@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 72" role="img" aria-labelledby="title desc">
+  <title id="title">GoreCode logo</title>
+  <desc id="desc">The GoreCode horizontal logo with a GC monogram and circuit-accented wordmark.</desc>
+
+  <defs>
+    <linearGradient id="gDark" x1="80" y1="80" x2="430" y2="430" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0b3650"/>
+      <stop offset="0.46" stop-color="#0d496b"/>
+      <stop offset="1" stop-color="#082f48"/>
+    </linearGradient>
+
+    <linearGradient id="gLight" x1="160" y1="150" x2="395" y2="350" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5ab9df"/>
+      <stop offset="0.5" stop-color="#3f97bf"/>
+      <stop offset="1" stop-color="#1b5f83"/>
+    </linearGradient>
+
+    <linearGradient id="edgeDark" x1="70" y1="70" x2="445" y2="445" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1d5f82"/>
+      <stop offset="0.55" stop-color="#0b3149"/>
+      <stop offset="1" stop-color="#061f30"/>
+    </linearGradient>
+
+  </defs>
+
+  <g aria-hidden="true" transform="translate(0 6) scale(0.118)">
+    <path
+      d="M 399 100
+         C 337 61 247 58 176 96
+         C 96 139 56 223 74 307
+         C 91 389 165 445 254 445
+         C 337 445 407 400 434 329
+         L 338 329
+         C 317 353 286 366 252 366
+         C 190 366 146 322 146 258
+         C 146 194 190 148 253 148
+         C 287 148 317 158 342 179
+         Z
+         M 296 239
+         L 448 239
+         C 454 239 459 244 459 250
+         L 459 328
+         C 459 334 454 339 448 339
+         L 335 339
+         C 329 339 324 334 324 328
+         L 324 302
+         L 296 302
+         C 290 302 285 297 285 291
+         L 285 250
+         C 285 244 290 239 296 239
+         Z"
+      fill="url(#gDark)"
+      stroke="url(#edgeDark)"
+      stroke-width="5"
+      stroke-linejoin="round"/>
+
+    <path
+      d="M 374 185
+         C 381 185 386 190 386 197
+         L 386 225
+         C 386 232 381 237 374 237
+         L 257 237
+         C 235 237 217 253 217 273
+         C 217 293 235 310 257 310
+         L 316 310
+         C 323 310 328 315 328 322
+         L 328 350
+         C 328 357 323 362 316 362
+         L 253 362
+         C 194 362 147 323 147 273
+         C 147 223 194 185 253 185
+         Z"
+      fill="url(#gLight)"
+      stroke="#17445f"
+      stroke-width="4"
+      stroke-linejoin="round"/>
+
+    <path
+      d="M 115 255
+         C 115 157 196 88 292 93
+         C 235 102 185 128 154 172
+         C 129 207 119 244 123 282"
+      fill="none"
+      stroke="#3f8cb1"
+      stroke-width="10"
+      stroke-linecap="round"
+      opacity="0.32"/>
+
+    <path
+      d="M 204 243
+         C 218 222 239 214 265 214
+         L 359 214"
+      fill="none"
+      stroke="#8bd4ee"
+      stroke-width="9"
+      stroke-linecap="round"
+      opacity="0.33"/>
+  </g>
+
+  <text
+    x="82"
+    y="47"
+    font-family="Aptos, 'Avenir Next', 'Segoe UI', ui-sans-serif, sans-serif"
+    font-size="31"
+    font-weight="680"
+    letter-spacing="0"
+  ><tspan fill="#12354d">Gore</tspan><tspan fill="#4f7f9a">Code</tspan></text>
+  <g aria-hidden="true" fill="none" stroke="#315a70" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.1">
+    <path d="M209 19h31l7 7h28"/>
+    <path d="M227 25h40"/>
+    <circle cx="278" cy="26" r="3.2" fill="#edf2f5"/>
+    <circle cx="242" cy="19" r="2.7" fill="#edf2f5"/>
+  </g>
+</svg>

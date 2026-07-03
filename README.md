@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/gorecode-logo.svg" alt="GoreCode" width="240">
+</p>
+
 # GoreGraph
 
 GoreGraph is a local, deterministic code-intelligence CLI for creating project maps that humans and AI coding assistants can use as orientation.
