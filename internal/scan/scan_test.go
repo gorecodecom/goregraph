@@ -159,6 +159,124 @@ func main() {
 	assertHasGraphEdge(t, graph, "file:cmd/api/main.go", "dependency:fmt", "imports")
 }
 
+func TestRunExtractsPythonSymbolsRelationsAndEntryPoint(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "app/service.py", `import os
+from app.utils import helper
+
+class Service:
+    def run(self):
+        return helper()
+
+def main():
+    Service().run()
+
+if __name__ == "__main__":
+    main()
+`)
+	writeFile(t, root, "app/utils.py", "def helper():\n    return 'ok'\n")
+	writeFile(t, root, "tests/test_service.py", "def test_service():\n    assert True\n")
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var symbols []SymbolRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "symbols.json"), &symbols)
+	assertHasSymbol(t, symbols, "Service", "class", "app/service.py")
+	assertHasSymbol(t, symbols, "run", "method", "app/service.py")
+	assertHasSymbol(t, symbols, "main", "function", "app/service.py")
+	assertHasSymbol(t, symbols, "test_service", "test", "tests/test_service.py")
+
+	var relations []RelationRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "relations.json"), &relations)
+	assertHasRelation(t, relations, "app/service.py", "os", "imports")
+	assertHasRelation(t, relations, "app/service.py", "app/utils.py", "imports")
+
+	entrypoints := readText(t, filepath.Join(root, "goregraph-out", "entrypoints.md"))
+	if !strings.Contains(entrypoints, "app/service.py") || !strings.Contains(entrypoints, "Python main guard") {
+		t.Fatalf("entrypoints report missing Python main guard:\n%s", entrypoints)
+	}
+}
+
+func TestRunExtractsPHPSymbolsRelationsAndEntrypoint(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "composer.json", `{"autoload":{"psr-4":{"App\\":"src/"}}}`)
+	writeFile(t, root, "public/index.php", `<?php
+require_once __DIR__ . '/../src/Service.php';
+
+use App\Service;
+
+function boot() {}
+`)
+	writeFile(t, root, "src/Service.php", `<?php
+namespace App;
+
+interface Contract {}
+trait Logger {}
+class Service {
+    public function run() {}
+}
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var symbols []SymbolRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "symbols.json"), &symbols)
+	assertHasSymbol(t, symbols, "App", "namespace", "src/Service.php")
+	assertHasSymbol(t, symbols, "Contract", "interface", "src/Service.php")
+	assertHasSymbol(t, symbols, "Logger", "trait", "src/Service.php")
+	assertHasSymbol(t, symbols, "Service", "class", "src/Service.php")
+	assertHasSymbol(t, symbols, "run", "method", "src/Service.php")
+	assertHasSymbol(t, symbols, "boot", "function", "public/index.php")
+
+	var relations []RelationRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "relations.json"), &relations)
+	assertHasRelation(t, relations, "public/index.php", "src/Service.php", "imports")
+	assertHasRelation(t, relations, "public/index.php", "src/Service.php", "includes")
+
+	entrypoints := readText(t, filepath.Join(root, "goregraph-out", "entrypoints.md"))
+	if !strings.Contains(entrypoints, "public/index.php") {
+		t.Fatalf("entrypoints report missing PHP public index:\n%s", entrypoints)
+	}
+}
+
+func TestRunExtractsShellSymbolsRelationsAndEntrypoint(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "scripts/deploy.sh", `#!/usr/bin/env bash
+source ./lib.sh
+
+deploy() {
+  echo deploy
+}
+
+function rollback() {
+  echo rollback
+}
+`)
+	writeFile(t, root, "scripts/lib.sh", "helper() { echo helper; }\n")
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var symbols []SymbolRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "symbols.json"), &symbols)
+	assertHasSymbol(t, symbols, "deploy", "function", "scripts/deploy.sh")
+	assertHasSymbol(t, symbols, "rollback", "function", "scripts/deploy.sh")
+
+	var relations []RelationRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "relations.json"), &relations)
+	assertHasRelation(t, relations, "scripts/deploy.sh", "scripts/lib.sh", "sources")
+
+	entrypoints := readText(t, filepath.Join(root, "goregraph-out", "entrypoints.md"))
+	if !strings.Contains(entrypoints, "scripts/deploy.sh") || !strings.Contains(entrypoints, "shell script") {
+		t.Fatalf("entrypoints report missing shell script:\n%s", entrypoints)
+	}
+}
+
 func TestRunProducesDeterministicManifestGoldenOutput(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# Demo\n")

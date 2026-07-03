@@ -100,10 +100,16 @@ func renderEntrypointsReport(files []FileRecord, symbols []SymbolRecord) string 
 		if symbol.Kind == "script" && symbol.File == "package.json" {
 			entrypoints[symbol.File] = append(entrypoints[symbol.File], "script "+symbol.Name)
 		}
+		if symbol.Kind == "entrypoint" {
+			entrypoints[symbol.File] = append(entrypoints[symbol.File], symbol.Name)
+		}
 	}
 	for _, file := range files {
 		if filepath.Base(file.Path) == "package.json" && len(entrypoints[file.Path]) == 0 {
 			entrypoints[file.Path] = append(entrypoints[file.Path], "package scripts")
+		}
+		if file.Language == "php" && filepath.Base(file.Path) == "index.php" {
+			entrypoints[file.Path] = append(entrypoints[file.Path], "PHP front controller")
 		}
 	}
 

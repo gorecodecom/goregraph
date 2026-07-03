@@ -9,7 +9,7 @@ Milestones 4-6 are tracked in `ROADMAP.md`.
 The first version must cover two use cases:
 
 - Phase 1: generate human-readable project documentation from a scan.
-- Phase 2: generate machine-readable project indexes for CLI queries and later MCP access.
+- Phase 2: generate machine-readable project indexes for CLI queries and MCP access.
 
 No AI or network access is part of the MVP.
 
@@ -117,6 +117,11 @@ Later commands:
 ```bash
 goregraph config init
 goregraph stats
+```
+
+Implemented Milestone 5 command:
+
+```bash
 goregraph mcp
 ```
 
@@ -386,32 +391,32 @@ Rules:
 - Use normalized `/` path separators in output.
 - Markdown reports should be generated from fixed templates.
 
-## MVP Extraction Scope
+## Extraction Scope
 
-The first implementation should favor reliable simple extraction over broad language support.
+The implementation favors reliable local extraction over running project code or adding heavyweight parser dependencies.
 
-Initial file detection:
+Current file detection:
 
 - Go
 - Java
 - JavaScript
 - TypeScript
+- Python
+- PHP
 - JSON
 - YAML
 - Markdown
 - shell scripts
-- Maven/Gradle/package files
+- Maven/Gradle/package/Composer files
 
-Initial extraction is regex/line-based:
+Current extraction:
 
-- Go module declarations
-- Go package declarations
-- imports where supported
-- exported and regular functions/classes where easy
-- Go test functions
-- Java classes/interfaces/enums
-- Go functions/types
-- JS/TS imports/exports/functions/classes
+- Go packages, modules, imports, functions, methods, types, and tests through the Go standard parser where possible.
+- Python classes, functions, methods, `test_` functions, imports, `from` imports, local module resolution, and main-guard entrypoints.
+- PHP namespaces, classes, interfaces, traits, functions, methods, `use` imports, `require`/`include` relations, Composer PSR-4 autoload hints, and front-controller entrypoints.
+- Shell script entrypoints, functions, and `source`/`.` relations.
+- Java classes/interfaces/enums and imports.
+- JS/TS imports/exports/functions/classes.
 - package.json scripts
 - Markdown headings
 - common build files are detected as file kinds
@@ -439,30 +444,30 @@ It should return:
 
 The query feature must be read-only.
 
-## Future MCP Mode
+## MCP Mode
 
-MCP is a later phase, not part of the first MVP.
-
-Planned command:
+Milestone 5 adds a read-only MCP stdio mode.
 
 ```bash
 goregraph mcp
 ```
 
-Planned tools:
+Provided tools:
 
 - `query_code_map`
+- `get_project_summary`
 - `get_symbol`
 - `get_file`
 - `get_related_files`
-- `get_project_summary`
+- `explain_file`
+- `doctor`
 
 Rules:
 
 - MCP reads `goregraph-out/`.
-- MCP must not scan automatically unless explicitly requested.
-- MCP must not expose a network listener by default.
-- Prefer stdio transport first.
+- MCP does not scan automatically.
+- MCP does not expose a network listener.
+- MCP uses stdio transport.
 - No global agent config modification.
 
 ## README Requirements
@@ -486,7 +491,7 @@ README must clearly state:
 - `goregraph-out/` is local scan output.
 - The tool may add `goregraph-out/` to the project `.gitignore`.
 - Use `--no-update-gitignore` to opt out.
-- No AI/network/hooks are used in the MVP.
+- No AI/network/hooks are used by GoreGraph.
 
 ## License Decision
 

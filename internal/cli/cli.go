@@ -10,6 +10,7 @@ import (
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/doctor"
 	"github.com/gorecodecom/goregraph/internal/gitignore"
+	"github.com/gorecodecom/goregraph/internal/mcp"
 	"github.com/gorecodecom/goregraph/internal/query"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
@@ -33,11 +34,29 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runExplain(args[1:], stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
+	case "mcp":
+		return runMCP(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		printHelp(stderr)
 		return 2
 	}
+}
+
+func runMCP(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph mcp\n\nStarts the read-only MCP stdio server. It reads existing GoreGraph output and does not scan or write project files.\n")
+		return 0
+	}
+	if len(args) > 0 {
+		fmt.Fprintf(stderr, "error: usage: goregraph mcp\n")
+		return 2
+	}
+	if err := mcp.Serve(os.Stdin, stdout); err != nil {
+		fmt.Fprintf(stderr, "error: mcp failed: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func runDoctor(args []string, stdout, stderr io.Writer) int {
@@ -190,6 +209,7 @@ Commands:
   query <path>      Search the generated index
   explain <path>    Explain a file or symbol from the generated index
   doctor <path>     Check generated output health
+  mcp               Start the read-only MCP stdio server
   help              Show this help
 
 Examples:
@@ -200,6 +220,7 @@ Examples:
   goregraph query . StartServer
   goregraph explain . src/main.go
   goregraph doctor .
+  goregraph mcp
 `)
 }
 

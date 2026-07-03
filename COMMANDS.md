@@ -208,6 +208,40 @@ Suggested fix:
   goregraph scan .
 ```
 
+## `goregraph mcp`
+
+Starts the read-only MCP stdio server.
+
+Use when:
+
+- an MCP-capable coding assistant should read an existing GoreGraph index
+- you want tool access to query/explain/project-summary functionality
+- you want local integration without network listeners or project writes
+
+Example:
+
+```bash
+goregraph mcp
+```
+
+Important behavior:
+
+- uses stdio
+- does not open a network port
+- does not scan automatically
+- does not write project files
+- reads the existing configured GoreGraph output
+
+Provided tools:
+
+- `query_code_map`
+- `get_project_summary`
+- `get_file`
+- `get_symbol`
+- `get_related_files`
+- `explain_file`
+- `doctor`
+
 ## Configuration
 
 All commands that read generated output respect `goregraph.yml` when present.

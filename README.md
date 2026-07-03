@@ -25,6 +25,7 @@ Implemented:
 - `goregraph query`
 - `goregraph explain`
 - `goregraph doctor`
+- `goregraph mcp`
 - deterministic `manifest.json`
 - deterministic `files.json`
 - deterministic `symbols.json`
@@ -38,17 +39,20 @@ Implemented:
 - project `.gitignore` exclusions
 - automatic project `.gitignore` entry for `goregraph-out/`
 - optional `goregraph.yml`
-- simple local symbol extraction for Go, Java, JavaScript, TypeScript, and Markdown
-- simple local import relation extraction for Go, Java, JavaScript, and TypeScript
+- local symbol extraction for Go, Python, PHP, Shell, Java, JavaScript, TypeScript, and Markdown
+- local relation extraction for Go, Python, PHP, Shell, Java, JavaScript, and TypeScript
 - simple test-to-source relations
 - local Go import resolution
+- local Python import resolution
+- local PHP namespace/use/include resolution
+- local Shell source resolution
 - graph nodes for local files and external dependencies
 - inbound/outbound relation context in `goregraph explain`
 - index health checks with `goregraph doctor`
+- read-only MCP stdio server with `goregraph mcp`
 
 Planned later:
 
-- optional MCP stdio mode
 - richer parser support
 - packaged releases
 
@@ -181,6 +185,25 @@ goregraph doctor <path>
 
 Check generated output health without scanning.
 
+```bash
+goregraph mcp
+```
+
+Start the read-only MCP stdio server for MCP-capable coding assistants.
+
+## Language Support
+
+Current extraction is local and deterministic. It does not run project code or call external services.
+
+- Go: packages, modules, functions, methods, types, tests, imports, and local module import resolution.
+- Python: classes, functions, methods, `test_` functions, imports, `from` imports, local module resolution, and main-guard entrypoints.
+- PHP: namespaces, classes, interfaces, traits, functions, methods, `use` imports, `require`/`include` relations, Composer PSR-4 autoload hints, and `index.php` front controllers.
+- Shell: shell-script entrypoints, functions, and `source`/`.` file relations.
+- JavaScript/TypeScript: functions, classes, imports, exports, and package scripts.
+- Java: classes, interfaces, enums, and imports.
+- Markdown: headings.
+- JSON/YAML and common build files: indexed as files and build/config context where supported.
+
 ## Output Files
 
 `manifest.json` contains scan metadata:
@@ -226,6 +249,20 @@ Check generated output health without scanning.
 `test-map.md` lists best-effort source/test associations.
 
 All normal output paths are relative to the scanned project root.
+
+## MCP Mode
+
+`goregraph mcp` starts a read-only stdio server for MCP-capable tools.
+
+It:
+
+- reads an existing `goregraph-out/` or configured output directory
+- exposes query, summary, file, symbol, relation, explain, and doctor tools
+- does not scan automatically
+- does not write project files
+- does not open a network port
+
+Run `goregraph scan .` first, then point the MCP client at the `goregraph mcp` command.
 
 ## Exclusions
 

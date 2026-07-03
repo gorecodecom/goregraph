@@ -66,6 +66,13 @@ func graphRelationTarget(to string, fileIDs map[string]bool) graphTarget {
 }
 
 func resolveLocalImportRelations(index *Index) {
+	resolveLocalGoImportRelations(index)
+	resolveLocalPythonImportRelations(index)
+	resolveLocalPHPRelations(index)
+	resolveLocalShellRelations(index)
+}
+
+func resolveLocalGoImportRelations(index *Index) {
 	module := modulePath(index.Symbols)
 	if module == "" {
 		return
@@ -78,6 +85,48 @@ func resolveLocalImportRelations(index *Index) {
 		}
 		dir := strings.TrimPrefix(relation.To, module+"/")
 		if target, ok := packages[dir]; ok {
+			relation.To = target
+		}
+	}
+}
+
+func resolveLocalPythonImportRelations(index *Index) {
+	modules := pythonModuleFiles(index.Files)
+	for i := range index.Relations {
+		relation := &index.Relations[i]
+		if relation.Type != "imports" {
+			continue
+		}
+		if target, ok := modules[relation.To]; ok {
+			relation.To = target
+		}
+	}
+}
+
+func resolveLocalPHPRelations(index *Index) {
+	classes := phpClassFiles(index.Symbols)
+	for i := range index.Relations {
+		relation := &index.Relations[i]
+		switch relation.Type {
+		case "imports":
+			if target, ok := classes[relation.To]; ok {
+				relation.To = target
+			}
+		case "includes":
+			if target, ok := resolveRelativeFile(index.Files, relation.From, relation.To); ok {
+				relation.To = target
+			}
+		}
+	}
+}
+
+func resolveLocalShellRelations(index *Index) {
+	for i := range index.Relations {
+		relation := &index.Relations[i]
+		if relation.Type != "sources" {
+			continue
+		}
+		if target, ok := resolveRelativeFile(index.Files, relation.From, relation.To); ok {
 			relation.To = target
 		}
 	}
@@ -108,6 +157,87 @@ func goPackageFiles(files []FileRecord) map[string]string {
 		}
 	}
 	return byDir
+}
+
+func pythonModuleFiles(files []FileRecord) map[string]string {
+	modules := map[string]string{}
+	for _, file := range files {
+		if file.Language != "python" {
+			continue
+		}
+		module := strings.TrimSuffix(file.Path, ".py")
+		module = strings.ReplaceAll(module, "/", ".")
+		if strings.HasSuffix(module, ".__init__") {
+			module = strings.TrimSuffix(module, ".__init__")
+		}
+		modules[module] = file.Path
+	}
+	return modules
+}
+
+func phpClassFiles(symbols []SymbolRecord) map[string]string {
+	classes := map[string]string{}
+	namespaceByFile := map[string]string{}
+	for _, symbol := range symbols {
+		if symbol.Kind == "namespace" {
+			namespaceByFile[symbol.File] = symbol.Name
+		}
+	}
+	for _, symbol := range symbols {
+		switch symbol.Kind {
+		case "class", "interface", "trait":
+			namespace := namespaceByFile[symbol.File]
+			if namespace == "" {
+				classes[symbol.Name] = symbol.File
+				continue
+			}
+			classes[namespace+`\`+symbol.Name] = symbol.File
+		}
+	}
+	return classes
+}
+
+func resolveRelativeFile(files []FileRecord, from, target string) (string, bool) {
+	fileSet := map[string]bool{}
+	for _, file := range files {
+		fileSet[file.Path] = true
+	}
+	candidates := []string{target}
+	if !strings.HasPrefix(target, "/") {
+		dir := strings.TrimSuffix(from, "/"+fileBase(from))
+		if dir == from {
+			dir = "."
+		}
+		candidates = append(candidates, cleanSlashPath(dir+"/"+target))
+		candidates = append(candidates, cleanSlashPath(dir+"/"+strings.TrimPrefix(target, "./")))
+		if strings.Contains(target, "../") {
+			candidates = append(candidates, cleanSlashPath(dir+"/"+target))
+		}
+	}
+	for _, candidate := range candidates {
+		if fileSet[candidate] {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+func cleanSlashPath(path string) string {
+	parts := strings.Split(path, "/")
+	var clean []string
+	for _, part := range parts {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			if len(clean) > 0 {
+				clean = clean[:len(clean)-1]
+			}
+		default:
+			clean = append(clean, part)
+		}
+	}
+	return strings.Join(clean, "/")
 }
 
 func fileBase(path string) string {

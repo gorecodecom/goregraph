@@ -1,6 +1,6 @@
 # GoreGraph Schema
 
-GoreGraph output is designed to be deterministic and safe for humans, CLI commands, and future read-only integrations.
+GoreGraph output is designed to be deterministic and safe for humans, CLI commands, and read-only integrations.
 
 ## Current Schema
 
@@ -30,7 +30,7 @@ Example:
 
 GoreGraph commands only support the current schema version.
 
-If generated output uses an unsupported schema, commands such as `doctor`, `query`, and future MCP mode should report an actionable error and ask the user to refresh the output:
+If generated output uses an unsupported schema, commands such as `doctor`, `query`, and MCP mode should report an actionable error and ask the user to refresh the output:
 
 ```bash
 goregraph scan .
@@ -78,3 +78,9 @@ Schema version 1 expects:
 `graph.json` combines files, symbols, local file targets, and external dependency nodes.
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
+
+## Language Records
+
+Schema version 1 may contain language-specific symbols and relations. Current symbol kinds include packages, modules, classes, interfaces, traits, functions, methods, tests, scripts, headings, namespaces, autoload hints, types, and entrypoints.
+
+Current relation types include imports, includes, sources, and tests. Local Go, Python, PHP, and Shell relations are resolved to root-relative files where GoreGraph can do so deterministically.

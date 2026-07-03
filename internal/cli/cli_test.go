@@ -244,6 +244,22 @@ func TestRunDoctorWarnsForStaleIndex(t *testing.T) {
 	}
 }
 
+func TestRunMCPHelpPrintsUsage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"mcp", "help"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Usage: goregraph mcp") {
+		t.Fatalf("mcp help missing usage:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "stdio") {
+		t.Fatalf("mcp help missing stdio note:\n%s", stdout.String())
+	}
+}
+
 func TestRunScanHelpPrintsScanUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 

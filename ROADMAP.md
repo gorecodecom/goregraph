@@ -46,12 +46,17 @@ Out of scope:
 - release packaging
 - AI provider calls
 
-## Milestone 5: Read-Only MCP Integration
+## Milestone 5: Language Expansion And Read-Only MCP
 
-Goal: allow AI coding tools to read GoreGraph indexes through a controlled local MCP stdio server.
+Status: delivered.
+
+Goal: deepen non-Go analysis and allow AI coding tools to read GoreGraph indexes through a controlled local MCP stdio server.
 
 Planned work:
 
+- add deeper Python symbol, import, local-module, test, and entrypoint extraction
+- add deeper PHP namespace, class, interface, trait, function, use, include, Composer, and entrypoint extraction
+- add deeper Shell function, source, and entrypoint extraction
 - add `goregraph mcp`
 - use stdio transport only
 - read existing `goregraph-out` or configured output directory
@@ -65,6 +70,24 @@ Planned work:
   - `get_related_files`
   - `explain_file`
 - document how Codex and other MCP clients can connect
+
+Delivered in this milestone:
+
+- Python class/function/method/test/main-guard symbol extraction
+- Python import and local-module relation resolution
+- PHP namespace/class/interface/trait/function/method/front-controller symbol extraction
+- PHP `use`, `require`, `include`, and Composer PSR-4 relation support
+- Shell function, source, and shebang entrypoint extraction
+- `goregraph mcp`
+- read-only stdio MCP tools:
+  - `query_code_map`
+  - `get_project_summary`
+  - `get_file`
+  - `get_symbol`
+  - `get_related_files`
+  - `explain_file`
+  - `doctor`
+- command documentation for MCP mode
 
 Acceptance criteria:
 

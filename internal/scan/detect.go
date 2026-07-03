@@ -17,6 +17,10 @@ func detectLanguage(rel string) string {
 		return "go"
 	case ".java":
 		return "java"
+	case ".py":
+		return "python"
+	case ".php":
+		return "php"
 	case ".js", ".mjs", ".cjs":
 		return "javascript"
 	case ".ts", ".tsx":
@@ -37,7 +41,7 @@ func detectLanguage(rel string) string {
 func detectKind(rel string) string {
 	base := strings.ToLower(filepath.Base(rel))
 	switch base {
-	case "go.mod", "package.json", "pom.xml", "build.gradle", "settings.gradle":
+	case "go.mod", "package.json", "composer.json", "pom.xml", "build.gradle", "settings.gradle":
 		return "build"
 	case "readme.md":
 		return "documentation"
