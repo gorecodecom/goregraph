@@ -107,6 +107,26 @@ func TestRunReportPrintsGeneratedReport(t *testing.T) {
 	}
 }
 
+func TestRunReportUsesConfiguredOutputDirectory(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "goregraph.yml", "output: .goregraph\nupdate_gitignore: false\n")
+	writeFile(t, root, "README.md", "# Demo\n")
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"scan", root}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"report", root}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "# GoreGraph Report") {
+		t.Fatalf("report output missing heading:\n%s", stdout.String())
+	}
+}
+
 func TestRunQuerySearchesGeneratedIndex(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")

@@ -82,7 +82,11 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		root = args[0]
 	}
-	cfg := config.Defaults()
+	cfg, err := config.Load(root)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
 	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, "report.md"))
 	if err != nil {
 		fmt.Fprintf(stderr, "error: reading report failed: %v\n", err)

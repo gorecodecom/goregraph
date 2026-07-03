@@ -113,10 +113,10 @@ goregraph explain . "src/auth/LoginService.ts"
 Later commands:
 
 ```bash
-goregraph mcp
 goregraph config init
 goregraph stats
 goregraph doctor
+goregraph mcp
 ```
 
 Help must be built into the CLI. Every command should have short usage, examples, and important safety notes.
@@ -190,7 +190,7 @@ Rules:
 - Only the project `.gitignore` is required for MVP.
 - Global Git excludes may be considered later, but are not required initially.
 - `.gitignore` patterns should be interpreted relative to the project root.
-- Explicit GoreGraph include rules in `goregraph.yml` may override ignore behavior later, but not in the MVP unless simple to implement safely.
+- Explicit GoreGraph include rules in `goregraph.yml` are supported as a scan limiter. Exclusions and safety skips still apply.
 
 ## Safety Rules
 
@@ -274,13 +274,11 @@ max_file_size_kb: 512
 follow_symlinks: false
 use_gitignore: true
 update_gitignore: true
-reports:
-  markdown: true
-ai:
-  enabled: false
 ```
 
 Project config should override only the specified values. Missing values fall back to built-in defaults.
+
+Configured `exclude` patterns are added to the default safety exclusions. Unsupported nested config sections are rejected for now instead of being silently ignored.
 
 The README must document every supported config key.
 
@@ -296,12 +294,6 @@ goregraph-out/
   relations.json
   graph.json
   report.md
-```
-
-Later human-readable report expansion can add:
-
-```text
-goregraph-out/
   modules.md
   entrypoints.md
   test-map.md
@@ -335,13 +327,15 @@ goregraph-out/
 - kind
 - relative file path
 - line number when available
+- Go package symbols
+- package.json script symbols
 - parent symbol can be added later
 
 `relations.json`:
 
 - imports
+- best-effort test-to-source relations
 - local references can be added later
-- test-to-source guesses can be added later
 - route/entrypoint hints can be added later
 
 `graph.json`:
@@ -410,11 +404,14 @@ Initial file detection:
 Initial extraction is regex/line-based:
 
 - Go module declarations
+- Go package declarations
 - imports where supported
 - exported and regular functions/classes where easy
+- Go test functions
 - Java classes/interfaces/enums
 - Go functions/types
 - JS/TS imports/exports/functions/classes
+- package.json scripts
 - Markdown headings
 - common build files are detected as file kinds
 
@@ -435,8 +432,9 @@ It should return:
 
 - summary from indexed data
 - symbols in file
-- direct relations for the file or symbol
-- likely tests can be added later
+- outbound relations
+- inbound relations
+- likely tests
 
 The query feature must be read-only.
 
@@ -547,8 +545,19 @@ Milestone 2 delivered:
 - `goregraph explain`.
 - tests for generated indexes and query/explain behavior.
 
-Milestone 3 can add:
+Milestone 3 delivered:
 
 - richer reports.
 - optional `goregraph.yml`.
+- include/exclude config.
+- configured output directories for scan/report/query/explain.
+- package and test symbol extraction.
+- package.json script extraction.
+- best-effort test-to-source relations.
+- inbound/outbound explain context.
+
+Milestone 4 or later can add:
+
 - MCP stdio mode.
+- release packaging.
+- richer parser support.

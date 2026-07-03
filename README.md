@@ -30,17 +30,23 @@ Implemented:
 - deterministic `relations.json`
 - deterministic `graph.json`
 - deterministic `report.md`
+- deterministic `modules.md`
+- deterministic `entrypoints.md`
+- deterministic `test-map.md`
 - default exclusions
 - project `.gitignore` exclusions
 - automatic project `.gitignore` entry for `goregraph-out/`
+- optional `goregraph.yml`
 - simple local symbol extraction for Go, Java, JavaScript, TypeScript, and Markdown
 - simple local import relation extraction for Go, Java, JavaScript, and TypeScript
+- simple test-to-source relations
+- inbound/outbound relation context in `goregraph explain`
 
 Planned later:
 
 - optional MCP stdio mode
-- optional `goregraph.yml`
-- richer human-readable reports
+- richer parser support
+- packaged releases
 
 ## Build From Source
 
@@ -84,6 +90,9 @@ goregraph-out/
   relations.json
   graph.json
   report.md
+  modules.md
+  entrypoints.md
+  test-map.md
 ```
 
 Print the generated report:
@@ -194,6 +203,12 @@ Print indexed context for a file path or symbol name.
 
 `report.md` is a human-readable deterministic project report.
 
+`modules.md` summarizes top-level project areas.
+
+`entrypoints.md` lists likely app, CLI, and package-script entrypoints.
+
+`test-map.md` lists best-effort source/test associations.
+
 All normal output paths are relative to the scanned project root.
 
 ## Exclusions
@@ -243,15 +258,49 @@ GoreGraph only modifies the project-local `.gitignore`. It does not modify globa
 
 ## Configuration
 
-The current milestone uses built-in defaults only.
-
-Later versions will support optional project configuration via:
+GoreGraph works without config. Projects can optionally add:
 
 ```text
 goregraph.yml
 ```
 
-The planned config model is documented in `BUILD_PLAN.md`.
+Supported keys:
+
+```yaml
+version: 1
+output: goregraph-out
+include:
+  - src/**
+  - tests/**
+exclude:
+  - generated/**
+max_file_size_kb: 512
+follow_symlinks: false
+use_gitignore: true
+update_gitignore: true
+```
+
+Config values are merged with built-in safety defaults. Configured `exclude` patterns are added to the default exclusions; they do not remove safety exclusions such as `.git/` or `node_modules/`.
+
+`include` limits the scan to matching root-relative paths. If `include` is omitted, GoreGraph scans the whole project except exclusions and safety skips.
+
+The configured `output` directory is used by `scan`, `report`, `query`, and `explain`.
+
+Unsupported nested config sections are intentionally rejected for now so configuration mistakes do not silently change scan behavior.
+
+## Explain Context
+
+```text
+goregraph explain . src/main.go
+```
+
+`explain` prints:
+
+- file metadata
+- symbols in the file
+- outbound relations
+- inbound relations
+- likely tests
 
 ## Security Model
 

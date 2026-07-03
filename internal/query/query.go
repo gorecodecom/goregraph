@@ -72,11 +72,33 @@ func Explain(root, target string) (string, error) {
 	if count == 0 {
 		lines = append(lines, "- none")
 	}
-	lines = append(lines, "", "## Relations")
+	lines = append(lines, "", "## Outbound Relations")
 	count = 0
 	for _, relation := range relations {
-		if relation.From == target || relation.To == target {
+		if relation.From == target {
 			lines = append(lines, fmt.Sprintf("- `%s` --%s--> `%s`", relation.From, relation.Type, relation.To))
+			count++
+		}
+	}
+	if count == 0 {
+		lines = append(lines, "- none")
+	}
+	lines = append(lines, "", "## Inbound Relations")
+	count = 0
+	for _, relation := range relations {
+		if relation.From != target && relationTargetsFile(relation, target) {
+			lines = append(lines, fmt.Sprintf("- `%s` --%s--> `%s`", relation.From, relation.Type, relation.To))
+			count++
+		}
+	}
+	if count == 0 {
+		lines = append(lines, "- none")
+	}
+	lines = append(lines, "", "## Likely Tests")
+	count = 0
+	for _, relation := range relations {
+		if relation.Type == "tests" && relation.To == target {
+			lines = append(lines, fmt.Sprintf("- `%s`", relation.From))
 			count++
 		}
 	}
@@ -87,7 +109,10 @@ func Explain(root, target string) (string, error) {
 }
 
 func loadIndex(root string) ([]scan.FileRecord, []scan.SymbolRecord, []scan.RelationRecord, error) {
-	cfg := config.Defaults()
+	cfg, err := config.Load(root)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	out := filepath.Join(root, cfg.OutputDir)
 	var files []scan.FileRecord
 	var symbols []scan.SymbolRecord
@@ -126,4 +151,18 @@ func readJSON(path string, dest any) error {
 		return err
 	}
 	return json.Unmarshal(body, dest)
+}
+
+func relationTargetsFile(relation scan.RelationRecord, target string) bool {
+	if relation.To == target {
+		return true
+	}
+	if relation.Type != "imports" {
+		return false
+	}
+	targetDir := filepath.ToSlash(filepath.Dir(target))
+	if targetDir == "." || targetDir == "" {
+		return false
+	}
+	return strings.HasSuffix(relation.To, targetDir)
 }

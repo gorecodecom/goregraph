@@ -53,6 +53,34 @@ func TestExplainFileShowsSymbolsAndRelations(t *testing.T) {
 	}
 }
 
+func TestExplainFileShowsInboundRelationsAndLikelyTests(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "internal/service/service.go", "package service\nfunc StartServer() {}\n")
+	writeFile(t, root, "internal/service/service_test.go", "package service\nfunc TestStartServer() {}\n")
+	writeFile(t, root, "cmd/api/main.go", "package main\nimport \"example.test/demo/internal/service\"\nfunc main() { service.StartServer() }\n")
+	if _, err := scan.Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Explain(root, "internal/service/service.go")
+	if err != nil {
+		t.Fatalf("Explain returned error: %v", err)
+	}
+
+	if !strings.Contains(result, "## Inbound Relations") {
+		t.Fatalf("Explain result missing inbound section:\n%s", result)
+	}
+	if !strings.Contains(result, "cmd/api/main.go") {
+		t.Fatalf("Explain result missing importer:\n%s", result)
+	}
+	if !strings.Contains(result, "## Likely Tests") {
+		t.Fatalf("Explain result missing likely tests section:\n%s", result)
+	}
+	if !strings.Contains(result, "internal/service/service_test.go") {
+		t.Fatalf("Explain result missing likely test:\n%s", result)
+	}
+}
+
 func TestSearchReportsNoMatches(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# Demo\n")
