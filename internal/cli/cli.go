@@ -13,6 +13,7 @@ import (
 	"github.com/gorecodecom/goregraph/internal/mcp"
 	"github.com/gorecodecom/goregraph/internal/query"
 	"github.com/gorecodecom/goregraph/internal/scan"
+	"github.com/gorecodecom/goregraph/internal/version"
 )
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -36,11 +37,26 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runDoctor(args[1:], stdout, stderr)
 	case "mcp":
 		return runMCP(args[1:], stdout, stderr)
+	case "version":
+		return runVersion(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		printHelp(stderr)
 		return 2
 	}
+}
+
+func runVersion(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph version\n\nPrints GoreGraph build metadata.\n")
+		return 0
+	}
+	if len(args) > 0 {
+		fmt.Fprint(stderr, "error: usage: goregraph version\n")
+		return 2
+	}
+	_, _ = stdout.Write([]byte(version.Info(scan.SchemaVersion)))
+	return 0
 }
 
 func runMCP(args []string, stdout, stderr io.Writer) int {
@@ -210,6 +226,7 @@ Commands:
   explain <path>    Explain a file or symbol from the generated index
   doctor <path>     Check generated output health
   mcp               Start the read-only MCP stdio server
+  version           Print build metadata
   help              Show this help
 
 Examples:
@@ -221,6 +238,7 @@ Examples:
   goregraph explain . src/main.go
   goregraph doctor .
   goregraph mcp
+  goregraph version
 `)
 }
 

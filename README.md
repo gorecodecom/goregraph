@@ -30,6 +30,7 @@ Implemented:
 - `goregraph explain`
 - `goregraph doctor`
 - `goregraph mcp`
+- `goregraph version`
 - deterministic `manifest.json`
 - deterministic `files.json`
 - deterministic `symbols.json`
@@ -54,11 +55,14 @@ Implemented:
 - inbound/outbound relation context in `goregraph explain`
 - index health checks with `goregraph doctor`
 - read-only MCP stdio server with `goregraph mcp`
+- build metadata with `goregraph version`
+- GoReleaser release configuration
+- GitHub Actions CI and release workflows
 
 Planned later:
 
 - richer parser support
-- packaged releases
+- code signing and notarization
 
 The next milestones are documented in `ROADMAP.md`.
 
@@ -66,7 +70,11 @@ Every CLI command is documented in `COMMANDS.md`.
 
 Generated output compatibility is documented in `SCHEMA.md`.
 
-## Build From Source
+## Installation
+
+GoreGraph is currently in the private validation phase. Public package installation should start with the first public pre-1.0 release.
+
+### Build From Source
 
 Requirements:
 
@@ -89,6 +97,36 @@ During development you can also run:
 ```bash
 go run ./cmd/goregraph help
 ```
+
+### GitHub Releases
+
+The first public release target is:
+
+```text
+v0.1.0
+```
+
+Release builds are prepared through GoReleaser and should publish archives for macOS, Linux, and Windows with `checksums.txt`.
+
+### Homebrew
+
+Homebrew installation is planned through the shared GoreCode tap:
+
+```bash
+brew install gorecodecom/tap/goregraph
+```
+
+During internal testing, the tap can stay private. For public installs, `gorecodecom/homebrew-tap` and GoreGraph release artifacts must be publicly reachable.
+
+### Winget
+
+Future Windows install command:
+
+```powershell
+winget install --id GoreCode.GoreGraph -e
+```
+
+Milestone 6 prepares Winget metadata, but upload to `winget-pkgs` is intentionally disabled until public release hardening.
 
 ## Quick Start
 
@@ -194,6 +232,12 @@ goregraph mcp
 ```
 
 Start the read-only MCP stdio server for MCP-capable coding assistants.
+
+```bash
+goregraph version
+```
+
+Print build metadata including version, commit, build date, Go version, platform, and schema version.
 
 ## Language Support
 

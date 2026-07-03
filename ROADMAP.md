@@ -106,6 +106,8 @@ Out of scope:
 
 ## Milestone 6: Distribution And Release
 
+Status: delivered.
+
 Goal: make GoreGraph easy to install and update on macOS, Linux, and Windows.
 
 Target release: `0.1.0`.
@@ -139,6 +141,23 @@ Planned work:
 - switch project license to Apache-2.0
 - document install, upgrade, and uninstall flows
 - add a release checklist
+
+Delivered in this milestone:
+
+- `goregraph version`
+- version metadata package with ldflag-ready fields
+- conservative GitHub Actions CI:
+  - `gofmt` check
+  - `go vet ./...`
+  - `go test ./...`
+- GoReleaser v2 configuration
+- release workflow for tag-based GitHub Releases
+- cross-platform release targets for macOS, Linux, and Windows
+- checksum publishing configuration
+- Homebrew Formula publishing configuration for `gorecodecom/homebrew-tap`
+- Winget metadata prepared with upload disabled for review
+- release checklist in `docs/RELEASE.md`
+- README installation guidance
 
 Acceptance criteria:
 

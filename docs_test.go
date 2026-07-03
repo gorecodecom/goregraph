@@ -21,6 +21,7 @@ func TestCommandsReferenceDocumentsEveryUserCommand(t *testing.T) {
 		"goregraph explain",
 		"goregraph doctor",
 		"goregraph mcp",
+		"goregraph version",
 	} {
 		if !strings.Contains(text, command) {
 			t.Fatalf("COMMANDS.md missing %q", command)

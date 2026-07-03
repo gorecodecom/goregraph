@@ -479,6 +479,49 @@ Important limitation:
 
 - MCP reads existing output only. If the index is stale or missing, run `goregraph scan .` manually.
 
+## `goregraph version`
+
+Prints GoreGraph build metadata.
+
+Use when:
+
+- you want to confirm which GoreGraph binary is installed
+- you are reporting a bug
+- you need to check which schema version the binary supports
+- you want to verify release build metadata
+
+Example:
+
+```bash
+goregraph version
+```
+
+Expected output:
+
+```text
+goregraph 0.1.0
+commit: dev
+built: unknown
+go: go1.23.x
+platform: darwin/arm64
+schema: 1
+```
+
+Field meaning:
+
+- `goregraph`: the CLI name and semantic version.
+- `commit`: the Git commit embedded by release builds.
+- `built`: the build timestamp embedded by release builds.
+- `go`: the Go runtime version used to build the binary.
+- `platform`: the operating system and CPU architecture of the binary.
+- `schema`: the GoreGraph output schema version supported by this binary.
+
+Important behavior:
+
+- does not read project files
+- does not require a GoreGraph project
+- does not call network services
+
 ## Configuration
 
 All commands that read generated output respect `goregraph.yml` when present.

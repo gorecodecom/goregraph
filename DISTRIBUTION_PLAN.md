@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document tracks future packaging and installation options for GoreGraph. The MVP should be structured so these paths are easy later, but publishing packages is not required for the first implementation.
+This document tracks packaging and installation options for GoreGraph. Release automation is configured for the private validation phase and should be used publicly once the CLI and schema are stable enough for external users.
 
 ## Release Artifacts
 
@@ -25,6 +25,13 @@ goregraph_Windows_x86_64.zip
 ```
 
 Each release should include checksums.
+
+Current release automation:
+
+- `.goreleaser.yaml`
+- `.github/workflows/ci.yml`
+- `.github/workflows/release.yml`
+- `docs/RELEASE.md`
 
 ## GitHub Releases
 
@@ -80,28 +87,28 @@ class Goregraph < Formula
   homepage "https://github.com/gorecodecom/goregraph"
   url "https://github.com/gorecodecom/goregraph/releases/download/v0.1.0/goregraph_Darwin_arm64.tar.gz"
   sha256 "..."
-  license "MIT"
+  license "Apache-2.0"
 
   def install
     bin.install "goregraph"
   end
 
   test do
-    system "#{bin}/goregraph", "help"
+    system "#{bin}/goregraph", "version"
   end
 end
 ```
 
-GoReleaser can update the Homebrew tap automatically later.
+GoReleaser is configured to update the Homebrew tap automatically during release.
 
 ## winget
 
-Windows Package Manager support can come after the CLI is stable.
+Windows Package Manager metadata is prepared for the stable package identifier.
 
 Expected command:
 
 ```powershell
-winget install GoreCode.GoreGraph
+winget install --id GoreCode.GoreGraph -e
 ```
 
 Requirements:
@@ -112,7 +119,7 @@ Requirements:
 - versioned release URL
 - installer or portable ZIP strategy
 
-This is more administrative than Homebrew and should not block the MVP.
+GoReleaser currently keeps Winget upload disabled with `skip_upload: true`. The generated metadata can be reviewed before enabling a pull request to `winget-pkgs`.
 
 ## Scoop
 
@@ -166,10 +173,11 @@ The README should document local development builds separately from official pac
 
 The repository can stay private while GoreGraph is validated.
 
-Even with MIT licensing in the repository, public package distribution should wait until:
+Even with Apache-2.0 licensing in the repository, public package distribution should wait until:
 
 - command surface is stable
 - README is complete
 - release automation is tested
-- licensing decision is re-reviewed
 - security model is documented
+- public GitHub release artifacts are available
+- `gorecodecom/homebrew-tap` is public

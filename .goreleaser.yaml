@@ -1,0 +1,100 @@
+version: 2
+
+project_name: goregraph
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: goregraph
+    main: ./cmd/goregraph
+    binary: goregraph
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/gorecodecom/goregraph/internal/version.Version={{ .Version }}
+        -X github.com/gorecodecom/goregraph/internal/version.Commit={{ .Commit }}
+        -X github.com/gorecodecom/goregraph/internal/version.Built={{ .Date }}
+
+archives:
+  - id: goregraph
+    ids:
+      - goregraph
+    name_template: >-
+      {{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+      - COMMANDS.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: gorecodecom
+    name: goregraph
+  prerelease: auto
+
+brews:
+  - name: goregraph
+    ids:
+      - goregraph
+    repository:
+      owner: gorecodecom
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/gorecodecom/goregraph
+    description: Local deterministic code intelligence for safer AI-assisted development
+    license: Apache-2.0
+    install: |
+      bin.install "goregraph"
+    test: |
+      system "#{bin}/goregraph", "version"
+
+winget:
+  - name: goregraph
+    publisher: GoreCode
+    package_identifier: GoreCode.GoreGraph
+    publisher_url: https://gorecode.com
+    publisher_support_url: https://github.com/gorecodecom/goregraph/issues
+    homepage: https://github.com/gorecodecom/goregraph
+    short_description: Local deterministic code intelligence for safer AI-assisted development
+    license: Apache-2.0
+    repository:
+      owner: microsoft
+      name: winget-pkgs
+      branch: master
+      token: "{{ .Env.WINGET_TOKEN }}"
+    skip_upload: true

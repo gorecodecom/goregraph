@@ -260,6 +260,28 @@ func TestRunMCPHelpPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestRunVersionPrintsBuildMetadata(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"version"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"goregraph 0.1.0",
+		"commit:",
+		"built:",
+		"go:",
+		"platform:",
+		"schema: 1",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("version output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunScanHelpPrintsScanUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
