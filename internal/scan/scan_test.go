@@ -24,7 +24,7 @@ func TestRunWritesDeterministicFilesManifestAndReport(t *testing.T) {
 		t.Fatalf("ScannedFiles = %d, want 2", result.ScannedFiles)
 	}
 
-	for _, name := range []string{"manifest.json", "files.json", "report.md"} {
+	for _, name := range []string{"manifest.json", "files.json", "symbols.json", "relations.json", "graph.json", "report.md"} {
 		if _, err := os.Stat(filepath.Join(root, "goregraph-out", name)); err != nil {
 			t.Fatalf("%s was not written: %v", name, err)
 		}
@@ -45,6 +45,57 @@ func TestRunWritesDeterministicFilesManifestAndReport(t *testing.T) {
 	}
 }
 
+func TestRunExtractsSymbolsRelationsAndGraph(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "go.mod", "module example.test/demo\n")
+	writeFile(t, root, "src/main.go", `package main
+
+import "fmt"
+
+type Server struct{}
+
+func main() {
+	fmt.Println("hello")
+}
+`)
+	writeFile(t, root, "web/app.ts", `import { api } from "./api";
+
+export class App {}
+
+export function start() {
+  api();
+}
+`)
+	writeFile(t, root, "README.md", "# Demo\n\n## Usage\n")
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var symbols []SymbolRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "symbols.json"), &symbols)
+	assertHasSymbol(t, symbols, "module example.test/demo", "module", "go.mod")
+	assertHasSymbol(t, symbols, "Server", "type", "src/main.go")
+	assertHasSymbol(t, symbols, "main", "function", "src/main.go")
+	assertHasSymbol(t, symbols, "App", "class", "web/app.ts")
+	assertHasSymbol(t, symbols, "start", "function", "web/app.ts")
+	assertHasSymbol(t, symbols, "Demo", "heading", "README.md")
+
+	var relations []RelationRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "relations.json"), &relations)
+	assertHasRelation(t, relations, "src/main.go", "fmt", "imports")
+	assertHasRelation(t, relations, "web/app.ts", "./api", "imports")
+
+	var graph Graph
+	readJSON(t, filepath.Join(root, "goregraph-out", "graph.json"), &graph)
+	if len(graph.Nodes) == 0 {
+		t.Fatal("graph has no nodes")
+	}
+	if len(graph.Edges) == 0 {
+		t.Fatal("graph has no edges")
+	}
+}
+
 func TestRunUsesProjectGitignoreAsExclusions(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, ".gitignore", "local/\n*.tmp\n")
@@ -60,6 +111,26 @@ func TestRunUsesProjectGitignoreAsExclusions(t *testing.T) {
 	if result.ScannedFiles != 1 {
 		t.Fatalf("ScannedFiles = %d, want 1", result.ScannedFiles)
 	}
+}
+
+func assertHasSymbol(t *testing.T, symbols []SymbolRecord, name, kind, file string) {
+	t.Helper()
+	for _, symbol := range symbols {
+		if symbol.Name == name && symbol.Kind == kind && symbol.File == file {
+			return
+		}
+	}
+	t.Fatalf("missing symbol name=%q kind=%q file=%q in %#v", name, kind, file, symbols)
+}
+
+func assertHasRelation(t *testing.T, relations []RelationRecord, from, to, kind string) {
+	t.Helper()
+	for _, relation := range relations {
+		if relation.From == from && relation.To == to && relation.Type == kind {
+			return
+		}
+	}
+	t.Fatalf("missing relation from=%q to=%q type=%q in %#v", from, to, kind, relations)
 }
 
 func TestRunSkipsLargeBinaryAndSymlinkFiles(t *testing.T) {

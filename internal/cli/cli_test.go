@@ -107,6 +107,50 @@ func TestRunReportPrintsGeneratedReport(t *testing.T) {
 	}
 }
 
+func TestRunQuerySearchesGeneratedIndex(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"scan", root, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"query", root, "StartServer"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "StartServer") {
+		t.Fatalf("query output missing symbol:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "src/main.go") {
+		t.Fatalf("query output missing file:\n%s", stdout.String())
+	}
+}
+
+func TestRunExplainPrintsFileContext(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"scan", root, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"explain", root, "src/main.go"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "src/main.go") {
+		t.Fatalf("explain output missing file:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "StartServer") {
+		t.Fatalf("explain output missing symbol:\n%s", stdout.String())
+	}
+}
+
 func TestRunScanHelpPrintsScanUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 

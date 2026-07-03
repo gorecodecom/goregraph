@@ -16,27 +16,31 @@ The MVP is intentionally conservative:
 
 GoreGraph is in early development.
 
-Implemented in the first milestone:
+Implemented:
 
 - `goregraph help`
 - `goregraph scan`
 - `goregraph update`
 - `goregraph report`
+- `goregraph query`
+- `goregraph explain`
 - deterministic `manifest.json`
 - deterministic `files.json`
+- deterministic `symbols.json`
+- deterministic `relations.json`
+- deterministic `graph.json`
 - deterministic `report.md`
 - default exclusions
 - project `.gitignore` exclusions
 - automatic project `.gitignore` entry for `goregraph-out/`
+- simple local symbol extraction for Go, Java, JavaScript, TypeScript, and Markdown
+- simple local import relation extraction for Go, Java, JavaScript, and TypeScript
 
 Planned later:
 
-- symbol extraction
-- relation extraction
-- `graph.json`
-- `query`
-- `explain`
 - optional MCP stdio mode
+- optional `goregraph.yml`
+- richer human-readable reports
 
 ## Build From Source
 
@@ -76,6 +80,9 @@ This creates:
 goregraph-out/
   manifest.json
   files.json
+  symbols.json
+  relations.json
+  graph.json
   report.md
 ```
 
@@ -83,6 +90,18 @@ Print the generated report:
 
 ```bash
 goregraph report .
+```
+
+Search the generated index:
+
+```bash
+goregraph query . StartServer
+```
+
+Explain one indexed file or symbol:
+
+```bash
+goregraph explain . src/main.go
 ```
 
 Refresh after code changes:
@@ -125,6 +144,18 @@ goregraph report <path>
 
 Print `<path>/goregraph-out/report.md`.
 
+```bash
+goregraph query <path> <term>
+```
+
+Search the generated index for matching files, symbols, and relations.
+
+```bash
+goregraph explain <path> <file-or-symbol>
+```
+
+Print indexed context for a file path or symbol name.
+
 ## Output Files
 
 `manifest.json` contains scan metadata:
@@ -144,6 +175,22 @@ Print `<path>/goregraph-out/report.md`.
 - size
 - SHA-256 hash
 - kind
+
+`symbols.json` contains simple extracted symbols:
+
+- name
+- kind
+- root-relative file path
+- line number
+
+`relations.json` contains simple extracted relations:
+
+- source file
+- target
+- relation type
+- line number
+
+`graph.json` contains combined nodes and edges derived from files, symbols, and relations.
 
 `report.md` is a human-readable deterministic project report.
 

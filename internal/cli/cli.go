@@ -9,6 +9,7 @@ import (
 
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/gitignore"
+	"github.com/gorecodecom/goregraph/internal/query"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
@@ -25,11 +26,51 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runScan(args[1:], stdout, stderr, true)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
+	case "query":
+		return runQuery(args[1:], stdout, stderr)
+	case "explain":
+		return runExplain(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		printHelp(stderr)
 		return 2
 	}
+}
+
+func runQuery(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph query <path> <term>\n\nSearches an existing goregraph-out index.\n")
+		return 0
+	}
+	if len(args) < 2 {
+		fmt.Fprint(stderr, "error: usage: goregraph query <path> <term>\n")
+		return 2
+	}
+	result, err := query.Search(args[0], strings.Join(args[1:], " "))
+	if err != nil {
+		fmt.Fprintf(stderr, "error: query failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write([]byte(result))
+	return 0
+}
+
+func runExplain(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph explain <path> <file-or-symbol>\n\nExplains a file or symbol from an existing goregraph-out index.\n")
+		return 0
+	}
+	if len(args) < 2 {
+		fmt.Fprint(stderr, "error: usage: goregraph explain <path> <file-or-symbol>\n")
+		return 2
+	}
+	result, err := query.Explain(args[0], strings.Join(args[1:], " "))
+	if err != nil {
+		fmt.Fprintf(stderr, "error: explain failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write([]byte(result))
+	return 0
 }
 
 func runReport(args []string, stdout, stderr io.Writer) int {
@@ -118,6 +159,8 @@ Commands:
   scan <path>       Create or rebuild goregraph-out for a project
   update            Refresh the current project's goregraph-out
   report <path>     Print the generated Markdown report
+  query <path>      Search the generated index
+  explain <path>    Explain a file or symbol from the generated index
   help              Show this help
 
 Examples:
@@ -125,6 +168,8 @@ Examples:
   goregraph scan . --no-update-gitignore
   goregraph update
   goregraph report .
+  goregraph query . StartServer
+  goregraph explain . src/main.go
 `)
 }
 

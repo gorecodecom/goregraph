@@ -103,11 +103,16 @@ goregraph help
 goregraph scan help
 ```
 
+Implemented Milestone 2 commands:
+
+```bash
+goregraph query . "auth"
+goregraph explain . "src/auth/LoginService.ts"
+```
+
 Later commands:
 
 ```bash
-goregraph query "auth"
-goregraph explain "src/auth/LoginService.ts"
 goregraph mcp
 goregraph config init
 goregraph stats
@@ -281,7 +286,7 @@ The README must document every supported config key.
 
 ## Output Structure
 
-`goregraph scan .` writes:
+`goregraph scan .` currently writes:
 
 ```text
 goregraph-out/
@@ -291,6 +296,12 @@ goregraph-out/
   relations.json
   graph.json
   report.md
+```
+
+Later human-readable report expansion can add:
+
+```text
+goregraph-out/
   modules.md
   entrypoints.md
   test-map.md
@@ -324,14 +335,14 @@ goregraph-out/
 - kind
 - relative file path
 - line number when available
-- parent symbol when available
+- parent symbol can be added later
 
 `relations.json`:
 
 - imports
-- local references
-- test-to-source guesses
-- route/entrypoint hints where supported
+- local references can be added later
+- test-to-source guesses can be added later
+- route/entrypoint hints can be added later
 
 `graph.json`:
 
@@ -396,36 +407,36 @@ Initial file detection:
 - shell scripts
 - Maven/Gradle/package files
 
-Initial extraction can be regex/line-based for MVP:
+Initial extraction is regex/line-based:
 
-- package/module declarations
-- imports/requires
-- exported functions/classes where easy
+- Go module declarations
+- imports where supported
+- exported and regular functions/classes where easy
 - Java classes/interfaces/enums
 - Go functions/types
 - JS/TS imports/exports/functions/classes
 - Markdown headings
-- common build files and scripts
+- common build files are detected as file kinds
 
 Tree-sitter or language-server integration can come later if needed.
 
 ## Query Behavior
 
-`goregraph query "term"` should search the generated index, not source files directly.
+`goregraph query <path> "term"` searches the generated index, not source files directly.
 
 It should return:
 
 - matching files
 - matching symbols
-- related files
+- matching relations
 - short reason for relevance
 
-`goregraph explain <path-or-symbol>` should return:
+`goregraph explain <path> <file-or-symbol>` returns:
 
 - summary from indexed data
 - symbols in file
-- inbound/outbound relations
-- likely tests
+- direct relations for the file or symbol
+- likely tests can be added later
 
 The query feature must be read-only.
 
@@ -526,7 +537,7 @@ Milestone 1 should deliver:
 - `--no-update-gitignore`.
 - README with installation/build-from-source and usage.
 
-Milestone 2 can add:
+Milestone 2 delivered:
 
 - language-specific symbol extraction.
 - `symbols.json`.
@@ -534,6 +545,7 @@ Milestone 2 can add:
 - `graph.json`.
 - `goregraph query`.
 - `goregraph explain`.
+- tests for generated indexes and query/explain behavior.
 
 Milestone 3 can add:
 
