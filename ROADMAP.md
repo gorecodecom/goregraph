@@ -130,8 +130,9 @@ Planned work:
 - create GitHub Releases while the repository is hosted on GitHub
 - keep release automation portable enough to move to GitLab CI later
 - prepare Homebrew tap release flow:
-  - tap repository: `gorecodecom/homebrew-goregraph`
-  - install command: `brew install gorecodecom/goregraph/goregraph`
+  - tap repository: `gorecodecom/homebrew-tap`
+  - install command: `brew install gorecodecom/tap/goregraph`
+  - tap repository can later host additional GoreCode CLI formulae
 - prepare Winget package metadata:
   - package ID: `GoreCode.GoreGraph`
   - install command: `winget install --id GoreCode.GoreGraph -e`

@@ -59,8 +59,9 @@ Later distribution should support:
   - Linux arm64
   - Windows amd64
 - Homebrew tap:
-  - repository: `gorecodecom/homebrew-goregraph`
-  - install command: `brew install gorecodecom/goregraph/goregraph`
+  - repository: `gorecodecom/homebrew-tap`
+  - install command: `brew install gorecodecom/tap/goregraph`
+  - tap repository can later host additional GoreCode CLI formulae
 - Windows package manager:
   - stable package ID: `GoreCode.GoreGraph`
   - preferred install command: `winget install --id GoreCode.GoreGraph -e`
