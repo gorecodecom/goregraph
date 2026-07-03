@@ -48,6 +48,8 @@ Initial development can use local builds:
 go build -o goregraph ./cmd/goregraph
 ```
 
+Public distribution should start after the tool is stable enough for external users. The first public pre-1.0 release should be `0.1.0`; `1.0.0` is reserved for a stable public CLI/schema contract.
+
 Later distribution should support:
 
 - GitHub Releases with prebuilt binaries:
@@ -57,14 +59,19 @@ Later distribution should support:
   - Linux arm64
   - Windows amd64
 - Homebrew tap:
-  - `brew install gorecode/tap/goregraph`
-- Windows package manager later:
-  - `winget install GoreCode.GoreGraph`
-  - or `scoop install goregraph`
+  - repository: `gorecodecom/homebrew-goregraph`
+  - install command: `brew install gorecodecom/goregraph/goregraph`
+- Windows package manager:
+  - stable package ID: `GoreCode.GoreGraph`
+  - preferred install command: `winget install --id GoreCode.GoreGraph -e`
 - Optional install script later:
   - `curl -fsSL https://gorecode.com/goregraph/install.sh | sh`
 
-This distribution plan is not required for the MVP implementation, but it must shape the project structure so releases are easy later.
+GoReleaser should be used for release automation so the same release configuration can later move from GitHub Actions to GitLab CI.
+
+Signing and notarization are deferred to release hardening after Milestone 6. Checksums are required for Milestone 6.
+
+This distribution plan is not required for the local beta implementation, but it must shape the project structure so releases are easy later.
 
 ## Repository Structure
 
@@ -495,23 +502,17 @@ README must clearly state:
 
 ## License Decision
 
-Current repository license: MIT.
+Current repository license: Apache-2.0.
 
 Decision:
 
-- Keep MIT for now because the repository already contains an MIT `LICENSE`.
-- Keep the repository private while product direction is still being validated.
-- Revisit licensing before public release.
+- Use Apache-2.0 before public release.
+- Keep the repository private while product direction and stability are still being validated.
+- Make the repository public only when the CLI, schema, docs, and release process are stable enough for external users.
 
 Important note:
 
-MIT permits commercial reuse, modification, redistribution, sublicensing, and sale as long as the copyright and license notice are preserved. If GoreGraph should not be commercially reused by others later, MIT is not the right final public license.
-
-Potential future alternatives:
-
-- Proprietary license
-- Source-available non-commercial license
-- Apache-2.0 only if permissive commercial reuse is acceptable and patent terms are desired
+Apache-2.0 is still permissive open source and allows commercial reuse, modification, redistribution, sublicensing, and sale under its terms. Compared with MIT, it has more explicit patent language and trademark limitations, which is a better fit for a public developer tool.
 
 ## Non-Goals For MVP
 

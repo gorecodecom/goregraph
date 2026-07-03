@@ -108,10 +108,18 @@ Out of scope:
 
 Goal: make GoreGraph easy to install and update on macOS, Linux, and Windows.
 
+Target release: `0.1.0`.
+
+Reasoning: the repository should stay private until GoreGraph is stable enough for external users. `1.0.0` is reserved for a stable public CLI/schema contract.
+
 Planned work:
 
 - add `goregraph version`
-- add GitHub Actions CI
+- add conservative CI:
+  - `gofmt` check
+  - `go vet ./...`
+  - `go test ./...`
+- add GoReleaser config
 - add cross-platform builds:
   - macOS arm64
   - macOS amd64
@@ -119,11 +127,15 @@ Planned work:
   - Linux arm64
   - Windows amd64
 - publish checksums
-- create GitHub Releases
-- prepare Homebrew tap release flow
-- evaluate Windows distribution:
-  - Winget
-  - Scoop
+- create GitHub Releases while the repository is hosted on GitHub
+- keep release automation portable enough to move to GitLab CI later
+- prepare Homebrew tap release flow:
+  - tap repository: `gorecodecom/homebrew-goregraph`
+  - install command: `brew install gorecodecom/goregraph/goregraph`
+- prepare Winget package metadata:
+  - package ID: `GoreCode.GoreGraph`
+  - install command: `winget install --id GoreCode.GoreGraph -e`
+- switch project license to Apache-2.0
 - document install, upgrade, and uninstall flows
 - add a release checklist
 
@@ -134,12 +146,15 @@ Acceptance criteria:
 - the README documents the recommended install path
 - release process is repeatable from CI
 - local source builds continue to work
+- `goregraph version` prints version, commit, build date, Go version, platform, and schema version
+- license and release docs are consistent
 
 Out of scope:
 
 - hosted SaaS
 - remote telemetry
-- commercial licensing change
+- code signing and notarization
+- Windows paid code signing certificate
 
 ## Cross-Cutting Rules
 
