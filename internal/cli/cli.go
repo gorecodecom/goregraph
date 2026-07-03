@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gorecodecom/goregraph/internal/config"
+	"github.com/gorecodecom/goregraph/internal/doctor"
 	"github.com/gorecodecom/goregraph/internal/gitignore"
 	"github.com/gorecodecom/goregraph/internal/query"
 	"github.com/gorecodecom/goregraph/internal/scan"
@@ -30,11 +31,34 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runQuery(args[1:], stdout, stderr)
 	case "explain":
 		return runExplain(args[1:], stdout, stderr)
+	case "doctor":
+		return runDoctor(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		printHelp(stderr)
 		return 2
 	}
+}
+
+func runDoctor(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph doctor <path>\n\nChecks config and generated GoreGraph output health without scanning.\n")
+		return 0
+	}
+	root := "."
+	if len(args) > 0 {
+		root = args[0]
+	}
+	result, err := doctor.Run(root)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: doctor failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write([]byte(result.String()))
+	if result.Failures > 0 || result.Warnings > 0 {
+		return 1
+	}
+	return 0
 }
 
 func runQuery(args []string, stdout, stderr io.Writer) int {
@@ -165,6 +189,7 @@ Commands:
   report <path>     Print the generated Markdown report
   query <path>      Search the generated index
   explain <path>    Explain a file or symbol from the generated index
+  doctor <path>     Check generated output health
   help              Show this help
 
 Examples:
@@ -174,6 +199,7 @@ Examples:
   goregraph report .
   goregraph query . StartServer
   goregraph explain . src/main.go
+  goregraph doctor .
 `)
 }
 

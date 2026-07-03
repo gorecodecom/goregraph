@@ -98,6 +98,101 @@ export function start() {
 	}
 }
 
+func TestRunExtractsGoSymbolsWithParser(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/server.go", `package service
+
+type Server interface {
+	Start() error
+}
+
+func NewServer() Server {
+	return nil
+}
+
+func (s *serverImpl) Start() error {
+	return nil
+}
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var symbols []SymbolRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "symbols.json"), &symbols)
+	assertHasSymbol(t, symbols, "service", "package", "src/server.go")
+	assertHasSymbol(t, symbols, "Server", "type", "src/server.go")
+	assertHasSymbol(t, symbols, "NewServer", "function", "src/server.go")
+	assertHasSymbol(t, symbols, "Start", "method", "src/server.go")
+}
+
+func TestRunResolvesLocalGoImports(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "go.mod", "module example.test/demo\n")
+	writeFile(t, root, "cmd/api/main.go", `package main
+
+import (
+	"fmt"
+	"example.test/demo/internal/service"
+)
+
+func main() {
+	fmt.Println(service.Name)
+}
+`)
+	writeFile(t, root, "internal/service/service.go", "package service\nconst Name = \"demo\"\n")
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var relations []RelationRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "relations.json"), &relations)
+	assertHasRelation(t, relations, "cmd/api/main.go", "internal/service/service.go", "imports")
+	assertHasRelation(t, relations, "cmd/api/main.go", "fmt", "imports")
+
+	var graph Graph
+	readJSON(t, filepath.Join(root, "goregraph-out", "graph.json"), &graph)
+	assertHasGraphNode(t, graph, "dependency:fmt")
+	assertHasGraphEdge(t, graph, "file:cmd/api/main.go", "file:internal/service/service.go", "imports")
+	assertHasGraphEdge(t, graph, "file:cmd/api/main.go", "dependency:fmt", "imports")
+}
+
+func TestRunProducesDeterministicManifestGoldenOutput(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "README.md", "# Demo\n")
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	got := readText(t, filepath.Join(root, "goregraph-out", "manifest.json"))
+	want := `{
+  "tool": "goregraph",
+  "schema": 1,
+  "output_dir": "goregraph-out",
+  "files": 1,
+  "skipped": 0,
+  "generated": [
+    "manifest.json",
+    "files.json",
+    "symbols.json",
+    "relations.json",
+    "graph.json",
+    "report.md",
+    "modules.md",
+    "entrypoints.md",
+    "test-map.md"
+  ],
+  "project_root": "` + filepath.Base(root) + `"
+}
+`
+	if got != want {
+		t.Fatalf("manifest mismatch\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
 func TestRunUsesIncludePatternsFromConfig(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Defaults()
@@ -206,6 +301,26 @@ func assertHasRelation(t *testing.T, relations []RelationRecord, from, to, kind 
 		}
 	}
 	t.Fatalf("missing relation from=%q to=%q type=%q in %#v", from, to, kind, relations)
+}
+
+func assertHasGraphNode(t *testing.T, graph Graph, id string) {
+	t.Helper()
+	for _, node := range graph.Nodes {
+		if node.ID == id {
+			return
+		}
+	}
+	t.Fatalf("missing graph node id=%q in %#v", id, graph.Nodes)
+}
+
+func assertHasGraphEdge(t *testing.T, graph Graph, from, to, kind string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.From == from && edge.To == to && edge.Type == kind {
+			return
+		}
+	}
+	t.Fatalf("missing graph edge from=%q to=%q type=%q in %#v", from, to, kind, graph.Edges)
 }
 
 func TestRunSkipsLargeBinaryAndSymlinkFiles(t *testing.T) {

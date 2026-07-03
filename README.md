@@ -24,6 +24,7 @@ Implemented:
 - `goregraph report`
 - `goregraph query`
 - `goregraph explain`
+- `goregraph doctor`
 - deterministic `manifest.json`
 - deterministic `files.json`
 - deterministic `symbols.json`
@@ -40,7 +41,10 @@ Implemented:
 - simple local symbol extraction for Go, Java, JavaScript, TypeScript, and Markdown
 - simple local import relation extraction for Go, Java, JavaScript, and TypeScript
 - simple test-to-source relations
+- local Go import resolution
+- graph nodes for local files and external dependencies
 - inbound/outbound relation context in `goregraph explain`
+- index health checks with `goregraph doctor`
 
 Planned later:
 
@@ -49,6 +53,10 @@ Planned later:
 - packaged releases
 
 The next milestones are documented in `ROADMAP.md`.
+
+Every CLI command is documented in `COMMANDS.md`.
+
+Generated output compatibility is documented in `SCHEMA.md`.
 
 ## Build From Source
 
@@ -166,6 +174,12 @@ goregraph explain <path> <file-or-symbol>
 ```
 
 Print indexed context for a file path or symbol name.
+
+```bash
+goregraph doctor <path>
+```
+
+Check generated output health without scanning.
 
 ## Output Files
 

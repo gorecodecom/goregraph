@@ -117,7 +117,6 @@ Later commands:
 ```bash
 goregraph config init
 goregraph stats
-goregraph doctor
 goregraph mcp
 ```
 
@@ -558,7 +557,17 @@ Milestone 3 delivered:
 - best-effort test-to-source relations.
 - inbound/outbound explain context.
 
-Milestone 4 or later can add:
+Milestone 4 delivered:
+
+- `goregraph doctor`.
+- schema constants.
+- deterministic manifest golden test.
+- Go parser extraction.
+- local Go import resolution.
+- graph dependency nodes.
+- command reference documentation.
+
+Milestone 5 or later can add:
 
 - MCP stdio mode.
 - release packaging.

@@ -6,28 +6,40 @@ import (
 )
 
 func buildGraph(files []FileRecord, symbols []SymbolRecord, relations []RelationRecord) Graph {
+	fileIDs := map[string]bool{}
+	nodeIDs := map[string]bool{}
 	nodes := make([]GraphNode, 0, len(files)+len(symbols))
 	for _, file := range files {
-		nodes = append(nodes, GraphNode{ID: "file:" + file.Path, Label: file.Path, Type: "file", File: file.Path})
+		id := "file:" + file.Path
+		fileIDs[file.Path] = true
+		nodeIDs[id] = true
+		nodes = append(nodes, GraphNode{ID: id, Label: file.Path, Type: "file", File: file.Path})
 	}
 	for _, symbol := range symbols {
+		id := "symbol:" + symbol.File + ":" + symbol.Kind + ":" + symbol.Name
+		nodeIDs[id] = true
 		nodes = append(nodes, GraphNode{
-			ID:    "symbol:" + symbol.File + ":" + symbol.Kind + ":" + symbol.Name,
+			ID:    id,
 			Label: symbol.Name,
 			Type:  symbol.Kind,
 			File:  symbol.File,
 			Line:  symbol.Line,
 		})
 	}
-	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 
 	edges := make([]GraphEdge, 0, len(symbols)+len(relations))
 	for _, symbol := range symbols {
 		edges = append(edges, GraphEdge{From: "file:" + symbol.File, To: "symbol:" + symbol.File + ":" + symbol.Kind + ":" + symbol.Name, Type: "contains"})
 	}
 	for _, relation := range relations {
-		edges = append(edges, GraphEdge{From: "file:" + relation.From, To: relation.To, Type: relation.Type})
+		target := graphRelationTarget(relation.To, fileIDs)
+		if !nodeIDs[target.id] {
+			nodeIDs[target.id] = true
+			nodes = append(nodes, GraphNode{ID: target.id, Label: target.label, Type: target.kind})
+		}
+		edges = append(edges, GraphEdge{From: "file:" + relation.From, To: target.id, Type: relation.Type})
 	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 	sort.Slice(edges, func(i, j int) bool {
 		if edges[i].From != edges[j].From {
 			return edges[i].From < edges[j].From
@@ -38,6 +50,69 @@ func buildGraph(files []FileRecord, symbols []SymbolRecord, relations []Relation
 		return edges[i].Type < edges[j].Type
 	})
 	return Graph{Nodes: nodes, Edges: edges}
+}
+
+type graphTarget struct {
+	id    string
+	label string
+	kind  string
+}
+
+func graphRelationTarget(to string, fileIDs map[string]bool) graphTarget {
+	if fileIDs[to] {
+		return graphTarget{id: "file:" + to, label: to, kind: "file"}
+	}
+	return graphTarget{id: "dependency:" + to, label: to, kind: "dependency"}
+}
+
+func resolveLocalImportRelations(index *Index) {
+	module := modulePath(index.Symbols)
+	if module == "" {
+		return
+	}
+	packages := goPackageFiles(index.Files)
+	for i := range index.Relations {
+		relation := &index.Relations[i]
+		if relation.Type != "imports" || !strings.HasPrefix(relation.To, module+"/") {
+			continue
+		}
+		dir := strings.TrimPrefix(relation.To, module+"/")
+		if target, ok := packages[dir]; ok {
+			relation.To = target
+		}
+	}
+}
+
+func modulePath(symbols []SymbolRecord) string {
+	for _, symbol := range symbols {
+		if symbol.Kind == "module" && strings.HasPrefix(symbol.Name, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(symbol.Name, "module "))
+		}
+	}
+	return ""
+}
+
+func goPackageFiles(files []FileRecord) map[string]string {
+	byDir := map[string]string{}
+	for _, file := range files {
+		if file.Language != "go" || strings.HasSuffix(file.Path, "_test.go") || file.Path == "go.mod" {
+			continue
+		}
+		dir := strings.TrimSuffix(file.Path, "/"+fileBase(file.Path))
+		if dir == file.Path {
+			dir = "."
+		}
+		existing, ok := byDir[dir]
+		if !ok || file.Path < existing {
+			byDir[dir] = file.Path
+		}
+	}
+	return byDir
+}
+
+func fileBase(path string) string {
+	parts := strings.Split(path, "/")
+	return parts[len(parts)-1]
 }
 
 func buildTestRelations(files []FileRecord) []RelationRecord {

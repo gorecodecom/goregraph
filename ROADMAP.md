@@ -4,6 +4,8 @@ This roadmap captures the next planned milestones after the current local code-i
 
 ## Milestone 4: Index Quality And Reliability
 
+Status: delivered.
+
 Goal: make the generated index more reliable, easier to validate, and safe to build future integrations on.
 
 Planned work:
@@ -18,6 +20,17 @@ Planned work:
 - distinguish local graph nodes from external dependency nodes
 - improve error messages for broken config and stale output
 - add fixture projects for Go, Java, and TypeScript scans
+
+Delivered in this milestone:
+
+- `goregraph doctor`
+- schema constants shared by scan and doctor
+- schema compatibility documented in `SCHEMA.md`
+- deterministic manifest golden test
+- Go extraction through `go/parser`
+- local Go import resolution for repository-relative files
+- graph dependency nodes for external imports
+- clearer command documentation in `COMMANDS.md`
 
 Acceptance criteria:
 

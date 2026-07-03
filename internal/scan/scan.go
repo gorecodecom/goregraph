@@ -12,7 +12,12 @@ import (
 	"github.com/gorecodecom/goregraph/internal/gitignore"
 )
 
-var generatedFiles = []string{
+const (
+	ToolName      = "goregraph"
+	SchemaVersion = 1
+)
+
+var GeneratedFiles = []string{
 	"manifest.json",
 	"files.json",
 	"symbols.json",
@@ -153,6 +158,7 @@ func sortIndex(index *Index) {
 		return index.Symbols[i].Name < index.Symbols[j].Name
 	})
 	index.Relations = append(index.Relations, buildTestRelations(index.Files)...)
+	resolveLocalImportRelations(index)
 	sort.Slice(index.Relations, func(i, j int) bool {
 		if index.Relations[i].From != index.Relations[j].From {
 			return index.Relations[i].From < index.Relations[j].From
@@ -170,12 +176,12 @@ func sortIndex(index *Index) {
 func writeOutputs(out, root string, cfg config.Config, index Index, skipped int) error {
 	graph := buildGraph(index.Files, index.Symbols, index.Relations)
 	manifest := Manifest{
-		Tool:        "goregraph",
-		Schema:      1,
+		Tool:        ToolName,
+		Schema:      SchemaVersion,
 		OutputDir:   cfg.OutputDir,
 		Files:       len(index.Files),
 		Skipped:     skipped,
-		Generated:   generatedFiles,
+		Generated:   GeneratedFiles,
 		ProjectRoot: filepath.Base(root),
 	}
 	writes := []struct {

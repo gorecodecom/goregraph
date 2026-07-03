@@ -2,8 +2,12 @@ package scan
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -25,6 +29,11 @@ var (
 )
 
 func extractSymbols(file FileRecord, body string) []SymbolRecord {
+	if file.Language == "go" && strings.HasSuffix(file.Path, ".go") {
+		if symbols, ok := extractGoFileSymbols(file, body); ok {
+			return symbols
+		}
+	}
 	lines := strings.Split(body, "\n")
 	var symbols []SymbolRecord
 	for index, line := range lines {
@@ -48,6 +57,42 @@ func extractSymbols(file FileRecord, body string) []SymbolRecord {
 		symbols = append(symbols, extractPackageScripts(file, body)...)
 	}
 	return symbols
+}
+
+func extractGoFileSymbols(file FileRecord, body string) ([]SymbolRecord, bool) {
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file.Path, body, parser.SkipObjectResolution)
+	if err != nil {
+		return nil, false
+	}
+	symbols := []SymbolRecord{{
+		Name: parsed.Name.Name,
+		Kind: "package",
+		File: file.Path,
+		Line: fset.Position(parsed.Name.Pos()).Line,
+	}}
+	for _, decl := range parsed.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			kind := "function"
+			if d.Recv != nil {
+				kind = "method"
+			}
+			if strings.HasSuffix(file.Path, "_test.go") && goTestFuncRE.MatchString(d.Name.Name) {
+				kind = "test"
+			}
+			symbols = append(symbols, SymbolRecord{Name: d.Name.Name, Kind: kind, File: file.Path, Line: fset.Position(d.Name.Pos()).Line})
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				typeSpec, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				symbols = append(symbols, SymbolRecord{Name: typeSpec.Name.Name, Kind: "type", File: file.Path, Line: fset.Position(typeSpec.Name.Pos()).Line})
+			}
+		}
+	}
+	return symbols, true
 }
 
 func extractGoSymbols(file FileRecord, line string, lineNo int) []SymbolRecord {
@@ -106,6 +151,11 @@ func extractPackageScripts(file FileRecord, body string) []SymbolRecord {
 }
 
 func extractRelations(file FileRecord, body string) []RelationRecord {
+	if file.Language == "go" && strings.HasSuffix(file.Path, ".go") {
+		if relations, ok := extractGoFileRelations(file, body); ok {
+			return relations
+		}
+	}
 	lines := strings.Split(body, "\n")
 	var relations []RelationRecord
 	inGoImportBlock := false
@@ -129,6 +179,23 @@ func extractRelations(file FileRecord, body string) []RelationRecord {
 		}
 	}
 	return relations
+}
+
+func extractGoFileRelations(file FileRecord, body string) ([]RelationRecord, bool) {
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file.Path, body, parser.ImportsOnly)
+	if err != nil {
+		return nil, false
+	}
+	relations := make([]RelationRecord, 0, len(parsed.Imports))
+	for _, imported := range parsed.Imports {
+		path, err := strconv.Unquote(imported.Path.Value)
+		if err != nil {
+			continue
+		}
+		relations = append(relations, RelationRecord{From: file.Path, To: path, Type: "imports", Line: fset.Position(imported.Path.Pos()).Line})
+	}
+	return relations, true
 }
 
 func extractGoImport(file FileRecord, line string, lineNo int, inBlock bool) (RelationRecord, bool, bool) {

@@ -185,6 +185,65 @@ func TestRunExplainPrintsFileContext(t *testing.T) {
 	}
 }
 
+func TestRunDoctorReportsHealthyIndex(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "README.md", "# Demo\n")
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"scan", root, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"doctor", root}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "OK   output") {
+		t.Fatalf("doctor output missing output check:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "OK   schema") {
+		t.Fatalf("doctor output missing schema check:\n%s", stdout.String())
+	}
+}
+
+func TestRunDoctorReturnsFailureForMissingIndex(t *testing.T) {
+	root := t.TempDir()
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"doctor", root}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), "FAIL output") {
+		t.Fatalf("doctor output missing output failure:\n%s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "goregraph scan") {
+		t.Fatalf("doctor output missing scan guidance:\n%s", stdout.String())
+	}
+}
+
+func TestRunDoctorWarnsForStaleIndex(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc main() {}\n")
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"scan", root, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	writeFile(t, root, "src/main.go", "package main\nfunc main() { println(\"changed\") }\n")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"doctor", root}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), "WARN stale") {
+		t.Fatalf("doctor output missing stale warning:\n%s", stdout.String())
+	}
+}
+
 func TestRunScanHelpPrintsScanUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
