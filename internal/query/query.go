@@ -148,6 +148,9 @@ func loadIndex(root string) ([]scan.FileRecord, []scan.SymbolRecord, []scan.Rela
 func readJSON(path string, dest any) error {
 	body, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("index is missing; run `goregraph scan <path>` first")
+		}
 		return err
 	}
 	return json.Unmarshal(body, dest)

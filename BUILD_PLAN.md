@@ -4,6 +4,8 @@
 
 GoreGraph is a local, deterministic code-intelligence CLI for GoreCode projects and other repositories. It should provide the core benefits of tools like Graphify without taking over agent instructions, Git hooks, global configuration, or network services.
 
+Milestones 4-6 are tracked in `ROADMAP.md`.
+
 The first version must cover two use cases:
 
 - Phase 1: generate human-readable project documentation from a scan.

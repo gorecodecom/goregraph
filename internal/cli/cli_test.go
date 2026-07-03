@@ -149,6 +149,20 @@ func TestRunQuerySearchesGeneratedIndex(t *testing.T) {
 	}
 }
 
+func TestRunQueryMissingIndexTellsUserToScan(t *testing.T) {
+	root := t.TempDir()
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"query", root, "StartServer"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "goregraph scan") {
+		t.Fatalf("stderr missing scan guidance:\n%s", stderr.String())
+	}
+}
+
 func TestRunExplainPrintsFileContext(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")

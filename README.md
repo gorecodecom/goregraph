@@ -2,7 +2,7 @@
 
 GoreGraph is a local, deterministic code-intelligence CLI for creating project maps that humans and AI coding assistants can use as orientation.
 
-The MVP is intentionally conservative:
+The tool is intentionally conservative:
 
 - no AI calls
 - no network access
@@ -14,7 +14,7 @@ The MVP is intentionally conservative:
 
 ## Status
 
-GoreGraph is in early development.
+GoreGraph is a usable local CLI for generating deterministic project indexes and human-readable project maps.
 
 Implemented:
 
@@ -47,6 +47,8 @@ Planned later:
 - optional MCP stdio mode
 - richer parser support
 - packaged releases
+
+The next milestones are documented in `ROADMAP.md`.
 
 ## Build From Source
 
@@ -119,7 +121,7 @@ Refresh after code changes:
 goregraph update
 ```
 
-For the MVP, `update` performs an explicit full refresh of the current project. It does not install hooks, run in the background, or watch files.
+`update` performs an explicit full refresh of the current project. It does not install hooks, run in the background, or watch files.
 
 ## Commands
 
@@ -304,7 +306,7 @@ goregraph explain . src/main.go
 
 ## Security Model
 
-The MVP is local and explicit.
+GoreGraph is local and explicit.
 
 GoreGraph does not:
 

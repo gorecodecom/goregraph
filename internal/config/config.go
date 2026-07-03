@@ -115,6 +115,9 @@ func applyProjectConfig(cfg *Config, body string) error {
 		case "version":
 			continue
 		case "output":
+			if err := validateOutputDir(value); err != nil {
+				return err
+			}
 			cfg.OutputDir = value
 		case "max_file_size_kb":
 			kb, err := strconv.ParseInt(value, 10, 64)
@@ -145,6 +148,20 @@ func applyProjectConfig(cfg *Config, body string) error {
 		}
 	}
 	return scanner.Err()
+}
+
+func validateOutputDir(value string) error {
+	if value == "" {
+		return fmt.Errorf("output must not be empty")
+	}
+	if filepath.IsAbs(value) {
+		return fmt.Errorf("output must be relative to the project root")
+	}
+	cleaned := filepath.Clean(value)
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(filepath.ToSlash(cleaned), "../") {
+		return fmt.Errorf("output must stay inside the project root")
+	}
+	return nil
 }
 
 func stripComment(line string) string {

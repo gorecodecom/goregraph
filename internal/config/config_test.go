@@ -91,6 +91,19 @@ update_gitignore: false
 	}
 }
 
+func TestLoadRejectsUnsafeOutputDirectory(t *testing.T) {
+	for _, output := range []string{"", ".", "..", "../out", "/tmp/goregraph-out"} {
+		t.Run(output, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "goregraph.yml", "output: "+output+"\n")
+
+			if _, err := Load(dir); err == nil {
+				t.Fatalf("Load accepted unsafe output directory %q, want error", output)
+			}
+		})
+	}
+}
+
 func TestLoadRejectsMissingProjectRoot(t *testing.T) {
 	dir := t.TempDir()
 	missing := dir + "/missing"
