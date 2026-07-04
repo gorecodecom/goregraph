@@ -2,6 +2,8 @@
 
 This file lists every user-facing GoreGraph command, what it does, and common variations.
 
+Installation commands such as `brew install gorecodecom/tap/goregraph` are documented in `README.md`. This file focuses on commands provided by the installed `goregraph` binary.
+
 ## Path Model
 
 Most commands accept a `<path>` argument.

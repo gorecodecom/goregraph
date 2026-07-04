@@ -110,9 +110,9 @@ Status: delivered.
 
 Goal: make GoreGraph easy to install and update on macOS, Linux, and Windows.
 
-Target release: `0.1.0`.
+Released version: `0.1.0`.
 
-Reasoning: the repository should stay private until GoreGraph is stable enough for external users. `1.0.0` is reserved for a stable public CLI/schema contract.
+Reasoning: `0.1.0` is the first public pre-1.0 release. `1.0.0` is reserved for a stable public CLI/schema contract.
 
 Planned work:
 

@@ -72,7 +72,40 @@ Generated output compatibility is documented in `SCHEMA.md`.
 
 ## Installation
 
-GoreGraph is currently in the private validation phase. Public package installation should start with the first public pre-1.0 release.
+The current public release is `v0.1.0`.
+
+### Homebrew
+
+Recommended macOS/Linux installation:
+
+```bash
+brew install gorecodecom/tap/goregraph
+```
+
+This command works without a separate `brew tap` step. Homebrew discovers the GoreCode tap from the fully qualified formula name.
+
+Optional two-step installation:
+
+```bash
+brew tap gorecodecom/tap
+brew install goregraph
+```
+
+Verify the installed binary:
+
+```bash
+goregraph version
+```
+
+### GitHub Releases
+
+Prebuilt archives are published for macOS, Linux, and Windows:
+
+```text
+https://github.com/gorecodecom/goregraph/releases
+```
+
+Each release includes `checksums.txt`.
 
 ### Build From Source
 
@@ -98,35 +131,15 @@ During development you can also run:
 go run ./cmd/goregraph help
 ```
 
-### GitHub Releases
-
-The first public release target is:
-
-```text
-v0.1.0
-```
-
-Release builds are prepared through GoReleaser and should publish archives for macOS, Linux, and Windows with `checksums.txt`.
-
-### Homebrew
-
-Homebrew installation is planned through the shared GoreCode tap:
-
-```bash
-brew install gorecodecom/tap/goregraph
-```
-
-During internal testing, the tap can stay private. For public installs, `gorecodecom/homebrew-tap` and GoreGraph release artifacts must be publicly reachable.
-
 ### Winget
 
-Future Windows install command:
+Future Windows install command after Winget publishing is enabled:
 
 ```powershell
 winget install --id GoreCode.GoreGraph -e
 ```
 
-Milestone 6 prepares Winget metadata, but upload to `winget-pkgs` is intentionally disabled until public release hardening.
+Winget metadata is configured, but upload to `winget-pkgs` is intentionally disabled until Windows distribution is validated.
 
 ## Quick Start
 

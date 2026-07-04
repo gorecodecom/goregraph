@@ -508,8 +508,9 @@ Current repository license: Apache-2.0.
 Decision:
 
 - Use Apache-2.0 before public release.
-- Keep the repository private while product direction and stability are still being validated.
-- Make the repository public only when the CLI, schema, docs, and release process are stable enough for external users.
+- The repository stayed private while product direction and release mechanics were validated.
+- The repository is public as of the `v0.1.0` pre-1.0 release.
+- Reserve `1.0.0` for a stable public CLI and schema contract.
 
 Important note:
 

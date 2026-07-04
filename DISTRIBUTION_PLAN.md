@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document tracks packaging and installation options for GoreGraph. Release automation is configured for the private validation phase and should be used publicly once the CLI and schema are stable enough for external users.
+This document tracks packaging and installation options for GoreGraph. Release automation is active for the public `v0.1.0` release. The CLI and schema are still pre-1.0, so distribution should remain conservative.
 
 ## Release Artifacts
 
@@ -54,7 +54,7 @@ Release flow:
 
 ## Homebrew
 
-Homebrew installation needs a tap repository:
+Homebrew installation uses the shared GoreCode tap repository:
 
 ```text
 github.com/gorecodecom/homebrew-tap
@@ -99,7 +99,13 @@ class Goregraph < Formula
 end
 ```
 
-GoReleaser is configured to update the Homebrew tap automatically during release.
+GoReleaser updates the Homebrew tap automatically during release. The `v0.1.0` Formula has been published and verified with:
+
+```bash
+brew audit --formula --strict gorecodecom/tap/goregraph
+brew install gorecodecom/tap/goregraph
+brew test gorecodecom/tap/goregraph
+```
 
 ## winget
 
@@ -169,11 +175,11 @@ go install ./cmd/goregraph
 
 The README should document local development builds separately from official package installation.
 
-## Private Phase
+## Public Release State
 
-The repository can stay private while GoreGraph is validated.
+The repository is public as of `v0.1.0`.
 
-Even with Apache-2.0 licensing in the repository, public package distribution should wait until:
+The first public package release was made after:
 
 - command surface is stable
 - README is complete
@@ -181,3 +187,5 @@ Even with Apache-2.0 licensing in the repository, public package distribution sh
 - security model is documented
 - public GitHub release artifacts are available
 - `gorecodecom/homebrew-tap` is public
+
+Future hardening should focus on broader project validation, Windows distribution, and optional signing decisions before `1.0.0`.

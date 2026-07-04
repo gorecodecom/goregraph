@@ -19,27 +19,28 @@ GitHub repository secrets:
 
 `GITHUB_TOKEN` is provided by GitHub Actions for publishing the GoreGraph release.
 
-## Release Ready Open Items
+## Public Release Status
 
-Milestone 6 is complete, but GoreGraph is not public-release-ready until these items are done:
+`v0.1.0` has been released publicly.
 
-- Add the `HOMEBREW_TAP_TOKEN` repository secret with write access to `gorecodecom/homebrew-tap`.
-- Decide whether `v0.1.0` is internal/private validation only or a public release.
-- For a public release, make `gorecodecom/goregraph` public or ensure release artifacts are publicly downloadable.
-- For a public Homebrew install, make `gorecodecom/homebrew-tap` public.
-- Create and push the first release tag only after final local validation.
-- Verify the GitHub release workflow finishes successfully.
-- Verify release artifacts and `checksums.txt` are present.
-- Verify the Homebrew Formula is generated in `gorecodecom/homebrew-tap`.
-- Test a downloaded release binary with `goregraph version`.
-- Test `brew install gorecodecom/tap/goregraph` after the tap and artifacts are publicly reachable.
+Completed release checks:
 
-Recommended final validation before public release:
+- `HOMEBREW_TAP_TOKEN` exists and can publish to `gorecodecom/homebrew-tap`.
+- `gorecodecom/goregraph` is public.
+- `gorecodecom/homebrew-tap` is public.
+- GitHub release workflow completed successfully.
+- Release artifacts and `checksums.txt` are present.
+- Homebrew Formula was generated in `gorecodecom/homebrew-tap`.
+- `brew audit --formula --strict gorecodecom/tap/goregraph` passes.
+- `brew install gorecodecom/tap/goregraph` installs `v0.1.0`.
+- `goregraph version` works for the Homebrew-installed binary.
+- `brew test gorecodecom/tap/goregraph` passes.
 
-- run GoreGraph against two or three real projects
-- run `goregraph doctor` after each scan
-- inspect generated `report.md`, `entrypoints.md`, and `test-map.md`
-- review README and `COMMANDS.md` from a first-time user perspective
+Remaining release-hardening items:
+
+- Validate GoreGraph against more real-world projects before considering `1.0.0`.
+- Keep Winget publishing disabled until Windows install and update behavior is manually verified.
+- Decide later whether macOS notarization or Windows code signing is worth the operational cost.
 
 ## Pre-Release Checks
 
@@ -107,7 +108,13 @@ Expected install command after public release:
 brew install gorecodecom/tap/goregraph
 ```
 
-The tap may stay private during internal testing. It must be public before external users can install without GitHub authentication.
+The tap and GoreGraph release artifacts are public for `v0.1.0`.
+
+After tapping, users can also run:
+
+```bash
+brew install goregraph
+```
 
 ## Winget
 
