@@ -72,7 +72,9 @@ Generated output compatibility is documented in `SCHEMA.md`.
 
 ## Installation
 
-The current public release is `v0.1.0`.
+The current public release is `v0.1.1`.
+
+The currently working installation paths are Homebrew, Scoop, manual release archives, and building from source. Winget is configured and submitted through the release workflow, but it is not live until Microsoft accepts the package manifest.
 
 ### Homebrew macOS/Linux
 
@@ -138,6 +140,28 @@ https://github.com/gorecodecom/goregraph/releases
 
 Each release includes `checksums.txt`.
 
+Manual archive names:
+
+```text
+goregraph_Darwin_arm64.tar.gz
+goregraph_Darwin_x86_64.tar.gz
+goregraph_Linux_arm64.tar.gz
+goregraph_Linux_x86_64.tar.gz
+goregraph_Windows_x86_64.zip
+```
+
+After extracting the archive, run:
+
+```bash
+./goregraph version
+```
+
+On Windows PowerShell:
+
+```powershell
+.\goregraph.exe version
+```
+
 ### Build From Source
 
 Requirements:
@@ -170,7 +194,7 @@ Future Windows install command after the package is accepted into `microsoft/win
 winget install --id GoreCode.GoreGraph -e
 ```
 
-Winget metadata and GoReleaser PR automation are configured. The command is not live until the Winget manifest is submitted and accepted by Microsoft.
+Winget metadata and GoReleaser PR automation are configured. The command is not live until the Winget manifest PR is accepted by Microsoft.
 
 ## Quick Start
 

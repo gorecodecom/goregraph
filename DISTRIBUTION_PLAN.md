@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document tracks packaging and installation options for GoreGraph. Release automation is active for the public `v0.1.0` release. The CLI and schema are still pre-1.0, so distribution should remain conservative.
+This document tracks packaging and installation options for GoreGraph. Release automation is active for public pre-1.0 releases. The CLI and schema are still pre-1.0, so distribution should remain conservative.
 
 ## Release Artifacts
 
@@ -45,7 +45,7 @@ Recommended automation:
 Release flow:
 
 ```text
-1. Tag version, e.g. v0.1.0
+1. Tag version, e.g. v0.1.1
 2. GitHub Actions builds binaries
 3. GoReleaser uploads artifacts
 4. Checksums are generated
@@ -85,7 +85,7 @@ Formula shape:
 class Goregraph < Formula
   desc "Local deterministic code intelligence for safer AI-assisted development"
   homepage "https://github.com/gorecodecom/goregraph"
-  url "https://github.com/gorecodecom/goregraph/releases/download/v0.1.0/goregraph_Darwin_arm64.tar.gz"
+  url "https://github.com/gorecodecom/goregraph/releases/download/v0.1.1/goregraph_Darwin_arm64.tar.gz"
   sha256 "..."
   license "Apache-2.0"
 
@@ -99,7 +99,7 @@ class Goregraph < Formula
 end
 ```
 
-GoReleaser updates the Homebrew tap automatically during release. The `v0.1.0` Formula has been published and verified with:
+GoReleaser updates the Homebrew tap automatically during release. The Formula has been published and verified with:
 
 ```bash
 brew audit --formula --strict gorecodecom/tap/goregraph
@@ -158,7 +158,7 @@ Current manifest:
 bucket/goregraph.json
 ```
 
-The `v0.1.0` manifest has been published manually. Future release automation is configured through GoReleaser and requires `SCOOP_BUCKET_TOKEN` with write access to `gorecodecom/scoop-bucket`.
+The `v0.1.0` manifest was published manually. Release automation is configured through GoReleaser and requires `SCOOP_BUCKET_TOKEN` with write access to `gorecodecom/scoop-bucket`.
 
 ## Install Script
 

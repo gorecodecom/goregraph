@@ -501,7 +501,7 @@ goregraph version
 Expected output:
 
 ```text
-goregraph 0.1.0
+goregraph 0.1.1
 commit: dev
 built: unknown
 go: go1.23.x

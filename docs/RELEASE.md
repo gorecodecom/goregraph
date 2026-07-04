@@ -1,11 +1,11 @@
 # GoreGraph Release Checklist
 
-## Current Target
+## Current Release
 
-First public release target:
+Current release target:
 
 ```text
-v0.1.0
+v0.1.1
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly.
+`v0.1.0` has been released publicly. `v0.1.1` validates the full package-manager release flow for Homebrew, Scoop, and Winget PR automation.
 
 Completed release checks:
 
@@ -39,13 +39,15 @@ Completed release checks:
 - `gorecodecom/scoop-bucket` is public.
 - Scoop manifest `bucket/goregraph.json` exists for `v0.1.0`.
 - `gorecodecom/winget-pkgs` fork exists for future Winget PR automation.
+- `SCOOP_BUCKET_TOKEN` is visible in `gorecodecom/goregraph`.
+- `WINGET_TOKEN` is visible in `gorecodecom/goregraph`.
 
 Remaining release-hardening items:
 
 - Validate GoreGraph against more real-world projects before considering `1.0.0`.
-- Add `SCOOP_BUCKET_TOKEN` before expecting future releases to update the Scoop bucket automatically.
-- Add `WINGET_TOKEN` before expecting GoReleaser to open Winget PRs.
-- Submit the Winget manifest and wait for Microsoft acceptance before documenting Winget as an active install path.
+- Verify after tagging `v0.1.1` that the Scoop bucket was updated automatically.
+- Verify after tagging `v0.1.1` that GoReleaser opened the Winget PR.
+- Wait for Microsoft acceptance before documenting Winget as an active install path.
 - Decide later whether macOS notarization or Windows code signing is worth the operational cost.
 
 ## Pre-Release Checks
@@ -63,7 +65,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.1.0
+goregraph 0.1.1
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -79,8 +81,8 @@ schema: 1
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v0.1.0 -m "Release v0.1.0"
-   git push origin v0.1.0
+   git tag -a v0.1.1 -m "Release v0.1.1"
+   git push origin v0.1.1
    ```
 
 5. GitHub Actions runs GoReleaser.
@@ -116,7 +118,7 @@ Expected install command after public release:
 brew install gorecodecom/tap/goregraph
 ```
 
-The tap and GoreGraph release artifacts are public for `v0.1.0`.
+The tap and GoreGraph release artifacts are public.
 
 After tapping, users can also run:
 
@@ -155,7 +157,7 @@ scoop bucket add gorecode https://github.com/gorecodecom/scoop-bucket
 scoop install goregraph
 ```
 
-Future releases update the bucket automatically when `SCOOP_BUCKET_TOKEN` is present.
+Releases update the bucket automatically when `SCOOP_BUCKET_TOKEN` is present.
 
 ## Out Of Scope
 

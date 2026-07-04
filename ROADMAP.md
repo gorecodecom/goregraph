@@ -110,9 +110,9 @@ Status: delivered.
 
 Goal: make GoreGraph easy to install and update on macOS, Linux, and Windows.
 
-Released version: `0.1.0`.
+Released versions: `0.1.0`, `0.1.1`.
 
-Reasoning: `0.1.0` is the first public pre-1.0 release. `1.0.0` is reserved for a stable public CLI/schema contract.
+Reasoning: `0.1.0` is the first public pre-1.0 release. `0.1.1` validates package-manager release automation for Homebrew, Scoop, and Winget PRs. `1.0.0` is reserved for a stable public CLI/schema contract.
 
 Planned work:
 
@@ -142,7 +142,7 @@ Planned work:
 - prepare Scoop metadata:
   - bucket repository: `gorecodecom/scoop-bucket`
   - install command: `scoop bucket add gorecode https://github.com/gorecodecom/scoop-bucket` then `scoop install goregraph`
-  - future updates use `SCOOP_BUCKET_TOKEN`
+  - release updates use `SCOOP_BUCKET_TOKEN`
 - switch project license to Apache-2.0
 - document install, upgrade, and uninstall flows
 - add a release checklist
