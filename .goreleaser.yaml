@@ -81,7 +81,7 @@ brews:
     install: |
       bin.install "goregraph"
     test: |
-      system "#{bin}/goregraph", "version"
+      system bin/"goregraph", "version"
 
 winget:
   - name: goregraph
