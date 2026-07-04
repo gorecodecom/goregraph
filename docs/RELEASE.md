@@ -142,6 +142,16 @@ winget install --id GoreCode.GoreGraph -e
 
 GoReleaser is configured for Winget PR publishing, but the package is not live until the manifest is accepted in `microsoft/winget-pkgs`.
 
+`v0.1.1` status:
+
+- GoReleaser generated the Winget manifests.
+- GoReleaser pushed branch `goregraph-0.1.1` to `gorecodecom/winget-pkgs`.
+- Automatic PR creation failed with GitHub `403 Resource not accessible by personal access token`.
+- The PR was opened manually: `https://github.com/microsoft/winget-pkgs/pull/397959`.
+- The PR is waiting on Microsoft CLA/review checks.
+
+For future fully automatic Winget PR creation, `WINGET_TOKEN` must be able to create pull requests against public upstream repositories. A classic GitHub PAT with `public_repo` is the simplest known-good option. If a fine-grained token cannot create the upstream PR, keep the generated branch and open the PR manually.
+
 ## Scoop
 
 Bucket repository:

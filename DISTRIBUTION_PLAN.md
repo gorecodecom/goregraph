@@ -135,6 +135,8 @@ GoReleaser is configured for the standard PR-based `winget-pkgs` flow:
 
 Publishing is skipped automatically when `WINGET_TOKEN` is not present. The package becomes installable only after the PR is accepted by Microsoft.
 
+Observed for `v0.1.1`: a token scoped only to the fork allowed GoReleaser to push the branch but failed to create the upstream Microsoft PR with GitHub `403 Resource not accessible by personal access token`. Use a token that can create pull requests against public upstream repositories, or open the PR manually from the generated fork branch.
+
 ## Scoop
 
 Scoop is active for Windows installation through the GoreCode bucket.
