@@ -19,6 +19,28 @@ GitHub repository secrets:
 
 `GITHUB_TOKEN` is provided by GitHub Actions for publishing the GoreGraph release.
 
+## Release Ready Open Items
+
+Milestone 6 is complete, but GoreGraph is not public-release-ready until these items are done:
+
+- Add the `HOMEBREW_TAP_TOKEN` repository secret with write access to `gorecodecom/homebrew-tap`.
+- Decide whether `v0.1.0` is internal/private validation only or a public release.
+- For a public release, make `gorecodecom/goregraph` public or ensure release artifacts are publicly downloadable.
+- For a public Homebrew install, make `gorecodecom/homebrew-tap` public.
+- Create and push the first release tag only after final local validation.
+- Verify the GitHub release workflow finishes successfully.
+- Verify release artifacts and `checksums.txt` are present.
+- Verify the Homebrew Formula is generated in `gorecodecom/homebrew-tap`.
+- Test a downloaded release binary with `goregraph version`.
+- Test `brew install gorecodecom/tap/goregraph` after the tap and artifacts are publicly reachable.
+
+Recommended final validation before public release:
+
+- run GoreGraph against two or three real projects
+- run `goregraph doctor` after each scan
+- inspect generated `report.md`, `entrypoints.md`, and `test-map.md`
+- review README and `COMMANDS.md` from a first-time user perspective
+
 ## Pre-Release Checks
 
 Run locally before tagging:
