@@ -107,11 +107,11 @@ brew install gorecodecom/tap/goregraph
 brew test gorecodecom/tap/goregraph
 ```
 
-## winget
+## Winget
 
 Windows Package Manager metadata is prepared for the stable package identifier.
 
-Expected command:
+Target command after Microsoft accepts the package:
 
 ```powershell
 winget install --id GoreCode.GoreGraph -e
@@ -124,12 +124,20 @@ Requirements:
 - winget manifest
 - versioned release URL
 - installer or portable ZIP strategy
+- `WINGET_TOKEN` with permission to push to the configured `gorecodecom/winget-pkgs` fork and open a PR against `microsoft/winget-pkgs`
 
-GoReleaser currently keeps Winget upload disabled with `skip_upload: true`. The generated metadata can be reviewed before enabling a pull request to `winget-pkgs`.
+GoReleaser is configured for the standard PR-based `winget-pkgs` flow:
+
+- source fork: `gorecodecom/winget-pkgs`
+- target repository: `microsoft/winget-pkgs`
+- target branch: `master`
+- branch template: `goregraph-{{ .Version }}`
+
+Publishing is skipped automatically when `WINGET_TOKEN` is not present. The package becomes installable only after the PR is accepted by Microsoft.
 
 ## Scoop
 
-Scoop can be easier than winget for early Windows distribution.
+Scoop is active for Windows installation through the GoreCode bucket.
 
 Expected command:
 
@@ -138,11 +146,19 @@ scoop bucket add gorecode https://github.com/gorecodecom/scoop-bucket
 scoop install goregraph
 ```
 
-Potential bucket:
+Bucket:
 
 ```text
 github.com/gorecodecom/scoop-bucket
 ```
+
+Current manifest:
+
+```text
+bucket/goregraph.json
+```
+
+The `v0.1.0` manifest has been published manually. Future release automation is configured through GoReleaser and requires `SCOOP_BUCKET_TOKEN` with write access to `gorecodecom/scoop-bucket`.
 
 ## Install Script
 
@@ -188,4 +204,4 @@ The first public package release was made after:
 - public GitHub release artifacts are available
 - `gorecodecom/homebrew-tap` is public
 
-Future hardening should focus on broader project validation, Windows distribution, and optional signing decisions before `1.0.0`.
+Future hardening should focus on broader project validation, Winget approval, and optional signing decisions before `1.0.0`.

@@ -74,7 +74,7 @@ Generated output compatibility is documented in `SCHEMA.md`.
 
 The current public release is `v0.1.0`.
 
-### Homebrew
+### Homebrew macOS/Linux
 
 Recommended macOS/Linux installation:
 
@@ -96,6 +96,37 @@ Verify the installed binary:
 ```bash
 goregraph version
 ```
+
+### Scoop Windows
+
+Recommended Windows installation until Winget publishing is approved:
+
+```powershell
+scoop bucket add gorecode https://github.com/gorecodecom/scoop-bucket
+scoop install goregraph
+```
+
+Verify the installed binary:
+
+```powershell
+goregraph version
+```
+
+### Manual Install Windows
+
+Download the Windows archive from the latest GitHub release:
+
+```text
+goregraph_Windows_x86_64.zip
+```
+
+Extract the ZIP and run:
+
+```powershell
+.\goregraph.exe version
+```
+
+For regular use, place `goregraph.exe` in a directory on your Windows `PATH`.
 
 ### GitHub Releases
 
@@ -133,13 +164,13 @@ go run ./cmd/goregraph help
 
 ### Winget
 
-Future Windows install command after Winget publishing is enabled:
+Future Windows install command after the package is accepted into `microsoft/winget-pkgs`:
 
 ```powershell
 winget install --id GoreCode.GoreGraph -e
 ```
 
-Winget metadata is configured, but upload to `winget-pkgs` is intentionally disabled until Windows distribution is validated.
+Winget metadata and GoReleaser PR automation are configured. The command is not live until the Winget manifest is submitted and accepted by Microsoft.
 
 ## Quick Start
 

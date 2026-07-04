@@ -138,6 +138,11 @@ Planned work:
 - prepare Winget package metadata:
   - package ID: `GoreCode.GoreGraph`
   - install command: `winget install --id GoreCode.GoreGraph -e`
+  - publish through a PR to `microsoft/winget-pkgs` once `WINGET_TOKEN` and the fork workflow are ready
+- prepare Scoop metadata:
+  - bucket repository: `gorecodecom/scoop-bucket`
+  - install command: `scoop bucket add gorecode https://github.com/gorecodecom/scoop-bucket` then `scoop install goregraph`
+  - future updates use `SCOOP_BUCKET_TOKEN`
 - switch project license to Apache-2.0
 - document install, upgrade, and uninstall flows
 - add a release checklist
@@ -155,7 +160,8 @@ Delivered in this milestone:
 - cross-platform release targets for macOS, Linux, and Windows
 - checksum publishing configuration
 - Homebrew Formula publishing configuration for `gorecodecom/homebrew-tap`
-- Winget metadata prepared with upload disabled for review
+- Scoop bucket manifest published for `gorecodecom/scoop-bucket`
+- Winget metadata and PR automation configured; package acceptance is still pending Microsoft review
 - release checklist in `docs/RELEASE.md`
 - README installation guidance
 

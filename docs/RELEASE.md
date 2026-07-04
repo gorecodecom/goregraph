@@ -15,7 +15,8 @@ v0.1.0
 GitHub repository secrets:
 
 - `HOMEBREW_TAP_TOKEN`: token with write access to `gorecodecom/homebrew-tap`.
-- `WINGET_TOKEN`: optional token for future Winget publishing. Milestone 6 keeps Winget upload disabled.
+- `SCOOP_BUCKET_TOKEN`: token with write access to `gorecodecom/scoop-bucket`.
+- `WINGET_TOKEN`: optional token for Winget PR publishing through the configured `gorecodecom/winget-pkgs` fork.
 
 `GITHUB_TOKEN` is provided by GitHub Actions for publishing the GoreGraph release.
 
@@ -35,11 +36,16 @@ Completed release checks:
 - `brew install gorecodecom/tap/goregraph` installs `v0.1.0`.
 - `goregraph version` works for the Homebrew-installed binary.
 - `brew test gorecodecom/tap/goregraph` passes.
+- `gorecodecom/scoop-bucket` is public.
+- Scoop manifest `bucket/goregraph.json` exists for `v0.1.0`.
+- `gorecodecom/winget-pkgs` fork exists for future Winget PR automation.
 
 Remaining release-hardening items:
 
 - Validate GoreGraph against more real-world projects before considering `1.0.0`.
-- Keep Winget publishing disabled until Windows install and update behavior is manually verified.
+- Add `SCOOP_BUCKET_TOKEN` before expecting future releases to update the Scoop bucket automatically.
+- Add `WINGET_TOKEN` before expecting GoReleaser to open Winget PRs.
+- Submit the Winget manifest and wait for Microsoft acceptance before documenting Winget as an active install path.
 - Decide later whether macOS notarization or Windows code signing is worth the operational cost.
 
 ## Pre-Release Checks
@@ -86,7 +92,9 @@ schema: 1
    - Windows amd64
 7. GoReleaser uploads release archives and `checksums.txt`.
 8. GoReleaser updates the Homebrew tap.
-9. Verify a downloaded binary:
+9. GoReleaser updates the Scoop bucket when `SCOOP_BUCKET_TOKEN` is present.
+10. GoReleaser opens a Winget PR when `WINGET_TOKEN` is present and the configured fork exists.
+11. Verify a downloaded binary:
 
    ```bash
    goregraph version
@@ -124,13 +132,30 @@ Stable package identity:
 GoreCode.GoreGraph
 ```
 
-Expected future install command:
+Expected command after Microsoft accepts the package:
 
 ```powershell
 winget install --id GoreCode.GoreGraph -e
 ```
 
-Milestone 6 prepares Winget metadata but does not upload to `winget-pkgs` automatically.
+GoReleaser is configured for Winget PR publishing, but the package is not live until the manifest is accepted in `microsoft/winget-pkgs`.
+
+## Scoop
+
+Bucket repository:
+
+```text
+gorecodecom/scoop-bucket
+```
+
+Current Windows install command:
+
+```powershell
+scoop bucket add gorecode https://github.com/gorecodecom/scoop-bucket
+scoop install goregraph
+```
+
+Future releases update the bucket automatically when `SCOOP_BUCKET_TOKEN` is present.
 
 ## Out Of Scope
 

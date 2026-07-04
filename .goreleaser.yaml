@@ -87,14 +87,44 @@ winget:
   - name: goregraph
     publisher: GoreCode
     package_identifier: GoreCode.GoreGraph
+    package_name: GoreGraph
     publisher_url: https://gorecode.com
     publisher_support_url: https://github.com/gorecodecom/goregraph/issues
     homepage: https://github.com/gorecodecom/goregraph
     short_description: Local deterministic code intelligence for safer AI-assisted development
+    description: GoreGraph creates deterministic local code maps for safer AI-assisted development.
     license: Apache-2.0
+    license_url: https://github.com/gorecodecom/goregraph/blob/main/LICENSE
+    release_notes_url: https://github.com/gorecodecom/goregraph/releases/tag/v{{ .Version }}
+    tags:
+      - goregraph
+      - code-map
+      - code-intelligence
+      - cli
     repository:
-      owner: microsoft
+      owner: gorecodecom
       name: winget-pkgs
-      branch: master
+      branch: goregraph-{{ .Version }}
       token: "{{ .Env.WINGET_TOKEN }}"
-    skip_upload: true
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    skip_upload: "{{ if .Env.WINGET_TOKEN }}false{{ else }}true{{ end }}"
+
+scoops:
+  - name: goregraph
+    ids:
+      - goregraph
+    repository:
+      owner: gorecodecom
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+    directory: bucket
+    homepage: https://github.com/gorecodecom/goregraph
+    description: Local deterministic code intelligence for safer AI-assisted development
+    license: Apache-2.0
+    skip_upload: "{{ if .Env.SCOOP_BUCKET_TOKEN }}false{{ else }}true{{ end }}"

@@ -62,9 +62,10 @@ Later distribution should support:
   - repository: `gorecodecom/homebrew-tap`
   - install command: `brew install gorecodecom/tap/goregraph`
   - tap repository can later host additional GoreCode CLI formulae
-- Windows package manager:
+- Windows package managers:
   - stable package ID: `GoreCode.GoreGraph`
-  - preferred install command: `winget install --id GoreCode.GoreGraph -e`
+  - Winget target command: `winget install --id GoreCode.GoreGraph -e`
+  - Scoop current command: `scoop bucket add gorecode https://github.com/gorecodecom/scoop-bucket` then `scoop install goregraph`
 - Optional install script later:
   - `curl -fsSL https://gorecode.com/goregraph/install.sh | sh`
 
