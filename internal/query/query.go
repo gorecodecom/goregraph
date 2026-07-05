@@ -74,6 +74,8 @@ var outputAliases = map[string]string{
 	"api-contracts-json":  "api-contracts.json",
 	"package-graph":       "package-graph.md",
 	"package-graph-json":  "package-graph.json",
+	"maven-graph":         "maven-graph.md",
+	"maven-graph-json":    "maven-graph.json",
 	"navigation":          "navigation.md",
 	"endpoints":           "endpoints.md",
 	"endpoint-flows":      "endpoint-flows.md",

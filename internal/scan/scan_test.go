@@ -680,6 +680,119 @@ test("renders home", () => {
 	}
 }
 
+func TestRunExtractsRealisticFrontendAPIContracts(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "apps/portal/package.json", `{"name":"@demo/portal"}`)
+	writeFile(t, root, "apps/portal/src/api/productsservice.js", "import { GetHelper, PostHelper, GetHelperWithStatus } from \"../utils/requestHelper\";\n\n"+
+		"export async function fetchProducts(dispatch, userId) {\n"+
+		"  return await GetHelper(dispatch, `/productservice/users/${userId}/products`);\n"+
+		"}\n\n"+
+		"export async function inviteUser(dispatch, cadasterId, body) {\n"+
+		"  const { status } = await PostHelper(\n"+
+		"    dispatch,\n"+
+		"    `/cadasters/${cadasterId}/users`,\n"+
+		"    JSON.stringify(body)\n"+
+		"  );\n"+
+		"  return status;\n"+
+		"}\n\n"+
+		"export async function flyout(dispatch) {\n"+
+		"  return GetHelperWithStatus(dispatch, '/portal/tasks/flyout');\n"+
+		"}\n\n"+
+		"export async function dynamicFetch(url) {\n"+
+		"  return fetch(url, { method: 'POST' });\n"+
+		"}\n")
+	writeFile(t, root, "apps/portal/src/utils/requestHelper.js", `export function GetHelper(dispatch, path) { return fetch(path); }
+export function GetHelperWithStatus(dispatch, path) { return fetch(path); }
+export function PostHelper(dispatch, path) { return fetch(path, { method: "POST" }); }
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var api []APIContractRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "api-contracts.json"), &api)
+	assertHasAPIContract(t, api, "GET", "/productservice/users/{userId}/products", "apps/portal/src/api/productsservice.js")
+	assertHasAPIContract(t, api, "POST", "/cadasters/{cadasterId}/users", "apps/portal/src/api/productsservice.js")
+	assertHasAPIContract(t, api, "GET", "/portal/tasks/flyout", "apps/portal/src/api/productsservice.js")
+	assertNoAPIContract(t, api, "POST", "/url")
+
+	apiReport := readText(t, filepath.Join(root, "goregraph-out", "api-contracts.md"))
+	if !strings.Contains(apiReport, "GET `/productservice/users/{userId}/products`") || !strings.Contains(apiReport, "POST `/cadasters/{cadasterId}/users`") {
+		t.Fatalf("api contract report missing realistic helper calls:\n%s", apiReport)
+	}
+}
+
+func TestRunKeepsFrontendRouteHandlersInsideOwningApp(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "apps/mein-konto/src/pages/home/home.jsx", `export function Home() {
+  return null;
+}
+`)
+	writeFile(t, root, "apps/portal/src/pages/home/home.jsx", `export function Home() {
+  return loadPortalHome();
+}
+
+export function loadPortalHome() {
+  return null;
+}
+`)
+	writeFile(t, root, "apps/portal/src/routes.jsx", `import { Route } from "react-router-dom";
+import { Home } from "./pages/home/home";
+
+export function Routes() {
+  return <Route path="/" component={Home} />;
+}
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var flows []CodeFlowRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "flows.json"), &flows)
+	for _, flow := range flows {
+		if flow.RouteID != "portal:/" {
+			continue
+		}
+		if len(flow.Steps) == 0 || flow.Steps[0].File != "apps/portal/src/pages/home/home.jsx" {
+			t.Fatalf("portal route resolved to wrong handler step: %#v", flow)
+		}
+		return
+	}
+	t.Fatalf("missing portal route flow in %#v", flows)
+}
+
+func TestRunGeneratesMavenDependencyGraph(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "pom.xml", `<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>service-a</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+      <version>3.5.0</version>
+    </dependency>
+  </dependencies>
+</project>`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var graph MavenGraphRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "maven-graph.json"), &graph)
+	assertHasMavenEdge(t, graph, "com.example:service-a", "org.springframework.boot:spring-boot-starter-web")
+
+	report := readText(t, filepath.Join(root, "goregraph-out", "maven-graph.md"))
+	if !strings.Contains(report, "com.example:service-a") || !strings.Contains(report, "org.springframework.boot:spring-boot-starter-web") {
+		t.Fatalf("maven graph report missing dependency:\n%s", report)
+	}
+}
+
 func assertHasSymbol(t *testing.T, symbols []SymbolRecord, name, kind, file string) {
 	t.Helper()
 	for _, symbol := range symbols {
@@ -795,6 +908,25 @@ func assertHasAPIContract(t *testing.T, records []APIContractRecord, method, pat
 		}
 	}
 	t.Fatalf("missing api contract method=%q path=%q file=%q in %#v", method, path, file, records)
+}
+
+func assertNoAPIContract(t *testing.T, records []APIContractRecord, method, path string) {
+	t.Helper()
+	for _, record := range records {
+		if record.HTTPMethod == method && record.Path == path {
+			t.Fatalf("unexpected api contract method=%q path=%q in %#v", method, path, records)
+		}
+	}
+}
+
+func assertHasMavenEdge(t *testing.T, graph MavenGraphRecord, from, to string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.From == from && edge.To == to {
+			return
+		}
+	}
+	t.Fatalf("missing maven edge %q -> %q in %#v", from, to, graph.Edges)
 }
 
 func assertHasTestMapTarget(t *testing.T, records []TestMapRecord, testName, targetName string) {

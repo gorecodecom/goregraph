@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.6.0
+v0.7.0
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript, TypeScript/React, Python, and Shell. `v0.6.0` targets frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis.
+`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript, TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output.
 
 Completed release checks:
 
@@ -85,6 +85,15 @@ Completed release checks:
 - JS/TS callgraph output filters low-signal declaration/archive/storybook paths and common test/helper call targets.
 - `goregraph query . api-contracts` and `goregraph query . package-graph` work.
 
+`v0.7.0` feature checks:
+
+- realistic helper calls such as `GetHelper(dispatch, "/path")` populate `api-contracts.json`.
+- multiline helper calls populate `api-contracts.json`.
+- template placeholders are normalized from `${id}` to `{id}`.
+- same-name frontend route handlers prefer the owning `apps/<name>` tree.
+- `maven-graph.json` and `maven-graph.md` are generated.
+- `goregraph query . maven-graph` and `goregraph query . maven-graph-json` work.
+
 Remaining release-hardening items:
 
 - Validate GoreGraph against more real-world projects before considering `1.0.0`.
@@ -108,7 +117,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.6.0
+goregraph 0.7.0
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -124,8 +133,8 @@ schema: 1
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v0.6.0 -m "Release v0.6.0"
-   git push origin v0.6.0
+   git tag -a v0.7.0 -m "Release v0.7.0"
+   git push origin v0.7.0
    ```
 
 5. GitHub Actions runs GoReleaser.

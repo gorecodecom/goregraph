@@ -94,6 +94,14 @@ func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
 		t.Fatalf("package-graph-json alias returned unexpected output:\n%s", packageGraph)
 	}
 
+	mavenGraph, err := Search(root, "maven-graph")
+	if err != nil {
+		t.Fatalf("Search maven-graph returned error: %v", err)
+	}
+	if !strings.Contains(mavenGraph, "# GoreGraph Maven Graph") {
+		t.Fatalf("maven-graph alias returned unexpected output:\n%s", mavenGraph)
+	}
+
 	navigation, err := Search(root, "navigation")
 	if err != nil {
 		t.Fatalf("Search navigation returned error: %v", err)

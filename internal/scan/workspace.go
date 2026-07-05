@@ -9,17 +9,25 @@ import (
 )
 
 type pomProject struct {
-	XMLName    xml.Name  `xml:"project"`
-	GroupID    string    `xml:"groupId"`
-	ArtifactID string    `xml:"artifactId"`
-	Version    string    `xml:"version"`
-	Parent     pomParent `xml:"parent"`
+	XMLName      xml.Name        `xml:"project"`
+	GroupID      string          `xml:"groupId"`
+	ArtifactID   string          `xml:"artifactId"`
+	Version      string          `xml:"version"`
+	Parent       pomParent       `xml:"parent"`
+	Dependencies []pomDependency `xml:"dependencies>dependency"`
 }
 
 type pomParent struct {
 	GroupID    string `xml:"groupId"`
 	ArtifactID string `xml:"artifactId"`
 	Version    string `xml:"version"`
+}
+
+type pomDependency struct {
+	GroupID    string `xml:"groupId"`
+	ArtifactID string `xml:"artifactId"`
+	Version    string `xml:"version"`
+	Scope      string `xml:"scope"`
 }
 
 type packageJSON struct {
@@ -75,6 +83,23 @@ func extractMavenPackage(path, body string) (MavenPackageRecord, bool) {
 	if project.Parent.ArtifactID != "" {
 		record.Parent = strings.TrimSpace(project.Parent.GroupID + ":" + project.Parent.ArtifactID + ":" + project.Parent.Version)
 	}
+	for _, dependency := range project.Dependencies {
+		dep := MavenDependencyRecord{
+			GroupID:    strings.TrimSpace(dependency.GroupID),
+			ArtifactID: strings.TrimSpace(dependency.ArtifactID),
+			Version:    strings.TrimSpace(dependency.Version),
+			Scope:      strings.TrimSpace(dependency.Scope),
+		}
+		if dep.GroupID != "" && dep.ArtifactID != "" {
+			record.Dependencies = append(record.Dependencies, dep)
+		}
+	}
+	sort.Slice(record.Dependencies, func(i, j int) bool {
+		if record.Dependencies[i].GroupID != record.Dependencies[j].GroupID {
+			return record.Dependencies[i].GroupID < record.Dependencies[j].GroupID
+		}
+		return record.Dependencies[i].ArtifactID < record.Dependencies[j].ArtifactID
+	})
 	return record, record.ArtifactID != ""
 }
 

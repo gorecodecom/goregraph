@@ -102,6 +102,7 @@ func checkJSONFiles(out string, result *Result) {
 		{"flows.json", &[]scan.CodeFlowRecord{}},
 		{"api-contracts.json", &[]scan.APIContractRecord{}},
 		{"package-graph.json", &scan.PackageGraphRecord{}},
+		{"maven-graph.json", &scan.MavenGraphRecord{}},
 		{"analyzers.json", &[]scan.AnalyzerRecord{}},
 		{"spring.json", &scan.SpringIndex{}},
 		{"audit.json", &scan.AuditRecord{}},

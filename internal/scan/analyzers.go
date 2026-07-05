@@ -46,7 +46,7 @@ func analyzerCapabilities() map[string]AnalyzerRecord {
 		"markdown":   {Language: "markdown", Scope: "document", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"files.json", "report.md"}},
 		"json":       {Language: "json", Scope: "metadata", Symbols: true, Relations: false, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md"}},
 		"yaml":       {Language: "yaml", Scope: "metadata", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"files.json"}},
-		"maven":      {Language: "maven", Scope: "workspace", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md"}},
+		"maven":      {Language: "maven", Scope: "workspace+dependencies", Symbols: false, Relations: true, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md", "maven-graph.json", "maven-graph.md"}},
 		"node":       {Language: "node", Scope: "workspace", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md", "package-graph.json", "package-graph.md", "entrypoints.md"}},
 		"composer":   {Language: "composer", Scope: "workspace", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md"}},
 	}

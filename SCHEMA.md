@@ -70,6 +70,7 @@ Schema version 1 expects:
 - `flows.json`
 - `api-contracts.json`
 - `package-graph.json`
+- `maven-graph.json`
 - `analyzers.json`
 - `spring.json`
 - `audit.json`
@@ -84,6 +85,7 @@ Schema version 1 expects:
 - `flows.md`
 - `api-contracts.md`
 - `package-graph.md`
+- `maven-graph.md`
 - `navigation.md`
 - `analyzers.md`
 - `affected.md`
@@ -118,9 +120,11 @@ Schema version 1 expects:
 
 `flows.json` contains normalized route-to-handler-to-call flow records. Flow steps are best-effort static orientation data and include confidence markers.
 
-`api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helper calls and `fetch`. Records include HTTP method, path, caller line, app/package context, confidence, and reason.
+`api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helper calls and `fetch`. Records include HTTP method, path, caller line, app/package context, confidence, and reason. Supported helper calls include direct and multiline argument forms where a literal path argument is visible, for example `GetHelper(dispatch, "/service/path")`.
 
 `package-graph.json` contains Node workspace package nodes and package dependency edges extracted from `package.json`. Internal workspace edges use reason `workspace-package-json-dependency`.
+
+`maven-graph.json` contains Maven module/dependency nodes and dependency edges extracted from `pom.xml`. Edges use reason `pom-dependency`.
 
 `analyzers.json` describes which language/workspace analyzers were active for the scanned project and which capabilities they provided.
 
@@ -128,7 +132,7 @@ Schema version 1 expects:
 
 `audit.json` records the scan command, generated files, file counts, timestamps, and safety flags. Normal scans set `network_used` and `external_commands` to `false`.
 
-`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `package-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
+`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `package-graph.md`, `maven-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
 

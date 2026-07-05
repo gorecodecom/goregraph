@@ -20,6 +20,7 @@ goregraph-out/
   flows.json
   api-contracts.json
   package-graph.json
+  maven-graph.json
   files.json
   symbols.json
   symbols-full.json
@@ -32,6 +33,7 @@ goregraph-out/
   flows.md
   api-contracts.md
   package-graph.md
+  maven-graph.md
   report.md
   audit.json
 ```
@@ -42,10 +44,10 @@ Recommended assistant read order:
 
 1. `manifest.json`, `navigation.md`, and `report.md` for freshness and orientation.
 2. `routes.json`, `callgraph.json`, `flows.json`, and `test-map.json` for code navigation and impact hints.
-3. `package-graph.json` and `api-contracts.json` for frontend monorepo/package/API context.
+3. `package-graph.json`, `maven-graph.json`, and `api-contracts.json` for package/API context.
 4. Source files only after the generated orientation layer identifies the likely relevant areas.
 
-`callgraph.json`, `routes.json`, `api-contracts.json`, and `package-graph.json` are the authoritative machine-readable files for their domains. Markdown files are deterministic human views, not strict APIs.
+`callgraph.json`, `routes.json`, `api-contracts.json`, `package-graph.json`, and `maven-graph.json` are the authoritative machine-readable files for their domains. Markdown files are deterministic human views, not strict APIs.
 
 ## How Assistants Can Use GoreGraph Output
 

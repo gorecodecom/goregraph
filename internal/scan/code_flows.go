@@ -222,15 +222,8 @@ func resolveCodeCall(from CodeFunctionRecord, call CodeCallRecord, index codeFun
 	if len(candidates) == 0 {
 		return CodeFunctionRecord{}, false
 	}
-	for _, candidate := range candidates {
-		if candidate.Language == from.Language && candidate.File == from.File && candidate.Name != from.Name {
-			return candidate, true
-		}
-	}
-	for _, candidate := range candidates {
-		if candidate.Language == from.Language && candidate.Name != from.Name {
-			return candidate, true
-		}
+	if target, ok := bestCodeCandidate(from, candidates); ok {
+		return target, true
 	}
 	return candidates[0], candidates[0].Name != from.Name || candidates[0].File != from.File
 }
@@ -248,8 +241,51 @@ func resolveRouteHandler(route CodeRouteRecord, index codeFunctionIndex) (CodeFu
 		handler = parts[len(parts)-1]
 	}
 	candidates := index.byName[handler]
+	return bestRouteCandidate(route, candidates)
+}
+
+func bestCodeCandidate(from CodeFunctionRecord, candidates []CodeFunctionRecord) (CodeFunctionRecord, bool) {
+	for _, candidate := range candidates {
+		if candidate.Language == from.Language && candidate.File == from.File && candidate.Name != from.Name {
+			return candidate, true
+		}
+	}
+	fromApp := codeFileApp(from.File)
+	for _, candidate := range candidates {
+		if candidate.Language == from.Language && codeFileApp(candidate.File) == fromApp && candidate.Name != from.Name {
+			return candidate, true
+		}
+	}
+	fromPackage := codeFilePackage(from.File)
+	for _, candidate := range candidates {
+		if candidate.Language == from.Language && fromPackage != "" && codeFilePackage(candidate.File) == fromPackage && candidate.Name != from.Name {
+			return candidate, true
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate.Language == from.Language && candidate.Name != from.Name {
+			return candidate, true
+		}
+	}
+	if len(candidates) == 0 {
+		return CodeFunctionRecord{}, false
+	}
+	return candidates[0], candidates[0].Name != from.Name || candidates[0].File != from.File
+}
+
+func bestRouteCandidate(route CodeRouteRecord, candidates []CodeFunctionRecord) (CodeFunctionRecord, bool) {
 	for _, candidate := range candidates {
 		if candidate.Language == route.Language && candidate.File == route.File {
+			return candidate, true
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate.Language == route.Language && route.App != "" && codeFileApp(candidate.File) == route.App {
+			return candidate, true
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate.Language == route.Language && route.Package != "" && codeFilePackage(candidate.File) == route.Package {
 			return candidate, true
 		}
 	}

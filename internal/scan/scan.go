@@ -34,6 +34,7 @@ var GeneratedFiles = []string{
 	"flows.json",
 	"api-contracts.json",
 	"package-graph.json",
+	"maven-graph.json",
 	"analyzers.json",
 	"spring.json",
 	"workspace.md",
@@ -45,6 +46,7 @@ var GeneratedFiles = []string{
 	"flows.md",
 	"api-contracts.md",
 	"package-graph.md",
+	"maven-graph.md",
 	"navigation.md",
 	"analyzers.md",
 	"affected.md",
@@ -232,6 +234,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	testMap := append(buildJavaTestMap(index.JavaSources, springIndex.Endpoints), buildGenericTestMap(index.Code)...)
 	routes := buildCodeRoutes(index.Code, springIndex)
 	packageGraph := buildPackageGraph(index.Workspace)
+	mavenGraph := buildMavenGraph(index.Workspace)
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
 	richSymbols := buildRichSymbols(index.Files, index.Symbols)
 	richRelations := buildRichRelations(index.Files, index.Relations)
@@ -268,6 +271,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"flows.json", codeFlows},
 		{"api-contracts.json", index.Code.APIContracts},
 		{"package-graph.json", packageGraph},
+		{"maven-graph.json", mavenGraph},
 		{"analyzers.json", analyzers},
 		{"spring.json", springIndex},
 		{"audit.json", audit},
@@ -293,6 +297,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"flows.md", renderCodeFlowsReport(codeFlows)},
 		{"api-contracts.md", renderAPIContractsReport(index.Code.APIContracts)},
 		{"package-graph.md", renderPackageGraphReport(packageGraph)},
+		{"maven-graph.md", renderMavenGraphReport(mavenGraph)},
 		{"navigation.md", renderNavigationReport(index.Files, index.Symbols, index.Relations, routes, codeFlows, testMap, analyzers)},
 		{"analyzers.md", renderAnalyzersReport(analyzers)},
 		{"affected.md", renderAffectedReport(richGraph)},

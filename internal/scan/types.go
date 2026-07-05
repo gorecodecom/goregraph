@@ -479,11 +479,46 @@ type WorkspaceIndex struct {
 }
 
 type MavenPackageRecord struct {
-	Path       string `json:"path"`
+	Path         string                  `json:"path"`
+	GroupID      string                  `json:"group_id,omitempty"`
+	ArtifactID   string                  `json:"artifact_id,omitempty"`
+	Version      string                  `json:"version,omitempty"`
+	Parent       string                  `json:"parent,omitempty"`
+	Dependencies []MavenDependencyRecord `json:"dependencies,omitempty"`
+}
+
+type MavenDependencyRecord struct {
 	GroupID    string `json:"group_id,omitempty"`
 	ArtifactID string `json:"artifact_id,omitempty"`
 	Version    string `json:"version,omitempty"`
-	Parent     string `json:"parent,omitempty"`
+	Scope      string `json:"scope,omitempty"`
+}
+
+type MavenGraphRecord struct {
+	Nodes []MavenNodeRecord `json:"nodes"`
+	Edges []MavenEdgeRecord `json:"edges"`
+}
+
+type MavenNodeRecord struct {
+	ID       string `json:"id"`
+	GroupID  string `json:"group_id,omitempty"`
+	Artifact string `json:"artifact_id,omitempty"`
+	Version  string `json:"version,omitempty"`
+	Kind     string `json:"kind"`
+	Path     string `json:"path,omitempty"`
+	Scope    string `json:"scope,omitempty"`
+	Parent   string `json:"parent,omitempty"`
+}
+
+type MavenEdgeRecord struct {
+	From            string  `json:"from"`
+	To              string  `json:"to"`
+	Type            string  `json:"type"`
+	Scope           string  `json:"scope,omitempty"`
+	FromPath        string  `json:"from_path,omitempty"`
+	Confidence      string  `json:"confidence"`
+	ConfidenceScore float64 `json:"confidence_score"`
+	Reason          string  `json:"reason,omitempty"`
 }
 
 type NodePackageRecord struct {

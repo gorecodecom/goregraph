@@ -392,3 +392,39 @@ Acceptance criteria:
 - frontend monorepo fixtures produce app-specific route IDs
 - Storybook/archive/declaration noise does not appear as route/call targets
 - package graph and API contract outputs are generated, queryable, and documented
+
+## Milestone 11: Realistic API Contracts And Maven Graph
+
+Status: delivered in the current development branch.
+
+Goal: close the biggest practical gaps found in real WEKA test scans after `v0.6.0`: empty frontend API contracts, occasional cross-app route handler resolution, and missing Maven dependency graph output.
+
+Delivered in this milestone:
+
+- realistic JavaScript/TypeScript API helper extraction:
+  - `GetHelper(dispatch, "/path")`
+  - `GetHelperWithStatus(dispatch, "/path")`
+  - `PostHelper`, `PutHelper`, `PatchHelper`, and `DeleteHelper`
+  - multiline helper calls
+  - template placeholders normalized from `${id}` to `{id}`
+- app-aware frontend candidate ranking:
+  - route handlers prefer same file
+  - then same `apps/<name>`
+  - then same `packages/<name>`
+  - then same language fallback
+- Maven dependency graph:
+  - `maven-graph.json`
+  - `maven-graph.md`
+  - module/dependency nodes from `pom.xml`
+  - dependency edges with reason `pom-dependency`
+- CLI and integration access:
+  - `goregraph query . maven-graph`
+  - `goregraph query . maven-graph-json`
+  - doctor validation for `maven-graph.json`
+
+Acceptance criteria:
+
+- realistic frontend helper fixtures produce non-empty `api-contracts.json`
+- same-name frontend components in different apps resolve to the owning route app
+- Maven fixture produces `maven-graph.json` and `maven-graph.md`
+- new outputs are additive and deterministic

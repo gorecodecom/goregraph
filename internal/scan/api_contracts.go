@@ -8,9 +8,11 @@ import (
 )
 
 var (
-	codeHelperAPIRE = regexp.MustCompile(`\b(Get|Post|Put|Patch|Delete)Helper\s*\(\s*["']([^"']+)["']`)
-	codeFetchAPIRE  = regexp.MustCompile(`\bfetch\s*\(\s*["']([^"']+)["']`)
-	codeMethodRE    = regexp.MustCompile(`\bmethod\s*:\s*["']([A-Za-z]+)["']`)
+	codeHelperStartRE = regexp.MustCompile(`\b(Get|Post|Put|Patch|Delete)Helper(?:WithStatus)?\s*\(`)
+	codeFetchAPIRE    = regexp.MustCompile(`\bfetch\s*\(\s*["']([^"']+)["']`)
+	codeMethodRE      = regexp.MustCompile(`\bmethod\s*:\s*["']([A-Za-z]+)["']`)
+	codePathLiteralRE = regexp.MustCompile(`["'](/[^"']+)["']|` + "`" + `(/[^` + "`" + `]+)` + "`")
+	codeTemplateVarRE = regexp.MustCompile(`\$\{([^}]+)\}`)
 )
 
 func extractAPIContracts(file FileRecord, lines []string) []APIContractRecord {
@@ -25,8 +27,11 @@ func extractAPIContracts(file FileRecord, lines []string) []APIContractRecord {
 
 	var records []APIContractRecord
 	for i, line := range lines {
-		if match := codeHelperAPIRE.FindStringSubmatch(line); len(match) == 3 {
-			records = append(records, apiContract(file, strings.ToUpper(match[1]), match[2], line, i+1, "helper-call"))
+		if match := codeHelperStartRE.FindStringSubmatch(line); len(match) == 2 {
+			callText := collectCallText(lines, i, 5)
+			if path, ok := firstPathLiteral(callText); ok {
+				records = append(records, apiContract(file, helperHTTPMethod(match[1]), path, callText, i+1, "helper-call-argument"))
+			}
 			continue
 		}
 		if match := codeFetchAPIRE.FindStringSubmatch(line); len(match) == 2 {
@@ -55,7 +60,7 @@ func apiContract(file FileRecord, method, path, caller string, line int, reason 
 		App:             codeFileApp(file.Path),
 		Package:         codeFilePackage(file.Path),
 		HTTPMethod:      method,
-		Path:            normalizeCodeRoutePath(path),
+		Path:            normalizeAPIPath(path),
 		Caller:          strings.TrimSpace(caller),
 		File:            file.Path,
 		Line:            line,
@@ -63,6 +68,60 @@ func apiContract(file FileRecord, method, path, caller string, line int, reason 
 		ConfidenceScore: 0.9,
 		Reason:          reason,
 	}
+}
+
+func helperHTTPMethod(name string) string {
+	name = strings.TrimSuffix(name, "Helper")
+	name = strings.TrimSuffix(name, "HelperWithStatus")
+	switch strings.ToLower(name) {
+	case "get":
+		return "GET"
+	case "post":
+		return "POST"
+	case "put":
+		return "PUT"
+	case "patch":
+		return "PATCH"
+	case "delete":
+		return "DELETE"
+	default:
+		return strings.ToUpper(name)
+	}
+}
+
+func collectCallText(lines []string, start, maxLines int) string {
+	depth := 0
+	seenOpen := false
+	var parts []string
+	for i := start; i < len(lines) && i < start+maxLines; i++ {
+		line := stripCodeLineComment("javascript", lines[i])
+		parts = append(parts, strings.TrimSpace(line))
+		depth += strings.Count(line, "(")
+		if strings.Contains(line, "(") {
+			seenOpen = true
+		}
+		depth -= strings.Count(line, ")")
+		if seenOpen && depth <= 0 {
+			break
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func firstPathLiteral(callText string) (string, bool) {
+	for _, match := range codePathLiteralRE.FindAllStringSubmatch(callText, -1) {
+		for _, group := range match[1:] {
+			if strings.HasPrefix(group, "/") {
+				return group, true
+			}
+		}
+	}
+	return "", false
+}
+
+func normalizeAPIPath(path string) string {
+	path = normalizeCodeRoutePath(path)
+	return codeTemplateVarRE.ReplaceAllString(path, `{$1}`)
 }
 
 func renderAPIContractsReport(records []APIContractRecord) string {
