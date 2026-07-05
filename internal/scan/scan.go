@@ -33,6 +33,7 @@ var GeneratedFiles = []string{
 	"routes.json",
 	"flows.json",
 	"api-contracts.json",
+	"contract-matches.json",
 	"package-graph.json",
 	"maven-graph.json",
 	"analyzers.json",
@@ -45,6 +46,8 @@ var GeneratedFiles = []string{
 	"routes.md",
 	"flows.md",
 	"api-contracts.md",
+	"contract-matches.md",
+	"potentially-broken-contracts.md",
 	"package-graph.md",
 	"maven-graph.md",
 	"navigation.md",
@@ -233,6 +236,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	codeFlows := buildCodeFlows(index.Code, springIndex, endpointFlows, callGraph)
 	testMap := append(buildJavaTestMap(index.JavaSources, springIndex.Endpoints), buildGenericTestMap(index.Code)...)
 	routes := buildCodeRoutes(index.Code, springIndex)
+	contractMatches := buildContractMatches(index.Code.APIContracts, routes)
 	packageGraph := buildPackageGraph(index.Workspace)
 	mavenGraph := buildMavenGraph(index.Workspace)
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
@@ -270,6 +274,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"routes.json", routes},
 		{"flows.json", codeFlows},
 		{"api-contracts.json", index.Code.APIContracts},
+		{"contract-matches.json", contractMatches},
 		{"package-graph.json", packageGraph},
 		{"maven-graph.json", mavenGraph},
 		{"analyzers.json", analyzers},
@@ -296,6 +301,8 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"routes.md", renderRoutesReport(routes)},
 		{"flows.md", renderCodeFlowsReport(codeFlows)},
 		{"api-contracts.md", renderAPIContractsReport(index.Code.APIContracts)},
+		{"contract-matches.md", renderContractMatchesReport(contractMatches)},
+		{"potentially-broken-contracts.md", renderPotentiallyBrokenContractsReport(contractMatches)},
 		{"package-graph.md", renderPackageGraphReport(packageGraph)},
 		{"maven-graph.md", renderMavenGraphReport(mavenGraph)},
 		{"navigation.md", renderNavigationReport(index.Files, index.Symbols, index.Relations, routes, codeFlows, testMap, analyzers)},

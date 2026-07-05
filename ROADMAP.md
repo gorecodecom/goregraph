@@ -428,3 +428,227 @@ Acceptance criteria:
 - same-name frontend components in different apps resolve to the owning route app
 - Maven fixture produces `maven-graph.json` and `maven-graph.md`
 - new outputs are additive and deterministic
+
+## Strategic Roadmap: From Code Index To Work Assistant
+
+Status: planned.
+
+Goal: keep GoreGraph realistic and useful without pretending that static analysis can fully replace code reading. GoreGraph should become a deterministic local work assistant for navigation, contract checks, impact orientation, and test selection while keeping normal scans local, offline, and free of project code execution.
+
+Long-term principles:
+
+- source code remains authoritative
+- generated output is orientation and risk reduction, not proof of runtime behavior
+- normal scans do not call AI, network services, package managers, build tools, or project code
+- every heuristic edge must expose confidence and reason
+- every machine-readable output should use stable IDs, root-relative paths, file/line evidence, and deterministic ordering
+- expensive or non-deterministic enrichment must stay optional and explicit
+
+Backend roadmap:
+
+- endpoint contracts:
+  - endpoint -> HTTP method -> path
+  - request DTO
+  - response DTO
+  - content type
+  - path/query params
+  - validation annotations such as `@Valid`, `@NotNull`, `@Size`, and custom validators where statically visible
+  - declared multipart parts
+- backend contract quality:
+  - OpenAPI/Swagger comparison when an existing spec is present in the repository
+  - missing documentation markers
+  - response schema drift markers
+- deeper Spring graph:
+  - Controller -> Service -> Helper -> Repository -> External Client
+  - interface-to-implementation candidates
+  - constructor, field, setter, and Lombok constructor injection where statically visible
+  - `@Scheduled`, `@EventListener`, and async entrypoints
+- security model:
+  - endpoint-level `@PreAuthorize`
+  - role/scope/authority strings where statically visible
+  - explicit security caveats when only global filter-chain context exists
+- database model:
+  - Entity -> table/view
+  - Entity field -> column
+  - Repository method -> derived query fields
+  - `@Query` JPQL/native SQL
+  - read/write orientation for repositories where statically visible
+- external service contracts:
+  - RestClient/WebClient/Feign-style calls
+  - target method/path/DTOs where statically visible
+  - retry/timeout/error handling markers where local code exposes them
+- Maven graph hardening:
+  - parent POM/BOM/dependencyManagement records
+  - version source markers
+  - scope normalization
+  - duplicate/conflicting direct dependency markers
+  - transitive dependencies only as optional explicit enrichment if a local lock/cache/source exists
+- test coverage mapping:
+  - MockMvc/WebTestClient paths
+  - test method -> endpoint/method candidates
+  - unit vs integration test markers
+  - untested endpoint report
+
+Frontend roadmap:
+
+- AST/type-aware resolution:
+  - exact imports for relative paths
+  - `tsconfig` path aliases
+  - webpack aliases
+  - package aliases
+  - default/named exports
+  - re-export chains through `index.ts`
+  - mixed JS/TS projects
+- React route and component model:
+  - Route -> Page -> Child Components
+  - JSX component usage
+  - conditional rendering markers
+  - props flow orientation
+  - connected/container component resolution
+- routing:
+  - React Router `Route`, `Switch`, `Redirect`
+  - Redux Little Router `Fragment forRoute`
+  - nested route composition
+  - dynamic params
+  - redirects and fallbacks
+- Redux/state flows:
+  - Component -> Action Creator
+  - Action -> Reducer
+  - Action -> Saga/Thunk
+  - Selector -> State Slice
+  - Dispatch usage
+  - Duck-file conventions
+  - async side effects
+- API contracts:
+  - more robust template-string normalization
+  - query param structure
+  - request body hints
+  - response usage hints
+  - API call -> backend service candidate
+- frontend/backend linking:
+  - frontend API contract -> backend route match
+  - method/path mismatch markers
+  - missing backend endpoint markers
+  - backend DTO field changes -> frontend usage candidates
+- frontend tests:
+  - test file -> imported component/service/reducer priority
+  - Jest/Enzyme/React Testing Library patterns
+  - mocked API calls
+  - route/component/API test coverage markers
+  - generic helper noise filtering
+- package graph:
+  - app -> workspace package imports
+  - workspace package -> workspace package imports
+  - package.json dependencies compared with actual imports
+  - duplicate package names and version drift
+- feature navigation:
+  - feature module grouping by route/page/components/state/api/tests
+  - design-system usage
+  - forms, modals, flyouts, tables, and wizards
+- forms/data flow:
+  - field -> validation -> submit handler -> API payload
+  - API response -> mapper -> state -> selector -> component
+
+Cross-cutting roadmap:
+
+- confidence model:
+  - `EXTRACTED`: direct syntactic fact from source
+  - `RESOLVED`: source fact resolved through imports/types/package boundaries
+  - `INFERRED`: plausible static match without full resolution
+  - `WEAK_MATCH`: name/string similarity only
+- all edges include:
+  - reason
+  - file
+  - line
+  - stable ID
+  - source artifact
+- high-value reports:
+  - `impact-index.json`
+  - `route-index.json`
+  - `contract-matches.json`
+  - `missing-tests.md`
+  - `potentially-broken-contracts.md`
+  - `high-impact-files.md`
+- cross-repo orientation:
+  - frontend API call -> microservice endpoint
+  - backend endpoint -> frontend callers
+  - shared DTO/contract drift candidates
+- optional diff mode:
+  - changed files since last scan
+  - changed symbols/contracts/routes
+  - likely affected routes/tests/API calls
+
+## Milestone 12: Contract Matching And Better Confidence
+
+Status: implemented for `v0.8.0`.
+
+Goal: create the next large but controlled jump by connecting existing frontend API contracts to existing backend route contracts, hardening URL normalization, and introducing clearer confidence levels. This makes GoreGraph more useful for frontend/backend change impact without attempting a full AST/type-system rewrite yet.
+
+Why this milestone is the next best step:
+
+- `api-contracts.json` is now populated in real frontend scans
+- backend routes and Spring endpoint data are already strong
+- frontend/backend matching gives immediate practical value for bugfixes and refactors
+- the scope is still deterministic and local
+- it avoids prematurely building a full TypeScript compiler-level analyzer
+
+Implemented outputs:
+
+- `contract-matches.json`
+- `contract-matches.md`
+- `potentially-broken-contracts.md`
+- extended `api-contracts.json` normalization fields
+
+Implemented work:
+
+- URL normalization hardening:
+  - normalize `${id}` to `{id}`
+  - mark unsafe complex template expressions such as `${stateName ? ...}`
+  - split path and query string
+  - normalize query params into stable sorted metadata
+  - preserve raw path separately from normalized path
+- frontend API contract classification:
+  - service candidate from first path segment
+  - e.g. `/cadasters/...` -> `ms-cadaster` candidate
+  - e.g. `/userservice/...` -> `ms-userservice` candidate
+  - explicit unsafe dynamic marker and reason
+- backend endpoint contract extraction:
+  - backend route key: method + normalized path
+  - controller method
+  - existing backend route metadata from `routes.json`
+- matching engine:
+  - exact method + normalized path match -> `RESOLVED`
+  - method + compatible path pattern match -> `RESOLVED`
+  - compatible path with different method -> `WEAK_MATCH` issue
+  - missing backend route -> reported
+  - HTTP method mismatch -> reported
+  - unsafe dynamic URL -> reported
+- confidence model update:
+  - introduce `RESOLVED` and `WEAK_MATCH`
+  - keep existing `EXTRACTED` and `INFERRED`
+  - document confidence definitions in `SCHEMA.md`
+- reports:
+  - matched frontend API calls with backend method/path/handler where available
+  - missing backend endpoint candidates
+  - method mismatches
+  - unsafe dynamic URL patterns
+  - focused potential breakage report
+
+Acceptance criteria status:
+
+- normal scan remains local, deterministic, and offline: done
+- no project code, Maven, npm, TypeScript compiler, or bundler execution: done
+- same-scan frontend/backend matches produce `contract-matches.json`: done
+- unsafe dynamic frontend URLs are visible rather than silently normalized into misleading paths: done
+- backend endpoint route matching remains additive and does not break existing `spring.json`, `routes.json`, or `api-contracts.json`: done
+- docs explain that contract matching is static orientation, not runtime proof: done
+
+Deferred beyond Milestone 12:
+
+- cross-repository contract matching across separately scanned frontend/backend projects
+- backend request/response DTO matching inside `contract-matches.json`
+- full TypeScript AST/type resolver
+- full Redux/Saga/Thunk semantic flow graph
+- transitive Maven dependency resolution
+- full SecurityFilterChain evaluation
+- database stored procedure and Oracle function analysis

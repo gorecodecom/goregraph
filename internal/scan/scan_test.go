@@ -793,6 +793,68 @@ func TestRunGeneratesMavenDependencyGraph(t *testing.T) {
 	}
 }
 
+func TestRunMatchesFrontendAPIContractsToBackendRoutes(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "apps/portal/src/api/cadasterservice.js", "import { GetHelper, PostHelper, DeleteHelper } from '../utils/requestHelper';\n\n"+
+		"export function loadCadaster(dispatch, id) {\n"+
+		"  return GetHelper(dispatch, `/cadasters/${id}`);\n"+
+		"}\n\n"+
+		"export function createCadaster(dispatch, id) {\n"+
+		"  return PostHelper(dispatch, `/cadasters/${id}`);\n"+
+		"}\n\n"+
+		"export function deleteCadaster(dispatch, id) {\n"+
+		"  return DeleteHelper(dispatch, `/cadasters/${id}`);\n"+
+		"}\n\n"+
+		"export function dynamicCadaster(dispatch, stateName, id) {\n"+
+		"  return GetHelper(dispatch, `/cadasters/${stateName ? 'draft' : 'active'}/${id}`);\n"+
+		"}\n")
+	writeFile(t, root, "apps/portal/src/utils/requestHelper.js", `export function GetHelper(dispatch, path) { return fetch(path); }
+export function PostHelper(dispatch, path) { return fetch(path, { method: "POST" }); }
+export function DeleteHelper(dispatch, path) { return fetch(path, { method: "DELETE" }); }
+`)
+	writeFile(t, root, "src/main/java/com/example/CadasterController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @GetMapping("/{cadasterId}")
+  String get(@PathVariable String cadasterId) {
+    return cadasterId;
+  }
+}
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var api []APIContractRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "api-contracts.json"), &api)
+	assertHasAPIContract(t, api, "GET", "/cadasters/{id}", "apps/portal/src/api/cadasterservice.js")
+	assertHasUnsafeAPIContract(t, api, "GET", "/cadasters/{dynamic}/{id}")
+
+	var matches []ContractMatchRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "contract-matches.json"), &matches)
+	assertHasContractMatch(t, matches, "GET", "/cadasters/{id}", "GET", "/cadasters/{cadasterId}", "RESOLVED")
+	assertHasContractIssue(t, matches, "POST", "/cadasters/{id}", "method_mismatch")
+	assertHasContractIssue(t, matches, "DELETE", "/cadasters/{id}", "method_mismatch")
+	assertHasContractIssue(t, matches, "GET", "/cadasters/{dynamic}/{id}", "unsafe_dynamic")
+
+	report := readText(t, filepath.Join(root, "goregraph-out", "contract-matches.md"))
+	if !strings.Contains(report, "GET `/cadasters/{id}` -> GET `/cadasters/{cadasterId}`") {
+		t.Fatalf("contract match report missing resolved match:\n%s", report)
+	}
+	broken := readText(t, filepath.Join(root, "goregraph-out", "potentially-broken-contracts.md"))
+	if !strings.Contains(broken, "method_mismatch") || !strings.Contains(broken, "unsafe_dynamic") {
+		t.Fatalf("broken contract report missing issues:\n%s", broken)
+	}
+}
+
 func assertHasSymbol(t *testing.T, symbols []SymbolRecord, name, kind, file string) {
 	t.Helper()
 	for _, symbol := range symbols {
@@ -910,6 +972,16 @@ func assertHasAPIContract(t *testing.T, records []APIContractRecord, method, pat
 	t.Fatalf("missing api contract method=%q path=%q file=%q in %#v", method, path, file, records)
 }
 
+func assertHasUnsafeAPIContract(t *testing.T, records []APIContractRecord, method, path string) {
+	t.Helper()
+	for _, record := range records {
+		if record.HTTPMethod == method && record.Path == path && record.UnsafeDynamic {
+			return
+		}
+	}
+	t.Fatalf("missing unsafe api contract method=%q path=%q in %#v", method, path, records)
+}
+
 func assertNoAPIContract(t *testing.T, records []APIContractRecord, method, path string) {
 	t.Helper()
 	for _, record := range records {
@@ -917,6 +989,26 @@ func assertNoAPIContract(t *testing.T, records []APIContractRecord, method, path
 			t.Fatalf("unexpected api contract method=%q path=%q in %#v", method, path, records)
 		}
 	}
+}
+
+func assertHasContractMatch(t *testing.T, records []ContractMatchRecord, apiMethod, apiPath, backendMethod, backendPath, confidence string) {
+	t.Helper()
+	for _, record := range records {
+		if record.APIHTTPMethod == apiMethod && record.APIPath == apiPath && record.BackendHTTPMethod == backendMethod && record.BackendPath == backendPath && record.Confidence == confidence {
+			return
+		}
+	}
+	t.Fatalf("missing contract match api=%s %q backend=%s %q confidence=%q in %#v", apiMethod, apiPath, backendMethod, backendPath, confidence, records)
+}
+
+func assertHasContractIssue(t *testing.T, records []ContractMatchRecord, apiMethod, apiPath, issue string) {
+	t.Helper()
+	for _, record := range records {
+		if record.APIHTTPMethod == apiMethod && record.APIPath == apiPath && record.Issue == issue {
+			return
+		}
+	}
+	t.Fatalf("missing contract issue api=%s %q issue=%q in %#v", apiMethod, apiPath, issue, records)
 }
 
 func assertHasMavenEdge(t *testing.T, graph MavenGraphRecord, from, to string) {

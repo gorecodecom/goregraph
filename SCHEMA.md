@@ -69,6 +69,7 @@ Schema version 1 expects:
 - `routes.json`
 - `flows.json`
 - `api-contracts.json`
+- `contract-matches.json`
 - `package-graph.json`
 - `maven-graph.json`
 - `analyzers.json`
@@ -84,6 +85,8 @@ Schema version 1 expects:
 - `routes.md`
 - `flows.md`
 - `api-contracts.md`
+- `contract-matches.md`
+- `potentially-broken-contracts.md`
 - `package-graph.md`
 - `maven-graph.md`
 - `navigation.md`
@@ -120,7 +123,9 @@ Schema version 1 expects:
 
 `flows.json` contains normalized route-to-handler-to-call flow records. Flow steps are best-effort static orientation data and include confidence markers.
 
-`api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helper calls and `fetch`. Records include HTTP method, path, caller line, app/package context, confidence, and reason. Supported helper calls include direct and multiline argument forms where a literal path argument is visible, for example `GetHelper(dispatch, "/service/path")`.
+`api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helper calls and `fetch`. Records include HTTP method, raw path, normalized path, query string, sorted query params, service candidate, caller line, app/package context, confidence, and reason. Supported helper calls include direct and multiline argument forms where a literal path argument is visible, for example `GetHelper(dispatch, "/service/path")`. Template placeholders such as `${id}` normalize to `{id}`. Complex dynamic expressions such as ternaries are marked with `unsafe_dynamic` and normalized to `{dynamic}`.
+
+`contract-matches.json` compares frontend API contracts with backend route records from the same scan. Match records include API method/path/location, backend method/path/handler/location when available, service candidate, issue, confidence, confidence score, and reason. Issue values currently include `matched`, `method_mismatch`, `missing_backend_route`, and `unsafe_dynamic`.
 
 `package-graph.json` contains Node workspace package nodes and package dependency edges extracted from `package.json`. Internal workspace edges use reason `workspace-package-json-dependency`.
 
@@ -132,9 +137,18 @@ Schema version 1 expects:
 
 `audit.json` records the scan command, generated files, file counts, timestamps, and safety flags. Normal scans set `network_used` and `external_commands` to `false`.
 
-`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `package-graph.md`, `maven-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
+`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `contract-matches.md`, `potentially-broken-contracts.md`, `package-graph.md`, `maven-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
+
+## Confidence Values
+
+GoreGraph confidence values are static-analysis labels, not runtime proof:
+
+- `EXTRACTED`: the fact was directly extracted from source syntax.
+- `RESOLVED`: multiple static facts were connected with a deterministic match, for example frontend API method/path to backend route method/path.
+- `INFERRED`: the fact was inferred from local naming, call, test, or ownership heuristics.
+- `WEAK_MATCH`: GoreGraph found a possible relationship or issue, but the source expression is dynamic, incomplete, or only loosely compatible.
 
 ## Language Records
 

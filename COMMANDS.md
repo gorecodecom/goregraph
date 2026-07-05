@@ -111,6 +111,7 @@ Generated files include:
 - `routes.json`
 - `flows.json`
 - `api-contracts.json`
+- `contract-matches.json`
 - `package-graph.json`
 - `maven-graph.json`
 - `analyzers.json`
@@ -123,6 +124,8 @@ Generated files include:
 - `routes.md`
 - `flows.md`
 - `api-contracts.md`
+- `contract-matches.md`
+- `potentially-broken-contracts.md`
 - `package-graph.md`
 - `maven-graph.md`
 - `navigation.md`
@@ -161,7 +164,8 @@ What the generated files mean:
 - `test-map.json`: method-level, endpoint-level, and best-effort cross-language test mappings with confidence metadata.
 - `routes.json`: normalized route records for Spring, Go, PHP/Laravel-style routes, JS/TS Express/Fastify-style routes, React Router routes, and Python FastAPI/Flask-style routes.
 - `flows.json`: normalized route-to-handler-to-call flow records across supported languages.
-- `api-contracts.json`: JavaScript/TypeScript HTTP client calls detected from supported helpers and `fetch`, including realistic helper argument shapes, method, path, file, app, confidence, and reason.
+- `api-contracts.json`: JavaScript/TypeScript HTTP client calls detected from supported helpers and `fetch`, including realistic helper argument shapes, method, raw path, normalized path, query metadata, service candidate, file, app, confidence, and reason.
+- `contract-matches.json`: static frontend API call to backend route matches, including resolved method/path matches, method mismatches, missing backend routes, and unsafe dynamic URL patterns.
 - `package-graph.json`: Node workspace package nodes and package dependency edges from `package.json`.
 - `maven-graph.json`: Maven package nodes and dependency edges from `pom.xml`.
 - `analyzers.json`: active analyzer capability inventory for the scanned project.
@@ -174,6 +178,8 @@ What the generated files mean:
 - `routes.md`: human-readable route inventory.
 - `flows.md`: human-readable route and handler flow report.
 - `api-contracts.md`: human-readable API client call inventory.
+- `contract-matches.md`: human-readable frontend API to backend route match report.
+- `potentially-broken-contracts.md`: focused report for API calls that could not be safely matched to backend routes.
 - `package-graph.md`: human-readable Node package/workspace dependency graph.
 - `maven-graph.md`: human-readable Maven dependency graph.
 - `navigation.md`: human-readable starting-point report with likely routes, central files, important symbols, test orientation, and analyzer coverage.
@@ -331,6 +337,8 @@ goregraph query . graph-full
 goregraph query . endpoints
 goregraph query . dependencies
 goregraph query . api-contracts
+goregraph query . contract-matches
+goregraph query . broken-contracts
 goregraph query . package-graph
 goregraph query . maven-graph
 goregraph query . audit
@@ -364,6 +372,10 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `flows-json` -> `flows.json`
 - `api-contracts` -> `api-contracts.md`
 - `api-contracts-json` -> `api-contracts.json`
+- `contract-matches` -> `contract-matches.md`
+- `contracts` -> `contract-matches.md`
+- `contract-matches-json` -> `contract-matches.json`
+- `broken-contracts` -> `potentially-broken-contracts.md`
 - `package-graph` -> `package-graph.md`
 - `package-graph-json` -> `package-graph.json`
 - `maven-graph` -> `maven-graph.md`

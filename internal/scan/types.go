@@ -281,17 +281,46 @@ type CodeFlowStep struct {
 }
 
 type APIContractRecord struct {
-	Language        string  `json:"language"`
-	App             string  `json:"app,omitempty"`
-	Package         string  `json:"package,omitempty"`
-	HTTPMethod      string  `json:"http_method"`
-	Path            string  `json:"path"`
-	Caller          string  `json:"caller,omitempty"`
-	File            string  `json:"file"`
-	Line            int     `json:"line"`
-	Confidence      string  `json:"confidence"`
-	ConfidenceScore float64 `json:"confidence_score"`
-	Reason          string  `json:"reason,omitempty"`
+	Language         string             `json:"language"`
+	App              string             `json:"app,omitempty"`
+	Package          string             `json:"package,omitempty"`
+	HTTPMethod       string             `json:"http_method"`
+	Path             string             `json:"path"`
+	RawPath          string             `json:"raw_path,omitempty"`
+	Query            string             `json:"query,omitempty"`
+	QueryParams      []QueryParamRecord `json:"query_params,omitempty"`
+	ServiceCandidate string             `json:"service_candidate,omitempty"`
+	UnsafeDynamic    bool               `json:"unsafe_dynamic,omitempty"`
+	Caller           string             `json:"caller,omitempty"`
+	File             string             `json:"file"`
+	Line             int                `json:"line"`
+	Confidence       string             `json:"confidence"`
+	ConfidenceScore  float64            `json:"confidence_score"`
+	Reason           string             `json:"reason,omitempty"`
+}
+
+type QueryParamRecord struct {
+	Name  string `json:"name"`
+	Value string `json:"value,omitempty"`
+}
+
+type ContractMatchRecord struct {
+	APIHTTPMethod     string  `json:"api_http_method"`
+	APIPath           string  `json:"api_path"`
+	APIRawPath        string  `json:"api_raw_path,omitempty"`
+	APIFile           string  `json:"api_file"`
+	APILine           int     `json:"api_line,omitempty"`
+	APIApp            string  `json:"api_app,omitempty"`
+	BackendHTTPMethod string  `json:"backend_http_method,omitempty"`
+	BackendPath       string  `json:"backend_path,omitempty"`
+	BackendHandler    string  `json:"backend_handler,omitempty"`
+	BackendFile       string  `json:"backend_file,omitempty"`
+	BackendLine       int     `json:"backend_line,omitempty"`
+	ServiceCandidate  string  `json:"service_candidate,omitempty"`
+	Issue             string  `json:"issue,omitempty"`
+	Confidence        string  `json:"confidence"`
+	ConfidenceScore   float64 `json:"confidence_score"`
+	Reason            string  `json:"reason,omitempty"`
 }
 
 type PackageGraphRecord struct {

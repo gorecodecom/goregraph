@@ -86,6 +86,22 @@ func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
 		t.Fatalf("api-contracts alias returned unexpected output:\n%s", apiContracts)
 	}
 
+	contractMatches, err := Search(root, "contract-matches")
+	if err != nil {
+		t.Fatalf("Search contract-matches returned error: %v", err)
+	}
+	if !strings.Contains(contractMatches, "# GoreGraph Contract Matches") {
+		t.Fatalf("contract-matches alias returned unexpected output:\n%s", contractMatches)
+	}
+
+	brokenContracts, err := Search(root, "broken-contracts")
+	if err != nil {
+		t.Fatalf("Search broken-contracts returned error: %v", err)
+	}
+	if !strings.Contains(brokenContracts, "# GoreGraph Potentially Broken Contracts") {
+		t.Fatalf("broken-contracts alias returned unexpected output:\n%s", brokenContracts)
+	}
+
 	packageGraph, err := Search(root, "package-graph-json")
 	if err != nil {
 		t.Fatalf("Search package-graph-json returned error: %v", err)
