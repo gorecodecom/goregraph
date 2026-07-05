@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.2.0
+v0.2.1
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -16,13 +16,13 @@ GitHub repository secrets:
 
 - `HOMEBREW_TAP_TOKEN`: token with write access to `gorecodecom/homebrew-tap`.
 - `SCOOP_BUCKET_TOKEN`: token with write access to `gorecodecom/scoop-bucket`.
-- `WINGET_TOKEN`: optional token for Winget PR publishing through the configured `gorecodecom/winget-pkgs` fork.
+- `WINGET_TOKEN`: optional token for pushing Winget manifests to the configured `gorecodecom/winget-pkgs` fork.
 
 `GITHUB_TOKEN` is provided by GitHub Actions for publishing the GoreGraph release.
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and Winget PR automation. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis.
+`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red.
 
 Completed release checks:
 
@@ -38,7 +38,7 @@ Completed release checks:
 - `brew test gorecodecom/tap/goregraph` passes.
 - `gorecodecom/scoop-bucket` is public.
 - Scoop manifest `bucket/goregraph.json` exists for `v0.1.0`.
-- `gorecodecom/winget-pkgs` fork exists for future Winget PR automation.
+- `gorecodecom/winget-pkgs` fork exists for Winget manifest publishing.
 - `SCOOP_BUCKET_TOKEN` is visible in `gorecodecom/goregraph`.
 - `WINGET_TOKEN` is visible in `gorecodecom/goregraph`.
 
@@ -50,11 +50,19 @@ Completed release checks:
 - `workspace.md` captures Maven and Node package metadata.
 - `goregraph query . graph-full`, `goregraph query . endpoints`, and `goregraph query . audit` work.
 
+`v0.2.1` release checks:
+
+- GitHub release artifacts are published.
+- Homebrew tap update succeeds.
+- Scoop bucket update succeeds.
+- Winget manifests are generated and pushed to the configured fork branch.
+- Automatic PR creation against `microsoft/winget-pkgs` is disabled until a token/workflow with upstream PR permissions is chosen.
+
 Remaining release-hardening items:
 
 - Validate GoreGraph against more real-world projects before considering `1.0.0`.
-- Verify after tagging `v0.1.1` that the Scoop bucket was updated automatically.
-- Verify after tagging `v0.1.1` that GoReleaser opened the Winget PR.
+- Verify after tagging that the Scoop bucket was updated automatically.
+- Open the Winget PR manually when a new manifest branch is generated.
 - Wait for Microsoft acceptance before documenting Winget as an active install path.
 - Decide later whether macOS notarization or Windows code signing is worth the operational cost.
 
@@ -73,7 +81,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.2.0
+goregraph 0.2.1
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -89,8 +97,8 @@ schema: 1
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v0.2.0 -m "Release v0.2.0"
-   git push origin v0.2.0
+   git tag -a v0.2.1 -m "Release v0.2.1"
+   git push origin v0.2.1
    ```
 
 5. GitHub Actions runs GoReleaser.
@@ -103,7 +111,7 @@ schema: 1
 7. GoReleaser uploads release archives and `checksums.txt`.
 8. GoReleaser updates the Homebrew tap.
 9. GoReleaser updates the Scoop bucket when `SCOOP_BUCKET_TOKEN` is present.
-10. GoReleaser opens a Winget PR when `WINGET_TOKEN` is present and the configured fork exists.
+10. GoReleaser pushes Winget manifests to the configured fork when `WINGET_TOKEN` is present.
 11. Verify a downloaded binary:
 
    ```bash
@@ -148,7 +156,7 @@ Expected command after Microsoft accepts the package:
 winget install --id GoreCode.GoreGraph -e
 ```
 
-GoReleaser is configured for Winget PR publishing, but the package is not live until the manifest is accepted in `microsoft/winget-pkgs`.
+GoReleaser is configured to generate Winget manifests and push them to the configured fork. The package is not live until the manifest is accepted in `microsoft/winget-pkgs`.
 
 `v0.1.1` status:
 
@@ -157,6 +165,12 @@ GoReleaser is configured for Winget PR publishing, but the package is not live u
 - Automatic PR creation failed with GitHub `403 Resource not accessible by personal access token`.
 - The PR was opened manually: `https://github.com/microsoft/winget-pkgs/pull/397959`.
 - The PR is waiting on Microsoft CLA/review checks.
+
+Current release behavior:
+
+- GoReleaser generates the Winget manifests.
+- GoReleaser pushes a `goregraph-<version>` branch to `gorecodecom/winget-pkgs`.
+- The PR to `microsoft/winget-pkgs` is opened manually.
 
 For future fully automatic Winget PR creation, `WINGET_TOKEN` must be able to create pull requests against public upstream repositories. A classic GitHub PAT with `public_repo` is the simplest known-good option. If a fine-grained token cannot create the upstream PR, keep the generated branch and open the PR manually.
 

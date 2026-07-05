@@ -112,7 +112,7 @@ Goal: make GoreGraph easy to install and update on macOS, Linux, and Windows.
 
 Released versions: `0.1.0`, `0.1.1`.
 
-Reasoning: `0.1.0` is the first public pre-1.0 release. `0.1.1` validates package-manager release automation for Homebrew, Scoop, and Winget PRs. `1.0.0` is reserved for a stable public CLI/schema contract.
+Reasoning: `0.1.0` is the first public pre-1.0 release. `0.1.1` validates package-manager release automation for Homebrew, Scoop, and manual Winget PR publishing. `1.0.0` is reserved for a stable public CLI/schema contract.
 
 Planned work:
 
@@ -161,7 +161,7 @@ Delivered in this milestone:
 - checksum publishing configuration
 - Homebrew Formula publishing configuration for `gorecodecom/homebrew-tap`
 - Scoop bucket manifest published for `gorecodecom/scoop-bucket`
-- Winget metadata and PR automation configured; package acceptance is still pending Microsoft review
+- Winget metadata generation configured; package acceptance is still pending Microsoft review
 - release checklist in `docs/RELEASE.md`
 - README installation guidance
 
