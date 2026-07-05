@@ -13,10 +13,14 @@ GoreGraph should first create stable project intelligence:
 ```text
 goregraph-out/
   graph.json
+  graph-full.json
   files.json
   symbols.json
+  symbols-full.json
   relations.json
+  relations-full.json
   report.md
+  audit.json
 ```
 
 AI should consume these files later. AI should not define the canonical index.
@@ -51,7 +55,7 @@ This file must not be a forceful agent-instruction system like `AGENTS.md`. It s
 
 ### MCP Integration
 
-Later, GoreGraph can expose a stdio MCP server:
+GoreGraph exposes a read-only stdio MCP server:
 
 ```bash
 goregraph mcp
@@ -61,7 +65,7 @@ Potential MCP tools:
 
 - `query_code_map`
 - `get_project_summary`
-- `get_file_context`
+- `get_output`
 - `get_symbol`
 - `get_related_files`
 - `get_test_candidates`
@@ -125,7 +129,12 @@ Canonical files must remain deterministic:
 - `symbols.json`
 - `relations.json`
 - `graph.json`
+- `symbols-full.json`
+- `relations-full.json`
+- `graph-full.json`
 - deterministic Markdown reports
+
+Metadata files such as `audit.json` and `manifest.json` may contain scan timestamps because their purpose is to describe one scan event.
 
 AI files may vary and must not be used as the source of truth.
 

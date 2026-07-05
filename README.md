@@ -10,6 +10,8 @@ The tool is intentionally conservative:
 
 - no AI calls
 - no network access
+- no telemetry
+- no project code execution
 - no Git hooks
 - no agent config writes
 - no global project modifications
@@ -36,8 +38,17 @@ Implemented:
 - deterministic `symbols.json`
 - deterministic `relations.json`
 - deterministic `graph.json`
+- deterministic `symbols-full.json`
+- deterministic `relations-full.json`
+- deterministic `graph-full.json`
+- deterministic `spring.json`
+- deterministic `audit.json`
 - deterministic `report.md`
 - deterministic `modules.md`
+- deterministic `workspace.md`
+- deterministic `endpoints.md`
+- deterministic `dependencies.md`
+- deterministic `affected.md`
 - deterministic `entrypoints.md`
 - deterministic `test-map.md`
 - default exclusions
@@ -51,6 +62,11 @@ Implemented:
 - local Python import resolution
 - local PHP namespace/use/include resolution
 - local Shell source resolution
+- universal rich graph output for all currently supported languages
+- Java internal/external import classification
+- Spring Boot application, controller, endpoint, service, repository, entity, bean, and dependency extraction
+- Maven and Node workspace summaries
+- scan audit metadata showing normal scans used no network and executed no external commands
 - graph nodes for local files and external dependencies
 - inbound/outbound relation context in `goregraph explain`
 - index health checks with `goregraph doctor`
@@ -72,7 +88,7 @@ Generated output compatibility is documented in `SCHEMA.md`.
 
 ## Installation
 
-The current public release is `v0.1.1`.
+The current public release is `v0.2.0`.
 
 The currently working installation paths are Homebrew, Scoop, manual release archives, and building from source. Winget is configured and submitted through the release workflow, but it is not live until Microsoft accepts the package manifest.
 
@@ -213,6 +229,15 @@ goregraph-out/
   symbols.json
   relations.json
   graph.json
+  symbols-full.json
+  relations-full.json
+  graph-full.json
+  spring.json
+  workspace.md
+  endpoints.md
+  dependencies.md
+  affected.md
+  audit.json
   report.md
   modules.md
   entrypoints.md
@@ -229,6 +254,14 @@ Search the generated index:
 
 ```bash
 goregraph query . StartServer
+```
+
+Read a generated output directly:
+
+```bash
+goregraph query . graph-full
+goregraph query . endpoints
+goregraph query . audit
 ```
 
 Explain one indexed file or symbol:

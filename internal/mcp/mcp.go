@@ -95,6 +95,7 @@ func tools() []map[string]any {
 	return []map[string]any{
 		tool("query_code_map", "Search the generated GoreGraph index."),
 		tool("get_project_summary", "Read the generated project report."),
+		tool("get_output", "Read a generated GoreGraph output by alias, for example graph-full, spring, endpoints, dependencies, workspace, audit."),
 		tool("get_file", "Read indexed metadata for a file."),
 		tool("get_symbol", "Find indexed symbols by name."),
 		tool("get_related_files", "Explain relations for a file."),
@@ -125,6 +126,12 @@ func callTool(name string, args map[string]any) (string, error) {
 		return query.Explain(root, target)
 	case "get_project_summary":
 		return readReport(root)
+	case "get_output":
+		name := stringArg(args, "name", stringArg(args, "alias", ""))
+		if strings.TrimSpace(name) == "" {
+			return "", fmt.Errorf("name is required")
+		}
+		return query.Search(root, name)
 	case "doctor":
 		result, err := doctor.Run(root)
 		if err != nil {

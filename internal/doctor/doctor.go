@@ -92,6 +92,11 @@ func checkJSONFiles(out string, result *Result) {
 		{"symbols.json", &[]scan.SymbolRecord{}},
 		{"relations.json", &[]scan.RelationRecord{}},
 		{"graph.json", &scan.Graph{}},
+		{"symbols-full.json", &[]scan.RichSymbolRecord{}},
+		{"relations-full.json", &[]scan.RichRelationRecord{}},
+		{"graph-full.json", &scan.RichGraph{}},
+		{"spring.json", &scan.SpringIndex{}},
+		{"audit.json", &scan.AuditRecord{}},
 	}
 	for _, check := range checks {
 		if err := readJSON(filepath.Join(out, check.name), check.dest); err != nil {

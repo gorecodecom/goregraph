@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/gitignore"
@@ -23,6 +24,15 @@ var GeneratedFiles = []string{
 	"symbols.json",
 	"relations.json",
 	"graph.json",
+	"symbols-full.json",
+	"relations-full.json",
+	"graph-full.json",
+	"spring.json",
+	"workspace.md",
+	"endpoints.md",
+	"dependencies.md",
+	"affected.md",
+	"audit.json",
 	"report.md",
 	"modules.md",
 	"entrypoints.md",
@@ -30,6 +40,7 @@ var GeneratedFiles = []string{
 }
 
 func Run(root string, cfg config.Config) (Result, error) {
+	started := time.Now().UTC()
 	resolved, err := filepath.Abs(root)
 	if err != nil {
 		return Result{}, err
@@ -57,7 +68,7 @@ func Run(root string, cfg config.Config) (Result, error) {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return Result{}, err
 	}
-	if err := writeOutputs(out, resolved, cfg, index, skipped); err != nil {
+	if err := writeOutputs(out, resolved, cfg, index, skipped, started); err != nil {
 		return Result{}, err
 	}
 
@@ -125,8 +136,13 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 
 		record := fileRecord(rel, info.Size(), body)
 		index.Files = append(index.Files, record)
-		index.Symbols = append(index.Symbols, extractSymbols(record, string(body))...)
-		index.Relations = append(index.Relations, extractRelations(record, string(body))...)
+		text := string(body)
+		index.Symbols = append(index.Symbols, extractSymbols(record, text)...)
+		index.Relations = append(index.Relations, extractRelations(record, text)...)
+		if record.Language == "java" {
+			index.JavaSources = append(index.JavaSources, extractJavaSource(record, text))
+		}
+		mergeWorkspaceIndex(&index.Workspace, extractWorkspaceRecord(record, text))
 		return nil
 	})
 	return index, skipped, err
@@ -158,6 +174,8 @@ func sortIndex(index *Index) {
 		return index.Symbols[i].Name < index.Symbols[j].Name
 	})
 	index.Relations = append(index.Relations, buildTestRelations(index.Files)...)
+	index.Relations = append(index.Relations, javaTestRelations(index.JavaSources)...)
+	index.Relations = replaceJavaImportRelations(index.Relations, resolveJavaImportRelations(index.JavaSources))
 	resolveLocalImportRelations(index)
 	sort.Slice(index.Relations, func(i, j int) bool {
 		if index.Relations[i].From != index.Relations[j].From {
@@ -173,8 +191,13 @@ func sortIndex(index *Index) {
 	})
 }
 
-func writeOutputs(out, root string, cfg config.Config, index Index, skipped int) error {
+func writeOutputs(out, root string, cfg config.Config, index Index, skipped int, started time.Time) error {
 	graph := buildGraph(index.Files, index.Symbols, index.Relations)
+	springIndex := buildSpringIndex(index.JavaSources)
+	richSymbols := buildRichSymbols(index.Files, index.Symbols)
+	richRelations := buildRichRelations(index.Files, index.Relations)
+	richGraph := buildRichGraph(index.Files, richSymbols, richRelations)
+	finished := time.Now().UTC()
 	manifest := Manifest{
 		Tool:        ToolName,
 		Schema:      SchemaVersion,
@@ -183,7 +206,10 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int)
 		Skipped:     skipped,
 		Generated:   GeneratedFiles,
 		ProjectRoot: filepath.Base(root),
+		GeneratedAt: finished.Format(time.RFC3339),
+		Git:         readGitMetadata(root),
 	}
+	audit := newAuditRecord(root, cfg.OutputDir, started, finished, len(index.Files), skipped)
 	writes := []struct {
 		name  string
 		value any
@@ -193,6 +219,11 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int)
 		{"symbols.json", index.Symbols},
 		{"relations.json", index.Relations},
 		{"graph.json", graph},
+		{"symbols-full.json", richSymbols},
+		{"relations-full.json", richRelations},
+		{"graph-full.json", richGraph},
+		{"spring.json", springIndex},
+		{"audit.json", audit},
 	}
 	for _, write := range writes {
 		if err := writeJSON(filepath.Join(out, write.name), write.value); err != nil {
@@ -206,7 +237,11 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int)
 	}{
 		{"report.md", renderReport(root, index.Files, skipped)},
 		{"modules.md", renderModulesReport(index.Files)},
-		{"entrypoints.md", renderEntrypointsReport(index.Files, index.Symbols)},
+		{"workspace.md", renderWorkspaceReport(index.Workspace)},
+		{"endpoints.md", renderEndpointsReport(springIndex)},
+		{"dependencies.md", renderDependenciesReport(springIndex)},
+		{"affected.md", renderAffectedReport(richGraph)},
+		{"entrypoints.md", renderEntrypointsReport(index.Files, index.Symbols, springIndex)},
 		{"test-map.md", renderTestMapReport(index.Relations)},
 	}
 	for _, report := range reports {

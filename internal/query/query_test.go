@@ -30,6 +30,31 @@ func TestSearchFindsMatchingSymbolsAndFiles(t *testing.T) {
 	}
 }
 
+func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")
+	if _, err := scan.Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Search(root, "graph-full")
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+
+	if !strings.Contains(result, `"directed"`) || !strings.Contains(result, "StartServer") {
+		t.Fatalf("graph-full alias returned unexpected output:\n%s", result)
+	}
+
+	audit, err := Search(root, "audit")
+	if err != nil {
+		t.Fatalf("Search audit returned error: %v", err)
+	}
+	if !strings.Contains(audit, `"network_used": false`) || !strings.Contains(audit, `"external_commands": false`) {
+		t.Fatalf("audit alias missing safety fields:\n%s", audit)
+	}
+}
+
 func TestExplainFileShowsSymbolsAndRelations(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nimport \"fmt\"\nfunc StartServer() {}\n")

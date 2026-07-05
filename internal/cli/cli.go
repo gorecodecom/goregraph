@@ -98,7 +98,7 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 
 func runQuery(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph query <path> <term>\n\nSearches an existing goregraph-out index.\n")
+		fmt.Fprint(stdout, "Usage: goregraph query <path> <term-or-output>\n\nSearches an existing goregraph-out index. Known output aliases such as graph-full, spring, endpoints, dependencies, workspace, affected, and audit print that generated file directly.\n")
 		return 0
 	}
 	if len(args) < 2 {
@@ -222,7 +222,7 @@ Commands:
   scan <path>       Create or rebuild goregraph-out for a project
   update            Refresh the current project's goregraph-out
   report <path>     Print the generated Markdown report
-  query <path>      Search the generated index
+  query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
   doctor <path>     Check generated output health
   mcp               Start the read-only MCP stdio server
@@ -235,6 +235,8 @@ Examples:
   goregraph update
   goregraph report .
   goregraph query . StartServer
+  goregraph query . graph-full
+  goregraph query . audit
   goregraph explain . src/main.go
   goregraph doctor .
   goregraph mcp

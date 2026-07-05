@@ -91,7 +91,7 @@ func renderModulesReport(files []FileRecord) string {
 	return b.String()
 }
 
-func renderEntrypointsReport(files []FileRecord, symbols []SymbolRecord) string {
+func renderEntrypointsReport(files []FileRecord, symbols []SymbolRecord, springIndex SpringIndex) string {
 	entrypoints := map[string][]string{}
 	for _, symbol := range symbols {
 		if symbol.Kind == "function" && symbol.Name == "main" && isGoMainFile(symbol.File, symbols) {
@@ -102,6 +102,14 @@ func renderEntrypointsReport(files []FileRecord, symbols []SymbolRecord) string 
 		}
 		if symbol.Kind == "entrypoint" {
 			entrypoints[symbol.File] = append(entrypoints[symbol.File], symbol.Name)
+		}
+	}
+	for _, app := range springIndex.Applications {
+		entrypoints[app.File] = append(entrypoints[app.File], "Spring Boot application "+app.Name)
+	}
+	for _, component := range springIndex.Components {
+		if component.Kind == "rest_controller" {
+			entrypoints[component.File] = append(entrypoints[component.File], "Spring REST controller "+component.Name)
 		}
 	}
 	for _, file := range files {

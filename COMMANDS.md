@@ -102,6 +102,15 @@ Generated files include:
 - `symbols.json`
 - `relations.json`
 - `graph.json`
+- `symbols-full.json`
+- `relations-full.json`
+- `graph-full.json`
+- `spring.json`
+- `workspace.md`
+- `endpoints.md`
+- `dependencies.md`
+- `affected.md`
+- `audit.json`
 - `report.md`
 - `modules.md`
 - `entrypoints.md`
@@ -126,6 +135,15 @@ What the generated files mean:
 - `symbols.json`: extracted packages, classes, functions, methods, tests, scripts, headings, namespaces, and entrypoints.
 - `relations.json`: extracted imports, includes, sources, and test relations.
 - `graph.json`: a combined node/edge graph from files, symbols, and relations.
+- `symbols-full.json`: normalized symbols for all supported languages with stable IDs and source locations.
+- `relations-full.json`: normalized relations for all supported languages with confidence and source-location metadata.
+- `graph-full.json`: Graphify-like rich directed graph with stable IDs, file nodes, symbol nodes, relation edges, confidence, and source locations.
+- `spring.json`: Spring Boot applications, components, endpoints, dependencies, repositories, entities, and beans detected from Java source.
+- `workspace.md`: Maven and Node package/workspace metadata.
+- `endpoints.md`: HTTP endpoint inventory for supported backend adapters.
+- `dependencies.md`: human-readable dependency view for supported domain adapters.
+- `affected.md`: best-effort high-inbound relation overview for impact orientation.
+- `audit.json`: scan audit showing generated files and confirming normal scans used no network and executed no external commands.
 - `report.md`: human-readable project overview.
 - `modules.md`: top-level directory/module overview.
 - `entrypoints.md`: likely app, CLI, script, package, and front-controller entrypoints.
@@ -273,6 +291,10 @@ Examples:
 goregraph query . StartServer
 goregraph query . internal/service
 goregraph query . go
+goregraph query . graph-full
+goregraph query . endpoints
+goregraph query . dependencies
+goregraph query . audit
 ```
 
 Searches these generated files:
@@ -280,6 +302,26 @@ Searches these generated files:
 - `files.json`
 - `symbols.json`
 - `relations.json`
+
+If `<term>` is a known output alias, `query` prints that generated file directly instead of performing a text search. Supported aliases:
+
+- `files` -> `files.json`
+- `symbols` -> `symbols.json`
+- `symbols-full` -> `symbols-full.json`
+- `relations` -> `relations.json`
+- `relations-full` -> `relations-full.json`
+- `graph` -> `graph.json`
+- `graph-full` -> `graph-full.json`
+- `report` -> `report.md`
+- `modules` -> `modules.md`
+- `entrypoints` -> `entrypoints.md`
+- `tests` or `test-map` -> `test-map.md`
+- `spring` -> `spring.json`
+- `workspace` -> `workspace.md`
+- `endpoints` -> `endpoints.md`
+- `dependencies` -> `dependencies.md`
+- `affected` -> `affected.md`
+- `audit` -> `audit.json`
 
 Matches can include:
 

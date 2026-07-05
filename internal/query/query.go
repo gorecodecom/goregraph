@@ -17,6 +17,9 @@ func Search(root, term string) (string, error) {
 	if term == "" {
 		return "", fmt.Errorf("query term is required")
 	}
+	if name, ok := outputAliases[term]; ok {
+		return ReadOutput(root, name)
+	}
 	files, symbols, relations, err := loadIndex(root)
 	if err != nil {
 		return "", err
@@ -43,6 +46,42 @@ func Search(root, term string) (string, error) {
 		lines = append(lines, "No matches.")
 	}
 	return strings.Join(lines, "\n") + "\n", nil
+}
+
+var outputAliases = map[string]string{
+	"files":          "files.json",
+	"symbols":        "symbols.json",
+	"symbols-full":   "symbols-full.json",
+	"relations":      "relations.json",
+	"relations-full": "relations-full.json",
+	"graph":          "graph.json",
+	"graph-full":     "graph-full.json",
+	"report":         "report.md",
+	"modules":        "modules.md",
+	"entrypoints":    "entrypoints.md",
+	"tests":          "test-map.md",
+	"test-map":       "test-map.md",
+	"audit":          "audit.json",
+	"spring":         "spring.json",
+	"endpoints":      "endpoints.md",
+	"dependencies":   "dependencies.md",
+	"workspace":      "workspace.md",
+	"affected":       "affected.md",
+}
+
+func ReadOutput(root, name string) (string, error) {
+	cfg, err := config.Load(root)
+	if err != nil {
+		return "", err
+	}
+	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, name))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
+		}
+		return "", err
+	}
+	return string(body), nil
 }
 
 func Explain(root, target string) (string, error) {

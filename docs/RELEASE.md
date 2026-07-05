@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.1.1
+v0.2.0
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validates the full package-manager release flow for Homebrew, Scoop, and Winget PR automation.
+`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and Winget PR automation. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis.
 
 Completed release checks:
 
@@ -41,6 +41,14 @@ Completed release checks:
 - `gorecodecom/winget-pkgs` fork exists for future Winget PR automation.
 - `SCOOP_BUCKET_TOKEN` is visible in `gorecodecom/goregraph`.
 - `WINGET_TOKEN` is visible in `gorecodecom/goregraph`.
+
+`v0.2.0` feature checks:
+
+- `graph-full.json`, `symbols-full.json`, and `relations-full.json` are generated.
+- `audit.json` confirms normal scans use no network and execute no external commands.
+- `spring.json`, `endpoints.md`, and `dependencies.md` are generated for Java/Spring projects.
+- `workspace.md` captures Maven and Node package metadata.
+- `goregraph query . graph-full`, `goregraph query . endpoints`, and `goregraph query . audit` work.
 
 Remaining release-hardening items:
 
@@ -65,7 +73,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.1.1
+goregraph 0.2.0
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -81,8 +89,8 @@ schema: 1
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v0.1.1 -m "Release v0.1.1"
-   git push origin v0.1.1
+   git tag -a v0.2.0 -m "Release v0.2.0"
+   git push origin v0.2.0
    ```
 
 5. GitHub Actions runs GoReleaser.

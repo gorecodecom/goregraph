@@ -285,29 +285,30 @@ func TestRunProducesDeterministicManifestGoldenOutput(t *testing.T) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
-	got := readText(t, filepath.Join(root, "goregraph-out", "manifest.json"))
-	want := `{
-  "tool": "goregraph",
-  "schema": 1,
-  "output_dir": "goregraph-out",
-  "files": 1,
-  "skipped": 0,
-  "generated": [
-    "manifest.json",
-    "files.json",
-    "symbols.json",
-    "relations.json",
-    "graph.json",
-    "report.md",
-    "modules.md",
-    "entrypoints.md",
-    "test-map.md"
-  ],
-  "project_root": "` + filepath.Base(root) + `"
-}
-`
-	if got != want {
-		t.Fatalf("manifest mismatch\nwant:\n%s\ngot:\n%s", want, got)
+	var manifest Manifest
+	readJSON(t, filepath.Join(root, "goregraph-out", "manifest.json"), &manifest)
+	if manifest.Tool != "goregraph" {
+		t.Fatalf("Tool = %q, want goregraph", manifest.Tool)
+	}
+	if manifest.Schema != 1 {
+		t.Fatalf("Schema = %d, want 1", manifest.Schema)
+	}
+	if manifest.OutputDir != "goregraph-out" {
+		t.Fatalf("OutputDir = %q, want goregraph-out", manifest.OutputDir)
+	}
+	if manifest.Files != 1 || manifest.Skipped != 0 {
+		t.Fatalf("manifest counts = files %d skipped %d, want 1/0", manifest.Files, manifest.Skipped)
+	}
+	if manifest.ProjectRoot != filepath.Base(root) {
+		t.Fatalf("ProjectRoot = %q, want %q", manifest.ProjectRoot, filepath.Base(root))
+	}
+	if manifest.GeneratedAt == "" {
+		t.Fatal("GeneratedAt is empty")
+	}
+	for _, name := range GeneratedFiles {
+		if !containsString(manifest.Generated, name) {
+			t.Fatalf("Generated missing %q in %#v", name, manifest.Generated)
+		}
 	}
 }
 
@@ -439,6 +440,15 @@ func assertHasGraphEdge(t *testing.T, graph Graph, from, to, kind string) {
 		}
 	}
 	t.Fatalf("missing graph edge from=%q to=%q type=%q in %#v", from, to, kind, graph.Edges)
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRunSkipsLargeBinaryAndSymlinkFiles(t *testing.T) {

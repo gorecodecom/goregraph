@@ -190,3 +190,71 @@ Out of scope:
 - prefer Go standard library where practical
 - add dependencies only when they replace fragile custom logic with a maintained, focused package
 - preserve explicit user control over scans and writes
+
+## Milestone 7: Universal Safe Code Graph
+
+Status: delivered in `0.2.0`.
+
+Goal: provide the useful orientation layer of Graphify-style code graphs while keeping GoreGraph local, explicit, and inspectable.
+
+Delivered in this milestone:
+
+- universal rich graph outputs for all currently supported languages:
+  - `symbols-full.json`
+  - `relations-full.json`
+  - `graph-full.json`
+- scan audit output:
+  - `audit.json`
+  - normal scans report `network_used: false`
+  - normal scans report `external_commands: false`
+- Java extraction hardened beyond the previous regex:
+  - packages
+  - imports
+  - classes
+  - interfaces
+  - enums
+  - records
+  - methods
+  - fields
+  - annotations
+  - simple receiver method calls
+- Java import classification:
+  - `imports_internal`
+  - `imports_external`
+- Spring Boot domain extraction:
+  - applications
+  - REST controllers
+  - HTTP endpoints
+  - services
+  - repositories
+  - entities and table names
+  - bean dependencies
+  - `@Bean` methods
+- additional reports:
+  - `workspace.md`
+  - `endpoints.md`
+  - `dependencies.md`
+  - `affected.md`
+- Maven and Node workspace metadata extraction without running Maven, npm, yarn, pnpm, Java, or Node
+- query aliases for generated outputs, for example:
+  - `goregraph query . graph-full`
+  - `goregraph query . spring`
+  - `goregraph query . endpoints`
+  - `goregraph query . audit`
+- MCP read-only access to generated outputs through `get_output`
+
+Acceptance criteria:
+
+- broad existing language support remains available for Go, JavaScript, TypeScript, Python, PHP, Shell, Java, Markdown, `package.json`, and `composer.json`
+- Java/Spring projects get deeper framework-oriented navigation
+- generated paths remain root-relative
+- normal scans remain local and deterministic except metadata timestamps
+- no AI, telemetry, network, hooks, background services, or project code execution are part of `scan`
+
+Out of scope:
+
+- tree-sitter dependency
+- SCIP ingestion
+- AI-generated summaries
+- global cross-repository graph
+- file watcher

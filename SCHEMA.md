@@ -48,7 +48,7 @@ Rules:
 - sorted symbols
 - sorted relations
 - stable JSON indentation
-- no timestamps in deterministic files
+- timestamps only in metadata/audit files where the timestamp is the purpose of the file
 - no random IDs
 
 ## Generated Files
@@ -60,8 +60,17 @@ Schema version 1 expects:
 - `symbols.json`
 - `relations.json`
 - `graph.json`
+- `symbols-full.json`
+- `relations-full.json`
+- `graph-full.json`
+- `spring.json`
+- `audit.json`
 - `report.md`
 - `modules.md`
+- `workspace.md`
+- `endpoints.md`
+- `dependencies.md`
+- `affected.md`
 - `entrypoints.md`
 - `test-map.md`
 
@@ -77,10 +86,22 @@ Schema version 1 expects:
 
 `graph.json` combines files, symbols, local file targets, and external dependency nodes.
 
+`symbols-full.json` contains additive normalized symbol records with stable IDs, language, source file, and source location.
+
+`relations-full.json` contains additive normalized relation records with stable IDs, relation type, source location, confidence, confidence score, and best-effort internal/external classification.
+
+`graph-full.json` contains a richer directed graph inspired by Graphify-style node/edge interchange. It preserves root-relative source files and marks extracted relationships with `EXTRACTED` confidence.
+
+`spring.json` contains Java/Spring domain records. It is empty when no Spring facts are detected.
+
+`audit.json` records the scan command, generated files, file counts, timestamps, and safety flags. Normal scans set `network_used` and `external_commands` to `false`.
+
+`workspace.md`, `endpoints.md`, `dependencies.md`, and `affected.md` are deterministic human-readable reports.
+
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
 
 ## Language Records
 
 Schema version 1 may contain language-specific symbols and relations. Current symbol kinds include packages, modules, classes, interfaces, traits, functions, methods, tests, scripts, headings, namespaces, autoload hints, types, and entrypoints.
 
-Current relation types include imports, includes, sources, and tests. Local Go, Python, PHP, and Shell relations are resolved to root-relative files where GoreGraph can do so deterministically.
+Current relation types include imports, imports_internal, imports_external, includes, sources, and tests. Local Go, Python, PHP, Shell, and Java relations are resolved to root-relative files where GoreGraph can do so deterministically.

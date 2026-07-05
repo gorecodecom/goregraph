@@ -10,8 +10,6 @@ var (
 	tsExportClassRE = regexp.MustCompile(`^\s*export\s+class\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
 	tsClassRE       = regexp.MustCompile(`^\s*class\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
 	tsFuncRE        = regexp.MustCompile(`^\s*(?:export\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
-	javaClassRE     = regexp.MustCompile(`\b(class|interface|enum)\s+([A-Za-z_][A-Za-z0-9_]*)`)
-	javaImportRE    = regexp.MustCompile(`^\s*import\s+(?:static\s+)?([^;]+);`)
 	mdHeadingRE     = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
 )
 
@@ -37,9 +35,7 @@ func extractSymbols(file FileRecord, body string) []SymbolRecord {
 		case "shell":
 			symbols = append(symbols, extractShellSymbols(file, line, lineNo)...)
 		case "java":
-			if match := javaClassRE.FindStringSubmatch(line); len(match) == 3 {
-				symbols = append(symbols, SymbolRecord{Name: match[2], Kind: match[1], File: file.Path, Line: lineNo})
-			}
+			return javaSymbols(extractJavaSource(file, body))
 		case "markdown":
 			if match := mdHeadingRE.FindStringSubmatch(line); len(match) == 3 {
 				symbols = append(symbols, SymbolRecord{Name: strings.TrimSpace(match[2]), Kind: "heading", File: file.Path, Line: lineNo})
@@ -97,9 +93,7 @@ func extractRelations(file FileRecord, body string) []RelationRecord {
 		case "shell":
 			relations = append(relations, extractShellRelations(file, line, lineNo)...)
 		case "java":
-			if match := javaImportRE.FindStringSubmatch(line); len(match) == 2 {
-				relations = append(relations, RelationRecord{From: file.Path, To: strings.TrimSpace(match[1]), Type: "imports", Line: lineNo})
-			}
+			return javaImportRelations(extractJavaSource(file, body))
 		}
 	}
 	return relations
