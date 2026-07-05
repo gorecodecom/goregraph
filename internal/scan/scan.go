@@ -27,10 +27,17 @@ var GeneratedFiles = []string{
 	"symbols-full.json",
 	"relations-full.json",
 	"graph-full.json",
+	"callgraph.json",
+	"endpoint-flows.json",
+	"test-map.json",
+	"analyzers.json",
 	"spring.json",
 	"workspace.md",
 	"endpoints.md",
+	"endpoint-flows.md",
 	"dependencies.md",
+	"callgraph.md",
+	"analyzers.md",
 	"affected.md",
 	"audit.json",
 	"report.md",
@@ -194,6 +201,24 @@ func sortIndex(index *Index) {
 func writeOutputs(out, root string, cfg config.Config, index Index, skipped int, started time.Time) error {
 	graph := buildGraph(index.Files, index.Symbols, index.Relations)
 	springIndex := buildSpringIndex(index.JavaSources)
+	callGraph := buildJavaCallGraph(index.JavaSources)
+	index.Relations = append(index.Relations, buildCallRelations(callGraph)...)
+	sort.Slice(index.Relations, func(i, j int) bool {
+		if index.Relations[i].From != index.Relations[j].From {
+			return index.Relations[i].From < index.Relations[j].From
+		}
+		if index.Relations[i].To != index.Relations[j].To {
+			return index.Relations[i].To < index.Relations[j].To
+		}
+		if index.Relations[i].Type != index.Relations[j].Type {
+			return index.Relations[i].Type < index.Relations[j].Type
+		}
+		return index.Relations[i].Line < index.Relations[j].Line
+	})
+	graph = buildGraph(index.Files, index.Symbols, index.Relations)
+	endpointFlows := buildEndpointFlows(springIndex, callGraph)
+	testMap := buildJavaTestMap(index.JavaSources, springIndex.Endpoints)
+	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
 	richSymbols := buildRichSymbols(index.Files, index.Symbols)
 	richRelations := buildRichRelations(index.Files, index.Relations)
 	richGraph := buildRichGraph(index.Files, richSymbols, richRelations)
@@ -222,6 +247,10 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"symbols-full.json", richSymbols},
 		{"relations-full.json", richRelations},
 		{"graph-full.json", richGraph},
+		{"callgraph.json", callGraph},
+		{"endpoint-flows.json", endpointFlows},
+		{"test-map.json", testMap},
+		{"analyzers.json", analyzers},
 		{"spring.json", springIndex},
 		{"audit.json", audit},
 	}
@@ -239,10 +268,13 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"modules.md", renderModulesReport(index.Files)},
 		{"workspace.md", renderWorkspaceReport(index.Workspace)},
 		{"endpoints.md", renderEndpointsReport(springIndex)},
+		{"endpoint-flows.md", renderEndpointFlowsReport(endpointFlows)},
 		{"dependencies.md", renderDependenciesReport(springIndex)},
+		{"callgraph.md", renderCallGraphReport(callGraph)},
+		{"analyzers.md", renderAnalyzersReport(analyzers)},
 		{"affected.md", renderAffectedReport(richGraph)},
 		{"entrypoints.md", renderEntrypointsReport(index.Files, index.Symbols, springIndex)},
-		{"test-map.md", renderTestMapReport(index.Relations)},
+		{"test-map.md", renderTestMapReport(index.Relations, testMap)},
 	}
 	for _, report := range reports {
 		if err := os.WriteFile(filepath.Join(out, report.name), []byte(report.body), 0o644); err != nil {

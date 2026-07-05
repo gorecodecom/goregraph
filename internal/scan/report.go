@@ -141,7 +141,7 @@ func renderEntrypointsReport(files []FileRecord, symbols []SymbolRecord, springI
 	return b.String()
 }
 
-func renderTestMapReport(relations []RelationRecord) string {
+func renderTestMapReport(relations []RelationRecord, records []TestMapRecord) string {
 	var tests []RelationRecord
 	for _, relation := range relations {
 		if relation.Type == "tests" {
@@ -157,9 +157,25 @@ func renderTestMapReport(relations []RelationRecord) string {
 
 	var b strings.Builder
 	b.WriteString("# GoreGraph Test Map\n\n")
-	if len(tests) == 0 {
+	if len(tests) == 0 && len(records) == 0 {
 		b.WriteString("- none detected\n")
 		return b.String()
+	}
+	if len(records) > 0 {
+		b.WriteString("## Method And Endpoint Tests\n\n")
+		for _, record := range records {
+			b.WriteString(fmt.Sprintf("- `%s.%s`", record.TestClass, record.TestMethod))
+			if record.Type == "endpoint" {
+				b.WriteString(fmt.Sprintf(" covers %s `%s` via `%s.%s`", record.HTTPMethod, record.Path, record.TargetClass, record.TargetMethod))
+			} else {
+				b.WriteString(fmt.Sprintf(" tests `%s.%s`", record.TargetClass, record.TargetMethod))
+			}
+			b.WriteString(fmt.Sprintf(" (%s)\n", record.Confidence))
+		}
+		b.WriteString("\n")
+	}
+	if len(tests) > 0 {
+		b.WriteString("## Class-Level Tests\n\n")
 	}
 	for _, relation := range tests {
 		b.WriteString(fmt.Sprintf("- `%s` tests `%s`\n", relation.From, relation.To))

@@ -258,3 +258,45 @@ Out of scope:
 - AI-generated summaries
 - global cross-repository graph
 - file watcher
+
+## Milestone 8: Call Graph And Analyzer Expansion
+
+Status: delivered in `0.4.0`.
+
+Goal: move GoreGraph from a useful architecture inventory toward a stronger local navigation graph for endpoint-level debugging and AI-assisted code orientation.
+
+Delivered in this milestone:
+
+- endpoint hardening:
+  - path variables keep closing braces, for example `/cadasters/{cadasterId}/import`
+  - multipart endpoints are detected through `consumes`, `@RequestPart`, and `MultipartFile`
+  - controller method names are preserved for multi-line handler signatures
+- richer graph schema:
+  - `graph-full.json` edges expose `type`
+  - `relation` remains available as a compatibility alias
+- Java/Spring call graph:
+  - `callgraph.json`
+  - `callgraph.md`
+  - controller-to-service and service-to-repository method calls
+  - extracted vs inferred confidence metadata
+- endpoint flows:
+  - `endpoint-flows.json`
+  - `endpoint-flows.md`
+  - endpoint -> controller method -> service method -> repository method orientation
+- method-aware test mapping:
+  - `test-map.json`
+  - enriched `test-map.md`
+  - direct Java test method calls
+  - MockMvc-style endpoint path matching
+- analyzer inventory:
+  - `analyzers.json`
+  - `analyzers.md`
+  - per-language capability summary for symbols, relations, calls, endpoints, tests, and workspace metadata
+
+Acceptance criteria:
+
+- existing scan outputs remain compatible
+- new outputs are additive
+- Java/Spring depth improves without making GoreGraph Spring-only
+- normal scans still do not use AI, network, telemetry, hooks, background services, or project code execution
+- generated files remain root-relative and deterministic except metadata timestamps

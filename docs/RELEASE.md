@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.2.1
+v0.4.0
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red.
+`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory.
 
 Completed release checks:
 
@@ -58,6 +58,15 @@ Completed release checks:
 - Winget manifests are generated and pushed to the configured fork branch.
 - Automatic PR creation against `microsoft/winget-pkgs` is disabled until a token/workflow with upstream PR permissions is chosen.
 
+`v0.4.0` feature checks:
+
+- `callgraph.json` and `callgraph.md` are generated.
+- `endpoint-flows.json` and `endpoint-flows.md` are generated.
+- `test-map.json` is generated and `test-map.md` contains method/endpoint mappings.
+- `analyzers.json` and `analyzers.md` are generated.
+- `graph-full.json` edges contain `type` while keeping `relation`.
+- multipart Spring endpoints include request kind/type metadata.
+
 Remaining release-hardening items:
 
 - Validate GoreGraph against more real-world projects before considering `1.0.0`.
@@ -81,7 +90,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.2.1
+goregraph 0.4.0
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -97,8 +106,8 @@ schema: 1
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v0.2.1 -m "Release v0.2.1"
-   git push origin v0.2.1
+   git tag -a v0.4.0 -m "Release v0.4.0"
+   git push origin v0.4.0
    ```
 
 5. GitHub Actions runs GoReleaser.

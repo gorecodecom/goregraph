@@ -95,6 +95,10 @@ func checkJSONFiles(out string, result *Result) {
 		{"symbols-full.json", &[]scan.RichSymbolRecord{}},
 		{"relations-full.json", &[]scan.RichRelationRecord{}},
 		{"graph-full.json", &scan.RichGraph{}},
+		{"callgraph.json", &scan.CallGraphRecord{}},
+		{"endpoint-flows.json", &[]scan.SpringEndpointFlowRecord{}},
+		{"test-map.json", &[]scan.TestMapRecord{}},
+		{"analyzers.json", &[]scan.AnalyzerRecord{}},
 		{"spring.json", &scan.SpringIndex{}},
 		{"audit.json", &scan.AuditRecord{}},
 	}

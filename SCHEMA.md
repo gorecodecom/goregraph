@@ -63,13 +63,20 @@ Schema version 1 expects:
 - `symbols-full.json`
 - `relations-full.json`
 - `graph-full.json`
+- `callgraph.json`
+- `endpoint-flows.json`
+- `test-map.json`
+- `analyzers.json`
 - `spring.json`
 - `audit.json`
 - `report.md`
 - `modules.md`
 - `workspace.md`
 - `endpoints.md`
+- `endpoint-flows.md`
 - `dependencies.md`
+- `callgraph.md`
+- `analyzers.md`
 - `affected.md`
 - `entrypoints.md`
 - `test-map.md`
@@ -90,13 +97,21 @@ Schema version 1 expects:
 
 `relations-full.json` contains additive normalized relation records with stable IDs, relation type, source location, confidence, confidence score, and best-effort internal/external classification.
 
-`graph-full.json` contains a richer directed graph inspired by Graphify-style node/edge interchange. It preserves root-relative source files and marks extracted relationships with `EXTRACTED` confidence.
+`graph-full.json` contains a richer directed graph inspired by Graphify-style node/edge interchange. It preserves root-relative source files and marks extracted relationships with `EXTRACTED` confidence. Rich graph edges expose `type`; `relation` remains as a compatibility alias.
+
+`callgraph.json` contains method-level Java call graph edges. Exact method declaration matches use `EXTRACTED`; inferred framework/repository calls use `INFERRED`.
+
+`endpoint-flows.json` contains Spring endpoint flow records from endpoint to controller, service, repository, and other resolved method steps.
+
+`test-map.json` contains Java test mappings. Direct method calls use `EXTRACTED`; endpoint matches from MockMvc-style HTTP calls use `INFERRED`.
+
+`analyzers.json` describes which language/workspace analyzers were active for the scanned project and which capabilities they provided.
 
 `spring.json` contains Java/Spring domain records. It is empty when no Spring facts are detected.
 
 `audit.json` records the scan command, generated files, file counts, timestamps, and safety flags. Normal scans set `network_used` and `external_commands` to `false`.
 
-`workspace.md`, `endpoints.md`, `dependencies.md`, and `affected.md` are deterministic human-readable reports.
+`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
 
@@ -104,4 +119,4 @@ Markdown reports are human-readable and deterministic, but not intended as stric
 
 Schema version 1 may contain language-specific symbols and relations. Current symbol kinds include packages, modules, classes, interfaces, traits, functions, methods, tests, scripts, headings, namespaces, autoload hints, types, and entrypoints.
 
-Current relation types include imports, imports_internal, imports_external, includes, sources, and tests. Local Go, Python, PHP, Shell, and Java relations are resolved to root-relative files where GoreGraph can do so deterministically.
+Current relation types include imports, imports_internal, imports_external, includes, sources, calls, and tests. Local Go, Python, PHP, Shell, and Java relations are resolved to root-relative files where GoreGraph can do so deterministically.

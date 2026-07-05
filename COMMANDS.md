@@ -105,10 +105,17 @@ Generated files include:
 - `symbols-full.json`
 - `relations-full.json`
 - `graph-full.json`
+- `callgraph.json`
+- `endpoint-flows.json`
+- `test-map.json`
+- `analyzers.json`
 - `spring.json`
 - `workspace.md`
 - `endpoints.md`
+- `endpoint-flows.md`
 - `dependencies.md`
+- `callgraph.md`
+- `analyzers.md`
 - `affected.md`
 - `audit.json`
 - `report.md`
@@ -137,11 +144,18 @@ What the generated files mean:
 - `graph.json`: a combined node/edge graph from files, symbols, and relations.
 - `symbols-full.json`: normalized symbols for all supported languages with stable IDs and source locations.
 - `relations-full.json`: normalized relations for all supported languages with confidence and source-location metadata.
-- `graph-full.json`: Graphify-like rich directed graph with stable IDs, file nodes, symbol nodes, relation edges, confidence, and source locations.
+- `graph-full.json`: Graphify-like rich directed graph with stable IDs, file nodes, symbol nodes, `type`/`relation` edge metadata, confidence, and source locations.
+- `callgraph.json`: method-level Java call graph with extracted and inferred call edges.
+- `endpoint-flows.json`: Spring endpoint flow records from endpoint to controller/service/repository methods.
+- `test-map.json`: method-level and endpoint-level Java test mappings with confidence metadata.
+- `analyzers.json`: active analyzer capability inventory for the scanned project.
 - `spring.json`: Spring Boot applications, components, endpoints, dependencies, repositories, entities, and beans detected from Java source.
 - `workspace.md`: Maven and Node package/workspace metadata.
 - `endpoints.md`: HTTP endpoint inventory for supported backend adapters.
+- `endpoint-flows.md`: human-readable endpoint call-flow report.
 - `dependencies.md`: human-readable dependency view for supported domain adapters.
+- `callgraph.md`: human-readable method call graph.
+- `analyzers.md`: human-readable analyzer capability inventory.
 - `affected.md`: best-effort high-inbound relation overview for impact orientation.
 - `audit.json`: scan audit showing generated files and confirming normal scans used no network and executed no external commands.
 - `report.md`: human-readable project overview.
@@ -312,14 +326,21 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `relations-full` -> `relations-full.json`
 - `graph` -> `graph.json`
 - `graph-full` -> `graph-full.json`
+- `callgraph` -> `callgraph.json`
+- `callgraph-md` -> `callgraph.md`
 - `report` -> `report.md`
 - `modules` -> `modules.md`
 - `entrypoints` -> `entrypoints.md`
 - `tests` or `test-map` -> `test-map.md`
+- `test-map-json` -> `test-map.json`
 - `spring` -> `spring.json`
 - `workspace` -> `workspace.md`
 - `endpoints` -> `endpoints.md`
+- `endpoint-flows` -> `endpoint-flows.md`
+- `endpoint-flows-json` -> `endpoint-flows.json`
 - `dependencies` -> `dependencies.md`
+- `analyzers` -> `analyzers.md`
+- `analyzers-json` -> `analyzers.json`
 - `affected` -> `affected.md`
 - `audit` -> `audit.json`
 

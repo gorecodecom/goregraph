@@ -53,6 +53,14 @@ func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
 	if !strings.Contains(audit, `"network_used": false`) || !strings.Contains(audit, `"external_commands": false`) {
 		t.Fatalf("audit alias missing safety fields:\n%s", audit)
 	}
+
+	analyzers, err := Search(root, "analyzers-json")
+	if err != nil {
+		t.Fatalf("Search analyzers-json returned error: %v", err)
+	}
+	if !strings.Contains(analyzers, `"language": "go"`) {
+		t.Fatalf("analyzers-json alias missing Go analyzer:\n%s", analyzers)
+	}
 }
 
 func TestExplainFileShowsSymbolsAndRelations(t *testing.T) {

@@ -132,11 +132,82 @@ type RichGraphEdge struct {
 	ID              string  `json:"id"`
 	Source          string  `json:"source"`
 	Target          string  `json:"target"`
+	Type            string  `json:"type"`
 	Relation        string  `json:"relation"`
 	Confidence      string  `json:"confidence"`
 	ConfidenceScore float64 `json:"confidence_score"`
 	SourceFile      string  `json:"source_file,omitempty"`
 	SourceLocation  string  `json:"source_location,omitempty"`
+}
+
+type MethodRefRecord struct {
+	Owner  string `json:"owner"`
+	Method string `json:"method"`
+	File   string `json:"file,omitempty"`
+	Line   int    `json:"line,omitempty"`
+}
+
+type CallGraphRecord struct {
+	Edges []CallGraphEdgeRecord `json:"edges"`
+}
+
+type CallGraphEdgeRecord struct {
+	ID              string          `json:"id"`
+	From            MethodRefRecord `json:"from"`
+	To              MethodRefRecord `json:"to"`
+	Type            string          `json:"type"`
+	Line            int             `json:"line,omitempty"`
+	SourceFile      string          `json:"source_file,omitempty"`
+	Confidence      string          `json:"confidence"`
+	ConfidenceScore float64         `json:"confidence_score"`
+	Reason          string          `json:"reason,omitempty"`
+}
+
+type SpringEndpointFlowRecord struct {
+	HTTPMethod string                   `json:"http_method"`
+	Path       string                   `json:"path"`
+	Controller string                   `json:"controller"`
+	Method     string                   `json:"method"`
+	File       string                   `json:"file"`
+	Line       int                      `json:"line"`
+	Steps      []SpringEndpointFlowStep `json:"steps"`
+}
+
+type SpringEndpointFlowStep struct {
+	Owner      string `json:"owner"`
+	Method     string `json:"method"`
+	Kind       string `json:"kind,omitempty"`
+	File       string `json:"file,omitempty"`
+	Line       int    `json:"line,omitempty"`
+	Confidence string `json:"confidence"`
+}
+
+type TestMapRecord struct {
+	TestFile        string  `json:"test_file"`
+	TestClass       string  `json:"test_class,omitempty"`
+	TestMethod      string  `json:"test_method,omitempty"`
+	TargetFile      string  `json:"target_file,omitempty"`
+	TargetClass     string  `json:"target_class,omitempty"`
+	TargetMethod    string  `json:"target_method,omitempty"`
+	HTTPMethod      string  `json:"http_method,omitempty"`
+	Path            string  `json:"path,omitempty"`
+	Type            string  `json:"type"`
+	Line            int     `json:"line,omitempty"`
+	Confidence      string  `json:"confidence"`
+	ConfidenceScore float64 `json:"confidence_score"`
+	Reason          string  `json:"reason,omitempty"`
+}
+
+type AnalyzerRecord struct {
+	Language  string   `json:"language"`
+	Scope     string   `json:"scope"`
+	Symbols   bool     `json:"symbols"`
+	Relations bool     `json:"relations"`
+	Calls     bool     `json:"calls"`
+	Endpoints bool     `json:"endpoints"`
+	Tests     bool     `json:"tests"`
+	Workspace bool     `json:"workspace"`
+	Outputs   []string `json:"outputs,omitempty"`
 }
 
 type JavaSourceRecord struct {
@@ -170,15 +241,16 @@ type JavaTypeRecord struct {
 }
 
 type JavaMethodRecord struct {
-	Name        string                 `json:"name"`
-	File        string                 `json:"file"`
-	Line        int                    `json:"line"`
-	Owner       string                 `json:"owner,omitempty"`
-	Visibility  string                 `json:"visibility,omitempty"`
-	ReturnType  string                 `json:"return_type,omitempty"`
-	Parameters  []JavaParameterRecord  `json:"parameters,omitempty"`
-	Annotations []JavaAnnotationRecord `json:"annotations,omitempty"`
-	Calls       []JavaCallRecord       `json:"calls,omitempty"`
+	Name         string                 `json:"name"`
+	File         string                 `json:"file"`
+	Line         int                    `json:"line"`
+	Owner        string                 `json:"owner,omitempty"`
+	Visibility   string                 `json:"visibility,omitempty"`
+	ReturnType   string                 `json:"return_type,omitempty"`
+	Parameters   []JavaParameterRecord  `json:"parameters,omitempty"`
+	Annotations  []JavaAnnotationRecord `json:"annotations,omitempty"`
+	Calls        []JavaCallRecord       `json:"calls,omitempty"`
+	HTTPRequests []JavaHTTPCallRecord   `json:"http_requests,omitempty"`
 }
 
 type JavaFieldRecord struct {
@@ -205,9 +277,16 @@ type JavaAnnotationRecord struct {
 }
 
 type JavaCallRecord struct {
-	Receiver string `json:"receiver,omitempty"`
-	Method   string `json:"method"`
-	Line     int    `json:"line"`
+	Receiver    string `json:"receiver,omitempty"`
+	TargetOwner string `json:"target_owner,omitempty"`
+	Method      string `json:"method"`
+	Line        int    `json:"line"`
+}
+
+type JavaHTTPCallRecord struct {
+	HTTPMethod string `json:"http_method"`
+	Path       string `json:"path"`
+	Line       int    `json:"line"`
 }
 
 type SpringIndex struct {
@@ -244,6 +323,8 @@ type SpringEndpointRecord struct {
 	File        string                `json:"file"`
 	Line        int                   `json:"line"`
 	RequestType string                `json:"request_type,omitempty"`
+	RequestKind string                `json:"request_kind,omitempty"`
+	Consumes    string                `json:"consumes,omitempty"`
 	ReturnType  string                `json:"return_type,omitempty"`
 	Parameters  []JavaParameterRecord `json:"parameters,omitempty"`
 }

@@ -14,11 +14,15 @@ GoreGraph should first create stable project intelligence:
 goregraph-out/
   graph.json
   graph-full.json
+  callgraph.json
+  endpoint-flows.json
   files.json
   symbols.json
   symbols-full.json
   relations.json
   relations-full.json
+  test-map.json
+  analyzers.json
   report.md
   audit.json
 ```

@@ -15,6 +15,8 @@ var (
 	javaAnnotationLineRE = regexp.MustCompile(`^\s*@([A-Za-z_][A-Za-z0-9_.]*)(?:\((.*)\))?\s*$`)
 	javaConstantLineRE   = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*;`)
 	javaCallRE           = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+	javaNewCallRE        = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+	javaHTTPCallRE       = regexp.MustCompile(`\b(get|post|put|delete|patch)\s*\(\s*"([^"]+)"`)
 )
 
 func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
@@ -24,12 +26,28 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	currentOwner := ""
 	braceDepth := 0
 	blockComment := false
+	methodSignature := ""
+	methodSignatureLine := 0
 
 	for index, raw := range lines {
 		lineNo := index + 1
 		line, inBlock := stripJavaLineNoise(raw, blockComment)
 		blockComment = inBlock
 		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if methodSignature != "" {
+			methodSignature += " " + strings.TrimSpace(line)
+			if strings.Contains(line, "{") {
+				if method, ok := parseJavaMethod(methodSignature, file.Path, currentOwner, methodSignatureLine, pending); ok {
+					source.Methods = append(source.Methods, method)
+					pending = nil
+				}
+				methodSignature = ""
+				methodSignatureLine = 0
+			}
+			braceDepth += strings.Count(line, "{")
+			braceDepth -= strings.Count(line, "}")
 			continue
 		}
 
@@ -75,22 +93,16 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 				Annotations: pending,
 			})
 			pending = nil
-		} else if match := javaMethodLineRE.FindStringSubmatch(line); len(match) == 5 && currentOwner != "" && !isJavaControlLine(line) {
-			source.Methods = append(source.Methods, JavaMethodRecord{
-				Name:        match[3],
-				File:        file.Path,
-				Line:        lineNo,
-				Owner:       currentOwner,
-				Visibility:  strings.TrimSpace(match[1]),
-				ReturnType:  cleanJavaType(match[2]),
-				Parameters:  parseJavaParameters(match[4]),
-				Annotations: pending,
-				Calls:       extractJavaCalls(line, lineNo),
-			})
+		} else if currentOwner != "" && looksLikeJavaMethodStart(line) && !strings.Contains(line, "{") {
+			methodSignature = strings.TrimSpace(line)
+			methodSignatureLine = lineNo
+		} else if method, ok := parseJavaMethod(line, file.Path, currentOwner, lineNo, pending); ok && currentOwner != "" {
+			source.Methods = append(source.Methods, method)
 			pending = nil
 		} else if len(source.Methods) > 0 {
 			last := &source.Methods[len(source.Methods)-1]
 			last.Calls = append(last.Calls, extractJavaCalls(line, lineNo)...)
+			last.HTTPRequests = append(last.HTTPRequests, extractJavaHTTPRequests(line, lineNo)...)
 		}
 
 		braceDepth += strings.Count(line, "{")
@@ -105,6 +117,98 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		source.Constants = nil
 	}
 	return source
+}
+
+func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnnotationRecord) (JavaMethodRecord, bool) {
+	if owner == "" || isJavaControlLine(line) {
+		return JavaMethodRecord{}, false
+	}
+	if name, returnType, params, visibility, ok := parseJavaMethodSignature(line); ok {
+		return JavaMethodRecord{
+			Name:         name,
+			File:         file,
+			Line:         lineNo,
+			Owner:        owner,
+			Visibility:   visibility,
+			ReturnType:   returnType,
+			Parameters:   parseJavaParameters(params),
+			Annotations:  annotations,
+			Calls:        extractJavaCalls(line, lineNo),
+			HTTPRequests: extractJavaHTTPRequests(line, lineNo),
+		}, true
+	}
+	match := javaMethodLineRE.FindStringSubmatch(line)
+	if len(match) == 5 {
+		return JavaMethodRecord{
+			Name:         match[3],
+			File:         file,
+			Line:         lineNo,
+			Owner:        owner,
+			Visibility:   strings.TrimSpace(match[1]),
+			ReturnType:   cleanJavaType(match[2]),
+			Parameters:   parseJavaParameters(match[4]),
+			Annotations:  annotations,
+			Calls:        extractJavaCalls(line, lineNo),
+			HTTPRequests: extractJavaHTTPRequests(line, lineNo),
+		}, true
+	}
+	return JavaMethodRecord{}, false
+}
+
+func parseJavaMethodSignature(line string) (name, returnType, params, visibility string, ok bool) {
+	signature := strings.TrimSpace(line)
+	if index := strings.Index(signature, "{"); index >= 0 {
+		signature = strings.TrimSpace(signature[:index])
+	}
+	if index := strings.Index(signature, " throws "); index >= 0 {
+		signature = strings.TrimSpace(signature[:index])
+	}
+	open := strings.Index(signature, "(")
+	close := strings.LastIndex(signature, ")")
+	if open < 0 || close < open {
+		return "", "", "", "", false
+	}
+	prefix := strings.TrimSpace(signature[:open])
+	if strings.Contains(prefix, "=") || strings.Contains(prefix, ".") {
+		return "", "", "", "", false
+	}
+	params = signature[open+1 : close]
+	fields := strings.Fields(prefix)
+	if len(fields) < 2 {
+		return "", "", "", "", false
+	}
+	var kept []string
+	for _, field := range fields {
+		switch field {
+		case "public", "protected", "private":
+			if visibility == "" {
+				visibility = field
+			}
+		case "static", "final", "abstract", "synchronized", "default", "native", "strictfp":
+			continue
+		default:
+			kept = append(kept, field)
+		}
+	}
+	if len(kept) < 2 {
+		return "", "", "", "", false
+	}
+	name = kept[len(kept)-1]
+	returnType = cleanJavaType(strings.Join(kept[:len(kept)-1], " "))
+	return name, returnType, params, visibility, true
+}
+
+func looksLikeJavaMethodStart(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if isJavaControlLine(trimmed) || strings.HasPrefix(trimmed, ".") || strings.HasPrefix(trimmed, "@") || strings.HasSuffix(trimmed, ";") {
+		return false
+	}
+	open := strings.Index(trimmed, "(")
+	if open < 0 || strings.HasPrefix(trimmed, "new ") {
+		return false
+	}
+	prefix := trimmed[:open]
+	return !strings.Contains(prefix, "=") && !strings.Contains(prefix, ".")
 }
 
 func javaSymbols(source JavaSourceRecord) []SymbolRecord {
@@ -176,7 +280,7 @@ func shortJavaName(name string) string {
 
 func isJavaControlLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
-	for _, prefix := range []string{"if", "for", "while", "switch", "catch", "return", "new"} {
+	for _, prefix := range []string{"if", "for", "while", "switch", "catch", "return", "throw", "new"} {
 		if strings.HasPrefix(trimmed, prefix+" ") || strings.HasPrefix(trimmed, prefix+"(") {
 			return true
 		}
@@ -217,18 +321,17 @@ func parseJavaParameters(params string) []JavaParameterRecord {
 		if part == "" {
 			continue
 		}
+		part = strings.TrimSpace(strings.ReplaceAll(part, "final ", ""))
 		var annotations []JavaAnnotationRecord
 		for strings.HasPrefix(part, "@") {
-			fields := strings.Fields(part)
-			if len(fields) == 0 {
+			annotation, rest, ok := consumeJavaParameterAnnotation(part)
+			if !ok {
 				break
 			}
-			annotationName := strings.TrimPrefix(fields[0], "@")
-			annotationName = strings.TrimSuffix(annotationName, "()")
-			annotations = append(annotations, JavaAnnotationRecord{Name: shortJavaName(annotationName)})
-			part = strings.TrimSpace(strings.TrimPrefix(part, fields[0]))
+			annotations = append(annotations, annotation)
+			part = rest
 		}
-		part = strings.ReplaceAll(part, "final ", "")
+		part = strings.TrimSpace(strings.ReplaceAll(part, "final ", ""))
 		fields := strings.Fields(part)
 		if len(fields) < 2 {
 			continue
@@ -240,14 +343,76 @@ func parseJavaParameters(params string) []JavaParameterRecord {
 	return records
 }
 
+func consumeJavaParameterAnnotation(part string) (JavaAnnotationRecord, string, bool) {
+	part = strings.TrimSpace(part)
+	if !strings.HasPrefix(part, "@") {
+		return JavaAnnotationRecord{}, part, false
+	}
+	nameEnd := 1
+	for nameEnd < len(part) {
+		ch := part[nameEnd]
+		if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '.' {
+			nameEnd++
+			continue
+		}
+		break
+	}
+	if nameEnd <= 1 {
+		return JavaAnnotationRecord{}, part, false
+	}
+	name := part[1:nameEnd]
+	rest := strings.TrimSpace(part[nameEnd:])
+	args := ""
+	if strings.HasPrefix(rest, "(") {
+		depth := 0
+		close := -1
+		for index, r := range rest {
+			switch r {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					close = index
+					break
+				}
+			}
+		}
+		if close < 0 {
+			return JavaAnnotationRecord{}, part, false
+		}
+		args = rest[1:close]
+		rest = strings.TrimSpace(rest[close+1:])
+	}
+	return JavaAnnotationRecord{Name: shortJavaName(name), Arguments: strings.TrimSpace(args), Attributes: parseJavaAnnotationAttributes(args)}, rest, true
+}
+
 func extractJavaCalls(line string, lineNo int) []JavaCallRecord {
 	var calls []JavaCallRecord
+	for _, match := range javaNewCallRE.FindAllStringSubmatch(line, -1) {
+		if len(match) == 3 {
+			calls = append(calls, JavaCallRecord{TargetOwner: match[1], Method: match[2], Line: lineNo})
+		}
+	}
 	for _, match := range javaCallRE.FindAllStringSubmatch(line, -1) {
 		if len(match) == 3 {
+			if match[1] == "new" {
+				continue
+			}
 			calls = append(calls, JavaCallRecord{Receiver: match[1], Method: match[2], Line: lineNo})
 		}
 	}
 	return calls
+}
+
+func extractJavaHTTPRequests(line string, lineNo int) []JavaHTTPCallRecord {
+	var requests []JavaHTTPCallRecord
+	for _, match := range javaHTTPCallRE.FindAllStringSubmatch(line, -1) {
+		if len(match) == 3 {
+			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(match[1]), Path: match[2], Line: lineNo})
+		}
+	}
+	return requests
 }
 
 func parseJavaExtends(tail string) string {

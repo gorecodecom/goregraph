@@ -42,6 +42,7 @@ func TestRunWritesRichGraphForAllCurrentLanguages(t *testing.T) {
 	assertRichEdge(t, rich.Edges, "imports", "EXTRACTED")
 	assertRichEdge(t, rich.Edges, "sources", "EXTRACTED")
 	assertRichEdge(t, rich.Edges, "contains", "EXTRACTED")
+	assertRichEdgeType(t, rich.Edges, "imports")
 
 	var symbols []RichSymbolRecord
 	readJSON(t, filepath.Join(out, "symbols-full.json"), &symbols)
@@ -60,6 +61,27 @@ func TestRunWritesRichGraphForAllCurrentLanguages(t *testing.T) {
 	readJSON(t, filepath.Join(out, "audit.json"), &audit)
 	if audit.NetworkUsed || audit.ExternalCommands {
 		t.Fatalf("audit reported unsafe activity: %#v", audit)
+	}
+}
+
+func TestParseJavaMethodSignatureWithAnnotatedMultipartParameters(t *testing.T) {
+	line := `public ResponseEntity<?> importFile(@RequestPart(name = "csvFile") MultipartFile multipartFile, @RequestPart(name = "ownerUserId") String ownerUserId) throws Exception {`
+	name, returnType, params, visibility, ok := parseJavaMethodSignature(line)
+	if !ok {
+		t.Fatalf("parseJavaMethodSignature returned false")
+	}
+	if name != "importFile" || returnType != "ResponseEntity<?>" || visibility != "public" {
+		t.Fatalf("unexpected signature parts name=%q returnType=%q visibility=%q", name, returnType, visibility)
+	}
+	parsed := parseJavaParameters(params)
+	if len(parsed) != 2 {
+		t.Fatalf("parameter count = %d, want 2: %#v", len(parsed), parsed)
+	}
+	if parsed[0].Name != "multipartFile" || parsed[0].Type != "MultipartFile" || !hasAnnotation(parsed[0].Annotations, "RequestPart") {
+		t.Fatalf("unexpected first parameter: %#v", parsed[0])
+	}
+	if parsed[1].Name != "ownerUserId" || parsed[1].Type != "String" || !hasAnnotation(parsed[1].Annotations, "RequestPart") {
+		t.Fatalf("unexpected second parameter: %#v", parsed[1])
 	}
 }
 
@@ -89,16 +111,21 @@ public class ApplicationConfig {
 	writeFile(t, root, "src/main/java/com/weka/demo/controller/CadasterController.java", `package com.weka.demo.controller;
 
 import com.weka.demo.model.CadasterCopyRequest;
+import com.weka.demo.model.ImportResult;
 import com.weka.demo.service.CadasterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import static com.weka.demo.config.ApplicationConfig.BASE_PATH;
 
@@ -117,18 +144,35 @@ public class CadasterController {
   public ResponseEntity<?> copy(@PathVariable("cadasterId") final long cadasterId, @RequestBody final CadasterCopyRequest request) {
     return ResponseEntity.ok(cadasterService.copyCadaster(cadasterId, request));
   }
+
+  @Operation(
+      summary = "Import CSV to create a cadaster",
+      responses = {@ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = ImportResult.class)))})
+  @PostMapping(path = "/{cadasterId}/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<ImportResult> importFile(
+      @PathVariable("cadasterId") final long cadasterId,
+      @RequestPart("file") final MultipartFile file,
+      @RequestParam("source") final String source) {
+    if (source == null) {
+      throw new ForbiddenException("missing");
+    }
+    return ResponseEntity.ok(cadasterService.importFile(cadasterId, file, source));
+  }
 }
 `)
 	writeFile(t, root, "src/main/java/com/weka/demo/model/CadasterCopyRequest.java", "package com.weka.demo.model;\npublic record CadasterCopyRequest(String name) {}\n")
+	writeFile(t, root, "src/main/java/com/weka/demo/model/ImportResult.java", "package com.weka.demo.model;\npublic record ImportResult(long imported) {}\n")
 	writeFile(t, root, "src/main/java/com/weka/demo/service/CadasterService.java", `package com.weka.demo.service;
 
 import com.weka.demo.entity.CadasterEntity;
 import com.weka.demo.model.CadasterCopyRequest;
+import com.weka.demo.model.ImportResult;
 import com.weka.demo.repository.CadasterRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor(onConstructor_ = {@Autowired})
@@ -142,6 +186,12 @@ public class CadasterService {
   public CadasterEntity copyCadaster(final long cadasterId, final CadasterCopyRequest request) {
     final CadasterEntity source = cadasterRepository.findById(cadasterId).orElseThrow();
     return cadasterRepository.save(source.withName(request.name()));
+  }
+
+  public ImportResult importFile(final long cadasterId, final MultipartFile file, final String source) {
+    final CadasterEntity target = cadasterRepository.findById(cadasterId).orElseThrow();
+    cadasterRepository.save(target);
+    return new ImportResult(1);
   }
 }
 `)
@@ -178,15 +228,38 @@ public class CadasterEntity {
   }
 }
 `)
-	writeFile(t, root, "src/test/java/com/weka/demo/controller/CadasterControllerTest.java", "package com.weka.demo.controller;\nclass CadasterControllerTest {}\n")
-	writeFile(t, root, "src/test/java/com/weka/demo/service/CadasterServiceTest.java", "package com.weka.demo.service;\nclass CadasterServiceTest {}\n")
+	writeFile(t, root, "src/test/java/com/weka/demo/controller/CadasterControllerTest.java", `package com.weka.demo.controller;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.test.web.servlet.MockMvc;
+
+class CadasterControllerTest {
+  private MockMvc mockMvc;
+
+  @Test
+  void importsFile() throws Exception {
+    mockMvc.perform(post("/cadasters/42/import"));
+  }
+}
+`)
+	writeFile(t, root, "src/test/java/com/weka/demo/service/CadasterServiceTest.java", `package com.weka.demo.service;
+
+import org.junit.jupiter.api.Test;
+
+class CadasterServiceTest {
+  @Test
+  void importsFile() {
+    new CadasterService(null).importFile(1L, null, "manual");
+  }
+}
+`)
 
 	if _, err := Run(root, config.Defaults()); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
 	out := filepath.Join(root, "goregraph-out")
-	for _, name := range []string{"spring.json", "endpoints.md", "dependencies.md", "workspace.md", "affected.md"} {
+	for _, name := range []string{"spring.json", "endpoints.md", "dependencies.md", "workspace.md", "affected.md", "callgraph.json", "callgraph.md", "endpoint-flows.json", "endpoint-flows.md", "test-map.json", "analyzers.json", "analyzers.md"} {
 		if !fileExists(filepath.Join(out, name)) {
 			t.Fatalf("%s was not written", name)
 		}
@@ -197,6 +270,7 @@ public class CadasterEntity {
 	assertHasSymbol(t, symbols, "CadasterController", "class", "src/main/java/com/weka/demo/controller/CadasterController.java")
 	assertHasSymbol(t, symbols, "gets", "method", "src/main/java/com/weka/demo/controller/CadasterController.java")
 	assertNoSymbol(t, symbols, "for", "class")
+	assertNoSymbol(t, symbols, "ForbiddenException", "method")
 
 	var relations []RelationRecord
 	readJSON(t, filepath.Join(out, "relations.json"), &relations)
@@ -214,6 +288,31 @@ public class CadasterEntity {
 	assertHasSpringRepositoryEntity(t, spring.Repositories, "CadasterRepository", "CadasterEntity")
 	assertHasSpringEndpoint(t, spring.Endpoints, "GET", "/cadasters", "CadasterController", "gets")
 	assertHasSpringEndpoint(t, spring.Endpoints, "POST", "/cadasters/{cadasterId}/copy", "CadasterController", "copy")
+	assertHasSpringEndpoint(t, spring.Endpoints, "POST", "/cadasters/{cadasterId}/import", "CadasterController", "importFile")
+	assertHasSpringEndpointRequest(t, spring.Endpoints, "POST", "/cadasters/{cadasterId}/import", "multipart", "MultipartFile")
+
+	var callGraph CallGraphRecord
+	readJSON(t, filepath.Join(out, "callgraph.json"), &callGraph)
+	assertHasCallGraphEdge(t, callGraph.Edges, "CadasterController", "copy", "CadasterService", "copyCadaster")
+	assertHasCallGraphEdge(t, callGraph.Edges, "CadasterController", "importFile", "CadasterService", "importFile")
+	assertHasCallGraphEdge(t, callGraph.Edges, "CadasterService", "importFile", "CadasterRepository", "findById")
+	assertHasCallGraphEdge(t, callGraph.Edges, "CadasterService", "importFile", "CadasterRepository", "save")
+
+	var flows []SpringEndpointFlowRecord
+	readJSON(t, filepath.Join(out, "endpoint-flows.json"), &flows)
+	assertHasEndpointFlowStep(t, flows, "POST", "/cadasters/{cadasterId}/import", "CadasterController", "importFile")
+	assertHasEndpointFlowStep(t, flows, "POST", "/cadasters/{cadasterId}/import", "CadasterService", "importFile")
+	assertHasEndpointFlowStep(t, flows, "POST", "/cadasters/{cadasterId}/import", "CadasterRepository", "save")
+
+	var testMapRecords []TestMapRecord
+	readJSON(t, filepath.Join(out, "test-map.json"), &testMapRecords)
+	assertHasMethodTestMap(t, testMapRecords, "CadasterServiceTest", "importsFile", "CadasterService", "importFile")
+	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "importsFile", "POST", "/cadasters/{cadasterId}/import")
+
+	var analyzers []AnalyzerRecord
+	readJSON(t, filepath.Join(out, "analyzers.json"), &analyzers)
+	assertHasAnalyzer(t, analyzers, "java", true, true, true)
+	assertHasAnalyzer(t, analyzers, "maven", false, false, false)
 
 	entrypoints := readText(t, filepath.Join(out, "entrypoints.md"))
 	if !strings.Contains(entrypoints, "DemoApplication") || !strings.Contains(entrypoints, "Spring Boot application") {
@@ -226,8 +325,21 @@ public class CadasterEntity {
 	}
 
 	endpoints := readText(t, filepath.Join(out, "endpoints.md"))
-	if !strings.Contains(endpoints, "GET `/cadasters`") || !strings.Contains(endpoints, "POST `/cadasters/{cadasterId}/copy`") {
+	if !strings.Contains(endpoints, "GET `/cadasters`") || !strings.Contains(endpoints, "POST `/cadasters/{cadasterId}/copy`") || !strings.Contains(endpoints, "POST `/cadasters/{cadasterId}/import`") {
 		t.Fatalf("endpoints report missing expected routes:\n%s", endpoints)
+	}
+	if !strings.Contains(endpoints, "multipart") || !strings.Contains(endpoints, "MultipartFile") {
+		t.Fatalf("endpoints report missing multipart metadata:\n%s", endpoints)
+	}
+
+	callGraphReport := readText(t, filepath.Join(out, "callgraph.md"))
+	if !strings.Contains(callGraphReport, "CadasterController.importFile") || !strings.Contains(callGraphReport, "CadasterService.importFile") {
+		t.Fatalf("callgraph report missing expected call chain:\n%s", callGraphReport)
+	}
+
+	flowReport := readText(t, filepath.Join(out, "endpoint-flows.md"))
+	if !strings.Contains(flowReport, "POST `/cadasters/{cadasterId}/import`") || !strings.Contains(flowReport, "CadasterRepository.save") {
+		t.Fatalf("endpoint flow report missing expected flow:\n%s", flowReport)
 	}
 
 	workspace := readText(t, filepath.Join(out, "workspace.md"))
@@ -254,6 +366,16 @@ func assertRichEdge(t *testing.T, edges []RichGraphEdge, relation, confidence st
 		}
 	}
 	t.Fatalf("missing rich edge relation=%q confidence=%q in %#v", relation, confidence, edges)
+}
+
+func assertRichEdgeType(t *testing.T, edges []RichGraphEdge, edgeType string) {
+	t.Helper()
+	for _, edge := range edges {
+		if edge.Type == edgeType {
+			return
+		}
+	}
+	t.Fatalf("missing rich edge type=%q in %#v", edgeType, edges)
 }
 
 func assertRichSymbol(t *testing.T, symbols []RichSymbolRecord, language, name, kind string) {
@@ -333,6 +455,71 @@ func assertHasSpringEndpoint(t *testing.T, endpoints []SpringEndpointRecord, met
 		}
 	}
 	t.Fatalf("missing Spring endpoint method=%q path=%q controller=%q handler=%q in %#v", method, path, controller, handler, endpoints)
+}
+
+func assertHasSpringEndpointRequest(t *testing.T, endpoints []SpringEndpointRecord, method, path, requestKind, requestType string) {
+	t.Helper()
+	for _, endpoint := range endpoints {
+		if endpoint.HTTPMethod == method && endpoint.Path == path && endpoint.RequestKind == requestKind && endpoint.RequestType == requestType {
+			return
+		}
+	}
+	t.Fatalf("missing Spring endpoint request method=%q path=%q requestKind=%q requestType=%q in %#v", method, path, requestKind, requestType, endpoints)
+}
+
+func assertHasCallGraphEdge(t *testing.T, edges []CallGraphEdgeRecord, fromOwner, fromMethod, toOwner, toMethod string) {
+	t.Helper()
+	for _, edge := range edges {
+		if edge.From.Owner == fromOwner && edge.From.Method == fromMethod && edge.To.Owner == toOwner && edge.To.Method == toMethod {
+			return
+		}
+	}
+	t.Fatalf("missing call graph edge %s.%s -> %s.%s in %#v", fromOwner, fromMethod, toOwner, toMethod, edges)
+}
+
+func assertHasEndpointFlowStep(t *testing.T, flows []SpringEndpointFlowRecord, method, path, owner, handler string) {
+	t.Helper()
+	for _, flow := range flows {
+		if flow.HTTPMethod != method || flow.Path != path {
+			continue
+		}
+		for _, step := range flow.Steps {
+			if step.Owner == owner && step.Method == handler {
+				return
+			}
+		}
+	}
+	t.Fatalf("missing endpoint flow step %s %s -> %s.%s in %#v", method, path, owner, handler, flows)
+}
+
+func assertHasMethodTestMap(t *testing.T, records []TestMapRecord, testClass, testMethod, targetClass, targetMethod string) {
+	t.Helper()
+	for _, record := range records {
+		if record.TestClass == testClass && record.TestMethod == testMethod && record.TargetClass == targetClass && record.TargetMethod == targetMethod {
+			return
+		}
+	}
+	t.Fatalf("missing method test map %s.%s -> %s.%s in %#v", testClass, testMethod, targetClass, targetMethod, records)
+}
+
+func assertHasEndpointTestMap(t *testing.T, records []TestMapRecord, testClass, testMethod, httpMethod, path string) {
+	t.Helper()
+	for _, record := range records {
+		if record.TestClass == testClass && record.TestMethod == testMethod && record.HTTPMethod == httpMethod && record.Path == path {
+			return
+		}
+	}
+	t.Fatalf("missing endpoint test map %s.%s -> %s %s in %#v", testClass, testMethod, httpMethod, path, records)
+}
+
+func assertHasAnalyzer(t *testing.T, records []AnalyzerRecord, language string, calls, endpoints, tests bool) {
+	t.Helper()
+	for _, record := range records {
+		if record.Language == language && record.Calls == calls && record.Endpoints == endpoints && record.Tests == tests {
+			return
+		}
+	}
+	t.Fatalf("missing analyzer language=%q calls=%t endpoints=%t tests=%t in %#v", language, calls, endpoints, tests, records)
 }
 
 func fileExists(path string) bool {

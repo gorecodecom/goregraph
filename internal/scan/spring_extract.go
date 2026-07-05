@@ -134,6 +134,7 @@ func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, 
 	var endpoints []SpringEndpointRecord
 	for _, httpMethod := range httpMethods {
 		for _, methodPath := range paths {
+			requestType, requestKind := requestMetadata(method.Parameters)
 			endpoints = append(endpoints, SpringEndpointRecord{
 				HTTPMethod:  httpMethod,
 				Path:        joinSpringPaths(classPath, methodPath),
@@ -141,7 +142,9 @@ func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, 
 				Method:      method.Name,
 				File:        method.File,
 				Line:        annotation.Line,
-				RequestType: requestBodyType(method.Parameters),
+				RequestType: requestType,
+				RequestKind: requestKind,
+				Consumes:    springConsumes(annotation, constants),
 				ReturnType:  method.ReturnType,
 				Parameters:  method.Parameters,
 			})
@@ -205,8 +208,10 @@ func splitSpringPaths(path string) []string {
 	if path == "" {
 		return nil
 	}
-	path = strings.TrimPrefix(path, "{")
-	path = strings.TrimSuffix(path, "}")
+	if isSpringPathArray(path) {
+		path = strings.TrimPrefix(path, "{")
+		path = strings.TrimSuffix(path, "}")
+	}
 	parts := splitTopLevel(path, ',')
 	paths := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -244,13 +249,48 @@ func normalizeSpringPath(path string) string {
 	return path
 }
 
-func requestBodyType(params []JavaParameterRecord) string {
+func requestMetadata(params []JavaParameterRecord) (string, string) {
 	for _, param := range params {
 		if hasAnnotation(param.Annotations, "RequestBody") {
-			return param.Type
+			return param.Type, "body"
 		}
 	}
-	return ""
+	for _, param := range params {
+		if hasAnnotation(param.Annotations, "RequestPart") {
+			return param.Type, "multipart"
+		}
+	}
+	for _, param := range params {
+		if param.Type == "MultipartFile" {
+			return param.Type, "multipart"
+		}
+	}
+	return "", ""
+}
+
+func springConsumes(annotation JavaAnnotationRecord, constants map[string]string) string {
+	value := annotation.Attributes["consumes"]
+	if value == "" {
+		return ""
+	}
+	if resolved, ok := constants[value]; ok {
+		return resolved
+	}
+	switch value {
+	case "MediaType.MULTIPART_FORM_DATA_VALUE":
+		return "multipart/form-data"
+	default:
+		return value
+	}
+}
+
+func isSpringPathArray(path string) bool {
+	trimmed := strings.TrimSpace(path)
+	if !strings.HasPrefix(trimmed, "{") || !strings.HasSuffix(trimmed, "}") {
+		return false
+	}
+	inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "{"), "}"))
+	return strings.Contains(inner, ",") || strings.Contains(inner, `"`)
 }
 
 func parseRepositoryGeneric(extends string) (string, string) {

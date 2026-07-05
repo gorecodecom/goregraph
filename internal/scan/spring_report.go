@@ -23,10 +23,61 @@ func renderEndpointsReport(index SpringIndex) string {
 		if endpoint.RequestType != "" {
 			b.WriteString(fmt.Sprintf(" - request `%s`", endpoint.RequestType))
 		}
+		if endpoint.RequestKind != "" {
+			b.WriteString(fmt.Sprintf(" - kind `%s`", endpoint.RequestKind))
+		}
+		if endpoint.Consumes != "" {
+			b.WriteString(fmt.Sprintf(" - consumes `%s`", endpoint.Consumes))
+		}
 		if endpoint.ReturnType != "" {
 			b.WriteString(fmt.Sprintf(" - returns `%s`", endpoint.ReturnType))
 		}
 		b.WriteString(fmt.Sprintf(" - `%s:%d`\n", endpoint.File, endpoint.Line))
+	}
+	return b.String()
+}
+
+func renderEndpointFlowsReport(flows []SpringEndpointFlowRecord) string {
+	var b strings.Builder
+	b.WriteString("# GoreGraph Endpoint Flows\n\n")
+	if len(flows) == 0 {
+		b.WriteString("- none detected\n")
+		return b.String()
+	}
+	for _, flow := range flows {
+		b.WriteString(fmt.Sprintf("## %s `%s`\n\n", flow.HTTPMethod, flow.Path))
+		for index, step := range flow.Steps {
+			prefix := "- "
+			if index > 0 {
+				prefix = "  - "
+			}
+			b.WriteString(fmt.Sprintf("%s`%s.%s`", prefix, step.Owner, step.Method))
+			if step.Kind != "" {
+				b.WriteString(fmt.Sprintf(" (%s)", step.Kind))
+			}
+			if step.File != "" {
+				b.WriteString(fmt.Sprintf(" - `%s:%d`", step.File, step.Line))
+			}
+			b.WriteString(fmt.Sprintf(" - %s\n", step.Confidence))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func renderCallGraphReport(graph CallGraphRecord) string {
+	var b strings.Builder
+	b.WriteString("# GoreGraph Call Graph\n\n")
+	if len(graph.Edges) == 0 {
+		b.WriteString("- none detected\n")
+		return b.String()
+	}
+	for _, edge := range graph.Edges {
+		b.WriteString(fmt.Sprintf("- `%s.%s` -> `%s.%s` (%s", edge.From.Owner, edge.From.Method, edge.To.Owner, edge.To.Method, edge.Confidence))
+		if edge.SourceFile != "" {
+			b.WriteString(fmt.Sprintf(", `%s:%d`", edge.SourceFile, edge.Line))
+		}
+		b.WriteString(")\n")
 	}
 	return b.String()
 }
@@ -73,7 +124,7 @@ func renderAffectedReport(graph RichGraph) string {
 		labels[node.ID] = node.Label
 	}
 	for _, edge := range graph.Edges {
-		switch edge.Relation {
+		switch edge.Type {
 		case "imports", "imports_internal", "tests", "sources", "includes", "contains":
 			incoming[edge.Target]++
 		}
