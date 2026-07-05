@@ -14,16 +14,22 @@ func renderRoutesReport(routes []CodeRouteRecord) string {
 		return b.String()
 	}
 	for _, route := range routes {
-		b.WriteString(fmt.Sprintf("- `%s` %s `%s` -> `%s` (%s, %s, `%s:%d`, %s)\n",
+		rendered := ""
+		if len(route.RenderedComponents) > 0 {
+			rendered = fmt.Sprintf(", renders `%s`", strings.Join(route.RenderedComponents, "`, `"))
+		}
+		b.WriteString(fmt.Sprintf("- `%s` %s `%s` -> `%s` (%s, %s, route `%s`, `%s:%d`, %s%s)\n",
 			route.Kind,
 			route.HTTPMethod,
 			route.Path,
 			emptyAsNone(route.Handler),
 			route.Framework,
 			route.Language,
+			route.RouteID,
 			route.File,
 			route.Line,
 			route.Confidence,
+			rendered,
 		))
 	}
 	return b.String()
@@ -38,6 +44,9 @@ func renderCodeFlowsReport(flows []CodeFlowRecord) string {
 	}
 	for _, flow := range flows {
 		b.WriteString(fmt.Sprintf("## %s `%s`\n\n", flow.HTTPMethod, flow.Path))
+		if flow.RouteID != "" {
+			b.WriteString(fmt.Sprintf("- Route ID: `%s`\n", flow.RouteID))
+		}
 		b.WriteString(fmt.Sprintf("- Framework: %s\n", flow.Framework))
 		b.WriteString(fmt.Sprintf("- Language: %s\n", flow.Language))
 		b.WriteString(fmt.Sprintf("- Entry: `%s:%d`\n", flow.File, flow.Line))

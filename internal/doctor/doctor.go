@@ -100,6 +100,8 @@ func checkJSONFiles(out string, result *Result) {
 		{"test-map.json", &[]scan.TestMapRecord{}},
 		{"routes.json", &[]scan.CodeRouteRecord{}},
 		{"flows.json", &[]scan.CodeFlowRecord{}},
+		{"api-contracts.json", &[]scan.APIContractRecord{}},
+		{"package-graph.json", &scan.PackageGraphRecord{}},
 		{"analyzers.json", &[]scan.AnalyzerRecord{}},
 		{"spring.json", &scan.SpringIndex{}},
 		{"audit.json", &scan.AuditRecord{}},

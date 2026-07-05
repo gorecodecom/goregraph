@@ -62,16 +62,23 @@ func buildCodeRoutes(code CodeIntelligenceRecord, spring SpringIndex) []CodeRout
 	routes := make([]CodeRouteRecord, 0, len(code.Routes)+len(spring.Endpoints))
 	routes = append(routes, code.Routes...)
 	for _, endpoint := range spring.Endpoints {
+		app := codeFileApp(endpoint.File)
+		path := normalizeCodeRoutePath(endpoint.Path)
 		routes = append(routes, CodeRouteRecord{
-			Language:   "java",
-			Framework:  "Spring",
-			Kind:       "backend",
-			HTTPMethod: endpoint.HTTPMethod,
-			Path:       endpoint.Path,
-			Handler:    endpoint.Controller + "." + endpoint.Method,
-			File:       endpoint.File,
-			Line:       endpoint.Line,
-			Confidence: "EXTRACTED",
+			Language:        "java",
+			Framework:       "Spring",
+			Kind:            "backend",
+			App:             app,
+			Package:         codeFilePackage(endpoint.File),
+			RouteID:         codeRouteID(app, path),
+			HTTPMethod:      endpoint.HTTPMethod,
+			Path:            path,
+			Handler:         endpoint.Controller + "." + endpoint.Method,
+			File:            endpoint.File,
+			Line:            endpoint.Line,
+			Confidence:      "EXTRACTED",
+			ConfidenceScore: 1.0,
+			Reason:          "spring-mapping",
 		})
 	}
 	sort.Slice(routes, func(i, j int) bool {
@@ -103,6 +110,9 @@ func buildCodeFlows(code CodeIntelligenceRecord, spring SpringIndex, springFlows
 			Language:   route.Language,
 			Framework:  route.Framework,
 			Kind:       route.Kind,
+			App:        route.App,
+			Package:    route.Package,
+			RouteID:    route.RouteID,
 			HTTPMethod: route.HTTPMethod,
 			Path:       route.Path,
 			Handler:    route.Handler,
@@ -115,6 +125,7 @@ func buildCodeFlows(code CodeIntelligenceRecord, spring SpringIndex, springFlows
 				File:       route.File,
 				Line:       route.Line,
 				Confidence: route.Confidence,
+				Reason:     route.Reason,
 			}},
 		}
 		if route.Language == "java" {
@@ -193,6 +204,9 @@ func indexedCodeFunctions(functions []CodeFunctionRecord) codeFunctionIndex {
 }
 
 func resolveCodeCall(from CodeFunctionRecord, call CodeCallRecord, index codeFunctionIndex) (CodeFunctionRecord, bool) {
+	if isLowValueCallTarget(call.Method) {
+		return CodeFunctionRecord{}, false
+	}
 	if call.Owner != "" {
 		if target, ok := index.byOwnerName[call.Owner+"."+call.Method]; ok {
 			return target, true
@@ -235,6 +249,11 @@ func resolveRouteHandler(route CodeRouteRecord, index codeFunctionIndex) (CodeFu
 	}
 	candidates := index.byName[handler]
 	for _, candidate := range candidates {
+		if candidate.Language == route.Language && candidate.File == route.File {
+			return candidate, true
+		}
+	}
+	for _, candidate := range candidates {
 		if candidate.Language == route.Language {
 			return candidate, true
 		}
@@ -263,6 +282,7 @@ func walkCodeFlow(function CodeFunctionRecord, edgesByMethod map[string][]CallGr
 			File:       edge.To.File,
 			Line:       edge.To.Line,
 			Confidence: edge.Confidence,
+			Reason:     edge.Reason,
 		}
 		steps = append(steps, step)
 		next := CodeFunctionRecord{Name: edge.To.Method, Owner: edge.To.Owner, File: edge.To.File}

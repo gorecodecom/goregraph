@@ -68,6 +68,8 @@ Schema version 1 expects:
 - `test-map.json`
 - `routes.json`
 - `flows.json`
+- `api-contracts.json`
+- `package-graph.json`
 - `analyzers.json`
 - `spring.json`
 - `audit.json`
@@ -80,6 +82,8 @@ Schema version 1 expects:
 - `callgraph.md`
 - `routes.md`
 - `flows.md`
+- `api-contracts.md`
+- `package-graph.md`
 - `navigation.md`
 - `analyzers.md`
 - `affected.md`
@@ -104,15 +108,19 @@ Schema version 1 expects:
 
 `graph-full.json` contains a richer directed graph inspired by Graphify-style node/edge interchange. It preserves root-relative source files and marks extracted relationships with `EXTRACTED` confidence. Rich graph edges expose `type`; `relation` remains as a compatibility alias.
 
-`callgraph.json` contains method/function-level call graph edges. Java/Spring exact method declaration matches use `EXTRACTED`; language-neutral Go, PHP, JavaScript, TypeScript/React, Python, and Shell call matches use `INFERRED`.
+`callgraph.json` is the authoritative method/function-level call graph. Java/Spring exact method declaration matches use `EXTRACTED`; language-neutral Go, PHP, JavaScript, TypeScript/React, Python, and Shell call matches use `INFERRED`. `relations.json` and `graph.json` may include a subset of call relations for broad graph navigation, but tools should use `callgraph.json` when they need method-level calls.
 
 `endpoint-flows.json` contains Spring endpoint flow records from endpoint to controller, service, repository, and other resolved method steps.
 
 `test-map.json` contains Java and language-neutral test mappings. Direct Java method calls use `EXTRACTED`; endpoint matches and generic test-to-production call matches use `INFERRED`.
 
-`routes.json` contains normalized route records. Current route sources include Spring, Go `net/http`/router calls, PHP Laravel-style routes, JavaScript/TypeScript Express/Fastify-style routes, React Router routes, and Python FastAPI/Flask-style decorators.
+`routes.json` contains normalized route records. Current route sources include Spring, Go `net/http`/router calls, PHP Laravel-style routes, JavaScript/TypeScript Express/Fastify-style routes, React Router routes, Redux Little Router fragments, and Python FastAPI/Flask-style decorators. Frontend routes include app-specific `route_id` values such as `portal:/settings` when they are inside `apps/<name>/...`.
 
 `flows.json` contains normalized route-to-handler-to-call flow records. Flow steps are best-effort static orientation data and include confidence markers.
+
+`api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helper calls and `fetch`. Records include HTTP method, path, caller line, app/package context, confidence, and reason.
+
+`package-graph.json` contains Node workspace package nodes and package dependency edges extracted from `package.json`. Internal workspace edges use reason `workspace-package-json-dependency`.
 
 `analyzers.json` describes which language/workspace analyzers were active for the scanned project and which capabilities they provided.
 
@@ -120,7 +128,7 @@ Schema version 1 expects:
 
 `audit.json` records the scan command, generated files, file counts, timestamps, and safety flags. Normal scans set `network_used` and `external_commands` to `false`.
 
-`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
+`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `package-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
 

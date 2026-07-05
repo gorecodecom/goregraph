@@ -24,16 +24,19 @@ var (
 	codeScriptRouteRE         = regexp.MustCompile(`\b(?:app|router|server|fastify)\s*\.\s*(get|post|put|delete|patch|options|head)\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)`)
 	codeReactJSXRouteRE       = regexp.MustCompile(`<Route\b[^>]*\bpath=["']([^"']+)["'][^>]*\belement=\{\s*<([A-Za-z_$][A-Za-z0-9_$]*)`)
 	codeReactComponentRouteRE = regexp.MustCompile(`<Route\b[^>]*\bpath=["']([^"']+)["'][^>]*\bcomponent=\{?\s*([A-Za-z_$][A-Za-z0-9_$]*)`)
+	codeReactRenderRouteRE    = regexp.MustCompile(`<Route\b[^>]*\bpath=["']([^"']+)["'][^>]*\brender=\{[^<]*<([A-Za-z_$][A-Za-z0-9_$]*)`)
 	codeReduxFragmentRouteRE  = regexp.MustCompile(`<Fragment\b[^>]*\bforRoute=["']([^"']+)["']`)
 	codeReactObjectRouteRE    = regexp.MustCompile(`\bpath\s*:\s*["']([^"']+)["'][^,\n]*,\s*element\s*:\s*<([A-Za-z_$][A-Za-z0-9_$]*)`)
 	codePythonRouteRE         = regexp.MustCompile(`^\s*@([A-Za-z_][A-Za-z0-9_]*)\.(get|post|put|delete|patch|options|head|route)\s*\(\s*["']([^"']+)["']`)
 	codeCallRE                = regexp.MustCompile(`([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	codeMemberCallRE          = regexp.MustCompile(`([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\.|->|::)\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
+	codeJSXComponentOpenRE    = regexp.MustCompile(`<([A-Z][A-Za-z0-9_$]*)\b`)
 )
 
 func mergeCodeIntelligence(target *CodeIntelligenceRecord, next CodeIntelligenceRecord) {
 	target.Functions = append(target.Functions, next.Functions...)
 	target.Routes = append(target.Routes, next.Routes...)
+	target.APIContracts = append(target.APIContracts, next.APIContracts...)
 }
 
 func extractCodeIntelligence(file FileRecord, body string) CodeIntelligenceRecord {
@@ -44,9 +47,13 @@ func extractCodeIntelligence(file FileRecord, body string) CodeIntelligenceRecor
 	}
 
 	lines := strings.Split(body, "\n")
+	if isLowSignalCodeFile(file.Path) {
+		return CodeIntelligenceRecord{APIContracts: extractAPIContracts(file, lines)}
+	}
 	record := CodeIntelligenceRecord{
-		Functions: extractCodeFunctions(file, lines),
-		Routes:    extractCodeRoutes(file, lines),
+		Functions:    extractCodeFunctions(file, lines),
+		Routes:       extractCodeRoutes(file, lines),
+		APIContracts: extractAPIContracts(file, lines),
 	}
 	for i := range record.Functions {
 		record.Functions[i].Calls = extractCallsForFunction(file.Language, lines, record.Functions[i])
@@ -219,8 +226,17 @@ func extractCodeRoutes(file FileRecord, lines []string) []CodeRouteRecord {
 			if match := codeReactComponentRouteRE.FindStringSubmatch(line); len(match) == 3 {
 				routes = append(routes, codeRoute(file, "React Router", "frontend", "ROUTE", match[1], match[2], lineNo))
 			}
+			if match := codeReactRenderRouteRE.FindStringSubmatch(line); len(match) == 3 {
+				routes = append(routes, codeRoute(file, "React Router", "frontend", "ROUTE", match[1], match[2], lineNo))
+			}
 			if match := codeReduxFragmentRouteRE.FindStringSubmatch(line); len(match) == 2 {
-				routes = append(routes, codeRoute(file, "Redux Little Router", "frontend", "ROUTE", match[1], "Fragment", lineNo))
+				handler, components := routeRenderedComponents(lines, i)
+				if handler == "" {
+					handler = "Fragment"
+				}
+				route := codeRoute(file, "Redux Little Router", "frontend", "ROUTE", match[1], handler, lineNo)
+				route.RenderedComponents = components
+				routes = append(routes, route)
 			}
 			if match := codeReactObjectRouteRE.FindStringSubmatch(line); len(match) == 3 {
 				routes = append(routes, codeRoute(file, "React Router", "frontend", "ROUTE", match[1], match[2], lineNo))
@@ -258,16 +274,28 @@ func isRouteCommentLine(language, line string) bool {
 }
 
 func codeRoute(file FileRecord, framework, kind, method, path, handler string, line int) CodeRouteRecord {
+	app := codeFileApp(file.Path)
+	normalizedPath := normalizeCodeRoutePath(path)
+	rendered := []string(nil)
+	if handler != "" && handler != "Fragment" {
+		rendered = []string{handler}
+	}
 	return CodeRouteRecord{
-		Language:   file.Language,
-		Framework:  framework,
-		Kind:       kind,
-		HTTPMethod: strings.ToUpper(method),
-		Path:       normalizeCodeRoutePath(path),
-		Handler:    handler,
-		File:       file.Path,
-		Line:       line,
-		Confidence: "INFERRED",
+		Language:           file.Language,
+		Framework:          framework,
+		Kind:               kind,
+		App:                app,
+		Package:            codeFilePackage(file.Path),
+		RouteID:            codeRouteID(app, normalizedPath),
+		HTTPMethod:         strings.ToUpper(method),
+		Path:               normalizedPath,
+		Handler:            handler,
+		RenderedComponents: rendered,
+		File:               file.Path,
+		Line:               line,
+		Confidence:         "INFERRED",
+		ConfidenceScore:    0.72,
+		Reason:             "pattern-match",
 	}
 }
 
@@ -291,7 +319,7 @@ func extractCallsForFunction(language string, lines []string, function CodeFunct
 			}
 		}
 		for _, match := range codeMemberCallRE.FindAllStringSubmatch(line, -1) {
-			if len(match) != 3 || isCodeKeyword(match[2]) {
+			if len(match) != 3 || isLowValueCallTarget(match[2]) {
 				continue
 			}
 			key := match[1] + "." + match[2] + "@" + strings.TrimSpace(line)
@@ -302,7 +330,7 @@ func extractCallsForFunction(language string, lines []string, function CodeFunct
 			calls = append(calls, CodeCallRecord{Receiver: match[1], Method: match[2], Raw: strings.TrimSpace(line), Line: i + 1})
 		}
 		for _, match := range codeCallRE.FindAllStringSubmatch(line, -1) {
-			if len(match) != 2 || isCodeKeyword(match[1]) || match[1] == function.Name {
+			if len(match) != 2 || isLowValueCallTarget(match[1]) || match[1] == function.Name {
 				continue
 			}
 			if strings.Contains(line, "function "+match[1]) || strings.Contains(line, "def "+match[1]) || strings.Contains(line, "func "+match[1]) {
@@ -331,7 +359,7 @@ func extractShellBareCall(line string, lineNo int) (CodeCallRecord, bool) {
 		return CodeCallRecord{}, false
 	}
 	fields := strings.Fields(trimmed)
-	if len(fields) == 0 || isCodeKeyword(fields[0]) {
+	if len(fields) == 0 || isLowValueCallTarget(fields[0]) {
 		return CodeCallRecord{}, false
 	}
 	if strings.ContainsAny(fields[0], "$=|&;<>") {
@@ -409,6 +437,28 @@ func stripCodeLineComment(language, line string) string {
 	return line
 }
 
+func routeRenderedComponents(lines []string, start int) (string, []string) {
+	seen := map[string]bool{}
+	var components []string
+	for i := start; i < len(lines) && i <= start+8; i++ {
+		line := lines[i]
+		for _, match := range codeJSXComponentOpenRE.FindAllStringSubmatch(line, -1) {
+			if len(match) != 2 || match[1] == "Fragment" || seen[match[1]] {
+				continue
+			}
+			seen[match[1]] = true
+			components = append(components, match[1])
+		}
+		if strings.Contains(line, "</Fragment>") {
+			break
+		}
+	}
+	if len(components) == 0 {
+		return "", nil
+	}
+	return components[0], components
+}
+
 func isCodeKeyword(value string) bool {
 	switch value {
 	case "", "if", "for", "while", "switch", "return", "func", "function", "def", "class", "new", "echo", "print", "println", "String", "Integer", "Boolean", "Number", "Array", "Object", "Promise", "fetch", "test", "it", "describe", "expect", "assert", "require", "include", "include_once", "require_once", "source":
@@ -436,6 +486,15 @@ func sortCodeIntelligence(record *CodeIntelligenceRecord) {
 			return record.Routes[i].Line < record.Routes[j].Line
 		}
 		return record.Routes[i].Path < record.Routes[j].Path
+	})
+	sort.Slice(record.APIContracts, func(i, j int) bool {
+		if record.APIContracts[i].File != record.APIContracts[j].File {
+			return record.APIContracts[i].File < record.APIContracts[j].File
+		}
+		if record.APIContracts[i].Line != record.APIContracts[j].Line {
+			return record.APIContracts[i].Line < record.APIContracts[j].Line
+		}
+		return record.APIContracts[i].Path < record.APIContracts[j].Path
 	})
 }
 

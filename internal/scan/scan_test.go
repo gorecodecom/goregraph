@@ -568,6 +568,118 @@ deploy() {
 	}
 }
 
+func TestRunHardensFrontendMonorepoIntelligence(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "package.json", `{"name":"workspace-root","private":true,"workspaces":["apps/*","packages/*"]}`)
+	writeFile(t, root, "apps/portal/package.json", `{"name":"@demo/portal","dependencies":{"@demo/ui":"workspace:*","react":"18.0.0"}}`)
+	writeFile(t, root, "packages/ui/package.json", `{"name":"@demo/ui","dependencies":{"@demo/shared":"workspace:*"}}`)
+	writeFile(t, root, "packages/shared/package.json", `{"name":"@demo/shared"}`)
+	writeFile(t, root, "apps/portal/src/components/routes/router.jsx", `import { Route } from "react-router-dom";
+import { Home } from "../pages/Home";
+import { TasksPage } from "../pages/TasksPage";
+
+export function Router() {
+  return <>
+    <Route exact path="/" component={Home} />
+    <Route path="/tasks" render={() => <TasksPage />} />
+  </>;
+}
+`)
+	writeFile(t, root, "apps/portal/src/Root.tsx", `import { Fragment } from "@weka/redux-little-router";
+import ConnectedEdit from "./containers/Edit";
+
+export function Root() {
+  return <Fragment forRoute="/editieren"><ConnectedEdit /></Fragment>;
+}
+`)
+	writeFile(t, root, "apps/portal/src/pages/Home.jsx", `import { GetHelper } from "../utils/requestHelper";
+import { Button } from "@demo/ui";
+
+export function Home() {
+  return Button();
+}
+
+export async function loadHome() {
+  return GetHelper("/api/home");
+}
+`)
+	writeFile(t, root, "apps/portal/src/pages/TasksPage.tsx", `import { PostHelper } from "../utils/requestHelper";
+
+export function TasksPage() {
+  return PostHelper("/api/tasks/export");
+}
+`)
+	writeFile(t, root, "apps/portal/src/containers/Edit.jsx", `export default function ConnectedEdit() {
+  return null;
+}
+`)
+	writeFile(t, root, "apps/portal/src/utils/requestHelper.js", `export function GetHelper(path) {
+  return fetch(path);
+}
+
+export function PostHelper(path) {
+  return fetch(path, { method: "POST" });
+}
+`)
+	writeFile(t, root, "packages/redux-little-router/index.d.ts", `export function push(path: string): void;
+export function block(path: string): void;
+`)
+	writeFile(t, root, ".storybook.old/archive.jsx", `export function ArchivedStory() {
+  return <Route path="/archive" component={Archive} />;
+}
+`)
+	writeFile(t, root, "apps/portal/src/pages/Home.test.jsx", `import { Home } from "./Home";
+
+test("renders home", () => {
+  const wrapper = shallow(<Home />);
+  wrapper.find("button").text();
+});
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var routes []CodeRouteRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "routes.json"), &routes)
+	assertHasRouteID(t, routes, "portal:/", "Home")
+	assertHasRouteID(t, routes, "portal:/tasks", "TasksPage")
+	assertHasRouteID(t, routes, "portal:/editieren", "ConnectedEdit")
+	assertNoRouteID(t, routes, "workspace-root:/archive")
+
+	var graph CallGraphRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "callgraph.json"), &graph)
+	assertNoAnyCallGraphTarget(t, graph, "find")
+	assertNoAnyCallGraphTarget(t, graph, "text")
+	assertNoAnyCallGraphTarget(t, graph, "push")
+	assertNoAnyCallGraphTarget(t, graph, "block")
+
+	var packages PackageGraphRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "package-graph.json"), &packages)
+	assertHasPackageEdge(t, packages, "@demo/portal", "@demo/ui")
+	assertHasPackageEdge(t, packages, "@demo/ui", "@demo/shared")
+
+	var api []APIContractRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "api-contracts.json"), &api)
+	assertHasAPIContract(t, api, "GET", "/api/home", "apps/portal/src/pages/Home.jsx")
+	assertHasAPIContract(t, api, "POST", "/api/tasks/export", "apps/portal/src/pages/TasksPage.tsx")
+
+	routesReport := readText(t, filepath.Join(root, "goregraph-out", "routes.md"))
+	if !strings.Contains(routesReport, "portal:/editieren") || !strings.Contains(routesReport, "ConnectedEdit") {
+		t.Fatalf("routes report missing app-specific rendered component:\n%s", routesReport)
+	}
+
+	packageReport := readText(t, filepath.Join(root, "goregraph-out", "package-graph.md"))
+	if !strings.Contains(packageReport, "@demo/portal") || !strings.Contains(packageReport, "@demo/ui") {
+		t.Fatalf("package graph report missing workspace dependency:\n%s", packageReport)
+	}
+
+	apiReport := readText(t, filepath.Join(root, "goregraph-out", "api-contracts.md"))
+	if !strings.Contains(apiReport, "GET `/api/home`") || !strings.Contains(apiReport, "POST `/api/tasks/export`") {
+		t.Fatalf("api contract report missing helper calls:\n%s", apiReport)
+	}
+}
+
 func assertHasSymbol(t *testing.T, symbols []SymbolRecord, name, kind, file string) {
 	t.Helper()
 	for _, symbol := range symbols {
@@ -627,6 +739,25 @@ func assertNoRoute(t *testing.T, routes []map[string]any, path string) {
 	}
 }
 
+func assertHasRouteID(t *testing.T, routes []CodeRouteRecord, routeID, handler string) {
+	t.Helper()
+	for _, route := range routes {
+		if route.RouteID == routeID && (route.Handler == handler || containsString(route.RenderedComponents, handler)) {
+			return
+		}
+	}
+	t.Fatalf("missing route id=%q handler=%q in %#v", routeID, handler, routes)
+}
+
+func assertNoRouteID(t *testing.T, routes []CodeRouteRecord, routeID string) {
+	t.Helper()
+	for _, route := range routes {
+		if route.RouteID == routeID {
+			t.Fatalf("unexpected route id=%q in %#v", routeID, routes)
+		}
+	}
+}
+
 func assertHasAnyCallGraphEdge(t *testing.T, graph CallGraphRecord, fromMethod, toMethod string) {
 	t.Helper()
 	for _, edge := range graph.Edges {
@@ -635,6 +766,35 @@ func assertHasAnyCallGraphEdge(t *testing.T, graph CallGraphRecord, fromMethod, 
 		}
 	}
 	t.Fatalf("missing callgraph edge %q -> %q in %#v", fromMethod, toMethod, graph.Edges)
+}
+
+func assertNoAnyCallGraphTarget(t *testing.T, graph CallGraphRecord, target string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.To.Method == target {
+			t.Fatalf("unexpected callgraph target %q in %#v", target, graph.Edges)
+		}
+	}
+}
+
+func assertHasPackageEdge(t *testing.T, graph PackageGraphRecord, from, to string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.From == from && edge.To == to {
+			return
+		}
+	}
+	t.Fatalf("missing package edge %q -> %q in %#v", from, to, graph.Edges)
+}
+
+func assertHasAPIContract(t *testing.T, records []APIContractRecord, method, path, file string) {
+	t.Helper()
+	for _, record := range records {
+		if record.HTTPMethod == method && record.Path == path && record.File == file {
+			return
+		}
+	}
+	t.Fatalf("missing api contract method=%q path=%q file=%q in %#v", method, path, file, records)
 }
 
 func assertHasTestMapTarget(t *testing.T, records []TestMapRecord, testName, targetName string) {

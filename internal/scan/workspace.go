@@ -23,12 +23,15 @@ type pomParent struct {
 }
 
 type packageJSON struct {
-	Name           string         `json:"name"`
-	Version        string         `json:"version"`
-	Private        bool           `json:"private"`
-	PackageManager string         `json:"packageManager"`
-	Workspaces     any            `json:"workspaces"`
-	Scripts        map[string]any `json:"scripts"`
+	Name             string         `json:"name"`
+	Version          string         `json:"version"`
+	Private          bool           `json:"private"`
+	PackageManager   string         `json:"packageManager"`
+	Workspaces       any            `json:"workspaces"`
+	Scripts          map[string]any `json:"scripts"`
+	Dependencies     map[string]any `json:"dependencies"`
+	DevDependencies  map[string]any `json:"devDependencies"`
+	PeerDependencies map[string]any `json:"peerDependencies"`
 }
 
 func extractWorkspaceRecord(file FileRecord, body string) WorkspaceIndex {
@@ -88,8 +91,24 @@ func extractNodePackage(path, body string) (NodePackageRecord, bool) {
 		PackageManager: pkg.PackageManager,
 		Workspaces:     normalizeWorkspaces(pkg.Workspaces),
 		Scripts:        sortedKeys(pkg.Scripts),
+		Dependencies:   sortedDependencyKeys(pkg.Dependencies, pkg.DevDependencies, pkg.PeerDependencies),
 	}
 	return record, record.Name != "" || len(record.Scripts) > 0 || len(record.Workspaces) > 0
+}
+
+func sortedDependencyKeys(groups ...map[string]any) []string {
+	seen := map[string]bool{}
+	for _, group := range groups {
+		for name := range group {
+			seen[name] = true
+		}
+	}
+	keys := make([]string, 0, len(seen))
+	for name := range seen {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func normalizeWorkspaces(value any) []string {

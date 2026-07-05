@@ -212,8 +212,9 @@ type AnalyzerRecord struct {
 }
 
 type CodeIntelligenceRecord struct {
-	Functions []CodeFunctionRecord `json:"functions,omitempty"`
-	Routes    []CodeRouteRecord    `json:"routes,omitempty"`
+	Functions    []CodeFunctionRecord `json:"functions,omitempty"`
+	Routes       []CodeRouteRecord    `json:"routes,omitempty"`
+	APIContracts []APIContractRecord  `json:"api_contracts,omitempty"`
 }
 
 type CodeFunctionRecord struct {
@@ -236,21 +237,30 @@ type CodeCallRecord struct {
 }
 
 type CodeRouteRecord struct {
-	Language   string `json:"language"`
-	Framework  string `json:"framework"`
-	Kind       string `json:"kind"`
-	HTTPMethod string `json:"http_method"`
-	Path       string `json:"path"`
-	Handler    string `json:"handler,omitempty"`
-	File       string `json:"file"`
-	Line       int    `json:"line"`
-	Confidence string `json:"confidence"`
+	Language           string   `json:"language"`
+	Framework          string   `json:"framework"`
+	Kind               string   `json:"kind"`
+	App                string   `json:"app,omitempty"`
+	Package            string   `json:"package,omitempty"`
+	RouteID            string   `json:"route_id,omitempty"`
+	HTTPMethod         string   `json:"http_method"`
+	Path               string   `json:"path"`
+	Handler            string   `json:"handler,omitempty"`
+	RenderedComponents []string `json:"rendered_components,omitempty"`
+	File               string   `json:"file"`
+	Line               int      `json:"line"`
+	Confidence         string   `json:"confidence"`
+	ConfidenceScore    float64  `json:"confidence_score,omitempty"`
+	Reason             string   `json:"reason,omitempty"`
 }
 
 type CodeFlowRecord struct {
 	Language   string         `json:"language"`
 	Framework  string         `json:"framework"`
 	Kind       string         `json:"kind"`
+	App        string         `json:"app,omitempty"`
+	Package    string         `json:"package,omitempty"`
+	RouteID    string         `json:"route_id,omitempty"`
 	HTTPMethod string         `json:"http_method"`
 	Path       string         `json:"path"`
 	Handler    string         `json:"handler,omitempty"`
@@ -267,6 +277,45 @@ type CodeFlowStep struct {
 	File       string `json:"file,omitempty"`
 	Line       int    `json:"line,omitempty"`
 	Confidence string `json:"confidence"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+type APIContractRecord struct {
+	Language        string  `json:"language"`
+	App             string  `json:"app,omitempty"`
+	Package         string  `json:"package,omitempty"`
+	HTTPMethod      string  `json:"http_method"`
+	Path            string  `json:"path"`
+	Caller          string  `json:"caller,omitempty"`
+	File            string  `json:"file"`
+	Line            int     `json:"line"`
+	Confidence      string  `json:"confidence"`
+	ConfidenceScore float64 `json:"confidence_score"`
+	Reason          string  `json:"reason,omitempty"`
+}
+
+type PackageGraphRecord struct {
+	Nodes []PackageNodeRecord `json:"nodes"`
+	Edges []PackageEdgeRecord `json:"edges"`
+}
+
+type PackageNodeRecord struct {
+	Name           string   `json:"name"`
+	Path           string   `json:"path"`
+	Kind           string   `json:"kind"`
+	PackageManager string   `json:"package_manager,omitempty"`
+	Scripts        []string `json:"scripts,omitempty"`
+}
+
+type PackageEdgeRecord struct {
+	From            string  `json:"from"`
+	To              string  `json:"to"`
+	Type            string  `json:"type"`
+	FromPath        string  `json:"from_path,omitempty"`
+	ToPath          string  `json:"to_path,omitempty"`
+	Confidence      string  `json:"confidence"`
+	ConfidenceScore float64 `json:"confidence_score"`
+	Reason          string  `json:"reason,omitempty"`
 }
 
 type JavaSourceRecord struct {
@@ -445,4 +494,5 @@ type NodePackageRecord struct {
 	PackageManager string   `json:"package_manager,omitempty"`
 	Workspaces     []string `json:"workspaces,omitempty"`
 	Scripts        []string `json:"scripts,omitempty"`
+	Dependencies   []string `json:"dependencies,omitempty"`
 }

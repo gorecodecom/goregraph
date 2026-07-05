@@ -110,6 +110,8 @@ Generated files include:
 - `test-map.json`
 - `routes.json`
 - `flows.json`
+- `api-contracts.json`
+- `package-graph.json`
 - `analyzers.json`
 - `spring.json`
 - `workspace.md`
@@ -119,6 +121,8 @@ Generated files include:
 - `callgraph.md`
 - `routes.md`
 - `flows.md`
+- `api-contracts.md`
+- `package-graph.md`
 - `navigation.md`
 - `analyzers.md`
 - `affected.md`
@@ -155,6 +159,8 @@ What the generated files mean:
 - `test-map.json`: method-level, endpoint-level, and best-effort cross-language test mappings with confidence metadata.
 - `routes.json`: normalized route records for Spring, Go, PHP/Laravel-style routes, JS/TS Express/Fastify-style routes, React Router routes, and Python FastAPI/Flask-style routes.
 - `flows.json`: normalized route-to-handler-to-call flow records across supported languages.
+- `api-contracts.json`: JavaScript/TypeScript HTTP client calls detected from supported helpers and `fetch`, including method, path, file, app, confidence, and reason.
+- `package-graph.json`: Node workspace package nodes and package dependency edges from `package.json`.
 - `analyzers.json`: active analyzer capability inventory for the scanned project.
 - `spring.json`: Spring Boot applications, components, endpoints, dependencies, repositories, entities, and beans detected from Java source.
 - `workspace.md`: Maven and Node package/workspace metadata.
@@ -164,6 +170,8 @@ What the generated files mean:
 - `callgraph.md`: human-readable method call graph.
 - `routes.md`: human-readable route inventory.
 - `flows.md`: human-readable route and handler flow report.
+- `api-contracts.md`: human-readable API client call inventory.
+- `package-graph.md`: human-readable Node package/workspace dependency graph.
 - `navigation.md`: human-readable starting-point report with likely routes, central files, important symbols, test orientation, and analyzer coverage.
 - `analyzers.md`: human-readable analyzer capability inventory.
 - `affected.md`: best-effort high-inbound relation overview for impact orientation.
@@ -318,6 +326,8 @@ goregraph query . go
 goregraph query . graph-full
 goregraph query . endpoints
 goregraph query . dependencies
+goregraph query . api-contracts
+goregraph query . package-graph
 goregraph query . audit
 ```
 
@@ -347,6 +357,10 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `routes-json` -> `routes.json`
 - `flows` -> `flows.md`
 - `flows-json` -> `flows.json`
+- `api-contracts` -> `api-contracts.md`
+- `api-contracts-json` -> `api-contracts.json`
+- `package-graph` -> `package-graph.md`
+- `package-graph-json` -> `package-graph.json`
 - `navigation` -> `navigation.md`
 - `spring` -> `spring.json`
 - `workspace` -> `workspace.md`

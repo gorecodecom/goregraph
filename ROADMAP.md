@@ -349,3 +349,46 @@ Acceptance criteria:
 - no language analyzer executes project code
 - no AI, telemetry, network, hooks, background services, or project code execution are part of `scan`
 - confidence metadata remains explicit for heuristic static matches
+
+## Milestone 10: Noise-Aware Frontend And Package Intelligence
+
+Status: delivered in the current development branch.
+
+Goal: make frontend monorepos and mixed JS/TS projects more useful by reducing static-analysis noise and adding deterministic package/API context.
+
+Delivered in this milestone:
+
+- app-specific frontend route IDs:
+  - `portal:/`
+  - `mein-konto:/settings`
+  - route records keep `app`, `package`, `route_id`, rendered components, confidence, and reason
+- Redux Little Router improvements:
+  - `Fragment forRoute` records prefer the rendered component when it is statically visible
+  - rendered components are listed separately from the route wrapper
+- low-signal source filtering:
+  - declaration files
+  - generated files
+  - archive/storybook paths
+  - common test/helper call targets such as `find`, `text`, `match`, `push`, and `block`
+- Node workspace package graph:
+  - `package-graph.json`
+  - `package-graph.md`
+  - package nodes from `package.json`
+  - package dependency edges with internal workspace detection
+- JavaScript/TypeScript API contract inventory:
+  - `api-contracts.json`
+  - `api-contracts.md`
+  - supported helper calls such as `GetHelper(...)` and `PostHelper(...)`
+  - basic `fetch(...)` usage
+- clearer machine-readable authority:
+  - `callgraph.json` is authoritative for method/function call edges
+  - `routes.json` is authoritative for route records
+  - `package-graph.json` is authoritative for Node package dependencies
+  - `api-contracts.json` is authoritative for detected frontend API calls
+
+Acceptance criteria:
+
+- previous Spring/Java and universal-language tests remain green
+- frontend monorepo fixtures produce app-specific route IDs
+- Storybook/archive/declaration noise does not appear as route/call targets
+- package graph and API contract outputs are generated, queryable, and documented
