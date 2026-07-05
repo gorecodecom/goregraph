@@ -16,6 +16,8 @@ goregraph-out/
   graph-full.json
   callgraph.json
   endpoint-flows.json
+  routes.json
+  flows.json
   files.json
   symbols.json
   symbols-full.json
@@ -23,6 +25,9 @@ goregraph-out/
   relations-full.json
   test-map.json
   analyzers.json
+  navigation.md
+  routes.md
+  flows.md
   report.md
   audit.json
 ```

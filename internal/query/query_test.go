@@ -61,6 +61,30 @@ func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
 	if !strings.Contains(analyzers, `"language": "go"`) {
 		t.Fatalf("analyzers-json alias missing Go analyzer:\n%s", analyzers)
 	}
+
+	routes, err := Search(root, "routes")
+	if err != nil {
+		t.Fatalf("Search routes returned error: %v", err)
+	}
+	if !strings.Contains(routes, "# GoreGraph Routes") {
+		t.Fatalf("routes alias returned unexpected output:\n%s", routes)
+	}
+
+	flows, err := Search(root, "flows-json")
+	if err != nil {
+		t.Fatalf("Search flows-json returned error: %v", err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(flows), "[") {
+		t.Fatalf("flows-json alias returned unexpected output:\n%s", flows)
+	}
+
+	navigation, err := Search(root, "navigation")
+	if err != nil {
+		t.Fatalf("Search navigation returned error: %v", err)
+	}
+	if !strings.Contains(navigation, "# GoreGraph Navigation") {
+		t.Fatalf("navigation alias returned unexpected output:\n%s", navigation)
+	}
 }
 
 func TestExplainFileShowsSymbolsAndRelations(t *testing.T) {

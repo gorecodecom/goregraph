@@ -85,6 +85,24 @@ func TestParseJavaMethodSignatureWithAnnotatedMultipartParameters(t *testing.T) 
 	}
 }
 
+func TestExtractJavaSourceDoesNotTreatCatchAsMethod(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/SecurityConfig.java", Language: "java"}, `class SecurityConfig {
+    void configure() {
+        try {
+            run();
+        } catch (Exception ex) {
+            recover();
+        }
+    }
+}`)
+
+	for _, method := range source.Methods {
+		if method.Name == "catch" {
+			t.Fatalf("catch block was extracted as method: %#v", source.Methods)
+		}
+	}
+}
+
 func TestRunExtractsWekaStyleSpringIntelligence(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "pom.xml", `<project><groupId>com.weka</groupId><artifactId>ms-demo</artifactId><version>1.0.0</version></project>`)
@@ -271,6 +289,7 @@ class CadasterServiceTest {
 	assertHasSymbol(t, symbols, "gets", "method", "src/main/java/com/weka/demo/controller/CadasterController.java")
 	assertNoSymbol(t, symbols, "for", "class")
 	assertNoSymbol(t, symbols, "ForbiddenException", "method")
+	assertNoSymbol(t, symbols, "catch", "method")
 
 	var relations []RelationRecord
 	readJSON(t, filepath.Join(out, "relations.json"), &relations)

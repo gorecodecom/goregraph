@@ -402,6 +402,172 @@ func TestRunUsesProjectGitignoreAsExclusions(t *testing.T) {
 	}
 }
 
+func TestRunExtractsUniversalLanguageIntelligence(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "go.mod", "module example.test/universal\n")
+	writeFile(t, root, "cmd/server/main.go", `package main
+
+import "net/http"
+
+func main() {
+	http.HandleFunc("/health", healthHandler)
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	checkHealth()
+}
+
+func checkHealth() {}
+`)
+	writeFile(t, root, "cmd/server/main_test.go", `package main
+
+func TestHealthHandler(t *testing.T) {
+	healthHandler(nil, nil)
+}
+`)
+	writeFile(t, root, "routes/web.php", `<?php
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\UserController;
+
+Route::get('/users', [UserController::class, 'index']);
+`)
+	writeFile(t, root, "app/Http/Controllers/UserController.php", `<?php
+namespace App\Http\Controllers;
+
+class UserController {
+    public function index() {
+        return $this->service->listUsers();
+    }
+}
+`)
+	writeFile(t, root, "tests/UserControllerTest.php", `<?php
+class UserControllerTest {
+    public function testIndex() {
+        $controller = new UserController();
+        $controller->index();
+    }
+}
+`)
+	writeFile(t, root, "src/App.tsx", `import { Route } from "react-router-dom";
+import { loadUsers } from "./api";
+
+export function App() {
+  return <Route path="/users" element={<UsersPage />} />;
+}
+
+export function UsersPage() {
+  loadUsers();
+  return null;
+}
+`)
+	writeFile(t, root, "src/Router.jsx", `import { Fragment } from "@weka/redux-little-router";
+import { Route } from "react-router-dom";
+
+export function Router() {
+  return <>
+    // <Fragment forRoute="/commented" />
+    <Route exact path="/search" component={SearchContainer} />
+    <Fragment forRoute="/kataster/:id" />
+  </>;
+}
+`)
+	writeFile(t, root, "src/api.ts", `export function loadUsers() {
+  return fetch("/api/users");
+}
+`)
+	writeFile(t, root, "src/server.ts", `import express from "express";
+const app = express();
+
+app.get("/api/users", listUsers);
+
+export function listUsers(req, res) {
+  loadUsers();
+}
+`)
+	writeFile(t, root, "src/App.test.tsx", `import { UsersPage } from "./App";
+
+test("users page loads users", () => {
+  UsersPage();
+});
+`)
+	writeFile(t, root, "app/main.py", `from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/status")
+def status():
+    return compute_status()
+
+def compute_status():
+    return {"ok": True}
+`)
+	writeFile(t, root, "tests/test_main.py", `from app.main import status
+
+def test_status():
+    status()
+`)
+	writeFile(t, root, "scripts/deploy.sh", `#!/usr/bin/env bash
+source ./lib.sh
+
+deploy() {
+  build_image
+}
+`)
+	writeFile(t, root, "scripts/lib.sh", `build_image() {
+  echo build
+}
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	for _, name := range []string{"routes.json", "routes.md", "flows.json", "flows.md", "navigation.md"} {
+		if _, err := os.Stat(filepath.Join(root, "goregraph-out", name)); err != nil {
+			t.Fatalf("%s was not written: %v", name, err)
+		}
+	}
+
+	var routes []map[string]any
+	readJSON(t, filepath.Join(root, "goregraph-out", "routes.json"), &routes)
+	assertHasRoute(t, routes, "go", "GET", "/health", "healthHandler")
+	assertHasRoute(t, routes, "php", "GET", "/users", "UserController.index")
+	assertHasRoute(t, routes, "typescript", "ROUTE", "/users", "UsersPage")
+	assertHasRoute(t, routes, "javascript", "ROUTE", "/search", "SearchContainer")
+	assertHasRoute(t, routes, "javascript", "ROUTE", "/kataster/:id", "Fragment")
+	assertNoRoute(t, routes, "/commented")
+	assertHasRoute(t, routes, "typescript", "GET", "/api/users", "listUsers")
+	assertHasRoute(t, routes, "python", "GET", "/status", "status")
+
+	var callGraph CallGraphRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "callgraph.json"), &callGraph)
+	assertHasAnyCallGraphEdge(t, callGraph, "healthHandler", "checkHealth")
+	assertHasAnyCallGraphEdge(t, callGraph, "UsersPage", "loadUsers")
+	assertHasAnyCallGraphEdge(t, callGraph, "status", "compute_status")
+	assertHasAnyCallGraphEdge(t, callGraph, "deploy", "build_image")
+
+	var testMap []TestMapRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "test-map.json"), &testMap)
+	assertHasTestMapTarget(t, testMap, "TestHealthHandler", "healthHandler")
+	assertHasTestMapTarget(t, testMap, "test_status", "status")
+	assertHasTestMapTarget(t, testMap, "users page loads users", "UsersPage")
+
+	routesReport := readText(t, filepath.Join(root, "goregraph-out", "routes.md"))
+	if !strings.Contains(routesReport, "React Router") || !strings.Contains(routesReport, "FastAPI") || !strings.Contains(routesReport, "Laravel") {
+		t.Fatalf("routes report missing framework context:\n%s", routesReport)
+	}
+
+	flowsReport := readText(t, filepath.Join(root, "goregraph-out", "flows.md"))
+	if !strings.Contains(flowsReport, "UsersPage") || !strings.Contains(flowsReport, "loadUsers") || !strings.Contains(flowsReport, "healthHandler") {
+		t.Fatalf("flows report missing useful flow steps:\n%s", flowsReport)
+	}
+
+	navigationReport := readText(t, filepath.Join(root, "goregraph-out", "navigation.md"))
+	if !strings.Contains(navigationReport, "Where To Start") || !strings.Contains(navigationReport, "Most Connected Files") || !strings.Contains(navigationReport, "src/App.tsx") {
+		t.Fatalf("navigation report missing orientation content:\n%s", navigationReport)
+	}
+}
+
 func assertHasSymbol(t *testing.T, symbols []SymbolRecord, name, kind, file string) {
 	t.Helper()
 	for _, symbol := range symbols {
@@ -440,6 +606,45 @@ func assertHasGraphEdge(t *testing.T, graph Graph, from, to, kind string) {
 		}
 	}
 	t.Fatalf("missing graph edge from=%q to=%q type=%q in %#v", from, to, kind, graph.Edges)
+}
+
+func assertHasRoute(t *testing.T, routes []map[string]any, language, method, path, handler string) {
+	t.Helper()
+	for _, route := range routes {
+		if route["language"] == language && route["http_method"] == method && route["path"] == path && route["handler"] == handler {
+			return
+		}
+	}
+	t.Fatalf("missing route language=%q method=%q path=%q handler=%q in %#v", language, method, path, handler, routes)
+}
+
+func assertNoRoute(t *testing.T, routes []map[string]any, path string) {
+	t.Helper()
+	for _, route := range routes {
+		if route["path"] == path {
+			t.Fatalf("unexpected route path=%q in %#v", path, routes)
+		}
+	}
+}
+
+func assertHasAnyCallGraphEdge(t *testing.T, graph CallGraphRecord, fromMethod, toMethod string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.From.Method == fromMethod && edge.To.Method == toMethod {
+			return
+		}
+	}
+	t.Fatalf("missing callgraph edge %q -> %q in %#v", fromMethod, toMethod, graph.Edges)
+}
+
+func assertHasTestMapTarget(t *testing.T, records []TestMapRecord, testName, targetName string) {
+	t.Helper()
+	for _, record := range records {
+		if record.TestMethod == testName && record.TargetMethod == targetName {
+			return
+		}
+	}
+	t.Fatalf("missing test map test=%q target=%q in %#v", testName, targetName, records)
 }
 
 func containsString(values []string, want string) bool {

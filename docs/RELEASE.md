@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.4.0
+v0.5.0
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory.
+`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript, TypeScript/React, Python, and Shell.
 
 Completed release checks:
 
@@ -67,6 +67,15 @@ Completed release checks:
 - `graph-full.json` edges contain `type` while keeping `relation`.
 - multipart Spring endpoints include request kind/type metadata.
 
+`v0.5.0` feature checks:
+
+- `routes.json` and `routes.md` are generated.
+- `flows.json` and `flows.md` are generated.
+- `navigation.md` is generated.
+- `callgraph.json` includes best-effort non-Java call edges for Go, PHP, JS/TS, Python, and Shell.
+- `test-map.json` includes best-effort non-Java test-to-production mappings.
+- Analyzer inventory marks implemented route/call/test support for Go, PHP, JS/TS, Python, and Shell.
+
 Remaining release-hardening items:
 
 - Validate GoreGraph against more real-world projects before considering `1.0.0`.
@@ -90,7 +99,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.4.0
+goregraph 0.5.0
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -106,8 +115,8 @@ schema: 1
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v0.4.0 -m "Release v0.4.0"
-   git push origin v0.4.0
+   git tag -a v0.5.0 -m "Release v0.5.0"
+   git push origin v0.5.0
    ```
 
 5. GitHub Actions runs GoReleaser.

@@ -21,7 +21,7 @@ func detectLanguage(rel string) string {
 		return "python"
 	case ".php":
 		return "php"
-	case ".js", ".mjs", ".cjs":
+	case ".js", ".jsx", ".mjs", ".cjs":
 		return "javascript"
 	case ".ts", ".tsx":
 		return "typescript"

@@ -30,6 +30,8 @@ var GeneratedFiles = []string{
 	"callgraph.json",
 	"endpoint-flows.json",
 	"test-map.json",
+	"routes.json",
+	"flows.json",
 	"analyzers.json",
 	"spring.json",
 	"workspace.md",
@@ -37,6 +39,9 @@ var GeneratedFiles = []string{
 	"endpoint-flows.md",
 	"dependencies.md",
 	"callgraph.md",
+	"routes.md",
+	"flows.md",
+	"navigation.md",
 	"analyzers.md",
 	"affected.md",
 	"audit.json",
@@ -149,6 +154,7 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 		if record.Language == "java" {
 			index.JavaSources = append(index.JavaSources, extractJavaSource(record, text))
 		}
+		mergeCodeIntelligence(&index.Code, extractCodeIntelligence(record, text))
 		mergeWorkspaceIndex(&index.Workspace, extractWorkspaceRecord(record, text))
 		return nil
 	})
@@ -202,6 +208,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	graph := buildGraph(index.Files, index.Symbols, index.Relations)
 	springIndex := buildSpringIndex(index.JavaSources)
 	callGraph := buildJavaCallGraph(index.JavaSources)
+	callGraph = mergeCallGraphs(callGraph, buildGenericCallGraph(index.Code))
 	index.Relations = append(index.Relations, buildCallRelations(callGraph)...)
 	sort.Slice(index.Relations, func(i, j int) bool {
 		if index.Relations[i].From != index.Relations[j].From {
@@ -217,7 +224,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	})
 	graph = buildGraph(index.Files, index.Symbols, index.Relations)
 	endpointFlows := buildEndpointFlows(springIndex, callGraph)
-	testMap := buildJavaTestMap(index.JavaSources, springIndex.Endpoints)
+	codeFlows := buildCodeFlows(index.Code, springIndex, endpointFlows, callGraph)
+	testMap := append(buildJavaTestMap(index.JavaSources, springIndex.Endpoints), buildGenericTestMap(index.Code)...)
+	routes := buildCodeRoutes(index.Code, springIndex)
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
 	richSymbols := buildRichSymbols(index.Files, index.Symbols)
 	richRelations := buildRichRelations(index.Files, index.Relations)
@@ -250,6 +259,8 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"callgraph.json", callGraph},
 		{"endpoint-flows.json", endpointFlows},
 		{"test-map.json", testMap},
+		{"routes.json", routes},
+		{"flows.json", codeFlows},
 		{"analyzers.json", analyzers},
 		{"spring.json", springIndex},
 		{"audit.json", audit},
@@ -271,6 +282,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"endpoint-flows.md", renderEndpointFlowsReport(endpointFlows)},
 		{"dependencies.md", renderDependenciesReport(springIndex)},
 		{"callgraph.md", renderCallGraphReport(callGraph)},
+		{"routes.md", renderRoutesReport(routes)},
+		{"flows.md", renderCodeFlowsReport(codeFlows)},
+		{"navigation.md", renderNavigationReport(index.Files, index.Symbols, index.Relations, routes, codeFlows, testMap, analyzers)},
 		{"analyzers.md", renderAnalyzersReport(analyzers)},
 		{"affected.md", renderAffectedReport(richGraph)},
 		{"entrypoints.md", renderEntrypointsReport(index.Files, index.Symbols, springIndex)},

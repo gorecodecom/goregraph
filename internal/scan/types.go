@@ -12,6 +12,7 @@ type Index struct {
 	Relations   []RelationRecord
 	JavaSources []JavaSourceRecord
 	Workspace   WorkspaceIndex
+	Code        CodeIntelligenceRecord
 }
 
 type FileRecord struct {
@@ -208,6 +209,64 @@ type AnalyzerRecord struct {
 	Tests     bool     `json:"tests"`
 	Workspace bool     `json:"workspace"`
 	Outputs   []string `json:"outputs,omitempty"`
+}
+
+type CodeIntelligenceRecord struct {
+	Functions []CodeFunctionRecord `json:"functions,omitempty"`
+	Routes    []CodeRouteRecord    `json:"routes,omitempty"`
+}
+
+type CodeFunctionRecord struct {
+	Name     string           `json:"name"`
+	Owner    string           `json:"owner,omitempty"`
+	Kind     string           `json:"kind"`
+	Language string           `json:"language"`
+	File     string           `json:"file"`
+	Line     int              `json:"line"`
+	EndLine  int              `json:"end_line,omitempty"`
+	Calls    []CodeCallRecord `json:"calls,omitempty"`
+}
+
+type CodeCallRecord struct {
+	Receiver string `json:"receiver,omitempty"`
+	Owner    string `json:"owner,omitempty"`
+	Method   string `json:"method"`
+	Raw      string `json:"raw,omitempty"`
+	Line     int    `json:"line"`
+}
+
+type CodeRouteRecord struct {
+	Language   string `json:"language"`
+	Framework  string `json:"framework"`
+	Kind       string `json:"kind"`
+	HTTPMethod string `json:"http_method"`
+	Path       string `json:"path"`
+	Handler    string `json:"handler,omitempty"`
+	File       string `json:"file"`
+	Line       int    `json:"line"`
+	Confidence string `json:"confidence"`
+}
+
+type CodeFlowRecord struct {
+	Language   string         `json:"language"`
+	Framework  string         `json:"framework"`
+	Kind       string         `json:"kind"`
+	HTTPMethod string         `json:"http_method"`
+	Path       string         `json:"path"`
+	Handler    string         `json:"handler,omitempty"`
+	File       string         `json:"file"`
+	Line       int            `json:"line"`
+	Steps      []CodeFlowStep `json:"steps"`
+}
+
+type CodeFlowStep struct {
+	Name       string `json:"name"`
+	Owner      string `json:"owner,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Language   string `json:"language,omitempty"`
+	File       string `json:"file,omitempty"`
+	Line       int    `json:"line,omitempty"`
+	Confidence string `json:"confidence"`
 }
 
 type JavaSourceRecord struct {

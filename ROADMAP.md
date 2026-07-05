@@ -300,3 +300,52 @@ Acceptance criteria:
 - Java/Spring depth improves without making GoreGraph Spring-only
 - normal scans still do not use AI, network, telemetry, hooks, background services, or project code execution
 - generated files remain root-relative and deterministic except metadata timestamps
+
+## Milestone 9: Universal Language Intelligence
+
+Status: delivered in `0.5.0`.
+
+Goal: make GoreGraph substantially more helpful outside Java/Spring by adding deterministic route, call, flow, test, and navigation orientation for Go, PHP, JavaScript, TypeScript/React, Python, and Shell.
+
+Delivered in this milestone:
+
+- normalized route inventory:
+  - `routes.json`
+  - `routes.md`
+  - Spring endpoints
+  - Go `net/http` and router-style routes
+  - PHP Laravel-style routes
+  - JavaScript/TypeScript Express/Fastify-style routes
+  - React Router routes
+  - Python FastAPI/Flask-style decorators
+- normalized flow output:
+  - `flows.json`
+  - `flows.md`
+  - route -> handler -> static call steps
+  - Spring endpoint flows are included in the generic flow view
+- broader call graph:
+  - Go function calls
+  - PHP method/function calls
+  - JavaScript/TypeScript function/component calls
+  - Python function/method calls
+  - Shell function calls
+- broader test mapping:
+  - Go test functions
+  - PHP test methods
+  - JavaScript/TypeScript `test`/`it` blocks
+  - Python `test_` functions
+- human navigation report:
+  - `navigation.md`
+  - likely route starting points
+  - most connected files
+  - important symbols
+  - test orientation
+  - analyzer coverage summary
+
+Acceptance criteria:
+
+- Java/Spring functionality remains intact
+- new outputs are additive and deterministic
+- no language analyzer executes project code
+- no AI, telemetry, network, hooks, background services, or project code execution are part of `scan`
+- confidence metadata remains explicit for heuristic static matches

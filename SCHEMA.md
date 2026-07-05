@@ -66,6 +66,8 @@ Schema version 1 expects:
 - `callgraph.json`
 - `endpoint-flows.json`
 - `test-map.json`
+- `routes.json`
+- `flows.json`
 - `analyzers.json`
 - `spring.json`
 - `audit.json`
@@ -76,6 +78,9 @@ Schema version 1 expects:
 - `endpoint-flows.md`
 - `dependencies.md`
 - `callgraph.md`
+- `routes.md`
+- `flows.md`
+- `navigation.md`
 - `analyzers.md`
 - `affected.md`
 - `entrypoints.md`
@@ -99,11 +104,15 @@ Schema version 1 expects:
 
 `graph-full.json` contains a richer directed graph inspired by Graphify-style node/edge interchange. It preserves root-relative source files and marks extracted relationships with `EXTRACTED` confidence. Rich graph edges expose `type`; `relation` remains as a compatibility alias.
 
-`callgraph.json` contains method-level Java call graph edges. Exact method declaration matches use `EXTRACTED`; inferred framework/repository calls use `INFERRED`.
+`callgraph.json` contains method/function-level call graph edges. Java/Spring exact method declaration matches use `EXTRACTED`; language-neutral Go, PHP, JavaScript, TypeScript/React, Python, and Shell call matches use `INFERRED`.
 
 `endpoint-flows.json` contains Spring endpoint flow records from endpoint to controller, service, repository, and other resolved method steps.
 
-`test-map.json` contains Java test mappings. Direct method calls use `EXTRACTED`; endpoint matches from MockMvc-style HTTP calls use `INFERRED`.
+`test-map.json` contains Java and language-neutral test mappings. Direct Java method calls use `EXTRACTED`; endpoint matches and generic test-to-production call matches use `INFERRED`.
+
+`routes.json` contains normalized route records. Current route sources include Spring, Go `net/http`/router calls, PHP Laravel-style routes, JavaScript/TypeScript Express/Fastify-style routes, React Router routes, and Python FastAPI/Flask-style decorators.
+
+`flows.json` contains normalized route-to-handler-to-call flow records. Flow steps are best-effort static orientation data and include confidence markers.
 
 `analyzers.json` describes which language/workspace analyzers were active for the scanned project and which capabilities they provided.
 
@@ -111,7 +120,7 @@ Schema version 1 expects:
 
 `audit.json` records the scan command, generated files, file counts, timestamps, and safety flags. Normal scans set `network_used` and `external_commands` to `false`.
 
-`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
+`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
 

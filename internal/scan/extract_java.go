@@ -280,7 +280,8 @@ func shortJavaName(name string) string {
 
 func isJavaControlLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
-	for _, prefix := range []string{"if", "for", "while", "switch", "catch", "return", "throw", "new"} {
+	trimmed = strings.TrimSpace(strings.TrimLeft(trimmed, "}"))
+	for _, prefix := range []string{"if", "else", "for", "while", "switch", "catch", "try", "finally", "return", "throw", "new"} {
 		if strings.HasPrefix(trimmed, prefix+" ") || strings.HasPrefix(trimmed, prefix+"(") {
 			return true
 		}

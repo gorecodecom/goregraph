@@ -108,6 +108,8 @@ Generated files include:
 - `callgraph.json`
 - `endpoint-flows.json`
 - `test-map.json`
+- `routes.json`
+- `flows.json`
 - `analyzers.json`
 - `spring.json`
 - `workspace.md`
@@ -115,6 +117,9 @@ Generated files include:
 - `endpoint-flows.md`
 - `dependencies.md`
 - `callgraph.md`
+- `routes.md`
+- `flows.md`
+- `navigation.md`
 - `analyzers.md`
 - `affected.md`
 - `audit.json`
@@ -145,9 +150,11 @@ What the generated files mean:
 - `symbols-full.json`: normalized symbols for all supported languages with stable IDs and source locations.
 - `relations-full.json`: normalized relations for all supported languages with confidence and source-location metadata.
 - `graph-full.json`: Graphify-like rich directed graph with stable IDs, file nodes, symbol nodes, `type`/`relation` edge metadata, confidence, and source locations.
-- `callgraph.json`: method-level Java call graph with extracted and inferred call edges.
+- `callgraph.json`: method/function-level call graph with extracted Java/Spring edges and inferred Go, PHP, JS/TS/React, Python, and Shell call edges.
 - `endpoint-flows.json`: Spring endpoint flow records from endpoint to controller/service/repository methods.
-- `test-map.json`: method-level and endpoint-level Java test mappings with confidence metadata.
+- `test-map.json`: method-level, endpoint-level, and best-effort cross-language test mappings with confidence metadata.
+- `routes.json`: normalized route records for Spring, Go, PHP/Laravel-style routes, JS/TS Express/Fastify-style routes, React Router routes, and Python FastAPI/Flask-style routes.
+- `flows.json`: normalized route-to-handler-to-call flow records across supported languages.
 - `analyzers.json`: active analyzer capability inventory for the scanned project.
 - `spring.json`: Spring Boot applications, components, endpoints, dependencies, repositories, entities, and beans detected from Java source.
 - `workspace.md`: Maven and Node package/workspace metadata.
@@ -155,6 +162,9 @@ What the generated files mean:
 - `endpoint-flows.md`: human-readable endpoint call-flow report.
 - `dependencies.md`: human-readable dependency view for supported domain adapters.
 - `callgraph.md`: human-readable method call graph.
+- `routes.md`: human-readable route inventory.
+- `flows.md`: human-readable route and handler flow report.
+- `navigation.md`: human-readable starting-point report with likely routes, central files, important symbols, test orientation, and analyzer coverage.
 - `analyzers.md`: human-readable analyzer capability inventory.
 - `affected.md`: best-effort high-inbound relation overview for impact orientation.
 - `audit.json`: scan audit showing generated files and confirming normal scans used no network and executed no external commands.
@@ -333,6 +343,11 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `entrypoints` -> `entrypoints.md`
 - `tests` or `test-map` -> `test-map.md`
 - `test-map-json` -> `test-map.json`
+- `routes` -> `routes.md`
+- `routes-json` -> `routes.json`
+- `flows` -> `flows.md`
+- `flows-json` -> `flows.json`
+- `navigation` -> `navigation.md`
 - `spring` -> `spring.json`
 - `workspace` -> `workspace.md`
 - `endpoints` -> `endpoints.md`

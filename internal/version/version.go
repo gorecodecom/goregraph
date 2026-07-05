@@ -7,7 +7,7 @@ import (
 
 var (
 	// Version is set by release builds through ldflags.
-	Version = "0.4.0"
+	Version = "0.5.0"
 	// Commit is set by release builds through ldflags.
 	Commit = "dev"
 	// Built is set by release builds through ldflags.
