@@ -409,6 +409,24 @@ type WorkspaceContractMatchRecord struct {
 	Reason            string  `json:"reason,omitempty"`
 }
 
+type WorkspaceFeatureFlowRecord struct {
+	FrontendProject   string                   `json:"frontend_project"`
+	FrontendFile      string                   `json:"frontend_file"`
+	FrontendLine      int                      `json:"frontend_line,omitempty"`
+	HTTPMethod        string                   `json:"http_method"`
+	Path              string                   `json:"path"`
+	BackendProject    string                   `json:"backend_project"`
+	BackendService    string                   `json:"backend_service,omitempty"`
+	BackendController string                   `json:"backend_controller,omitempty"`
+	BackendMethod     string                   `json:"backend_method,omitempty"`
+	BackendFile       string                   `json:"backend_file,omitempty"`
+	BackendLine       int                      `json:"backend_line,omitempty"`
+	BackendSteps      []SpringEndpointFlowStep `json:"backend_steps,omitempty"`
+	Tests             []TestMapRecord          `json:"tests,omitempty"`
+	Confidence        string                   `json:"confidence"`
+	Reason            string                   `json:"reason,omitempty"`
+}
+
 type PackageGraphRecord struct {
 	Nodes []PackageNodeRecord `json:"nodes"`
 	Edges []PackageEdgeRecord `json:"edges"`

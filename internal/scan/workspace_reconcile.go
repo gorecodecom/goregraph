@@ -15,9 +15,11 @@ import (
 var workspaceGroupDirs = []string{"frontend", "frontends", "microservices", "services", "backends"}
 
 type workspaceIndexProject struct {
-	record    WorkspaceProjectRecord
-	routes    []CodeRouteRecord
-	contracts []APIContractRecord
+	record        WorkspaceProjectRecord
+	routes        []CodeRouteRecord
+	contracts     []APIContractRecord
+	endpointFlows []SpringEndpointFlowRecord
+	testMap       []TestMapRecord
 }
 
 type workspaceBackendRoute struct {
@@ -60,6 +62,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	}
 	context := buildWorkspaceContext(registry, indexed)
 	matches := buildWorkspaceContractMatches(indexed)
+	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
 
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
 	if err := os.MkdirAll(workspaceOut, 0o755); err != nil {
@@ -74,10 +77,16 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	if err := writeJSON(filepath.Join(workspaceOut, "contract-matches.json"), matches); err != nil {
 		return nil, err
 	}
+	if err := writeJSON(filepath.Join(workspaceOut, "feature-flows.json"), featureFlows); err != nil {
+		return nil, err
+	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-context.md"), []byte(renderWorkspaceContextReport(context)), 0o644); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "contract-matches.md"), []byte(renderWorkspaceContractMatchesReport(matches)), 0o644); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(workspaceOut, "feature-flows.md"), []byte(renderWorkspaceFeatureFlowsReport(featureFlows)), 0o644); err != nil {
 		return nil, err
 	}
 
@@ -87,6 +96,13 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "workspace-contract-matches.md"), []byte(renderProjectWorkspaceMatchesReport(project.record.Path, matches)), 0o644); err != nil {
+			return nil, err
+		}
+		projectFeatureFlows := filterWorkspaceFeatureFlows(project.record.Path, featureFlows)
+		if err := writeJSON(filepath.Join(out, "workspace-feature-flows.json"), projectFeatureFlows); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(out, "workspace-feature-flows.md"), []byte(renderWorkspaceFeatureFlowsReport(projectFeatureFlows)), 0o644); err != nil {
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "frontend-consumers.md"), []byte(renderFrontendConsumersReport(project.record.Path, matches)), 0o644); err != nil {
@@ -284,6 +300,12 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		if err := readWorkspaceJSON(filepath.Join(out, "api-contracts.json"), &loaded.contracts); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
+		if err := readWorkspaceJSON(filepath.Join(out, "endpoint-flows.json"), &loaded.endpointFlows); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		if err := readWorkspaceJSON(filepath.Join(out, "test-map.json"), &loaded.testMap); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
 		result = append(result, loaded)
 	}
 	return result, nil
@@ -448,6 +470,115 @@ func hasBackendRoutes(routes []CodeRouteRecord) bool {
 		}
 	}
 	return false
+}
+
+func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []WorkspaceContractMatchRecord) []WorkspaceFeatureFlowRecord {
+	byProject := map[string]workspaceIndexProject{}
+	for _, project := range projects {
+		byProject[project.record.Path] = project
+	}
+	var records []WorkspaceFeatureFlowRecord
+	for _, match := range matches {
+		if match.Issue != contractIssueMatched {
+			continue
+		}
+		backendProject, ok := byProject[match.BackendProject]
+		if !ok {
+			continue
+		}
+		flow, hasFlow := findWorkspaceEndpointFlow(backendProject.endpointFlows, match)
+		tests := workspaceFeatureTests(backendProject.testMap, flow, match)
+		record := WorkspaceFeatureFlowRecord{
+			FrontendProject:   match.APIProject,
+			FrontendFile:      match.APIFile,
+			FrontendLine:      match.APILine,
+			HTTPMethod:        match.APIHTTPMethod,
+			Path:              match.APIPath,
+			BackendProject:    match.BackendProject,
+			BackendService:    match.BackendService,
+			BackendController: flow.Controller,
+			BackendMethod:     flow.Method,
+			BackendFile:       match.BackendFile,
+			BackendLine:       match.BackendLine,
+			BackendSteps:      flow.Steps,
+			Tests:             tests,
+			Confidence:        match.Confidence,
+			Reason:            "frontend api contract resolved to indexed backend endpoint",
+		}
+		if !hasFlow {
+			record.BackendMethod = match.BackendHandler
+		}
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].FrontendProject != records[j].FrontendProject {
+			return records[i].FrontendProject < records[j].FrontendProject
+		}
+		if records[i].FrontendFile != records[j].FrontendFile {
+			return records[i].FrontendFile < records[j].FrontendFile
+		}
+		if records[i].FrontendLine != records[j].FrontendLine {
+			return records[i].FrontendLine < records[j].FrontendLine
+		}
+		return records[i].Path < records[j].Path
+	})
+	return records
+}
+
+func findWorkspaceEndpointFlow(flows []SpringEndpointFlowRecord, match WorkspaceContractMatchRecord) (SpringEndpointFlowRecord, bool) {
+	for _, flow := range flows {
+		if strings.EqualFold(flow.HTTPMethod, match.BackendHTTPMethod) && pathsCompatible(flow.Path, match.BackendPath) {
+			return flow, true
+		}
+	}
+	return SpringEndpointFlowRecord{}, false
+}
+
+func workspaceFeatureTests(tests []TestMapRecord, flow SpringEndpointFlowRecord, match WorkspaceContractMatchRecord) []TestMapRecord {
+	var result []TestMapRecord
+	seen := map[string]bool{}
+	for _, test := range tests {
+		if workspaceFeatureTestMatches(test, flow, match) {
+			key := test.TestFile + "|" + test.TestClass + "|" + test.TestMethod + "|" + test.HTTPMethod + "|" + test.Path
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			result = append(result, test)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].TestFile != result[j].TestFile {
+			return result[i].TestFile < result[j].TestFile
+		}
+		return result[i].TestMethod < result[j].TestMethod
+	})
+	return result
+}
+
+func workspaceFeatureTestMatches(test TestMapRecord, flow SpringEndpointFlowRecord, match WorkspaceContractMatchRecord) bool {
+	if test.Type == "endpoint" && strings.EqualFold(test.HTTPMethod, match.BackendHTTPMethod) && pathsCompatible(test.Path, match.BackendPath) {
+		return true
+	}
+	if flow.Controller != "" && test.TargetClass == flow.Controller && test.TargetMethod == flow.Method {
+		return true
+	}
+	for _, step := range flow.Steps {
+		if test.TargetClass == step.Owner && test.TargetMethod == step.Method {
+			return true
+		}
+	}
+	return false
+}
+
+func filterWorkspaceFeatureFlows(projectPath string, records []WorkspaceFeatureFlowRecord) []WorkspaceFeatureFlowRecord {
+	var filtered []WorkspaceFeatureFlowRecord
+	for _, record := range records {
+		if record.FrontendProject == projectPath || record.BackendProject == projectPath {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
 }
 
 func renderWorkspaceContextReport(record WorkspaceContextRecord) string {
@@ -629,6 +760,57 @@ func renderFrontendConsumersReport(projectPath string, records []WorkspaceContra
 	}
 	if count == 0 {
 		b.WriteString("- none detected\n")
+	}
+	return b.String()
+}
+
+func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) string {
+	var b strings.Builder
+	b.WriteString("# GoreGraph Workspace Feature Flows\n\n")
+	if len(records) == 0 {
+		b.WriteString("- none detected\n")
+		return b.String()
+	}
+	for _, record := range records {
+		b.WriteString(fmt.Sprintf("## %s `%s`\n\n", record.HTTPMethod, record.Path))
+		b.WriteString(fmt.Sprintf("- Frontend: `%s` `%s:%d`\n", record.FrontendProject, record.FrontendFile, record.FrontendLine))
+		backendName := record.BackendController + "." + record.BackendMethod
+		if backendName == "." {
+			backendName = record.BackendMethod
+		}
+		b.WriteString(fmt.Sprintf("- Backend: `%s` `%s` -> `%s` in `%s:%d`\n", record.BackendProject, emptyAsNone(record.BackendService), emptyAsNone(backendName), record.BackendFile, record.BackendLine))
+		b.WriteString("- Backend steps:\n")
+		if len(record.BackendSteps) == 0 {
+			b.WriteString("  - none resolved\n")
+		} else {
+			for _, step := range record.BackendSteps {
+				b.WriteString(fmt.Sprintf("  - `%s.%s`", step.Owner, step.Method))
+				if step.Kind != "" {
+					b.WriteString(fmt.Sprintf(" (%s)", step.Kind))
+				}
+				if step.File != "" {
+					b.WriteString(fmt.Sprintf(" - `%s:%d`", step.File, step.Line))
+				}
+				b.WriteString(fmt.Sprintf(" - %s\n", step.Confidence))
+			}
+		}
+		b.WriteString("- Tests:\n")
+		if len(record.Tests) == 0 {
+			b.WriteString("  - none detected\n")
+		} else {
+			for _, test := range record.Tests {
+				label := test.TestClass + "." + test.TestMethod
+				if label == "." {
+					label = test.TestMethod
+				}
+				b.WriteString(fmt.Sprintf("  - `%s` in `%s` (%s", emptyAsNone(label), test.TestFile, test.Confidence))
+				if test.HTTPMethod != "" && test.Path != "" {
+					b.WriteString(fmt.Sprintf(", %s `%s`", test.HTTPMethod, test.Path))
+				}
+				b.WriteString(")\n")
+			}
+		}
+		b.WriteString("\n")
 	}
 	return b.String()
 }

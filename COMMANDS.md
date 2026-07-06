@@ -130,6 +130,8 @@ Generated files include:
 - `diagnostics.md`
 - `workspace-context.md`
 - `workspace-contract-matches.md`
+- `workspace-feature-flows.json`
+- `workspace-feature-flows.md`
 - `frontend-consumers.md`
 - `package-graph.md`
 - `maven-graph.md`
@@ -195,6 +197,8 @@ What the generated files mean:
 - `diagnostics.md`: prioritized human-readable diagnosis report with entrypoints, risky contracts, unscanned services, untested endpoints, weak flows, and likely tests.
 - `workspace-context.md`: readable workspace project/index summary, or a no-workspace placeholder.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
+- `workspace-feature-flows.json`: cross-project feature flows from frontend API call to backend endpoint flow and tests.
+- `workspace-feature-flows.md`: readable end-to-end feature-flow report.
 - `frontend-consumers.md`: backend-oriented view of frontend API callers.
 - `package-graph.md`: human-readable Node package/workspace dependency graph.
 - `maven-graph.md`: human-readable Maven dependency graph.
@@ -212,8 +216,10 @@ Workspace overlays:
 - `.goregraph-workspace/registry.json`: discovered sibling projects with `current`, `indexed`, or `not_indexed` status.
 - `.goregraph-workspace/context.json`: loaded indexes, known backend services, and referenced but missing services.
 - `.goregraph-workspace/contract-matches.json`: cross-project API-to-backend matches from already scanned projects.
+- `.goregraph-workspace/feature-flows.json`: cross-project feature flows from already scanned projects.
 - `workspace-context.md`: readable workspace project/index summary.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
+- `workspace-feature-flows.md`: readable frontend-to-backend-to-test feature flows.
 - `frontend-consumers.md`: backend-oriented view of frontend API callers.
 
 Workspace reconciliation also refreshes:
@@ -373,6 +379,7 @@ goregraph query . diagnostics
 goregraph query . package-graph
 goregraph query . maven-graph
 goregraph query . workspace-contracts
+goregraph query . workspace-features
 goregraph query . audit
 ```
 
@@ -382,6 +389,7 @@ Workspace aliases can be read from either a scanned project root or the workspac
 cd /Users/name/projects/weka
 goregraph query . workspace-context
 goregraph query . workspace-contracts
+goregraph query . workspace-features
 ```
 
 Searches these generated files:
@@ -427,6 +435,8 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `workspace` -> `workspace.md`
 - `workspace-context` -> `workspace-context.md`
 - `workspace-contracts` -> `workspace-contract-matches.md`
+- `workspace-features` or `workspace-feature-flows` -> `workspace-feature-flows.md`
+- `workspace-feature-flows-json` -> `workspace-feature-flows.json`
 - `frontend-consumers` -> `frontend-consumers.md`
 - `endpoints` -> `endpoints.md`
 - `endpoint-flows` -> `endpoint-flows.md`

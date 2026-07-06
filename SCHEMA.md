@@ -91,6 +91,8 @@ Schema version 1 expects:
 - `diagnostics.md`
 - `workspace-context.md`
 - `workspace-contract-matches.md`
+- `workspace-feature-flows.json`
+- `workspace-feature-flows.md`
 - `frontend-consumers.md`
 - `package-graph.md`
 - `maven-graph.md`
@@ -134,7 +136,7 @@ Schema version 1 expects:
 
 `diagnostics.json` contains a compact diagnosis index with `entrypoints`, `risky_contracts`, `workspace_resolved_contracts`, `unscanned_services`, `endpoints_without_tests`, `weak_flows`, and `likely_tests`. It is derived from existing route, contract, endpoint-flow, flow, test-map, and workspace overlay facts.
 
-Workspace files are additive generated outputs. When a workspace is detected, `.goregraph-workspace/registry.json` stores discovered projects with `current`, `indexed`, or `not_indexed` status. `.goregraph-workspace/context.json` stores loaded indexes, known backend services, and referenced but missing services. `.goregraph-workspace/contract-matches.json` stores cross-project API contract matches between already indexed projects. Existing indexed siblings receive `workspace-context.md`, `workspace-contract-matches.md`, and `frontend-consumers.md` overlay reports in their configured output directories. Workspace reconciliation may also update `diagnostics.json`, `diagnostics.md`, and `endpoints.md` with workspace-resolved contracts and frontend consumers. These overlays are regenerated from existing scan output and do not imply sibling projects were rescanned.
+Workspace files are additive generated outputs. When a workspace is detected, `.goregraph-workspace/registry.json` stores discovered projects with `current`, `indexed`, or `not_indexed` status. `.goregraph-workspace/context.json` stores loaded indexes, known backend services, and referenced but missing services. `.goregraph-workspace/contract-matches.json` stores cross-project API contract matches between already indexed projects. `.goregraph-workspace/feature-flows.json` stores resolved end-to-end feature flows from frontend API call to backend endpoint flow and matching tests. Existing indexed siblings receive `workspace-context.md`, `workspace-contract-matches.md`, `workspace-feature-flows.json`, `workspace-feature-flows.md`, and `frontend-consumers.md` overlay reports in their configured output directories. Workspace reconciliation may also update `diagnostics.json`, `diagnostics.md`, and `endpoints.md` with workspace-resolved contracts and frontend consumers. These overlays are regenerated from existing scan output and do not imply sibling projects were rescanned.
 
 `package-graph.json` contains Node workspace package nodes and package dependency edges extracted from `package.json`. Internal workspace edges use reason `workspace-package-json-dependency`.
 

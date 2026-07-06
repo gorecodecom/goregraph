@@ -245,6 +245,14 @@ class CadasterController {
 	if !strings.Contains(context, "Loaded Indexes") || !strings.Contains(context, "microservices/ms-cadaster") {
 		t.Fatalf("workspace root context alias returned unexpected output:\n%s", context)
 	}
+
+	features, err := Search(workspace, "workspace-features")
+	if err != nil {
+		t.Fatalf("Search workspace-features at workspace root returned error: %v", err)
+	}
+	if !strings.Contains(features, "# GoreGraph Workspace Feature Flows") {
+		t.Fatalf("workspace root feature alias returned unexpected output:\n%s", features)
+	}
 }
 
 func TestExplainFileShowsSymbolsAndRelations(t *testing.T) {

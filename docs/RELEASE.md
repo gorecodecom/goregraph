@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript/TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output. `v0.8.0` adds frontend API to backend route contract matching, safer URL normalization, and explicit weak/static contract issue reports. `v0.8.1` adds diagnostics, unscanned-service classification, and lower-noise affected output. `v0.8.2` adds zero-config workspace discovery and cross-project overlay refreshes. `v0.8.3` is the current local development version for workspace query fallback, integrated workspace diagnostics, frontend consumers in endpoints, and stricter path matching; it is not released until a tag is pushed.
+`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript/TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output. `v0.8.0` adds frontend API to backend route contract matching, safer URL normalization, and explicit weak/static contract issue reports. `v0.8.1` adds diagnostics, unscanned-service classification, and lower-noise affected output. `v0.8.2` adds zero-config workspace discovery and cross-project overlay refreshes. `v0.8.3` is the current local development version for workspace query fallback, integrated workspace diagnostics, frontend consumers in endpoints, end-to-end workspace feature flows, and stricter path matching; it is not released until a tag is pushed.
 
 Completed release checks:
 
@@ -126,6 +126,8 @@ Completed release checks:
 - project `workspace-context.md` distinguishes `This project` from `Last refreshed by`.
 - project `diagnostics.md` and `diagnostics.json` include workspace-resolved contracts.
 - backend `endpoints.md` includes a `Frontend Consumers` section.
+- `workspace-feature-flows.json` and `workspace-feature-flows.md` connect frontend API calls to backend endpoint flow steps and tests.
+- `goregraph query . workspace-features` works from scanned projects and workspace roots.
 - `manifest.json` and `audit.json` list workspace overlay files.
 - static path segments no longer method-mismatch against backend `{param}` routes.
 

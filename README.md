@@ -70,6 +70,8 @@ Implemented:
 - deterministic `diagnostics.md`
 - deterministic `workspace-context.md`
 - deterministic `workspace-contract-matches.md`
+- deterministic `workspace-feature-flows.json`
+- deterministic `workspace-feature-flows.md`
 - deterministic `frontend-consumers.md`
 - deterministic `package-graph.md`
 - deterministic `maven-graph.md`
@@ -319,6 +321,8 @@ goregraph-out/
   diagnostics.md
   workspace-context.md
   workspace-contract-matches.md
+  workspace-feature-flows.json
+  workspace-feature-flows.md
   frontend-consumers.md
   package-graph.md
   maven-graph.md
@@ -358,6 +362,7 @@ goregraph query . diagnostics
 goregraph query . package-graph
 goregraph query . maven-graph
 goregraph query . workspace-contracts
+goregraph query . workspace-features
 goregraph query . navigation
 goregraph query . endpoint-flows
 goregraph query . analyzers
@@ -371,6 +376,7 @@ Workspace aliases also work from the workspace root after at least one project s
 cd ~/projects/weka
 goregraph query . workspace-context
 goregraph query . workspace-contracts
+goregraph query . workspace-features
 ```
 
 When GoreGraph detects a workspace above the scanned project, it also writes:
@@ -380,8 +386,10 @@ When GoreGraph detects a workspace above the scanned project, it also writes:
   registry.json
   context.json
   contract-matches.json
+  feature-flows.json
   workspace-context.md
   contract-matches.md
+  feature-flows.md
 ```
 
 and refreshes workspace overlays in every already indexed project:
@@ -390,6 +398,8 @@ and refreshes workspace overlays in every already indexed project:
 goregraph-out/
   workspace-context.md
   workspace-contract-matches.md
+  workspace-feature-flows.json
+  workspace-feature-flows.md
   frontend-consumers.md
 ```
 
@@ -554,7 +564,7 @@ Current extraction is local and deterministic. It does not run project code or c
 
 `diagnostics.json` and `diagnostics.md` summarize the most useful diagnostic entrypoints: top routes/endpoints, risky contracts, unscanned services, endpoints without detected tests, weak inferred flows, and likely tests.
 
-Workspace files are additive overlays. `.goregraph-workspace/registry.json` lists discovered sibling projects and whether each one has a scan index. `.goregraph-workspace/context.json` summarizes loaded indexes and known services. `.goregraph-workspace/contract-matches.json` links API contracts from indexed projects to backend routes from indexed sibling services. Existing scanned siblings receive refreshed `workspace-context.md`, `workspace-contract-matches.md`, and `frontend-consumers.md` files after each later scan. Workspace reconciliation also updates `diagnostics.md` with resolved workspace contracts and appends frontend consumers to backend `endpoints.md`.
+Workspace files are additive overlays. `.goregraph-workspace/registry.json` lists discovered sibling projects and whether each one has a scan index. `.goregraph-workspace/context.json` summarizes loaded indexes and known services. `.goregraph-workspace/contract-matches.json` links API contracts from indexed projects to backend routes from indexed sibling services. `.goregraph-workspace/feature-flows.json` links resolved frontend calls to backend endpoint flows and tests. Existing scanned siblings receive refreshed `workspace-context.md`, `workspace-contract-matches.md`, `workspace-feature-flows.json`, `workspace-feature-flows.md`, and `frontend-consumers.md` files after each later scan. Workspace reconciliation also updates `diagnostics.md` with resolved workspace contracts and appends frontend consumers to backend `endpoints.md`.
 
 `package-graph.json` contains Node workspace package nodes and package-to-package dependency edges from `package.json`.
 

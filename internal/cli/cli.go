@@ -143,7 +143,7 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 
 func runQuery(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph query <path> <term-or-output>\n\nSearches an existing goregraph-out index. Known output aliases such as graph-full, callgraph, routes, flows, api-contracts, package-graph, maven-graph, navigation, endpoint-flows, spring, endpoints, dependencies, analyzers, workspace, workspace-context, workspace-contracts, frontend-consumers, affected, and audit print that generated file directly.\n")
+		fmt.Fprint(stdout, "Usage: goregraph query <path> <term-or-output>\n\nSearches an existing goregraph-out index. Known output aliases such as graph-full, callgraph, routes, flows, api-contracts, package-graph, maven-graph, navigation, endpoint-flows, spring, endpoints, dependencies, analyzers, workspace, workspace-context, workspace-contracts, workspace-features, frontend-consumers, affected, and audit print that generated file directly.\n")
 		return 0
 	}
 	if len(args) < 2 {

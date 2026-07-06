@@ -156,6 +156,117 @@ func TestWorkspacePathMatchingDoesNotTreatStaticSegmentsAsRouteParams(t *testing
 	}
 }
 
+func TestWorkspaceFeatureFlowsConnectFrontendBackendServiceAndTests(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, "apps/portal/src/api/cadasterservice.js", "export function importCadaster(id) {\n"+
+		"  return fetch(`/cadasters/${id}/import`, { method: 'POST' });\n"+
+		"}\n")
+	writeFile(t, cadaster, "src/main/java/com/example/CadasterController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  private final CadasterService cadasterService;
+
+  CadasterController(CadasterService cadasterService) {
+    this.cadasterService = cadasterService;
+  }
+
+  @PostMapping("/{cadasterId}/import")
+  String importFile(@PathVariable String cadasterId) {
+    return cadasterService.importFile(cadasterId);
+  }
+}
+`)
+	writeFile(t, cadaster, "src/main/java/com/example/CadasterService.java", `package com.example;
+
+import org.springframework.stereotype.Service;
+
+@Service
+class CadasterService {
+  private final CadasterRepository cadasterRepository;
+
+  CadasterService(CadasterRepository cadasterRepository) {
+    this.cadasterRepository = cadasterRepository;
+  }
+
+  String importFile(String cadasterId) {
+    cadasterRepository.save(cadasterId);
+    return cadasterId;
+  }
+}
+`)
+	writeFile(t, cadaster, "src/main/java/com/example/CadasterRepository.java", `package com.example;
+
+import org.springframework.stereotype.Repository;
+
+@Repository
+class CadasterRepository {
+  void save(String cadasterId) {
+  }
+}
+`)
+	writeFile(t, cadaster, "src/test/java/com/example/CadasterControllerTest.java", `package com.example;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.test.web.servlet.MockMvc;
+
+class CadasterControllerTest {
+  private MockMvc mockMvc;
+
+  @Test
+  void importsFile() throws Exception {
+    mockMvc.perform(post("/cadasters/42/import"));
+  }
+}
+`)
+
+	if _, err := Run(frontend, config.Defaults()); err != nil {
+		t.Fatalf("Run frontend returned error: %v", err)
+	}
+	if _, err := Run(cadaster, config.Defaults()); err != nil {
+		t.Fatalf("Run cadaster returned error: %v", err)
+	}
+
+	featureReport := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-feature-flows.md"))
+	for _, want := range []string{
+		"apps/portal/src/api/cadasterservice.js:2",
+		"CadasterController.importFile",
+		"CadasterService.importFile",
+		"CadasterRepository.save",
+		"CadasterControllerTest",
+	} {
+		if !strings.Contains(featureReport, want) {
+			t.Fatalf("workspace feature flow report missing %q:\n%s", want, featureReport)
+		}
+	}
+
+	var flows []WorkspaceFeatureFlowRecord
+	readJSON(t, filepath.Join(frontend, "goregraph-out", "workspace-feature-flows.json"), &flows)
+	if len(flows) != 1 {
+		t.Fatalf("feature flow count = %d, want 1: %#v", len(flows), flows)
+	}
+	if len(flows[0].BackendSteps) < 3 {
+		t.Fatalf("feature flow missing backend steps: %#v", flows[0])
+	}
+	if len(flows[0].Tests) == 0 {
+		t.Fatalf("feature flow missing tests: %#v", flows[0])
+	}
+
+	workspaceReport := readText(t, filepath.Join(workspace, ".goregraph-workspace", "feature-flows.md"))
+	if !strings.Contains(workspaceReport, "frontend/frontend-monorepo") || !strings.Contains(workspaceReport, "microservices/ms-cadaster") {
+		t.Fatalf("workspace-level feature flow report missing projects:\n%s", workspaceReport)
+	}
+}
+
 func TestWorkspaceStatusDetectsWorkspaceRootItself(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "weka")
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
