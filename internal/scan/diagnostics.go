@@ -195,11 +195,13 @@ func renderDiagnosticsReport(record DiagnosticsRecord) string {
 		b.WriteString("- none detected\n")
 	} else {
 		for _, match := range record.WorkspaceResolvedContracts {
-			b.WriteString(fmt.Sprintf("- %s `%s` from `%s:%d` -> %s %s `%s` via `%s:%d` (%s)\n",
+			b.WriteString(fmt.Sprintf("- %s `%s` frontend `%s` `%s:%d` -> backend `%s` %s %s `%s` via `%s:%d` (%s)\n",
 				match.APIHTTPMethod,
 				match.APIPath,
+				match.APIProject,
 				match.APIFile,
 				match.APILine,
+				emptyAsNone(match.BackendProject),
 				emptyAsNone(match.BackendService),
 				match.BackendHTTPMethod,
 				match.BackendPath,

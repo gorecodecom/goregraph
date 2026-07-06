@@ -92,6 +92,13 @@ class CadasterController {
 		t.Fatalf("diagnostics json missing workspace resolved contracts: %#v", diagnostics)
 	}
 
+	backendDiagnostics := readText(t, filepath.Join(cadaster, "goregraph-out", "diagnostics.md"))
+	if !strings.Contains(backendDiagnostics, "## Workspace Resolved Contracts") ||
+		!strings.Contains(backendDiagnostics, "frontend/frontend-monorepo") ||
+		!strings.Contains(backendDiagnostics, "src/api/cadasterservice.js:2") {
+		t.Fatalf("backend diagnostics missing incoming workspace contract:\n%s", backendDiagnostics)
+	}
+
 	var manifest Manifest
 	readJSON(t, filepath.Join(frontend, "goregraph-out", "manifest.json"), &manifest)
 	assertGeneratedFile(t, manifest.Generated, "workspace-context.md")
@@ -107,6 +114,18 @@ class CadasterController {
 	consumers := readText(t, filepath.Join(cadaster, "goregraph-out", "frontend-consumers.md"))
 	if !strings.Contains(consumers, "frontend/frontend-monorepo") || !strings.Contains(consumers, "src/api/cadasterservice.js") {
 		t.Fatalf("backend frontend-consumers overlay missing frontend usage:\n%s", consumers)
+	}
+
+	frontendConsumers := readText(t, filepath.Join(frontend, "goregraph-out", "frontend-consumers.md"))
+	if !strings.Contains(frontendConsumers, "not applicable for frontend projects") ||
+		!strings.Contains(frontendConsumers, "workspace-feature-flows.md") {
+		t.Fatalf("frontend frontend-consumers overlay should explain report scope:\n%s", frontendConsumers)
+	}
+
+	featureReport := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-feature-flows.md"))
+	if !strings.Contains(featureReport, "no endpoint or backend-step tests matched backend endpoint GET `/cadasters/{cadasterId}`") ||
+		!strings.Contains(featureReport, "Endpoints Without Tests") {
+		t.Fatalf("feature flow report missing actionable test gap:\n%s", featureReport)
 	}
 
 	endpoints := readText(t, filepath.Join(cadaster, "goregraph-out", "endpoints.md"))

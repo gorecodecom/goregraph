@@ -514,6 +514,9 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 			Confidence:        match.Confidence,
 			Reason:            "frontend api contract resolved to indexed backend endpoint",
 		}
+		if len(tests) == 0 {
+			record.TestReason = fmt.Sprintf("no endpoint or backend-step tests matched backend endpoint %s `%s`; check backend diagnostics Endpoints Without Tests", match.BackendHTTPMethod, match.BackendPath)
+		}
 		if !hasFlow {
 			record.BackendMethod = match.BackendHandler
 		}
@@ -768,9 +771,22 @@ func renderFrontendConsumersReport(projectPath string, records []WorkspaceContra
 		))
 	}
 	if count == 0 {
+		if hasOutgoingWorkspaceContracts(projectPath, records) {
+			b.WriteString("- not applicable for frontend projects; this report lists frontend consumers of backend endpoints. See `workspace-contract-matches.md` and `workspace-feature-flows.md` for this project's outgoing API calls.\n")
+			return b.String()
+		}
 		b.WriteString("- none detected\n")
 	}
 	return b.String()
+}
+
+func hasOutgoingWorkspaceContracts(projectPath string, records []WorkspaceContractMatchRecord) bool {
+	for _, record := range records {
+		if record.APIProject == projectPath && record.Issue == contractIssueMatched {
+			return true
+		}
+	}
+	return false
 }
 
 func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) string {
@@ -805,7 +821,11 @@ func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) str
 		}
 		b.WriteString("- Tests:\n")
 		if len(record.Tests) == 0 {
-			b.WriteString("  - none detected\n")
+			if record.TestReason != "" {
+				b.WriteString(fmt.Sprintf("  - none detected (%s)\n", record.TestReason))
+			} else {
+				b.WriteString("  - none detected\n")
+			}
 		} else {
 			for _, test := range record.Tests {
 				label := test.TestClass + "." + test.TestMethod
@@ -837,15 +857,19 @@ func updateWorkspaceProjectDiagnostics(out, projectPath string, matches []Worksp
 	var resolved []WorkspaceContractMatchRecord
 	resolvedServices := map[string]bool{}
 	for _, match := range matches {
-		if match.APIProject != projectPath || match.Issue != contractIssueMatched {
+		if match.Issue != contractIssueMatched {
 			continue
 		}
-		resolved = append(resolved, match)
-		if match.BackendService != "" {
-			resolvedServices[match.BackendService] = true
+		if match.APIProject == projectPath || match.BackendProject == projectPath {
+			resolved = append(resolved, match)
 		}
-		if match.ServiceCandidate != "" {
-			resolvedServices[match.ServiceCandidate] = true
+		if match.APIProject == projectPath {
+			if match.BackendService != "" {
+				resolvedServices[match.BackendService] = true
+			}
+			if match.ServiceCandidate != "" {
+				resolvedServices[match.ServiceCandidate] = true
+			}
 		}
 	}
 	diagnostics.WorkspaceResolvedContracts = resolved

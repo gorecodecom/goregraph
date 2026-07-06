@@ -423,6 +423,7 @@ type WorkspaceFeatureFlowRecord struct {
 	BackendLine       int                      `json:"backend_line,omitempty"`
 	BackendSteps      []SpringEndpointFlowStep `json:"backend_steps,omitempty"`
 	Tests             []TestMapRecord          `json:"tests,omitempty"`
+	TestReason        string                   `json:"test_reason,omitempty"`
 	Confidence        string                   `json:"confidence"`
 	Reason            string                   `json:"reason,omitempty"`
 }

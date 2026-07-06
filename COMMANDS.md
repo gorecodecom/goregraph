@@ -194,12 +194,12 @@ What the generated files mean:
 - `api-contracts.md`: human-readable API client call inventory.
 - `contract-matches.md`: human-readable frontend API to backend route match report.
 - `potentially-broken-contracts.md`: focused report for API calls that could not be safely matched to backend routes.
-- `diagnostics.md`: prioritized human-readable diagnosis report with entrypoints, risky contracts, unscanned services, untested endpoints, weak flows, and likely tests.
+- `diagnostics.md`: prioritized human-readable diagnosis report with entrypoints, risky contracts, workspace-resolved contracts, unscanned services, untested endpoints, weak flows, and likely tests.
 - `workspace-context.md`: readable workspace project/index summary, or a no-workspace placeholder.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
 - `workspace-feature-flows.json`: cross-project feature flows from frontend API call to backend endpoint flow and tests.
-- `workspace-feature-flows.md`: readable end-to-end feature-flow report.
-- `frontend-consumers.md`: backend-oriented view of frontend API callers.
+- `workspace-feature-flows.md`: readable end-to-end feature-flow report, including a reason when no linked tests were detected.
+- `frontend-consumers.md`: backend-oriented view of frontend API callers; frontend projects explain that this report is not applicable and point to workspace contract/feature reports.
 - `package-graph.md`: human-readable Node package/workspace dependency graph.
 - `maven-graph.md`: human-readable Maven dependency graph.
 - `navigation.md`: human-readable starting-point report with likely routes, central files, important symbols, test orientation, and analyzer coverage.
@@ -219,12 +219,12 @@ Workspace overlays:
 - `.goregraph-workspace/feature-flows.json`: cross-project feature flows from already scanned projects.
 - `workspace-context.md`: readable workspace project/index summary.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
-- `workspace-feature-flows.md`: readable frontend-to-backend-to-test feature flows.
-- `frontend-consumers.md`: backend-oriented view of frontend API callers.
+- `workspace-feature-flows.md`: readable frontend-to-backend-to-test feature flows, including missing-test reasons.
+- `frontend-consumers.md`: backend-oriented view of frontend API callers; frontend projects explain the report scope instead of showing an ambiguous empty result.
 
 Workspace reconciliation also refreshes:
 
-- `diagnostics.md` and `diagnostics.json` with workspace-resolved contracts for the project.
+- `diagnostics.md` and `diagnostics.json` with outgoing frontend contracts and incoming backend consumers for the project.
 - `endpoints.md` with a `Frontend Consumers` section for backend projects.
 
 When workspace discovery is active, `scan` also adds `.goregraph-workspace/` to the detected workspace root `.gitignore` unless `--no-update-gitignore` is used.
