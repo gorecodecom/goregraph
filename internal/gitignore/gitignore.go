@@ -79,6 +79,14 @@ func (p pattern) matches(rel string, isDir bool) bool {
 
 func EnsureOutputIgnored(root, outputDir string) (bool, error) {
 	entry := strings.TrimSuffix(outputDir, "/") + "/"
+	return ensureEntryIgnored(root, entry, "# GoreGraph local scan output")
+}
+
+func EnsureWorkspaceIgnored(root string) (bool, error) {
+	return ensureEntryIgnored(root, ".goregraph-workspace/", "# GoreGraph local workspace output")
+}
+
+func ensureEntryIgnored(root, entry, comment string) (bool, error) {
 	path := filepath.Join(root, ".gitignore")
 	body, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
@@ -99,7 +107,8 @@ func EnsureOutputIgnored(root, outputDir string) (bool, error) {
 	if text != "" && !strings.HasSuffix(text, "\n\n") {
 		b.WriteString("\n")
 	}
-	b.WriteString("# GoreGraph local scan output\n")
+	b.WriteString(comment)
+	b.WriteString("\n")
 	b.WriteString(entry)
 	b.WriteString("\n")
 	return true, os.WriteFile(path, []byte(b.String()), 0o644)

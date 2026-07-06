@@ -119,6 +119,15 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	return &registry, nil
 }
 
+// WorkspaceRoot returns the workspace root that would be used for a project.
+func WorkspaceRoot(root string, cfg config.Config) (string, bool, error) {
+	currentAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", false, err
+	}
+	return resolveWorkspaceRoot(currentAbs, cfg.WorkspaceRoot)
+}
+
 func resolveWorkspaceRoot(currentAbs, override string) (string, bool, error) {
 	if override != "" {
 		root := override

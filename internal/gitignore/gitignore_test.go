@@ -59,6 +59,30 @@ func TestEnsureOutputIgnoredIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestEnsureWorkspaceIgnoredAppendsWorkspaceOutput(t *testing.T) {
+	dir := t.TempDir()
+
+	changed, err := EnsureWorkspaceIgnored(dir)
+	if err != nil {
+		t.Fatalf("EnsureWorkspaceIgnored returned error: %v", err)
+	}
+	if !changed {
+		t.Fatal("changed = false, want true")
+	}
+
+	body, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	if !strings.Contains(text, "# GoreGraph local workspace output\n") {
+		t.Fatalf("missing GoreGraph workspace comment in .gitignore:\n%s", text)
+	}
+	if !strings.Contains(text, ".goregraph-workspace/\n") {
+		t.Fatalf("missing .goregraph-workspace/ in .gitignore:\n%s", text)
+	}
+}
+
 func TestParseMatchesRootRelativeIgnoredPaths(t *testing.T) {
 	matcher := Parse("dist/\n*.log\n!important.log\n")
 

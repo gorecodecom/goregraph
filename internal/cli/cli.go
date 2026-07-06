@@ -260,6 +260,19 @@ func runScan(args []string, stdout, stderr io.Writer, update bool) int {
 		fmt.Fprintf(stderr, "error: scan failed: %v\n", err)
 		return 1
 	}
+	if loaded.UpdateGitignore && loaded.Workspace {
+		workspaceRoot, ok, err := scan.WorkspaceRoot(root, loaded)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: detecting workspace root failed: %v\n", err)
+			return 1
+		}
+		if ok {
+			if _, err := gitignore.EnsureWorkspaceIgnored(workspaceRoot); err != nil {
+				fmt.Fprintf(stderr, "error: updating workspace .gitignore failed: %v\n", err)
+				return 1
+			}
+		}
+	}
 
 	fmt.Fprintf(stdout, "Scanned %d files, skipped %d files.\n", result.ScannedFiles, result.SkippedFiles)
 	fmt.Fprintf(stdout, "Output written to %s\n", loaded.OutputDir)
@@ -312,7 +325,7 @@ func printScanHelp(w io.Writer) {
 Creates deterministic GoreGraph output for a project.
 
 Options:
-  --no-update-gitignore   Do not add goregraph-out/ to the project .gitignore
+  --no-update-gitignore   Do not add generated GoreGraph output to .gitignore files
   --no-workspace          Do not discover or refresh workspace overlays
   --workspace <path>      Use an explicit workspace root
 

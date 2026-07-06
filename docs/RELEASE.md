@@ -130,6 +130,7 @@ Completed release checks:
 - `goregraph query . workspace-features` works from scanned projects and workspace roots.
 - `manifest.json` and `audit.json` list workspace overlay files.
 - static path segments no longer method-mismatch against backend `{param}` routes.
+- `goregraph scan .` adds `.goregraph-workspace/` to the detected workspace root `.gitignore` unless `--no-update-gitignore` is used.
 
 Remaining release-hardening items:
 

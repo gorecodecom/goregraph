@@ -16,7 +16,7 @@ The tool is intentionally conservative:
 - no agent config writes
 - no global project modifications
 - writes scan output to `goregraph-out/` and, when a workspace is detected, workspace metadata to `.goregraph-workspace/`
-- may add `goregraph-out/` to the project `.gitignore`
+- may add generated GoreGraph output paths to the relevant `.gitignore` files
 
 ## Status
 
@@ -83,7 +83,7 @@ Implemented:
 - workspace registry and cross-project overlay reports when a repository is part of a detected workspace
 - default exclusions
 - project `.gitignore` exclusions
-- automatic project `.gitignore` entry for `goregraph-out/`
+- automatic `.gitignore` entries for `goregraph-out/` and `.goregraph-workspace/`
 - optional `goregraph.yml`
 - local symbol extraction for Go, Python, PHP, Shell, Java, JavaScript, TypeScript, and Markdown
 - local relation extraction for Go, Python, PHP, Shell, Java, JavaScript, and TypeScript
@@ -441,7 +441,7 @@ Create or rebuild GoreGraph output for a project.
 goregraph scan <path> --no-update-gitignore
 ```
 
-Scan without adding `goregraph-out/` to the project `.gitignore`.
+Scan without adding GoreGraph-generated output paths to `.gitignore` files.
 
 ```bash
 goregraph scan <path> --no-workspace
@@ -614,6 +614,7 @@ coverage/
 .vscode/
 .gitignore
 goregraph-out/
+.goregraph-workspace/
 ```
 
 It also skips:
@@ -622,7 +623,7 @@ It also skips:
 - files over the configured size limit
 - symlinks by default
 
-## Project .gitignore
+## Generated Output .gitignore
 
 GoreGraph reads the project `.gitignore` and uses it as additional scan exclusions.
 
@@ -635,13 +636,22 @@ goregraph-out/
 
 This prevents local scan output from being committed.
 
+When workspace discovery is active and a workspace root is detected, GoreGraph also ensures the workspace root `.gitignore` contains:
+
+```gitignore
+# GoreGraph local workspace output
+.goregraph-workspace/
+```
+
+This prevents central workspace overlays from being committed when the workspace root itself is a Git repository.
+
 To opt out:
 
 ```bash
 goregraph scan . --no-update-gitignore
 ```
 
-GoreGraph only modifies the project-local `.gitignore`. It does not modify global Git config.
+GoreGraph only modifies `.gitignore` files in the scanned project and detected workspace root. It does not modify global Git config.
 
 ## Configuration
 
@@ -708,7 +718,7 @@ GoreGraph does:
 - read files under the selected scan root
 - write to `goregraph-out/`
 - write workspace registry/overlay files under a detected workspace root and already indexed sibling output directories
-- optionally update the project `.gitignore`
+- optionally update project and workspace root `.gitignore` files for generated GoreGraph output
 
 ## License
 

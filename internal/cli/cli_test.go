@@ -61,6 +61,54 @@ func TestRunScanNoUpdateGitignoreLeavesGitignoreUntouched(t *testing.T) {
 	}
 }
 
+func TestRunScanUpdatesWorkspaceGitignore(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	root := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	writeFile(t, root, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, filepath.Join(workspace, "microservices", "ms-cadaster"), "README.md", "# ms-cadaster\n")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"scan", root}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	projectGitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatalf("project .gitignore not written: %v", err)
+	}
+	if !strings.Contains(string(projectGitignore), "goregraph-out/") {
+		t.Fatalf("project .gitignore missing goregraph-out/:\n%s", string(projectGitignore))
+	}
+	workspaceGitignore, err := os.ReadFile(filepath.Join(workspace, ".gitignore"))
+	if err != nil {
+		t.Fatalf("workspace .gitignore not written: %v", err)
+	}
+	if !strings.Contains(string(workspaceGitignore), ".goregraph-workspace/") {
+		t.Fatalf("workspace .gitignore missing .goregraph-workspace/:\n%s", string(workspaceGitignore))
+	}
+}
+
+func TestRunScanNoUpdateGitignoreSkipsWorkspaceGitignore(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	root := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	writeFile(t, root, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, filepath.Join(workspace, "microservices", "ms-cadaster"), "README.md", "# ms-cadaster\n")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"scan", root, "--no-update-gitignore"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf("project .gitignore exists after opt-out, err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf("workspace .gitignore exists after opt-out, err=%v", err)
+	}
+}
+
 func TestRunScanNoWorkspaceSkipsWorkspaceRegistry(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "weka")
 	root := filepath.Join(workspace, "frontend", "frontend-monorepo")

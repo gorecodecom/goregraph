@@ -41,6 +41,7 @@ func Defaults() Config {
 			".vscode/",
 			".gitignore",
 			"goregraph-out/",
+			".goregraph-workspace/",
 		},
 	}
 }

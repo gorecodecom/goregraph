@@ -91,7 +91,7 @@ goregraph-out/
 Expected result:
 
 - creates or replaces the generated index files
-- adds `goregraph-out/` to the project `.gitignore` unless disabled
+- adds generated GoreGraph output paths to relevant `.gitignore` files unless disabled
 - prints a short completion summary
 - returns a non-zero exit code if config, filesystem access, or scan safety checks fail
 
@@ -156,7 +156,7 @@ goregraph scan help
 goregraph scan --help
 ```
 
-`--no-update-gitignore` prevents GoreGraph from adding the output directory to the project `.gitignore`.
+`--no-update-gitignore` prevents GoreGraph from adding generated output entries to project and workspace root `.gitignore` files.
 
 `--no-workspace` disables workspace discovery and skips `.goregraph-workspace/` plus sibling overlay refreshes.
 
@@ -226,6 +226,8 @@ Workspace reconciliation also refreshes:
 
 - `diagnostics.md` and `diagnostics.json` with workspace-resolved contracts for the project.
 - `endpoints.md` with a `Frontend Consumers` section for backend projects.
+
+When workspace discovery is active, `scan` also adds `.goregraph-workspace/` to the detected workspace root `.gitignore` unless `--no-update-gitignore` is used.
 
 Important behavior:
 
