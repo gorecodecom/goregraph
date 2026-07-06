@@ -10,11 +10,13 @@ const (
 	contractIssueMatched        = "matched"
 	contractIssueMethodMismatch = "method_mismatch"
 	contractIssueMissingRoute   = "missing_backend_route"
+	contractIssueUnscanned      = "unscanned_service"
 	contractIssueUnsafeDynamic  = "unsafe_dynamic"
 )
 
 func buildContractMatches(contracts []APIContractRecord, routes []CodeRouteRecord) []ContractMatchRecord {
 	backendRoutes := backendCodeRoutes(routes)
+	scannedServices := backendRouteServices(backendRoutes)
 	records := make([]ContractMatchRecord, 0, len(contracts))
 	for _, contract := range contracts {
 		if contract.UnsafeDynamic {
@@ -27,6 +29,10 @@ func buildContractMatches(contracts []APIContractRecord, routes []CodeRouteRecor
 		}
 		if route, ok := pathCompatibleContractRoute(contract, backendRoutes); ok {
 			records = append(records, contractIssue(contract, route, contractIssueMethodMismatch, "WEAK_MATCH", 0.45, "path pattern exists but http method differs"))
+			continue
+		}
+		if contract.ServiceCandidate != "" && !scannedServices[contract.ServiceCandidate] {
+			records = append(records, contractIssue(contract, CodeRouteRecord{}, contractIssueUnscanned, "OUT_OF_SCOPE", 0.75, contract.ServiceCandidate+" was not scanned; contract cannot be matched in this run"))
 			continue
 		}
 		records = append(records, contractIssue(contract, CodeRouteRecord{}, contractIssueMissingRoute, "WEAK_MATCH", 0.3, "no compatible backend route found"))
@@ -54,6 +60,17 @@ func backendCodeRoutes(routes []CodeRouteRecord) []CodeRouteRecord {
 		}
 	}
 	return backend
+}
+
+func backendRouteServices(routes []CodeRouteRecord) map[string]bool {
+	services := map[string]bool{}
+	for _, route := range routes {
+		service := serviceCandidateForPath(route.Path)
+		if service != "" {
+			services[service] = true
+		}
+	}
+	return services
 }
 
 func exactContractRoute(contract APIContractRecord, routes []CodeRouteRecord) (CodeRouteRecord, bool) {

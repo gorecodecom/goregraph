@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.8.0
+v0.8.1
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript, TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output. `v0.8.0` adds frontend API to backend route contract matching, safer URL normalization, and explicit weak/static contract issue reports.
+`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript, TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output. `v0.8.0` adds frontend API to backend route contract matching, safer URL normalization, and explicit weak/static contract issue reports. `v0.8.1` is the current local development version for diagnostics, unscanned-service classification, and lower-noise affected output; it is not released until a tag is pushed.
 
 Completed release checks:
 
@@ -103,6 +103,14 @@ Completed release checks:
 - unsafe dynamic frontend template URLs are reported as `unsafe_dynamic`.
 - `goregraph query . contract-matches`, `goregraph query . contracts`, `goregraph query . contract-matches-json`, and `goregraph query . broken-contracts` work.
 
+`v0.8.1` local feature checks:
+
+- `diagnostics.json` and `diagnostics.md` are generated.
+- `contract-matches.json` reports recognized frontend service calls as `unscanned_service` when that backend service was not scanned.
+- same-scope missing backend routes continue to report `missing_backend_route`.
+- `affected.md` filters external dependency labels and focuses on local file impact.
+- `goregraph query . diagnostics` and `goregraph query . diagnostics-json` work.
+
 Remaining release-hardening items:
 
 - Validate GoreGraph against more real-world projects before considering `1.0.0`.
@@ -126,7 +134,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.8.0
+goregraph 0.8.1
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -142,8 +150,8 @@ schema: 1
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v0.8.0 -m "Release v0.8.0"
-   git push origin v0.8.0
+   git tag -a v0.8.1 -m "Release v0.8.1"
+   git push origin v0.8.1
    ```
 
 5. GitHub Actions runs GoReleaser.

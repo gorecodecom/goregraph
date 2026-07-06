@@ -70,6 +70,7 @@ Schema version 1 expects:
 - `flows.json`
 - `api-contracts.json`
 - `contract-matches.json`
+- `diagnostics.json`
 - `package-graph.json`
 - `maven-graph.json`
 - `analyzers.json`
@@ -87,6 +88,7 @@ Schema version 1 expects:
 - `api-contracts.md`
 - `contract-matches.md`
 - `potentially-broken-contracts.md`
+- `diagnostics.md`
 - `package-graph.md`
 - `maven-graph.md`
 - `navigation.md`
@@ -125,7 +127,9 @@ Schema version 1 expects:
 
 `api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helper calls and `fetch`. Records include HTTP method, raw path, normalized path, query string, sorted query params, service candidate, caller line, app/package context, confidence, and reason. Supported helper calls include direct and multiline argument forms where a literal path argument is visible, for example `GetHelper(dispatch, "/service/path")`. Template placeholders such as `${id}` normalize to `{id}`. Complex dynamic expressions such as ternaries are marked with `unsafe_dynamic` and normalized to `{dynamic}`.
 
-`contract-matches.json` compares frontend API contracts with backend route records from the same scan. Match records include API method/path/location, backend method/path/handler/location when available, service candidate, issue, confidence, confidence score, and reason. Issue values currently include `matched`, `method_mismatch`, `missing_backend_route`, and `unsafe_dynamic`.
+`contract-matches.json` compares frontend API contracts with backend route records from the same scan. Match records include API method/path/location, backend method/path/handler/location when available, service candidate, issue, confidence, confidence score, and reason. Issue values currently include `matched`, `method_mismatch`, `missing_backend_route`, `unscanned_service`, and `unsafe_dynamic`. `unscanned_service` means the frontend call references a recognized service candidate whose backend routes were not present in this scan, so it should not be treated as a broken route inside the scanned backend scope.
+
+`diagnostics.json` contains a compact diagnosis index with `entrypoints`, `risky_contracts`, `unscanned_services`, `endpoints_without_tests`, `weak_flows`, and `likely_tests`. It is derived from existing route, contract, endpoint-flow, flow, and test-map facts.
 
 `package-graph.json` contains Node workspace package nodes and package dependency edges extracted from `package.json`. Internal workspace edges use reason `workspace-package-json-dependency`.
 
@@ -137,7 +141,7 @@ Schema version 1 expects:
 
 `audit.json` records the scan command, generated files, file counts, timestamps, and safety flags. Normal scans set `network_used` and `external_commands` to `false`.
 
-`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `contract-matches.md`, `potentially-broken-contracts.md`, `package-graph.md`, `maven-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports.
+`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `contract-matches.md`, `potentially-broken-contracts.md`, `diagnostics.md`, `package-graph.md`, `maven-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports. `affected.md` focuses on local file targets and filters external dependency labels.
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
 
@@ -149,6 +153,7 @@ GoreGraph confidence values are static-analysis labels, not runtime proof:
 - `RESOLVED`: multiple static facts were connected with a deterministic match, for example frontend API method/path to backend route method/path.
 - `INFERRED`: the fact was inferred from local naming, call, test, or ownership heuristics.
 - `WEAK_MATCH`: GoreGraph found a possible relationship or issue, but the source expression is dynamic, incomplete, or only loosely compatible.
+- `OUT_OF_SCOPE`: GoreGraph recognized a referenced service candidate, but that backend service was not represented by scanned routes.
 
 ## Language Records
 

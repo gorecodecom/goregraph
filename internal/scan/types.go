@@ -323,6 +323,44 @@ type ContractMatchRecord struct {
 	Reason            string  `json:"reason,omitempty"`
 }
 
+type DiagnosticsRecord struct {
+	Entrypoints           []DiagnosticRouteRecord   `json:"entrypoints"`
+	RiskyContracts        []ContractMatchRecord     `json:"risky_contracts"`
+	UnscannedServices     []DiagnosticServiceRecord `json:"unscanned_services"`
+	EndpointsWithoutTests []SpringEndpointRecord    `json:"endpoints_without_tests"`
+	WeakFlows             []DiagnosticFlowRecord    `json:"weak_flows"`
+	LikelyTests           []TestMapRecord           `json:"likely_tests"`
+}
+
+type DiagnosticRouteRecord struct {
+	HTTPMethod string `json:"http_method"`
+	Path       string `json:"path"`
+	RouteID    string `json:"route_id,omitempty"`
+	Handler    string `json:"handler,omitempty"`
+	File       string `json:"file"`
+	Line       int    `json:"line,omitempty"`
+	Framework  string `json:"framework,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+type DiagnosticServiceRecord struct {
+	Service   string `json:"service"`
+	Contracts int    `json:"contracts"`
+	Reason    string `json:"reason"`
+}
+
+type DiagnosticFlowRecord struct {
+	HTTPMethod string `json:"http_method"`
+	Path       string `json:"path"`
+	RouteID    string `json:"route_id,omitempty"`
+	Handler    string `json:"handler,omitempty"`
+	File       string `json:"file"`
+	Line       int    `json:"line,omitempty"`
+	Confidence string `json:"confidence"`
+	Reason     string `json:"reason"`
+}
+
 type PackageGraphRecord struct {
 	Nodes []PackageNodeRecord `json:"nodes"`
 	Edges []PackageEdgeRecord `json:"edges"`

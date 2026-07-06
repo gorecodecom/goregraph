@@ -120,12 +120,19 @@ func renderDependenciesReport(index SpringIndex) string {
 func renderAffectedReport(graph RichGraph) string {
 	var incoming = map[string]int{}
 	labels := map[string]string{}
+	localFiles := map[string]bool{}
 	for _, node := range graph.Nodes {
 		labels[node.ID] = node.Label
+		if node.Kind == "file" && node.SourceFile != "" {
+			localFiles[node.ID] = true
+		}
 	}
 	for _, edge := range graph.Edges {
+		if !localFiles[edge.Target] {
+			continue
+		}
 		switch edge.Type {
-		case "imports", "imports_internal", "tests", "sources", "includes", "contains":
+		case "imports", "imports_internal", "tests", "sources", "includes", "calls":
 			incoming[edge.Target]++
 		}
 	}

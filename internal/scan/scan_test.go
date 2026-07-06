@@ -855,6 +855,167 @@ class CadasterController {
 	}
 }
 
+func TestRunClassifiesContractsForUnscannedServices(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "apps/portal/src/api/services.js", "import { GetHelper } from '../utils/requestHelper';\n\n"+
+		"export function loadCadaster(dispatch, id) {\n"+
+		"  return GetHelper(dispatch, `/cadasters/${id}`);\n"+
+		"}\n\n"+
+		"export function loadTask(dispatch, id) {\n"+
+		"  return GetHelper(dispatch, `/tasks/${id}`);\n"+
+		"}\n\n"+
+		"export function loadMissingCadasterRoute(dispatch) {\n"+
+		"  return GetHelper(dispatch, '/cadasters/missing/detail');\n"+
+		"}\n")
+	writeFile(t, root, "apps/portal/src/utils/requestHelper.js", `export function GetHelper(dispatch, path) { return fetch(path); }
+`)
+	writeFile(t, root, "src/main/java/com/example/CadasterController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @GetMapping("/{cadasterId}")
+  String get(@PathVariable String cadasterId) {
+    return cadasterId;
+  }
+}
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var matches []ContractMatchRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "contract-matches.json"), &matches)
+	assertHasContractIssue(t, matches, "GET", "/tasks/{id}", "unscanned_service")
+	assertHasContractIssue(t, matches, "GET", "/cadasters/missing/detail", "missing_backend_route")
+
+	report := readText(t, filepath.Join(root, "goregraph-out", "contract-matches.md"))
+	if !strings.Contains(report, "unscanned_service") || !strings.Contains(report, "ms-task was not scanned") {
+		t.Fatalf("contract match report missing unscanned service context:\n%s", report)
+	}
+}
+
+func TestRunWritesDiagnosticsReports(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "apps/portal/src/routes.jsx", `import { Route } from "react-router-dom";
+import { Home } from "./Home";
+
+export function Routes() {
+  return <Route path="/" component={Home} />;
+}
+`)
+	writeFile(t, root, "apps/portal/src/Home.jsx", "import { GetHelper } from \"./utils/requestHelper\";\n\n"+
+		"export function Home() {\n"+
+		"  return loadTask();\n"+
+		"}\n\n"+
+		"export function loadTask(dispatch, id) {\n"+
+		"  return GetHelper(dispatch, `/tasks/${id}`);\n"+
+		"}\n")
+	writeFile(t, root, "apps/portal/src/Home.test.jsx", `import { Home } from "./Home";
+
+test("renders home", () => {
+  Home();
+});
+`)
+	writeFile(t, root, "apps/portal/src/utils/requestHelper.js", `export function GetHelper(dispatch, path) { return fetch(path); }
+`)
+	writeFile(t, root, "src/main/java/com/example/CadasterController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @GetMapping("/{cadasterId}")
+  String get() {
+    return "";
+  }
+}
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var diagnostics map[string]any
+	readJSON(t, filepath.Join(root, "goregraph-out", "diagnostics.json"), &diagnostics)
+	for _, key := range []string{"entrypoints", "risky_contracts", "unscanned_services", "endpoints_without_tests", "weak_flows", "likely_tests"} {
+		if _, ok := diagnostics[key]; !ok {
+			t.Fatalf("diagnostics.json missing key %q in %#v", key, diagnostics)
+		}
+	}
+
+	report := readText(t, filepath.Join(root, "goregraph-out", "diagnostics.md"))
+	for _, want := range []string{"# GoreGraph Diagnostics", "Top Entry Points", "Risky Contracts", "Unscanned Services", "Endpoints Without Tests", "Weak Flows", "Likely Tests"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("diagnostics report missing %q:\n%s", want, report)
+		}
+	}
+	if !strings.Contains(report, "ms-task") || !strings.Contains(report, "GET `/cadasters/{cadasterId}`") {
+		t.Fatalf("diagnostics report missing service and endpoint context:\n%s", report)
+	}
+}
+
+func TestRunAffectedReportPrioritizesLocalDiagnosisOverExternalImports(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "go.mod", "module example.test/affected\n")
+	writeFile(t, root, "cmd/app/main.go", `package main
+
+import "example.test/affected/internal/home"
+
+func main() {
+	home.Render()
+}
+`)
+	writeFile(t, root, "internal/home/home.go", `package home
+
+func Render() {}
+`)
+	writeFile(t, root, "package.json", `{"name":"portal"}`)
+	for _, rel := range []string{"src/App.jsx", "src/Home.jsx", "src/Search.jsx"} {
+		writeFile(t, root, rel, `import React from "react";
+import { Button } from "@weka/designsystem";
+
+export function Component() {
+  return React.createElement(Button);
+}
+`)
+	}
+	writeFile(t, root, "src/routes.jsx", `import { Route } from "react-router-dom";
+import { Component } from "./Home";
+
+export function Routes() {
+  return <Route path="/" component={Component} />;
+}
+`)
+	writeFile(t, root, "src/Home.test.jsx", `import { Component } from "./Home";
+
+test("renders", () => {
+  Component();
+});
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	affected := readText(t, filepath.Join(root, "goregraph-out", "affected.md"))
+	if strings.Contains(affected, "`react`") || strings.Contains(affected, "`@weka/designsystem`") {
+		t.Fatalf("affected report should not prioritize external imports:\n%s", affected)
+	}
+	if !strings.Contains(affected, "internal/home/home.go") {
+		t.Fatalf("affected report missing local diagnosis target:\n%s", affected)
+	}
+}
+
 func assertHasSymbol(t *testing.T, symbols []SymbolRecord, name, kind, file string) {
 	t.Helper()
 	for _, symbol := range symbols {
@@ -1050,7 +1211,7 @@ func TestRunSkipsLargeBinaryAndSymlinkFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(root, "src/app.go"), filepath.Join(root, "link.go")); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink creation is not permitted in this environment: %v", err)
 	}
 
 	result, err := Run(root, cfg)

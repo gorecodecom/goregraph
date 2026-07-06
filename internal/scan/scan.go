@@ -34,6 +34,7 @@ var GeneratedFiles = []string{
 	"flows.json",
 	"api-contracts.json",
 	"contract-matches.json",
+	"diagnostics.json",
 	"package-graph.json",
 	"maven-graph.json",
 	"analyzers.json",
@@ -48,6 +49,7 @@ var GeneratedFiles = []string{
 	"api-contracts.md",
 	"contract-matches.md",
 	"potentially-broken-contracts.md",
+	"diagnostics.md",
 	"package-graph.md",
 	"maven-graph.md",
 	"navigation.md",
@@ -237,6 +239,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	testMap := append(buildJavaTestMap(index.JavaSources, springIndex.Endpoints), buildGenericTestMap(index.Code)...)
 	routes := buildCodeRoutes(index.Code, springIndex)
 	contractMatches := buildContractMatches(index.Code.APIContracts, routes)
+	diagnostics := buildDiagnostics(routes, contractMatches, endpointFlows, codeFlows, testMap)
 	packageGraph := buildPackageGraph(index.Workspace)
 	mavenGraph := buildMavenGraph(index.Workspace)
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
@@ -275,6 +278,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"flows.json", codeFlows},
 		{"api-contracts.json", index.Code.APIContracts},
 		{"contract-matches.json", contractMatches},
+		{"diagnostics.json", diagnostics},
 		{"package-graph.json", packageGraph},
 		{"maven-graph.json", mavenGraph},
 		{"analyzers.json", analyzers},
@@ -303,6 +307,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"api-contracts.md", renderAPIContractsReport(index.Code.APIContracts)},
 		{"contract-matches.md", renderContractMatchesReport(contractMatches)},
 		{"potentially-broken-contracts.md", renderPotentiallyBrokenContractsReport(contractMatches)},
+		{"diagnostics.md", renderDiagnosticsReport(diagnostics)},
 		{"package-graph.md", renderPackageGraphReport(packageGraph)},
 		{"maven-graph.md", renderMavenGraphReport(mavenGraph)},
 		{"navigation.md", renderNavigationReport(index.Files, index.Symbols, index.Relations, routes, codeFlows, testMap, analyzers)},

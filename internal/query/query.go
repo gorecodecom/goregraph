@@ -76,6 +76,8 @@ var outputAliases = map[string]string{
 	"contracts":             "contract-matches.md",
 	"contract-matches-json": "contract-matches.json",
 	"broken-contracts":      "potentially-broken-contracts.md",
+	"diagnostics":           "diagnostics.md",
+	"diagnostics-json":      "diagnostics.json",
 	"package-graph":         "package-graph.md",
 	"package-graph-json":    "package-graph.json",
 	"maven-graph":           "maven-graph.md",

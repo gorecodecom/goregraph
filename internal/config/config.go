@@ -154,7 +154,8 @@ func validateOutputDir(value string) error {
 	if value == "" {
 		return fmt.Errorf("output must not be empty")
 	}
-	if filepath.IsAbs(value) {
+	slashed := filepath.ToSlash(value)
+	if filepath.IsAbs(value) || strings.HasPrefix(slashed, "/") {
 		return fmt.Errorf("output must be relative to the project root")
 	}
 	cleaned := filepath.Clean(value)

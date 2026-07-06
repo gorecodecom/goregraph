@@ -125,6 +125,22 @@ func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
 	if !strings.Contains(navigation, "# GoreGraph Navigation") {
 		t.Fatalf("navigation alias returned unexpected output:\n%s", navigation)
 	}
+
+	diagnostics, err := Search(root, "diagnostics")
+	if err != nil {
+		t.Fatalf("Search diagnostics returned error: %v", err)
+	}
+	if !strings.Contains(diagnostics, "# GoreGraph Diagnostics") {
+		t.Fatalf("diagnostics alias returned unexpected output:\n%s", diagnostics)
+	}
+
+	diagnosticsJSON, err := Search(root, "diagnostics-json")
+	if err != nil {
+		t.Fatalf("Search diagnostics-json returned error: %v", err)
+	}
+	if !strings.Contains(diagnosticsJSON, `"entrypoints"`) {
+		t.Fatalf("diagnostics-json alias returned unexpected output:\n%s", diagnosticsJSON)
+	}
 }
 
 func TestExplainFileShowsSymbolsAndRelations(t *testing.T) {
