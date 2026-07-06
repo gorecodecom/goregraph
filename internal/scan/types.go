@@ -410,22 +410,31 @@ type WorkspaceContractMatchRecord struct {
 }
 
 type WorkspaceFeatureFlowRecord struct {
-	FrontendProject   string                   `json:"frontend_project"`
-	FrontendFile      string                   `json:"frontend_file"`
-	FrontendLine      int                      `json:"frontend_line,omitempty"`
-	HTTPMethod        string                   `json:"http_method"`
-	Path              string                   `json:"path"`
-	BackendProject    string                   `json:"backend_project"`
-	BackendService    string                   `json:"backend_service,omitempty"`
-	BackendController string                   `json:"backend_controller,omitempty"`
-	BackendMethod     string                   `json:"backend_method,omitempty"`
-	BackendFile       string                   `json:"backend_file,omitempty"`
-	BackendLine       int                      `json:"backend_line,omitempty"`
-	BackendSteps      []SpringEndpointFlowStep `json:"backend_steps,omitempty"`
-	Tests             []TestMapRecord          `json:"tests,omitempty"`
-	TestReason        string                   `json:"test_reason,omitempty"`
-	Confidence        string                   `json:"confidence"`
-	Reason            string                   `json:"reason,omitempty"`
+	FrontendProject    string                   `json:"frontend_project"`
+	FrontendRouteID    string                   `json:"frontend_route_id,omitempty"`
+	FrontendRoutePath  string                   `json:"frontend_route_path,omitempty"`
+	FrontendRouteFile  string                   `json:"frontend_route_file,omitempty"`
+	FrontendRouteLine  int                      `json:"frontend_route_line,omitempty"`
+	FrontendComponent  string                   `json:"frontend_component,omitempty"`
+	FrontendCaller     string                   `json:"frontend_caller,omitempty"`
+	FrontendSteps      []CodeFlowStep           `json:"frontend_steps,omitempty"`
+	FrontendConfidence string                   `json:"frontend_confidence,omitempty"`
+	FrontendReason     string                   `json:"frontend_reason,omitempty"`
+	FrontendFile       string                   `json:"frontend_file"`
+	FrontendLine       int                      `json:"frontend_line,omitempty"`
+	HTTPMethod         string                   `json:"http_method"`
+	Path               string                   `json:"path"`
+	BackendProject     string                   `json:"backend_project"`
+	BackendService     string                   `json:"backend_service,omitempty"`
+	BackendController  string                   `json:"backend_controller,omitempty"`
+	BackendMethod      string                   `json:"backend_method,omitempty"`
+	BackendFile        string                   `json:"backend_file,omitempty"`
+	BackendLine        int                      `json:"backend_line,omitempty"`
+	BackendSteps       []SpringEndpointFlowStep `json:"backend_steps,omitempty"`
+	Tests              []TestMapRecord          `json:"tests,omitempty"`
+	TestReason         string                   `json:"test_reason,omitempty"`
+	Confidence         string                   `json:"confidence"`
+	Reason             string                   `json:"reason,omitempty"`
 }
 
 type PackageGraphRecord struct {

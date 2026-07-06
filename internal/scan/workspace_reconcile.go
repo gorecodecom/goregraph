@@ -18,6 +18,7 @@ type workspaceIndexProject struct {
 	record        WorkspaceProjectRecord
 	routes        []CodeRouteRecord
 	contracts     []APIContractRecord
+	codeFlows     []CodeFlowRecord
 	endpointFlows []SpringEndpointFlowRecord
 	testMap       []TestMapRecord
 }
@@ -309,6 +310,9 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		if err := readWorkspaceJSON(filepath.Join(out, "api-contracts.json"), &loaded.contracts); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
+		if err := readWorkspaceJSON(filepath.Join(out, "flows.json"), &loaded.codeFlows); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
 		if err := readWorkspaceJSON(filepath.Join(out, "endpoint-flows.json"), &loaded.endpointFlows); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
@@ -495,6 +499,7 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 		if !ok {
 			continue
 		}
+		frontendProject, hasFrontendProject := byProject[match.APIProject]
 		flow, hasFlow := findWorkspaceEndpointFlow(backendProject.endpointFlows, match)
 		tests := workspaceFeatureTests(backendProject.testMap, flow, match)
 		record := WorkspaceFeatureFlowRecord{
@@ -513,6 +518,18 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 			Tests:             tests,
 			Confidence:        match.Confidence,
 			Reason:            "frontend api contract resolved to indexed backend endpoint",
+		}
+		if hasFrontendProject {
+			frontend := resolveWorkspaceFrontendContext(frontendProject, match)
+			record.FrontendRouteID = frontend.routeID
+			record.FrontendRoutePath = frontend.routePath
+			record.FrontendRouteFile = frontend.routeFile
+			record.FrontendRouteLine = frontend.routeLine
+			record.FrontendComponent = frontend.component
+			record.FrontendCaller = frontend.apiCaller
+			record.FrontendSteps = frontend.steps
+			record.FrontendConfidence = frontend.confidence
+			record.FrontendReason = frontend.reason
 		}
 		if len(tests) == 0 {
 			record.TestReason = fmt.Sprintf("no endpoint or backend-step tests matched backend endpoint %s `%s`; check backend diagnostics Endpoints Without Tests", match.BackendHTTPMethod, match.BackendPath)
@@ -535,6 +552,73 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 		return records[i].Path < records[j].Path
 	})
 	return records
+}
+
+type workspaceFrontendContext struct {
+	routeID    string
+	routePath  string
+	routeFile  string
+	routeLine  int
+	component  string
+	apiCaller  string
+	steps      []CodeFlowStep
+	confidence string
+	reason     string
+	score      float64
+}
+
+func resolveWorkspaceFrontendContext(project workspaceIndexProject, match WorkspaceContractMatchRecord) workspaceFrontendContext {
+	var best workspaceFrontendContext
+	apiApp := codeFileApp(match.APIFile)
+	for _, flow := range project.codeFlows {
+		if flow.Kind != "frontend" {
+			continue
+		}
+		if apiApp != "" && flow.App != "" && flow.App != apiApp {
+			continue
+		}
+		candidate := scoreWorkspaceFrontendFlow(flow, match)
+		if candidate.score > best.score {
+			best = candidate
+		}
+	}
+	return best
+}
+
+func scoreWorkspaceFrontendFlow(flow CodeFlowRecord, match WorkspaceContractMatchRecord) workspaceFrontendContext {
+	context := workspaceFrontendContext{
+		routeID:    flow.RouteID,
+		routePath:  flow.Path,
+		routeFile:  flow.File,
+		routeLine:  flow.Line,
+		component:  flow.Handler,
+		steps:      flow.Steps,
+		confidence: "WEAK_MATCH",
+		reason:     "frontend route shares app with API contract but no route-flow step reached the API caller",
+		score:      0.35,
+	}
+	for _, step := range flow.Steps {
+		if step.Kind == "route_handler" && step.Name != "" {
+			context.component = step.Name
+		}
+		if step.File != match.APIFile || match.APIFile == "" {
+			continue
+		}
+		if step.Name != "" {
+			context.apiCaller = step.Name
+		}
+		if context.score < 0.82 {
+			context.confidence = "RESOLVED"
+			context.reason = "route flow reaches API contract file"
+			context.score = 0.82
+		}
+		if step.Name != "" {
+			context.confidence = "RESOLVED"
+			context.reason = "route flow reaches API contract caller"
+			context.score = 0.95
+		}
+	}
+	return context
 }
 
 func findWorkspaceEndpointFlow(flows []SpringEndpointFlowRecord, match WorkspaceContractMatchRecord) (SpringEndpointFlowRecord, bool) {
@@ -798,7 +882,28 @@ func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) str
 	}
 	for _, record := range records {
 		b.WriteString(fmt.Sprintf("## %s `%s`\n\n", record.HTTPMethod, record.Path))
-		b.WriteString(fmt.Sprintf("- Frontend: `%s` `%s:%d`\n", record.FrontendProject, record.FrontendFile, record.FrontendLine))
+		if record.FrontendRouteID != "" || record.FrontendRoutePath != "" || record.FrontendComponent != "" {
+			b.WriteString(fmt.Sprintf("- Frontend route: `%s` `%s` -> `%s`",
+				emptyAsNone(record.FrontendRouteID),
+				emptyAsNone(record.FrontendRoutePath),
+				emptyAsNone(record.FrontendComponent),
+			))
+			if record.FrontendRouteFile != "" {
+				b.WriteString(fmt.Sprintf(" in `%s:%d`", record.FrontendRouteFile, record.FrontendRouteLine))
+			}
+			if record.FrontendConfidence != "" {
+				b.WriteString(fmt.Sprintf(" (%s", record.FrontendConfidence))
+				if record.FrontendReason != "" {
+					b.WriteString(fmt.Sprintf(", %s", record.FrontendReason))
+				}
+				b.WriteString(")")
+			}
+			b.WriteString("\n")
+		} else {
+			b.WriteString("- Frontend route: none resolved (no route flow reached this API contract)\n")
+		}
+		b.WriteString(fmt.Sprintf("- Frontend API: `%s:%d` `%s`\n", record.FrontendFile, record.FrontendLine, emptyAsNone(record.FrontendCaller)))
+		b.WriteString(fmt.Sprintf("- Frontend project: `%s`\n", record.FrontendProject))
 		backendName := record.BackendController + "." + record.BackendMethod
 		if backendName == "." {
 			backendName = record.BackendMethod

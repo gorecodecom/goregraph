@@ -354,7 +354,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 0.8.4",
+		"goregraph 0.8.5",
 		"commit:",
 		"built:",
 		"go:",
