@@ -83,13 +83,19 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 
 	for _, project := range indexed {
 		out := filepath.Join(project.record.AbsPath, project.record.OutputDir)
-		if err := os.WriteFile(filepath.Join(out, "workspace-context.md"), []byte(renderWorkspaceContextReport(context)), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(out, "workspace-context.md"), []byte(renderProjectWorkspaceContextReport(context, project.record.Path)), 0o644); err != nil {
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "workspace-contract-matches.md"), []byte(renderProjectWorkspaceMatchesReport(project.record.Path, matches)), 0o644); err != nil {
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "frontend-consumers.md"), []byte(renderFrontendConsumersReport(project.record.Path, matches)), 0o644); err != nil {
+			return nil, err
+		}
+		if err := updateWorkspaceProjectDiagnostics(out, project.record.Path, matches); err != nil {
+			return nil, err
+		}
+		if err := updateWorkspaceEndpointConsumers(out, project.record.Path, matches); err != nil {
 			return nil, err
 		}
 	}
@@ -486,6 +492,62 @@ func renderWorkspaceContextReport(record WorkspaceContextRecord) string {
 	return b.String()
 }
 
+func renderProjectWorkspaceContextReport(record WorkspaceContextRecord, projectPath string) string {
+	var b strings.Builder
+	b.WriteString("# GoreGraph Workspace Context\n\n")
+	b.WriteString(fmt.Sprintf("- Workspace root: `%s`\n", record.Root))
+	if projectPath != "" {
+		b.WriteString(fmt.Sprintf("- This project: `%s`\n", projectPath))
+	}
+	if record.Current != "" {
+		b.WriteString(fmt.Sprintf("- Last refreshed by: `%s`\n", record.Current))
+	}
+	b.WriteString("\n")
+	b.WriteString(renderWorkspaceContextSections(record))
+	return b.String()
+}
+
+func renderNoWorkspaceContextReport() string {
+	return "# GoreGraph Workspace Context\n\n- No GoreGraph workspace detected for this scan.\n"
+}
+
+func renderWorkspaceContextSections(record WorkspaceContextRecord) string {
+	var b strings.Builder
+	b.WriteString("## Projects\n\n")
+	for _, project := range record.Projects {
+		b.WriteString(fmt.Sprintf("- `%s` - %s", project.Path, project.Status))
+		if project.Service != "" {
+			b.WriteString(fmt.Sprintf(", service `%s`", project.Service))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n## Loaded Indexes\n\n")
+	if len(record.LoadedIndexes) == 0 {
+		b.WriteString("- none\n")
+	} else {
+		for _, project := range record.LoadedIndexes {
+			b.WriteString(fmt.Sprintf("- `%s`\n", project.Path))
+		}
+	}
+	b.WriteString("\n## Known Backend Services\n\n")
+	if len(record.KnownServices) == 0 {
+		b.WriteString("- none\n")
+	} else {
+		for _, service := range record.KnownServices {
+			b.WriteString(fmt.Sprintf("- `%s`\n", service))
+		}
+	}
+	b.WriteString("\n## Referenced But Missing Services\n\n")
+	if len(record.MissingServices) == 0 {
+		b.WriteString("- none\n")
+	} else {
+		for _, service := range record.MissingServices {
+			b.WriteString(fmt.Sprintf("- `%s`\n", service))
+		}
+	}
+	return b.String()
+}
+
 func renderWorkspaceContractMatchesReport(records []WorkspaceContractMatchRecord) string {
 	var b strings.Builder
 	b.WriteString("# GoreGraph Workspace Contract Matches\n\n")
@@ -569,6 +631,96 @@ func renderFrontendConsumersReport(projectPath string, records []WorkspaceContra
 		b.WriteString("- none detected\n")
 	}
 	return b.String()
+}
+
+func updateWorkspaceProjectDiagnostics(out, projectPath string, matches []WorkspaceContractMatchRecord) error {
+	path := filepath.Join(out, "diagnostics.json")
+	var diagnostics DiagnosticsRecord
+	if err := readWorkspaceJSON(path, &diagnostics); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var resolved []WorkspaceContractMatchRecord
+	resolvedServices := map[string]bool{}
+	for _, match := range matches {
+		if match.APIProject != projectPath || match.Issue != contractIssueMatched {
+			continue
+		}
+		resolved = append(resolved, match)
+		if match.BackendService != "" {
+			resolvedServices[match.BackendService] = true
+		}
+		if match.ServiceCandidate != "" {
+			resolvedServices[match.ServiceCandidate] = true
+		}
+	}
+	diagnostics.WorkspaceResolvedContracts = resolved
+	if len(resolvedServices) > 0 {
+		var filtered []DiagnosticServiceRecord
+		for _, service := range diagnostics.UnscannedServices {
+			if resolvedServices[service.Service] {
+				continue
+			}
+			filtered = append(filtered, service)
+		}
+		diagnostics.UnscannedServices = filtered
+	}
+	if err := writeJSON(path, diagnostics); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(out, "diagnostics.md"), []byte(renderDiagnosticsReport(diagnostics)), 0o644)
+}
+
+func updateWorkspaceEndpointConsumers(out, projectPath string, matches []WorkspaceContractMatchRecord) error {
+	path := filepath.Join(out, "endpoints.md")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	updated := stripMarkdownSection(string(body), "## Frontend Consumers") + renderEndpointFrontendConsumersSection(projectPath, matches)
+	return os.WriteFile(path, []byte(updated), 0o644)
+}
+
+func renderEndpointFrontendConsumersSection(projectPath string, records []WorkspaceContractMatchRecord) string {
+	var b strings.Builder
+	b.WriteString("\n## Frontend Consumers\n\n")
+	count := 0
+	for _, record := range records {
+		if record.BackendProject != projectPath || record.Issue != contractIssueMatched {
+			continue
+		}
+		count++
+		b.WriteString(fmt.Sprintf("- %s `%s` used by `%s` `%s:%d` -> `%s.%s`\n",
+			record.BackendHTTPMethod,
+			record.BackendPath,
+			record.APIProject,
+			record.APIFile,
+			record.APILine,
+			record.BackendService,
+			record.BackendHandler,
+		))
+	}
+	if count == 0 {
+		b.WriteString("- none detected\n")
+	}
+	return b.String()
+}
+
+func stripMarkdownSection(body, heading string) string {
+	index := strings.Index(body, heading)
+	if index == -1 {
+		if strings.HasSuffix(body, "\n") {
+			return body
+		}
+		return body + "\n"
+	}
+	return strings.TrimRight(body[:index], "\n") + "\n"
 }
 
 // WorkspaceStatus renders the auto-detected workspace without scanning or writing files.

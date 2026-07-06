@@ -98,8 +98,13 @@ func pathsCompatible(left, right string) bool {
 		return false
 	}
 	for i := range leftParts {
-		if isPlaceholder(leftParts[i]) || isPlaceholder(rightParts[i]) {
+		leftPlaceholder := isPlaceholder(leftParts[i])
+		rightPlaceholder := isPlaceholder(rightParts[i])
+		if leftPlaceholder && rightPlaceholder {
 			continue
+		}
+		if leftPlaceholder != rightPlaceholder {
+			return false
 		}
 		if !strings.EqualFold(leftParts[i], rightParts[i]) {
 			return false

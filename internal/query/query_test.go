@@ -199,6 +199,54 @@ class CadasterController {
 	}
 }
 
+func TestSearchReadsWorkspaceRootOverlayAliases(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
+		"  return fetch(`/cadasters/${id}`);\n"+
+		"}\n")
+	writeFile(t, cadaster, "src/main/java/com/example/CadasterController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @GetMapping("/{cadasterId}")
+  String get(@PathVariable String cadasterId) {
+    return cadasterId;
+  }
+}
+`)
+	if _, err := scan.Run(frontend, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scan.Run(cadaster, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+
+	matches, err := Search(workspace, "workspace-contracts")
+	if err != nil {
+		t.Fatalf("Search workspace-contracts at workspace root returned error: %v", err)
+	}
+	if !strings.Contains(matches, "frontend/frontend-monorepo") || !strings.Contains(matches, "ms-cadaster GET `/cadasters/{cadasterId}`") {
+		t.Fatalf("workspace root alias returned unexpected output:\n%s", matches)
+	}
+
+	context, err := Search(workspace, "workspace-context")
+	if err != nil {
+		t.Fatalf("Search workspace-context at workspace root returned error: %v", err)
+	}
+	if !strings.Contains(context, "Loaded Indexes") || !strings.Contains(context, "microservices/ms-cadaster") {
+		t.Fatalf("workspace root context alias returned unexpected output:\n%s", context)
+	}
+}
+
 func TestExplainFileShowsSymbolsAndRelations(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nimport \"fmt\"\nfunc StartServer() {}\n")

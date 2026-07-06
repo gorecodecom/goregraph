@@ -190,6 +190,26 @@ func renderDiagnosticsReport(record DiagnosticsRecord) string {
 		}
 	}
 
+	b.WriteString("\n## Workspace Resolved Contracts\n\n")
+	if len(record.WorkspaceResolvedContracts) == 0 {
+		b.WriteString("- none detected\n")
+	} else {
+		for _, match := range record.WorkspaceResolvedContracts {
+			b.WriteString(fmt.Sprintf("- %s `%s` from `%s:%d` -> %s %s `%s` via `%s:%d` (%s)\n",
+				match.APIHTTPMethod,
+				match.APIPath,
+				match.APIFile,
+				match.APILine,
+				emptyAsNone(match.BackendService),
+				match.BackendHTTPMethod,
+				match.BackendPath,
+				match.BackendFile,
+				match.BackendLine,
+				match.Confidence,
+			))
+		}
+	}
+
 	b.WriteString("\n## Unscanned Services\n\n")
 	if len(record.UnscannedServices) == 0 {
 		b.WriteString("- none detected\n")

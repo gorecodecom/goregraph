@@ -128,6 +128,9 @@ Generated files include:
 - `contract-matches.md`
 - `potentially-broken-contracts.md`
 - `diagnostics.md`
+- `workspace-context.md`
+- `workspace-contract-matches.md`
+- `frontend-consumers.md`
 - `package-graph.md`
 - `maven-graph.md`
 - `navigation.md`
@@ -190,6 +193,9 @@ What the generated files mean:
 - `contract-matches.md`: human-readable frontend API to backend route match report.
 - `potentially-broken-contracts.md`: focused report for API calls that could not be safely matched to backend routes.
 - `diagnostics.md`: prioritized human-readable diagnosis report with entrypoints, risky contracts, unscanned services, untested endpoints, weak flows, and likely tests.
+- `workspace-context.md`: readable workspace project/index summary, or a no-workspace placeholder.
+- `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
+- `frontend-consumers.md`: backend-oriented view of frontend API callers.
 - `package-graph.md`: human-readable Node package/workspace dependency graph.
 - `maven-graph.md`: human-readable Maven dependency graph.
 - `navigation.md`: human-readable starting-point report with likely routes, central files, important symbols, test orientation, and analyzer coverage.
@@ -209,6 +215,11 @@ Workspace overlays:
 - `workspace-context.md`: readable workspace project/index summary.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
 - `frontend-consumers.md`: backend-oriented view of frontend API callers.
+
+Workspace reconciliation also refreshes:
+
+- `diagnostics.md` and `diagnostics.json` with workspace-resolved contracts for the project.
+- `endpoints.md` with a `Frontend Consumers` section for backend projects.
 
 Important behavior:
 
@@ -363,6 +374,14 @@ goregraph query . package-graph
 goregraph query . maven-graph
 goregraph query . workspace-contracts
 goregraph query . audit
+```
+
+Workspace aliases can be read from either a scanned project root or the workspace root:
+
+```bash
+cd /Users/name/projects/weka
+goregraph query . workspace-context
+goregraph query . workspace-contracts
 ```
 
 Searches these generated files:

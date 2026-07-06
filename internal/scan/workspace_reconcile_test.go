@@ -73,15 +73,87 @@ class CadasterController {
 		t.Fatalf("frontend workspace contract overlay missing backend match:\n%s", frontendMatches)
 	}
 
+	frontendContext := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-context.md"))
+	if !strings.Contains(frontendContext, "This project: `frontend/frontend-monorepo`") || !strings.Contains(frontendContext, "Last refreshed by: `microservices/ms-cadaster`") {
+		t.Fatalf("frontend workspace context has misleading project labels:\n%s", frontendContext)
+	}
+
+	frontendDiagnostics := readText(t, filepath.Join(frontend, "goregraph-out", "diagnostics.md"))
+	if !strings.Contains(frontendDiagnostics, "## Workspace Resolved Contracts") || !strings.Contains(frontendDiagnostics, "ms-cadaster GET `/cadasters/{cadasterId}`") {
+		t.Fatalf("frontend diagnostics missing workspace resolved contract:\n%s", frontendDiagnostics)
+	}
+	if strings.Contains(frontendDiagnostics, "`ms-cadaster` -") {
+		t.Fatalf("frontend diagnostics still reports resolved ms-cadaster as unscanned:\n%s", frontendDiagnostics)
+	}
+
+	var diagnostics DiagnosticsRecord
+	readJSON(t, filepath.Join(frontend, "goregraph-out", "diagnostics.json"), &diagnostics)
+	if len(diagnostics.WorkspaceResolvedContracts) == 0 {
+		t.Fatalf("diagnostics json missing workspace resolved contracts: %#v", diagnostics)
+	}
+
+	var manifest Manifest
+	readJSON(t, filepath.Join(frontend, "goregraph-out", "manifest.json"), &manifest)
+	assertGeneratedFile(t, manifest.Generated, "workspace-context.md")
+	assertGeneratedFile(t, manifest.Generated, "workspace-contract-matches.md")
+	assertGeneratedFile(t, manifest.Generated, "frontend-consumers.md")
+
+	var audit AuditRecord
+	readJSON(t, filepath.Join(frontend, "goregraph-out", "audit.json"), &audit)
+	assertGeneratedFile(t, audit.Generated, "workspace-context.md")
+	assertGeneratedFile(t, audit.Generated, "workspace-contract-matches.md")
+	assertGeneratedFile(t, audit.Generated, "frontend-consumers.md")
+
 	consumers := readText(t, filepath.Join(cadaster, "goregraph-out", "frontend-consumers.md"))
 	if !strings.Contains(consumers, "frontend/frontend-monorepo") || !strings.Contains(consumers, "src/api/cadasterservice.js") {
 		t.Fatalf("backend frontend-consumers overlay missing frontend usage:\n%s", consumers)
+	}
+
+	endpoints := readText(t, filepath.Join(cadaster, "goregraph-out", "endpoints.md"))
+	if !strings.Contains(endpoints, "## Frontend Consumers") || !strings.Contains(endpoints, "frontend/frontend-monorepo") {
+		t.Fatalf("backend endpoints report missing frontend consumers:\n%s", endpoints)
 	}
 
 	var registry WorkspaceRegistryRecord
 	readJSON(t, filepath.Join(workspace, ".goregraph-workspace", "registry.json"), &registry)
 	assertWorkspaceProject(t, registry, "frontend/frontend-monorepo", "indexed", true)
 	assertWorkspaceProject(t, registry, "microservices/ms-cadaster", "current", true)
+}
+
+func TestWorkspacePathMatchingDoesNotTreatStaticSegmentsAsRouteParams(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-cadaster", Kind: "backend", Service: "ms-cadaster", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "POST",
+					Path:             "/cadasters/cadastertopics",
+					File:             "src/api/cadasters.js",
+					Line:             19,
+					ServiceCandidate: "ms-cadaster",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/cadasters/{cadasterId}", Handler: "CadasterController.get", File: "CadasterController.java", Line: 108},
+			},
+		},
+	})
+
+	if len(matches) != 1 {
+		t.Fatalf("matches length = %d, want 1: %#v", len(matches), matches)
+	}
+	if matches[0].Issue == contractIssueMethodMismatch {
+		t.Fatalf("static path was matched too broadly against parameter route: %#v", matches[0])
+	}
+	if matches[0].Issue != contractIssueMissingRoute {
+		t.Fatalf("issue = %q, want %q: %#v", matches[0].Issue, contractIssueMissingRoute, matches[0])
+	}
 }
 
 func TestWorkspaceStatusDetectsWorkspaceRootItself(t *testing.T) {
@@ -112,4 +184,14 @@ func assertWorkspaceProject(t *testing.T, registry WorkspaceRegistryRecord, relP
 		}
 	}
 	t.Fatalf("missing workspace project %q in %#v", relPath, registry.Projects)
+}
+
+func assertGeneratedFile(t *testing.T, generated []string, name string) {
+	t.Helper()
+	for _, candidate := range generated {
+		if candidate == name {
+			return
+		}
+	}
+	t.Fatalf("generated files missing %q in %#v", name, generated)
 }

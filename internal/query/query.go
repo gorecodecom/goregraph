@@ -96,6 +96,11 @@ var outputAliases = map[string]string{
 	"affected":              "affected.md",
 }
 
+var workspaceOutputFallbacks = map[string]string{
+	"workspace-context.md":          "workspace-context.md",
+	"workspace-contract-matches.md": "contract-matches.md",
+}
+
 func ReadOutput(root, name string) (string, error) {
 	cfg, err := config.Load(root)
 	if err != nil {
@@ -104,6 +109,11 @@ func ReadOutput(root, name string) (string, error) {
 	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, name))
 	if err != nil {
 		if os.IsNotExist(err) {
+			if fallbackName, ok := workspaceOutputFallbacks[name]; ok {
+				if body, fallbackErr := os.ReadFile(filepath.Join(root, ".goregraph-workspace", fallbackName)); fallbackErr == nil {
+					return string(body), nil
+				}
+			}
 			return "", fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
 		}
 		return "", err

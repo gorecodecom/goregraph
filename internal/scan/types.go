@@ -324,12 +324,13 @@ type ContractMatchRecord struct {
 }
 
 type DiagnosticsRecord struct {
-	Entrypoints           []DiagnosticRouteRecord   `json:"entrypoints"`
-	RiskyContracts        []ContractMatchRecord     `json:"risky_contracts"`
-	UnscannedServices     []DiagnosticServiceRecord `json:"unscanned_services"`
-	EndpointsWithoutTests []SpringEndpointRecord    `json:"endpoints_without_tests"`
-	WeakFlows             []DiagnosticFlowRecord    `json:"weak_flows"`
-	LikelyTests           []TestMapRecord           `json:"likely_tests"`
+	Entrypoints                []DiagnosticRouteRecord        `json:"entrypoints"`
+	RiskyContracts             []ContractMatchRecord          `json:"risky_contracts"`
+	WorkspaceResolvedContracts []WorkspaceContractMatchRecord `json:"workspace_resolved_contracts,omitempty"`
+	UnscannedServices          []DiagnosticServiceRecord      `json:"unscanned_services"`
+	EndpointsWithoutTests      []SpringEndpointRecord         `json:"endpoints_without_tests"`
+	WeakFlows                  []DiagnosticFlowRecord         `json:"weak_flows"`
+	LikelyTests                []TestMapRecord                `json:"likely_tests"`
 }
 
 type DiagnosticRouteRecord struct {
