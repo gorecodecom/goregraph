@@ -94,6 +94,9 @@ func Run(root string, cfg config.Config) (Result, error) {
 	if err := writeOutputs(out, resolved, cfg, index, skipped, started); err != nil {
 		return Result{}, err
 	}
+	if _, err := ReconcileWorkspace(resolved, cfg); err != nil {
+		return Result{}, err
+	}
 
 	return Result{ScannedFiles: len(index.Files), SkippedFiles: skipped, OutputDir: out}, nil
 }

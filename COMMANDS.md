@@ -145,11 +145,17 @@ Variations:
 goregraph scan .
 goregraph scan /path/to/project
 goregraph scan . --no-update-gitignore
+goregraph scan . --no-workspace
+goregraph scan . --workspace /path/to/workspace
 goregraph scan help
 goregraph scan --help
 ```
 
 `--no-update-gitignore` prevents GoreGraph from adding the output directory to the project `.gitignore`.
+
+`--no-workspace` disables workspace discovery and skips `.goregraph-workspace/` plus sibling overlay refreshes.
+
+`--workspace <path>` forces the workspace root used to discover sibling projects and existing `goregraph-out/` indexes.
 
 What the generated files mean:
 
@@ -194,6 +200,15 @@ What the generated files mean:
 - `modules.md`: top-level directory/module overview.
 - `entrypoints.md`: likely app, CLI, script, package, and front-controller entrypoints.
 - `test-map.md`: best-effort source/test associations.
+
+Workspace overlays:
+
+- `.goregraph-workspace/registry.json`: discovered sibling projects with `current`, `indexed`, or `not_indexed` status.
+- `.goregraph-workspace/context.json`: loaded indexes, known backend services, and referenced but missing services.
+- `.goregraph-workspace/contract-matches.json`: cross-project API-to-backend matches from already scanned projects.
+- `workspace-context.md`: readable workspace project/index summary.
+- `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
+- `frontend-consumers.md`: backend-oriented view of frontend API callers.
 
 Important behavior:
 
@@ -346,6 +361,7 @@ goregraph query . broken-contracts
 goregraph query . diagnostics
 goregraph query . package-graph
 goregraph query . maven-graph
+goregraph query . workspace-contracts
 goregraph query . audit
 ```
 
@@ -390,6 +406,9 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `navigation` -> `navigation.md`
 - `spring` -> `spring.json`
 - `workspace` -> `workspace.md`
+- `workspace-context` -> `workspace-context.md`
+- `workspace-contracts` -> `workspace-contract-matches.md`
+- `frontend-consumers` -> `frontend-consumers.md`
 - `endpoints` -> `endpoints.md`
 - `endpoint-flows` -> `endpoint-flows.md`
 - `endpoint-flows-json` -> `endpoint-flows.json`
@@ -535,6 +554,39 @@ Typical fix:
 ```bash
 goregraph scan .
 ```
+
+## `goregraph workspace status [path]`
+
+Shows the workspace GoreGraph would use for a project without scanning or writing files.
+
+Use when:
+
+- you want to confirm the auto-detected workspace root
+- you want to see which sibling projects are already indexed
+- you want to know which backend services are known from existing scans
+
+Examples:
+
+```bash
+goregraph workspace status .
+goregraph workspace status frontend/frontend-monorepo
+goregraph workspace status . --workspace /Users/name/projects/weka
+```
+
+Expected output:
+
+- workspace root
+- current project
+- discovered sibling projects with status
+- loaded indexes
+- known backend services
+- referenced but missing services
+
+Important behavior:
+
+- does not scan
+- does not write files
+- uses the same auto-detection as `goregraph scan`
 
 ## `goregraph mcp`
 

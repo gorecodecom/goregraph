@@ -143,6 +143,62 @@ func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
 	}
 }
 
+func TestSearchReadsWorkspaceOverlayAliases(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
+		"  return fetch(`/cadasters/${id}`);\n"+
+		"}\n")
+	writeFile(t, cadaster, "src/main/java/com/example/CadasterController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @GetMapping("/{cadasterId}")
+  String get(@PathVariable String cadasterId) {
+    return cadasterId;
+  }
+}
+`)
+	if _, err := scan.Run(frontend, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scan.Run(cadaster, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+
+	context, err := Search(frontend, "workspace-context")
+	if err != nil {
+		t.Fatalf("Search workspace-context returned error: %v", err)
+	}
+	if !strings.Contains(context, "microservices/ms-cadaster") {
+		t.Fatalf("workspace-context alias missing cadaster project:\n%s", context)
+	}
+
+	matches, err := Search(frontend, "workspace-contracts")
+	if err != nil {
+		t.Fatalf("Search workspace-contracts returned error: %v", err)
+	}
+	if !strings.Contains(matches, "ms-cadaster GET `/cadasters/{cadasterId}`") {
+		t.Fatalf("workspace-contracts alias missing backend match:\n%s", matches)
+	}
+
+	consumers, err := Search(cadaster, "frontend-consumers")
+	if err != nil {
+		t.Fatalf("Search frontend-consumers returned error: %v", err)
+	}
+	if !strings.Contains(consumers, "frontend/frontend-monorepo") {
+		t.Fatalf("frontend-consumers alias missing frontend project:\n%s", consumers)
+	}
+}
+
 func TestExplainFileShowsSymbolsAndRelations(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nimport \"fmt\"\nfunc StartServer() {}\n")

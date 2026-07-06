@@ -17,6 +17,8 @@ type Config struct {
 	FollowSymlinks   bool
 	UseGitignore     bool
 	UpdateGitignore  bool
+	Workspace        bool
+	WorkspaceRoot    string
 }
 
 func Defaults() Config {
@@ -26,6 +28,7 @@ func Defaults() Config {
 		FollowSymlinks:   false,
 		UseGitignore:     true,
 		UpdateGitignore:  true,
+		Workspace:        true,
 		Exclude: []string{
 			".git/",
 			"node_modules/",

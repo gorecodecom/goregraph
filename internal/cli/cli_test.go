@@ -61,6 +61,43 @@ func TestRunScanNoUpdateGitignoreLeavesGitignoreUntouched(t *testing.T) {
 	}
 }
 
+func TestRunScanNoWorkspaceSkipsWorkspaceRegistry(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	root := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	writeFile(t, root, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, filepath.Join(workspace, "microservices", "ms-cadaster"), "README.md", "# ms-cadaster\n")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"scan", root, "--no-workspace"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "goregraph-out", "manifest.json")); err != nil {
+		t.Fatalf("manifest not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, ".goregraph-workspace", "registry.json")); !os.IsNotExist(err) {
+		t.Fatalf("workspace registry exists after --no-workspace, err=%v", err)
+	}
+}
+
+func TestRunWorkspaceStatusPrintsDetectedProjects(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	root := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	writeFile(t, root, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, filepath.Join(workspace, "microservices", "ms-cadaster"), "README.md", "# ms-cadaster\n")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "status", root}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "frontend/frontend-monorepo") || !strings.Contains(stdout.String(), "microservices/ms-cadaster") {
+		t.Fatalf("workspace status missing projects:\n%s", stdout.String())
+	}
+}
+
 func TestRunUpdateRefreshesCurrentProject(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# Demo\n")
@@ -269,7 +306,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 0.8.1",
+		"goregraph 0.8.2",
 		"commit:",
 		"built:",
 		"go:",

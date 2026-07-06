@@ -95,7 +95,7 @@ func tools() []map[string]any {
 	return []map[string]any{
 		tool("query_code_map", "Search the generated GoreGraph index."),
 		tool("get_project_summary", "Read the generated project report."),
-		tool("get_output", "Read a generated GoreGraph output by alias, for example graph-full, callgraph, routes, flows, api-contracts, package-graph, maven-graph, navigation, endpoint-flows, spring, endpoints, dependencies, analyzers, workspace, audit."),
+		tool("get_output", "Read a generated GoreGraph output by alias, for example graph-full, callgraph, routes, flows, api-contracts, package-graph, maven-graph, navigation, endpoint-flows, spring, endpoints, dependencies, analyzers, workspace, workspace-context, workspace-contracts, frontend-consumers, audit."),
 		tool("get_file", "Read indexed metadata for a file."),
 		tool("get_symbol", "Find indexed symbols by name."),
 		tool("get_related_files", "Explain relations for a file."),

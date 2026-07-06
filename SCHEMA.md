@@ -131,6 +131,8 @@ Schema version 1 expects:
 
 `diagnostics.json` contains a compact diagnosis index with `entrypoints`, `risky_contracts`, `unscanned_services`, `endpoints_without_tests`, `weak_flows`, and `likely_tests`. It is derived from existing route, contract, endpoint-flow, flow, and test-map facts.
 
+Workspace files are additive and not required for schema health. When a workspace is detected, `.goregraph-workspace/registry.json` stores discovered projects with `current`, `indexed`, or `not_indexed` status. `.goregraph-workspace/context.json` stores loaded indexes, known backend services, and referenced but missing services. `.goregraph-workspace/contract-matches.json` stores cross-project API contract matches between already indexed projects. Existing indexed siblings may receive `workspace-context.md`, `workspace-contract-matches.md`, and `frontend-consumers.md` overlay reports in their configured output directories. These overlays are regenerated from existing scan output and do not imply sibling projects were rescanned.
+
 `package-graph.json` contains Node workspace package nodes and package dependency edges extracted from `package.json`. Internal workspace edges use reason `workspace-package-json-dependency`.
 
 `maven-graph.json` contains Maven module/dependency nodes and dependency edges extracted from `pom.xml`. Edges use reason `pom-dependency`.
@@ -141,7 +143,7 @@ Schema version 1 expects:
 
 `audit.json` records the scan command, generated files, file counts, timestamps, and safety flags. Normal scans set `network_used` and `external_commands` to `false`.
 
-`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `contract-matches.md`, `potentially-broken-contracts.md`, `diagnostics.md`, `package-graph.md`, `maven-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports. `affected.md` focuses on local file targets and filters external dependency labels.
+`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `contract-matches.md`, `potentially-broken-contracts.md`, `diagnostics.md`, `package-graph.md`, `maven-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports. `affected.md` focuses on local file targets and filters external dependency labels. Workspace overlay Markdown files are deterministic for the currently available sibling indexes, but they can change when another project in the same workspace is scanned later.
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
 

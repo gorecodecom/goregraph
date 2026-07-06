@@ -35,6 +35,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runExplain(args[1:], stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
+	case "workspace":
+		return runWorkspace(args[1:], stdout, stderr)
 	case "mcp":
 		return runMCP(args[1:], stdout, stderr)
 	case "version":
@@ -96,9 +98,52 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runWorkspace(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph workspace status [path] [--workspace <path>]\n\nShows discovered workspace projects and loaded GoreGraph indexes without scanning.\n")
+		return 0
+	}
+	if len(args) == 0 || args[0] != "status" {
+		fmt.Fprint(stderr, "error: usage: goregraph workspace status [path] [--workspace <path>]\n")
+		return 2
+	}
+
+	root := "."
+	cfg := config.Defaults()
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			cfg.WorkspaceRoot = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace status [path] [--workspace <path>]\n\nShows discovered workspace projects and loaded GoreGraph indexes without scanning.\n")
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			root = arg
+		}
+	}
+
+	body, err := scan.WorkspaceStatus(root, cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace status failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write([]byte(body))
+	return 0
+}
+
 func runQuery(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph query <path> <term-or-output>\n\nSearches an existing goregraph-out index. Known output aliases such as graph-full, callgraph, routes, flows, api-contracts, package-graph, maven-graph, navigation, endpoint-flows, spring, endpoints, dependencies, analyzers, workspace, affected, and audit print that generated file directly.\n")
+		fmt.Fprint(stdout, "Usage: goregraph query <path> <term-or-output>\n\nSearches an existing goregraph-out index. Known output aliases such as graph-full, callgraph, routes, flows, api-contracts, package-graph, maven-graph, navigation, endpoint-flows, spring, endpoints, dependencies, analyzers, workspace, workspace-context, workspace-contracts, frontend-consumers, affected, and audit print that generated file directly.\n")
 		return 0
 	}
 	if len(args) < 2 {
@@ -163,10 +208,20 @@ func runScan(args []string, stdout, stderr io.Writer, update bool) int {
 
 	root := "."
 	cfg := config.Defaults()
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch arg {
 		case "--no-update-gitignore":
 			cfg.UpdateGitignore = false
+		case "--no-workspace":
+			cfg.Workspace = false
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			cfg.WorkspaceRoot = args[i]
 		case "--help", "help":
 			printScanHelp(stdout)
 			return 0
@@ -190,6 +245,8 @@ func runScan(args []string, stdout, stderr io.Writer, update bool) int {
 		return 1
 	}
 	loaded.UpdateGitignore = cfg.UpdateGitignore
+	loaded.Workspace = cfg.Workspace
+	loaded.WorkspaceRoot = cfg.WorkspaceRoot
 
 	if loaded.UpdateGitignore {
 		if _, err := gitignore.EnsureOutputIgnored(root, loaded.OutputDir); err != nil {
@@ -225,6 +282,7 @@ Commands:
   query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
   doctor <path>     Check generated output health
+  workspace status  Show workspace projects and loaded indexes
   mcp               Start the read-only MCP stdio server
   version           Print build metadata
   help              Show this help
@@ -242,6 +300,7 @@ Examples:
   goregraph query . audit
   goregraph explain . src/main.go
   goregraph doctor .
+  goregraph workspace status .
   goregraph mcp
   goregraph version
 `)
@@ -254,9 +313,12 @@ Creates deterministic GoreGraph output for a project.
 
 Options:
   --no-update-gitignore   Do not add goregraph-out/ to the project .gitignore
+  --no-workspace          Do not discover or refresh workspace overlays
+  --workspace <path>      Use an explicit workspace root
 
 Examples:
   goregraph scan .
   goregraph scan . --no-update-gitignore
+  goregraph scan . --workspace ..
 `)
 }

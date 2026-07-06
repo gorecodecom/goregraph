@@ -9,7 +9,7 @@ import (
 
 var (
 	codeHelperStartRE = regexp.MustCompile(`\b(Get|Post|Put|Patch|Delete)Helper(?:WithStatus)?\s*\(`)
-	codeFetchAPIRE    = regexp.MustCompile(`\bfetch\s*\(\s*["']([^"']+)["']`)
+	codeFetchAPIRE    = regexp.MustCompile("\\bfetch\\s*\\(\\s*(?:\"([^\"]+)\"|'([^']+)'|`([^`]+)`)")
 	codeMethodRE      = regexp.MustCompile(`\bmethod\s*:\s*["']([A-Za-z]+)["']`)
 	codePathLiteralRE = regexp.MustCompile(`["'](/[^"']+)["']|` + "`" + `(/[^` + "`" + `]+)` + "`")
 	codeTemplateVarRE = regexp.MustCompile(`\$\{([^}]+)\}`)
@@ -34,12 +34,12 @@ func extractAPIContracts(file FileRecord, lines []string) []APIContractRecord {
 			}
 			continue
 		}
-		if match := codeFetchAPIRE.FindStringSubmatch(line); len(match) == 2 {
+		if match := codeFetchAPIRE.FindStringSubmatch(line); len(match) == 4 {
 			method := "GET"
 			if methodMatch := codeMethodRE.FindStringSubmatch(line); len(methodMatch) == 2 {
 				method = strings.ToUpper(methodMatch[1])
 			}
-			records = append(records, apiContract(file, method, match[1], line, i+1, "fetch-call"))
+			records = append(records, apiContract(file, method, firstNonEmpty(match[1], match[2], match[3]), line, i+1, "fetch-call"))
 		}
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -52,6 +52,15 @@ func extractAPIContracts(file FileRecord, lines []string) []APIContractRecord {
 		return records[i].Path < records[j].Path
 	})
 	return records
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func apiContract(file FileRecord, method, path, caller string, line int, reason string) APIContractRecord {

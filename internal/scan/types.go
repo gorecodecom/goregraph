@@ -361,6 +361,53 @@ type DiagnosticFlowRecord struct {
 	Reason     string `json:"reason"`
 }
 
+type WorkspaceRegistryRecord struct {
+	Root      string                   `json:"root"`
+	Current   string                   `json:"current,omitempty"`
+	Generated string                   `json:"generated_at,omitempty"`
+	Projects  []WorkspaceProjectRecord `json:"projects"`
+}
+
+type WorkspaceProjectRecord struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	AbsPath   string `json:"abs_path,omitempty"`
+	Kind      string `json:"kind"`
+	Service   string `json:"service,omitempty"`
+	Indexed   bool   `json:"indexed"`
+	Status    string `json:"status"`
+	OutputDir string `json:"output_dir,omitempty"`
+}
+
+type WorkspaceContextRecord struct {
+	Root            string                   `json:"root"`
+	Current         string                   `json:"current,omitempty"`
+	LoadedIndexes   []WorkspaceProjectRecord `json:"loaded_indexes"`
+	Projects        []WorkspaceProjectRecord `json:"projects"`
+	KnownServices   []string                 `json:"known_services,omitempty"`
+	MissingServices []string                 `json:"missing_services,omitempty"`
+}
+
+type WorkspaceContractMatchRecord struct {
+	APIProject        string  `json:"api_project"`
+	APIHTTPMethod     string  `json:"api_http_method"`
+	APIPath           string  `json:"api_path"`
+	APIFile           string  `json:"api_file"`
+	APILine           int     `json:"api_line,omitempty"`
+	BackendProject    string  `json:"backend_project,omitempty"`
+	BackendService    string  `json:"backend_service,omitempty"`
+	BackendHTTPMethod string  `json:"backend_http_method,omitempty"`
+	BackendPath       string  `json:"backend_path,omitempty"`
+	BackendHandler    string  `json:"backend_handler,omitempty"`
+	BackendFile       string  `json:"backend_file,omitempty"`
+	BackendLine       int     `json:"backend_line,omitempty"`
+	ServiceCandidate  string  `json:"service_candidate,omitempty"`
+	Issue             string  `json:"issue"`
+	Confidence        string  `json:"confidence"`
+	ConfidenceScore   float64 `json:"confidence_score"`
+	Reason            string  `json:"reason,omitempty"`
+}
+
 type PackageGraphRecord struct {
 	Nodes []PackageNodeRecord `json:"nodes"`
 	Edges []PackageEdgeRecord `json:"edges"`
