@@ -100,6 +100,10 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 		if err := os.WriteFile(filepath.Join(out, "workspace-context.md"), []byte(renderProjectWorkspaceContextReport(context, project.record.Path)), 0o644); err != nil {
 			return nil, err
 		}
+		projectMatches := filterWorkspaceContractMatches(project.record.Path, matches)
+		if err := writeJSON(filepath.Join(out, "workspace-contract-matches.json"), projectMatches); err != nil {
+			return nil, err
+		}
 		if err := os.WriteFile(filepath.Join(out, "workspace-contract-matches.md"), []byte(renderProjectWorkspaceMatchesReport(project.record.Path, matches)), 0o644); err != nil {
 			return nil, err
 		}
@@ -1045,6 +1049,16 @@ func renderProjectWorkspaceMatchesReport(projectPath string, records []Workspace
 		b.WriteString("- none detected\n")
 	}
 	return b.String()
+}
+
+func filterWorkspaceContractMatches(projectPath string, records []WorkspaceContractMatchRecord) []WorkspaceContractMatchRecord {
+	var filtered []WorkspaceContractMatchRecord
+	for _, record := range records {
+		if record.APIProject == projectPath || record.BackendProject == projectPath {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
 }
 
 func renderWorkspaceContractMatchLine(b *strings.Builder, record WorkspaceContractMatchRecord) {

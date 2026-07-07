@@ -132,6 +132,14 @@ class CadasterController {
 	if !strings.Contains(frontendMatches, "GET `/cadasters/{id}` -> ms-cadaster GET `/cadasters/{cadasterId}`") {
 		t.Fatalf("frontend workspace contract overlay missing backend match:\n%s", frontendMatches)
 	}
+	var frontendMatchJSON []WorkspaceContractMatchRecord
+	readJSON(t, filepath.Join(frontend, "goregraph-out", "workspace-contract-matches.json"), &frontendMatchJSON)
+	if len(frontendMatchJSON) != 1 ||
+		frontendMatchJSON[0].Issue != contractIssueMatched ||
+		frontendMatchJSON[0].APIProject != "frontend/frontend-monorepo" ||
+		frontendMatchJSON[0].BackendProject != "microservices/ms-cadaster" {
+		t.Fatalf("frontend workspace contract JSON overlay missing backend match: %#v", frontendMatchJSON)
+	}
 
 	frontendContext := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-context.md"))
 	if !strings.Contains(frontendContext, "This project: `frontend/frontend-monorepo`") || !strings.Contains(frontendContext, "Last refreshed by: `microservices/ms-cadaster`") {
@@ -158,17 +166,26 @@ class CadasterController {
 		!strings.Contains(backendDiagnostics, "src/api/cadasterservice.js:2") {
 		t.Fatalf("backend diagnostics missing incoming workspace contract:\n%s", backendDiagnostics)
 	}
+	var backendMatchJSON []WorkspaceContractMatchRecord
+	readJSON(t, filepath.Join(cadaster, "goregraph-out", "workspace-contract-matches.json"), &backendMatchJSON)
+	if len(backendMatchJSON) != 1 ||
+		backendMatchJSON[0].APIProject != "frontend/frontend-monorepo" ||
+		backendMatchJSON[0].BackendProject != "microservices/ms-cadaster" {
+		t.Fatalf("backend workspace contract JSON overlay missing incoming frontend match: %#v", backendMatchJSON)
+	}
 
 	var manifest Manifest
 	readJSON(t, filepath.Join(frontend, "goregraph-out", "manifest.json"), &manifest)
 	assertGeneratedFile(t, manifest.Generated, "workspace-context.md")
 	assertGeneratedFile(t, manifest.Generated, "workspace-contract-matches.md")
+	assertGeneratedFile(t, manifest.Generated, "workspace-contract-matches.json")
 	assertGeneratedFile(t, manifest.Generated, "frontend-consumers.md")
 
 	var audit AuditRecord
 	readJSON(t, filepath.Join(frontend, "goregraph-out", "audit.json"), &audit)
 	assertGeneratedFile(t, audit.Generated, "workspace-context.md")
 	assertGeneratedFile(t, audit.Generated, "workspace-contract-matches.md")
+	assertGeneratedFile(t, audit.Generated, "workspace-contract-matches.json")
 	assertGeneratedFile(t, audit.Generated, "frontend-consumers.md")
 
 	consumers := readText(t, filepath.Join(cadaster, "goregraph-out", "frontend-consumers.md"))

@@ -131,6 +131,7 @@ Generated files include:
 - `potentially-broken-contracts.md`
 - `diagnostics.md`
 - `workspace-context.md`
+- `workspace-contract-matches.json`
 - `workspace-contract-matches.md`
 - `workspace-feature-flows.json`
 - `workspace-feature-flows.md`
@@ -227,6 +228,7 @@ Workspace overlays:
 - `.goregraph-workspace/feature-flows.json`: cross-project frontend route/component/API-to-backend feature flows from already scanned projects, with component-aware frontend route steps, React effect calls, and local event handler calls when available.
 - `.goregraph-workspace/next-actions.md`: workspace coverage summary and prioritized follow-up actions from already scanned project indexes.
 - `workspace-context.md`: readable workspace project/index summary with prioritized missing services and suggested next scans.
+- `workspace-contract-matches.json`: project-local cross-project contract matches relevant to the scanned project, refreshed after later sibling scans.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project, including API caller names when detected.
 - `workspace-feature-flows.md`: readable frontend-route-to-API-to-backend-to-test feature flows, including JSX component hops, effect/event-handler reasons, API caller fallback for weak route matches, unresolved-route reasons, and missing-test reasons.
 - `workspace-next-actions.md`: project-local copy of the workspace next-action summary.
