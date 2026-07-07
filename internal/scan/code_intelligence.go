@@ -49,12 +49,14 @@ func extractCodeIntelligence(file FileRecord, body string) CodeIntelligenceRecor
 
 	lines := strings.Split(body, "\n")
 	if isLowSignalCodeFile(file.Path) {
-		return CodeIntelligenceRecord{APIContracts: extractAPIContracts(file, lines)}
+		functions := extractCodeFunctions(file, lines)
+		return CodeIntelligenceRecord{APIContracts: extractAPIContracts(file, lines, functions)}
 	}
+	functions := extractCodeFunctions(file, lines)
 	record := CodeIntelligenceRecord{
-		Functions:    extractCodeFunctions(file, lines),
+		Functions:    functions,
 		Routes:       extractCodeRoutes(file, lines),
-		APIContracts: extractAPIContracts(file, lines),
+		APIContracts: extractAPIContracts(file, lines, functions),
 	}
 	for i := range record.Functions {
 		record.Functions[i].Calls = extractCallsForFunction(file.Language, lines, record.Functions[i])

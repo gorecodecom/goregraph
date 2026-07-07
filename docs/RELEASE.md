@@ -153,6 +153,7 @@ Completed release checks:
 - workspace root detection prefers a parent with both frontend and backend group directories over an intermediate frontend-only grouping folder.
 - frontend route flows can resolve API callers through React effect calls and local event handlers.
 - workspace feature flow reasons distinguish direct, effect, event-handler, and app-scope matches.
+- API contracts retain the enclosing helper/fetch caller name and workspace feature flows use it even when route context is only `WEAK_MATCH`.
 - `goregraph version` reports `0.8.6`.
 
 Remaining release-hardening items:

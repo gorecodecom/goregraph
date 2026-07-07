@@ -430,6 +430,7 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		APIPath:          contract.Path,
 		APIFile:          contract.File,
 		APILine:          contract.Line,
+		APICaller:        contract.Caller,
 		ServiceCandidate: contract.ServiceCandidate,
 	}
 	if contract.UnsafeDynamic {
@@ -523,6 +524,7 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 		tests := workspaceFeatureTests(backendProject.testMap, flow, match)
 		record := WorkspaceFeatureFlowRecord{
 			FrontendProject:   match.APIProject,
+			FrontendCaller:    match.APICaller,
 			FrontendFile:      match.APIFile,
 			FrontendLine:      match.APILine,
 			HTTPMethod:        match.APIHTTPMethod,
@@ -545,7 +547,7 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 			record.FrontendRouteFile = frontend.routeFile
 			record.FrontendRouteLine = frontend.routeLine
 			record.FrontendComponent = frontend.component
-			record.FrontendCaller = frontend.apiCaller
+			record.FrontendCaller = firstNonEmpty(frontend.apiCaller, match.APICaller)
 			record.FrontendSteps = frontend.steps
 			record.FrontendConfidence = frontend.confidence
 			record.FrontendReason = frontend.reason

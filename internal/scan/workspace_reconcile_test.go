@@ -651,6 +651,150 @@ class CadasterController {
 	}
 }
 
+func TestWorkspaceFeatureFlowsUseAPIContractCallerWhenRouteIsWeak(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
+	writeFile(t, frontend, "apps/portal/src/routes.jsx", `import { Route } from "react-router-dom";
+import { Home } from "./pages/Home";
+
+export const routes = <Route path="/" element={<Home />} />;
+`)
+	writeFile(t, frontend, "apps/portal/src/pages/Home.jsx", `export function Home() {
+  return <main />;
+}
+`)
+	writeFile(t, frontend, "apps/portal/src/api/vd/userService.ts", "import { GetHelper } from '../../utils/requestHelper';\n\n"+
+		"export const userService = {\n"+
+		"  getCurrentCadaster(cadasterId) {\n"+
+		"    return GetHelper(null, `/cadasters/${cadasterId}`);\n"+
+		"  }\n"+
+		"};\n")
+	writeFile(t, frontend, "apps/portal/src/utils/requestHelper.ts", `export function GetHelper(dispatch, path) { return fetch(path); }
+`)
+	writeFile(t, cadaster, "src/main/java/com/weka/vd/api/cadaster/controller/CadasterController.java", `package com.weka.vd.api.cadaster.controller;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @GetMapping("/{cadasterId}")
+  String get(@PathVariable String cadasterId) {
+    return cadasterId;
+  }
+}
+`)
+
+	if _, err := Run(frontend, config.Defaults()); err != nil {
+		t.Fatalf("frontend Run returned error: %v", err)
+	}
+	if _, err := Run(cadaster, config.Defaults()); err != nil {
+		t.Fatalf("cadaster Run returned error: %v", err)
+	}
+
+	report := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-feature-flows.md"))
+	for _, want := range []string{
+		"- Frontend route: `portal:/` `/` -> `Home`",
+		"WEAK_MATCH, frontend route shares app with API contract but no route-flow step reached the API caller",
+		"- Frontend API: `apps/portal/src/api/vd/userService.ts:5` `getCurrentCadaster`",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("workspace feature flow report missing %q:\n%s", want, report)
+		}
+	}
+
+	var flows []WorkspaceFeatureFlowRecord
+	readJSON(t, filepath.Join(frontend, "goregraph-out", "workspace-feature-flows.json"), &flows)
+	if len(flows) != 1 {
+		t.Fatalf("feature flow count = %d, want 1: %#v", len(flows), flows)
+	}
+	if flows[0].FrontendConfidence != "WEAK_MATCH" {
+		t.Fatalf("FrontendConfidence = %q, want WEAK_MATCH: %#v", flows[0].FrontendConfidence, flows[0])
+	}
+	if flows[0].FrontendCaller != "getCurrentCadaster" {
+		t.Fatalf("FrontendCaller = %q, want API contract caller: %#v", flows[0].FrontendCaller, flows[0])
+	}
+}
+
+func TestWorkspaceFeatureFlowsResolvePortalServiceMethodToAPICaller(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
+	writeFile(t, frontend, "apps/portal/src/routes.jsx", `import { Route } from "react-router-dom";
+import { Home } from "./pages/Home";
+
+export const routes = <Route path="/" element={<Home />} />;
+`)
+	writeFile(t, frontend, "apps/portal/src/pages/Home.jsx", `import { userService } from "../api/vd/userService";
+
+export function Home({ cadasterId }) {
+  return userService.getCurrentCadaster(cadasterId);
+}
+`)
+	writeFile(t, frontend, "apps/portal/src/api/vd/userService.ts", "import { GetHelper } from '../../utils/requestHelper';\n\n"+
+		"export const userService = {\n"+
+		"  getCurrentCadaster(cadasterId) {\n"+
+		"    return GetHelper(null, `/cadasters/${cadasterId}`);\n"+
+		"  }\n"+
+		"};\n")
+	writeFile(t, frontend, "apps/portal/src/utils/requestHelper.ts", `export function GetHelper(dispatch, path) { return fetch(path); }
+`)
+	writeFile(t, cadaster, "src/main/java/com/weka/vd/api/cadaster/controller/CadasterController.java", `package com.weka.vd.api.cadaster.controller;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @GetMapping("/{cadasterId}")
+  String get(@PathVariable String cadasterId) {
+    return cadasterId;
+  }
+}
+`)
+
+	if _, err := Run(frontend, config.Defaults()); err != nil {
+		t.Fatalf("frontend Run returned error: %v", err)
+	}
+	if _, err := Run(cadaster, config.Defaults()); err != nil {
+		t.Fatalf("cadaster Run returned error: %v", err)
+	}
+
+	report := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-feature-flows.md"))
+	for _, want := range []string{
+		"- Frontend route: `portal:/` `/` -> `Home`",
+		"RESOLVED, route flow reaches API contract caller",
+		"- Frontend API: `apps/portal/src/api/vd/userService.ts:5` `getCurrentCadaster`",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("workspace feature flow report missing %q:\n%s", want, report)
+		}
+	}
+
+	var flows []WorkspaceFeatureFlowRecord
+	readJSON(t, filepath.Join(frontend, "goregraph-out", "workspace-feature-flows.json"), &flows)
+	if len(flows) != 1 {
+		t.Fatalf("feature flow count = %d, want 1: %#v", len(flows), flows)
+	}
+	if flows[0].FrontendConfidence != "RESOLVED" {
+		t.Fatalf("FrontendConfidence = %q, want RESOLVED: %#v", flows[0].FrontendConfidence, flows[0])
+	}
+	if flows[0].FrontendCaller != "getCurrentCadaster" {
+		t.Fatalf("FrontendCaller = %q, want API contract caller: %#v", flows[0].FrontendCaller, flows[0])
+	}
+}
+
 func TestWorkspaceFeatureFlowsExplainMissingFrontendRouteContext(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "weka")
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")

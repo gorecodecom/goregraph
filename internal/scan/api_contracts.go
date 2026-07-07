@@ -15,7 +15,7 @@ var (
 	codeTemplateVarRE = regexp.MustCompile(`\$\{([^}]+)\}`)
 )
 
-func extractAPIContracts(file FileRecord, lines []string) []APIContractRecord {
+func extractAPIContracts(file FileRecord, lines []string, functions []CodeFunctionRecord) []APIContractRecord {
 	if isLowSignalCodeFile(file.Path) {
 		return nil
 	}
@@ -30,7 +30,7 @@ func extractAPIContracts(file FileRecord, lines []string) []APIContractRecord {
 		if match := codeHelperStartRE.FindStringSubmatch(line); len(match) == 2 {
 			callText := collectCallText(lines, i, 5)
 			if path, ok := firstPathLiteral(callText); ok {
-				records = append(records, apiContract(file, helperHTTPMethod(match[1]), path, callText, i+1, "helper-call-argument"))
+				records = append(records, apiContract(file, helperHTTPMethod(match[1]), path, apiContractCaller(functions, i+1), i+1, "helper-call-argument"))
 			}
 			continue
 		}
@@ -39,7 +39,7 @@ func extractAPIContracts(file FileRecord, lines []string) []APIContractRecord {
 			if methodMatch := codeMethodRE.FindStringSubmatch(line); len(methodMatch) == 2 {
 				method = strings.ToUpper(methodMatch[1])
 			}
-			records = append(records, apiContract(file, method, firstNonEmpty(match[1], match[2], match[3]), line, i+1, "fetch-call"))
+			records = append(records, apiContract(file, method, firstNonEmpty(match[1], match[2], match[3]), apiContractCaller(functions, i+1), i+1, "fetch-call"))
 		}
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -52,6 +52,22 @@ func extractAPIContracts(file FileRecord, lines []string) []APIContractRecord {
 		return records[i].Path < records[j].Path
 	})
 	return records
+}
+
+func apiContractCaller(functions []CodeFunctionRecord, line int) string {
+	var best CodeFunctionRecord
+	for _, function := range functions {
+		if function.Line <= 0 || function.EndLine <= 0 {
+			continue
+		}
+		if line < function.Line || line > function.EndLine {
+			continue
+		}
+		if best.Name == "" || function.Line >= best.Line {
+			best = function
+		}
+	}
+	return best.Name
 }
 
 func firstNonEmpty(values ...string) string {

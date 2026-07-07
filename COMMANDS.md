@@ -179,7 +179,7 @@ What the generated files mean:
 - `test-map.json`: method-level, endpoint-level, and best-effort cross-language test mappings with confidence metadata.
 - `routes.json`: normalized route records for Spring, Go, PHP/Laravel-style routes, JS/TS Express/Fastify-style routes, React Router routes, and Python FastAPI/Flask-style routes.
 - `flows.json`: normalized route-to-handler-to-call flow records across supported languages.
-- `api-contracts.json`: JavaScript/TypeScript HTTP client calls detected from supported helpers and `fetch`, including realistic helper argument shapes, method, raw path, normalized path, query metadata, service candidate, file, app, confidence, and reason.
+- `api-contracts.json`: JavaScript/TypeScript HTTP client calls detected from supported helpers and `fetch`, including realistic helper argument shapes, method, raw path, normalized path, query metadata, service candidate, enclosing caller function or method when available, file, app, confidence, and reason.
 - `contract-matches.json`: static frontend API call to backend route matches, including resolved method/path matches, method mismatches, missing backend routes, unscanned services, and unsafe dynamic URL patterns.
 - `diagnostics.json`: compact diagnosis index derived from routes, contracts, endpoint flows, route flows, and tests.
 - `package-graph.json`: Node workspace package nodes and package dependency edges from `package.json`.
@@ -217,11 +217,11 @@ Workspace overlays:
 
 - `.goregraph-workspace/registry.json`: discovered sibling projects with `current`, `indexed`, or `not_indexed` status.
 - `.goregraph-workspace/context.json`: loaded indexes, known backend services, and referenced but missing services.
-- `.goregraph-workspace/contract-matches.json`: cross-project API-to-backend matches from already scanned projects.
+- `.goregraph-workspace/contract-matches.json`: cross-project API-to-backend matches from already scanned projects, including the API caller name when detected.
 - `.goregraph-workspace/feature-flows.json`: cross-project frontend route/component/API-to-backend feature flows from already scanned projects, with component-aware frontend route steps, React effect calls, and local event handler calls when available.
 - `workspace-context.md`: readable workspace project/index summary.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
-- `workspace-feature-flows.md`: readable frontend-route-to-API-to-backend-to-test feature flows, including JSX component hops, effect/event-handler reasons, unresolved-route reasons, and missing-test reasons.
+- `workspace-feature-flows.md`: readable frontend-route-to-API-to-backend-to-test feature flows, including JSX component hops, effect/event-handler reasons, API caller fallback for weak route matches, unresolved-route reasons, and missing-test reasons.
 - `frontend-consumers.md`: backend-oriented view of frontend API callers; frontend projects explain the report scope instead of showing an ambiguous empty result.
 
 Workspace reconciliation also refreshes:
