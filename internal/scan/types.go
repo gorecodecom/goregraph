@@ -382,12 +382,20 @@ type WorkspaceProjectRecord struct {
 }
 
 type WorkspaceContextRecord struct {
-	Root            string                   `json:"root"`
-	Current         string                   `json:"current,omitempty"`
-	LoadedIndexes   []WorkspaceProjectRecord `json:"loaded_indexes"`
-	Projects        []WorkspaceProjectRecord `json:"projects"`
-	KnownServices   []string                 `json:"known_services,omitempty"`
-	MissingServices []string                 `json:"missing_services,omitempty"`
+	Root                  string                          `json:"root"`
+	Current               string                          `json:"current,omitempty"`
+	LoadedIndexes         []WorkspaceProjectRecord        `json:"loaded_indexes"`
+	Projects              []WorkspaceProjectRecord        `json:"projects"`
+	KnownServices         []string                        `json:"known_services,omitempty"`
+	MissingServices       []string                        `json:"missing_services,omitempty"`
+	MissingServiceDetails []WorkspaceMissingServiceRecord `json:"missing_service_details,omitempty"`
+}
+
+type WorkspaceMissingServiceRecord struct {
+	Service   string `json:"service"`
+	Contracts int    `json:"contracts"`
+	Project   string `json:"project,omitempty"`
+	Status    string `json:"status,omitempty"`
 }
 
 type WorkspaceContractMatchRecord struct {

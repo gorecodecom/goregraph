@@ -193,15 +193,15 @@ What the generated files mean:
 - `callgraph.md`: human-readable method call graph.
 - `routes.md`: human-readable route inventory.
 - `flows.md`: human-readable route and handler flow report.
-- `api-contracts.md`: human-readable API client call inventory.
+- `api-contracts.md`: human-readable API client call inventory, including the enclosing caller function or method when detected.
 - `contract-matches.md`: human-readable frontend API to backend route match report.
 - `potentially-broken-contracts.md`: focused report for API calls that could not be safely matched to backend routes.
 - `diagnostics.md`: prioritized human-readable diagnosis report with entrypoints, risky contracts, workspace-resolved contracts, unscanned services, untested endpoints, weak flows, and likely tests.
-- `workspace-context.md`: readable workspace project/index summary, or a no-workspace placeholder.
-- `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
+- `workspace-context.md`: readable workspace project/index summary with missing services prioritized by referenced contract count and scan suggestions when a matching workspace project is known, or a no-workspace placeholder.
+- `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project, including API caller names when detected.
 - `workspace-feature-flows.json`: cross-project feature flows from frontend route/component/API call to backend endpoint flow and tests, including JSX child component hops, React effect calls, and local event handlers when those steps connect a route component to the API caller.
 - `workspace-feature-flows.md`: readable end-to-end feature-flow report, including frontend route context when resolved, confidence reasons such as direct/effect/event-handler API caller matches, and reasons for unresolved route context or missing linked tests.
-- `frontend-consumers.md`: backend-oriented view of frontend API callers; frontend projects explain that this report is not applicable and point to workspace contract/feature reports.
+- `frontend-consumers.md`: backend-oriented view of frontend API callers with caller names when detected; frontend projects explain that this report is not applicable and point to workspace contract/feature reports.
 - `package-graph.md`: human-readable Node package/workspace dependency graph.
 - `maven-graph.md`: human-readable Maven dependency graph.
 - `navigation.md`: human-readable starting-point report with likely routes, central files, important symbols, test orientation, and analyzer coverage.
@@ -216,13 +216,13 @@ What the generated files mean:
 Workspace overlays:
 
 - `.goregraph-workspace/registry.json`: discovered sibling projects with `current`, `indexed`, or `not_indexed` status.
-- `.goregraph-workspace/context.json`: loaded indexes, known backend services, and referenced but missing services.
+- `.goregraph-workspace/context.json`: loaded indexes, known backend services, and referenced but missing services with contract counts and matching workspace project status when known.
 - `.goregraph-workspace/contract-matches.json`: cross-project API-to-backend matches from already scanned projects, including the API caller name when detected.
 - `.goregraph-workspace/feature-flows.json`: cross-project frontend route/component/API-to-backend feature flows from already scanned projects, with component-aware frontend route steps, React effect calls, and local event handler calls when available.
-- `workspace-context.md`: readable workspace project/index summary.
-- `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
+- `workspace-context.md`: readable workspace project/index summary with prioritized missing services and suggested next scans.
+- `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project, including API caller names when detected.
 - `workspace-feature-flows.md`: readable frontend-route-to-API-to-backend-to-test feature flows, including JSX component hops, effect/event-handler reasons, API caller fallback for weak route matches, unresolved-route reasons, and missing-test reasons.
-- `frontend-consumers.md`: backend-oriented view of frontend API callers; frontend projects explain the report scope instead of showing an ambiguous empty result.
+- `frontend-consumers.md`: backend-oriented view of frontend API callers with caller names when detected; frontend projects explain the report scope instead of showing an ambiguous empty result.
 
 Workspace reconciliation also refreshes:
 
@@ -613,7 +613,8 @@ Expected output:
 - discovered sibling projects with status
 - loaded indexes
 - known backend services
-- referenced but missing services
+- referenced but missing services, prioritized by contract count
+- suggested `goregraph scan .` commands for missing services whose workspace project was discovered
 
 Important behavior:
 

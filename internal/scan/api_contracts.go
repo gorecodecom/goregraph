@@ -311,7 +311,11 @@ func renderAPIContractsReport(records []APIContractRecord) string {
 		if record.Query != "" {
 			query = "?" + record.Query
 		}
-		b.WriteString(fmt.Sprintf("- %s `%s%s` from `%s:%d` (app `%s`, service `%s`, %s%s)\n",
+		caller := ""
+		if record.Caller != "" {
+			caller = fmt.Sprintf(", caller `%s`", record.Caller)
+		}
+		b.WriteString(fmt.Sprintf("- %s `%s%s` from `%s:%d` (app `%s`, service `%s`%s, %s%s)\n",
 			record.HTTPMethod,
 			record.Path,
 			query,
@@ -319,6 +323,7 @@ func renderAPIContractsReport(records []APIContractRecord) string {
 			record.Line,
 			record.App,
 			emptyAsNone(record.ServiceCandidate),
+			caller,
 			record.Reason,
 			dynamic,
 		))

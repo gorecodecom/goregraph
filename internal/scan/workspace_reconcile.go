@@ -346,6 +346,12 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspaceIndexProject) WorkspaceContextRecord {
 	var loaded []WorkspaceProjectRecord
 	serviceSet := map[string]bool{}
+	projectsByService := map[string]WorkspaceProjectRecord{}
+	for _, project := range registry.Projects {
+		if project.Service != "" {
+			projectsByService[project.Service] = project
+		}
+	}
 	for _, project := range indexed {
 		loaded = append(loaded, project.record)
 		if project.record.Service != "" && hasBackendRoutes(project.routes) {
@@ -353,11 +359,11 @@ func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspace
 		}
 	}
 
-	referenced := map[string]bool{}
+	referenced := map[string]int{}
 	for _, project := range indexed {
 		for _, contract := range project.contracts {
 			if contract.ServiceCandidate != "" {
-				referenced[contract.ServiceCandidate] = true
+				referenced[contract.ServiceCandidate]++
 			}
 		}
 	}
@@ -367,19 +373,36 @@ func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspace
 	}
 	sort.Strings(known)
 	var missing []string
-	for service := range referenced {
+	var missingDetails []WorkspaceMissingServiceRecord
+	for service, count := range referenced {
 		if !serviceSet[service] {
 			missing = append(missing, service)
+			detail := WorkspaceMissingServiceRecord{
+				Service:   service,
+				Contracts: count,
+			}
+			if project, ok := projectsByService[service]; ok {
+				detail.Project = project.Path
+				detail.Status = project.Status
+			}
+			missingDetails = append(missingDetails, detail)
 		}
 	}
 	sort.Strings(missing)
+	sort.Slice(missingDetails, func(i, j int) bool {
+		if missingDetails[i].Contracts != missingDetails[j].Contracts {
+			return missingDetails[i].Contracts > missingDetails[j].Contracts
+		}
+		return missingDetails[i].Service < missingDetails[j].Service
+	})
 	return WorkspaceContextRecord{
-		Root:            registry.Root,
-		Current:         registry.Current,
-		LoadedIndexes:   loaded,
-		Projects:        registry.Projects,
-		KnownServices:   known,
-		MissingServices: missing,
+		Root:                  registry.Root,
+		Current:               registry.Current,
+		LoadedIndexes:         loaded,
+		Projects:              registry.Projects,
+		KnownServices:         known,
+		MissingServices:       missing,
+		MissingServiceDetails: missingDetails,
 	}
 }
 
@@ -715,38 +738,8 @@ func renderWorkspaceContextReport(record WorkspaceContextRecord) string {
 	if record.Current != "" {
 		b.WriteString(fmt.Sprintf("- Current project: `%s`\n", record.Current))
 	}
-	b.WriteString("\n## Projects\n\n")
-	for _, project := range record.Projects {
-		b.WriteString(fmt.Sprintf("- `%s` - %s", project.Path, project.Status))
-		if project.Service != "" {
-			b.WriteString(fmt.Sprintf(", service `%s`", project.Service))
-		}
-		b.WriteString("\n")
-	}
-	b.WriteString("\n## Loaded Indexes\n\n")
-	if len(record.LoadedIndexes) == 0 {
-		b.WriteString("- none\n")
-	} else {
-		for _, project := range record.LoadedIndexes {
-			b.WriteString(fmt.Sprintf("- `%s`\n", project.Path))
-		}
-	}
-	b.WriteString("\n## Known Backend Services\n\n")
-	if len(record.KnownServices) == 0 {
-		b.WriteString("- none\n")
-	} else {
-		for _, service := range record.KnownServices {
-			b.WriteString(fmt.Sprintf("- `%s`\n", service))
-		}
-	}
-	b.WriteString("\n## Referenced But Missing Services\n\n")
-	if len(record.MissingServices) == 0 {
-		b.WriteString("- none\n")
-	} else {
-		for _, service := range record.MissingServices {
-			b.WriteString(fmt.Sprintf("- `%s`\n", service))
-		}
-	}
+	b.WriteString("\n")
+	b.WriteString(renderWorkspaceContextSections(record))
 	return b.String()
 }
 
@@ -798,12 +791,41 @@ func renderWorkspaceContextSections(record WorkspaceContextRecord) string {
 	b.WriteString("\n## Referenced But Missing Services\n\n")
 	if len(record.MissingServices) == 0 {
 		b.WriteString("- none\n")
+	} else if len(record.MissingServiceDetails) > 0 {
+		for _, service := range record.MissingServiceDetails {
+			b.WriteString(fmt.Sprintf("- `%s` - %d contracts", service.Service, service.Contracts))
+			if service.Project != "" {
+				b.WriteString(fmt.Sprintf(" - project `%s`", service.Project))
+			}
+			if service.Status != "" {
+				b.WriteString(fmt.Sprintf(" - %s", service.Status))
+			}
+			b.WriteString("\n")
+		}
 	} else {
 		for _, service := range record.MissingServices {
 			b.WriteString(fmt.Sprintf("- `%s`\n", service))
 		}
 	}
+	writeWorkspaceScanSuggestions(&b, record)
 	return b.String()
+}
+
+func writeWorkspaceScanSuggestions(b *strings.Builder, record WorkspaceContextRecord) {
+	var suggestions []string
+	for _, service := range record.MissingServiceDetails {
+		if service.Project == "" || service.Status == "indexed" {
+			continue
+		}
+		suggestions = append(suggestions, fmt.Sprintf("cd %s && goregraph scan .", service.Project))
+	}
+	if len(suggestions) == 0 {
+		return
+	}
+	b.WriteString("\n## Suggested Next Scans\n\n")
+	for _, suggestion := range suggestions {
+		b.WriteString(fmt.Sprintf("- `%s`\n", suggestion))
+	}
 }
 
 func renderWorkspaceContractMatchesReport(records []WorkspaceContractMatchRecord) string {
@@ -839,7 +861,7 @@ func renderProjectWorkspaceMatchesReport(projectPath string, records []Workspace
 func renderWorkspaceContractMatchLine(b *strings.Builder, record WorkspaceContractMatchRecord) {
 	if record.Issue == contractIssueMatched {
 		service := emptyAsNone(record.BackendService)
-		b.WriteString(fmt.Sprintf("- %s `%s` -> %s %s `%s` via `%s:%d` (%s, frontend `%s` `%s:%d`)\n",
+		b.WriteString(fmt.Sprintf("- %s `%s` -> %s %s `%s` via `%s:%d` (%s, frontend `%s` `%s:%d`%s)\n",
 			record.APIHTTPMethod,
 			record.APIPath,
 			service,
@@ -851,19 +873,28 @@ func renderWorkspaceContractMatchLine(b *strings.Builder, record WorkspaceContra
 			record.APIProject,
 			record.APIFile,
 			record.APILine,
+			workspaceCallerSuffix(record.APICaller),
 		))
 		return
 	}
-	b.WriteString(fmt.Sprintf("- %s `%s` from `%s` `%s:%d`: %s (%s, %s)\n",
+	b.WriteString(fmt.Sprintf("- %s `%s` from `%s` `%s:%d`%s: %s (%s, %s)\n",
 		record.APIHTTPMethod,
 		record.APIPath,
 		record.APIProject,
 		record.APIFile,
 		record.APILine,
+		workspaceCallerSuffix(record.APICaller),
 		record.Issue,
 		record.Confidence,
 		record.Reason,
 	))
+}
+
+func workspaceCallerSuffix(caller string) string {
+	if caller == "" {
+		return ""
+	}
+	return fmt.Sprintf(", caller `%s`", caller)
 }
 
 func renderFrontendConsumersReport(projectPath string, records []WorkspaceContractMatchRecord) string {
@@ -875,12 +906,13 @@ func renderFrontendConsumersReport(projectPath string, records []WorkspaceContra
 			continue
 		}
 		count++
-		b.WriteString(fmt.Sprintf("- %s `%s` used by `%s` `%s:%d` -> `%s.%s`\n",
+		b.WriteString(fmt.Sprintf("- %s `%s` used by `%s` `%s:%d`%s -> `%s.%s`\n",
 			record.APIHTTPMethod,
 			record.APIPath,
 			record.APIProject,
 			record.APIFile,
 			record.APILine,
+			workspaceCallerSuffix(record.APICaller),
 			record.BackendService,
 			record.BackendHandler,
 		))
@@ -1047,12 +1079,13 @@ func renderEndpointFrontendConsumersSection(projectPath string, records []Worksp
 			continue
 		}
 		count++
-		b.WriteString(fmt.Sprintf("- %s `%s` used by `%s` `%s:%d` -> `%s.%s`\n",
+		b.WriteString(fmt.Sprintf("- %s `%s` used by `%s` `%s:%d`%s -> `%s.%s`\n",
 			record.BackendHTTPMethod,
 			record.BackendPath,
 			record.APIProject,
 			record.APIFile,
 			record.APILine,
+			workspaceCallerSuffix(record.APICaller),
 			record.BackendService,
 			record.BackendHandler,
 		))

@@ -655,8 +655,10 @@ func TestWorkspaceFeatureFlowsUseAPIContractCallerWhenRouteIsWeak(t *testing.T) 
 	workspace := filepath.Join(t.TempDir(), "weka")
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	task := filepath.Join(workspace, "microservices", "ms-task")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
 	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
+	writeFile(t, task, "pom.xml", `<project><artifactId>ms-task</artifactId></project>`)
 	writeFile(t, frontend, "apps/portal/src/routes.jsx", `import { Route } from "react-router-dom";
 import { Home } from "./pages/Home";
 
@@ -670,6 +672,12 @@ export const routes = <Route path="/" element={<Home />} />;
 		"export const userService = {\n"+
 		"  getCurrentCadaster(cadasterId) {\n"+
 		"    return GetHelper(null, `/cadasters/${cadasterId}`);\n"+
+		"  }\n"+
+		"  getTask(taskId) {\n"+
+		"    return GetHelper(null, `/tasks/${taskId}`);\n"+
+		"  }\n"+
+		"  getCurrentTask() {\n"+
+		"    return GetHelper(null, '/tasks/current');\n"+
 		"  }\n"+
 		"};\n")
 	writeFile(t, frontend, "apps/portal/src/utils/requestHelper.ts", `export function GetHelper(dispatch, path) { return fetch(path); }
@@ -719,6 +727,36 @@ class CadasterController {
 	}
 	if flows[0].FrontendCaller != "getCurrentCadaster" {
 		t.Fatalf("FrontendCaller = %q, want API contract caller: %#v", flows[0].FrontendCaller, flows[0])
+	}
+
+	apiContracts := readText(t, filepath.Join(frontend, "goregraph-out", "api-contracts.md"))
+	if !strings.Contains(apiContracts, "caller `getCurrentCadaster`") {
+		t.Fatalf("api-contracts report should include API caller:\n%s", apiContracts)
+	}
+
+	workspaceMatches := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-contract-matches.md"))
+	if !strings.Contains(workspaceMatches, "caller `getCurrentCadaster`") {
+		t.Fatalf("workspace contract matches should include API caller:\n%s", workspaceMatches)
+	}
+
+	frontendConsumers := readText(t, filepath.Join(cadaster, "goregraph-out", "frontend-consumers.md"))
+	if !strings.Contains(frontendConsumers, "caller `getCurrentCadaster`") {
+		t.Fatalf("frontend consumers report should include API caller:\n%s", frontendConsumers)
+	}
+
+	endpoints := readText(t, filepath.Join(cadaster, "goregraph-out", "endpoints.md"))
+	if !strings.Contains(endpoints, "caller `getCurrentCadaster`") {
+		t.Fatalf("backend endpoints consumers should include API caller:\n%s", endpoints)
+	}
+
+	context := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-context.md"))
+	for _, want := range []string{
+		"`ms-task` - 2 contracts - project `microservices/ms-task` - not_indexed",
+		"cd microservices/ms-task && goregraph scan .",
+	} {
+		if !strings.Contains(context, want) {
+			t.Fatalf("workspace context missing %q:\n%s", want, context)
+		}
 	}
 }
 

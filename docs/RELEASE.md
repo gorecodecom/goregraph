@@ -154,6 +154,8 @@ Completed release checks:
 - frontend route flows can resolve API callers through React effect calls and local event handlers.
 - workspace feature flow reasons distinguish direct, effect, event-handler, and app-scope matches.
 - API contracts retain the enclosing helper/fetch caller name and workspace feature flows use it even when route context is only `WEAK_MATCH`.
+- API contract, workspace contract, frontend-consumer, and backend endpoint-consumer Markdown reports show the detected API caller name when available.
+- workspace context prioritizes referenced but missing services by contract count and suggests `cd <project> && goregraph scan .` for discovered unindexed service projects.
 - `goregraph version` reports `0.8.6`.
 
 Remaining release-hardening items:
