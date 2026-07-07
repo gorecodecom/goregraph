@@ -48,6 +48,7 @@ Implemented:
 - deterministic `routes.json`
 - deterministic `flows.json`
 - deterministic `api-contracts.json`
+- deterministic `frontend-usage.json`
 - deterministic `contract-matches.json`
 - deterministic `diagnostics.json`
 - deterministic `package-graph.json`
@@ -65,6 +66,7 @@ Implemented:
 - deterministic `routes.md`
 - deterministic `flows.md`
 - deterministic `api-contracts.md`
+- deterministic `frontend-usage.md`
 - deterministic `contract-matches.md`
 - deterministic `potentially-broken-contracts.md`
 - deterministic `diagnostics.md`
@@ -72,6 +74,7 @@ Implemented:
 - deterministic `workspace-contract-matches.md`
 - deterministic `workspace-feature-flows.json`
 - deterministic `workspace-feature-flows.md`
+- deterministic `workspace-next-actions.md`
 - deterministic `frontend-consumers.md`
 - deterministic `package-graph.md`
 - deterministic `maven-graph.md`
@@ -101,11 +104,13 @@ Implemented:
 - generic route, call, flow, and test mapping for Go, PHP, JavaScript, TypeScript/React, Python, and Shell
 - app-specific frontend route IDs for monorepos
 - component-aware frontend route flows that can follow JSX child components, React effect calls, and local event handlers to API callers
+- frontend usage chains that explain which route/component flow reaches a detected API caller
 - local JavaScript/TypeScript API helper and `fetch` contract extraction, including common helper calls such as `GetHelper(dispatch, "/path")` and the enclosing API function/method name when available
 - frontend API to backend route contract matching with method mismatch, missing route, unscanned service, and unsafe dynamic URL reports
 - compact diagnostics report for entrypoints, risky contracts, unscanned services, untested endpoints, weak flows, and likely tests
 - zero-config workspace discovery for common layouts such as `frontend/` plus `microservices/`, including nested frontend group folders
 - workspace reconciliation that refreshes existing `goregraph-out/` overlays when later sibling scans add new service indexes
+- workspace next-action summaries for coverage, missing service scans, weak matches, and resolved flows without linked tests
 - Node workspace package dependency graph extraction
 - Maven dependency graph extraction from `pom.xml`
 - low-signal frontend noise filtering for declarations, archives, generated files, and common test utility calls
@@ -303,6 +308,7 @@ goregraph-out/
   routes.json
   flows.json
   api-contracts.json
+  frontend-usage.json
   contract-matches.json
   diagnostics.json
   package-graph.json
@@ -317,6 +323,7 @@ goregraph-out/
   routes.md
   flows.md
   api-contracts.md
+  frontend-usage.md
   contract-matches.md
   potentially-broken-contracts.md
   diagnostics.md
@@ -324,6 +331,7 @@ goregraph-out/
   workspace-contract-matches.md
   workspace-feature-flows.json
   workspace-feature-flows.md
+  workspace-next-actions.md
   frontend-consumers.md
   package-graph.md
   maven-graph.md
@@ -357,6 +365,7 @@ goregraph query . callgraph
 goregraph query . routes
 goregraph query . flows
 goregraph query . api-contracts
+goregraph query . frontend-usage
 goregraph query . contract-matches
 goregraph query . broken-contracts
 goregraph query . diagnostics
@@ -378,6 +387,7 @@ cd ~/projects/weka
 goregraph query . workspace-context
 goregraph query . workspace-contracts
 goregraph query . workspace-features
+goregraph query . workspace-next-actions
 ```
 
 When GoreGraph detects a workspace above the scanned project, it also writes:
@@ -388,6 +398,7 @@ When GoreGraph detects a workspace above the scanned project, it also writes:
   context.json
   contract-matches.json
   feature-flows.json
+  next-actions.md
   workspace-context.md
   contract-matches.md
   feature-flows.md
@@ -401,6 +412,7 @@ goregraph-out/
   workspace-contract-matches.md
   workspace-feature-flows.json
   workspace-feature-flows.md
+  workspace-next-actions.md
   frontend-consumers.md
 ```
 
@@ -561,11 +573,13 @@ Current extraction is local and deterministic. It does not run project code or c
 
 `api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helpers and `fetch` calls. Helper extraction handles common argument shapes such as `GetHelper(dispatch, "/path")` and multiline calls. Records preserve the raw path, normalized path, query metadata, service candidate, enclosing caller function or method when available, and unsafe dynamic URL marker when a template expression is too complex to trust. `api-contracts.md` shows the caller next to the API contract when detected.
 
+`frontend-usage.json` and `frontend-usage.md` connect detected frontend API contracts back to the best matching frontend route flow. They show route ID/path, component, API caller, confidence, and the static evidence chain when a route flow reaches the API contract file or caller.
+
 `contract-matches.json` compares detected frontend API calls with backend routes discovered in the same scan. Exact method and compatible path patterns are marked `RESOLVED`; method mismatches, missing backend routes, unscanned services, and unsafe dynamic URL patterns are reported as weak/static findings. `contract-matches.md` is the readable match view, while `potentially-broken-contracts.md` focuses on issues that deserve manual review.
 
 `diagnostics.json` and `diagnostics.md` summarize the most useful diagnostic entrypoints: top routes/endpoints, risky contracts, workspace-resolved contracts, unscanned services, endpoints without detected tests, weak inferred flows, and likely tests.
 
-Workspace files are additive overlays. `.goregraph-workspace/registry.json` lists discovered sibling projects and whether each one has a scan index. `.goregraph-workspace/context.json` summarizes loaded indexes, known services, and referenced-but-missing services with contract counts and matching project status when known. `workspace-context.md` also suggests concrete `cd <project> && goregraph scan .` commands for referenced services that have not been indexed yet. `.goregraph-workspace/contract-matches.json` links API contracts from indexed projects to backend routes from indexed sibling services and carries the API caller name when the helper call is inside a detected function or method; `workspace-contract-matches.md`, `frontend-consumers.md`, and backend `endpoints.md` render that caller in their readable lines. `.goregraph-workspace/feature-flows.json` links resolved frontend route/component/API calls to backend endpoint flows and tests, including JSX child component hops, React effect calls, and local event handlers when they connect a route component to an API caller. Workspace feature flows still show the API caller for app-scope `WEAK_MATCH` routes when the API contract itself has caller context. Workspace root detection prefers the parent that contains both frontend and backend group directories over an intermediate frontend-only grouping folder. Existing scanned siblings receive refreshed `workspace-context.md`, `workspace-contract-matches.md`, `workspace-feature-flows.json`, `workspace-feature-flows.md`, and `frontend-consumers.md` files after each later scan. Workspace reconciliation also updates `diagnostics.md` with outgoing frontend contracts and incoming backend consumers, appends frontend consumers to backend `endpoints.md`, and explains missing linked frontend routes or tests in `workspace-feature-flows.md`.
+Workspace files are additive overlays. `.goregraph-workspace/registry.json` lists discovered sibling projects and whether each one has a scan index. `.goregraph-workspace/context.json` summarizes loaded indexes, known services, and referenced-but-missing services with contract counts and matching project status when known. `workspace-context.md` also suggests concrete `cd <project> && goregraph scan .` commands for referenced services that have not been indexed yet. `.goregraph-workspace/contract-matches.json` links API contracts from indexed projects to backend routes from indexed sibling services and carries the API caller name when the helper call is inside a detected function or method; `workspace-contract-matches.md`, `frontend-consumers.md`, and backend `endpoints.md` render that caller in their readable lines. `.goregraph-workspace/feature-flows.json` links resolved frontend route/component/API calls to backend endpoint flows and tests, including JSX child component hops, React effect calls, and local event handlers when they connect a route component to an API caller. `workspace-next-actions.md` summarizes workspace coverage, the highest-value missing service scans, weak workspace matches, and resolved flows without linked tests. Workspace feature flows still show the API caller for app-scope `WEAK_MATCH` routes when the API contract itself has caller context. Workspace root detection prefers the parent that contains both frontend and backend group directories over an intermediate frontend-only grouping folder. Existing scanned siblings receive refreshed `workspace-context.md`, `workspace-contract-matches.md`, `workspace-feature-flows.json`, `workspace-feature-flows.md`, `workspace-next-actions.md`, and `frontend-consumers.md` files after each later scan. Workspace reconciliation also updates `diagnostics.md` with outgoing frontend contracts and incoming backend consumers, appends frontend consumers to backend `endpoints.md`, and explains missing linked frontend routes or tests in `workspace-feature-flows.md`.
 
 `package-graph.json` contains Node workspace package nodes and package-to-package dependency edges from `package.json`.
 

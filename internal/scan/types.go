@@ -281,6 +281,24 @@ type CodeFlowStep struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
+type FrontendUsageRecord struct {
+	App              string         `json:"app,omitempty"`
+	HTTPMethod       string         `json:"http_method"`
+	Path             string         `json:"path"`
+	ServiceCandidate string         `json:"service_candidate,omitempty"`
+	APIFile          string         `json:"api_file"`
+	APILine          int            `json:"api_line,omitempty"`
+	APICaller        string         `json:"api_caller,omitempty"`
+	RouteID          string         `json:"route_id,omitempty"`
+	RoutePath        string         `json:"route_path,omitempty"`
+	RouteFile        string         `json:"route_file,omitempty"`
+	RouteLine        int            `json:"route_line,omitempty"`
+	Component        string         `json:"component,omitempty"`
+	Steps            []CodeFlowStep `json:"steps,omitempty"`
+	RouteConfidence  string         `json:"route_confidence"`
+	Reason           string         `json:"reason,omitempty"`
+}
+
 type APIContractRecord struct {
 	Language         string             `json:"language"`
 	App              string             `json:"app,omitempty"`

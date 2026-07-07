@@ -111,6 +111,7 @@ Generated files include:
 - `routes.json`
 - `flows.json`
 - `api-contracts.json`
+- `frontend-usage.json`
 - `contract-matches.json`
 - `diagnostics.json`
 - `package-graph.json`
@@ -125,6 +126,7 @@ Generated files include:
 - `routes.md`
 - `flows.md`
 - `api-contracts.md`
+- `frontend-usage.md`
 - `contract-matches.md`
 - `potentially-broken-contracts.md`
 - `diagnostics.md`
@@ -132,6 +134,7 @@ Generated files include:
 - `workspace-contract-matches.md`
 - `workspace-feature-flows.json`
 - `workspace-feature-flows.md`
+- `workspace-next-actions.md`
 - `frontend-consumers.md`
 - `package-graph.md`
 - `maven-graph.md`
@@ -180,6 +183,7 @@ What the generated files mean:
 - `routes.json`: normalized route records for Spring, Go, PHP/Laravel-style routes, JS/TS Express/Fastify-style routes, React Router routes, and Python FastAPI/Flask-style routes.
 - `flows.json`: normalized route-to-handler-to-call flow records across supported languages.
 - `api-contracts.json`: JavaScript/TypeScript HTTP client calls detected from supported helpers and `fetch`, including realistic helper argument shapes, method, raw path, normalized path, query metadata, service candidate, enclosing caller function or method when available, file, app, confidence, and reason.
+- `frontend-usage.json`: frontend API usage chains from API contract back to the best matching frontend route flow, including route, component, API caller, confidence, and static evidence steps.
 - `contract-matches.json`: static frontend API call to backend route matches, including resolved method/path matches, method mismatches, missing backend routes, unscanned services, and unsafe dynamic URL patterns.
 - `diagnostics.json`: compact diagnosis index derived from routes, contracts, endpoint flows, route flows, and tests.
 - `package-graph.json`: Node workspace package nodes and package dependency edges from `package.json`.
@@ -194,6 +198,7 @@ What the generated files mean:
 - `routes.md`: human-readable route inventory.
 - `flows.md`: human-readable route and handler flow report.
 - `api-contracts.md`: human-readable API client call inventory, including the enclosing caller function or method when detected.
+- `frontend-usage.md`: readable frontend route/component/API usage chains with confidence and evidence.
 - `contract-matches.md`: human-readable frontend API to backend route match report.
 - `potentially-broken-contracts.md`: focused report for API calls that could not be safely matched to backend routes.
 - `diagnostics.md`: prioritized human-readable diagnosis report with entrypoints, risky contracts, workspace-resolved contracts, unscanned services, untested endpoints, weak flows, and likely tests.
@@ -201,6 +206,7 @@ What the generated files mean:
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project, including API caller names when detected.
 - `workspace-feature-flows.json`: cross-project feature flows from frontend route/component/API call to backend endpoint flow and tests, including JSX child component hops, React effect calls, and local event handlers when those steps connect a route component to the API caller.
 - `workspace-feature-flows.md`: readable end-to-end feature-flow report, including frontend route context when resolved, confidence reasons such as direct/effect/event-handler API caller matches, and reasons for unresolved route context or missing linked tests.
+- `workspace-next-actions.md`: workspace coverage summary with high-value missing service scans, weak workspace matches, and resolved flows without linked tests.
 - `frontend-consumers.md`: backend-oriented view of frontend API callers with caller names when detected; frontend projects explain that this report is not applicable and point to workspace contract/feature reports.
 - `package-graph.md`: human-readable Node package/workspace dependency graph.
 - `maven-graph.md`: human-readable Maven dependency graph.
@@ -219,9 +225,11 @@ Workspace overlays:
 - `.goregraph-workspace/context.json`: loaded indexes, known backend services, and referenced but missing services with contract counts and matching workspace project status when known.
 - `.goregraph-workspace/contract-matches.json`: cross-project API-to-backend matches from already scanned projects, including the API caller name when detected.
 - `.goregraph-workspace/feature-flows.json`: cross-project frontend route/component/API-to-backend feature flows from already scanned projects, with component-aware frontend route steps, React effect calls, and local event handler calls when available.
+- `.goregraph-workspace/next-actions.md`: workspace coverage summary and prioritized follow-up actions from already scanned project indexes.
 - `workspace-context.md`: readable workspace project/index summary with prioritized missing services and suggested next scans.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project, including API caller names when detected.
 - `workspace-feature-flows.md`: readable frontend-route-to-API-to-backend-to-test feature flows, including JSX component hops, effect/event-handler reasons, API caller fallback for weak route matches, unresolved-route reasons, and missing-test reasons.
+- `workspace-next-actions.md`: project-local copy of the workspace next-action summary.
 - `frontend-consumers.md`: backend-oriented view of frontend API callers with caller names when detected; frontend projects explain the report scope instead of showing an ambiguous empty result.
 
 Workspace reconciliation also refreshes:
@@ -377,6 +385,7 @@ goregraph query . graph-full
 goregraph query . endpoints
 goregraph query . dependencies
 goregraph query . api-contracts
+goregraph query . frontend-usage
 goregraph query . contract-matches
 goregraph query . broken-contracts
 goregraph query . diagnostics
@@ -394,6 +403,7 @@ cd /Users/name/projects/weka
 goregraph query . workspace-context
 goregraph query . workspace-contracts
 goregraph query . workspace-features
+goregraph query . workspace-next-actions
 ```
 
 Searches these generated files:
@@ -424,6 +434,8 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `flows-json` -> `flows.json`
 - `api-contracts` -> `api-contracts.md`
 - `api-contracts-json` -> `api-contracts.json`
+- `frontend-usage` -> `frontend-usage.md`
+- `frontend-usage-json` -> `frontend-usage.json`
 - `contract-matches` -> `contract-matches.md`
 - `contracts` -> `contract-matches.md`
 - `contract-matches-json` -> `contract-matches.json`
@@ -441,6 +453,7 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `workspace-contracts` -> `workspace-contract-matches.md`
 - `workspace-features` or `workspace-feature-flows` -> `workspace-feature-flows.md`
 - `workspace-feature-flows-json` -> `workspace-feature-flows.json`
+- `workspace-next-actions` -> `workspace-next-actions.md`
 - `frontend-consumers` -> `frontend-consumers.md`
 - `endpoints` -> `endpoints.md`
 - `endpoint-flows` -> `endpoint-flows.md`

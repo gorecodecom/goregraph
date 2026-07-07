@@ -69,6 +69,7 @@ Schema version 1 expects:
 - `routes.json`
 - `flows.json`
 - `api-contracts.json`
+- `frontend-usage.json`
 - `contract-matches.json`
 - `diagnostics.json`
 - `package-graph.json`
@@ -86,6 +87,7 @@ Schema version 1 expects:
 - `routes.md`
 - `flows.md`
 - `api-contracts.md`
+- `frontend-usage.md`
 - `contract-matches.md`
 - `potentially-broken-contracts.md`
 - `diagnostics.md`
@@ -93,6 +95,7 @@ Schema version 1 expects:
 - `workspace-contract-matches.md`
 - `workspace-feature-flows.json`
 - `workspace-feature-flows.md`
+- `workspace-next-actions.md`
 - `frontend-consumers.md`
 - `package-graph.md`
 - `maven-graph.md`
@@ -132,11 +135,13 @@ Schema version 1 expects:
 
 `api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helper calls and `fetch`. Records include HTTP method, raw path, normalized path, query string, sorted query params, service candidate, enclosing caller function or method when detected, caller line, app/package context, confidence, and reason. Supported helper calls include direct and multiline argument forms where a literal path argument is visible, for example `GetHelper(dispatch, "/service/path")`. Template placeholders such as `${id}` normalize to `{id}`. Complex dynamic expressions such as ternaries are marked with `unsafe_dynamic` and normalized to `{dynamic}`.
 
+`frontend-usage.json` contains frontend API usage records derived from `api-contracts.json` and `flows.json`. Records include the API method/path/location, service candidate, detected API caller, best matching frontend route ID/path/component, route confidence, reason, and static chain steps when a frontend route flow reaches the API contract file or caller. `frontend-usage.md` is the readable view of the same data.
+
 `contract-matches.json` compares frontend API contracts with backend route records from the same scan. Match records include API method/path/location, backend method/path/handler/location when available, service candidate, issue, confidence, confidence score, and reason. API contracts also include `caller` when the helper or fetch call is inside a detected JavaScript/TypeScript function or method. Issue values currently include `matched`, `method_mismatch`, `missing_backend_route`, `unscanned_service`, and `unsafe_dynamic`. `unscanned_service` means the frontend call references a recognized service candidate whose backend routes were not present in this scan, so it should not be treated as a broken route inside the scanned backend scope.
 
 `diagnostics.json` contains a compact diagnosis index with `entrypoints`, `risky_contracts`, `workspace_resolved_contracts`, `unscanned_services`, `endpoints_without_tests`, `weak_flows`, and `likely_tests`. It is derived from existing route, contract, endpoint-flow, flow, test-map, and workspace overlay facts.
 
-Workspace files are additive generated outputs. When a workspace is detected, `.goregraph-workspace/registry.json` stores discovered projects with `current`, `indexed`, or `not_indexed` status. `.goregraph-workspace/context.json` stores loaded indexes, known backend services, referenced but missing services, and `missing_service_details` entries with service name, referenced contract count, matching workspace project path, and project status when available. `.goregraph-workspace/contract-matches.json` stores cross-project API contract matches between already indexed projects and may include `api_caller` from the originating API contract. `.goregraph-workspace/feature-flows.json` stores resolved end-to-end feature flows from frontend route/component/API call to backend endpoint flow and matching tests. Feature-flow records may include `frontend_route_id`, `frontend_route_path`, `frontend_route_file`, `frontend_route_line`, `frontend_component`, `frontend_caller`, `frontend_steps`, `frontend_confidence`, and `frontend_reason`; `frontend_caller` can come from either the resolved route flow or the API contract caller when route context remains weak. `frontend_steps` can include lightweight JavaScript/TypeScript callgraph steps such as route handlers, function calls, JSX child component hops, React effect calls, and local event handler calls that connect a rendered component to an API caller. Existing indexed siblings receive `workspace-context.md`, `workspace-contract-matches.md`, `workspace-feature-flows.json`, `workspace-feature-flows.md`, and `frontend-consumers.md` overlay reports in their configured output directories. The readable workspace reports show API caller names in contract matches, frontend consumers, and backend endpoint consumers when available; `workspace-context.md` prioritizes missing services by contract count and suggests scan commands for discovered unindexed service projects. Workspace reconciliation may also update `diagnostics.json`, `diagnostics.md`, and `endpoints.md` with workspace-resolved contracts and frontend consumers. These overlays are regenerated from existing scan output and do not imply sibling projects were rescanned.
+Workspace files are additive generated outputs. When a workspace is detected, `.goregraph-workspace/registry.json` stores discovered projects with `current`, `indexed`, or `not_indexed` status. `.goregraph-workspace/context.json` stores loaded indexes, known backend services, referenced but missing services, and `missing_service_details` entries with service name, referenced contract count, matching workspace project path, and project status when available. `.goregraph-workspace/contract-matches.json` stores cross-project API contract matches between already indexed projects and may include `api_caller` from the originating API contract. `.goregraph-workspace/feature-flows.json` stores resolved end-to-end feature flows from frontend route/component/API call to backend endpoint flow and matching tests. `.goregraph-workspace/next-actions.md` summarizes workspace coverage, suggested scans for high-value missing services, weak workspace matches, and resolved flows without linked tests. Feature-flow records may include `frontend_route_id`, `frontend_route_path`, `frontend_route_file`, `frontend_route_line`, `frontend_component`, `frontend_caller`, `frontend_steps`, `frontend_confidence`, and `frontend_reason`; `frontend_caller` can come from either the resolved route flow or the API contract caller when route context remains weak. `frontend_steps` can include lightweight JavaScript/TypeScript callgraph steps such as route handlers, function calls, JSX child component hops, React effect calls, and local event handler calls that connect a rendered component to an API caller. Existing indexed siblings receive `workspace-context.md`, `workspace-contract-matches.md`, `workspace-feature-flows.json`, `workspace-feature-flows.md`, `workspace-next-actions.md`, and `frontend-consumers.md` overlay reports in their configured output directories. The readable workspace reports show API caller names in contract matches, frontend consumers, and backend endpoint consumers when available; `workspace-context.md` prioritizes missing services by contract count and suggests scan commands for discovered unindexed service projects. Workspace reconciliation may also update `diagnostics.json`, `diagnostics.md`, and `endpoints.md` with workspace-resolved contracts and frontend consumers. These overlays are regenerated from existing scan output and do not imply sibling projects were rescanned.
 
 `package-graph.json` contains Node workspace package nodes and package dependency edges extracted from `package.json`. Internal workspace edges use reason `workspace-package-json-dependency`.
 
@@ -148,7 +153,7 @@ Workspace files are additive generated outputs. When a workspace is detected, `.
 
 `audit.json` records the scan command, generated files, file counts, timestamps, and safety flags. Normal scans set `network_used` and `external_commands` to `false`.
 
-`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `contract-matches.md`, `potentially-broken-contracts.md`, `diagnostics.md`, `package-graph.md`, `maven-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports. `affected.md` focuses on local file targets and filters external dependency labels. Workspace overlay Markdown files are deterministic for the currently available sibling indexes, but they can change when another project in the same workspace is scanned later.
+`workspace.md`, `endpoints.md`, `endpoint-flows.md`, `dependencies.md`, `callgraph.md`, `routes.md`, `flows.md`, `api-contracts.md`, `frontend-usage.md`, `contract-matches.md`, `potentially-broken-contracts.md`, `diagnostics.md`, `package-graph.md`, `maven-graph.md`, `navigation.md`, `analyzers.md`, and `affected.md` are deterministic human-readable reports. `affected.md` focuses on local file targets and filters external dependency labels. Workspace overlay Markdown files are deterministic for the currently available sibling indexes, but they can change when another project in the same workspace is scanned later.
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
 

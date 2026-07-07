@@ -758,6 +758,19 @@ class CadasterController {
 			t.Fatalf("workspace context missing %q:\n%s", want, context)
 		}
 	}
+
+	nextActions := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-next-actions.md"))
+	for _, want := range []string{
+		"# GoreGraph Workspace Next Actions",
+		"- Projects indexed: 2 / 3",
+		"- Referenced services indexed: 1 / 2",
+		"- `ms-task` - 2 contracts - project `microservices/ms-task` - not_indexed",
+		"`cd microservices/ms-task && goregraph scan .`",
+	} {
+		if !strings.Contains(nextActions, want) {
+			t.Fatalf("workspace next actions missing %q:\n%s", want, nextActions)
+		}
+	}
 }
 
 func TestWorkspaceFeatureFlowsResolvePortalServiceMethodToAPICaller(t *testing.T) {

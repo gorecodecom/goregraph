@@ -72,6 +72,8 @@ var outputAliases = map[string]string{
 	"flows-json":                   "flows.json",
 	"api-contracts":                "api-contracts.md",
 	"api-contracts-json":           "api-contracts.json",
+	"frontend-usage":               "frontend-usage.md",
+	"frontend-usage-json":          "frontend-usage.json",
 	"contract-matches":             "contract-matches.md",
 	"contracts":                    "contract-matches.md",
 	"contract-matches-json":        "contract-matches.json",
@@ -93,6 +95,7 @@ var outputAliases = map[string]string{
 	"workspace-features":           "workspace-feature-flows.md",
 	"workspace-feature-flows":      "workspace-feature-flows.md",
 	"workspace-feature-flows-json": "workspace-feature-flows.json",
+	"workspace-next-actions":       "workspace-next-actions.md",
 	"frontend-consumers":           "frontend-consumers.md",
 	"analyzers":                    "analyzers.md",
 	"analyzers-json":               "analyzers.json",
@@ -104,6 +107,7 @@ var workspaceOutputFallbacks = map[string]string{
 	"workspace-contract-matches.md": "contract-matches.md",
 	"workspace-feature-flows.md":    "feature-flows.md",
 	"workspace-feature-flows.json":  "feature-flows.json",
+	"workspace-next-actions.md":     "next-actions.md",
 }
 
 func ReadOutput(root, name string) (string, error) {

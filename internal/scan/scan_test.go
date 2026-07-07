@@ -964,6 +964,56 @@ class CadasterController {
 	}
 }
 
+func TestRunWritesFrontendUsageChains(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, root, "apps/portal/src/routes.jsx", `import { Route } from "react-router-dom";
+import { Home } from "./pages/Home";
+
+export const routes = <Route path="/" element={<Home />} />;
+`)
+	writeFile(t, root, "apps/portal/src/pages/Home.jsx", `import { userService } from "../api/vd/userService";
+
+export function Home({ cadasterId }) {
+  return userService.getCurrentCadaster(cadasterId);
+}
+`)
+	writeFile(t, root, "apps/portal/src/api/vd/userService.ts", "import { GetHelper } from '../../utils/requestHelper';\n\n"+
+		"export const userService = {\n"+
+		"  getCurrentCadaster(cadasterId) {\n"+
+		"    return GetHelper(null, `/cadasters/${cadasterId}`);\n"+
+		"  }\n"+
+		"};\n")
+	writeFile(t, root, "apps/portal/src/utils/requestHelper.ts", `export function GetHelper(dispatch, path) { return fetch(path); }
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	report := readText(t, filepath.Join(root, "goregraph-out", "frontend-usage.md"))
+	for _, want := range []string{
+		"# GoreGraph Frontend Usage",
+		"## GET `/cadasters/{cadasterId}`",
+		"- Route: `portal:/` `/` -> `Home`",
+		"- API: `apps/portal/src/api/vd/userService.ts:5` `getCurrentCadaster`",
+		"- Evidence: route flow reaches API contract caller",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("frontend usage report missing %q:\n%s", want, report)
+		}
+	}
+
+	var records []map[string]any
+	readJSON(t, filepath.Join(root, "goregraph-out", "frontend-usage.json"), &records)
+	if len(records) != 1 {
+		t.Fatalf("frontend usage count = %d, want 1: %#v", len(records), records)
+	}
+	if records[0]["route_confidence"] != "RESOLVED" || records[0]["api_caller"] != "getCurrentCadaster" {
+		t.Fatalf("frontend usage record missing resolved caller context: %#v", records[0])
+	}
+}
+
 func TestRunAffectedReportPrioritizesLocalDiagnosisOverExternalImports(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.test/affected\n")

@@ -64,6 +64,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	context := buildWorkspaceContext(registry, indexed)
 	matches := buildWorkspaceContractMatches(indexed)
 	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
+	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
 	if err := os.MkdirAll(workspaceOut, 0o755); err != nil {
@@ -90,6 +91,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	if err := os.WriteFile(filepath.Join(workspaceOut, "feature-flows.md"), []byte(renderWorkspaceFeatureFlowsReport(featureFlows)), 0o644); err != nil {
 		return nil, err
 	}
+	if err := os.WriteFile(filepath.Join(workspaceOut, "next-actions.md"), []byte(nextActions), 0o644); err != nil {
+		return nil, err
+	}
 
 	for _, project := range indexed {
 		out := filepath.Join(project.record.AbsPath, project.record.OutputDir)
@@ -104,6 +108,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "workspace-feature-flows.md"), []byte(renderWorkspaceFeatureFlowsReport(projectFeatureFlows)), 0o644); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(out, "workspace-next-actions.md"), []byte(nextActions), 0o644); err != nil {
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "frontend-consumers.md"), []byte(renderFrontendConsumersReport(project.record.Path, matches)), 0o644); err != nil {
@@ -762,6 +769,10 @@ func renderNoWorkspaceContextReport() string {
 	return "# GoreGraph Workspace Context\n\n- No GoreGraph workspace detected for this scan.\n"
 }
 
+func renderNoWorkspaceNextActionsReport() string {
+	return "# GoreGraph Workspace Next Actions\n\n- No GoreGraph workspace detected for this scan.\n"
+}
+
 func renderWorkspaceContextSections(record WorkspaceContextRecord) string {
 	var b strings.Builder
 	b.WriteString("## Projects\n\n")
@@ -811,13 +822,132 @@ func renderWorkspaceContextSections(record WorkspaceContextRecord) string {
 	return b.String()
 }
 
+func renderWorkspaceNextActionsReport(context WorkspaceContextRecord, matches []WorkspaceContractMatchRecord, featureFlows []WorkspaceFeatureFlowRecord) string {
+	var b strings.Builder
+	b.WriteString("# GoreGraph Workspace Next Actions\n\n")
+	b.WriteString("## Workspace Coverage\n\n")
+	indexedProjects := len(context.LoadedIndexes)
+	totalProjects := len(context.Projects)
+	referencedServices := workspaceReferencedServices(context, matches)
+	indexedReferencedServices := 0
+	knownServices := stringSet(context.KnownServices)
+	for service := range referencedServices {
+		if knownServices[service] {
+			indexedReferencedServices++
+		}
+	}
+	resolvedContracts := 0
+	for _, match := range matches {
+		if match.Issue == contractIssueMatched {
+			resolvedContracts++
+		}
+	}
+	b.WriteString(fmt.Sprintf("- Projects indexed: %d / %d\n", indexedProjects, totalProjects))
+	b.WriteString(fmt.Sprintf("- Referenced services indexed: %d / %d\n", indexedReferencedServices, len(referencedServices)))
+	b.WriteString(fmt.Sprintf("- Workspace contracts resolved: %d / %d\n", resolvedContracts, len(matches)))
+
+	b.WriteString("\n## Most Useful Next Scans\n\n")
+	wroteScan := false
+	for _, service := range context.MissingServiceDetails {
+		if service.Project == "" || service.Status == "indexed" {
+			continue
+		}
+		wroteScan = true
+		b.WriteString(fmt.Sprintf("- `%s` - %d contracts - project `%s` - %s\n", service.Service, service.Contracts, service.Project, emptyAsNone(service.Status)))
+		b.WriteString(fmt.Sprintf("  - `%s`\n", workspaceScanCommand(service.Project)))
+	}
+	if !wroteScan {
+		b.WriteString("- none\n")
+	}
+
+	b.WriteString("\n## Weak Workspace Matches\n\n")
+	weak := 0
+	for _, match := range matches {
+		if match.Issue == contractIssueMatched {
+			continue
+		}
+		weak++
+		b.WriteString(fmt.Sprintf("- %s `%s` from `%s` `%s:%d`%s - %s (%s)\n",
+			match.APIHTTPMethod,
+			match.APIPath,
+			match.APIProject,
+			match.APIFile,
+			match.APILine,
+			workspaceCallerSuffix(match.APICaller),
+			match.Issue,
+			match.Confidence,
+		))
+		if weak >= 10 {
+			break
+		}
+	}
+	if weak == 0 {
+		b.WriteString("- none\n")
+	}
+
+	b.WriteString("\n## Resolved Flows Without Linked Tests\n\n")
+	missingTests := 0
+	for _, flow := range featureFlows {
+		if len(flow.Tests) > 0 {
+			continue
+		}
+		missingTests++
+		b.WriteString(fmt.Sprintf("- %s `%s` from `%s` `%s:%d` -> `%s.%s`",
+			flow.HTTPMethod,
+			flow.Path,
+			flow.FrontendProject,
+			flow.FrontendFile,
+			flow.FrontendLine,
+			emptyAsNone(flow.BackendController),
+			emptyAsNone(flow.BackendMethod),
+		))
+		if flow.TestReason != "" {
+			b.WriteString(fmt.Sprintf(" (%s)", flow.TestReason))
+		}
+		b.WriteString("\n")
+		if missingTests >= 10 {
+			break
+		}
+	}
+	if missingTests == 0 {
+		b.WriteString("- none\n")
+	}
+	return b.String()
+}
+
+func workspaceReferencedServices(context WorkspaceContextRecord, matches []WorkspaceContractMatchRecord) map[string]bool {
+	referenced := map[string]bool{}
+	for _, service := range context.MissingServices {
+		referenced[service] = true
+	}
+	for _, match := range matches {
+		service := firstNonEmpty(match.ServiceCandidate, match.BackendService)
+		if service != "" {
+			referenced[service] = true
+		}
+	}
+	return referenced
+}
+
+func stringSet(values []string) map[string]bool {
+	result := map[string]bool{}
+	for _, value := range values {
+		result[value] = true
+	}
+	return result
+}
+
+func workspaceScanCommand(project string) string {
+	return fmt.Sprintf("cd %s && goregraph scan .", project)
+}
+
 func writeWorkspaceScanSuggestions(b *strings.Builder, record WorkspaceContextRecord) {
 	var suggestions []string
 	for _, service := range record.MissingServiceDetails {
 		if service.Project == "" || service.Status == "indexed" {
 			continue
 		}
-		suggestions = append(suggestions, fmt.Sprintf("cd %s && goregraph scan .", service.Project))
+		suggestions = append(suggestions, workspaceScanCommand(service.Project))
 	}
 	if len(suggestions) == 0 {
 		return

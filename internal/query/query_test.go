@@ -86,6 +86,14 @@ func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
 		t.Fatalf("api-contracts alias returned unexpected output:\n%s", apiContracts)
 	}
 
+	frontendUsage, err := Search(root, "frontend-usage")
+	if err != nil {
+		t.Fatalf("Search frontend-usage returned error: %v", err)
+	}
+	if !strings.Contains(frontendUsage, "# GoreGraph Frontend Usage") {
+		t.Fatalf("frontend-usage alias returned unexpected output:\n%s", frontendUsage)
+	}
+
 	contractMatches, err := Search(root, "contract-matches")
 	if err != nil {
 		t.Fatalf("Search contract-matches returned error: %v", err)
@@ -252,6 +260,14 @@ class CadasterController {
 	}
 	if !strings.Contains(features, "# GoreGraph Workspace Feature Flows") {
 		t.Fatalf("workspace root feature alias returned unexpected output:\n%s", features)
+	}
+
+	nextActions, err := Search(workspace, "workspace-next-actions")
+	if err != nil {
+		t.Fatalf("Search workspace-next-actions at workspace root returned error: %v", err)
+	}
+	if !strings.Contains(nextActions, "# GoreGraph Workspace Next Actions") {
+		t.Fatalf("workspace root next-actions alias returned unexpected output:\n%s", nextActions)
 	}
 }
 

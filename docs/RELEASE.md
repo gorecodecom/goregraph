@@ -156,6 +156,8 @@ Completed release checks:
 - API contracts retain the enclosing helper/fetch caller name and workspace feature flows use it even when route context is only `WEAK_MATCH`.
 - API contract, workspace contract, frontend-consumer, and backend endpoint-consumer Markdown reports show the detected API caller name when available.
 - workspace context prioritizes referenced but missing services by contract count and suggests `cd <project> && goregraph scan .` for discovered unindexed service projects.
+- `frontend-usage.json` and `frontend-usage.md` explain frontend route/component/API usage chains with confidence and evidence.
+- `workspace-next-actions.md` summarizes workspace coverage, high-value missing service scans, weak workspace matches, and resolved flows without linked tests.
 - `goregraph version` reports `0.8.6`.
 
 Remaining release-hardening items:
