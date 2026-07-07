@@ -141,40 +141,59 @@ func resolveWorkspaceRoot(currentAbs, override string) (string, bool, error) {
 		}
 		return resolved, true, nil
 	}
-	if hasWorkspaceManifest(currentAbs) || hasWorkspaceGroups(currentAbs) {
-		return currentAbs, true, nil
-	}
-	for dir := filepath.Dir(currentAbs); dir != "." && dir != ""; dir = filepath.Dir(dir) {
-		if hasWorkspaceManifest(dir) || hasWorkspaceGroups(dir) {
-			return dir, true, nil
+
+	bestRoot := ""
+	bestScore := 0
+	for dir := currentAbs; dir != "." && dir != ""; dir = filepath.Dir(dir) {
+		if score := workspaceRootScore(dir); score > bestScore {
+			bestRoot = dir
+			bestScore = score
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			break
 		}
 	}
+	if bestRoot != "" {
+		return bestRoot, true, nil
+	}
 	return "", false, nil
 }
 
-func hasWorkspaceManifest(dir string) bool {
-	if _, err := os.Stat(filepath.Join(dir, ".goregraph-workspace", "registry.json")); err == nil {
-		return true
+func workspaceRootScore(dir string) int {
+	score := 0
+	if workspaceFileExists(filepath.Join(dir, ".goregraph-workspace.yml")) {
+		score += 1000
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".goregraph-workspace.yml")); err == nil {
-		return true
+	if workspaceFileExists(filepath.Join(dir, ".goregraph-workspace", "registry.json")) {
+		score += 10
 	}
-	return false
+	frontendGroups, backendGroups := workspaceGroupCounts(dir)
+	switch {
+	case frontendGroups > 0 && backendGroups > 0:
+		score += 100 + frontendGroups + backendGroups
+	case frontendGroups > 0 || backendGroups > 0:
+		score += frontendGroups + backendGroups
+	}
+	return score
 }
 
-func hasWorkspaceGroups(dir string) bool {
-	count := 0
+func workspaceGroupCounts(dir string) (int, int) {
+	frontendGroups := 0
+	backendGroups := 0
 	for _, name := range workspaceGroupDirs {
 		info, err := os.Stat(filepath.Join(dir, name))
-		if err == nil && info.IsDir() {
-			count++
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		switch name {
+		case "frontend", "frontends":
+			frontendGroups++
+		case "microservices", "services", "backends":
+			backendGroups++
 		}
 	}
-	return count > 0
+	return frontendGroups, backendGroups
 }
 
 func discoverWorkspaceProjects(workspaceRoot, currentAbs, defaultOutput string) ([]WorkspaceProjectRecord, error) {

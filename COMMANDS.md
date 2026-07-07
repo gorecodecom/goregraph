@@ -162,6 +162,8 @@ goregraph scan --help
 
 `--workspace <path>` forces the workspace root used to discover sibling projects and existing `goregraph-out/` indexes.
 
+Without `--workspace`, GoreGraph scores ancestor directories and prefers a parent that contains both frontend and backend group directories, such as `frontend/` plus `microservices/`, over an intermediate frontend-only grouping folder.
+
 What the generated files mean:
 
 - `manifest.json`: metadata about the scan, schema, generated files, and scanned project.

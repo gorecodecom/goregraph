@@ -36,6 +36,66 @@ func TestScanCreatesWorkspaceRegistryWithIndexedAndNotIndexedProjects(t *testing
 	}
 }
 
+func TestWorkspaceRootPrefersParentWithFrontendAndMicroservices(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	nestedFrontend := filepath.Join(workspace, "frontend", "frontend")
+	nestedFrontends := filepath.Join(workspace, "frontend", "frontends")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
+		"  return fetch(`/cadasters/${id}`);\n"+
+		"}\n")
+	writeFile(t, nestedFrontend, "package.json", `{"name":"nested-frontend"}`)
+	writeFile(t, nestedFrontends, "package.json", `{"name":"nested-frontends"}`)
+	writeFile(t, cadaster, "src/main/java/com/example/CadasterController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @GetMapping("/{cadasterId}")
+  String get(@PathVariable String cadasterId) {
+    return cadasterId;
+  }
+}
+`)
+
+	root, ok, err := WorkspaceRoot(frontend, config.Defaults())
+	if err != nil {
+		t.Fatalf("WorkspaceRoot returned error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("WorkspaceRoot did not detect workspace")
+	}
+	if !samePath(root, workspace) {
+		t.Fatalf("WorkspaceRoot = %q, want parent workspace %q", root, workspace)
+	}
+
+	if _, err := Run(frontend, config.Defaults()); err != nil {
+		t.Fatalf("Run frontend returned error: %v", err)
+	}
+	if _, err := Run(cadaster, config.Defaults()); err != nil {
+		t.Fatalf("Run cadaster returned error: %v", err)
+	}
+
+	context := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-context.md"))
+	if strings.Contains(context, "No GoreGraph workspace detected") ||
+		!strings.Contains(context, "Workspace root: `"+filepath.ToSlash(workspace)+"`") ||
+		!strings.Contains(context, "microservices/ms-cadaster") {
+		t.Fatalf("frontend workspace context should use parent workspace and include backend:\n%s", context)
+	}
+
+	matches := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-contract-matches.md"))
+	if !strings.Contains(matches, "GET `/cadasters/{id}` -> ms-cadaster GET `/cadasters/{cadasterId}`") {
+		t.Fatalf("frontend workspace contract overlay missing backend match:\n%s", matches)
+	}
+}
+
 func TestLaterBackendScanRefreshesExistingFrontendWorkspaceOverlay(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "weka")
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
