@@ -318,6 +318,19 @@ func extractCallsForFunction(language string, lines []string, function CodeFunct
 				}
 			}
 		}
+		if language == "javascript" || language == "typescript" {
+			for _, match := range codeJSXComponentOpenRE.FindAllStringSubmatch(line, -1) {
+				if len(match) != 2 || match[1] == "Fragment" || match[1] == function.Name {
+					continue
+				}
+				key := match[1] + "@" + strings.TrimSpace(line)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				calls = append(calls, CodeCallRecord{Method: match[1], Raw: strings.TrimSpace(line), Line: i + 1})
+			}
+		}
 		for _, match := range codeMemberCallRE.FindAllStringSubmatch(line, -1) {
 			if len(match) != 3 || isLowValueCallTarget(match[2]) {
 				continue
