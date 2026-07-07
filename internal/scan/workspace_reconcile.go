@@ -1212,28 +1212,52 @@ func updateWorkspaceProjectDiagnostics(out, projectPath string, matches []Worksp
 	}
 
 	var resolved []WorkspaceContractMatchRecord
-	resolvedServices := map[string]bool{}
+	indexedServices := map[string]bool{}
+	workspaceIssues := map[string]WorkspaceContractMatchRecord{}
 	for _, match := range matches {
 		if match.Issue != contractIssueMatched {
-			continue
-		}
-		if match.APIProject == projectPath || match.BackendProject == projectPath {
-			resolved = append(resolved, match)
+			if match.APIProject == projectPath && match.ServiceCandidate != "" && match.Issue != contractIssueUnscanned {
+				indexedServices[match.ServiceCandidate] = true
+			}
+		} else {
+			if match.APIProject == projectPath || match.BackendProject == projectPath {
+				resolved = append(resolved, match)
+			}
+			if match.APIProject == projectPath {
+				if match.BackendService != "" {
+					indexedServices[match.BackendService] = true
+				}
+				if match.ServiceCandidate != "" {
+					indexedServices[match.ServiceCandidate] = true
+				}
+			}
 		}
 		if match.APIProject == projectPath {
-			if match.BackendService != "" {
-				resolvedServices[match.BackendService] = true
-			}
-			if match.ServiceCandidate != "" {
-				resolvedServices[match.ServiceCandidate] = true
-			}
+			workspaceIssues[workspaceContractDiagnosticKey(match.APIHTTPMethod, match.APIPath, match.APIFile, match.APILine)] = match
 		}
 	}
 	diagnostics.WorkspaceResolvedContracts = resolved
-	if len(resolvedServices) > 0 {
+	if len(workspaceIssues) > 0 {
+		for i, contract := range diagnostics.RiskyContracts {
+			match, ok := workspaceIssues[workspaceContractDiagnosticKey(contract.APIHTTPMethod, contract.APIPath, contract.APIFile, contract.APILine)]
+			if !ok || match.Issue == contractIssueUnscanned {
+				continue
+			}
+			diagnostics.RiskyContracts[i].Issue = match.Issue
+			diagnostics.RiskyContracts[i].Confidence = match.Confidence
+			diagnostics.RiskyContracts[i].ConfidenceScore = match.ConfidenceScore
+			diagnostics.RiskyContracts[i].Reason = match.Reason
+			diagnostics.RiskyContracts[i].BackendHTTPMethod = match.BackendHTTPMethod
+			diagnostics.RiskyContracts[i].BackendPath = match.BackendPath
+			diagnostics.RiskyContracts[i].BackendHandler = match.BackendHandler
+			diagnostics.RiskyContracts[i].BackendFile = match.BackendFile
+			diagnostics.RiskyContracts[i].BackendLine = match.BackendLine
+		}
+	}
+	if len(indexedServices) > 0 {
 		var filtered []DiagnosticServiceRecord
 		for _, service := range diagnostics.UnscannedServices {
-			if resolvedServices[service.Service] {
+			if indexedServices[service.Service] {
 				continue
 			}
 			filtered = append(filtered, service)
@@ -1244,6 +1268,10 @@ func updateWorkspaceProjectDiagnostics(out, projectPath string, matches []Worksp
 		return err
 	}
 	return os.WriteFile(filepath.Join(out, "diagnostics.md"), []byte(renderDiagnosticsReport(diagnostics)), 0o644)
+}
+
+func workspaceContractDiagnosticKey(method, path, file string, line int) string {
+	return strings.ToUpper(method) + "\x00" + path + "\x00" + file + "\x00" + fmt.Sprint(line)
 }
 
 func updateWorkspaceEndpointConsumers(out, projectPath string, matches []WorkspaceContractMatchRecord) error {

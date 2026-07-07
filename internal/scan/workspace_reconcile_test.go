@@ -199,6 +199,56 @@ class CadasterController {
 	assertWorkspaceProject(t, registry, "microservices/ms-cadaster", "current", true)
 }
 
+func TestWorkspaceDiagnosticsDoNotKeepIndexedMissingRoutesAsUnscanned(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	task := filepath.Join(workspace, "microservices", "ms-task")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, "src/api/taskservice.js", "export function loadTask(id) {\n"+
+		"  return fetch(`/task/${id}`);\n"+
+		"}\n")
+	writeFile(t, task, "src/main/java/com/example/TaskController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/task")
+class TaskController {
+  @GetMapping("/overview")
+  String overview() {
+    return "ok";
+  }
+}
+`)
+
+	if _, err := Run(frontend, config.Defaults()); err != nil {
+		t.Fatalf("Run frontend returned error: %v", err)
+	}
+	if _, err := Run(task, config.Defaults()); err != nil {
+		t.Fatalf("Run task returned error: %v", err)
+	}
+
+	frontendMatches := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-contract-matches.md"))
+	if !strings.Contains(frontendMatches, "missing_backend_route") {
+		t.Fatalf("frontend workspace contract overlay should classify indexed service mismatch as missing route:\n%s", frontendMatches)
+	}
+
+	frontendDiagnostics := readText(t, filepath.Join(frontend, "goregraph-out", "diagnostics.md"))
+	if strings.Contains(frontendDiagnostics, "`ms-task` -") {
+		t.Fatalf("frontend diagnostics still reports indexed ms-task as unscanned:\n%s", frontendDiagnostics)
+	}
+
+	var diagnostics DiagnosticsRecord
+	readJSON(t, filepath.Join(frontend, "goregraph-out", "diagnostics.json"), &diagnostics)
+	for _, service := range diagnostics.UnscannedServices {
+		if service.Service == "ms-task" {
+			t.Fatalf("diagnostics json still reports indexed ms-task as unscanned: %#v", diagnostics.UnscannedServices)
+		}
+	}
+}
+
 func TestWorkspacePathMatchingDoesNotTreatStaticSegmentsAsRouteParams(t *testing.T) {
 	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
 	backend := WorkspaceProjectRecord{Path: "microservices/ms-cadaster", Kind: "backend", Service: "ms-cadaster", Indexed: true}
