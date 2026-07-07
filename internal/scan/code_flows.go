@@ -49,7 +49,7 @@ func buildGenericCallGraph(code CodeIntelligenceRecord) CallGraphRecord {
 				SourceFile:      function.File,
 				Confidence:      "INFERRED",
 				ConfidenceScore: 0.72,
-				Reason:          function.Language + " static call match",
+				Reason:          codeCallReason(function.Language, call.Kind),
 			}
 			edges = append(edges, edge)
 		}
@@ -314,7 +314,7 @@ func walkCodeFlow(function CodeFunctionRecord, edgesByMethod map[string][]CallGr
 		step := CodeFlowStep{
 			Name:       edge.To.Method,
 			Owner:      edge.To.Owner,
-			Kind:       "call",
+			Kind:       codeFlowStepKind(edge),
 			File:       edge.To.File,
 			Line:       edge.To.Line,
 			Confidence: edge.Confidence,
@@ -325,6 +325,28 @@ func walkCodeFlow(function CodeFunctionRecord, edgesByMethod map[string][]CallGr
 		steps = append(steps, walkCodeFlow(next, edgesByMethod, depth+1, visited)...)
 	}
 	return steps
+}
+
+func codeCallReason(language, kind string) string {
+	switch kind {
+	case "effect":
+		return language + " effect call match"
+	case "event_handler":
+		return language + " event handler call match"
+	default:
+		return language + " static call match"
+	}
+}
+
+func codeFlowStepKind(edge CallGraphEdgeRecord) string {
+	switch {
+	case strings.Contains(edge.Reason, "effect call"):
+		return "effect_call"
+	case strings.Contains(edge.Reason, "event handler call"):
+		return "event_handler"
+	default:
+		return "call"
+	}
 }
 
 func appendJavaFlowSteps(steps []CodeFlowStep, route CodeRouteRecord, springFlows []SpringEndpointFlowRecord) []CodeFlowStep {

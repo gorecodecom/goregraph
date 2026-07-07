@@ -633,11 +633,21 @@ func scoreWorkspaceFrontendFlow(flow CodeFlowRecord, match WorkspaceContractMatc
 		}
 		if step.Name != "" {
 			context.confidence = "RESOLVED"
-			context.reason = "route flow reaches API contract caller"
-			context.score = 0.95
+			context.reason, context.score = frontendCallerResolution(step)
 		}
 	}
 	return context
+}
+
+func frontendCallerResolution(step CodeFlowStep) (string, float64) {
+	switch step.Kind {
+	case "effect_call":
+		return "route flow reaches API contract caller through effect", 0.92
+	case "event_handler":
+		return "route flow reaches API contract caller through event handler", 0.90
+	default:
+		return "route flow reaches API contract caller", 0.95
+	}
 }
 
 func findWorkspaceEndpointFlow(flows []SpringEndpointFlowRecord, match WorkspaceContractMatchRecord) (SpringEndpointFlowRecord, bool) {

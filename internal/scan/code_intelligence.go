@@ -31,6 +31,7 @@ var (
 	codeCallRE                = regexp.MustCompile(`([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	codeMemberCallRE          = regexp.MustCompile(`([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\.|->|::)\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	codeJSXComponentOpenRE    = regexp.MustCompile(`<([A-Z][A-Za-z0-9_$]*)\b`)
+	codeJSXEventHandlerRE     = regexp.MustCompile(`\bon[A-Z][A-Za-z0-9_$]*=\{\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\}`)
 )
 
 func mergeCodeIntelligence(target *CodeIntelligenceRecord, next CodeIntelligenceRecord) {
@@ -307,8 +308,16 @@ func extractCallsForFunction(language string, lines []string, function CodeFunct
 	}
 	seen := map[string]bool{}
 	var calls []CodeCallRecord
+	eventHandlers := map[string]bool(nil)
+	if language == "javascript" || language == "typescript" {
+		eventHandlers = scriptEventHandlerNames(lines, start, end)
+	}
 	for i := start; i < end; i++ {
 		line := stripCodeLineComment(language, lines[i])
+		callKind := ""
+		if language == "javascript" || language == "typescript" {
+			callKind = scriptCallUsageKind(lines, start, end, i, eventHandlers)
+		}
 		if language == "shell" {
 			if call, ok := extractShellBareCall(line, i+1); ok && call.Method != function.Name {
 				key := call.Method + "@" + strings.TrimSpace(line)
@@ -328,7 +337,7 @@ func extractCallsForFunction(language string, lines []string, function CodeFunct
 					continue
 				}
 				seen[key] = true
-				calls = append(calls, CodeCallRecord{Method: match[1], Raw: strings.TrimSpace(line), Line: i + 1})
+				calls = append(calls, CodeCallRecord{Method: match[1], Kind: callKind, Raw: strings.TrimSpace(line), Line: i + 1})
 			}
 		}
 		for _, match := range codeMemberCallRE.FindAllStringSubmatch(line, -1) {
@@ -340,7 +349,7 @@ func extractCallsForFunction(language string, lines []string, function CodeFunct
 				continue
 			}
 			seen[key] = true
-			calls = append(calls, CodeCallRecord{Receiver: match[1], Method: match[2], Raw: strings.TrimSpace(line), Line: i + 1})
+			calls = append(calls, CodeCallRecord{Receiver: match[1], Method: match[2], Kind: callKind, Raw: strings.TrimSpace(line), Line: i + 1})
 		}
 		for _, match := range codeCallRE.FindAllStringSubmatch(line, -1) {
 			if len(match) != 2 || isLowValueCallTarget(match[1]) || match[1] == function.Name {
@@ -354,7 +363,7 @@ func extractCallsForFunction(language string, lines []string, function CodeFunct
 				continue
 			}
 			seen[key] = true
-			calls = append(calls, CodeCallRecord{Method: match[1], Raw: strings.TrimSpace(line), Line: i + 1})
+			calls = append(calls, CodeCallRecord{Method: match[1], Kind: callKind, Raw: strings.TrimSpace(line), Line: i + 1})
 		}
 	}
 	sort.Slice(calls, func(i, j int) bool {
@@ -364,6 +373,85 @@ func extractCallsForFunction(language string, lines []string, function CodeFunct
 		return calls[i].Method < calls[j].Method
 	})
 	return calls
+}
+
+func scriptEventHandlerNames(lines []string, start, end int) map[string]bool {
+	handlers := map[string]bool{}
+	for i := start; i < end; i++ {
+		for _, match := range codeJSXEventHandlerRE.FindAllStringSubmatch(lines[i], -1) {
+			if len(match) == 2 && match[1] != "" {
+				handlers[match[1]] = true
+			}
+		}
+	}
+	return handlers
+}
+
+func scriptCallUsageKind(lines []string, start, end, lineIndex int, eventHandlers map[string]bool) string {
+	if scriptLineInsideLocalEventHandler(lines, start, end, lineIndex, eventHandlers) {
+		return "event_handler"
+	}
+	if scriptLineInsideEffect(lines, start, lineIndex) {
+		return "effect"
+	}
+	return ""
+}
+
+func scriptLineInsideLocalEventHandler(lines []string, start, end, lineIndex int, eventHandlers map[string]bool) bool {
+	if len(eventHandlers) == 0 {
+		return false
+	}
+	for i := start; i <= lineIndex && i < end; i++ {
+		name := ""
+		if match := codeScriptFuncRE.FindStringSubmatch(lines[i]); len(match) == 2 {
+			name = match[1]
+		} else if match := codeScriptArrowRE.FindStringSubmatch(lines[i]); len(match) == 2 {
+			name = match[1]
+		}
+		if name == "" || !eventHandlers[name] {
+			continue
+		}
+		blockEnd := findBraceBlockEnd(lines, i)
+		if lineIndex > i && lineIndex < blockEnd {
+			return true
+		}
+	}
+	return false
+}
+
+func scriptLineInsideEffect(lines []string, start, lineIndex int) bool {
+	for i := start; i <= lineIndex && i < len(lines); i++ {
+		if !strings.Contains(lines[i], "useEffect") {
+			continue
+		}
+		if lineIndex > i && lineIndex <= findParenCallEnd(lines, i) {
+			return true
+		}
+	}
+	return false
+}
+
+func findParenCallEnd(lines []string, start int) int {
+	depth := 0
+	started := false
+	for i := start; i < len(lines); i++ {
+		line := stripCodeLineComment("javascript", lines[i])
+		for _, ch := range line {
+			switch ch {
+			case '(':
+				depth++
+				started = true
+			case ')':
+				if started {
+					depth--
+				}
+			}
+		}
+		if started && depth <= 0 {
+			return i
+		}
+	}
+	return len(lines) - 1
 }
 
 func extractShellBareCall(line string, lineNo int) (CodeCallRecord, bool) {

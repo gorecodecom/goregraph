@@ -199,8 +199,8 @@ What the generated files mean:
 - `diagnostics.md`: prioritized human-readable diagnosis report with entrypoints, risky contracts, workspace-resolved contracts, unscanned services, untested endpoints, weak flows, and likely tests.
 - `workspace-context.md`: readable workspace project/index summary, or a no-workspace placeholder.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
-- `workspace-feature-flows.json`: cross-project feature flows from frontend route/component/API call to backend endpoint flow and tests, including JSX child component hops when a route component renders the component that calls the API.
-- `workspace-feature-flows.md`: readable end-to-end feature-flow report, including frontend route context when resolved and reasons for unresolved route context or missing linked tests.
+- `workspace-feature-flows.json`: cross-project feature flows from frontend route/component/API call to backend endpoint flow and tests, including JSX child component hops, React effect calls, and local event handlers when those steps connect a route component to the API caller.
+- `workspace-feature-flows.md`: readable end-to-end feature-flow report, including frontend route context when resolved, confidence reasons such as direct/effect/event-handler API caller matches, and reasons for unresolved route context or missing linked tests.
 - `frontend-consumers.md`: backend-oriented view of frontend API callers; frontend projects explain that this report is not applicable and point to workspace contract/feature reports.
 - `package-graph.md`: human-readable Node package/workspace dependency graph.
 - `maven-graph.md`: human-readable Maven dependency graph.
@@ -218,10 +218,10 @@ Workspace overlays:
 - `.goregraph-workspace/registry.json`: discovered sibling projects with `current`, `indexed`, or `not_indexed` status.
 - `.goregraph-workspace/context.json`: loaded indexes, known backend services, and referenced but missing services.
 - `.goregraph-workspace/contract-matches.json`: cross-project API-to-backend matches from already scanned projects.
-- `.goregraph-workspace/feature-flows.json`: cross-project frontend route/component/API-to-backend feature flows from already scanned projects, with component-aware frontend route steps when available.
+- `.goregraph-workspace/feature-flows.json`: cross-project frontend route/component/API-to-backend feature flows from already scanned projects, with component-aware frontend route steps, React effect calls, and local event handler calls when available.
 - `workspace-context.md`: readable workspace project/index summary.
 - `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project.
-- `workspace-feature-flows.md`: readable frontend-route-to-API-to-backend-to-test feature flows, including JSX component hops, unresolved-route reasons, and missing-test reasons.
+- `workspace-feature-flows.md`: readable frontend-route-to-API-to-backend-to-test feature flows, including JSX component hops, effect/event-handler reasons, unresolved-route reasons, and missing-test reasons.
 - `frontend-consumers.md`: backend-oriented view of frontend API callers; frontend projects explain the report scope instead of showing an ambiguous empty result.
 
 Workspace reconciliation also refreshes:

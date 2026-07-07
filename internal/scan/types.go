@@ -232,6 +232,7 @@ type CodeCallRecord struct {
 	Receiver string `json:"receiver,omitempty"`
 	Owner    string `json:"owner,omitempty"`
 	Method   string `json:"method"`
+	Kind     string `json:"kind,omitempty"`
 	Raw      string `json:"raw,omitempty"`
 	Line     int    `json:"line"`
 }

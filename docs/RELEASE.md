@@ -151,6 +151,8 @@ Completed release checks:
 - frontend route flows treat JSX child components as callgraph steps when a route component renders the component that calls an API helper.
 - workspace feature flows can upgrade from app-scope `WEAK_MATCH` to `RESOLVED` when the component-aware route flow reaches the API contract caller.
 - workspace root detection prefers a parent with both frontend and backend group directories over an intermediate frontend-only grouping folder.
+- frontend route flows can resolve API callers through React effect calls and local event handlers.
+- workspace feature flow reasons distinguish direct, effect, event-handler, and app-scope matches.
 - `goregraph version` reports `0.8.6`.
 
 Remaining release-hardening items:
