@@ -941,6 +941,65 @@ func workspaceScanCommand(project string) string {
 	return fmt.Sprintf("cd %s && goregraph scan .", project)
 }
 
+// WorkspaceMissingScanPlan returns the highest-value missing service projects to scan.
+func WorkspaceMissingScanPlan(root string, cfg config.Config, top int) (WorkspaceMissingScanPlanRecord, error) {
+	currentAbs, err := filepath.Abs(root)
+	if err != nil {
+		return WorkspaceMissingScanPlanRecord{}, err
+	}
+	workspaceRoot, ok, err := resolveWorkspaceRoot(currentAbs, cfg.WorkspaceRoot)
+	if err != nil {
+		return WorkspaceMissingScanPlanRecord{}, err
+	}
+	if !ok {
+		return WorkspaceMissingScanPlanRecord{}, fmt.Errorf("no GoreGraph workspace detected")
+	}
+	projects, err := discoverWorkspaceProjects(workspaceRoot, currentAbs, cfg.OutputDir)
+	if err != nil {
+		return WorkspaceMissingScanPlanRecord{}, err
+	}
+	indexed, err := loadWorkspaceIndexes(projects)
+	if err != nil {
+		return WorkspaceMissingScanPlanRecord{}, err
+	}
+	registry := WorkspaceRegistryRecord{
+		Root:     filepath.ToSlash(workspaceRoot),
+		Current:  workspaceRel(workspaceRoot, currentAbs),
+		Projects: projects,
+	}
+	context := buildWorkspaceContext(registry, indexed)
+	projectsByPath := map[string]WorkspaceProjectRecord{}
+	for _, project := range projects {
+		projectsByPath[project.Path] = project
+	}
+	var items []WorkspaceMissingScanItemRecord
+	for _, missing := range context.MissingServiceDetails {
+		if missing.Project == "" || missing.Status == "indexed" {
+			continue
+		}
+		project, ok := projectsByPath[missing.Project]
+		if !ok {
+			continue
+		}
+		items = append(items, WorkspaceMissingScanItemRecord{
+			Service:   missing.Service,
+			Contracts: missing.Contracts,
+			Project:   missing.Project,
+			AbsPath:   project.AbsPath,
+			Status:    missing.Status,
+		})
+		if top > 0 && len(items) >= top {
+			break
+		}
+	}
+	return WorkspaceMissingScanPlanRecord{
+		WorkspaceRoot: filepath.ToSlash(workspaceRoot),
+		Current:       registry.Current,
+		Top:           top,
+		Items:         items,
+	}, nil
+}
+
 func writeWorkspaceScanSuggestions(b *strings.Builder, record WorkspaceContextRecord) {
 	var suggestions []string
 	for _, service := range record.MissingServiceDetails {

@@ -146,7 +146,7 @@ Completed release checks:
 - workspace feature flow JSON includes route ID, route path, component, frontend call steps, confidence, and reason.
 - `goregraph version` reports `0.8.5`.
 
-`v0.8.6` local feature checks:
+`v0.8.6` feature checks:
 
 - frontend route flows treat JSX child components as callgraph steps when a route component renders the component that calls an API helper.
 - workspace feature flows can upgrade from app-scope `WEAK_MATCH` to `RESOLVED` when the component-aware route flow reaches the API contract caller.
@@ -158,6 +158,7 @@ Completed release checks:
 - workspace context prioritizes referenced but missing services by contract count and suggests `cd <project> && goregraph scan .` for discovered unindexed service projects.
 - `frontend-usage.json` and `frontend-usage.md` explain frontend route/component/API usage chains with confidence and evidence.
 - `workspace-next-actions.md` summarizes workspace coverage, high-value missing service scans, weak workspace matches, and resolved flows without linked tests.
+- `goregraph workspace scan-missing` previews prioritized missing service scans by default and executes them only with `--execute`.
 - `goregraph version` reports `0.8.6`.
 
 Remaining release-hardening items:

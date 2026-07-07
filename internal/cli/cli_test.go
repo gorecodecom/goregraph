@@ -146,6 +146,92 @@ func TestRunWorkspaceStatusPrintsDetectedProjects(t *testing.T) {
 	}
 }
 
+func TestRunWorkspaceScanMissingDryRunShowsPlanWithoutScanning(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	task := filepath.Join(workspace, "microservices", "ms-task")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, "src/api/tasks.js", "export function loadTask(id) {\n"+
+		"  return fetch(`/tasks/${id}`);\n"+
+		"}\n")
+	writeFile(t, task, "README.md", "# ms-task\n")
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"scan", frontend, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "scan-missing", frontend, "--top", "1"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"# GoreGraph Workspace Missing Scan Plan",
+		"Dry run: true",
+		"microservices/ms-task",
+		"goregraph workspace scan-missing",
+		"--execute",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("scan-missing dry-run output missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(task, "goregraph-out", "manifest.json")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run should not scan ms-task, err=%v", err)
+	}
+}
+
+func TestRunWorkspaceScanMissingExecuteScansTopMissingService(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	task := filepath.Join(workspace, "microservices", "ms-task")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, "src/api/tasks.js", "export function loadTask(id) {\n"+
+		"  return fetch(`/tasks/${id}`);\n"+
+		"}\n")
+	writeFile(t, task, "src/main/java/com/example/TaskController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/tasks")
+class TaskController {
+  @GetMapping("/{taskId}")
+  String get(@PathVariable String taskId) {
+    return taskId;
+  }
+}
+`)
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"scan", frontend, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "scan-missing", frontend, "--top", "1", "--execute", "--no-update-gitignore"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Scanned 1 missing workspace project") || !strings.Contains(stdout.String(), "microservices/ms-task") {
+		t.Fatalf("execute output missing scan summary:\n%s", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(task, "goregraph-out", "manifest.json")); err != nil {
+		t.Fatalf("execute should scan ms-task: %v", err)
+	}
+	matches, err := os.ReadFile(filepath.Join(frontend, "goregraph-out", "workspace-contract-matches.md"))
+	if err != nil {
+		t.Fatalf("reading frontend workspace matches: %v", err)
+	}
+	if !strings.Contains(string(matches), "ms-task GET `/tasks/{taskId}`") {
+		t.Fatalf("frontend workspace matches should include scanned task backend:\n%s", string(matches))
+	}
+}
+
 func TestRunUpdateRefreshesCurrentProject(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# Demo\n")

@@ -416,6 +416,21 @@ type WorkspaceMissingServiceRecord struct {
 	Status    string `json:"status,omitempty"`
 }
 
+type WorkspaceMissingScanPlanRecord struct {
+	WorkspaceRoot string                           `json:"workspace_root"`
+	Current       string                           `json:"current,omitempty"`
+	Top           int                              `json:"top"`
+	Items         []WorkspaceMissingScanItemRecord `json:"items"`
+}
+
+type WorkspaceMissingScanItemRecord struct {
+	Service   string `json:"service"`
+	Contracts int    `json:"contracts"`
+	Project   string `json:"project"`
+	AbsPath   string `json:"abs_path"`
+	Status    string `json:"status,omitempty"`
+}
+
 type WorkspaceContractMatchRecord struct {
 	APIProject        string  `json:"api_project"`
 	APIHTTPMethod     string  `json:"api_http_method"`

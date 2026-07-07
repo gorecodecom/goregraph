@@ -635,6 +635,46 @@ Important behavior:
 - does not write files
 - uses the same auto-detection as `goregraph scan`
 
+## `goregraph workspace scan-missing [path]`
+
+Shows or executes prioritized scans for referenced backend services that are discovered in the workspace but not indexed yet.
+
+Use when:
+
+- `workspace-next-actions.md` shows many `unscanned_service` contracts
+- you want better frontend-to-backend coverage without manually picking services
+- you want to scan only the highest-value missing services first
+
+Examples:
+
+```bash
+goregraph workspace scan-missing .
+goregraph workspace scan-missing . --top 5
+goregraph workspace scan-missing . --top 5 --execute
+goregraph workspace scan-missing frontend/frontend-monorepo --workspace /Users/name/projects/weka
+```
+
+Default behavior:
+
+- dry run only
+- scans nothing
+- writes nothing
+- shows the top 5 missing service projects ranked by referenced contract count
+
+Options:
+
+- `--top N`: limit the plan to the first N missing services.
+- `--execute`: run the scans for the planned projects.
+- `--workspace <path>`: force the workspace root used for discovery.
+- `--no-update-gitignore`: skip generated-output `.gitignore` updates while executing scans.
+
+Execution behavior:
+
+- scans each selected missing service project with normal GoreGraph scan logic
+- refreshes workspace overlays after each scan
+- keeps existing project output locations from each project's config
+- stops on the first scan error and reports the failing project
+
 ## `goregraph mcp`
 
 Starts the read-only MCP stdio server.

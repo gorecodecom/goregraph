@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gorecodecom/goregraph/internal/config"
@@ -100,17 +101,28 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 
 func runWorkspace(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph workspace status [path] [--workspace <path>]\n\nShows discovered workspace projects and loaded GoreGraph indexes without scanning.\n")
+		printWorkspaceHelp(stdout)
 		return 0
 	}
-	if len(args) == 0 || args[0] != "status" {
-		fmt.Fprint(stderr, "error: usage: goregraph workspace status [path] [--workspace <path>]\n")
+	if len(args) == 0 {
+		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing> [path] [options]\n")
 		return 2
 	}
+	switch args[0] {
+	case "status":
+		return runWorkspaceStatus(args[1:], stdout, stderr)
+	case "scan-missing":
+		return runWorkspaceScanMissing(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown workspace command: %s\n", args[0])
+		return 2
+	}
+}
 
-	root := "."
+func runWorkspaceStatus(args []string, stdout, stderr io.Writer) int {
 	cfg := config.Defaults()
-	for i := 1; i < len(args); i++ {
+	root := "."
+	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
 		case "--workspace":
@@ -139,6 +151,129 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 	}
 	_, _ = stdout.Write([]byte(body))
 	return 0
+}
+
+func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
+	root := "."
+	top := 5
+	execute := false
+	overrides := config.Defaults()
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--top":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --top requires a positive number\n")
+				return 2
+			}
+			i++
+			value, err := strconv.Atoi(args[i])
+			if err != nil || value <= 0 {
+				fmt.Fprint(stderr, "error: --top requires a positive number\n")
+				return 2
+			}
+			top = value
+		case "--execute":
+			execute = true
+		case "--no-update-gitignore":
+			overrides.UpdateGitignore = false
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			overrides.WorkspaceRoot = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace scan-missing [path] [--top N] [--execute] [--workspace <path>] [--no-update-gitignore]\n\nShows a prioritized missing-service scan plan. Add --execute to run the scans.\n")
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			root = arg
+		}
+	}
+
+	loaded, err := config.Load(root)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	loaded.UpdateGitignore = overrides.UpdateGitignore
+	loaded.Workspace = true
+	loaded.WorkspaceRoot = overrides.WorkspaceRoot
+
+	plan, err := scan.WorkspaceMissingScanPlan(root, loaded, top)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace scan-missing failed: %v\n", err)
+		return 1
+	}
+	if !execute {
+		printWorkspaceMissingScanPlan(stdout, plan, true)
+		return 0
+	}
+	printWorkspaceMissingScanPlan(stdout, plan, false)
+	scanned := 0
+	for _, item := range plan.Items {
+		projectCfg, err := config.Load(item.AbsPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
+			return 1
+		}
+		projectCfg.UpdateGitignore = loaded.UpdateGitignore
+		projectCfg.Workspace = true
+		projectCfg.WorkspaceRoot = plan.WorkspaceRoot
+		if projectCfg.UpdateGitignore {
+			if _, err := gitignore.EnsureOutputIgnored(item.AbsPath, projectCfg.OutputDir); err != nil {
+				fmt.Fprintf(stderr, "error: updating %s .gitignore failed: %v\n", item.Project, err)
+				return 1
+			}
+		}
+		result, err := scan.Run(item.AbsPath, projectCfg)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: scanning %s failed: %v\n", item.Project, err)
+			return 1
+		}
+		scanned++
+		fmt.Fprintf(stdout, "- Scanned `%s` (%d files, skipped %d)\n", item.Project, result.ScannedFiles, result.SkippedFiles)
+	}
+	if loaded.UpdateGitignore {
+		if _, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot); err != nil {
+			fmt.Fprintf(stderr, "error: updating workspace .gitignore failed: %v\n", err)
+			return 1
+		}
+	}
+	fmt.Fprintf(stdout, "\nScanned %d missing workspace project(s).\n", scanned)
+	return 0
+}
+
+func printWorkspaceMissingScanPlan(w io.Writer, plan scan.WorkspaceMissingScanPlanRecord, dryRun bool) {
+	fmt.Fprint(w, "# GoreGraph Workspace Missing Scan Plan\n\n")
+	fmt.Fprintf(w, "- Workspace root: `%s`\n", plan.WorkspaceRoot)
+	if plan.Current != "" {
+		fmt.Fprintf(w, "- Current project: `%s`\n", plan.Current)
+	}
+	fmt.Fprintf(w, "- Top: %d\n", plan.Top)
+	fmt.Fprintf(w, "- Dry run: %t\n\n", dryRun)
+	if len(plan.Items) == 0 {
+		fmt.Fprint(w, "- none\n")
+		return
+	}
+	for index, item := range plan.Items {
+		fmt.Fprintf(w, "%d. `%s` - %d contracts - project `%s` - %s\n", index+1, item.Service, item.Contracts, item.Project, emptyCLI(item.Status))
+	}
+	if dryRun {
+		fmt.Fprint(w, "\nRun with `goregraph workspace scan-missing <path> --top N --execute` to scan these projects.\n")
+	}
+}
+
+func emptyCLI(value string) string {
+	if value == "" {
+		return "none"
+	}
+	return value
 }
 
 func runQuery(args []string, stdout, stderr io.Writer) int {
@@ -295,7 +430,7 @@ Commands:
   query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
   doctor <path>     Check generated output health
-  workspace status  Show workspace projects and loaded indexes
+  workspace         Show workspace status or scan prioritized missing services
   mcp               Start the read-only MCP stdio server
   version           Print build metadata
   help              Show this help
@@ -314,8 +449,23 @@ Examples:
   goregraph explain . src/main.go
   goregraph doctor .
   goregraph workspace status .
+  goregraph workspace scan-missing . --top 5
   goregraph mcp
   goregraph version
+`)
+}
+
+func printWorkspaceHelp(w io.Writer) {
+	fmt.Fprint(w, `Usage: goregraph workspace <command> [options]
+
+Commands:
+  status [path]        Show workspace projects and loaded indexes without scanning
+  scan-missing [path]  Show prioritized missing service scans; add --execute to scan
+
+Examples:
+  goregraph workspace status .
+  goregraph workspace scan-missing .
+  goregraph workspace scan-missing . --top 5 --execute
 `)
 }
 
