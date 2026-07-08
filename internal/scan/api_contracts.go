@@ -2,6 +2,7 @@ package scan
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -81,6 +82,11 @@ func firstNonEmpty(values ...string) string {
 
 func apiContract(file FileRecord, method, path, caller string, line int, reason string) APIContractRecord {
 	normalizedPath, query, params, unsafeDynamic := normalizeAPIPathDetails(path)
+	serviceCandidate := serviceCandidateForPath(normalizedPath)
+	if isFrontendInternalAPIPath(file.Path, normalizedPath) {
+		serviceCandidate = ""
+		reason += "; frontend-internal-api-route"
+	}
 	return APIContractRecord{
 		Language:         file.Language,
 		App:              codeFileApp(file.Path),
@@ -90,7 +96,7 @@ func apiContract(file FileRecord, method, path, caller string, line int, reason 
 		RawPath:          path,
 		Query:            query,
 		QueryParams:      params,
-		ServiceCandidate: serviceCandidateForPath(normalizedPath),
+		ServiceCandidate: serviceCandidate,
 		UnsafeDynamic:    unsafeDynamic,
 		Caller:           strings.TrimSpace(caller),
 		File:             file.Path,
@@ -99,6 +105,20 @@ func apiContract(file FileRecord, method, path, caller string, line int, reason 
 		ConfidenceScore:  0.9,
 		Reason:           reason,
 	}
+}
+
+func isFrontendInternalAPIPath(filePath, apiPath string) bool {
+	if !strings.HasPrefix(apiPath, "/api/") {
+		return false
+	}
+	path := filepath.ToSlash(filePath)
+	if strings.Contains(path, "/app/api/") || strings.Contains(path, "/pages/api/") {
+		return false
+	}
+	return strings.Contains(path, "/src/app/") ||
+		strings.HasPrefix(path, "src/app/") ||
+		strings.HasPrefix(path, "app/") ||
+		strings.Contains(path, "/app/")
 }
 
 func helperHTTPMethod(name string) string {
@@ -184,6 +204,11 @@ func splitRawPathQuery(raw string) (string, string) {
 
 func normalizeTemplatePath(path string) (string, bool) {
 	unsafeDynamic := false
+	var trimmed bool
+	path, trimmed = trimOptionalTemplatePathSuffix(path)
+	if trimmed {
+		unsafeDynamic = false
+	}
 	path = codeTemplateVarRE.ReplaceAllStringFunc(path, func(match string) string {
 		groups := codeTemplateVarRE.FindStringSubmatch(match)
 		if len(groups) != 2 {
@@ -197,6 +222,41 @@ func normalizeTemplatePath(path string) (string, bool) {
 		return "{" + name + "}"
 	})
 	return normalizeCodeRoutePath(path), unsafeDynamic
+}
+
+func trimOptionalTemplatePathSuffix(path string) (string, bool) {
+	idx := strings.LastIndex(path, "${")
+	if idx < 0 {
+		return path, false
+	}
+	end := strings.Index(path[idx:], "}")
+	expression := path[idx+2:]
+	if end >= 0 {
+		expression = path[idx+2 : idx+end]
+	}
+	trimStart := idx
+	if strings.Contains(expression, "?") {
+		if idx > 0 && path[idx-1] == '/' {
+			trimStart = idx - 1
+		}
+		return path[:trimStart], true
+	}
+	if strings.Contains(expression, "||") && idx > 0 && path[idx-1] != '/' {
+		return path[:idx], true
+	}
+	if end >= 0 && idx > 0 && path[idx-1] != '/' && isOptionalPathSuffixExpression(expression) {
+		return path[:idx], true
+	}
+	return path, false
+}
+
+func isOptionalPathSuffixExpression(expression string) bool {
+	switch strings.ToLower(strings.TrimSpace(expression)) {
+	case "filter", "query", "params", "search":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeQueryParams(query string) ([]QueryParamRecord, bool) {

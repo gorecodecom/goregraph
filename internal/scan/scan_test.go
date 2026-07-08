@@ -698,6 +698,18 @@ func TestRunExtractsRealisticFrontendAPIContracts(t *testing.T) {
 		"export async function flyout(dispatch) {\n"+
 		"  return GetHelperWithStatus(dispatch, '/portal/tasks/flyout');\n"+
 		"}\n\n"+
+		"export async function filteredTopics(dispatch, isbn, filter) {\n"+
+		"  return GetHelper(dispatch, `/documenttopic/modules/${isbn}/topics${filter}`);\n"+
+		"}\n\n"+
+		"export async function filteredProducts(dispatch, userId, filter) {\n"+
+		"  return GetHelper(dispatch, `/productservice/users/${userId}/products${filter || ''}`);\n"+
+		"}\n\n"+
+		"export async function optionalContainer(dispatch, isbn, containerId) {\n"+
+		"  return GetHelper(dispatch, `/containertree/modules/${isbn}/containers${containerId ? `/${containerId}` : ''}`);\n"+
+		"}\n\n"+
+		"export async function taskWidget(dispatch, isbn) {\n"+
+		"  return GetHelper(dispatch, `/task/services/${isbn}/tasks?status=${getOpenTaskStates().join(',')}`);\n"+
+		"}\n\n"+
 		"export async function dynamicFetch(url) {\n"+
 		"  return fetch(url, { method: 'POST' });\n"+
 		"}\n")
@@ -715,6 +727,10 @@ export function PostHelper(dispatch, path) { return fetch(path, { method: "POST"
 	assertHasAPIContract(t, api, "GET", "/productservice/users/{userId}/products", "apps/portal/src/api/productsservice.js")
 	assertHasAPIContract(t, api, "POST", "/cadasters/{cadasterId}/users", "apps/portal/src/api/productsservice.js")
 	assertHasAPIContract(t, api, "GET", "/portal/tasks/flyout", "apps/portal/src/api/productsservice.js")
+	assertHasAPIContract(t, api, "GET", "/documenttopic/modules/{isbn}/topics", "apps/portal/src/api/productsservice.js")
+	assertHasAPIContract(t, api, "GET", "/productservice/users/{userId}/products", "apps/portal/src/api/productsservice.js")
+	assertHasAPIContract(t, api, "GET", "/containertree/modules/{isbn}/containers", "apps/portal/src/api/productsservice.js")
+	assertHasAPIContract(t, api, "GET", "/task/services/{isbn}/tasks", "apps/portal/src/api/productsservice.js")
 	assertNoAPIContract(t, api, "POST", "/url")
 
 	apiReport := readText(t, filepath.Join(root, "goregraph-out", "api-contracts.md"))
@@ -855,6 +871,83 @@ class CadasterController {
 	}
 }
 
+func TestContractMatchesNormalizeServiceAndConfigBasePrefixes(t *testing.T) {
+	matches := buildContractMatches(
+		[]APIContractRecord{
+			{
+				HTTPMethod:       "GET",
+				Path:             "/productservice/users/{userId}/products/{baseCode}",
+				File:             "apps/portal/src/api/products.js",
+				Line:             12,
+				ServiceCandidate: "ms-productservice",
+			},
+		},
+		[]CodeRouteRecord{
+			{Kind: "backend", HTTPMethod: "GET", Path: "/ApplicationConfig.BASE_PATH/users/{userId}/products/{baseCode}", Handler: "ProductController.get", File: "ProductController.java", Line: 28},
+		},
+	)
+
+	assertHasContractMatch(t, matches, "GET", "/productservice/users/{userId}/products/{baseCode}", "GET", "/users/{userId}/products/{baseCode}", "RESOLVED")
+}
+
+func TestContractMatchesNormalizeNonServiceSuffixBasePrefixes(t *testing.T) {
+	matches := buildContractMatches(
+		[]APIContractRecord{
+			{
+				HTTPMethod:       "GET",
+				Path:             "/documentdownload/modules/{isbn}/documents/{objectId}/search",
+				File:             "apps/portal/src/api/documentdownload.js",
+				Line:             12,
+				ServiceCandidate: "ms-documentdownload",
+			},
+		},
+		[]CodeRouteRecord{
+			{Kind: "backend", HTTPMethod: "GET", Path: "/ApplicationConfig.BASE_PATH/modules/{isbn}/documents/{objectId}/search", Handler: "DocumentController.search", File: "DocumentController.java", Line: 28},
+		},
+	)
+
+	assertHasContractMatch(t, matches, "GET", "/documentdownload/modules/{isbn}/documents/{objectId}/search", "GET", "/modules/{isbn}/documents/{objectId}/search", "RESOLVED")
+}
+
+func TestContractMatchesRouteUnsafeDynamicPlaceholdersWhenBackendPathMatches(t *testing.T) {
+	matches := buildContractMatches(
+		[]APIContractRecord{
+			{
+				HTTPMethod:       "GET",
+				Path:             "/documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic}",
+				File:             "apps/portal/src/api/documentdownload.js",
+				Line:             16,
+				ServiceCandidate: "ms-documentdownload",
+				UnsafeDynamic:    true,
+			},
+		},
+		[]CodeRouteRecord{
+			{Kind: "backend", HTTPMethod: "GET", Path: "/ApplicationConfig.BASE_PATH/modules/{isbn}/documents/{objectId}/fragments/{fragmentId}", Handler: "DocumentController.fragment", File: "DocumentController.java", Line: 38},
+		},
+	)
+
+	assertHasContractMatch(t, matches, "GET", "/documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic}", "GET", "/modules/{isbn}/documents/{objectId}/fragments/{fragmentId}", "RESOLVED")
+}
+
+func TestContractMatchesExpandKnownControllerPathConstants(t *testing.T) {
+	matches := buildContractMatches(
+		[]APIContractRecord{
+			{
+				HTTPMethod:       "PUT",
+				Path:             "/cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster",
+				File:             "apps/portal/src/api/regulations.js",
+				Line:             18,
+				ServiceCandidate: "ms-cadaster",
+			},
+		},
+		[]CodeRouteRecord{
+			{Kind: "backend", HTTPMethod: "PUT", Path: `/RegulationChangeBaseController.PATH_BASE/RegulationChangeBaseController.PATH_FRAGMENT_CHANGES_NEW + "/addtocadaster`, Handler: "RegulationChangesController.add", File: "RegulationChangesController.java", Line: 321},
+		},
+	)
+
+	assertHasContractMatch(t, matches, "PUT", "/cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster", "PUT", `/cadasters/{cadasterId}/regulations/changes/new/addtocadaster`, "RESOLVED")
+}
+
 func TestRunClassifiesContractsForUnscannedServices(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "apps/portal/src/api/services.js", "import { GetHelper } from '../utils/requestHelper';\n\n"+
@@ -893,12 +986,49 @@ class CadasterController {
 	var matches []ContractMatchRecord
 	readJSON(t, filepath.Join(root, "goregraph-out", "contract-matches.json"), &matches)
 	assertHasContractIssue(t, matches, "GET", "/tasks/{id}", "unscanned_service")
-	assertHasContractIssue(t, matches, "GET", "/cadasters/missing/detail", "missing_backend_route")
+	assertHasContractIssue(t, matches, "GET", "/cadasters/missing/detail", "indexed_backend_route_missing")
 
 	report := readText(t, filepath.Join(root, "goregraph-out", "contract-matches.md"))
 	if !strings.Contains(report, "unscanned_service") || !strings.Contains(report, "ms-task was not scanned") {
 		t.Fatalf("contract match report missing unscanned service context:\n%s", report)
 	}
+}
+
+func TestRunClassifiesFrontendInternalAPIRoutes(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/app/providers.tsx", "export function SessionGuard() {\n"+
+		"  return fetch('/api/auth/clear-session', { method: 'POST' });\n"+
+		"}\n")
+	writeFile(t, root, "src/app/api/auth/clear-session/route.ts", "export async function POST() {\n"+
+		"  return Response.json({ ok: true });\n"+
+		"}\n")
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var api []APIContractRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "api-contracts.json"), &api)
+	var found APIContractRecord
+	for _, record := range api {
+		if record.HTTPMethod == "POST" && record.Path == "/api/auth/clear-session" {
+			found = record
+			break
+		}
+	}
+	if found.Path == "" {
+		t.Fatalf("missing frontend internal api contract in %#v", api)
+	}
+	if found.ServiceCandidate != "" {
+		t.Fatalf("frontend internal api route should not produce service candidate, got %#v", found)
+	}
+	if !strings.Contains(found.Reason, "frontend-internal-api-route") {
+		t.Fatalf("frontend internal api route should be marked in reason, got %#v", found)
+	}
+
+	var matches []ContractMatchRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "contract-matches.json"), &matches)
+	assertHasContractIssue(t, matches, "POST", "/api/auth/clear-session", "frontend_internal_api")
 }
 
 func TestRunWritesDiagnosticsReports(t *testing.T) {

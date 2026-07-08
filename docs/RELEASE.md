@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.8.8
+v0.8.9
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript/TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output. `v0.8.0` adds frontend API to backend route contract matching, safer URL normalization, and explicit weak/static contract issue reports. `v0.8.1` adds diagnostics, unscanned-service classification, and lower-noise affected output. `v0.8.2` adds zero-config workspace discovery and cross-project overlay refreshes. `v0.8.3` adds workspace query fallback, integrated workspace diagnostics, frontend consumers in endpoints, end-to-end workspace feature flows, stricter path matching, and generated-output gitignore handling. `v0.8.4` adds consistent workspace diagnostics, clearer frontend-consumer report scope, and actionable missing-test reasons in feature flows. `v0.8.5` adds frontend route/component context in workspace feature flows. `v0.8.6` adds component-aware frontend route flows and parent-aware workspace root detection. `v0.8.7` adds clearer workspace diagnostics when indexed services have no matching backend route. `v0.8.8` is the current local development version for project-local workspace contract JSON overlays refreshed after later sibling scans; it is not released until a tag is pushed.
+`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript/TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output. `v0.8.0` adds frontend API to backend route contract matching, safer URL normalization, and explicit weak/static contract issue reports. `v0.8.1` adds diagnostics, unscanned-service classification, and lower-noise affected output. `v0.8.2` adds zero-config workspace discovery and cross-project overlay refreshes. `v0.8.3` adds workspace query fallback, integrated workspace diagnostics, frontend consumers in endpoints, end-to-end workspace feature flows, stricter path matching, and generated-output gitignore handling. `v0.8.4` adds consistent workspace diagnostics, clearer frontend-consumer report scope, and actionable missing-test reasons in feature flows. `v0.8.5` adds frontend route/component context in workspace feature flows. `v0.8.6` adds component-aware frontend route flows and parent-aware workspace root detection. `v0.8.7` adds clearer workspace diagnostics when indexed services have no matching backend route. `v0.8.8` adds project-local workspace contract JSON overlays refreshed after later sibling scans. `v0.8.9` is the current local development version for full-workspace scan and clean commands; it is not released until a tag is pushed.
 
 Completed release checks:
 
@@ -173,6 +173,26 @@ Completed release checks:
 - later sibling scans refresh `workspace-contract-matches.json` for already indexed frontend and backend projects.
 - `goregraph version` reports `0.8.8`.
 
+`v0.8.9` feature checks:
+
+- `goregraph workspace scan-all` scans every discovered workspace project and refreshes workspace overlays.
+- `goregraph workspace scan-all --dry-run` prints the plan without scanning.
+- `goregraph workspace clean` lists generated workspace output paths without deleting by default.
+- `goregraph workspace clean --execute` removes project output directories and `.goregraph-workspace/`.
+- unresolved contracts for indexed services are classified as `indexed_backend_route_missing` or `dynamic_endpoint_unresolved` instead of staying in the generic missing-route bucket.
+- API contracts that match backend routes after dropping a common gateway/proxy prefix are classified as `gateway_or_proxy_prefix` with backend route context.
+- frontend-internal Next-style `/api/...` calls are classified as `frontend_internal_api` instead of missing `ms-api` services.
+- indexed route-gap reasons include the nearest backend route hints when useful.
+- service gateway prefixes and Spring `ApplicationConfig.BASE_PATH` constants are normalized during contract matching.
+- known frontend service prefixes such as `documentdownload`, `documenttopic`, and `containertree` are normalized when matching backend base paths.
+- optional template suffixes such as `${filter}`, `${filter || ''}`, and ternary path suffixes are normalized to their stable base route.
+- unsafe dynamic path placeholders can still resolve when the backend route has a placeholder at the same path position.
+- known RegulationChange controller path constants are expanded for workspace contract matching.
+- backend route paths and similar-route hints are rendered with expanded controller/config constants for readable reports.
+- component/page-local API callers can promote otherwise weak frontend route context to resolved feature-flow context.
+- MockMvc tests with Java string-concatenated request paths are normalized with dynamic placeholders for stronger endpoint test mapping.
+- `goregraph version` reports `0.8.9`.
+
 Remaining release-hardening items:
 
 - Validate GoreGraph against more real-world projects before considering `1.0.0`.
@@ -196,7 +216,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.8.8
+goregraph 0.8.9
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -212,8 +232,8 @@ schema: 1
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v0.8.8 -m "Release v0.8.8"
-   git push origin v0.8.8
+   git tag -a v0.8.9 -m "Release v0.8.9"
+   git push origin v0.8.9
    ```
 
 5. GitHub Actions runs GoReleaser.

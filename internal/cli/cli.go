@@ -105,7 +105,7 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing> [path] [options]\n")
+		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing|scan-all|clean> [path] [options]\n")
 		return 2
 	}
 	switch args[0] {
@@ -113,6 +113,10 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return runWorkspaceStatus(args[1:], stdout, stderr)
 	case "scan-missing":
 		return runWorkspaceScanMissing(args[1:], stdout, stderr)
+	case "scan-all":
+		return runWorkspaceScanAll(args[1:], stdout, stderr)
+	case "clean":
+		return runWorkspaceClean(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown workspace command: %s\n", args[0])
 		return 2
@@ -249,6 +253,147 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runWorkspaceScanAll(args []string, stdout, stderr io.Writer) int {
+	root := "."
+	dryRun := false
+	overrides := config.Defaults()
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--dry-run":
+			dryRun = true
+		case "--no-update-gitignore":
+			overrides.UpdateGitignore = false
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			overrides.WorkspaceRoot = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace scan-all [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]\n\nScans every discovered project in the detected workspace and refreshes workspace overlays after each scan.\n")
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			root = arg
+		}
+	}
+
+	loaded, err := config.Load(root)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	loaded.UpdateGitignore = overrides.UpdateGitignore
+	loaded.Workspace = true
+	loaded.WorkspaceRoot = overrides.WorkspaceRoot
+
+	plan, err := scan.WorkspaceProjectScanPlan(root, loaded)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace scan-all failed: %v\n", err)
+		return 1
+	}
+	printWorkspaceScanAllPlan(stdout, plan, dryRun)
+	if dryRun {
+		return 0
+	}
+	scanned := 0
+	for _, item := range plan.Items {
+		projectCfg, err := config.Load(item.AbsPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
+			return 1
+		}
+		projectCfg.UpdateGitignore = loaded.UpdateGitignore
+		projectCfg.Workspace = true
+		projectCfg.WorkspaceRoot = plan.WorkspaceRoot
+		if projectCfg.UpdateGitignore {
+			if _, err := gitignore.EnsureOutputIgnored(item.AbsPath, projectCfg.OutputDir); err != nil {
+				fmt.Fprintf(stderr, "error: updating %s .gitignore failed: %v\n", item.Project, err)
+				return 1
+			}
+		}
+		result, err := scan.Run(item.AbsPath, projectCfg)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: scanning %s failed: %v\n", item.Project, err)
+			return 1
+		}
+		scanned++
+		fmt.Fprintf(stdout, "- Scanned `%s` (%d files, skipped %d)\n", item.Project, result.ScannedFiles, result.SkippedFiles)
+	}
+	if loaded.UpdateGitignore {
+		if _, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot); err != nil {
+			fmt.Fprintf(stderr, "error: updating workspace .gitignore failed: %v\n", err)
+			return 1
+		}
+	}
+	fmt.Fprintf(stdout, "\nScanned %d workspace project(s).\n", scanned)
+	return 0
+}
+
+func runWorkspaceClean(args []string, stdout, stderr io.Writer) int {
+	root := "."
+	execute := false
+	overrides := config.Defaults()
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--execute":
+			execute = true
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			overrides.WorkspaceRoot = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace clean [path] [--execute] [--workspace <path>]\n\nShows generated GoreGraph workspace output paths by default. Add --execute to remove project output directories and .goregraph-workspace.\n")
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			root = arg
+		}
+	}
+
+	loaded, err := config.Load(root)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	loaded.Workspace = true
+	loaded.WorkspaceRoot = overrides.WorkspaceRoot
+	plan, err := scan.WorkspaceCleanPlan(root, loaded)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace clean failed: %v\n", err)
+		return 1
+	}
+	printWorkspaceCleanPlan(stdout, plan, !execute)
+	if !execute {
+		return 0
+	}
+	removed := 0
+	for _, item := range plan.Items {
+		if !item.Exists {
+			continue
+		}
+		if err := os.RemoveAll(item.Path); err != nil {
+			fmt.Fprintf(stderr, "error: removing %s failed: %v\n", item.Path, err)
+			return 1
+		}
+		removed++
+	}
+	fmt.Fprintf(stdout, "\nRemoved %d GoreGraph output path(s).\n", removed)
+	return 0
+}
+
 func printWorkspaceMissingScanPlan(w io.Writer, plan scan.WorkspaceMissingScanPlanRecord, dryRun bool) {
 	fmt.Fprint(w, "# GoreGraph Workspace Missing Scan Plan\n\n")
 	fmt.Fprintf(w, "- Workspace root: `%s`\n", plan.WorkspaceRoot)
@@ -266,6 +411,48 @@ func printWorkspaceMissingScanPlan(w io.Writer, plan scan.WorkspaceMissingScanPl
 	}
 	if dryRun {
 		fmt.Fprint(w, "\nRun with `goregraph workspace scan-missing <path> --top N --execute` to scan these projects.\n")
+	}
+}
+
+func printWorkspaceScanAllPlan(w io.Writer, plan scan.WorkspaceProjectScanPlanRecord, dryRun bool) {
+	fmt.Fprint(w, "# GoreGraph Workspace Scan All Plan\n\n")
+	fmt.Fprintf(w, "- Workspace root: `%s`\n", plan.WorkspaceRoot)
+	if plan.Current != "" {
+		fmt.Fprintf(w, "- Current project: `%s`\n", plan.Current)
+	}
+	fmt.Fprintf(w, "- Dry run: %t\n\n", dryRun)
+	if len(plan.Items) == 0 {
+		fmt.Fprint(w, "- none\n")
+		return
+	}
+	for index, item := range plan.Items {
+		fmt.Fprintf(w, "%d. project `%s` - %s\n", index+1, item.Project, emptyCLI(item.Status))
+	}
+	if dryRun {
+		fmt.Fprint(w, "\nRun without `--dry-run` to scan these projects.\n")
+	}
+}
+
+func printWorkspaceCleanPlan(w io.Writer, plan scan.WorkspaceCleanPlanRecord, dryRun bool) {
+	fmt.Fprint(w, "# GoreGraph Workspace Clean Plan\n\n")
+	fmt.Fprintf(w, "- Workspace root: `%s`\n", plan.WorkspaceRoot)
+	if plan.Current != "" {
+		fmt.Fprintf(w, "- Current project: `%s`\n", plan.Current)
+	}
+	fmt.Fprintf(w, "- Dry run: %t\n\n", dryRun)
+	if len(plan.Items) == 0 {
+		fmt.Fprint(w, "- none\n")
+		return
+	}
+	for index, item := range plan.Items {
+		status := "missing"
+		if item.Exists {
+			status = "exists"
+		}
+		fmt.Fprintf(w, "%d. `%s` - %s - %s\n", index+1, item.Path, status, item.Reason)
+	}
+	if dryRun {
+		fmt.Fprint(w, "\nRun with `--execute` to remove these generated output paths.\n")
 	}
 }
 
@@ -430,7 +617,7 @@ Commands:
   query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
   doctor <path>     Check generated output health
-  workspace         Show workspace status or scan prioritized missing services
+  workspace         Show, scan, or clean workspace projects
   mcp               Start the read-only MCP stdio server
   version           Print build metadata
   help              Show this help
@@ -450,6 +637,8 @@ Examples:
   goregraph doctor .
   goregraph workspace status .
   goregraph workspace scan-missing . --top 5
+  goregraph workspace scan-all .
+  goregraph workspace clean . --execute
   goregraph mcp
   goregraph version
 `)
@@ -461,11 +650,15 @@ func printWorkspaceHelp(w io.Writer) {
 Commands:
   status [path]        Show workspace projects and loaded indexes without scanning
   scan-missing [path]  Show prioritized missing service scans; add --execute to scan
+  scan-all [path]      Scan every discovered project in the workspace
+  clean [path]         Show generated workspace outputs; add --execute to remove
 
 Examples:
   goregraph workspace status .
   goregraph workspace scan-missing .
   goregraph workspace scan-missing . --top 5 --execute
+  goregraph workspace scan-all .
+  goregraph workspace clean . --execute
 `)
 }
 

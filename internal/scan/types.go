@@ -431,6 +431,30 @@ type WorkspaceMissingScanItemRecord struct {
 	Status    string `json:"status,omitempty"`
 }
 
+type WorkspaceProjectScanPlanRecord struct {
+	WorkspaceRoot string                           `json:"workspace_root"`
+	Current       string                           `json:"current,omitempty"`
+	Items         []WorkspaceProjectScanItemRecord `json:"items"`
+}
+
+type WorkspaceProjectScanItemRecord struct {
+	Project string `json:"project"`
+	AbsPath string `json:"abs_path"`
+	Status  string `json:"status,omitempty"`
+}
+
+type WorkspaceCleanPlanRecord struct {
+	WorkspaceRoot string                     `json:"workspace_root"`
+	Current       string                     `json:"current,omitempty"`
+	Items         []WorkspaceCleanItemRecord `json:"items"`
+}
+
+type WorkspaceCleanItemRecord struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+	Exists bool   `json:"exists"`
+}
+
 type WorkspaceContractMatchRecord struct {
 	APIProject        string  `json:"api_project"`
 	APIHTTPMethod     string  `json:"api_http_method"`

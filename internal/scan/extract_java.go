@@ -16,7 +16,8 @@ var (
 	javaConstantLineRE   = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*;`)
 	javaCallRE           = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	javaNewCallRE        = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
-	javaHTTPCallRE       = regexp.MustCompile(`\b(get|post|put|delete|patch)\s*\(\s*"([^"]+)"`)
+	javaHTTPCallRE       = regexp.MustCompile(`\b(get|post|put|delete|patch)\s*\(([^)]*)\)`)
+	javaStringLiteralRE  = regexp.MustCompile(`"([^"]*)"`)
 )
 
 func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
@@ -410,10 +411,53 @@ func extractJavaHTTPRequests(line string, lineNo int) []JavaHTTPCallRecord {
 	var requests []JavaHTTPCallRecord
 	for _, match := range javaHTTPCallRE.FindAllStringSubmatch(line, -1) {
 		if len(match) == 3 {
-			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(match[1]), Path: match[2], Line: lineNo})
+			if path, ok := javaHTTPRequestPath(match[2]); ok {
+				requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(match[1]), Path: path, Line: lineNo})
+			}
 		}
 	}
 	return requests
+}
+
+func javaHTTPRequestPath(expression string) (string, bool) {
+	expression = strings.TrimSpace(expression)
+	literals := javaStringLiteralRE.FindAllStringSubmatchIndex(expression, -1)
+	if len(literals) == 0 || literals[0][0] != 0 {
+		return "", false
+	}
+
+	var b strings.Builder
+	lastEnd := 0
+	for _, literal := range literals {
+		if hasJavaConcatExpression(expression[lastEnd:literal[0]]) {
+			appendDynamicPathSegment(&b)
+		}
+		b.WriteString(expression[literal[2]:literal[3]])
+		lastEnd = literal[1]
+	}
+	if hasJavaConcatExpression(expression[lastEnd:]) {
+		appendDynamicPathSegment(&b)
+	}
+	path := strings.ReplaceAll(b.String(), "//", "/")
+	return path, strings.HasPrefix(path, "/")
+}
+
+func hasJavaConcatExpression(part string) bool {
+	part = strings.TrimSpace(part)
+	if part == "" {
+		return false
+	}
+	part = strings.Trim(part, "+ \t")
+	return part != ""
+}
+
+func appendDynamicPathSegment(b *strings.Builder) {
+	value := b.String()
+	if value == "" || strings.HasSuffix(value, "/") {
+		b.WriteString("{dynamic}")
+		return
+	}
+	b.WriteString("/{dynamic}")
 }
 
 func parseJavaExtends(tail string) string {

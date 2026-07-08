@@ -158,6 +158,11 @@ public class CadasterController {
     return ResponseEntity.ok(cadasterService.getUserCadasters());
   }
 
+  @GetMapping("/{cadasterId}")
+  public ResponseEntity<?> get(@PathVariable("cadasterId") final long cadasterId) {
+    return ResponseEntity.ok(cadasterService.getCadaster(cadasterId));
+  }
+
   @PostMapping(path = "/{cadasterId}/copy")
   public ResponseEntity<?> copy(@PathVariable("cadasterId") final long cadasterId, @RequestBody final CadasterCopyRequest request) {
     return ResponseEntity.ok(cadasterService.copyCadaster(cadasterId, request));
@@ -199,6 +204,10 @@ public class CadasterService {
 
   public List<CadasterEntity> getUserCadasters() {
     return cadasterRepository.findAll().stream().map(item -> item).toList();
+  }
+
+  public CadasterEntity getCadaster(final long cadasterId) {
+    return cadasterRepository.findById(cadasterId).orElseThrow();
   }
 
   public CadasterEntity copyCadaster(final long cadasterId, final CadasterCopyRequest request) {
@@ -258,6 +267,11 @@ class CadasterControllerTest {
   void importsFile() throws Exception {
     mockMvc.perform(post("/cadasters/42/import"));
   }
+
+  @Test
+  void getsDetails() throws Exception {
+    mockMvc.perform(get("/cadasters/" + CADASTER_ID));
+  }
 }
 `)
 	writeFile(t, root, "src/test/java/com/weka/demo/service/CadasterServiceTest.java", `package com.weka.demo.service;
@@ -306,6 +320,7 @@ class CadasterServiceTest {
 	assertHasSpringDependency(t, spring.Dependencies, "CadasterController", "CadasterService", "constructor")
 	assertHasSpringRepositoryEntity(t, spring.Repositories, "CadasterRepository", "CadasterEntity")
 	assertHasSpringEndpoint(t, spring.Endpoints, "GET", "/cadasters", "CadasterController", "gets")
+	assertHasSpringEndpoint(t, spring.Endpoints, "GET", "/cadasters/{cadasterId}", "CadasterController", "get")
 	assertHasSpringEndpoint(t, spring.Endpoints, "POST", "/cadasters/{cadasterId}/copy", "CadasterController", "copy")
 	assertHasSpringEndpoint(t, spring.Endpoints, "POST", "/cadasters/{cadasterId}/import", "CadasterController", "importFile")
 	assertHasSpringEndpointRequest(t, spring.Endpoints, "POST", "/cadasters/{cadasterId}/import", "multipart", "MultipartFile")
@@ -327,6 +342,7 @@ class CadasterServiceTest {
 	readJSON(t, filepath.Join(out, "test-map.json"), &testMapRecords)
 	assertHasMethodTestMap(t, testMapRecords, "CadasterServiceTest", "importsFile", "CadasterService", "importFile")
 	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "importsFile", "POST", "/cadasters/{cadasterId}/import")
+	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "getsDetails", "GET", "/cadasters/{cadasterId}")
 
 	var analyzers []AnalyzerRecord
 	readJSON(t, filepath.Join(out, "analyzers.json"), &analyzers)

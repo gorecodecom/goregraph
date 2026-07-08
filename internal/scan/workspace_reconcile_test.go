@@ -248,8 +248,8 @@ class TaskController {
 	}
 
 	frontendMatches := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-contract-matches.md"))
-	if !strings.Contains(frontendMatches, "missing_backend_route") {
-		t.Fatalf("frontend workspace contract overlay should classify indexed service mismatch as missing route:\n%s", frontendMatches)
+	if !strings.Contains(frontendMatches, "indexed_backend_route_missing") {
+		t.Fatalf("frontend workspace contract overlay should classify indexed service mismatch as scanned service route gap:\n%s", frontendMatches)
 	}
 
 	frontendDiagnostics := readText(t, filepath.Join(frontend, "goregraph-out", "diagnostics.md"))
@@ -297,8 +297,225 @@ func TestWorkspacePathMatchingDoesNotTreatStaticSegmentsAsRouteParams(t *testing
 	if matches[0].Issue == contractIssueMethodMismatch {
 		t.Fatalf("static path was matched too broadly against parameter route: %#v", matches[0])
 	}
-	if matches[0].Issue != contractIssueMissingRoute {
-		t.Fatalf("issue = %q, want %q: %#v", matches[0].Issue, contractIssueMissingRoute, matches[0])
+	if matches[0].Issue != contractIssueIndexedBackendRouteMissing {
+		t.Fatalf("issue = %q, want %q: %#v", matches[0].Issue, contractIssueIndexedBackendRouteMissing, matches[0])
+	}
+}
+
+func TestWorkspaceContractMatchesClassifyGatewayPrefixMatches(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-task", Kind: "backend", Service: "ms-task", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "GET",
+					Path:             "/api/tasks/{id}",
+					File:             "src/api/task.js",
+					Line:             12,
+					ServiceCandidate: "ms-task",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/tasks/{taskId}", Handler: "TaskController.get", File: "TaskController.java", Line: 24},
+			},
+		},
+	})
+
+	if len(matches) != 1 {
+		t.Fatalf("matches length = %d, want 1: %#v", len(matches), matches)
+	}
+	if matches[0].Issue != contractIssueGatewayOrProxyPrefix {
+		t.Fatalf("issue = %q, want %q: %#v", matches[0].Issue, contractIssueGatewayOrProxyPrefix, matches[0])
+	}
+	if matches[0].BackendProject != "microservices/ms-task" || matches[0].BackendPath != "/tasks/{taskId}" {
+		t.Fatalf("gateway prefix match did not retain backend route context: %#v", matches[0])
+	}
+}
+
+func TestWorkspaceContractMatchesNormalizeServiceAndConfigBasePrefixes(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-productservice", Kind: "backend", Service: "ms-productservice", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "GET",
+					Path:             "/productservice/users/{userId}/products/{baseCode}",
+					File:             "src/api/products.js",
+					Line:             12,
+					ServiceCandidate: "ms-productservice",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/ApplicationConfig.BASE_PATH/users/{userId}/products/{baseCode}", Handler: "ProductController.get", File: "ProductController.java", Line: 28},
+			},
+		},
+	})
+
+	if len(matches) != 1 {
+		t.Fatalf("matches length = %d, want 1: %#v", len(matches), matches)
+	}
+	if matches[0].Issue != contractIssueMatched || matches[0].Confidence != "RESOLVED" {
+		t.Fatalf("prefix-normalized route should resolve: %#v", matches[0])
+	}
+	if matches[0].BackendPath != "/users/{userId}/products/{baseCode}" {
+		t.Fatalf("BackendPath = %q, want normalized display path: %#v", matches[0].BackendPath, matches[0])
+	}
+}
+
+func TestWorkspaceContractMatchesSuggestSimilarBackendRoutes(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-task", Kind: "backend", Service: "ms-task", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "GET",
+					Path:             "/tasks/{id}/detail",
+					File:             "src/api/task.js",
+					Line:             18,
+					ServiceCandidate: "ms-task",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/tasks/{taskId}", Handler: "TaskController.get", File: "TaskController.java", Line: 24},
+				{Kind: "backend", HTTPMethod: "POST", Path: "/tasks/{taskId}/details", Handler: "TaskController.updateDetails", File: "TaskController.java", Line: 40},
+			},
+		},
+	})
+
+	if len(matches) != 1 {
+		t.Fatalf("matches length = %d, want 1: %#v", len(matches), matches)
+	}
+	if matches[0].Issue != contractIssueIndexedBackendRouteMissing {
+		t.Fatalf("issue = %q, want %q: %#v", matches[0].Issue, contractIssueIndexedBackendRouteMissing, matches[0])
+	}
+	if !strings.Contains(matches[0].Reason, "similar backend routes:") || !strings.Contains(matches[0].Reason, "POST /tasks/{taskId}/details") {
+		t.Fatalf("missing similar route hint in reason: %#v", matches[0])
+	}
+}
+
+func TestWorkspaceContractMatchesNormalizeSimilarBackendRouteHints(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-productservice", Kind: "backend", Service: "ms-productservice", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "GET",
+					Path:             "/productservice/users/{userId}/products/{baseCode}/detail",
+					File:             "src/api/product.js",
+					Line:             18,
+					ServiceCandidate: "ms-productservice",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/ApplicationConfig.BASE_PATH/users/{userId}/products/{baseCode}", Handler: "ProductController.get", File: "ProductController.java", Line: 24},
+			},
+		},
+	})
+
+	if len(matches) != 1 {
+		t.Fatalf("matches length = %d, want 1: %#v", len(matches), matches)
+	}
+	if !strings.Contains(matches[0].Reason, "GET /users/{userId}/products/{baseCode}") {
+		t.Fatalf("similar route hint was not normalized: %#v", matches[0])
+	}
+	if strings.Contains(matches[0].Reason, "ApplicationConfig.BASE_PATH") {
+		t.Fatalf("similar route hint leaked raw constant: %#v", matches[0])
+	}
+}
+
+func TestWorkspaceContractMatchesClassifyDynamicEndpointRemainders(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-documenttopic", Kind: "backend", Service: "ms-documenttopic", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "GET",
+					Path:             "/documenttopic/modules/{isbn}/{endpoint}",
+					File:             "src/api/topic.js",
+					Line:             18,
+					ServiceCandidate: "ms-documenttopic",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/documenttopic/modules/{isbn}/documents/new", Handler: "TopicController.new", File: "TopicController.java", Line: 24},
+			},
+		},
+	})
+
+	if len(matches) != 1 {
+		t.Fatalf("matches length = %d, want 1: %#v", len(matches), matches)
+	}
+	if matches[0].Issue != contractIssueDynamicEndpointUnresolved {
+		t.Fatalf("issue = %q, want %q: %#v", matches[0].Issue, contractIssueDynamicEndpointUnresolved, matches[0])
+	}
+	if !strings.Contains(matches[0].Reason, "dynamic endpoint segment") {
+		t.Fatalf("reason should explain dynamic endpoint segment: %#v", matches[0])
+	}
+}
+
+func TestWorkspaceContractMatchesClassifyMissingIndexedBackendRoute(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-documentexport", Kind: "backend", Service: "ms-documentexport", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "GET",
+					Path:             "/documentexport/modules/{isbn}/documents/{objectId}/availability",
+					File:             "src/api/export.js",
+					Line:             18,
+					ServiceCandidate: "ms-documentexport",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/documentexport/modules/{isbn}/documents/{objectId}/export/{exportId}/status", Handler: "ExportController.status", File: "ExportController.java", Line: 24},
+			},
+		},
+	})
+
+	if len(matches) != 1 {
+		t.Fatalf("matches length = %d, want 1: %#v", len(matches), matches)
+	}
+	if matches[0].Issue != contractIssueIndexedBackendRouteMissing {
+		t.Fatalf("issue = %q, want %q: %#v", matches[0].Issue, contractIssueIndexedBackendRouteMissing, matches[0])
+	}
+	if !strings.Contains(matches[0].Reason, "indexed backend service has no route") {
+		t.Fatalf("reason should explain missing route in indexed service: %#v", matches[0])
 	}
 }
 
@@ -837,6 +1054,63 @@ class CadasterController {
 		if !strings.Contains(nextActions, want) {
 			t.Fatalf("workspace next actions missing %q:\n%s", want, nextActions)
 		}
+	}
+}
+
+func TestWorkspaceFeatureFlowsResolveComponentLocalAPICallerWithoutRouteFlow(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-search", Kind: "backend", Service: "ms-search", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "PUT",
+					Path:             "/search",
+					File:             "apps/portal/src/components/search/search.jsx",
+					Line:             81,
+					Caller:           "fetchResults",
+					ServiceCandidate: "ms-search",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "PUT", Path: "/search", Handler: "SearchController.search", File: "SearchController.java", Line: 24},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "PUT", Path: "/search", Controller: "SearchController", Method: "search"},
+			},
+		},
+	})
+	flows := buildWorkspaceFeatureFlows([]workspaceIndexProject{
+		{
+			record: frontend,
+			codeFlows: []CodeFlowRecord{
+				{Kind: "frontend", App: "portal", RouteID: "portal:/search", Path: "/search", File: "apps/portal/src/routes.jsx", Line: 5, Handler: "SearchPage"},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "PUT", Path: "/search", Handler: "SearchController.search", File: "SearchController.java", Line: 24},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "PUT", Path: "/search", Controller: "SearchController", Method: "search"},
+			},
+		},
+	}, matches)
+
+	if len(flows) != 1 {
+		t.Fatalf("flows length = %d, want 1: %#v", len(flows), flows)
+	}
+	if flows[0].FrontendConfidence != "RESOLVED" {
+		t.Fatalf("FrontendConfidence = %q, want RESOLVED: %#v", flows[0].FrontendConfidence, flows[0])
+	}
+	if !strings.Contains(flows[0].FrontendReason, "component or page file") {
+		t.Fatalf("FrontendReason should explain component-local caller: %#v", flows[0])
 	}
 }
 

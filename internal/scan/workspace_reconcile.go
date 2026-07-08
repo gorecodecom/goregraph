@@ -467,11 +467,11 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		APICaller:        contract.Caller,
 		ServiceCandidate: contract.ServiceCandidate,
 	}
-	if contract.UnsafeDynamic {
-		base.Issue = contractIssueUnsafeDynamic
-		base.Confidence = "WEAK_MATCH"
-		base.ConfidenceScore = 0.35
-		base.Reason = "api path contains complex dynamic expression"
+	if isFrontendInternalAPIContract(contract) {
+		base.Issue = contractIssueFrontendInternalAPI
+		base.Confidence = "OUT_OF_SCOPE"
+		base.ConfidenceScore = 0.8
+		base.Reason = "frontend-internal API route; not matched against backend services"
 		return base
 	}
 	if route, ok := exactWorkspaceRoute(contract, routes); ok {
@@ -480,11 +480,32 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 	if route, ok := pathCompatibleWorkspaceRoute(contract, routes); ok {
 		return workspaceContractIssue(base, route, contractIssueMethodMismatch, "WEAK_MATCH", 0.45, "path pattern exists but http method differs")
 	}
+	if route, ok := gatewayPrefixCompatibleWorkspaceRoute(contract, routes); ok {
+		return workspaceContractIssue(base, route, contractIssueGatewayOrProxyPrefix, "WEAK_MATCH", 0.4, "path pattern matches after removing a common gateway or proxy prefix")
+	}
+	if contract.UnsafeDynamic {
+		base.Issue = contractIssueUnsafeDynamic
+		base.Confidence = "WEAK_MATCH"
+		base.ConfidenceScore = 0.35
+		base.Reason = "api path contains complex dynamic expression"
+		return base
+	}
 	if contract.ServiceCandidate != "" && !knownServices[contract.ServiceCandidate] {
 		base.Issue = contractIssueUnscanned
 		base.Confidence = "OUT_OF_SCOPE"
 		base.ConfidenceScore = 0.75
 		base.Reason = contract.ServiceCandidate + " has no indexed backend routes in this workspace"
+		return base
+	}
+	if contract.ServiceCandidate != "" && knownServices[contract.ServiceCandidate] {
+		issue, reason := indexedBackendRouteGapIssue(contract, contract.ServiceCandidate)
+		base.Issue = issue
+		base.Confidence = "WEAK_MATCH"
+		base.ConfidenceScore = 0.35
+		base.Reason = reason
+		if similar := similarWorkspaceRouteHints(contract, routes, 3); len(similar) > 0 {
+			base.Reason += "; similar backend routes: " + strings.Join(similar, ", ")
+		}
 		return base
 	}
 	base.Issue = contractIssueMissingRoute
@@ -501,7 +522,7 @@ func workspaceContractIssue(base WorkspaceContractMatchRecord, route workspaceBa
 		base.BackendService = serviceCandidateForPath(route.route.Path)
 	}
 	base.BackendHTTPMethod = route.route.HTTPMethod
-	base.BackendPath = route.route.Path
+	base.BackendPath = displayRoutePath(route.route.Path)
 	base.BackendHandler = route.route.Handler
 	base.BackendFile = route.route.File
 	base.BackendLine = route.route.Line
@@ -514,7 +535,7 @@ func workspaceContractIssue(base WorkspaceContractMatchRecord, route workspaceBa
 
 func exactWorkspaceRoute(contract APIContractRecord, routes []workspaceBackendRoute) (workspaceBackendRoute, bool) {
 	for _, route := range routes {
-		if strings.EqualFold(contract.HTTPMethod, route.route.HTTPMethod) && pathsCompatible(contract.Path, route.route.Path) {
+		if strings.EqualFold(contract.HTTPMethod, route.route.HTTPMethod) && pathsCompatibleWithKnownBasePrefixes(contract.Path, route.route.Path) {
 			return route, true
 		}
 	}
@@ -523,11 +544,35 @@ func exactWorkspaceRoute(contract APIContractRecord, routes []workspaceBackendRo
 
 func pathCompatibleWorkspaceRoute(contract APIContractRecord, routes []workspaceBackendRoute) (workspaceBackendRoute, bool) {
 	for _, route := range routes {
-		if pathsCompatible(contract.Path, route.route.Path) {
+		if pathsCompatibleWithKnownBasePrefixes(contract.Path, route.route.Path) {
 			return route, true
 		}
 	}
 	return workspaceBackendRoute{}, false
+}
+
+func gatewayPrefixCompatibleWorkspaceRoute(contract APIContractRecord, routes []workspaceBackendRoute) (workspaceBackendRoute, bool) {
+	for _, route := range routes {
+		if strings.EqualFold(contract.HTTPMethod, route.route.HTTPMethod) && pathsCompatibleWithoutGatewayPrefix(contract.Path, route.route.Path) {
+			return route, true
+		}
+	}
+	return workspaceBackendRoute{}, false
+}
+
+func similarWorkspaceRouteHints(contract APIContractRecord, routes []workspaceBackendRoute, limit int) []string {
+	codeRoutes := make([]CodeRouteRecord, 0, len(routes))
+	for _, route := range routes {
+		routeService := route.project.Service
+		if routeService == "" {
+			routeService = serviceCandidateForPath(route.route.Path)
+		}
+		if contract.ServiceCandidate != "" && routeService != "" && routeService != contract.ServiceCandidate {
+			continue
+		}
+		codeRoutes = append(codeRoutes, route.route)
+	}
+	return similarCodeRouteHints(contract, codeRoutes, limit)
 }
 
 func hasBackendRoutes(routes []CodeRouteRecord) bool {
@@ -637,7 +682,28 @@ func resolveWorkspaceFrontendContext(project workspaceIndexProject, match Worksp
 			best = candidate
 		}
 	}
+	if best.score <= 0.35 && isComponentOrPageFile(match.APIFile) {
+		return workspaceFrontendContext{
+			routeID:    best.routeID,
+			routePath:  best.routePath,
+			routeFile:  best.routeFile,
+			routeLine:  best.routeLine,
+			component:  best.component,
+			apiCaller:  match.APICaller,
+			steps:      best.steps,
+			confidence: "RESOLVED",
+			reason:     "API contract caller is declared in a frontend component or page file",
+			score:      0.78,
+		}
+	}
 	return best
+}
+
+func isComponentOrPageFile(path string) bool {
+	normalized := filepath.ToSlash(path)
+	return strings.Contains(normalized, "/components/") ||
+		strings.Contains(normalized, "/pages/") ||
+		strings.Contains(normalized, "/app/")
 }
 
 func scoreWorkspaceFrontendFlow(flow CodeFlowRecord, match WorkspaceContractMatchRecord) workspaceFrontendContext {
@@ -1000,6 +1066,77 @@ func WorkspaceMissingScanPlan(root string, cfg config.Config, top int) (Workspac
 		WorkspaceRoot: filepath.ToSlash(workspaceRoot),
 		Current:       registry.Current,
 		Top:           top,
+		Items:         items,
+	}, nil
+}
+
+// WorkspaceProjectScanPlan returns all discovered workspace projects to scan.
+func WorkspaceProjectScanPlan(root string, cfg config.Config) (WorkspaceProjectScanPlanRecord, error) {
+	currentAbs, err := filepath.Abs(root)
+	if err != nil {
+		return WorkspaceProjectScanPlanRecord{}, err
+	}
+	workspaceRoot, ok, err := resolveWorkspaceRoot(currentAbs, cfg.WorkspaceRoot)
+	if err != nil {
+		return WorkspaceProjectScanPlanRecord{}, err
+	}
+	if !ok {
+		return WorkspaceProjectScanPlanRecord{}, fmt.Errorf("no GoreGraph workspace detected")
+	}
+	projects, err := discoverWorkspaceProjects(workspaceRoot, currentAbs, cfg.OutputDir)
+	if err != nil {
+		return WorkspaceProjectScanPlanRecord{}, err
+	}
+	items := make([]WorkspaceProjectScanItemRecord, 0, len(projects))
+	for _, project := range projects {
+		items = append(items, WorkspaceProjectScanItemRecord{
+			Project: project.Path,
+			AbsPath: project.AbsPath,
+			Status:  project.Status,
+		})
+	}
+	return WorkspaceProjectScanPlanRecord{
+		WorkspaceRoot: filepath.ToSlash(workspaceRoot),
+		Current:       workspaceRel(workspaceRoot, currentAbs),
+		Items:         items,
+	}, nil
+}
+
+// WorkspaceCleanPlan returns generated GoreGraph output paths in a workspace.
+func WorkspaceCleanPlan(root string, cfg config.Config) (WorkspaceCleanPlanRecord, error) {
+	currentAbs, err := filepath.Abs(root)
+	if err != nil {
+		return WorkspaceCleanPlanRecord{}, err
+	}
+	workspaceRoot, ok, err := resolveWorkspaceRoot(currentAbs, cfg.WorkspaceRoot)
+	if err != nil {
+		return WorkspaceCleanPlanRecord{}, err
+	}
+	if !ok {
+		return WorkspaceCleanPlanRecord{}, fmt.Errorf("no GoreGraph workspace detected")
+	}
+	projects, err := discoverWorkspaceProjects(workspaceRoot, currentAbs, cfg.OutputDir)
+	if err != nil {
+		return WorkspaceCleanPlanRecord{}, err
+	}
+	items := make([]WorkspaceCleanItemRecord, 0, len(projects)+1)
+	for _, project := range projects {
+		path := filepath.Join(project.AbsPath, project.OutputDir)
+		items = append(items, WorkspaceCleanItemRecord{
+			Path:   filepath.ToSlash(path),
+			Reason: "project output for " + project.Path,
+			Exists: workspaceFileExists(path),
+		})
+	}
+	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
+	items = append(items, WorkspaceCleanItemRecord{
+		Path:   filepath.ToSlash(workspaceOut),
+		Reason: "workspace overlay output",
+		Exists: workspaceFileExists(workspaceOut),
+	})
+	return WorkspaceCleanPlanRecord{
+		WorkspaceRoot: filepath.ToSlash(workspaceRoot),
+		Current:       workspaceRel(workspaceRoot, currentAbs),
 		Items:         items,
 	}, nil
 }
@@ -1396,6 +1533,6 @@ func samePath(left, right string) bool {
 }
 
 func workspaceFileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
+	_, err := os.Stat(path)
+	return err == nil
 }

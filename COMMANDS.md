@@ -677,6 +677,67 @@ Execution behavior:
 - keeps existing project output locations from each project's config
 - stops on the first scan error and reports the failing project
 
+## `goregraph workspace scan-all [path]`
+
+Scans every project discovered in the detected workspace.
+
+Use when:
+
+- you want a fresh index for the full workspace
+- frontend and backend source changed and all project-local indexes should be rebuilt
+- you want workspace overlays refreshed after each project scan
+
+Examples:
+
+```bash
+goregraph workspace scan-all .
+goregraph workspace scan-all . --dry-run
+goregraph workspace scan-all frontend/frontend-monorepo --workspace /Users/name/projects/weka
+goregraph workspace scan-all . --no-update-gitignore
+```
+
+Default behavior:
+
+- scans every discovered workspace project
+- refreshes workspace overlays after each project scan
+- keeps each project's configured output directory
+- stops on the first scan error and reports the failing project
+
+Options:
+
+- `--dry-run`: show the scan plan without scanning or writing files.
+- `--workspace <path>`: force the workspace root used for discovery.
+- `--no-update-gitignore`: skip generated-output `.gitignore` updates while scanning.
+
+## `goregraph workspace clean [path]`
+
+Shows or removes generated GoreGraph output for a detected workspace.
+
+Use when:
+
+- you want to delete all project `goregraph-out/` directories in a workspace
+- you want to delete the workspace-level `.goregraph-workspace/` overlay directory
+- you want a clean rebuild before running `goregraph workspace scan-all`
+
+Examples:
+
+```bash
+goregraph workspace clean .
+goregraph workspace clean . --execute
+goregraph workspace clean . --workspace /Users/name/projects/weka
+```
+
+Default behavior:
+
+- dry run only
+- deletes nothing
+- lists project output directories and the workspace `.goregraph-workspace/` directory
+
+Options:
+
+- `--execute`: remove the listed generated output paths.
+- `--workspace <path>`: force the workspace root used for discovery.
+
 ## `goregraph mcp`
 
 Starts the read-only MCP stdio server.

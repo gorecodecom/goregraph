@@ -232,6 +232,100 @@ class TaskController {
 	}
 }
 
+func TestRunWorkspaceScanAllScansDiscoveredWorkspaceProjects(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	task := filepath.Join(workspace, "microservices", "ms-task")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
+		"  return fetch(`/cadasters/${id}`);\n"+
+		"}\n")
+	writeFile(t, cadaster, "src/main/java/com/example/CadasterController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @GetMapping("/{cadasterId}")
+  String get(@PathVariable String cadasterId) {
+    return cadasterId;
+  }
+}
+`)
+	writeFile(t, task, "README.md", "# ms-task\n")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "scan-all", workspace, "--no-update-gitignore"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	for _, project := range []string{"frontend/frontend-monorepo", "microservices/ms-cadaster", "microservices/ms-task"} {
+		if !strings.Contains(stdout.String(), "Scanned `"+project+"`") {
+			t.Fatalf("scan-all output missing %s:\n%s", project, stdout.String())
+		}
+	}
+	for _, out := range []string{
+		filepath.Join(frontend, "goregraph-out", "manifest.json"),
+		filepath.Join(cadaster, "goregraph-out", "manifest.json"),
+		filepath.Join(task, "goregraph-out", "manifest.json"),
+		filepath.Join(frontend, "goregraph-out", "workspace-contract-matches.json"),
+	} {
+		if _, err := os.Stat(out); err != nil {
+			t.Fatalf("scan-all should create %s: %v", out, err)
+		}
+	}
+}
+
+func TestRunWorkspaceCleanDryRunAndExecuteRemovesGeneratedWorkspaceOutput(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "README.md", "# ms-cadaster\n")
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"workspace", "scan-all", workspace, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan-all exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	var dryOut, dryErr bytes.Buffer
+
+	dryCode := Run([]string{"workspace", "clean", workspace}, &dryOut, &dryErr)
+
+	if dryCode != 0 {
+		t.Fatalf("dry-run exit code = %d, want 0; stderr=%s", dryCode, dryErr.String())
+	}
+	if !strings.Contains(dryOut.String(), "Dry run: true") || !strings.Contains(dryOut.String(), "goregraph-out") || !strings.Contains(dryOut.String(), ".goregraph-workspace") {
+		t.Fatalf("clean dry-run output missing expected paths:\n%s", dryOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(frontend, "goregraph-out", "manifest.json")); err != nil {
+		t.Fatalf("dry-run should keep frontend output: %v", err)
+	}
+	var execOut, execErr bytes.Buffer
+
+	execCode := Run([]string{"workspace", "clean", workspace, "--execute"}, &execOut, &execErr)
+
+	if execCode != 0 {
+		t.Fatalf("execute exit code = %d, want 0; stderr=%s", execCode, execErr.String())
+	}
+	for _, path := range []string{
+		filepath.Join(frontend, "goregraph-out"),
+		filepath.Join(cadaster, "goregraph-out"),
+		filepath.Join(workspace, ".goregraph-workspace"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("clean --execute should remove %s, err=%v\noutput:\n%s", path, err, execOut.String())
+		}
+	}
+	if !strings.Contains(execOut.String(), "Removed 3 GoreGraph output path(s)") {
+		t.Fatalf("clean execute output missing removal summary:\n%s", execOut.String())
+	}
+}
+
 func TestRunUpdateRefreshesCurrentProject(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# Demo\n")
@@ -440,7 +534,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 0.8.8",
+		"goregraph 0.8.9",
 		"commit:",
 		"built:",
 		"go:",
