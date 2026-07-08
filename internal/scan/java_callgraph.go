@@ -38,6 +38,9 @@ func buildJavaCallGraph(sources []JavaSourceRecord) CallGraphRecord {
 					if typ, ok := types[toOwner]; ok {
 						target.File = typ.File
 						target.Line = typ.Line
+						confidence = "EXTRACTED"
+						score = 0.85
+						reason = "type declaration matched"
 					}
 				}
 				if target.File == "" {

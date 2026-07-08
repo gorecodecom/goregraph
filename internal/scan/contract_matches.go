@@ -33,15 +33,15 @@ func buildContractMatches(contracts []APIContractRecord, routes []CodeRouteRecor
 			continue
 		}
 		if route, ok := pathCompatibleContractRoute(contract, backendRoutes); ok {
-			records = append(records, contractIssue(contract, route, contractIssueMethodMismatch, "WEAK_MATCH", 0.45, "path pattern exists but http method differs"))
+			records = append(records, contractIssue(contract, route, contractIssueMethodMismatch, "MISMATCH", 0.45, "path pattern exists but http method differs"))
 			continue
 		}
 		if route, ok := gatewayPrefixCompatibleContractRoute(contract, backendRoutes); ok {
-			records = append(records, contractIssue(contract, route, contractIssueGatewayOrProxyPrefix, "WEAK_MATCH", 0.4, "path pattern matches after removing a common gateway or proxy prefix"))
+			records = append(records, contractIssue(contract, route, contractIssueGatewayOrProxyPrefix, "PARTIAL_MATCH", 0.4, "path pattern matches after removing a common gateway or proxy prefix"))
 			continue
 		}
 		if contract.UnsafeDynamic {
-			records = append(records, contractIssue(contract, CodeRouteRecord{}, contractIssueUnsafeDynamic, "WEAK_MATCH", 0.35, "api path contains complex dynamic expression"))
+			records = append(records, contractIssue(contract, CodeRouteRecord{}, contractIssueUnsafeDynamic, "UNRESOLVED", 0.35, "api path contains complex dynamic expression"))
 			continue
 		}
 		if contract.ServiceCandidate != "" && !scannedServices[contract.ServiceCandidate] {
@@ -53,10 +53,10 @@ func buildContractMatches(contracts []APIContractRecord, routes []CodeRouteRecor
 			if similar := similarCodeRouteHints(contract, backendRoutes, 3); len(similar) > 0 {
 				reason += "; similar backend routes: " + strings.Join(similar, ", ")
 			}
-			records = append(records, contractIssue(contract, CodeRouteRecord{}, issue, "WEAK_MATCH", 0.35, reason))
+			records = append(records, contractIssue(contract, CodeRouteRecord{}, issue, "UNRESOLVED", 0.35, reason))
 			continue
 		}
-		records = append(records, contractIssue(contract, CodeRouteRecord{}, contractIssueMissingRoute, "WEAK_MATCH", 0.3, "no compatible backend route found"))
+		records = append(records, contractIssue(contract, CodeRouteRecord{}, contractIssueMissingRoute, "UNRESOLVED", 0.3, "no compatible backend route found"))
 	}
 	sort.Slice(records, func(i, j int) bool {
 		if records[i].APIFile != records[j].APIFile {

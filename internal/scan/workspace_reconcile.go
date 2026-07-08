@@ -482,14 +482,14 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		return workspaceContractIssue(base, route, contractIssueMatched, "RESOLVED", 0.9, "http method and path pattern match backend route")
 	}
 	if route, ok := pathCompatibleWorkspaceRoute(contract, routes); ok {
-		return workspaceContractIssue(base, route, contractIssueMethodMismatch, "WEAK_MATCH", 0.45, "path pattern exists but http method differs")
+		return workspaceContractIssue(base, route, contractIssueMethodMismatch, "MISMATCH", 0.45, "path pattern exists but http method differs")
 	}
 	if route, ok := gatewayPrefixCompatibleWorkspaceRoute(contract, routes); ok {
-		return workspaceContractIssue(base, route, contractIssueGatewayOrProxyPrefix, "WEAK_MATCH", 0.4, "path pattern matches after removing a common gateway or proxy prefix")
+		return workspaceContractIssue(base, route, contractIssueGatewayOrProxyPrefix, "PARTIAL_MATCH", 0.4, "path pattern matches after removing a common gateway or proxy prefix")
 	}
 	if contract.UnsafeDynamic {
 		base.Issue = contractIssueUnsafeDynamic
-		base.Confidence = "WEAK_MATCH"
+		base.Confidence = "UNRESOLVED"
 		base.ConfidenceScore = 0.35
 		base.Reason = "api path contains complex dynamic expression"
 		return base
@@ -504,7 +504,7 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 	if contract.ServiceCandidate != "" && knownServices[contract.ServiceCandidate] {
 		issue, reason := indexedBackendRouteGapIssue(contract, contract.ServiceCandidate)
 		base.Issue = issue
-		base.Confidence = "WEAK_MATCH"
+		base.Confidence = "UNRESOLVED"
 		base.ConfidenceScore = 0.35
 		base.Reason = reason
 		if similar := similarWorkspaceRouteHints(contract, routes, 3); len(similar) > 0 {
@@ -513,7 +513,7 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		return base
 	}
 	base.Issue = contractIssueMissingRoute
-	base.Confidence = "WEAK_MATCH"
+	base.Confidence = "UNRESOLVED"
 	base.ConfidenceScore = 0.3
 	base.Reason = "no compatible backend route found in indexed workspace services"
 	return base

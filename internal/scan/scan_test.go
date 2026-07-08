@@ -589,7 +589,11 @@ export function Router() {
 import ConnectedEdit from "./containers/Edit";
 
 export function Root() {
-  return <Fragment forRoute="/editieren"><ConnectedEdit /></Fragment>;
+  return <Fragment forRoute="/editieren"><ConnectedEdit />{ModalContainer()}</Fragment>;
+}
+`)
+	writeFile(t, root, "apps/vorschriftendienst/src/Root.tsx", `export function ModalContainer() {
+  return null;
 }
 `)
 	writeFile(t, root, "apps/portal/src/pages/Home.jsx", `import { GetHelper } from "../utils/requestHelper";
@@ -645,14 +649,21 @@ test("renders home", () => {
 	assertHasRouteID(t, routes, "portal:/", "Home")
 	assertHasRouteID(t, routes, "portal:/tasks", "TasksPage")
 	assertHasRouteID(t, routes, "portal:/editieren", "ConnectedEdit")
+	assertHasRouteConfidence(t, routes, "portal:/", "EXTRACTED")
 	assertNoRouteID(t, routes, "workspace-root:/archive")
 
 	var graph CallGraphRecord
 	readJSON(t, filepath.Join(root, "goregraph-out", "callgraph.json"), &graph)
+	assertHasCallGraphEdgeConfidence(t, graph, "loadHome", "GetHelper", "EXTRACTED")
+	assertNoCallGraphEdge(t, graph, "Root", "ModalContainer")
 	assertNoAnyCallGraphTarget(t, graph, "find")
 	assertNoAnyCallGraphTarget(t, graph, "text")
 	assertNoAnyCallGraphTarget(t, graph, "push")
 	assertNoAnyCallGraphTarget(t, graph, "block")
+
+	var testMap []TestMapRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "test-map.json"), &testMap)
+	assertHasTestMapTargetConfidence(t, testMap, "renders home", "Home", "MATCHED")
 
 	var packages PackageGraphRecord
 	readJSON(t, filepath.Join(root, "goregraph-out", "package-graph.json"), &packages)
@@ -858,8 +869,10 @@ class CadasterController {
 	readJSON(t, filepath.Join(root, "goregraph-out", "contract-matches.json"), &matches)
 	assertHasContractMatch(t, matches, "GET", "/cadasters/{id}", "GET", "/cadasters/{cadasterId}", "RESOLVED")
 	assertHasContractIssue(t, matches, "POST", "/cadasters/{id}", "method_mismatch")
+	assertHasContractConfidence(t, matches, "POST", "/cadasters/{id}", "MISMATCH")
 	assertHasContractIssue(t, matches, "DELETE", "/cadasters/{id}", "method_mismatch")
 	assertHasContractIssue(t, matches, "GET", "/cadasters/{dynamic}/{id}", "unsafe_dynamic")
+	assertHasContractConfidence(t, matches, "GET", "/cadasters/{dynamic}/{id}", "UNRESOLVED")
 
 	report := readText(t, filepath.Join(root, "goregraph-out", "contract-matches.md"))
 	if !strings.Contains(report, "GET `/cadasters/{id}` -> GET `/cadasters/{cadasterId}`") {
@@ -987,6 +1000,7 @@ class CadasterController {
 	readJSON(t, filepath.Join(root, "goregraph-out", "contract-matches.json"), &matches)
 	assertHasContractIssue(t, matches, "GET", "/tasks/{id}", "unscanned_service")
 	assertHasContractIssue(t, matches, "GET", "/cadasters/missing/detail", "indexed_backend_route_missing")
+	assertHasContractConfidence(t, matches, "GET", "/cadasters/missing/detail", "UNRESOLVED")
 
 	report := readText(t, filepath.Join(root, "goregraph-out", "contract-matches.md"))
 	if !strings.Contains(report, "unscanned_service") || !strings.Contains(report, "ms-task was not scanned") {
@@ -1372,6 +1386,16 @@ func assertHasContractIssue(t *testing.T, records []ContractMatchRecord, apiMeth
 	t.Fatalf("missing contract issue api=%s %q issue=%q in %#v", apiMethod, apiPath, issue, records)
 }
 
+func assertHasContractConfidence(t *testing.T, records []ContractMatchRecord, apiMethod, apiPath, confidence string) {
+	t.Helper()
+	for _, record := range records {
+		if record.APIHTTPMethod == apiMethod && record.APIPath == apiPath && record.Confidence == confidence {
+			return
+		}
+	}
+	t.Fatalf("missing contract confidence api=%s %q confidence=%q in %#v", apiMethod, apiPath, confidence, records)
+}
+
 func assertHasMavenEdge(t *testing.T, graph MavenGraphRecord, from, to string) {
 	t.Helper()
 	for _, edge := range graph.Edges {
@@ -1390,6 +1414,45 @@ func assertHasTestMapTarget(t *testing.T, records []TestMapRecord, testName, tar
 		}
 	}
 	t.Fatalf("missing test map test=%q target=%q in %#v", testName, targetName, records)
+}
+
+func assertHasTestMapTargetConfidence(t *testing.T, records []TestMapRecord, testName, targetName, confidence string) {
+	t.Helper()
+	for _, record := range records {
+		if record.TestMethod == testName && record.TargetMethod == targetName && record.Confidence == confidence {
+			return
+		}
+	}
+	t.Fatalf("missing test map test=%q target=%q confidence=%q in %#v", testName, targetName, confidence, records)
+}
+
+func assertHasRouteConfidence(t *testing.T, records []CodeRouteRecord, routeID, confidence string) {
+	t.Helper()
+	for _, record := range records {
+		if record.RouteID == routeID && record.Confidence == confidence {
+			return
+		}
+	}
+	t.Fatalf("missing route route_id=%q confidence=%q in %#v", routeID, confidence, records)
+}
+
+func assertHasCallGraphEdgeConfidence(t *testing.T, graph CallGraphRecord, fromMethod, toMethod, confidence string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.From.Method == fromMethod && edge.To.Method == toMethod && edge.Confidence == confidence {
+			return
+		}
+	}
+	t.Fatalf("missing callgraph edge %q -> %q confidence=%q in %#v", fromMethod, toMethod, confidence, graph.Edges)
+}
+
+func assertNoCallGraphEdge(t *testing.T, graph CallGraphRecord, fromMethod, toMethod string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.From.Method == fromMethod && edge.To.Method == toMethod {
+			t.Fatalf("unexpected callgraph edge %q -> %q in %#v", fromMethod, toMethod, graph.Edges)
+		}
+	}
 }
 
 func containsString(values []string, want string) bool {

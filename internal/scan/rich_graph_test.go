@@ -64,6 +64,37 @@ func TestRunWritesRichGraphForAllCurrentLanguages(t *testing.T) {
 	}
 }
 
+func TestJavaCallGraphMarksTypeOnlyTargetsAsExtracted(t *testing.T) {
+	graph := buildJavaCallGraph([]JavaSourceRecord{
+		{
+			File: "src/main/java/com/example/ExampleService.java",
+			Types: []JavaTypeRecord{
+				{Name: "ExampleService", Kind: "class", File: "src/main/java/com/example/ExampleService.java", Line: 1},
+			},
+			Fields: []JavaFieldRecord{
+				{Name: "repository", Type: "ExampleRepository", Owner: "ExampleService", File: "src/main/java/com/example/ExampleService.java", Line: 2},
+			},
+			Methods: []JavaMethodRecord{
+				{
+					Name:  "load",
+					Owner: "ExampleService",
+					File:  "src/main/java/com/example/ExampleService.java",
+					Line:  4,
+					Calls: []JavaCallRecord{{Receiver: "repository", Method: "findById", Line: 5}},
+				},
+			},
+		},
+		{
+			File: "src/main/java/com/example/ExampleRepository.java",
+			Types: []JavaTypeRecord{
+				{Name: "ExampleRepository", Kind: "interface", File: "src/main/java/com/example/ExampleRepository.java", Line: 1},
+			},
+		},
+	})
+
+	assertHasJavaCallGraphEdgeConfidence(t, graph.Edges, "ExampleService", "load", "ExampleRepository", "findById", "EXTRACTED")
+}
+
 func TestParseJavaMethodSignatureWithAnnotatedMultipartParameters(t *testing.T) {
 	line := `public ResponseEntity<?> importFile(@RequestPart(name = "csvFile") MultipartFile multipartFile, @RequestPart(name = "ownerUserId") String ownerUserId) throws Exception {`
 	name, returnType, params, visibility, ok := parseJavaMethodSignature(line)
@@ -601,6 +632,7 @@ class CadasterServiceTest {
 	assertHasCallGraphEdge(t, callGraph.Edges, "CadasterController", "copy", "CadasterService", "copyCadaster")
 	assertHasCallGraphEdge(t, callGraph.Edges, "CadasterController", "importFile", "CadasterService", "importFile")
 	assertHasCallGraphEdge(t, callGraph.Edges, "CadasterService", "importFile", "CadasterRepository", "findById")
+	assertHasJavaCallGraphEdgeConfidence(t, callGraph.Edges, "CadasterService", "importFile", "CadasterRepository", "findById", "EXTRACTED")
 	assertHasCallGraphEdge(t, callGraph.Edges, "CadasterService", "importFile", "CadasterRepository", "save")
 
 	var flows []SpringEndpointFlowRecord
@@ -786,6 +818,16 @@ func assertHasCallGraphEdge(t *testing.T, edges []CallGraphEdgeRecord, fromOwner
 		}
 	}
 	t.Fatalf("missing call graph edge %s.%s -> %s.%s in %#v", fromOwner, fromMethod, toOwner, toMethod, edges)
+}
+
+func assertHasJavaCallGraphEdgeConfidence(t *testing.T, edges []CallGraphEdgeRecord, fromOwner, fromMethod, toOwner, toMethod, confidence string) {
+	t.Helper()
+	for _, edge := range edges {
+		if edge.From.Owner == fromOwner && edge.From.Method == fromMethod && edge.To.Owner == toOwner && edge.To.Method == toMethod && edge.Confidence == confidence {
+			return
+		}
+	}
+	t.Fatalf("missing call graph edge %s.%s -> %s.%s confidence=%q in %#v", fromOwner, fromMethod, toOwner, toMethod, confidence, edges)
 }
 
 func assertHasEndpointFlowStep(t *testing.T, flows []SpringEndpointFlowRecord, method, path, owner, handler string) {

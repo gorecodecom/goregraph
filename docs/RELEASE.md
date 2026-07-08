@@ -198,6 +198,10 @@ Completed release checks:
 - same-class and unambiguous inherited Java HTTP helper methods are propagated into calling test methods without crossing generic `get/post/put/delete/patch` helper names between classes.
 - Java test HTTP paths strip query strings and fragments before endpoint matching.
 - endpoint test links from extracted HTTP requests are reported as `MATCHED` instead of `INFERRED`.
+- frontend route syntax, same-app callgraph edges, and direct JS/TS test-to-symbol links are reported as `EXTRACTED`/`MATCHED` instead of `INFERRED`.
+- name-only cross-app JS/TS callgraph and test-map edges are omitted instead of being kept as weak inferred noise.
+- contract gaps now use explicit `MISMATCH`, `PARTIAL_MATCH`, or `UNRESOLVED` confidence labels instead of `WEAK_MATCH`.
+- Java callgraph fallback edges with a concrete target type declaration are reported as extracted type matches.
 - `goregraph version` reports `0.8.9`.
 
 Remaining release-hardening items:

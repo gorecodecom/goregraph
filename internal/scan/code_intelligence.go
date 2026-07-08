@@ -296,9 +296,9 @@ func codeRoute(file FileRecord, framework, kind, method, path, handler string, l
 		RenderedComponents: rendered,
 		File:               file.Path,
 		Line:               line,
-		Confidence:         "INFERRED",
-		ConfidenceScore:    0.72,
-		Reason:             "pattern-match",
+		Confidence:         "EXTRACTED",
+		ConfidenceScore:    0.9,
+		Reason:             "syntax-pattern",
 	}
 }
 

@@ -30,6 +30,10 @@ func buildGenericCallGraph(code CodeIntelligenceRecord) CallGraphRecord {
 			if !ok {
 				continue
 			}
+			confidence := codeCallConfidence(function, target)
+			if confidence == "INFERRED" {
+				continue
+			}
 			edge := CallGraphEdgeRecord{
 				ID: stableID("call", function.File, function.Name, target.File, target.Name, fmt.Sprint(call.Line)),
 				From: MethodRefRecord{
@@ -47,8 +51,8 @@ func buildGenericCallGraph(code CodeIntelligenceRecord) CallGraphRecord {
 				Type:            "calls",
 				Line:            call.Line,
 				SourceFile:      function.File,
-				Confidence:      "INFERRED",
-				ConfidenceScore: 0.72,
+				Confidence:      confidence,
+				ConfidenceScore: codeCallConfidenceScore(confidence),
 				Reason:          codeCallReason(function.Language, call.Kind),
 			}
 			edges = append(edges, edge)
@@ -160,6 +164,10 @@ func buildGenericTestMap(code CodeIntelligenceRecord) []TestMapRecord {
 			if !ok || target.Kind == "test" {
 				continue
 			}
+			confidence := codeTestMapConfidence(function, target)
+			if confidence == "INFERRED" {
+				continue
+			}
 			records = append(records, TestMapRecord{
 				TestFile:        function.File,
 				TestClass:       function.Owner,
@@ -169,9 +177,9 @@ func buildGenericTestMap(code CodeIntelligenceRecord) []TestMapRecord {
 				TargetMethod:    target.Name,
 				Type:            "method",
 				Line:            call.Line,
-				Confidence:      "INFERRED",
-				ConfidenceScore: 0.7,
-				Reason:          function.Language + " test calls production symbol",
+				Confidence:      confidence,
+				ConfidenceScore: codeTestMapConfidenceScore(confidence),
+				Reason:          function.Language + " test calls resolved production symbol",
 			})
 		}
 	}
@@ -185,6 +193,40 @@ func buildGenericTestMap(code CodeIntelligenceRecord) []TestMapRecord {
 		return records[i].TargetMethod < records[j].TargetMethod
 	})
 	return records
+}
+
+func codeCallConfidence(from, target CodeFunctionRecord) string {
+	if from.File == target.File {
+		return "EXTRACTED"
+	}
+	if codeFileApp(from.File) != "" && codeFileApp(from.File) == codeFileApp(target.File) {
+		return "EXTRACTED"
+	}
+	if codeFilePackage(from.File) != "" && codeFilePackage(from.File) == codeFilePackage(target.File) {
+		return "EXTRACTED"
+	}
+	return "INFERRED"
+}
+
+func codeCallConfidenceScore(confidence string) float64 {
+	if confidence == "EXTRACTED" {
+		return 0.9
+	}
+	return 0.72
+}
+
+func codeTestMapConfidence(test, target CodeFunctionRecord) string {
+	if codeCallConfidence(test, target) == "EXTRACTED" {
+		return "MATCHED"
+	}
+	return "INFERRED"
+}
+
+func codeTestMapConfidenceScore(confidence string) float64 {
+	if confidence == "MATCHED" {
+		return 0.9
+	}
+	return 0.7
 }
 
 type codeFunctionIndex struct {
