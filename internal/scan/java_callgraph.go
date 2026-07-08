@@ -142,6 +142,7 @@ func buildEndpointFlows(index SpringIndex, graph CallGraphRecord) []SpringEndpoi
 func buildJavaTestMap(sources []JavaSourceRecord, endpoints []SpringEndpointRecord) []TestMapRecord {
 	methods := javaMethodsByOwner(sources)
 	endpointByRequest := endpointMatchers(endpoints)
+	helperHTTPRequests := javaHTTPRequestsByOwnerMethod(sources)
 	var records []TestMapRecord
 	for _, source := range sources {
 		if !strings.Contains(source.File, "src/test/") && !strings.Contains(source.File, "_test") {
@@ -169,13 +170,13 @@ func buildJavaTestMap(sources []JavaSourceRecord, endpoints []SpringEndpointReco
 					}
 				}
 			}
-			for _, request := range method.HTTPRequests {
+			for _, request := range javaTestMethodHTTPRequests(method, helperHTTPRequests) {
 				if endpoint, ok := endpointByRequest.match(request.HTTPMethod, request.Path); ok {
 					records = append(records, TestMapRecord{
 						TestFile: method.File, TestClass: method.Owner, TestMethod: method.Name,
 						TargetFile: endpoint.File, TargetClass: endpoint.Controller, TargetMethod: endpoint.Method,
 						HTTPMethod: endpoint.HTTPMethod, Path: endpoint.Path,
-						Type: "endpoint", Line: request.Line, Confidence: "INFERRED", ConfidenceScore: 0.82, Reason: "test HTTP request path matched endpoint pattern",
+						Type: "endpoint", Line: request.Line, Confidence: "MATCHED", ConfidenceScore: 0.9, Reason: "extracted test HTTP request matched endpoint pattern",
 					})
 				}
 			}
@@ -191,6 +192,98 @@ func buildJavaTestMap(sources []JavaSourceRecord, endpoints []SpringEndpointReco
 		return records[i].TargetClass < records[j].TargetClass
 	})
 	return records
+}
+
+func javaHTTPRequestsByOwnerMethod(sources []JavaSourceRecord) map[string]map[string][]JavaHTTPCallRecord {
+	requests := map[string]map[string][]JavaHTTPCallRecord{}
+	for _, source := range sources {
+		for _, method := range source.Methods {
+			if len(method.HTTPRequests) == 0 {
+				continue
+			}
+			if requests[method.Owner] == nil {
+				requests[method.Owner] = map[string][]JavaHTTPCallRecord{}
+			}
+			requests[method.Owner][method.Name] = append([]JavaHTTPCallRecord(nil), method.HTTPRequests...)
+		}
+	}
+	return requests
+}
+
+func javaTestMethodHTTPRequests(method JavaMethodRecord, helperRequests map[string]map[string][]JavaHTTPCallRecord) []JavaHTTPCallRecord {
+	requests := append([]JavaHTTPCallRecord(nil), method.HTTPRequests...)
+	for _, call := range method.Calls {
+		if call.Receiver != "" || call.TargetOwner != "" {
+			continue
+		}
+		if call.Method == method.Name {
+			continue
+		}
+		if helpers := helperRequests[method.Owner]; helpers != nil {
+			requests = append(requests, specializeJavaHelperHTTPRequests(helpers[call.Method], call.Arguments)...)
+			continue
+		}
+		if isGenericHTTPHelperName(call.Method) {
+			continue
+		}
+		if helpers := uniqueJavaHTTPRequestsByMethodName(helperRequests); helpers != nil {
+			requests = append(requests, specializeJavaHelperHTTPRequests(helpers[call.Method], call.Arguments)...)
+		}
+	}
+	return requests
+}
+
+func isGenericHTTPHelperName(name string) bool {
+	switch strings.ToLower(name) {
+	case "get", "post", "put", "delete", "patch":
+		return true
+	default:
+		return false
+	}
+}
+
+func uniqueJavaHTTPRequestsByMethodName(helperRequests map[string]map[string][]JavaHTTPCallRecord) map[string][]JavaHTTPCallRecord {
+	counts := map[string]int{}
+	byName := map[string][]JavaHTTPCallRecord{}
+	for _, methods := range helperRequests {
+		for name, requests := range methods {
+			counts[name]++
+			byName[name] = requests
+		}
+	}
+	for name, count := range counts {
+		if count != 1 {
+			delete(byName, name)
+		}
+	}
+	return byName
+}
+
+func specializeJavaHelperHTTPRequests(requests []JavaHTTPCallRecord, args []string) []JavaHTTPCallRecord {
+	if len(requests) == 0 {
+		return nil
+	}
+	suffix := javaLiteralPathArgument(args)
+	if suffix == "" {
+		return requests
+	}
+	specialized := append([]JavaHTTPCallRecord(nil), requests...)
+	for index := range specialized {
+		if !strings.HasSuffix(specialized[index].Path, suffix) {
+			specialized[index].Path += suffix
+		}
+	}
+	return specialized
+}
+
+func javaLiteralPathArgument(args []string) string {
+	for _, arg := range args {
+		arg = strings.TrimSpace(arg)
+		if len(arg) >= 2 && strings.HasPrefix(arg, "\"/") && strings.HasSuffix(arg, "\"") {
+			return strings.TrimSuffix(strings.TrimPrefix(arg, "\""), "\"")
+		}
+	}
+	return ""
 }
 
 func javaMethodsByOwner(sources []JavaSourceRecord) map[string]map[string]JavaMethodRecord {
@@ -296,6 +389,17 @@ func (set endpointMatcherSet) match(method, path string) (SpringEndpointRecord, 
 }
 
 func springEndpointPathMatches(pattern, path string) bool {
+	for _, patternVariant := range knownBasePrefixPathVariants(pattern) {
+		for _, pathVariant := range knownBasePrefixPathVariants(path) {
+			if springEndpointPathPatternMatches(patternVariant, pathVariant) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func springEndpointPathPatternMatches(pattern, path string) bool {
 	quoted := regexp.QuoteMeta(pattern)
 	expr := regexp.MustCompile(`\\\{[^/]+\\\}`).ReplaceAllString(quoted, `[^/]+`)
 	expr = "^" + expr + "$"

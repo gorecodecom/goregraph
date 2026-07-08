@@ -17,6 +17,7 @@ var workspaceGroupDirs = []string{"frontend", "frontends", "microservices", "ser
 type workspaceIndexProject struct {
 	record        WorkspaceProjectRecord
 	routes        []CodeRouteRecord
+	relations     []RelationRecord
 	contracts     []APIContractRecord
 	codeFlows     []CodeFlowRecord
 	endpointFlows []SpringEndpointFlowRecord
@@ -335,6 +336,9 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		}
 		loaded := workspaceIndexProject{record: project}
 		if err := readWorkspaceJSON(filepath.Join(out, "routes.json"), &loaded.routes); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		if err := readWorkspaceJSON(filepath.Join(out, "relations.json"), &loaded.relations); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		if err := readWorkspaceJSON(filepath.Join(out, "api-contracts.json"), &loaded.contracts); err != nil && !os.IsNotExist(err) {
@@ -682,6 +686,22 @@ func resolveWorkspaceFrontendContext(project workspaceIndexProject, match Worksp
 			best = candidate
 		}
 	}
+	if best.score <= 0.35 {
+		if relation, ok := frontendRelationToAPIFile(project.relations, match.APIFile, apiApp); ok {
+			return workspaceFrontendContext{
+				routeID:    best.routeID,
+				routePath:  best.routePath,
+				routeFile:  best.routeFile,
+				routeLine:  best.routeLine,
+				component:  componentNameFromPath(relation.From),
+				apiCaller:  match.APICaller,
+				steps:      best.steps,
+				confidence: "RESOLVED",
+				reason:     "frontend relation reaches API contract file",
+				score:      0.84,
+			}
+		}
+	}
 	if best.score <= 0.35 && isComponentOrPageFile(match.APIFile) {
 		return workspaceFrontendContext{
 			routeID:    best.routeID,
@@ -696,7 +716,75 @@ func resolveWorkspaceFrontendContext(project workspaceIndexProject, match Worksp
 			score:      0.78,
 		}
 	}
+	if best.score <= 0.35 && isContainerFile(match.APIFile) {
+		return workspaceFrontendContext{
+			routeID:    best.routeID,
+			routePath:  best.routePath,
+			routeFile:  best.routeFile,
+			routeLine:  best.routeLine,
+			component:  best.component,
+			apiCaller:  match.APICaller,
+			steps:      best.steps,
+			confidence: "RESOLVED",
+			reason:     "API contract caller is declared in a frontend container file",
+			score:      0.76,
+		}
+	}
+	if best.score <= 0.35 && isAppRootFile(match.APIFile) {
+		return workspaceFrontendContext{
+			routeID:    best.routeID,
+			routePath:  best.routePath,
+			routeFile:  best.routeFile,
+			routeLine:  best.routeLine,
+			component:  best.component,
+			apiCaller:  match.APICaller,
+			steps:      best.steps,
+			confidence: "RESOLVED",
+			reason:     "API contract caller is declared in an app root file",
+			score:      0.76,
+		}
+	}
+	if best.score == 0 && isPackageUIFile(match.APIFile) {
+		return workspaceFrontendContext{
+			apiCaller:  match.APICaller,
+			confidence: "RESOLVED",
+			reason:     "API contract caller is declared in a package UI file",
+			score:      0.72,
+		}
+	}
+	if best.score == 0 && isPackageUtilityFile(match.APIFile) {
+		return workspaceFrontendContext{
+			apiCaller:  match.APICaller,
+			confidence: "RESOLVED",
+			reason:     "API contract caller is declared in a package utility file",
+			score:      0.68,
+		}
+	}
 	return best
+}
+
+func frontendRelationToAPIFile(relations []RelationRecord, apiFile, apiApp string) (RelationRecord, bool) {
+	for _, relation := range relations {
+		if relation.To != apiFile {
+			continue
+		}
+		if relation.Type != "calls" && relation.Type != "imports_internal" && relation.Type != "imports" {
+			continue
+		}
+		if apiApp != "" && codeFileApp(relation.From) != "" && codeFileApp(relation.From) != apiApp {
+			continue
+		}
+		if isComponentOrPageFile(relation.From) || isContainerFile(relation.From) || isAppRootFile(relation.From) {
+			return relation, true
+		}
+	}
+	return RelationRecord{}, false
+}
+
+func componentNameFromPath(path string) string {
+	base := filepath.Base(filepath.ToSlash(path))
+	ext := filepath.Ext(base)
+	return strings.TrimSuffix(base, ext)
 }
 
 func isComponentOrPageFile(path string) bool {
@@ -704,6 +792,29 @@ func isComponentOrPageFile(path string) bool {
 	return strings.Contains(normalized, "/components/") ||
 		strings.Contains(normalized, "/pages/") ||
 		strings.Contains(normalized, "/app/")
+}
+
+func isContainerFile(path string) bool {
+	return strings.Contains(filepath.ToSlash(path), "/containers/")
+}
+
+func isAppRootFile(path string) bool {
+	normalized := filepath.ToSlash(path)
+	return strings.HasPrefix(normalized, "apps/") && strings.HasSuffix(normalized, "/src/Root.tsx")
+}
+
+func isPackageUIFile(path string) bool {
+	normalized := filepath.ToSlash(path)
+	return strings.HasPrefix(normalized, "packages/") &&
+		(strings.Contains(normalized, "/components/") ||
+			strings.Contains(normalized, "/organisms/") ||
+			strings.Contains(normalized, "/molecules/") ||
+			strings.Contains(normalized, "/atoms/"))
+}
+
+func isPackageUtilityFile(path string) bool {
+	normalized := filepath.ToSlash(path)
+	return strings.HasPrefix(normalized, "packages/") && strings.Contains(normalized, "/src/utils/")
 }
 
 func scoreWorkspaceFrontendFlow(flow CodeFlowRecord, match WorkspaceContractMatchRecord) workspaceFrontendContext {
@@ -784,7 +895,7 @@ func workspaceFeatureTests(tests []TestMapRecord, flow SpringEndpointFlowRecord,
 }
 
 func workspaceFeatureTestMatches(test TestMapRecord, flow SpringEndpointFlowRecord, match WorkspaceContractMatchRecord) bool {
-	if test.Type == "endpoint" && strings.EqualFold(test.HTTPMethod, match.BackendHTTPMethod) && pathsCompatible(test.Path, match.BackendPath) {
+	if test.Type == "endpoint" && strings.EqualFold(test.HTTPMethod, match.BackendHTTPMethod) && pathsCompatibleWithKnownBasePrefixes(test.Path, match.BackendPath) {
 		return true
 	}
 	if flow.Controller != "" && test.TargetClass == flow.Controller && test.TargetMethod == flow.Method {
@@ -962,14 +1073,13 @@ func renderWorkspaceNextActionsReport(context WorkspaceContextRecord, matches []
 			continue
 		}
 		missingTests++
-		b.WriteString(fmt.Sprintf("- %s `%s` from `%s` `%s:%d` -> `%s.%s`",
+		b.WriteString(fmt.Sprintf("- %s `%s` from `%s` `%s:%d` -> `%s`",
 			flow.HTTPMethod,
 			flow.Path,
 			flow.FrontendProject,
 			flow.FrontendFile,
 			flow.FrontendLine,
-			emptyAsNone(flow.BackendController),
-			emptyAsNone(flow.BackendMethod),
+			qualifiedName(flow.BackendController, flow.BackendMethod),
 		))
 		if flow.TestReason != "" {
 			b.WriteString(fmt.Sprintf(" (%s)", flow.TestReason))
@@ -1307,10 +1417,7 @@ func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) str
 		}
 		b.WriteString(fmt.Sprintf("- Frontend API: `%s:%d` `%s`\n", record.FrontendFile, record.FrontendLine, emptyAsNone(record.FrontendCaller)))
 		b.WriteString(fmt.Sprintf("- Frontend project: `%s`\n", record.FrontendProject))
-		backendName := record.BackendController + "." + record.BackendMethod
-		if backendName == "." {
-			backendName = record.BackendMethod
-		}
+		backendName := qualifiedName(record.BackendController, record.BackendMethod)
 		b.WriteString(fmt.Sprintf("- Backend: `%s` `%s` -> `%s` in `%s:%d`\n", record.BackendProject, emptyAsNone(record.BackendService), emptyAsNone(backendName), record.BackendFile, record.BackendLine))
 		b.WriteString("- Backend steps:\n")
 		if len(record.BackendSteps) == 0 {
@@ -1336,10 +1443,7 @@ func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) str
 			}
 		} else {
 			for _, test := range record.Tests {
-				label := test.TestClass + "." + test.TestMethod
-				if label == "." {
-					label = test.TestMethod
-				}
+				label := qualifiedName(test.TestClass, test.TestMethod)
 				b.WriteString(fmt.Sprintf("  - `%s` in `%s` (%s", emptyAsNone(label), test.TestFile, test.Confidence))
 				if test.HTTPMethod != "" && test.Path != "" {
 					b.WriteString(fmt.Sprintf(", %s `%s`", test.HTTPMethod, test.Path))

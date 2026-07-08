@@ -191,6 +191,13 @@ Completed release checks:
 - backend route paths and similar-route hints are rendered with expanded controller/config constants for readable reports.
 - component/page-local API callers can promote otherwise weak frontend route context to resolved feature-flow context.
 - MockMvc tests with Java string-concatenated request paths are normalized with dynamic placeholders for stronger endpoint test mapping.
+- workspace reports no longer render missing owners as `none.ControllerName`.
+- package UI, package utility, app root, container-local, and relation-backed frontend API callers resolve workspace feature-flow context.
+- frontend `relations.json` is loaded into the workspace overlay so component/page/container imports can resolve API caller context.
+- WebTestClient request chains, MockMvc builder references, local URI variables, Java `String.format(...)` request paths, and `ApplicationConfig.BASE_PATH + ...` test paths are extracted for endpoint test mapping.
+- same-class and unambiguous inherited Java HTTP helper methods are propagated into calling test methods without crossing generic `get/post/put/delete/patch` helper names between classes.
+- Java test HTTP paths strip query strings and fragments before endpoint matching.
+- endpoint test links from extracted HTTP requests are reported as `MATCHED` instead of `INFERRED`.
 - `goregraph version` reports `0.8.9`.
 
 Remaining release-hardening items:

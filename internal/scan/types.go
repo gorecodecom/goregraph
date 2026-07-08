@@ -569,6 +569,8 @@ type JavaMethodRecord struct {
 	Annotations  []JavaAnnotationRecord `json:"annotations,omitempty"`
 	Calls        []JavaCallRecord       `json:"calls,omitempty"`
 	HTTPRequests []JavaHTTPCallRecord   `json:"http_requests,omitempty"`
+	StringVars   map[string]string      `json:"-"`
+	PendingHTTP  string                 `json:"-"`
 }
 
 type JavaFieldRecord struct {
@@ -595,10 +597,11 @@ type JavaAnnotationRecord struct {
 }
 
 type JavaCallRecord struct {
-	Receiver    string `json:"receiver,omitempty"`
-	TargetOwner string `json:"target_owner,omitempty"`
-	Method      string `json:"method"`
-	Line        int    `json:"line"`
+	Receiver    string   `json:"receiver,omitempty"`
+	TargetOwner string   `json:"target_owner,omitempty"`
+	Method      string   `json:"method"`
+	Line        int      `json:"line"`
+	Arguments   []string `json:"-"`
 }
 
 type JavaHTTPCallRecord struct {

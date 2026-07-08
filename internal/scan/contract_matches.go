@@ -208,6 +208,9 @@ func expandKnownPathConstants(path string) string {
 func knownBasePrefixPathVariants(path string) []string {
 	variants := []string{path}
 	expanded := expandKnownPathConstants(path)
+	if expanded != path {
+		variants = append(variants, expanded)
+	}
 	parts := routeParts(expanded)
 	if len(parts) < 2 {
 		return variants

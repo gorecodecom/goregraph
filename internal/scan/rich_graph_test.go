@@ -85,6 +85,228 @@ func TestParseJavaMethodSignatureWithAnnotatedMultipartParameters(t *testing.T) 
 	}
 }
 
+func TestSpringEndpointPathMatchesKnownBasePrefixes(t *testing.T) {
+	if !springEndpointPathMatches("/ApplicationConfig.BASE_PATH/cadasters/{cadasterId}/regulations/{objectId}/tasks", "/cadastertask/cadasters/101/regulations/10/tasks") {
+		t.Fatal("spring endpoint path matcher should treat config base and service prefixes as compatible")
+	}
+}
+
+func TestExtractJavaSourceFindsHelperHTTPRequests(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/test/java/DemoTest.java", Language: "java"}, `class DemoTest {
+  @Test
+  void updatesStateWithHelperMethod() throws Exception {
+    mockMvc.perform(putStateRequestFor(CADASTER_ID));
+  }
+
+  private MockHttpServletRequestBuilder putStateRequestFor(final long cadasterId) {
+    return MockMvcRequestBuilders.put("/cadasters/%d/state".formatted(cadasterId));
+  }
+}`)
+
+	var testMethod JavaMethodRecord
+	var helper JavaMethodRecord
+	for _, method := range source.Methods {
+		switch method.Name {
+		case "updatesStateWithHelperMethod":
+			testMethod = method
+		case "putStateRequestFor":
+			helper = method
+		}
+	}
+	if !hasJavaCall(testMethod.Calls, "putStateRequestFor") {
+		t.Fatalf("test method did not record helper call: %#v", testMethod.Calls)
+	}
+	if len(helper.HTTPRequests) != 1 {
+		t.Fatalf("helper HTTP request count = %d, want 1: %#v", len(helper.HTTPRequests), helper.HTTPRequests)
+	}
+	if helper.HTTPRequests[0].HTTPMethod != "PUT" || helper.HTTPRequests[0].Path != "/cadasters/{dynamic}/state" {
+		t.Fatalf("unexpected helper HTTP request: %#v", helper.HTTPRequests[0])
+	}
+}
+
+func TestExtractJavaSourceKeepsApplicationConfigBasePathPrefix(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/test/java/DemoTest.java", Language: "java"}, `class DemoTest {
+  @Test
+  void getsTasks() throws Exception {
+    mockMvc.perform(get(ApplicationConfig.BASE_PATH + "/services/" + KNOWN_MODULE + "/tasks"));
+  }
+}`)
+
+	if len(source.Methods) != 1 {
+		t.Fatalf("method count = %d, want 1: %#v", len(source.Methods), source.Methods)
+	}
+	requests := source.Methods[0].HTTPRequests
+	if len(requests) != 1 {
+		t.Fatalf("HTTP request count = %d, want 1: %#v", len(requests), requests)
+	}
+	if requests[0].HTTPMethod != "GET" || requests[0].Path != "/ApplicationConfig.BASE_PATH/services/{dynamic}/tasks" {
+		t.Fatalf("unexpected request: %#v", requests[0])
+	}
+	if !springEndpointPathMatches("/ApplicationConfig.BASE_PATH/services/{serviceCode}/tasks", requests[0].Path) {
+		t.Fatalf("request path should match unresolved ApplicationConfig endpoint: %s", requests[0].Path)
+	}
+}
+
+func TestExtractJavaSourceStripsHTTPTestQueryString(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/test/java/DemoTest.java", Language: "java"}, `class DemoTest {
+  @Test
+  void autocompletes() throws Exception {
+    mockMvc.perform(get("/search/autocomplete?search=was&authorisation=RDBV"));
+  }
+}`)
+
+	requests := source.Methods[0].HTTPRequests
+	if len(requests) != 1 {
+		t.Fatalf("HTTP request count = %d, want 1: %#v", len(requests), requests)
+	}
+	if requests[0].Path != "/search/autocomplete" {
+		t.Fatalf("request path = %q, want /search/autocomplete", requests[0].Path)
+	}
+}
+
+func TestExtractJavaSourceReadsStringFormatHTTPPath(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/test/java/DemoTest.java", Language: "java"}, `class DemoTest {
+  @Test
+  void downloadsBinary() throws Exception {
+    mockMvc.perform(get(String.format(ApplicationConfig.BASE_PATH + "/modules/%s/downloads/binary/%s", isbn, objectId)));
+  }
+}`)
+
+	requests := source.Methods[0].HTTPRequests
+	if len(requests) != 1 {
+		t.Fatalf("HTTP request count = %d, want 1: %#v", len(requests), requests)
+	}
+	if requests[0].Path != "/ApplicationConfig.BASE_PATH/modules/{dynamic}/downloads/binary/{dynamic}" {
+		t.Fatalf("request path = %q", requests[0].Path)
+	}
+}
+
+func TestBuildJavaTestMapMatchesRegulationChangeBaseControllerConstants(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/test/java/RegulationChangesSaveRelevantForControllerTest.java", Language: "java"}, `class RegulationChangesSaveRelevantForControllerTest {
+  @Test
+  public void savesRelevantFor() throws Exception {
+    mockMvc.perform(buildPut(cadasterId, lra, objectId));
+  }
+
+  private MockHttpServletRequestBuilder buildPut(final Long cadasterId, final Timestamp lra, final Long objectId)
+      throws JacksonException {
+    return put("/cadasters/" + cadasterId + "/regulations/" + objectId + "/changes/" + lra.getTime());
+  }
+}`)
+	endpoints := []SpringEndpointRecord{{
+		HTTPMethod: "PUT",
+		Path:       "/RegulationChangeBaseController.PATH_BASE/{cadasterId}/regulations/{objectId}/changes/{lraTimestamp}",
+		Controller: "RegulationChangesController",
+		Method:     "editRegulationChangeDetails",
+		File:       "src/main/java/RegulationChangesController.java",
+	}}
+	var testMethod JavaMethodRecord
+	var helper JavaMethodRecord
+	for _, method := range source.Methods {
+		switch method.Name {
+		case "savesRelevantFor":
+			testMethod = method
+		case "buildPut":
+			helper = method
+		}
+	}
+	if !hasJavaCall(testMethod.Calls, "buildPut") {
+		t.Fatalf("test method did not record helper call: %#v", testMethod.Calls)
+	}
+	if len(helper.HTTPRequests) != 1 {
+		t.Fatalf("helper HTTP request count = %d, want 1: %#v", len(helper.HTTPRequests), helper.HTTPRequests)
+	}
+	if !springEndpointPathMatches(endpoints[0].Path, helper.HTTPRequests[0].Path) {
+		t.Fatalf("endpoint path %q did not match helper path %q", endpoints[0].Path, helper.HTTPRequests[0].Path)
+	}
+
+	records := buildJavaTestMap([]JavaSourceRecord{source}, endpoints)
+	assertHasEndpointTestMap(t, records, "RegulationChangesSaveRelevantForControllerTest", "savesRelevantFor", "PUT", endpoints[0].Path)
+}
+
+func TestBuildJavaTestMapPropagatesInheritedHTTPHelper(t *testing.T) {
+	base := extractJavaSource(FileRecord{Path: "src/test/java/ControllerBaseTest.java", Language: "java"}, `class ControllerBaseTest {
+  protected MockHttpServletRequestBuilder getForUser(final String isbn, final Optional<Long> objectId, final String suffix) {
+    return get("/documentinfo/modules/" + isbn + "/documents/" + objectId.orElseThrow() + suffix);
+  }
+}`)
+	test := extractJavaSource(FileRecord{Path: "src/test/java/DocumentAuthorsControllerTest.java", Language: "java"}, `class DocumentAuthorsControllerTest extends ControllerBaseTest {
+  @Test
+  void getsAuthors() throws Exception {
+    mockMvc.perform(getForUser(KNOWN_MODULE, Optional.of(KNOWN_OBJECT), "/authors"));
+  }
+}`)
+	endpoints := []SpringEndpointRecord{{
+		HTTPMethod: "GET",
+		Path:       "/documentinfo/modules/{isbn}/documents/{objectId}/authors",
+		Controller: "DocumentController",
+		Method:     "getAuthors",
+		File:       "src/main/java/DocumentController.java",
+	}}
+	var testMethod JavaMethodRecord
+	for _, method := range test.Methods {
+		if method.Name == "getsAuthors" {
+			testMethod = method
+		}
+	}
+	if !hasJavaCall(testMethod.Calls, "getForUser") {
+		t.Fatalf("test method did not record getForUser call: %#v", testMethod.Calls)
+	}
+	var helperCall JavaCallRecord
+	for _, call := range testMethod.Calls {
+		if call.Method == "getForUser" {
+			helperCall = call
+		}
+	}
+	var helper JavaMethodRecord
+	for _, method := range base.Methods {
+		if method.Name == "getForUser" {
+			helper = method
+		}
+	}
+	if len(helper.HTTPRequests) != 1 {
+		t.Fatalf("helper HTTP request count = %d, want 1: %#v", len(helper.HTTPRequests), helper.HTTPRequests)
+	}
+	specialized := specializeJavaHelperHTTPRequests(helper.HTTPRequests, helperCall.Arguments)
+	if len(specialized) != 1 || specialized[0].Path != "/documentinfo/modules/{dynamic}/documents/{dynamic}/authors" {
+		t.Fatalf("unexpected specialized helper requests: %#v from args %#v", specialized, helperCall.Arguments)
+	}
+	if !springEndpointPathMatches(endpoints[0].Path, specialized[0].Path) {
+		t.Fatalf("endpoint path %q did not match specialized helper path %q", endpoints[0].Path, specialized[0].Path)
+	}
+
+	records := buildJavaTestMap([]JavaSourceRecord{base, test}, endpoints)
+	assertHasEndpointTestMap(t, records, "DocumentAuthorsControllerTest", "getsAuthors", "GET", endpoints[0].Path)
+}
+
+func TestBuildJavaTestMapDoesNotPropagateGenericHTTPHelperAcrossClasses(t *testing.T) {
+	binary := extractJavaSource(FileRecord{Path: "src/test/java/BinaryControllerTest.java", Language: "java"}, `class BinaryControllerTest {
+  private RequestBuilder get(final String objectId, final String isbn) {
+    return MockMvcRequestBuilders.get(String.format(ApplicationConfig.BASE_PATH + "/modules/%s/downloads/binary/%s", isbn, objectId));
+  }
+}`)
+	search := extractJavaSource(FileRecord{Path: "src/test/java/SearchControllerTest.java", Language: "java"}, `class SearchControllerTest {
+  @Test
+  void searches() throws Exception {
+    mockMvc.perform(get(KNOWN_MODULE, 800, Optional.of("query")));
+  }
+}`)
+	endpoints := []SpringEndpointRecord{{
+		HTTPMethod: "GET",
+		Path:       "/ApplicationConfig.BASE_PATH/modules/{isbn}/downloads/binary/{objectId}",
+		Controller: "DocumentDownloadBinaryController",
+		Method:     "getBinary",
+		File:       "src/main/java/DocumentDownloadBinaryController.java",
+	}}
+
+	records := buildJavaTestMap([]JavaSourceRecord{binary, search}, endpoints)
+	for _, record := range records {
+		if record.TestClass == "SearchControllerTest" {
+			t.Fatalf("generic cross-class get helper was incorrectly propagated: %#v", records)
+		}
+	}
+}
+
 func TestExtractJavaSourceDoesNotTreatCatchAsMethod(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/SecurityConfig.java", Language: "java"}, `class SecurityConfig {
     void configure() {
@@ -160,6 +382,16 @@ public class CadasterController {
 
   @GetMapping("/{cadasterId}")
   public ResponseEntity<?> get(@PathVariable("cadasterId") final long cadasterId) {
+    return ResponseEntity.ok(cadasterService.getCadaster(cadasterId));
+  }
+
+  @PutMapping("/{cadasterId}/copy")
+  public ResponseEntity<?> updateCopy(@PathVariable("cadasterId") final long cadasterId, @RequestBody final CadasterCopyRequest request) {
+    return ResponseEntity.ok(cadasterService.copyCadaster(cadasterId, request));
+  }
+
+  @PutMapping("/{cadasterId}/state")
+  public ResponseEntity<?> updateState(@PathVariable("cadasterId") final long cadasterId) {
     return ResponseEntity.ok(cadasterService.getCadaster(cadasterId));
   }
 
@@ -258,10 +490,14 @@ public class CadasterEntity {
 	writeFile(t, root, "src/test/java/com/weka/demo/controller/CadasterControllerTest.java", `package com.weka.demo.controller;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.test.web.servlet.MockMvc;
 
 class CadasterControllerTest {
   private MockMvc mockMvc;
+  private WebTestClient client;
 
   @Test
   void importsFile() throws Exception {
@@ -269,8 +505,41 @@ class CadasterControllerTest {
   }
 
   @Test
+  void importsFileFromUriVariable() throws Exception {
+    final String uri = "/cadasters/42/import";
+    mockMvc.perform(post(uri));
+  }
+
+  @Test
   void getsDetails() throws Exception {
     mockMvc.perform(get("/cadasters/" + CADASTER_ID));
+  }
+
+  @Test
+  void updatesCopyWithBuilderHelper() throws Exception {
+    mockMvc.perform(buildRequest(MockMvcRequestBuilders::put, "/cadasters/" + CADASTER_ID + "/copy"));
+  }
+
+  @Test
+  void updatesCopyWithWebTestClient() {
+    client
+        .put()
+        .uri("/cadasters/42/copy")
+        .exchange()
+        .expectStatus().isOk();
+  }
+
+  @Test
+  void updatesStateWithHelperMethod() throws Exception {
+    mockMvc.perform(putStateRequestFor(CADASTER_ID));
+  }
+
+  private MockHttpServletRequestBuilder buildRequest(final RequestBuilderFactory factory, final String uri) {
+    return factory.apply(uri);
+  }
+
+  private MockHttpServletRequestBuilder putStateRequestFor(final long cadasterId) {
+    return MockMvcRequestBuilders.put("/cadasters/%d/state".formatted(cadasterId));
   }
 }
 `)
@@ -321,6 +590,8 @@ class CadasterServiceTest {
 	assertHasSpringRepositoryEntity(t, spring.Repositories, "CadasterRepository", "CadasterEntity")
 	assertHasSpringEndpoint(t, spring.Endpoints, "GET", "/cadasters", "CadasterController", "gets")
 	assertHasSpringEndpoint(t, spring.Endpoints, "GET", "/cadasters/{cadasterId}", "CadasterController", "get")
+	assertHasSpringEndpoint(t, spring.Endpoints, "PUT", "/cadasters/{cadasterId}/copy", "CadasterController", "updateCopy")
+	assertHasSpringEndpoint(t, spring.Endpoints, "PUT", "/cadasters/{cadasterId}/state", "CadasterController", "updateState")
 	assertHasSpringEndpoint(t, spring.Endpoints, "POST", "/cadasters/{cadasterId}/copy", "CadasterController", "copy")
 	assertHasSpringEndpoint(t, spring.Endpoints, "POST", "/cadasters/{cadasterId}/import", "CadasterController", "importFile")
 	assertHasSpringEndpointRequest(t, spring.Endpoints, "POST", "/cadasters/{cadasterId}/import", "multipart", "MultipartFile")
@@ -342,7 +613,12 @@ class CadasterServiceTest {
 	readJSON(t, filepath.Join(out, "test-map.json"), &testMapRecords)
 	assertHasMethodTestMap(t, testMapRecords, "CadasterServiceTest", "importsFile", "CadasterService", "importFile")
 	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "importsFile", "POST", "/cadasters/{cadasterId}/import")
+	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "importsFileFromUriVariable", "POST", "/cadasters/{cadasterId}/import")
 	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "getsDetails", "GET", "/cadasters/{cadasterId}")
+	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "updatesCopyWithBuilderHelper", "PUT", "/cadasters/{cadasterId}/copy")
+	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "updatesCopyWithWebTestClient", "PUT", "/cadasters/{cadasterId}/copy")
+	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "updatesStateWithHelperMethod", "PUT", "/cadasters/{cadasterId}/state")
+	assertEndpointTestMapConfidence(t, testMapRecords, "CadasterControllerTest", "updatesStateWithHelperMethod", "MATCHED")
 
 	var analyzers []AnalyzerRecord
 	readJSON(t, filepath.Join(out, "analyzers.json"), &analyzers)
@@ -527,6 +803,15 @@ func assertHasEndpointFlowStep(t *testing.T, flows []SpringEndpointFlowRecord, m
 	t.Fatalf("missing endpoint flow step %s %s -> %s.%s in %#v", method, path, owner, handler, flows)
 }
 
+func hasJavaCall(calls []JavaCallRecord, method string) bool {
+	for _, call := range calls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
 func assertHasMethodTestMap(t *testing.T, records []TestMapRecord, testClass, testMethod, targetClass, targetMethod string) {
 	t.Helper()
 	for _, record := range records {
@@ -545,6 +830,19 @@ func assertHasEndpointTestMap(t *testing.T, records []TestMapRecord, testClass, 
 		}
 	}
 	t.Fatalf("missing endpoint test map %s.%s -> %s %s in %#v", testClass, testMethod, httpMethod, path, records)
+}
+
+func assertEndpointTestMapConfidence(t *testing.T, records []TestMapRecord, testClass, testMethod, confidence string) {
+	t.Helper()
+	for _, record := range records {
+		if record.TestClass == testClass && record.TestMethod == testMethod && record.Type == "endpoint" {
+			if record.Confidence != confidence {
+				t.Fatalf("endpoint test map confidence = %q, want %q for %#v", record.Confidence, confidence, record)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing endpoint test map for confidence assertion %s.%s in %#v", testClass, testMethod, records)
 }
 
 func assertHasAnalyzer(t *testing.T, records []AnalyzerRecord, language string, calls, endpoints, tests bool) {

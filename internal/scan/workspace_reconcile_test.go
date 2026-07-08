@@ -1114,6 +1114,283 @@ func TestWorkspaceFeatureFlowsResolveComponentLocalAPICallerWithoutRouteFlow(t *
 	}
 }
 
+func TestWorkspaceFeatureFlowsResolvePackageUIAPICallerWithoutRouteFlow(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-search", Kind: "backend", Service: "ms-search", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "PUT",
+					Path:             "/search",
+					File:             "packages/designsystem/src/organisms/search/Search.tsx",
+					Line:             42,
+					Caller:           "runSearch",
+					ServiceCandidate: "ms-search",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "PUT", Path: "/search", Handler: "SearchController.search", File: "SearchController.java", Line: 24},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "PUT", Path: "/search", Controller: "SearchController", Method: "search"},
+			},
+		},
+	})
+	flows := buildWorkspaceFeatureFlows([]workspaceIndexProject{
+		{record: frontend},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "PUT", Path: "/search", Handler: "SearchController.search", File: "SearchController.java", Line: 24},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "PUT", Path: "/search", Controller: "SearchController", Method: "search"},
+			},
+		},
+	}, matches)
+
+	if len(flows) != 1 {
+		t.Fatalf("flows length = %d, want 1: %#v", len(flows), flows)
+	}
+	if flows[0].FrontendConfidence != "RESOLVED" {
+		t.Fatalf("FrontendConfidence = %q, want RESOLVED: %#v", flows[0].FrontendConfidence, flows[0])
+	}
+	if !strings.Contains(flows[0].FrontendReason, "package UI file") {
+		t.Fatalf("FrontendReason should explain package UI caller: %#v", flows[0])
+	}
+}
+
+func TestWorkspaceFeatureFlowsResolvePackageUtilityAPICallerWithoutRouteFlow(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-documentexport", Kind: "backend", Service: "ms-documentexport", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "POST",
+					Path:             "/documentexport/modules/{isbn}/documents/{objectId}/export",
+					File:             "packages/designsystem/src/utils/export.ts",
+					Line:             24,
+					Caller:           "generateExport",
+					ServiceCandidate: "ms-documentexport",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "POST", Path: "/documentexport/modules/{isbn}/documents/{objectId}/export", Handler: "DocumentExportController.postExport", File: "DocumentExportController.java", Line: 42},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "POST", Path: "/documentexport/modules/{isbn}/documents/{objectId}/export", Controller: "DocumentExportController", Method: "postExport"},
+			},
+		},
+	})
+	flows := buildWorkspaceFeatureFlows([]workspaceIndexProject{
+		{record: frontend},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "POST", Path: "/documentexport/modules/{isbn}/documents/{objectId}/export", Handler: "DocumentExportController.postExport", File: "DocumentExportController.java", Line: 42},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "POST", Path: "/documentexport/modules/{isbn}/documents/{objectId}/export", Controller: "DocumentExportController", Method: "postExport"},
+			},
+		},
+	}, matches)
+
+	if len(flows) != 1 {
+		t.Fatalf("flows length = %d, want 1: %#v", len(flows), flows)
+	}
+	if flows[0].FrontendConfidence != "RESOLVED" {
+		t.Fatalf("FrontendConfidence = %q, want RESOLVED: %#v", flows[0].FrontendConfidence, flows[0])
+	}
+	if !strings.Contains(flows[0].FrontendReason, "package utility file") {
+		t.Fatalf("FrontendReason should explain package utility caller: %#v", flows[0])
+	}
+}
+
+func TestWorkspaceFeatureFlowsResolveAppRootAPICallerWithoutRouteFlow(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-documentinfo", Kind: "backend", Service: "ms-documentinfo", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "GET",
+					Path:             "/documentinfo/modules/{isbn}/info",
+					File:             "apps/wekapilot/src/Root.tsx",
+					Line:             19,
+					Caller:           "fetchModuleInfo",
+					ServiceCandidate: "ms-documentinfo",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/documentinfo/modules/{isbn}/info", Handler: "InfoController.info", File: "InfoController.java", Line: 31},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "GET", Path: "/documentinfo/modules/{isbn}/info", Controller: "InfoController", Method: "info"},
+			},
+		},
+	})
+	flows := buildWorkspaceFeatureFlows([]workspaceIndexProject{
+		{
+			record: frontend,
+			codeFlows: []CodeFlowRecord{
+				{Kind: "frontend", App: "wekapilot", RouteID: "wekapilot:/", Path: "/", File: "apps/wekapilot/src/routes.tsx", Line: 5, Handler: "Root"},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/documentinfo/modules/{isbn}/info", Handler: "InfoController.info", File: "InfoController.java", Line: 31},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "GET", Path: "/documentinfo/modules/{isbn}/info", Controller: "InfoController", Method: "info"},
+			},
+		},
+	}, matches)
+
+	if len(flows) != 1 {
+		t.Fatalf("flows length = %d, want 1: %#v", len(flows), flows)
+	}
+	if flows[0].FrontendConfidence != "RESOLVED" {
+		t.Fatalf("FrontendConfidence = %q, want RESOLVED: %#v", flows[0].FrontendConfidence, flows[0])
+	}
+	if !strings.Contains(flows[0].FrontendReason, "app root file") {
+		t.Fatalf("FrontendReason should explain app root caller: %#v", flows[0])
+	}
+}
+
+func TestWorkspaceFeatureFlowsResolveFrontendRelationToAPICaller(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-cadaster", Kind: "backend", Service: "ms-cadaster", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "GET",
+					Path:             "/cadasters/{cadasterId}/users",
+					File:             "apps/portal/src/api/vd/userService.ts",
+					Line:             4,
+					Caller:           "fetchCadastersUsers",
+					ServiceCandidate: "ms-cadaster",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/cadasters/{cadasterId}/users", Handler: "CadasterUserController.getUsers", File: "CadasterUserController.java", Line: 31},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "GET", Path: "/cadasters/{cadasterId}/users", Controller: "CadasterUserController", Method: "getUsers"},
+			},
+		},
+	})
+	flows := buildWorkspaceFeatureFlows([]workspaceIndexProject{
+		{
+			record: frontend,
+			codeFlows: []CodeFlowRecord{
+				{Kind: "frontend", App: "portal", RouteID: "portal:/tasks", Path: "/tasks", File: "apps/portal/src/routes.tsx", Line: 8, Handler: "TasksPage"},
+			},
+			relations: []RelationRecord{
+				{From: "apps/portal/src/components/modals/vd/taskModal/vdTaskModal.tsx", To: "apps/portal/src/api/vd/userService.ts", Type: "calls", Line: 50},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/cadasters/{cadasterId}/users", Handler: "CadasterUserController.getUsers", File: "CadasterUserController.java", Line: 31},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "GET", Path: "/cadasters/{cadasterId}/users", Controller: "CadasterUserController", Method: "getUsers"},
+			},
+		},
+	}, matches)
+
+	if len(flows) != 1 {
+		t.Fatalf("flows length = %d, want 1: %#v", len(flows), flows)
+	}
+	if flows[0].FrontendConfidence != "RESOLVED" {
+		t.Fatalf("FrontendConfidence = %q, want RESOLVED: %#v", flows[0].FrontendConfidence, flows[0])
+	}
+	if !strings.Contains(flows[0].FrontendReason, "frontend relation reaches API contract file") {
+		t.Fatalf("FrontendReason should explain relation evidence: %#v", flows[0])
+	}
+}
+
+func TestWorkspaceFeatureFlowsResolveContainerLocalAPICallerWithoutRouteFlow(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-cadastertask", Kind: "backend", Service: "ms-cadastertask", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{
+				{
+					HTTPMethod:       "GET",
+					Path:             "/cadastertask/cadasters/tasks",
+					File:             "apps/vorschriftendienst/src/containers/CadasterContainer/tasksService.ts",
+					Line:             12,
+					ServiceCandidate: "ms-cadastertask",
+				},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/cadastertask/cadasters/tasks", Handler: "TaskController.getTasks", File: "TaskController.java", Line: 31},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "GET", Path: "/cadastertask/cadasters/tasks", Controller: "TaskController", Method: "getTasks"},
+			},
+		},
+	})
+	flows := buildWorkspaceFeatureFlows([]workspaceIndexProject{
+		{
+			record: frontend,
+			codeFlows: []CodeFlowRecord{
+				{Kind: "frontend", App: "vorschriftendienst", RouteID: "vorschriftendienst:/cadasters", Path: "/cadasters", File: "apps/vorschriftendienst/src/routes.js", Line: 5, Handler: "CadasterContainer"},
+			},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "GET", Path: "/cadastertask/cadasters/tasks", Handler: "TaskController.getTasks", File: "TaskController.java", Line: 31},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "GET", Path: "/cadastertask/cadasters/tasks", Controller: "TaskController", Method: "getTasks"},
+			},
+		},
+	}, matches)
+
+	if len(flows) != 1 {
+		t.Fatalf("flows length = %d, want 1: %#v", len(flows), flows)
+	}
+	if flows[0].FrontendConfidence != "RESOLVED" {
+		t.Fatalf("FrontendConfidence = %q, want RESOLVED: %#v", flows[0].FrontendConfidence, flows[0])
+	}
+	if !strings.Contains(flows[0].FrontendReason, "container file") {
+		t.Fatalf("FrontendReason should explain container-local caller: %#v", flows[0])
+	}
+}
+
 func TestWorkspaceFeatureFlowsResolvePortalServiceMethodToAPICaller(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "weka")
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
@@ -1225,6 +1502,52 @@ class CadasterController {
 	report := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-feature-flows.md"))
 	if !strings.Contains(report, "Frontend route: none resolved") {
 		t.Fatalf("feature flow report should explain missing frontend route context:\n%s", report)
+	}
+}
+
+func TestWorkspaceNextActionsDoesNotPrefixBackendMethodWithNoneOwner(t *testing.T) {
+	report := renderWorkspaceNextActionsReport(
+		WorkspaceContextRecord{},
+		nil,
+		[]WorkspaceFeatureFlowRecord{
+			{
+				HTTPMethod:       "GET",
+				Path:             "/invoiceservice/users/{userId}/invoices",
+				FrontendProject:  "frontend/frontend-monorepo",
+				FrontendFile:     "apps/mein-konto/src/api/invoiceservice.js",
+				FrontendLine:     27,
+				BackendMethod:    "InvoicesController.getInvoicesOfUser",
+				BackendProject:   "microservices/ms-invoiceservice",
+				BackendService:   "ms-invoiceservice",
+				BackendFile:      "src/main/java/InvoicesController.java",
+				BackendLine:      59,
+				Confidence:       "RESOLVED",
+				TestReason:       "no endpoint or backend-step tests matched backend endpoint GET `/users/{userId}/invoices`",
+			},
+		},
+	)
+
+	if strings.Contains(report, "none.InvoicesController.getInvoicesOfUser") {
+		t.Fatalf("next actions report leaked none owner prefix:\n%s", report)
+	}
+	if !strings.Contains(report, "-> `InvoicesController.getInvoicesOfUser`") {
+		t.Fatalf("next actions report missing backend method label:\n%s", report)
+	}
+}
+
+func TestWorkspaceFeatureTestMatchesKnownBasePrefixes(t *testing.T) {
+	test := TestMapRecord{
+		Type:       "endpoint",
+		HTTPMethod: "GET",
+		Path:       "/ApplicationConfig.BASE_PATH/cadasters/{cadasterId}/regulations/{objectId}/tasks",
+	}
+	match := WorkspaceContractMatchRecord{
+		BackendHTTPMethod: "GET",
+		BackendPath:       "/cadasters/{cadasterId}/regulations/{objectId}/tasks",
+	}
+
+	if !workspaceFeatureTestMatches(test, SpringEndpointFlowRecord{}, match) {
+		t.Fatalf("workspace feature test should match known base-prefix variants: %#v -> %#v", test, match)
 	}
 }
 

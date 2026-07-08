@@ -1094,6 +1094,26 @@ class CadasterController {
 	}
 }
 
+func TestDiagnosticsReportDoesNotPrefixLikelyTestTargetWithNoneOwner(t *testing.T) {
+	report := renderDiagnosticsReport(DiagnosticsRecord{
+		LikelyTests: []TestMapRecord{
+			{
+				TestFile:     "apps/mein-konto/src/utils/validation.test.js",
+				TestMethod:   "should allow names with a dot",
+				TargetMethod: "validateFirstName",
+				Confidence:   "INFERRED",
+			},
+		},
+	})
+
+	if strings.Contains(report, "none.validateFirstName") {
+		t.Fatalf("diagnostics report leaked none owner prefix:\n%s", report)
+	}
+	if !strings.Contains(report, "checks `validateFirstName`") {
+		t.Fatalf("diagnostics report missing target method label:\n%s", report)
+	}
+}
+
 func TestRunWritesFrontendUsageChains(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "package.json", `{"name":"frontend-monorepo"}`)

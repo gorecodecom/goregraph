@@ -259,10 +259,9 @@ func renderDiagnosticsReport(record DiagnosticsRecord) string {
 		b.WriteString("- none detected\n")
 	} else {
 		for _, test := range record.LikelyTests {
-			b.WriteString(fmt.Sprintf("- `%s` checks `%s.%s` from `%s` (%s)\n",
+			b.WriteString(fmt.Sprintf("- `%s` checks `%s` from `%s` (%s)\n",
 				test.TestMethod,
-				emptyAsNone(test.TargetClass),
-				emptyAsNone(test.TargetMethod),
+				qualifiedName(test.TargetClass, test.TargetMethod),
 				test.TestFile,
 				test.Confidence,
 			))

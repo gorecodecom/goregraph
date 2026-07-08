@@ -214,6 +214,16 @@ func emptyAsNone(value string) string {
 	return value
 }
 
+func qualifiedName(owner, name string) string {
+	if owner == "" {
+		return emptyAsNone(name)
+	}
+	if name == "" {
+		return owner
+	}
+	return owner + "." + name
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a

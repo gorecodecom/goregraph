@@ -16,8 +16,13 @@ var (
 	javaConstantLineRE   = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*;`)
 	javaCallRE           = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	javaNewCallRE        = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+	javaBareCallRE       = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	javaHTTPCallRE       = regexp.MustCompile(`\b(get|post|put|delete|patch)\s*\(([^)]*)\)`)
+	javaHTTPBuilderRefRE = regexp.MustCompile(`MockMvcRequestBuilders::(get|post|put|delete|patch)\s*,\s*(.+?)(?:,\s*[^)]*)?\)`)
+	javaHTTPChainVerbRE  = regexp.MustCompile(`^\s*\.(get|post|put|delete|patch)\s*\(\s*\)\s*$`)
+	javaHTTPChainURIRE   = regexp.MustCompile(`^\s*\.uri\s*\((.+)\)\s*$`)
 	javaStringLiteralRE  = regexp.MustCompile(`"([^"]*)"`)
+	javaStringVarLineRE  = regexp.MustCompile(`^\s*(?:final\s+)?String\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);\s*$`)
 )
 
 func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
@@ -83,7 +88,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			typ.Implements = parseJavaImplements(match[3])
 			source.Types = append(source.Types, typ)
 			pending = nil
-		} else if match := javaFieldLineRE.FindStringSubmatch(line); len(match) == 4 && currentOwner != "" && !strings.Contains(line, "(") {
+		} else if match := javaFieldLineRE.FindStringSubmatch(line); len(match) == 4 && currentOwner != "" && braceDepth <= 1 && !strings.Contains(line, "(") {
 			source.Fields = append(source.Fields, JavaFieldRecord{
 				Name:        match[3],
 				Type:        cleanJavaType(match[2]),
@@ -102,8 +107,11 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			pending = nil
 		} else if len(source.Methods) > 0 {
 			last := &source.Methods[len(source.Methods)-1]
+			last.StringVars = mergeJavaStringVars(last.StringVars, extractJavaStringVars(line))
 			last.Calls = append(last.Calls, extractJavaCalls(line, lineNo)...)
-			last.HTTPRequests = append(last.HTTPRequests, extractJavaHTTPRequests(line, lineNo)...)
+			requests, pending := extractJavaHTTPRequestsWithPending(line, lineNo, last.StringVars, last.PendingHTTP)
+			last.PendingHTTP = pending
+			last.HTTPRequests = append(last.HTTPRequests, requests...)
 		}
 
 		braceDepth += strings.Count(line, "{")
@@ -135,7 +143,7 @@ func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnn
 			Parameters:   parseJavaParameters(params),
 			Annotations:  annotations,
 			Calls:        extractJavaCalls(line, lineNo),
-			HTTPRequests: extractJavaHTTPRequests(line, lineNo),
+			HTTPRequests: extractJavaHTTPRequestsWithVars(line, lineNo, nil),
 		}, true
 	}
 	match := javaMethodLineRE.FindStringSubmatch(line)
@@ -150,7 +158,7 @@ func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnn
 			Parameters:   parseJavaParameters(match[4]),
 			Annotations:  annotations,
 			Calls:        extractJavaCalls(line, lineNo),
-			HTTPRequests: extractJavaHTTPRequests(line, lineNo),
+			HTTPRequests: extractJavaHTTPRequestsWithVars(line, lineNo, nil),
 		}, true
 	}
 	return JavaMethodRecord{}, false
@@ -404,30 +412,149 @@ func extractJavaCalls(line string, lineNo int) []JavaCallRecord {
 			calls = append(calls, JavaCallRecord{Receiver: match[1], Method: match[2], Line: lineNo})
 		}
 	}
+	for _, match := range javaBareCallRE.FindAllStringSubmatchIndex(line, -1) {
+		if len(match) != 4 {
+			continue
+		}
+		name := line[match[2]:match[3]]
+		if isIgnoredJavaBareCall(name) || isJavaQualifiedCall(line, match[0]) {
+			continue
+		}
+		calls = append(calls, JavaCallRecord{Method: name, Line: lineNo, Arguments: javaCallArguments(line, match[1]-1)})
+	}
 	return calls
 }
 
+func javaCallArguments(line string, open int) []string {
+	if open < 0 || open >= len(line) || line[open] != '(' {
+		return nil
+	}
+	depth := 0
+	for index := open; index < len(line); index++ {
+		switch line[index] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return splitJavaCallArguments(line[open+1 : index])
+			}
+		}
+	}
+	return nil
+}
+
+func splitJavaCallArguments(args string) []string {
+	var result []string
+	depth := 0
+	start := 0
+	for index, r := range args {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				result = append(result, strings.TrimSpace(args[start:index]))
+				start = index + 1
+			}
+		}
+	}
+	if strings.TrimSpace(args[start:]) != "" {
+		result = append(result, strings.TrimSpace(args[start:]))
+	}
+	return result
+}
+
+func isIgnoredJavaBareCall(name string) bool {
+	switch name {
+	case "if", "for", "while", "switch", "catch", "return", "new", "super", "this", "assertThat":
+		return true
+	default:
+		return false
+	}
+}
+
+func isJavaQualifiedCall(line string, start int) bool {
+	if start <= 0 {
+		return false
+	}
+	prev := line[start-1]
+	return prev == '.' || prev == ':'
+}
+
 func extractJavaHTTPRequests(line string, lineNo int) []JavaHTTPCallRecord {
+	return extractJavaHTTPRequestsWithVars(line, lineNo, nil)
+}
+
+func extractJavaHTTPRequestsWithVars(line string, lineNo int, vars map[string]string) []JavaHTTPCallRecord {
+	requests, _ := extractJavaHTTPRequestsWithPending(line, lineNo, vars, "")
+	return requests
+}
+
+func extractJavaHTTPRequestsWithPending(line string, lineNo int, vars map[string]string, pending string) ([]JavaHTTPCallRecord, string) {
 	var requests []JavaHTTPCallRecord
 	for _, match := range javaHTTPCallRE.FindAllStringSubmatch(line, -1) {
 		if len(match) == 3 {
-			if path, ok := javaHTTPRequestPath(match[2]); ok {
+			if path, ok := javaHTTPRequestPath(match[2], vars); ok {
 				requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(match[1]), Path: path, Line: lineNo})
 			}
 		}
 	}
-	return requests
+	for _, match := range javaHTTPBuilderRefRE.FindAllStringSubmatch(line, -1) {
+		if len(match) == 3 {
+			if path, ok := javaHTTPRequestPath(match[2], vars); ok {
+				requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(match[1]), Path: path, Line: lineNo})
+			}
+		}
+	}
+	if match := javaHTTPChainVerbRE.FindStringSubmatch(line); len(match) == 2 {
+		pending = strings.ToUpper(match[1])
+	}
+	if pending != "" {
+		if match := javaHTTPChainURIRE.FindStringSubmatch(line); len(match) == 2 {
+			if path, ok := javaHTTPRequestPath(match[1], vars); ok {
+				requests = append(requests, JavaHTTPCallRecord{HTTPMethod: pending, Path: path, Line: lineNo})
+				pending = ""
+			}
+		}
+	}
+	return requests, pending
 }
 
-func javaHTTPRequestPath(expression string) (string, bool) {
+func javaHTTPRequestPath(expression string, vars map[string]string) (string, bool) {
 	expression = strings.TrimSpace(expression)
+	if vars != nil {
+		if value, ok := vars[expression]; ok {
+			return value, strings.HasPrefix(value, "/")
+		}
+	}
+	if strings.HasPrefix(expression, "String.format(") {
+		if args := javaCallArguments(expression, strings.Index(expression, "(")); len(args) > 0 {
+			return javaHTTPRequestPath(args[0], vars)
+		}
+		if args := splitJavaCallArguments(strings.TrimPrefix(expression, "String.format(")); len(args) > 0 {
+			return javaHTTPRequestPath(args[0], vars)
+		}
+	}
 	literals := javaStringLiteralRE.FindAllStringSubmatchIndex(expression, -1)
-	if len(literals) == 0 || literals[0][0] != 0 {
+	if len(literals) == 0 {
 		return "", false
 	}
 
 	var b strings.Builder
 	lastEnd := 0
+	if literals[0][0] != 0 {
+		prefix, ok := javaRequestBasePathPrefix(expression[:literals[0][0]])
+		if !ok {
+			return "", false
+		}
+		b.WriteString(prefix)
+		lastEnd = literals[0][0]
+	}
 	for _, literal := range literals {
 		if hasJavaConcatExpression(expression[lastEnd:literal[0]]) {
 			appendDynamicPathSegment(&b)
@@ -438,13 +565,79 @@ func javaHTTPRequestPath(expression string) (string, bool) {
 	if hasJavaConcatExpression(expression[lastEnd:]) {
 		appendDynamicPathSegment(&b)
 	}
-	path := strings.ReplaceAll(b.String(), "//", "/")
+	path := strings.ReplaceAll(stripJavaRequestQuery(normalizeJavaFormatPath(b.String())), "//", "/")
 	return path, strings.HasPrefix(path, "/")
+}
+
+func stripJavaRequestQuery(path string) string {
+	if index := strings.IndexAny(path, "?#"); index >= 0 {
+		return path[:index]
+	}
+	return path
+}
+
+func javaRequestBasePathPrefix(expression string) (string, bool) {
+	expression = strings.Trim(expression, "+ \t")
+	fields := strings.FieldsFunc(expression, func(r rune) bool {
+		return r == '+' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	})
+	for i := len(fields) - 1; i >= 0; i-- {
+		field := strings.TrimSpace(fields[i])
+		if strings.Contains(field, "BASE_PATH") && isJavaIdentifierPath(field) {
+			return "/" + field, true
+		}
+	}
+	return "", false
+}
+
+func isJavaIdentifierPath(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r == '.' || r == '_' || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func normalizeJavaFormatPath(path string) string {
+	formatPlaceholderRE := regexp.MustCompile(`%[0-9.]*[A-Za-z]`)
+	return formatPlaceholderRE.ReplaceAllString(path, "{dynamic}")
+}
+
+func extractJavaStringVars(line string) map[string]string {
+	match := javaStringVarLineRE.FindStringSubmatch(line)
+	if len(match) != 3 {
+		return nil
+	}
+	if path, ok := javaHTTPRequestPath(match[2], nil); ok {
+		return map[string]string{match[1]: path}
+	}
+	return nil
+}
+
+func mergeJavaStringVars(existing, next map[string]string) map[string]string {
+	if len(next) == 0 {
+		return existing
+	}
+	if existing == nil {
+		existing = map[string]string{}
+	}
+	for key, value := range next {
+		existing[key] = value
+	}
+	return existing
 }
 
 func hasJavaConcatExpression(part string) bool {
 	part = strings.TrimSpace(part)
 	if part == "" {
+		return false
+	}
+	if strings.HasPrefix(part, ".formatted(") || strings.HasPrefix(part, ".format(") {
 		return false
 	}
 	part = strings.Trim(part, "+ \t")
