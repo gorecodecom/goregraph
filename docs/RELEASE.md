@@ -202,6 +202,10 @@ Completed release checks:
 - name-only cross-app JS/TS callgraph and test-map edges are omitted instead of being kept as weak inferred noise.
 - contract gaps now use explicit `MISMATCH`, `PARTIAL_MATCH`, or `UNRESOLVED` confidence labels instead of `WEAK_MATCH`.
 - Java callgraph fallback edges with a concrete target type declaration are reported as extracted type matches.
+- unresolved workspace contracts include structured owner, resolution, similar-route, and dynamic-endpoint candidate hints for reports and website code maps.
+- Java endpoint test maps classify matched tests by success/auth/permission/validation/not-found/error cases and expected status families when derivable from test names.
+- workspace feature flows include backend request kind/type, consumes, return type, stable IDs, and test case/status details.
+- workspace contract matches and feature flows include stable IDs for future diff and deep-link use.
 - `goregraph version` reports `0.8.9`.
 
 Remaining release-hardening items:

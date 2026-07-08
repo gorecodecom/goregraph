@@ -336,6 +336,9 @@ func TestWorkspaceContractMatchesClassifyGatewayPrefixMatches(t *testing.T) {
 	if matches[0].BackendProject != "microservices/ms-task" || matches[0].BackendPath != "/tasks/{taskId}" {
 		t.Fatalf("gateway prefix match did not retain backend route context: %#v", matches[0])
 	}
+	if matches[0].ID == "" {
+		t.Fatalf("workspace contract match should have stable id: %#v", matches[0])
+	}
 }
 
 func TestWorkspaceContractMatchesNormalizeServiceAndConfigBasePrefixes(t *testing.T) {
@@ -409,6 +412,12 @@ func TestWorkspaceContractMatchesSuggestSimilarBackendRoutes(t *testing.T) {
 	if !strings.Contains(matches[0].Reason, "similar backend routes:") || !strings.Contains(matches[0].Reason, "POST /tasks/{taskId}/details") {
 		t.Fatalf("missing similar route hint in reason: %#v", matches[0])
 	}
+	if !containsString(matches[0].SimilarBackendRoutes, "POST /tasks/{taskId}/details") {
+		t.Fatalf("missing structured similar route hint: %#v", matches[0])
+	}
+	if matches[0].LikelyOwner != "backend_or_gateway" {
+		t.Fatalf("likely owner = %q, want backend_or_gateway: %#v", matches[0].LikelyOwner, matches[0])
+	}
 }
 
 func TestWorkspaceContractMatchesNormalizeSimilarBackendRouteHints(t *testing.T) {
@@ -481,6 +490,12 @@ func TestWorkspaceContractMatchesClassifyDynamicEndpointRemainders(t *testing.T)
 	if !strings.Contains(matches[0].Reason, "dynamic endpoint segment") {
 		t.Fatalf("reason should explain dynamic endpoint segment: %#v", matches[0])
 	}
+	if !containsString(matches[0].DynamicEndpointCandidates, "documents/new") {
+		t.Fatalf("missing dynamic endpoint candidate from backend route: %#v", matches[0])
+	}
+	if matches[0].LikelyOwner != "frontend_dynamic_value" {
+		t.Fatalf("likely owner = %q, want frontend_dynamic_value: %#v", matches[0].LikelyOwner, matches[0])
+	}
 }
 
 func TestWorkspaceContractMatchesClassifyMissingIndexedBackendRoute(t *testing.T) {
@@ -516,6 +531,39 @@ func TestWorkspaceContractMatchesClassifyMissingIndexedBackendRoute(t *testing.T
 	}
 	if !strings.Contains(matches[0].Reason, "indexed backend service has no route") {
 		t.Fatalf("reason should explain missing route in indexed service: %#v", matches[0])
+	}
+	if matches[0].LikelyOwner != "backend_or_gateway" {
+		t.Fatalf("likely owner = %q, want backend_or_gateway: %#v", matches[0].LikelyOwner, matches[0])
+	}
+}
+
+func TestWorkspaceContractReportShowsActionableUnresolvedHints(t *testing.T) {
+	report := renderWorkspaceContractMatchesReport([]WorkspaceContractMatchRecord{
+		{
+			APIHTTPMethod:             "GET",
+			APIPath:                   "/documenttopic/modules/{isbn}/{endpoint}",
+			APIProject:                "frontend/frontend-monorepo",
+			APIFile:                   "src/api/topic.js",
+			APILine:                   18,
+			Issue:                     contractIssueDynamicEndpointUnresolved,
+			Confidence:                "UNRESOLVED",
+			Reason:                    "dynamic endpoint segment",
+			LikelyOwner:               "frontend_dynamic_value",
+			ResolutionHint:            "resolve the frontend dynamic segment values",
+			SimilarBackendRoutes:      []string{"GET /modules/{isbn}/documents/new"},
+			DynamicEndpointCandidates: []string{"documents/new"},
+		},
+	})
+
+	for _, want := range []string{
+		"Likely owner: `frontend_dynamic_value`",
+		"Resolution: resolve the frontend dynamic segment values",
+		"Similar backend routes: `GET /modules/{isbn}/documents/new`",
+		"Dynamic endpoint candidates: `documents/new`",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("workspace contract report missing %q:\n%s", want, report)
+		}
 	}
 }
 
@@ -1114,6 +1162,76 @@ func TestWorkspaceFeatureFlowsResolveComponentLocalAPICallerWithoutRouteFlow(t *
 	}
 }
 
+func TestWorkspaceFeatureFlowsIncludeBackendRequestResponseMetadata(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-upload", Kind: "backend", Service: "ms-upload", Indexed: true}
+	matches := []WorkspaceContractMatchRecord{
+		{
+			APIProject:        frontend.Path,
+			APIHTTPMethod:     "POST",
+			APIPath:           "/upload",
+			APIFile:           "src/api/upload.ts",
+			APILine:           12,
+			BackendProject:    backend.Path,
+			BackendService:    "ms-upload",
+			BackendHTTPMethod: "POST",
+			BackendPath:       "/upload",
+			BackendHandler:    "UploadController.upload",
+			BackendFile:       "UploadController.java",
+			BackendLine:       24,
+			Issue:             contractIssueMatched,
+			Confidence:        "RESOLVED",
+		},
+	}
+
+	flows := buildWorkspaceFeatureFlows([]workspaceIndexProject{
+		{record: frontend},
+		{
+			record: backend,
+			endpoints: []SpringEndpointRecord{
+				{HTTPMethod: "POST", Path: "/upload", Controller: "UploadController", Method: "upload", RequestKind: "multipart", RequestType: "MultipartFile", Consumes: "multipart/form-data", ReturnType: "ResponseEntity<ImportResult>"},
+			},
+			endpointFlows: []SpringEndpointFlowRecord{
+				{HTTPMethod: "POST", Path: "/upload", Controller: "UploadController", Method: "upload"},
+			},
+		},
+	}, matches)
+
+	if len(flows) != 1 {
+		t.Fatalf("flows length = %d, want 1: %#v", len(flows), flows)
+	}
+	if flows[0].ID == "" {
+		t.Fatalf("workspace feature flow should have stable id: %#v", flows[0])
+	}
+	if flows[0].BackendRequestKind != "multipart" || flows[0].BackendRequestType != "MultipartFile" || flows[0].BackendReturnType != "ResponseEntity<ImportResult>" {
+		t.Fatalf("missing backend request/response metadata: %#v", flows[0])
+	}
+	report := renderWorkspaceFeatureFlowsReport(flows)
+	if !strings.Contains(report, "Request: `multipart` `MultipartFile`") || !strings.Contains(report, "Returns: `ResponseEntity<ImportResult>`") {
+		t.Fatalf("feature flow report missing request/response metadata:\n%s", report)
+	}
+}
+
+func TestWorkspaceFeatureFlowReportIncludesTestCases(t *testing.T) {
+	report := renderWorkspaceFeatureFlowsReport([]WorkspaceFeatureFlowRecord{
+		{
+			FrontendProject: "frontend/frontend-monorepo",
+			FrontendFile:    "src/api/cadaster.js",
+			HTTPMethod:      "PUT",
+			Path:            "/cadasters/{cadasterId}/state",
+			BackendProject:  "microservices/ms-cadaster",
+			BackendService:  "ms-cadaster",
+			Tests: []TestMapRecord{
+				{TestClass: "CadasterControllerTest", TestMethod: "updatesStateNoAuthIsUnauthorized", TestFile: "CadasterControllerTest.java", Confidence: "MATCHED", HTTPMethod: "PUT", Path: "/cadasters/{cadasterId}/state", TestCase: "auth_error", StatusExpectation: "401"},
+			},
+		},
+	})
+
+	if !strings.Contains(report, "case `auth_error`") || !strings.Contains(report, "status `401`") {
+		t.Fatalf("feature flow report missing test case/status:\n%s", report)
+	}
+}
+
 func TestWorkspaceFeatureFlowsResolvePackageUIAPICallerWithoutRouteFlow(t *testing.T) {
 	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
 	backend := WorkspaceProjectRecord{Path: "microservices/ms-search", Kind: "backend", Service: "ms-search", Indexed: true}
@@ -1511,18 +1629,18 @@ func TestWorkspaceNextActionsDoesNotPrefixBackendMethodWithNoneOwner(t *testing.
 		nil,
 		[]WorkspaceFeatureFlowRecord{
 			{
-				HTTPMethod:       "GET",
-				Path:             "/invoiceservice/users/{userId}/invoices",
-				FrontendProject:  "frontend/frontend-monorepo",
-				FrontendFile:     "apps/mein-konto/src/api/invoiceservice.js",
-				FrontendLine:     27,
-				BackendMethod:    "InvoicesController.getInvoicesOfUser",
-				BackendProject:   "microservices/ms-invoiceservice",
-				BackendService:   "ms-invoiceservice",
-				BackendFile:      "src/main/java/InvoicesController.java",
-				BackendLine:      59,
-				Confidence:       "RESOLVED",
-				TestReason:       "no endpoint or backend-step tests matched backend endpoint GET `/users/{userId}/invoices`",
+				HTTPMethod:      "GET",
+				Path:            "/invoiceservice/users/{userId}/invoices",
+				FrontendProject: "frontend/frontend-monorepo",
+				FrontendFile:    "apps/mein-konto/src/api/invoiceservice.js",
+				FrontendLine:    27,
+				BackendMethod:   "InvoicesController.getInvoicesOfUser",
+				BackendProject:  "microservices/ms-invoiceservice",
+				BackendService:  "ms-invoiceservice",
+				BackendFile:     "src/main/java/InvoicesController.java",
+				BackendLine:     59,
+				Confidence:      "RESOLVED",
+				TestReason:      "no endpoint or backend-step tests matched backend endpoint GET `/users/{userId}/invoices`",
 			},
 		},
 	)
@@ -1532,6 +1650,37 @@ func TestWorkspaceNextActionsDoesNotPrefixBackendMethodWithNoneOwner(t *testing.
 	}
 	if !strings.Contains(report, "-> `InvoicesController.getInvoicesOfUser`") {
 		t.Fatalf("next actions report missing backend method label:\n%s", report)
+	}
+}
+
+func TestWorkspaceNextActionsIncludesUnresolvedContractResolutionHints(t *testing.T) {
+	report := renderWorkspaceNextActionsReport(
+		WorkspaceContextRecord{},
+		[]WorkspaceContractMatchRecord{
+			{
+				APIHTTPMethod:        "GET",
+				APIPath:              "/documenttopic/modules/{isbn}/{endpoint}",
+				APIProject:           "frontend/frontend-monorepo",
+				APIFile:              "src/api/topic.js",
+				APILine:              18,
+				Issue:                contractIssueDynamicEndpointUnresolved,
+				Confidence:           "UNRESOLVED",
+				LikelyOwner:          "frontend_dynamic_value",
+				ResolutionHint:       "resolve the frontend dynamic segment values",
+				SimilarBackendRoutes: []string{"GET /modules/{isbn}/documents/new"},
+			},
+		},
+		nil,
+	)
+
+	for _, want := range []string{
+		"frontend_dynamic_value",
+		"resolve the frontend dynamic segment values",
+		"GET /modules/{isbn}/documents/new",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("next actions missing %q:\n%s", want, report)
+		}
 	}
 }
 

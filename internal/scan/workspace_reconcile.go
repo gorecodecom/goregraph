@@ -20,6 +20,7 @@ type workspaceIndexProject struct {
 	relations     []RelationRecord
 	contracts     []APIContractRecord
 	codeFlows     []CodeFlowRecord
+	endpoints     []SpringEndpointRecord
 	endpointFlows []SpringEndpointFlowRecord
 	testMap       []TestMapRecord
 }
@@ -347,6 +348,11 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		if err := readWorkspaceJSON(filepath.Join(out, "flows.json"), &loaded.codeFlows); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
+		var spring SpringIndex
+		if err := readWorkspaceJSON(filepath.Join(out, "spring.json"), &spring); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		loaded.endpoints = spring.Endpoints
 		if err := readWorkspaceJSON(filepath.Join(out, "endpoint-flows.json"), &loaded.endpointFlows); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
@@ -463,6 +469,7 @@ func buildWorkspaceContractMatches(projects []workspaceIndexProject) []Workspace
 
 func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContractRecord, routes []workspaceBackendRoute, knownServices map[string]bool) WorkspaceContractMatchRecord {
 	base := WorkspaceContractMatchRecord{
+		ID:               stableID("workspace-contract", project.Path, contract.File, fmt.Sprint(contract.Line), contract.HTTPMethod, contract.Path),
 		APIProject:       project.Path,
 		APIHTTPMethod:    contract.HTTPMethod,
 		APIPath:          contract.Path,
@@ -482,16 +489,26 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		return workspaceContractIssue(base, route, contractIssueMatched, "RESOLVED", 0.9, "http method and path pattern match backend route")
 	}
 	if route, ok := pathCompatibleWorkspaceRoute(contract, routes); ok {
-		return workspaceContractIssue(base, route, contractIssueMethodMismatch, "MISMATCH", 0.45, "path pattern exists but http method differs")
+		record := workspaceContractIssue(base, route, contractIssueMethodMismatch, "MISMATCH", 0.45, "path pattern exists but http method differs")
+		record.LikelyOwner = "frontend_or_backend"
+		record.ResolutionHint = "same backend path exists with a different HTTP method; verify whether the frontend method or backend mapping is wrong, or whether this is a legacy intent"
+		record.SimilarBackendRoutes = []string{strings.ToUpper(route.route.HTTPMethod) + " " + displayRoutePath(route.route.Path)}
+		return record
 	}
 	if route, ok := gatewayPrefixCompatibleWorkspaceRoute(contract, routes); ok {
-		return workspaceContractIssue(base, route, contractIssueGatewayOrProxyPrefix, "PARTIAL_MATCH", 0.4, "path pattern matches after removing a common gateway or proxy prefix")
+		record := workspaceContractIssue(base, route, contractIssueGatewayOrProxyPrefix, "PARTIAL_MATCH", 0.4, "path pattern matches after removing a common gateway or proxy prefix")
+		record.LikelyOwner = "gateway_or_proxy"
+		record.ResolutionHint = "backend route matches after removing a gateway/proxy prefix; verify rewrite configuration before changing frontend or backend code"
+		record.SimilarBackendRoutes = []string{strings.ToUpper(route.route.HTTPMethod) + " " + displayRoutePath(route.route.Path)}
+		return record
 	}
 	if contract.UnsafeDynamic {
 		base.Issue = contractIssueUnsafeDynamic
 		base.Confidence = "UNRESOLVED"
 		base.ConfidenceScore = 0.35
 		base.Reason = "api path contains complex dynamic expression"
+		base.LikelyOwner = "frontend_dynamic_value"
+		base.ResolutionHint = "path contains a complex dynamic expression; inspect the frontend path builder and constrain possible values"
 		return base
 	}
 	if contract.ServiceCandidate != "" && !knownServices[contract.ServiceCandidate] {
@@ -508,7 +525,16 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		base.ConfidenceScore = 0.35
 		base.Reason = reason
 		if similar := similarWorkspaceRouteHints(contract, routes, 3); len(similar) > 0 {
+			base.SimilarBackendRoutes = similar
 			base.Reason += "; similar backend routes: " + strings.Join(similar, ", ")
+		}
+		base.LikelyOwner = workspaceRouteGapOwner(issue)
+		base.ResolutionHint = workspaceRouteGapHint(issue)
+		if issue == contractIssueDynamicEndpointUnresolved {
+			base.DynamicEndpointCandidates = contract.DynamicEndpointCandidates
+			if len(base.DynamicEndpointCandidates) == 0 {
+				base.DynamicEndpointCandidates = dynamicEndpointCandidates(contract, routes)
+			}
 		}
 		return base
 	}
@@ -516,6 +542,8 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 	base.Confidence = "UNRESOLVED"
 	base.ConfidenceScore = 0.3
 	base.Reason = "no compatible backend route found in indexed workspace services"
+	base.LikelyOwner = "backend_or_gateway"
+	base.ResolutionHint = "no indexed backend route matched; verify service ownership, gateway rewrites, or missing backend implementation"
 	return base
 }
 
@@ -579,6 +607,77 @@ func similarWorkspaceRouteHints(contract APIContractRecord, routes []workspaceBa
 	return similarCodeRouteHints(contract, codeRoutes, limit)
 }
 
+func workspaceRouteGapOwner(issue string) string {
+	switch issue {
+	case contractIssueDynamicEndpointUnresolved:
+		return "frontend_dynamic_value"
+	default:
+		return "backend_or_gateway"
+	}
+}
+
+func workspaceRouteGapHint(issue string) string {
+	switch issue {
+	case contractIssueDynamicEndpointUnresolved:
+		return "resolve the frontend dynamic segment values and compare them with the listed backend route suffixes"
+	default:
+		return "indexed backend service has no compatible route; verify missing implementation, gateway rewrite, or whether a similar route is the intended replacement"
+	}
+}
+
+func dynamicEndpointCandidates(contract APIContractRecord, routes []workspaceBackendRoute) []string {
+	contractParts := routeParts(contract.Path)
+	dynamicIndex := -1
+	for i, part := range contractParts {
+		if strings.EqualFold(part, "{endpoint}") || strings.EqualFold(part, "{dynamicendpoint}") {
+			dynamicIndex = i
+			break
+		}
+	}
+	if dynamicIndex < 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var candidates []string
+	for _, route := range routes {
+		routeService := route.project.Service
+		if routeService == "" {
+			routeService = serviceCandidateForPath(route.route.Path)
+		}
+		if contract.ServiceCandidate != "" && routeService != "" && routeService != contract.ServiceCandidate {
+			continue
+		}
+		if !strings.EqualFold(contract.HTTPMethod, route.route.HTTPMethod) {
+			continue
+		}
+		routeParts := routeParts(route.route.Path)
+		if len(routeParts) <= dynamicIndex || len(routeParts) < len(contractParts) {
+			continue
+		}
+		matchesPrefix := true
+		for i := 0; i < dynamicIndex; i++ {
+			if isPlaceholder(contractParts[i]) && isPlaceholder(routeParts[i]) {
+				continue
+			}
+			if !strings.EqualFold(contractParts[i], routeParts[i]) {
+				matchesPrefix = false
+				break
+			}
+		}
+		if !matchesPrefix {
+			continue
+		}
+		candidate := strings.Join(routeParts[dynamicIndex:], "/")
+		if candidate == "" || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		candidates = append(candidates, candidate)
+	}
+	sort.Strings(candidates)
+	return candidates
+}
+
 func hasBackendRoutes(routes []CodeRouteRecord) bool {
 	for _, route := range routes {
 		if route.Kind == "backend" {
@@ -604,8 +703,10 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 		}
 		frontendProject, hasFrontendProject := byProject[match.APIProject]
 		flow, hasFlow := findWorkspaceEndpointFlow(backendProject.endpointFlows, match)
+		endpoint, hasEndpoint := findWorkspaceSpringEndpoint(backendProject.endpoints, match)
 		tests := workspaceFeatureTests(backendProject.testMap, flow, match)
 		record := WorkspaceFeatureFlowRecord{
+			ID:                stableID("workspace-flow", match.APIProject, match.APIFile, fmt.Sprint(match.APILine), match.APIHTTPMethod, match.APIPath, match.BackendProject),
 			FrontendProject:   match.APIProject,
 			FrontendCaller:    match.APICaller,
 			FrontendFile:      match.APIFile,
@@ -641,6 +742,12 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 		if !hasFlow {
 			record.BackendMethod = match.BackendHandler
 		}
+		if hasEndpoint {
+			record.BackendRequestType = endpoint.RequestType
+			record.BackendRequestKind = endpoint.RequestKind
+			record.BackendConsumes = endpoint.Consumes
+			record.BackendReturnType = endpoint.ReturnType
+		}
 		records = append(records, record)
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -656,6 +763,15 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 		return records[i].Path < records[j].Path
 	})
 	return records
+}
+
+func findWorkspaceSpringEndpoint(endpoints []SpringEndpointRecord, match WorkspaceContractMatchRecord) (SpringEndpointRecord, bool) {
+	for _, endpoint := range endpoints {
+		if strings.EqualFold(endpoint.HTTPMethod, match.BackendHTTPMethod) && pathsCompatibleWithKnownBasePrefixes(endpoint.Path, match.BackendPath) {
+			return endpoint, true
+		}
+	}
+	return SpringEndpointRecord{}, false
 }
 
 type workspaceFrontendContext struct {
@@ -1058,6 +1174,15 @@ func renderWorkspaceNextActionsReport(context WorkspaceContextRecord, matches []
 			match.Issue,
 			match.Confidence,
 		))
+		if match.LikelyOwner != "" {
+			b.WriteString(fmt.Sprintf("  - Likely owner: `%s`\n", match.LikelyOwner))
+		}
+		if match.ResolutionHint != "" {
+			b.WriteString(fmt.Sprintf("  - Resolution: %s\n", match.ResolutionHint))
+		}
+		if len(match.SimilarBackendRoutes) > 0 {
+			b.WriteString(fmt.Sprintf("  - Similar backend routes: `%s`\n", strings.Join(match.SimilarBackendRoutes, "`, `")))
+		}
 		if weak >= 10 {
 			break
 		}
@@ -1338,6 +1463,18 @@ func renderWorkspaceContractMatchLine(b *strings.Builder, record WorkspaceContra
 		record.Confidence,
 		record.Reason,
 	))
+	if record.LikelyOwner != "" {
+		b.WriteString(fmt.Sprintf("  - Likely owner: `%s`\n", record.LikelyOwner))
+	}
+	if record.ResolutionHint != "" {
+		b.WriteString(fmt.Sprintf("  - Resolution: %s\n", record.ResolutionHint))
+	}
+	if len(record.SimilarBackendRoutes) > 0 {
+		b.WriteString(fmt.Sprintf("  - Similar backend routes: `%s`\n", strings.Join(record.SimilarBackendRoutes, "`, `")))
+	}
+	if len(record.DynamicEndpointCandidates) > 0 {
+		b.WriteString(fmt.Sprintf("  - Dynamic endpoint candidates: `%s`\n", strings.Join(record.DynamicEndpointCandidates, "`, `")))
+	}
 }
 
 func workspaceCallerSuffix(caller string) string {
@@ -1419,6 +1556,16 @@ func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) str
 		b.WriteString(fmt.Sprintf("- Frontend project: `%s`\n", record.FrontendProject))
 		backendName := qualifiedName(record.BackendController, record.BackendMethod)
 		b.WriteString(fmt.Sprintf("- Backend: `%s` `%s` -> `%s` in `%s:%d`\n", record.BackendProject, emptyAsNone(record.BackendService), emptyAsNone(backendName), record.BackendFile, record.BackendLine))
+		if record.BackendRequestKind != "" || record.BackendRequestType != "" || record.BackendConsumes != "" {
+			b.WriteString(fmt.Sprintf("- Request: `%s` `%s`", emptyAsNone(record.BackendRequestKind), emptyAsNone(record.BackendRequestType)))
+			if record.BackendConsumes != "" {
+				b.WriteString(fmt.Sprintf(" consumes `%s`", record.BackendConsumes))
+			}
+			b.WriteString("\n")
+		}
+		if record.BackendReturnType != "" {
+			b.WriteString(fmt.Sprintf("- Returns: `%s`\n", record.BackendReturnType))
+		}
 		b.WriteString("- Backend steps:\n")
 		if len(record.BackendSteps) == 0 {
 			b.WriteString("  - none resolved\n")
@@ -1447,6 +1594,12 @@ func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) str
 				b.WriteString(fmt.Sprintf("  - `%s` in `%s` (%s", emptyAsNone(label), test.TestFile, test.Confidence))
 				if test.HTTPMethod != "" && test.Path != "" {
 					b.WriteString(fmt.Sprintf(", %s `%s`", test.HTTPMethod, test.Path))
+				}
+				if test.TestCase != "" && test.TestCase != "unspecified" {
+					b.WriteString(fmt.Sprintf(", case `%s`", test.TestCase))
+				}
+				if test.StatusExpectation != "" {
+					b.WriteString(fmt.Sprintf(", status `%s`", test.StatusExpectation))
 				}
 				b.WriteString(")\n")
 			}

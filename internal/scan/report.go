@@ -170,6 +170,12 @@ func renderTestMapReport(relations []RelationRecord, records []TestMapRecord) st
 			} else {
 				b.WriteString(fmt.Sprintf(" tests `%s.%s`", record.TargetClass, record.TargetMethod))
 			}
+			if record.TestCase != "" && record.TestCase != "unspecified" {
+				b.WriteString(fmt.Sprintf(", case `%s`", record.TestCase))
+			}
+			if record.StatusExpectation != "" {
+				b.WriteString(fmt.Sprintf(", status `%s`", record.StatusExpectation))
+			}
 			b.WriteString(fmt.Sprintf(" (%s)\n", record.Confidence))
 		}
 		b.WriteString("\n")

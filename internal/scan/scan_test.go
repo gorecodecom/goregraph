@@ -721,6 +721,11 @@ func TestRunExtractsRealisticFrontendAPIContracts(t *testing.T) {
 		"export async function taskWidget(dispatch, isbn) {\n"+
 		"  return GetHelper(dispatch, `/task/services/${isbn}/tasks?status=${getOpenTaskStates().join(',')}`);\n"+
 		"}\n\n"+
+		"export async function welcome(dispatch, isbn, kind) {\n"+
+		"  const endpoints = { focus: 'documents/focus', newest: 'documents/new' };\n"+
+		"  const endpoint = endpoints[kind];\n"+
+		"  return GetHelper(dispatch, `/documenttopic/modules/${isbn}/${endpoint}`);\n"+
+		"}\n\n"+
 		"export async function dynamicFetch(url) {\n"+
 		"  return fetch(url, { method: 'POST' });\n"+
 		"}\n")
@@ -742,6 +747,7 @@ export function PostHelper(dispatch, path) { return fetch(path, { method: "POST"
 	assertHasAPIContract(t, api, "GET", "/productservice/users/{userId}/products", "apps/portal/src/api/productsservice.js")
 	assertHasAPIContract(t, api, "GET", "/containertree/modules/{isbn}/containers", "apps/portal/src/api/productsservice.js")
 	assertHasAPIContract(t, api, "GET", "/task/services/{isbn}/tasks", "apps/portal/src/api/productsservice.js")
+	assertHasAPIContractDynamicCandidates(t, api, "GET", "/documenttopic/modules/{isbn}/{endpoint}", "documents/focus", "documents/new")
 	assertNoAPIContract(t, api, "POST", "/url")
 
 	apiReport := readText(t, filepath.Join(root, "goregraph-out", "api-contracts.md"))
@@ -1128,6 +1134,27 @@ func TestDiagnosticsReportDoesNotPrefixLikelyTestTargetWithNoneOwner(t *testing.
 	}
 }
 
+func TestTestMapReportIncludesEndpointTestCase(t *testing.T) {
+	report := renderTestMapReport(nil, []TestMapRecord{
+		{
+			TestClass:         "CadasterControllerTest",
+			TestMethod:        "updatesStateNoAuthIsUnauthorized",
+			TargetClass:       "CadasterController",
+			TargetMethod:      "updateState",
+			HTTPMethod:        "PUT",
+			Path:              "/cadasters/{cadasterId}/state",
+			Type:              "endpoint",
+			TestCase:          "auth_error",
+			StatusExpectation: "401",
+			Confidence:        "MATCHED",
+		},
+	})
+
+	if !strings.Contains(report, "case `auth_error`") || !strings.Contains(report, "status `401`") {
+		t.Fatalf("test-map report missing endpoint case/status:\n%s", report)
+	}
+}
+
 func TestRunWritesFrontendUsageChains(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "package.json", `{"name":"frontend-monorepo"}`)
@@ -1345,6 +1372,22 @@ func assertHasAPIContract(t *testing.T, records []APIContractRecord, method, pat
 		}
 	}
 	t.Fatalf("missing api contract method=%q path=%q file=%q in %#v", method, path, file, records)
+}
+
+func assertHasAPIContractDynamicCandidates(t *testing.T, records []APIContractRecord, method, path string, candidates ...string) {
+	t.Helper()
+	for _, record := range records {
+		if record.HTTPMethod != method || record.Path != path {
+			continue
+		}
+		for _, candidate := range candidates {
+			if !containsString(record.DynamicEndpointCandidates, candidate) {
+				t.Fatalf("api contract %s %q missing dynamic candidate %q in %#v", method, path, candidate, record)
+			}
+		}
+		return
+	}
+	t.Fatalf("missing api contract method=%q path=%q in %#v", method, path, records)
 }
 
 func assertHasUnsafeAPIContract(t *testing.T, records []APIContractRecord, method, path string) {

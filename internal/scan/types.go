@@ -184,19 +184,21 @@ type SpringEndpointFlowStep struct {
 }
 
 type TestMapRecord struct {
-	TestFile        string  `json:"test_file"`
-	TestClass       string  `json:"test_class,omitempty"`
-	TestMethod      string  `json:"test_method,omitempty"`
-	TargetFile      string  `json:"target_file,omitempty"`
-	TargetClass     string  `json:"target_class,omitempty"`
-	TargetMethod    string  `json:"target_method,omitempty"`
-	HTTPMethod      string  `json:"http_method,omitempty"`
-	Path            string  `json:"path,omitempty"`
-	Type            string  `json:"type"`
-	Line            int     `json:"line,omitempty"`
-	Confidence      string  `json:"confidence"`
-	ConfidenceScore float64 `json:"confidence_score"`
-	Reason          string  `json:"reason,omitempty"`
+	TestFile          string  `json:"test_file"`
+	TestClass         string  `json:"test_class,omitempty"`
+	TestMethod        string  `json:"test_method,omitempty"`
+	TargetFile        string  `json:"target_file,omitempty"`
+	TargetClass       string  `json:"target_class,omitempty"`
+	TargetMethod      string  `json:"target_method,omitempty"`
+	HTTPMethod        string  `json:"http_method,omitempty"`
+	Path              string  `json:"path,omitempty"`
+	Type              string  `json:"type"`
+	TestCase          string  `json:"test_case,omitempty"`
+	StatusExpectation string  `json:"status_expectation,omitempty"`
+	Line              int     `json:"line,omitempty"`
+	Confidence        string  `json:"confidence"`
+	ConfidenceScore   float64 `json:"confidence_score"`
+	Reason            string  `json:"reason,omitempty"`
 }
 
 type AnalyzerRecord struct {
@@ -300,22 +302,23 @@ type FrontendUsageRecord struct {
 }
 
 type APIContractRecord struct {
-	Language         string             `json:"language"`
-	App              string             `json:"app,omitempty"`
-	Package          string             `json:"package,omitempty"`
-	HTTPMethod       string             `json:"http_method"`
-	Path             string             `json:"path"`
-	RawPath          string             `json:"raw_path,omitempty"`
-	Query            string             `json:"query,omitempty"`
-	QueryParams      []QueryParamRecord `json:"query_params,omitempty"`
-	ServiceCandidate string             `json:"service_candidate,omitempty"`
-	UnsafeDynamic    bool               `json:"unsafe_dynamic,omitempty"`
-	Caller           string             `json:"caller,omitempty"`
-	File             string             `json:"file"`
-	Line             int                `json:"line"`
-	Confidence       string             `json:"confidence"`
-	ConfidenceScore  float64            `json:"confidence_score"`
-	Reason           string             `json:"reason,omitempty"`
+	Language                  string             `json:"language"`
+	App                       string             `json:"app,omitempty"`
+	Package                   string             `json:"package,omitempty"`
+	HTTPMethod                string             `json:"http_method"`
+	Path                      string             `json:"path"`
+	RawPath                   string             `json:"raw_path,omitempty"`
+	Query                     string             `json:"query,omitempty"`
+	QueryParams               []QueryParamRecord `json:"query_params,omitempty"`
+	ServiceCandidate          string             `json:"service_candidate,omitempty"`
+	UnsafeDynamic             bool               `json:"unsafe_dynamic,omitempty"`
+	DynamicEndpointCandidates []string           `json:"dynamic_endpoint_candidates,omitempty"`
+	Caller                    string             `json:"caller,omitempty"`
+	File                      string             `json:"file"`
+	Line                      int                `json:"line"`
+	Confidence                string             `json:"confidence"`
+	ConfidenceScore           float64            `json:"confidence_score"`
+	Reason                    string             `json:"reason,omitempty"`
 }
 
 type QueryParamRecord struct {
@@ -456,27 +459,33 @@ type WorkspaceCleanItemRecord struct {
 }
 
 type WorkspaceContractMatchRecord struct {
-	APIProject        string  `json:"api_project"`
-	APIHTTPMethod     string  `json:"api_http_method"`
-	APIPath           string  `json:"api_path"`
-	APIFile           string  `json:"api_file"`
-	APILine           int     `json:"api_line,omitempty"`
-	APICaller         string  `json:"api_caller,omitempty"`
-	BackendProject    string  `json:"backend_project,omitempty"`
-	BackendService    string  `json:"backend_service,omitempty"`
-	BackendHTTPMethod string  `json:"backend_http_method,omitempty"`
-	BackendPath       string  `json:"backend_path,omitempty"`
-	BackendHandler    string  `json:"backend_handler,omitempty"`
-	BackendFile       string  `json:"backend_file,omitempty"`
-	BackendLine       int     `json:"backend_line,omitempty"`
-	ServiceCandidate  string  `json:"service_candidate,omitempty"`
-	Issue             string  `json:"issue"`
-	Confidence        string  `json:"confidence"`
-	ConfidenceScore   float64 `json:"confidence_score"`
-	Reason            string  `json:"reason,omitempty"`
+	ID                        string   `json:"id"`
+	APIProject                string   `json:"api_project"`
+	APIHTTPMethod             string   `json:"api_http_method"`
+	APIPath                   string   `json:"api_path"`
+	APIFile                   string   `json:"api_file"`
+	APILine                   int      `json:"api_line,omitempty"`
+	APICaller                 string   `json:"api_caller,omitempty"`
+	BackendProject            string   `json:"backend_project,omitempty"`
+	BackendService            string   `json:"backend_service,omitempty"`
+	BackendHTTPMethod         string   `json:"backend_http_method,omitempty"`
+	BackendPath               string   `json:"backend_path,omitempty"`
+	BackendHandler            string   `json:"backend_handler,omitempty"`
+	BackendFile               string   `json:"backend_file,omitempty"`
+	BackendLine               int      `json:"backend_line,omitempty"`
+	ServiceCandidate          string   `json:"service_candidate,omitempty"`
+	Issue                     string   `json:"issue"`
+	Confidence                string   `json:"confidence"`
+	ConfidenceScore           float64  `json:"confidence_score"`
+	Reason                    string   `json:"reason,omitempty"`
+	LikelyOwner               string   `json:"likely_owner,omitempty"`
+	ResolutionHint            string   `json:"resolution_hint,omitempty"`
+	SimilarBackendRoutes      []string `json:"similar_backend_routes,omitempty"`
+	DynamicEndpointCandidates []string `json:"dynamic_endpoint_candidates,omitempty"`
 }
 
 type WorkspaceFeatureFlowRecord struct {
+	ID                 string                   `json:"id"`
 	FrontendProject    string                   `json:"frontend_project"`
 	FrontendRouteID    string                   `json:"frontend_route_id,omitempty"`
 	FrontendRoutePath  string                   `json:"frontend_route_path,omitempty"`
@@ -497,6 +506,10 @@ type WorkspaceFeatureFlowRecord struct {
 	BackendMethod      string                   `json:"backend_method,omitempty"`
 	BackendFile        string                   `json:"backend_file,omitempty"`
 	BackendLine        int                      `json:"backend_line,omitempty"`
+	BackendRequestType string                   `json:"backend_request_type,omitempty"`
+	BackendRequestKind string                   `json:"backend_request_kind,omitempty"`
+	BackendConsumes    string                   `json:"backend_consumes,omitempty"`
+	BackendReturnType  string                   `json:"backend_return_type,omitempty"`
 	BackendSteps       []SpringEndpointFlowStep `json:"backend_steps,omitempty"`
 	Tests              []TestMapRecord          `json:"tests,omitempty"`
 	TestReason         string                   `json:"test_reason,omitempty"`

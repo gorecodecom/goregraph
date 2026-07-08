@@ -175,11 +175,12 @@ func buildJavaTestMap(sources []JavaSourceRecord, endpoints []SpringEndpointReco
 			}
 			for _, request := range javaTestMethodHTTPRequests(method, helperHTTPRequests) {
 				if endpoint, ok := endpointByRequest.match(request.HTTPMethod, request.Path); ok {
+					testCase, status := classifyEndpointTestCase(method.Name)
 					records = append(records, TestMapRecord{
 						TestFile: method.File, TestClass: method.Owner, TestMethod: method.Name,
 						TargetFile: endpoint.File, TargetClass: endpoint.Controller, TargetMethod: endpoint.Method,
 						HTTPMethod: endpoint.HTTPMethod, Path: endpoint.Path,
-						Type: "endpoint", Line: request.Line, Confidence: "MATCHED", ConfidenceScore: 0.9, Reason: "extracted test HTTP request matched endpoint pattern",
+						Type: "endpoint", TestCase: testCase, StatusExpectation: status, Line: request.Line, Confidence: "MATCHED", ConfidenceScore: 0.9, Reason: "extracted test HTTP request matched endpoint pattern",
 					})
 				}
 			}
@@ -195,6 +196,26 @@ func buildJavaTestMap(sources []JavaSourceRecord, endpoints []SpringEndpointReco
 		return records[i].TargetClass < records[j].TargetClass
 	})
 	return records
+}
+
+func classifyEndpointTestCase(name string) (string, string) {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, "unauthorized") || strings.Contains(lower, "noauth") || strings.Contains(lower, "no_auth"):
+		return "auth_error", "401"
+	case strings.Contains(lower, "forbidden"):
+		return "permission_error", "403"
+	case strings.Contains(lower, "badrequest") || strings.Contains(lower, "bad_request"):
+		return "validation_error", "400"
+	case strings.Contains(lower, "notfound") || strings.Contains(lower, "not_found"):
+		return "not_found", "404"
+	case strings.Contains(lower, "error") || strings.Contains(lower, "exception"):
+		return "error", ""
+	case strings.Contains(lower, "okay") || strings.Contains(lower, "success") || strings.Contains(lower, "isok"):
+		return "success", "2xx"
+	default:
+		return "unspecified", ""
+	}
 }
 
 func javaHTTPRequestsByOwnerMethod(sources []JavaSourceRecord) map[string]map[string][]JavaHTTPCallRecord {

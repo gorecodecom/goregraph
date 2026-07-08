@@ -14,6 +14,7 @@ var (
 	codeMethodRE      = regexp.MustCompile(`\bmethod\s*:\s*["']([A-Za-z]+)["']`)
 	codePathLiteralRE = regexp.MustCompile(`["'](/[^"']+)["']|` + "`" + `(/[^` + "`" + `]+)` + "`")
 	codeTemplateVarRE = regexp.MustCompile(`\$\{([^}]+)\}`)
+	codeStringValueRE = regexp.MustCompile(`["']([A-Za-z0-9_./-]+)["']`)
 )
 
 func extractAPIContracts(file FileRecord, lines []string, functions []CodeFunctionRecord) []APIContractRecord {
@@ -31,7 +32,7 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 		if match := codeHelperStartRE.FindStringSubmatch(line); len(match) == 2 {
 			callText := collectCallText(lines, i, 5)
 			if path, ok := firstPathLiteral(callText); ok {
-				records = append(records, apiContract(file, helperHTTPMethod(match[1]), path, apiContractCaller(functions, i+1), i+1, "helper-call-argument"))
+				records = append(records, apiContract(file, helperHTTPMethod(match[1]), path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(lines, functions, i+1, path), i+1, "helper-call-argument"))
 			}
 			continue
 		}
@@ -40,7 +41,8 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 			if methodMatch := codeMethodRE.FindStringSubmatch(line); len(methodMatch) == 2 {
 				method = strings.ToUpper(methodMatch[1])
 			}
-			records = append(records, apiContract(file, method, firstNonEmpty(match[1], match[2], match[3]), apiContractCaller(functions, i+1), i+1, "fetch-call"))
+			path := firstNonEmpty(match[1], match[2], match[3])
+			records = append(records, apiContract(file, method, path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(lines, functions, i+1, path), i+1, "fetch-call"))
 		}
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -71,6 +73,60 @@ func apiContractCaller(functions []CodeFunctionRecord, line int) string {
 	return best.Name
 }
 
+func dynamicEndpointCandidatesForLine(lines []string, functions []CodeFunctionRecord, line int, rawPath string) []string {
+	if !strings.Contains(rawPath, "${endpoint}") && !strings.Contains(strings.ToLower(rawPath), "${dynamicendpoint}") {
+		return nil
+	}
+	var owner CodeFunctionRecord
+	for _, function := range functions {
+		if function.Line <= 0 || function.EndLine <= 0 {
+			continue
+		}
+		if line >= function.Line && line <= function.EndLine && (owner.Name == "" || function.Line >= owner.Line) {
+			owner = function
+		}
+	}
+	if owner.Name == "" {
+		return nil
+	}
+	start := owner.Line - 1
+	end := owner.EndLine
+	if start < 0 || end > len(lines) || start >= end {
+		return nil
+	}
+	seen := map[string]bool{}
+	var candidates []string
+	for i := start; i < end; i++ {
+		for _, match := range codeStringValueRE.FindAllStringSubmatch(lines[i], -1) {
+			if len(match) != 2 || !isLikelyDynamicEndpointCandidate(match[1]) {
+				continue
+			}
+			if seen[match[1]] {
+				continue
+			}
+			seen[match[1]] = true
+			candidates = append(candidates, match[1])
+		}
+	}
+	sort.Strings(candidates)
+	return candidates
+}
+
+func isLikelyDynamicEndpointCandidate(value string) bool {
+	if value == "" || strings.HasPrefix(value, "/") || strings.Contains(value, "://") {
+		return false
+	}
+	if !strings.Contains(value, "/") {
+		return false
+	}
+	for _, part := range strings.Split(value, "/") {
+		if part == "" || strings.ContainsAny(part, "${}?&=:") {
+			return false
+		}
+	}
+	return true
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -80,7 +136,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func apiContract(file FileRecord, method, path, caller string, line int, reason string) APIContractRecord {
+func apiContract(file FileRecord, method, path, caller string, dynamicEndpointCandidates []string, line int, reason string) APIContractRecord {
 	normalizedPath, query, params, unsafeDynamic := normalizeAPIPathDetails(path)
 	serviceCandidate := serviceCandidateForPath(normalizedPath)
 	if isFrontendInternalAPIPath(file.Path, normalizedPath) {
@@ -88,22 +144,23 @@ func apiContract(file FileRecord, method, path, caller string, line int, reason 
 		reason += "; frontend-internal-api-route"
 	}
 	return APIContractRecord{
-		Language:         file.Language,
-		App:              codeFileApp(file.Path),
-		Package:          codeFilePackage(file.Path),
-		HTTPMethod:       method,
-		Path:             normalizedPath,
-		RawPath:          path,
-		Query:            query,
-		QueryParams:      params,
-		ServiceCandidate: serviceCandidate,
-		UnsafeDynamic:    unsafeDynamic,
-		Caller:           strings.TrimSpace(caller),
-		File:             file.Path,
-		Line:             line,
-		Confidence:       "EXTRACTED",
-		ConfidenceScore:  0.9,
-		Reason:           reason,
+		Language:                  file.Language,
+		App:                       codeFileApp(file.Path),
+		Package:                   codeFilePackage(file.Path),
+		HTTPMethod:                method,
+		Path:                      normalizedPath,
+		RawPath:                   path,
+		Query:                     query,
+		QueryParams:               params,
+		ServiceCandidate:          serviceCandidate,
+		UnsafeDynamic:             unsafeDynamic,
+		DynamicEndpointCandidates: dynamicEndpointCandidates,
+		Caller:                    strings.TrimSpace(caller),
+		File:                      file.Path,
+		Line:                      line,
+		Confidence:                "EXTRACTED",
+		ConfidenceScore:           0.9,
+		Reason:                    reason,
 	}
 }
 

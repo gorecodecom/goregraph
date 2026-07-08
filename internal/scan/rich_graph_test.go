@@ -129,6 +129,11 @@ func TestExtractJavaSourceFindsHelperHTTPRequests(t *testing.T) {
     mockMvc.perform(putStateRequestFor(CADASTER_ID));
   }
 
+  @Test
+  void updatesStateNoAuthIsUnauthorized() throws Exception {
+    mockMvc.perform(putStateRequestFor(CADASTER_ID));
+  }
+
   private MockHttpServletRequestBuilder putStateRequestFor(final long cadasterId) {
     return MockMvcRequestBuilders.put("/cadasters/%d/state".formatted(cadasterId));
   }
@@ -565,6 +570,11 @@ class CadasterControllerTest {
     mockMvc.perform(putStateRequestFor(CADASTER_ID));
   }
 
+  @Test
+  void updatesStateNoAuthIsUnauthorized() throws Exception {
+    mockMvc.perform(putStateRequestFor(CADASTER_ID));
+  }
+
   private MockHttpServletRequestBuilder buildRequest(final RequestBuilderFactory factory, final String uri) {
     return factory.apply(uri);
   }
@@ -651,6 +661,7 @@ class CadasterServiceTest {
 	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "updatesCopyWithWebTestClient", "PUT", "/cadasters/{cadasterId}/copy")
 	assertHasEndpointTestMap(t, testMapRecords, "CadasterControllerTest", "updatesStateWithHelperMethod", "PUT", "/cadasters/{cadasterId}/state")
 	assertEndpointTestMapConfidence(t, testMapRecords, "CadasterControllerTest", "updatesStateWithHelperMethod", "MATCHED")
+	assertEndpointTestMapCase(t, testMapRecords, "CadasterControllerTest", "updatesStateNoAuthIsUnauthorized", "auth_error", "401")
 
 	var analyzers []AnalyzerRecord
 	readJSON(t, filepath.Join(out, "analyzers.json"), &analyzers)
@@ -885,6 +896,19 @@ func assertEndpointTestMapConfidence(t *testing.T, records []TestMapRecord, test
 		}
 	}
 	t.Fatalf("missing endpoint test map for confidence assertion %s.%s in %#v", testClass, testMethod, records)
+}
+
+func assertEndpointTestMapCase(t *testing.T, records []TestMapRecord, testClass, testMethod, testCase, status string) {
+	t.Helper()
+	for _, record := range records {
+		if record.TestClass == testClass && record.TestMethod == testMethod && record.Type == "endpoint" {
+			if record.TestCase != testCase || record.StatusExpectation != status {
+				t.Fatalf("endpoint test case = %q/%q, want %q/%q for %#v", record.TestCase, record.StatusExpectation, testCase, status, record)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing endpoint test map for case assertion %s.%s in %#v", testClass, testMethod, records)
 }
 
 func assertHasAnalyzer(t *testing.T, records []AnalyzerRecord, language string, calls, endpoints, tests bool) {
