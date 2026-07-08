@@ -160,6 +160,87 @@ func TestExtractJavaSourceFindsHelperHTTPRequests(t *testing.T) {
 	}
 }
 
+func TestSpringIndexExtractsDTOFieldsAndEndpointAuth(t *testing.T) {
+	controller := extractJavaSource(FileRecord{Path: "src/main/java/com/example/CadasterController.java", Language: "java"}, `package com.example;
+
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @PreAuthorize("hasAuthority('CADASTER_WRITE')")
+  @PostMapping("/{cadasterId}/copy")
+  CadasterDto copy(@RequestBody CadasterCopyRequest request) {
+    return new CadasterDto();
+  }
+}
+`)
+	request := extractJavaSource(FileRecord{Path: "src/main/java/com/example/CadasterCopyRequest.java", Language: "java"}, `package com.example;
+
+import jakarta.validation.constraints.NotBlank;
+
+class CadasterCopyRequest {
+  @NotBlank
+  private String name;
+}
+`)
+	response := extractJavaSource(FileRecord{Path: "src/main/java/com/example/CadasterDto.java", Language: "java"}, `package com.example;
+
+class CadasterDto {
+  private Long id;
+}
+`)
+
+	spring := buildSpringIndex([]JavaSourceRecord{controller, request, response})
+	endpoint, ok := findSpringEndpointForTest(spring.Endpoints, "POST", "/cadasters/{cadasterId}/copy")
+	if !ok {
+		t.Fatalf("missing endpoint in %#v", spring.Endpoints)
+	}
+	if len(endpoint.Auth) != 1 || endpoint.Auth[0].Expression != "hasAuthority('CADASTER_WRITE')" {
+		t.Fatalf("missing endpoint auth: %#v", endpoint)
+	}
+	assertHasDTOField(t, spring.DTOs, "CadasterCopyRequest", "name", true)
+	assertHasDTOField(t, spring.DTOs, "CadasterDto", "id", false)
+}
+
+func TestSpringIndexKeepsMappingAfterMultilineOpenAPIOperation(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/example/CadasterController.java", Language: "java"}, `package com.example;
+
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/cadasters")
+class CadasterController {
+  @Operation(
+      summary = "Get all cadasters of user",
+      responses = {@ApiResponse(responseCode = "200", content = @Content(array = @ArraySchema(schema = @Schema(implementation = CadasterResponse.class)))),
+          @ApiResponse(responseCode = "204", content = @Content)},
+      security = @SecurityRequirement(name = "bearerAuth"))
+  @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<?> gets() {
+    return ResponseEntity.ok();
+  }
+}
+`)
+
+	spring := buildSpringIndex([]JavaSourceRecord{source})
+	endpoint, ok := findSpringEndpointForTest(spring.Endpoints, "GET", "/cadasters")
+	if !ok {
+		t.Fatalf("missing endpoint after multiline Operation; methods=%#v endpoints=%#v", source.Methods, spring.Endpoints)
+	}
+	if endpoint.ReturnType != "CadasterResponse" {
+		t.Fatalf("return type = %q, want CadasterResponse: %#v", endpoint.ReturnType, endpoint)
+	}
+}
+
 func TestExtractJavaSourceKeepsApplicationConfigBasePathPrefix(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/test/java/DemoTest.java", Language: "java"}, `class DemoTest {
   @Test
@@ -819,6 +900,31 @@ func assertHasSpringEndpointRequest(t *testing.T, endpoints []SpringEndpointReco
 		}
 	}
 	t.Fatalf("missing Spring endpoint request method=%q path=%q requestKind=%q requestType=%q in %#v", method, path, requestKind, requestType, endpoints)
+}
+
+func findSpringEndpointForTest(endpoints []SpringEndpointRecord, method, path string) (SpringEndpointRecord, bool) {
+	for _, endpoint := range endpoints {
+		if endpoint.HTTPMethod == method && endpoint.Path == path {
+			return endpoint, true
+		}
+	}
+	return SpringEndpointRecord{}, false
+}
+
+func assertHasDTOField(t *testing.T, dtos []DTORecord, dtoName, fieldName string, required bool) {
+	t.Helper()
+	for _, dto := range dtos {
+		if dto.Name != dtoName {
+			continue
+		}
+		for _, field := range dto.Fields {
+			if field.Name == fieldName && field.Required == required {
+				return
+			}
+		}
+		t.Fatalf("DTO %q missing field %q required=%v in %#v", dtoName, fieldName, required, dto)
+	}
+	t.Fatalf("missing DTO %q in %#v", dtoName, dtos)
 }
 
 func assertHasCallGraphEdge(t *testing.T, edges []CallGraphEdgeRecord, fromOwner, fromMethod, toOwner, toMethod string) {

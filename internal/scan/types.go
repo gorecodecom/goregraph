@@ -310,6 +310,7 @@ type APIContractRecord struct {
 	RawPath                   string             `json:"raw_path,omitempty"`
 	Query                     string             `json:"query,omitempty"`
 	QueryParams               []QueryParamRecord `json:"query_params,omitempty"`
+	ResponseFields            []string           `json:"response_fields,omitempty"`
 	ServiceCandidate          string             `json:"service_candidate,omitempty"`
 	UnsafeDynamic             bool               `json:"unsafe_dynamic,omitempty"`
 	DynamicEndpointCandidates []string           `json:"dynamic_endpoint_candidates,omitempty"`
@@ -466,6 +467,7 @@ type WorkspaceContractMatchRecord struct {
 	APIFile                   string   `json:"api_file"`
 	APILine                   int      `json:"api_line,omitempty"`
 	APICaller                 string   `json:"api_caller,omitempty"`
+	FrontendResponseFields    []string `json:"frontend_response_fields,omitempty"`
 	BackendProject            string   `json:"backend_project,omitempty"`
 	BackendService            string   `json:"backend_service,omitempty"`
 	BackendHTTPMethod         string   `json:"backend_http_method,omitempty"`
@@ -480,41 +482,50 @@ type WorkspaceContractMatchRecord struct {
 	Reason                    string   `json:"reason,omitempty"`
 	LikelyOwner               string   `json:"likely_owner,omitempty"`
 	ResolutionHint            string   `json:"resolution_hint,omitempty"`
+	ResolutionClass           string   `json:"resolution_class,omitempty"`
+	ResolutionEvidence        []string `json:"resolution_evidence,omitempty"`
 	SimilarBackendRoutes      []string `json:"similar_backend_routes,omitempty"`
 	DynamicEndpointCandidates []string `json:"dynamic_endpoint_candidates,omitempty"`
+	EquivalentRouteCandidates []string `json:"equivalent_route_candidates,omitempty"`
+	MissingRouteKind          string   `json:"missing_route_kind,omitempty"`
 }
 
 type WorkspaceFeatureFlowRecord struct {
-	ID                 string                   `json:"id"`
-	FrontendProject    string                   `json:"frontend_project"`
-	FrontendRouteID    string                   `json:"frontend_route_id,omitempty"`
-	FrontendRoutePath  string                   `json:"frontend_route_path,omitempty"`
-	FrontendRouteFile  string                   `json:"frontend_route_file,omitempty"`
-	FrontendRouteLine  int                      `json:"frontend_route_line,omitempty"`
-	FrontendComponent  string                   `json:"frontend_component,omitempty"`
-	FrontendCaller     string                   `json:"frontend_caller,omitempty"`
-	FrontendSteps      []CodeFlowStep           `json:"frontend_steps,omitempty"`
-	FrontendConfidence string                   `json:"frontend_confidence,omitempty"`
-	FrontendReason     string                   `json:"frontend_reason,omitempty"`
-	FrontendFile       string                   `json:"frontend_file"`
-	FrontendLine       int                      `json:"frontend_line,omitempty"`
-	HTTPMethod         string                   `json:"http_method"`
-	Path               string                   `json:"path"`
-	BackendProject     string                   `json:"backend_project"`
-	BackendService     string                   `json:"backend_service,omitempty"`
-	BackendController  string                   `json:"backend_controller,omitempty"`
-	BackendMethod      string                   `json:"backend_method,omitempty"`
-	BackendFile        string                   `json:"backend_file,omitempty"`
-	BackendLine        int                      `json:"backend_line,omitempty"`
-	BackendRequestType string                   `json:"backend_request_type,omitempty"`
-	BackendRequestKind string                   `json:"backend_request_kind,omitempty"`
-	BackendConsumes    string                   `json:"backend_consumes,omitempty"`
-	BackendReturnType  string                   `json:"backend_return_type,omitempty"`
-	BackendSteps       []SpringEndpointFlowStep `json:"backend_steps,omitempty"`
-	Tests              []TestMapRecord          `json:"tests,omitempty"`
-	TestReason         string                   `json:"test_reason,omitempty"`
-	Confidence         string                   `json:"confidence"`
-	Reason             string                   `json:"reason,omitempty"`
+	ID                    string                   `json:"id"`
+	FrontendProject       string                   `json:"frontend_project"`
+	FrontendRouteID       string                   `json:"frontend_route_id,omitempty"`
+	FrontendRoutePath     string                   `json:"frontend_route_path,omitempty"`
+	FrontendRouteFile     string                   `json:"frontend_route_file,omitempty"`
+	FrontendRouteLine     int                      `json:"frontend_route_line,omitempty"`
+	FrontendComponent     string                   `json:"frontend_component,omitempty"`
+	FrontendCaller        string                   `json:"frontend_caller,omitempty"`
+	FrontendSteps         []CodeFlowStep           `json:"frontend_steps,omitempty"`
+	FrontendConfidence    string                   `json:"frontend_confidence,omitempty"`
+	FrontendReason        string                   `json:"frontend_reason,omitempty"`
+	FrontendFile          string                   `json:"frontend_file"`
+	FrontendLine          int                      `json:"frontend_line,omitempty"`
+	HTTPMethod            string                   `json:"http_method"`
+	Path                  string                   `json:"path"`
+	BackendProject        string                   `json:"backend_project"`
+	BackendService        string                   `json:"backend_service,omitempty"`
+	BackendController     string                   `json:"backend_controller,omitempty"`
+	BackendMethod         string                   `json:"backend_method,omitempty"`
+	BackendFile           string                   `json:"backend_file,omitempty"`
+	BackendLine           int                      `json:"backend_line,omitempty"`
+	BackendRequestType    string                   `json:"backend_request_type,omitempty"`
+	BackendRequestKind    string                   `json:"backend_request_kind,omitempty"`
+	BackendConsumes       string                   `json:"backend_consumes,omitempty"`
+	BackendReturnType     string                   `json:"backend_return_type,omitempty"`
+	BackendRequestFields  []DTOFieldRecord         `json:"backend_request_fields,omitempty"`
+	BackendResponseFields []DTOFieldRecord         `json:"backend_response_fields,omitempty"`
+	Auth                  []AuthRecord             `json:"auth,omitempty"`
+	PersistencePath       []PersistenceStepRecord  `json:"persistence_path,omitempty"`
+	FieldRisks            []FieldRiskRecord        `json:"field_risks,omitempty"`
+	BackendSteps          []SpringEndpointFlowStep `json:"backend_steps,omitempty"`
+	Tests                 []TestMapRecord          `json:"tests,omitempty"`
+	TestReason            string                   `json:"test_reason,omitempty"`
+	Confidence            string                   `json:"confidence"`
+	Reason                string                   `json:"reason,omitempty"`
 }
 
 type PackageGraphRecord struct {
@@ -582,6 +593,7 @@ type JavaMethodRecord struct {
 	Annotations  []JavaAnnotationRecord `json:"annotations,omitempty"`
 	Calls        []JavaCallRecord       `json:"calls,omitempty"`
 	HTTPRequests []JavaHTTPCallRecord   `json:"http_requests,omitempty"`
+	Auth         []AuthRecord           `json:"auth,omitempty"`
 	StringVars   map[string]string      `json:"-"`
 	PendingHTTP  string                 `json:"-"`
 }
@@ -627,10 +639,98 @@ type SpringIndex struct {
 	Applications []SpringApplicationRecord `json:"applications,omitempty"`
 	Components   []SpringComponentRecord   `json:"components,omitempty"`
 	Endpoints    []SpringEndpointRecord    `json:"endpoints,omitempty"`
+	DTOs         []DTORecord               `json:"dtos,omitempty"`
 	Dependencies []SpringDependencyRecord  `json:"dependencies,omitempty"`
 	Repositories []SpringRepositoryRecord  `json:"repositories,omitempty"`
 	Entities     []SpringEntityRecord      `json:"entities,omitempty"`
 	Beans        []SpringBeanRecord        `json:"beans,omitempty"`
+}
+
+type DTORecord struct {
+	Name       string           `json:"name"`
+	Package    string           `json:"package,omitempty"`
+	File       string           `json:"file,omitempty"`
+	Line       int              `json:"line,omitempty"`
+	Kind       string           `json:"kind,omitempty"`
+	Fields     []DTOFieldRecord `json:"fields,omitempty"`
+	Confidence string           `json:"confidence,omitempty"`
+	Source     string           `json:"source,omitempty"`
+}
+
+type DTOFieldRecord struct {
+	Name       string `json:"name"`
+	Type       string `json:"type,omitempty"`
+	Required   bool   `json:"required,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+}
+
+type AuthRecord struct {
+	Kind       string `json:"kind"`
+	Expression string `json:"expression,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+	File       string `json:"file,omitempty"`
+	Line       int    `json:"line,omitempty"`
+}
+
+type PersistenceStepRecord struct {
+	Repository string `json:"repository,omitempty"`
+	Method     string `json:"method,omitempty"`
+	Entity     string `json:"entity,omitempty"`
+	Table      string `json:"table,omitempty"`
+	File       string `json:"file,omitempty"`
+	Line       int    `json:"line,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+}
+
+type FieldRiskRecord struct {
+	Kind       string `json:"kind"`
+	Field      string `json:"field,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+}
+
+type FeatureDossierRecord struct {
+	ID                string                  `json:"id"`
+	Route             string                  `json:"route"`
+	FrontendProject   string                  `json:"frontend_project,omitempty"`
+	FrontendRoute     string                  `json:"frontend_route,omitempty"`
+	FrontendComponent string                  `json:"frontend_component,omitempty"`
+	FrontendCaller    string                  `json:"frontend_caller,omitempty"`
+	BackendProject    string                  `json:"backend_project,omitempty"`
+	BackendHandler    string                  `json:"backend_handler,omitempty"`
+	RequestFields     []DTOFieldRecord        `json:"request_fields,omitempty"`
+	ResponseFields    []DTOFieldRecord        `json:"response_fields,omitempty"`
+	Auth              []AuthRecord            `json:"auth,omitempty"`
+	PersistencePath   []PersistenceStepRecord `json:"persistence_path,omitempty"`
+	Tests             []TestMapRecord         `json:"tests,omitempty"`
+	Risks             []FieldRiskRecord       `json:"risks,omitempty"`
+	Confidence        string                  `json:"confidence,omitempty"`
+	SourceFlowID      string                  `json:"source_flow_id,omitempty"`
+}
+
+type WorkspaceSnapshotRecord struct {
+	Contracts []WorkspaceContractMatchRecord `json:"contracts,omitempty"`
+	Flows     []WorkspaceFeatureFlowRecord   `json:"flows,omitempty"`
+}
+
+type WorkspaceDiffRecord struct {
+	NewContracts        []WorkspaceContractMatchRecord `json:"new_contracts,omitempty"`
+	RemovedContracts    []WorkspaceContractMatchRecord `json:"removed_contracts,omitempty"`
+	ChangedContracts    []WorkspaceContractDiffRecord  `json:"changed_contracts,omitempty"`
+	CoverageRegressions []string                       `json:"coverage_regressions,omitempty"`
+}
+
+type WorkspaceContractDiffRecord struct {
+	ID               string `json:"id"`
+	Route            string `json:"route,omitempty"`
+	BeforeIssue      string `json:"before_issue,omitempty"`
+	AfterIssue       string `json:"after_issue,omitempty"`
+	BeforeConfidence string `json:"before_confidence,omitempty"`
+	AfterConfidence  string `json:"after_confidence,omitempty"`
 }
 
 type SpringApplicationRecord struct {
@@ -661,6 +761,7 @@ type SpringEndpointRecord struct {
 	Consumes    string                `json:"consumes,omitempty"`
 	ReturnType  string                `json:"return_type,omitempty"`
 	Parameters  []JavaParameterRecord `json:"parameters,omitempty"`
+	Auth        []AuthRecord          `json:"auth,omitempty"`
 }
 
 type SpringDependencyRecord struct {

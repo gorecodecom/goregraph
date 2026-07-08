@@ -105,7 +105,7 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing|scan-all|clean> [path] [options]\n")
+		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing|scan-all|clean|diff> [path] [options]\n")
 		return 2
 	}
 	switch args[0] {
@@ -117,10 +117,53 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return runWorkspaceScanAll(args[1:], stdout, stderr)
 	case "clean":
 		return runWorkspaceClean(args[1:], stdout, stderr)
+	case "diff":
+		return runWorkspaceDiff(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown workspace command: %s\n", args[0])
 		return 2
 	}
+}
+
+func runWorkspaceDiff(args []string, stdout, stderr io.Writer) int {
+	before := ""
+	after := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--before":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --before requires a path\n")
+				return 2
+			}
+			i++
+			before = args[i]
+		case "--after":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --after requires a path\n")
+				return 2
+			}
+			i++
+			after = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace diff --before <workspace-output> --after <workspace-output>\n\nCompares two .goregraph-workspace output directories without scanning.\n")
+			return 0
+		default:
+			fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+			return 2
+		}
+	}
+	if before == "" || after == "" {
+		fmt.Fprint(stderr, "error: workspace diff requires --before and --after\n")
+		return 2
+	}
+	diff, err := scan.WorkspaceDiff(before, after)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace diff failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write([]byte(scan.RenderWorkspaceDiffReport(diff)))
+	return 0
 }
 
 func runWorkspaceStatus(args []string, stdout, stderr io.Writer) int {

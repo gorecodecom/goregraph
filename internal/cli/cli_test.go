@@ -326,6 +326,28 @@ func TestRunWorkspaceCleanDryRunAndExecuteRemovesGeneratedWorkspaceOutput(t *tes
 	}
 }
 
+func TestRunWorkspaceDiffComparesTwoWorkspaceOutputDirs(t *testing.T) {
+	root := t.TempDir()
+	before := filepath.Join(root, "before")
+	after := filepath.Join(root, "after")
+	writeFile(t, before, "contract-matches.json", `[{"id":"a","api_http_method":"GET","api_path":"/a","issue":"matched","confidence":"RESOLVED"}]`)
+	writeFile(t, before, "feature-flows.json", `[{"id":"flow-a","tests":[{"confidence":"MATCHED"}]}]`)
+	writeFile(t, after, "contract-matches.json", `[{"id":"a","api_http_method":"GET","api_path":"/a","issue":"indexed_backend_route_missing","confidence":"UNRESOLVED"},{"id":"b","api_http_method":"POST","api_path":"/b","issue":"matched","confidence":"RESOLVED"}]`)
+	writeFile(t, after, "feature-flows.json", `[{"id":"flow-a"}]`)
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "diff", "--before", before, "--after", after}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{"# GoreGraph Workspace Diff", "New contracts: 1", "Changed contracts: 1", "flow-a lost matched tests"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace diff output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunUpdateRefreshesCurrentProject(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# Demo\n")

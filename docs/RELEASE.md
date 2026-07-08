@@ -203,8 +203,13 @@ Completed release checks:
 - contract gaps now use explicit `MISMATCH`, `PARTIAL_MATCH`, or `UNRESOLVED` confidence labels instead of `WEAK_MATCH`.
 - Java callgraph fallback edges with a concrete target type declaration are reported as extracted type matches.
 - unresolved workspace contracts include structured owner, resolution, similar-route, and dynamic-endpoint candidate hints for reports and website code maps.
+- unresolved workspace contracts include `resolution_class`, `resolution_evidence`, `missing_route_kind`, and equivalent route candidates where derivable.
 - Java endpoint test maps classify matched tests by success/auth/permission/validation/not-found/error cases and expected status families when derivable from test names.
 - workspace feature flows include backend request kind/type, consumes, return type, stable IDs, and test case/status details.
+- workspace feature flows include backend DTO request/response fields, frontend response field usage risks, auth context, and repository/entity/table persistence path data where deterministically extracted.
+- `.goregraph-workspace/feature-dossiers.json` and `.md` summarize route, UI, API, backend, tests, DTO, auth, persistence, and risks for website/code-map consumption.
+- `goregraph workspace diff --before <dir> --after <dir>` compares workspace output directories and reports contract changes plus lost matched test coverage.
+- `docs/OUTPUTS.md` documents the additive output contract and confidence semantics.
 - workspace contract matches and feature flows include stable IDs for future diff and deep-link use.
 - `goregraph version` reports `0.8.9`.
 

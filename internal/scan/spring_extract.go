@@ -83,6 +83,8 @@ func buildSpringIndex(sources []JavaSourceRecord) SpringIndex {
 		}
 	}
 
+	index.DTOs = springDTORecords(sources)
+	applyGlobalSpringAuth(&index, springGlobalAuthRecords(sources))
 	sortSpringIndex(&index)
 	return index
 }
@@ -135,6 +137,7 @@ func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, 
 	for _, httpMethod := range httpMethods {
 		for _, methodPath := range paths {
 			requestType, requestKind := requestMetadata(method.Parameters)
+			returnType := firstNonEmpty(openAPIResponseType(method.Annotations), method.ReturnType)
 			endpoints = append(endpoints, SpringEndpointRecord{
 				HTTPMethod:  httpMethod,
 				Path:        joinSpringPaths(classPath, methodPath),
@@ -145,12 +148,175 @@ func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, 
 				RequestType: requestType,
 				RequestKind: requestKind,
 				Consumes:    springConsumes(annotation, constants),
-				ReturnType:  method.ReturnType,
+				ReturnType:  returnType,
 				Parameters:  method.Parameters,
+				Auth:        springAuthRecords(method.Annotations, method.File),
 			})
 		}
 	}
 	return endpoints
+}
+
+func springDTORecords(sources []JavaSourceRecord) []DTORecord {
+	var records []DTORecord
+	for _, source := range sources {
+		for _, typ := range source.Types {
+			if !isSpringDTOType(typ, source.Fields) {
+				continue
+			}
+			record := DTORecord{
+				Name:       typ.Name,
+				Package:    typ.Package,
+				File:       typ.File,
+				Line:       typ.Line,
+				Kind:       typ.Kind,
+				Confidence: "EXTRACTED",
+				Source:     "java_type_fields",
+				Fields:     springDTOFields(typ.Name, source.Fields),
+			}
+			if len(record.Fields) > 0 {
+				records = append(records, record)
+			}
+		}
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].Name < records[j].Name })
+	return records
+}
+
+func isSpringDTOType(typ JavaTypeRecord, fields []JavaFieldRecord) bool {
+	if springComponentKind(typ.Annotations) != "" || hasAnnotation(typ.Annotations, "Entity") {
+		return false
+	}
+	switch {
+	case strings.HasSuffix(typ.Name, "Request"), strings.HasSuffix(typ.Name, "Response"), strings.HasSuffix(typ.Name, "Dto"), strings.HasSuffix(typ.Name, "DTO"):
+		return true
+	}
+	for _, field := range fields {
+		if field.Owner == typ.Name {
+			return true
+		}
+	}
+	return false
+}
+
+func springDTOFields(owner string, fields []JavaFieldRecord) []DTOFieldRecord {
+	var records []DTOFieldRecord
+	for _, field := range fields {
+		if field.Owner != owner {
+			continue
+		}
+		records = append(records, DTOFieldRecord{
+			Name:       field.Name,
+			Type:       field.Type,
+			Required:   fieldRequired(field.Annotations),
+			Source:     fieldSource(field.Annotations),
+			Confidence: "EXTRACTED",
+		})
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].Name < records[j].Name })
+	return records
+}
+
+func fieldRequired(annotations []JavaAnnotationRecord) bool {
+	for _, annotation := range annotations {
+		switch annotation.Name {
+		case "NotNull", "NotBlank", "NotEmpty", "NonNull":
+			return true
+		}
+	}
+	return false
+}
+
+func fieldSource(annotations []JavaAnnotationRecord) string {
+	if len(annotations) > 0 {
+		return "field_annotation"
+	}
+	return "field"
+}
+
+func springAuthRecords(annotations []JavaAnnotationRecord, file string) []AuthRecord {
+	var records []AuthRecord
+	for _, annotation := range annotations {
+		switch annotation.Name {
+		case "PreAuthorize", "PostAuthorize":
+			records = append(records, AuthRecord{
+				Kind:       toSnake(annotation.Name),
+				Expression: firstNonEmpty(annotation.Attributes["value"], annotation.Arguments),
+				Source:     "method_annotation",
+				Confidence: "EXTRACTED",
+				File:       file,
+				Line:       annotation.Line,
+			})
+		case "Secured", "RolesAllowed":
+			records = append(records, AuthRecord{
+				Kind:       toSnake(annotation.Name),
+				Expression: firstNonEmpty(annotation.Attributes["value"], annotation.Arguments),
+				Source:     "method_annotation",
+				Confidence: "EXTRACTED",
+				File:       file,
+				Line:       annotation.Line,
+			})
+		}
+	}
+	return records
+}
+
+func springGlobalAuthRecords(sources []JavaSourceRecord) []AuthRecord {
+	seen := map[string]bool{}
+	var records []AuthRecord
+	for _, source := range sources {
+		for _, method := range source.Methods {
+			for _, auth := range method.Auth {
+				key := auth.Kind + ":" + auth.Expression
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				records = append(records, auth)
+			}
+		}
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Kind != records[j].Kind {
+			return records[i].Kind < records[j].Kind
+		}
+		return records[i].Expression < records[j].Expression
+	})
+	return records
+}
+
+func applyGlobalSpringAuth(index *SpringIndex, global []AuthRecord) {
+	if len(global) == 0 {
+		return
+	}
+	for i := range index.Endpoints {
+		if len(index.Endpoints[i].Auth) == 0 {
+			index.Endpoints[i].Auth = append([]AuthRecord(nil), global...)
+		}
+	}
+}
+
+func openAPIResponseType(annotations []JavaAnnotationRecord) string {
+	for _, annotation := range annotations {
+		if annotation.Name != "Operation" && annotation.Name != "ApiResponse" {
+			continue
+		}
+		if match := regexp.MustCompile(`implementation\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\.class`).FindStringSubmatch(annotation.Arguments); len(match) == 2 {
+			return match[1]
+		}
+	}
+	return ""
+}
+
+func toSnake(value string) string {
+	var b strings.Builder
+	for index, r := range value {
+		if index > 0 && r >= 'A' && r <= 'Z' {
+			b.WriteByte('_')
+		}
+		b.WriteRune(r)
+	}
+	return strings.ToLower(b.String())
 }
 
 func firstMappingAnnotation(annotations []JavaAnnotationRecord) JavaAnnotationRecord {

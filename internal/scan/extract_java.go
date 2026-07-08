@@ -23,6 +23,7 @@ var (
 	javaHTTPChainURIRE   = regexp.MustCompile(`^\s*\.uri\s*\((.+)\)\s*$`)
 	javaStringLiteralRE  = regexp.MustCompile(`"([^"]*)"`)
 	javaStringVarLineRE  = regexp.MustCompile(`^\s*(?:final\s+)?String\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);\s*$`)
+	javaSecurityCallRE   = regexp.MustCompile(`\.(hasRole|hasAuthority|hasAnyRole|hasAnyAuthority|authenticated)\s*\(([^)]*)\)`)
 )
 
 func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
@@ -34,6 +35,8 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	blockComment := false
 	methodSignature := ""
 	methodSignatureLine := 0
+	annotationSignature := ""
+	annotationSignatureLine := 0
 
 	for index, raw := range lines {
 		lineNo := index + 1
@@ -41,6 +44,27 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		blockComment = inBlock
 		if strings.TrimSpace(line) == "" {
 			continue
+		}
+		if annotationSignature != "" {
+			if isAnnotationBoundary(strings.TrimSpace(line)) {
+				if annotation, ok := parseJavaAnnotationLine(annotationSignature, annotationSignatureLine); ok {
+					pending = append(pending, annotation)
+					source.Annotations = append(source.Annotations, annotation)
+				}
+				annotationSignature = ""
+				annotationSignatureLine = 0
+			} else {
+				annotationSignature += " " + strings.TrimSpace(line)
+				if balancedJavaParens(annotationSignature) {
+					if annotation, ok := parseJavaAnnotationLine(annotationSignature, annotationSignatureLine); ok {
+						pending = append(pending, annotation)
+						source.Annotations = append(source.Annotations, annotation)
+					}
+					annotationSignature = ""
+					annotationSignatureLine = 0
+				}
+				continue
+			}
 		}
 		if methodSignature != "" {
 			methodSignature += " " + strings.TrimSpace(line)
@@ -65,8 +89,12 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			source.Imports = append(source.Imports, JavaImportRecord{Name: strings.TrimSpace(match[2]), Static: strings.TrimSpace(match[1]) == "static", Line: lineNo})
 			continue
 		}
-		if match := javaAnnotationLineRE.FindStringSubmatch(line); len(match) == 3 {
-			annotation := JavaAnnotationRecord{Name: shortJavaName(match[1]), Arguments: strings.TrimSpace(match[2]), Attributes: parseJavaAnnotationAttributes(match[2]), Line: lineNo}
+		if strings.HasPrefix(strings.TrimSpace(line), "@") && strings.Contains(line, "(") && !balancedJavaParens(line) {
+			annotationSignature = strings.TrimSpace(line)
+			annotationSignatureLine = lineNo
+			continue
+		}
+		if annotation, ok := parseJavaAnnotationLine(line, lineNo); ok {
 			pending = append(pending, annotation)
 			source.Annotations = append(source.Annotations, annotation)
 			continue
@@ -109,6 +137,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			last := &source.Methods[len(source.Methods)-1]
 			last.StringVars = mergeJavaStringVars(last.StringVars, extractJavaStringVars(line))
 			last.Calls = append(last.Calls, extractJavaCalls(line, lineNo)...)
+			last.Auth = append(last.Auth, extractJavaSecurityAuth(line, lineNo, file.Path)...)
 			requests, pending := extractJavaHTTPRequestsWithPending(line, lineNo, last.StringVars, last.PendingHTTP)
 			last.PendingHTTP = pending
 			last.HTTPRequests = append(last.HTTPRequests, requests...)
@@ -126,6 +155,71 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		source.Constants = nil
 	}
 	return source
+}
+
+func extractJavaSecurityAuth(line string, lineNo int, file string) []AuthRecord {
+	var records []AuthRecord
+	for _, match := range javaSecurityCallRE.FindAllStringSubmatch(line, -1) {
+		if len(match) != 3 {
+			continue
+		}
+		records = append(records, AuthRecord{
+			Kind:       toSnake(match[1]),
+			Expression: strings.TrimSpace(match[2]),
+			Source:     "security_config_call",
+			Confidence: "EXTRACTED",
+			File:       file,
+			Line:       lineNo,
+		})
+	}
+	return records
+}
+
+func parseJavaAnnotationLine(line string, lineNo int) (JavaAnnotationRecord, bool) {
+	match := javaAnnotationLineRE.FindStringSubmatch(strings.TrimSpace(line))
+	if len(match) != 3 {
+		return JavaAnnotationRecord{}, false
+	}
+	return JavaAnnotationRecord{Name: shortJavaName(match[1]), Arguments: strings.TrimSpace(match[2]), Attributes: parseJavaAnnotationAttributes(match[2]), Line: lineNo}, true
+}
+
+func isAnnotationBoundary(line string) bool {
+	for _, prefix := range []string{"@GetMapping", "@PostMapping", "@PutMapping", "@DeleteMapping", "@PatchMapping", "@RequestMapping", "@Override", "@Test"} {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func balancedJavaParens(line string) bool {
+	depth := 0
+	inString := false
+	escaped := false
+	for _, r := range line {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if r == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+	}
+	return depth == 0
 }
 
 func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnnotationRecord) (JavaMethodRecord, bool) {

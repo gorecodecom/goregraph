@@ -1014,6 +1014,31 @@ class CadasterController {
 	}
 }
 
+func TestRunExtractsFrontendResponseFieldUsage(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "apps/portal/package.json", `{"name":"@demo/portal"}`)
+	writeFile(t, root, "apps/portal/src/api/cadaster.js", "export async function loadCadaster(id) {\n"+
+		"  const response = await fetch(`/cadasters/${id}`);\n"+
+		"  const data = await response.json();\n"+
+		"  return { id: data.id, title: data.title };\n"+
+		"}\n")
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var api []APIContractRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "api-contracts.json"), &api)
+	if len(api) != 1 {
+		t.Fatalf("api contract count = %d, want 1: %#v", len(api), api)
+	}
+	for _, want := range []string{"id", "title"} {
+		if !containsString(api[0].ResponseFields, want) {
+			t.Fatalf("response field %q missing from %#v", want, api[0])
+		}
+	}
+}
+
 func TestRunClassifiesFrontendInternalAPIRoutes(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/app/providers.tsx", "export function SessionGuard() {\n"+

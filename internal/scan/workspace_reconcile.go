@@ -20,6 +20,7 @@ type workspaceIndexProject struct {
 	relations     []RelationRecord
 	contracts     []APIContractRecord
 	codeFlows     []CodeFlowRecord
+	spring        SpringIndex
 	endpoints     []SpringEndpointRecord
 	endpointFlows []SpringEndpointFlowRecord
 	testMap       []TestMapRecord
@@ -66,6 +67,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	context := buildWorkspaceContext(registry, indexed)
 	matches := buildWorkspaceContractMatches(indexed)
 	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
+	featureDossiers := buildFeatureDossiers(featureFlows, matches)
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
@@ -84,6 +86,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	if err := writeJSON(filepath.Join(workspaceOut, "feature-flows.json"), featureFlows); err != nil {
 		return nil, err
 	}
+	if err := writeJSON(filepath.Join(workspaceOut, "feature-dossiers.json"), featureDossiers); err != nil {
+		return nil, err
+	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-context.md"), []byte(renderWorkspaceContextReport(context)), 0o644); err != nil {
 		return nil, err
 	}
@@ -91,6 +96,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "feature-flows.md"), []byte(renderWorkspaceFeatureFlowsReport(featureFlows)), 0o644); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(workspaceOut, "feature-dossiers.md"), []byte(renderFeatureDossiersReport(featureDossiers)), 0o644); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "next-actions.md"), []byte(nextActions), 0o644); err != nil {
@@ -114,6 +122,13 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "workspace-feature-flows.md"), []byte(renderWorkspaceFeatureFlowsReport(projectFeatureFlows)), 0o644); err != nil {
+			return nil, err
+		}
+		projectDossiers := filterFeatureDossiers(project.record.Path, featureDossiers)
+		if err := writeJSON(filepath.Join(out, "workspace-feature-dossiers.json"), projectDossiers); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(out, "workspace-feature-dossiers.md"), []byte(renderFeatureDossiersReport(projectDossiers)), 0o644); err != nil {
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "workspace-next-actions.md"), []byte(nextActions), 0o644); err != nil {
@@ -352,6 +367,7 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		if err := readWorkspaceJSON(filepath.Join(out, "spring.json"), &spring); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
+		loaded.spring = spring
 		loaded.endpoints = spring.Endpoints
 		if err := readWorkspaceJSON(filepath.Join(out, "endpoint-flows.json"), &loaded.endpointFlows); err != nil && !os.IsNotExist(err) {
 			return nil, err
@@ -469,14 +485,15 @@ func buildWorkspaceContractMatches(projects []workspaceIndexProject) []Workspace
 
 func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContractRecord, routes []workspaceBackendRoute, knownServices map[string]bool) WorkspaceContractMatchRecord {
 	base := WorkspaceContractMatchRecord{
-		ID:               stableID("workspace-contract", project.Path, contract.File, fmt.Sprint(contract.Line), contract.HTTPMethod, contract.Path),
-		APIProject:       project.Path,
-		APIHTTPMethod:    contract.HTTPMethod,
-		APIPath:          contract.Path,
-		APIFile:          contract.File,
-		APILine:          contract.Line,
-		APICaller:        contract.Caller,
-		ServiceCandidate: contract.ServiceCandidate,
+		ID:                     stableID("workspace-contract", project.Path, contract.File, fmt.Sprint(contract.Line), contract.HTTPMethod, contract.Path),
+		APIProject:             project.Path,
+		APIHTTPMethod:          contract.HTTPMethod,
+		APIPath:                contract.Path,
+		APIFile:                contract.File,
+		APILine:                contract.Line,
+		APICaller:              contract.Caller,
+		FrontendResponseFields: contract.ResponseFields,
+		ServiceCandidate:       contract.ServiceCandidate,
 	}
 	if isFrontendInternalAPIContract(contract) {
 		base.Issue = contractIssueFrontendInternalAPI
@@ -492,6 +509,12 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		record := workspaceContractIssue(base, route, contractIssueMethodMismatch, "MISMATCH", 0.45, "path pattern exists but http method differs")
 		record.LikelyOwner = "frontend_or_backend"
 		record.ResolutionHint = "same backend path exists with a different HTTP method; verify whether the frontend method or backend mapping is wrong, or whether this is a legacy intent"
+		record.ResolutionClass = "method_conflict"
+		record.ResolutionEvidence = []string{
+			"same_path_backend_method=" + strings.ToUpper(route.route.HTTPMethod),
+			"frontend_method=" + strings.ToUpper(contract.HTTPMethod),
+			"source=workspace_route_index",
+		}
 		record.SimilarBackendRoutes = []string{strings.ToUpper(route.route.HTTPMethod) + " " + displayRoutePath(route.route.Path)}
 		return record
 	}
@@ -527,6 +550,15 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		if similar := similarWorkspaceRouteHints(contract, routes, 3); len(similar) > 0 {
 			base.SimilarBackendRoutes = similar
 			base.Reason += "; similar backend routes: " + strings.Join(similar, ", ")
+			if isNeighborRouteGap(contract, similar) {
+				base.MissingRouteKind = "neighbor_resource"
+				base.EquivalentRouteCandidates = similar
+				base.ResolutionClass = "neighbor_route_gap"
+				base.ResolutionEvidence = []string{
+					"source=workspace_route_similarity",
+					"service=" + contract.ServiceCandidate,
+				}
+			}
 		}
 		base.LikelyOwner = workspaceRouteGapOwner(issue)
 		base.ResolutionHint = workspaceRouteGapHint(issue)
@@ -605,6 +637,31 @@ func similarWorkspaceRouteHints(contract APIContractRecord, routes []workspaceBa
 		codeRoutes = append(codeRoutes, route.route)
 	}
 	return similarCodeRouteHints(contract, codeRoutes, limit)
+}
+
+func isNeighborRouteGap(contract APIContractRecord, similar []string) bool {
+	if len(similar) == 0 {
+		return false
+	}
+	contractBase := strings.TrimSuffix(displayRoutePath(contract.Path), "/availability")
+	contractBase = strings.TrimSuffix(contractBase, "/available")
+	contractBase = strings.TrimSuffix(contractBase, "/exists")
+	if contractBase == displayRoutePath(contract.Path) {
+		parts := routeParts(contract.Path)
+		if len(parts) > 1 {
+			contractBase = "/" + strings.Join(parts[:len(parts)-1], "/")
+		}
+	}
+	for _, candidate := range similar {
+		candidatePath := candidate
+		if fields := strings.Fields(candidate); len(fields) > 1 {
+			candidatePath = fields[1]
+		}
+		if strings.HasPrefix(candidatePath, contractBase+"/") || candidatePath == contractBase {
+			return true
+		}
+	}
+	return false
 }
 
 func workspaceRouteGapOwner(issue string) string {
@@ -747,7 +804,12 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 			record.BackendRequestKind = endpoint.RequestKind
 			record.BackendConsumes = endpoint.Consumes
 			record.BackendReturnType = endpoint.ReturnType
+			record.Auth = endpoint.Auth
+			record.BackendRequestFields = workspaceDTOFields(backendProject.spring.DTOs, endpoint.RequestType)
+			record.BackendResponseFields = workspaceDTOFields(backendProject.spring.DTOs, endpoint.ReturnType)
+			record.FieldRisks = workspaceFieldRisks(match.FrontendResponseFields, record.BackendResponseFields)
 		}
+		record.PersistencePath = workspacePersistencePath(backendProject.spring, record.BackendSteps)
 		records = append(records, record)
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -763,6 +825,97 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 		return records[i].Path < records[j].Path
 	})
 	return records
+}
+
+func workspaceDTOFields(dtos []DTORecord, typeName string) []DTOFieldRecord {
+	typeName = baseJavaTypeName(typeName)
+	if typeName == "" {
+		return nil
+	}
+	for _, dto := range dtos {
+		if dto.Name == typeName {
+			return append([]DTOFieldRecord(nil), dto.Fields...)
+		}
+	}
+	return nil
+}
+
+func baseJavaTypeName(typeName string) string {
+	typeName = strings.TrimSpace(typeName)
+	typeName = strings.TrimPrefix(typeName, "ResponseEntity<")
+	typeName = strings.TrimPrefix(typeName, "Optional<")
+	typeName = strings.TrimSuffix(typeName, ">")
+	if strings.HasPrefix(typeName, "List<") || strings.HasPrefix(typeName, "Collection<") || strings.HasPrefix(typeName, "Set<") {
+		if start := strings.Index(typeName, "<"); start >= 0 {
+			typeName = strings.TrimSuffix(typeName[start+1:], ">")
+		}
+	}
+	typeName = strings.TrimSpace(typeName)
+	typeName = strings.TrimPrefix(typeName, "? extends ")
+	return strings.TrimSpace(typeName)
+}
+
+func workspacePersistencePath(spring SpringIndex, steps []SpringEndpointFlowStep) []PersistenceStepRecord {
+	if len(steps) == 0 || len(spring.Repositories) == 0 {
+		return nil
+	}
+	repositoryByName := map[string]SpringRepositoryRecord{}
+	entityByName := map[string]SpringEntityRecord{}
+	for _, repository := range spring.Repositories {
+		repositoryByName[repository.Name] = repository
+	}
+	for _, entity := range spring.Entities {
+		entityByName[entity.Name] = entity
+	}
+	seen := map[string]bool{}
+	var records []PersistenceStepRecord
+	for _, step := range steps {
+		repository, ok := repositoryByName[step.Owner]
+		if !ok {
+			continue
+		}
+		key := repository.Name + "." + step.Method
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		entity := entityByName[repository.Entity]
+		records = append(records, PersistenceStepRecord{
+			Repository: repository.Name,
+			Method:     step.Method,
+			Entity:     repository.Entity,
+			Table:      entity.Table,
+			File:       firstNonEmpty(repository.File, entity.File),
+			Line:       step.Line,
+			Source:     "endpoint_flow_repository_step",
+			Confidence: firstNonEmpty(step.Confidence, "EXTRACTED"),
+		})
+	}
+	return records
+}
+
+func workspaceFieldRisks(frontendFields []string, backendFields []DTOFieldRecord) []FieldRiskRecord {
+	if len(frontendFields) == 0 || len(backendFields) == 0 {
+		return nil
+	}
+	backendSet := map[string]bool{}
+	for _, field := range backendFields {
+		backendSet[field.Name] = true
+	}
+	var risks []FieldRiskRecord
+	for _, field := range frontendFields {
+		if backendSet[field] {
+			continue
+		}
+		risks = append(risks, FieldRiskRecord{
+			Kind:       "frontend_uses_field_not_in_backend_dto",
+			Field:      field,
+			Reason:     "frontend response field usage was not found in backend response DTO fields",
+			Source:     "frontend_response_usage_vs_backend_dto",
+			Confidence: "MATCHED",
+		})
+	}
+	return risks
 }
 
 func findWorkspaceSpringEndpoint(endpoints []SpringEndpointRecord, match WorkspaceContractMatchRecord) (SpringEndpointRecord, bool) {
@@ -1027,6 +1180,16 @@ func workspaceFeatureTestMatches(test TestMapRecord, flow SpringEndpointFlowReco
 
 func filterWorkspaceFeatureFlows(projectPath string, records []WorkspaceFeatureFlowRecord) []WorkspaceFeatureFlowRecord {
 	var filtered []WorkspaceFeatureFlowRecord
+	for _, record := range records {
+		if record.FrontendProject == projectPath || record.BackendProject == projectPath {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
+}
+
+func filterFeatureDossiers(projectPath string, records []FeatureDossierRecord) []FeatureDossierRecord {
+	var filtered []FeatureDossierRecord
 	for _, record := range records {
 		if record.FrontendProject == projectPath || record.BackendProject == projectPath {
 			filtered = append(filtered, record)
@@ -1565,6 +1728,33 @@ func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) str
 		}
 		if record.BackendReturnType != "" {
 			b.WriteString(fmt.Sprintf("- Returns: `%s`\n", record.BackendReturnType))
+		}
+		if len(record.BackendRequestFields) > 0 {
+			b.WriteString("- Request fields:")
+			for _, field := range record.BackendRequestFields {
+				required := ""
+				if field.Required {
+					required = " required"
+				}
+				b.WriteString(fmt.Sprintf(" `%s:%s%s`", field.Name, field.Type, required))
+			}
+			b.WriteString("\n")
+		}
+		if len(record.BackendResponseFields) > 0 {
+			b.WriteString("- Response fields:")
+			for _, field := range record.BackendResponseFields {
+				b.WriteString(fmt.Sprintf(" `%s:%s`", field.Name, field.Type))
+			}
+			b.WriteString("\n")
+		}
+		for _, auth := range record.Auth {
+			b.WriteString(fmt.Sprintf("- Auth: `%s` `%s`\n", auth.Kind, auth.Expression))
+		}
+		for _, step := range record.PersistencePath {
+			b.WriteString(fmt.Sprintf("- Persistence: `%s.%s` entity `%s` table `%s`\n", step.Repository, step.Method, step.Entity, step.Table))
+		}
+		for _, risk := range record.FieldRisks {
+			b.WriteString(fmt.Sprintf("- Risk: `%s` field `%s` - %s\n", risk.Kind, risk.Field, risk.Reason))
 		}
 		b.WriteString("- Backend steps:\n")
 		if len(record.BackendSteps) == 0 {

@@ -537,6 +537,82 @@ func TestWorkspaceContractMatchesClassifyMissingIndexedBackendRoute(t *testing.T
 	}
 }
 
+func TestWorkspaceContractMatchesAddResolutionEvidence(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-cadaster", Kind: "backend", Service: "ms-cadaster", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{{
+				HTTPMethod:       "PUT",
+				Path:             "/cadasters/{cadasterId}/regulations/{objectId}",
+				File:             "src/api/note.js",
+				Line:             33,
+				ServiceCandidate: "ms-cadaster",
+			}},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{{
+				Kind:       "backend",
+				HTTPMethod: "GET",
+				Path:       "/cadasters/{cadasterId}/regulations/{objectId}",
+				Handler:    "CadasterRegulationController.get",
+				File:       "CadasterRegulationController.java",
+				Line:       44,
+			}},
+		},
+	})
+
+	if len(matches) != 1 {
+		t.Fatalf("matches length = %d, want 1: %#v", len(matches), matches)
+	}
+	if matches[0].ResolutionClass != "method_conflict" {
+		t.Fatalf("resolution class = %q, want method_conflict: %#v", matches[0].ResolutionClass, matches[0])
+	}
+	for _, want := range []string{"same_path_backend_method=GET", "frontend_method=PUT", "source=workspace_route_index"} {
+		if !containsString(matches[0].ResolutionEvidence, want) {
+			t.Fatalf("missing resolution evidence %q: %#v", want, matches[0])
+		}
+	}
+}
+
+func TestWorkspaceContractMatchesClassifyNeighborMissingRoute(t *testing.T) {
+	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
+	backend := WorkspaceProjectRecord{Path: "microservices/ms-documentexport", Kind: "backend", Service: "ms-documentexport", Indexed: true}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{
+		{
+			record: frontend,
+			contracts: []APIContractRecord{{
+				HTTPMethod:       "GET",
+				Path:             "/documentexport/modules/{isbn}/documents/{objectId}/availability",
+				File:             "src/api/export.js",
+				Line:             18,
+				ServiceCandidate: "ms-documentexport",
+			}},
+		},
+		{
+			record: backend,
+			routes: []CodeRouteRecord{
+				{Kind: "backend", HTTPMethod: "POST", Path: "/documentexport/modules/{isbn}/documents/{objectId}/export", Handler: "ExportController.create", File: "ExportController.java", Line: 20},
+				{Kind: "backend", HTTPMethod: "GET", Path: "/documentexport/modules/{isbn}/documents/{objectId}/export/{exportId}/status", Handler: "ExportController.status", File: "ExportController.java", Line: 24},
+			},
+		},
+	})
+
+	if len(matches) != 1 {
+		t.Fatalf("matches length = %d, want 1: %#v", len(matches), matches)
+	}
+	if matches[0].MissingRouteKind != "neighbor_resource" {
+		t.Fatalf("missing route kind = %q, want neighbor_resource: %#v", matches[0].MissingRouteKind, matches[0])
+	}
+	if !containsString(matches[0].EquivalentRouteCandidates, "POST /modules/{isbn}/documents/{objectId}/export") {
+		t.Fatalf("missing equivalent route candidate: %#v", matches[0])
+	}
+}
+
 func TestWorkspaceContractReportShowsActionableUnresolvedHints(t *testing.T) {
 	report := renderWorkspaceContractMatchesReport([]WorkspaceContractMatchRecord{
 		{
@@ -1212,6 +1288,90 @@ func TestWorkspaceFeatureFlowsIncludeBackendRequestResponseMetadata(t *testing.T
 	}
 }
 
+func TestWorkspaceFeatureFlowsIncludeAuthPersistenceAndDTOFields(t *testing.T) {
+	matches := []WorkspaceContractMatchRecord{
+		{
+			APIProject:             "frontend/frontend-monorepo",
+			APIHTTPMethod:          "POST",
+			APIPath:                "/cadasters/{cadasterId}/copy",
+			APIFile:                "src/api/cadaster.js",
+			APILine:                12,
+			BackendProject:         "microservices/ms-cadaster",
+			BackendService:         "ms-cadaster",
+			BackendHTTPMethod:      "POST",
+			BackendPath:            "/cadasters/{cadasterId}/copy",
+			Issue:                  contractIssueMatched,
+			Confidence:             "RESOLVED",
+			FrontendResponseFields: []string{"id", "missingTitle"},
+		},
+	}
+
+	flows := buildWorkspaceFeatureFlows([]workspaceIndexProject{
+		{
+			record: WorkspaceProjectRecord{Path: "microservices/ms-cadaster", Service: "ms-cadaster", Kind: "backend", Indexed: true},
+			spring: SpringIndex{
+				Endpoints: []SpringEndpointRecord{{
+					HTTPMethod:  "POST",
+					Path:        "/cadasters/{cadasterId}/copy",
+					Controller:  "CadasterController",
+					Method:      "copy",
+					File:        "CadasterController.java",
+					Line:        20,
+					RequestType: "CadasterCopyRequest",
+					ReturnType:  "CadasterDto",
+					Auth:        []AuthRecord{{Kind: "pre_authorize", Expression: "hasAuthority('CADASTER_WRITE')", Source: "method_annotation", Confidence: "EXTRACTED"}},
+				}},
+				DTOs: []DTORecord{
+					{Name: "CadasterCopyRequest", Fields: []DTOFieldRecord{{Name: "name", Type: "String", Required: true, Source: "field_annotation", Confidence: "EXTRACTED"}}},
+					{Name: "CadasterDto", Fields: []DTOFieldRecord{{Name: "id", Type: "Long", Source: "field", Confidence: "EXTRACTED"}}},
+				},
+				Repositories: []SpringRepositoryRecord{{Name: "CadasterRepository", Entity: "CadasterEntity", EntityFile: "CadasterEntity.java"}},
+				Entities:     []SpringEntityRecord{{Name: "CadasterEntity", Table: "VD_CADASTER", File: "CadasterEntity.java"}},
+			},
+			endpoints: []SpringEndpointRecord{{
+				HTTPMethod:  "POST",
+				Path:        "/cadasters/{cadasterId}/copy",
+				Controller:  "CadasterController",
+				Method:      "copy",
+				File:        "CadasterController.java",
+				Line:        20,
+				RequestType: "CadasterCopyRequest",
+				ReturnType:  "CadasterDto",
+				Auth:        []AuthRecord{{Kind: "pre_authorize", Expression: "hasAuthority('CADASTER_WRITE')", Source: "method_annotation", Confidence: "EXTRACTED"}},
+			}},
+			endpointFlows: []SpringEndpointFlowRecord{{
+				HTTPMethod: "POST",
+				Path:       "/cadasters/{cadasterId}/copy",
+				Controller: "CadasterController",
+				Method:     "copy",
+				Steps: []SpringEndpointFlowStep{
+					{Owner: "CadasterController", Method: "copy", Kind: "controller", Confidence: "EXTRACTED"},
+					{Owner: "CadasterRepository", Method: "save", Kind: "repository", Confidence: "EXTRACTED"},
+				},
+			}},
+		},
+	}, matches)
+
+	if len(flows) != 1 {
+		t.Fatalf("flow count = %d, want 1: %#v", len(flows), flows)
+	}
+	if len(flows[0].Auth) != 1 || flows[0].Auth[0].Expression == "" {
+		t.Fatalf("feature flow missing auth context: %#v", flows[0])
+	}
+	if len(flows[0].BackendRequestFields) != 1 || flows[0].BackendRequestFields[0].Name != "name" {
+		t.Fatalf("feature flow missing request DTO fields: %#v", flows[0])
+	}
+	if len(flows[0].BackendResponseFields) != 1 || flows[0].BackendResponseFields[0].Name != "id" {
+		t.Fatalf("feature flow missing response DTO fields: %#v", flows[0])
+	}
+	if len(flows[0].PersistencePath) != 1 || flows[0].PersistencePath[0].Table != "VD_CADASTER" {
+		t.Fatalf("feature flow missing persistence path: %#v", flows[0])
+	}
+	if len(flows[0].FieldRisks) != 1 || flows[0].FieldRisks[0].Field != "missingTitle" {
+		t.Fatalf("feature flow missing frontend/backend field risk: %#v", flows[0])
+	}
+}
+
 func TestWorkspaceFeatureFlowReportIncludesTestCases(t *testing.T) {
 	report := renderWorkspaceFeatureFlowsReport([]WorkspaceFeatureFlowRecord{
 		{
@@ -1229,6 +1389,69 @@ func TestWorkspaceFeatureFlowReportIncludesTestCases(t *testing.T) {
 
 	if !strings.Contains(report, "case `auth_error`") || !strings.Contains(report, "status `401`") {
 		t.Fatalf("feature flow report missing test case/status:\n%s", report)
+	}
+}
+
+func TestBuildFeatureDossiersSummarizesChangeSafetySignals(t *testing.T) {
+	flows := []WorkspaceFeatureFlowRecord{{
+		ID:                    "flow-1",
+		FrontendProject:       "frontend/frontend-monorepo",
+		FrontendRoutePath:     "/cadasters/:id",
+		FrontendComponent:     "CadasterPage",
+		FrontendCaller:        "copyCadaster",
+		HTTPMethod:            "POST",
+		Path:                  "/cadasters/{cadasterId}/copy",
+		BackendProject:        "microservices/ms-cadaster",
+		BackendController:     "CadasterController",
+		BackendMethod:         "copy",
+		BackendRequestFields:  []DTOFieldRecord{{Name: "name", Type: "String", Required: true}},
+		BackendResponseFields: []DTOFieldRecord{{Name: "id", Type: "Long"}},
+		Auth:                  []AuthRecord{{Kind: "pre_authorize", Expression: "hasAuthority('CADASTER_WRITE')"}},
+		PersistencePath:       []PersistenceStepRecord{{Repository: "CadasterRepository", Entity: "CadasterEntity", Table: "VD_CADASTER"}},
+		Tests:                 []TestMapRecord{{TestClass: "CadasterControllerTest", TestMethod: "copy", TestCase: "success", Confidence: "MATCHED"}},
+		Confidence:            "RESOLVED",
+	}}
+
+	dossiers := buildFeatureDossiers(flows, nil)
+	if len(dossiers) != 1 {
+		t.Fatalf("dossier count = %d, want 1: %#v", len(dossiers), dossiers)
+	}
+	if dossiers[0].ID == "" || dossiers[0].Route != "POST /cadasters/{cadasterId}/copy" {
+		t.Fatalf("dossier missing stable route identity: %#v", dossiers[0])
+	}
+	if len(dossiers[0].Risks) != 0 {
+		t.Fatalf("resolved tested dossier should have no risks: %#v", dossiers[0])
+	}
+	report := renderFeatureDossiersReport(dossiers)
+	for _, want := range []string{"CadasterPage", "CadasterController.copy", "VD_CADASTER", "CADASTER_WRITE"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("feature dossier report missing %q:\n%s", want, report)
+		}
+	}
+}
+
+func TestWorkspaceDiffReportsContractAndCoverageChanges(t *testing.T) {
+	before := WorkspaceSnapshotRecord{
+		Contracts: []WorkspaceContractMatchRecord{{ID: "a", APIHTTPMethod: "GET", APIPath: "/a", Issue: contractIssueMatched, Confidence: "RESOLVED"}},
+		Flows:     []WorkspaceFeatureFlowRecord{{ID: "flow-a", Tests: []TestMapRecord{{Confidence: "MATCHED"}}}},
+	}
+	after := WorkspaceSnapshotRecord{
+		Contracts: []WorkspaceContractMatchRecord{
+			{ID: "a", APIHTTPMethod: "GET", APIPath: "/a", Issue: contractIssueIndexedBackendRouteMissing, Confidence: "UNRESOLVED"},
+			{ID: "b", APIHTTPMethod: "POST", APIPath: "/b", Issue: contractIssueMatched, Confidence: "RESOLVED"},
+		},
+		Flows: []WorkspaceFeatureFlowRecord{{ID: "flow-a"}},
+	}
+
+	diff := buildWorkspaceDiff(before, after)
+	if len(diff.NewContracts) != 1 || diff.NewContracts[0].ID != "b" {
+		t.Fatalf("missing new contract diff: %#v", diff)
+	}
+	if len(diff.ChangedContracts) != 1 || diff.ChangedContracts[0].BeforeConfidence != "RESOLVED" || diff.ChangedContracts[0].AfterConfidence != "UNRESOLVED" {
+		t.Fatalf("missing changed contract diff: %#v", diff)
+	}
+	if !containsString(diff.CoverageRegressions, "flow-a lost matched tests") {
+		t.Fatalf("missing coverage regression: %#v", diff)
 	}
 }
 
