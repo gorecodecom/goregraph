@@ -9,12 +9,37 @@ GoreGraph outputs are additive. Existing field meanings must remain stable; new 
 - `.goregraph-workspace/feature-flows.json`: resolved frontend-to-backend flows with frontend context, backend steps, tests, request/response metadata, auth, persistence, and field risks.
 - `.goregraph-workspace/feature-dossiers.json`: compact per-feature dossiers for website/code-map consumption.
 - `.goregraph-workspace/feature-dossiers.md`: human-readable summary of feature dossiers.
+- `.goregraph-workspace/workspace-graph.json`: normalized workspace graph with stable node and edge IDs for projects, contracts, routes, flows, features, files, symbols, and candidate routes.
+- `.goregraph-workspace/workspace-service-map.json`: directed service/project relationship map with incoming/outgoing API counts, backend service-client dependencies, confidence buckets, endpoint examples, evidence files, generic service roles, and architecture domains.
+- `.goregraph-workspace/workspace-endpoint-traces.json`: readable endpoint traces from frontend consumer/API contract to backend route, handler, backend steps, tests, and risks.
+- `.goregraph-workspace/workspace-map.html`: standalone offline dashboard with Open Issues, Architecture Map, Focused Service, Endpoint Trace, and Endpoint Paths views. Open Issues groups unresolved, mismatched, dynamic, and out-of-scope contracts by cause, including repeated `/tree/...` prefix/gateway candidates. Endpoint Paths lists a selected service as caller -> endpoint/relation -> provider/next hop, replacing the old low-level raw node cloud. The dashboard includes pan/zoom, selectable and deselectable nodes, source file/line links, status explanations, route quality buckets, endpoint trace focus links, and an inspector with incoming/outgoing relationships.
 
 Project overlays mirror the workspace data in each project output directory:
 
+- `service-dependencies.json`
 - `workspace-contract-matches.json`
 - `workspace-feature-flows.json`
 - `workspace-feature-dossiers.json`
+- `workspace-graph.json`
+- `workspace-service-map.json`
+- `workspace-endpoint-traces.json`
+- `workspace-map.md`
+
+## Workspace Navigation Commands
+
+- `goregraph workspace dashboard <path>` prints the generated `workspace-map.html` path.
+- `goregraph workspace refresh <path>` refreshes `.goregraph-workspace` overlays from existing project outputs without scanning source files.
+- `goregraph workspace explain <target>` explains the matching graph node and direct connections.
+- `goregraph workspace path --from <target> --to <target>` reports the shortest graph path between two targets.
+- `goregraph workspace impact --changed-file <path>` reports affected feature dossiers for explicit changed files.
+
+Graph IDs are deterministic from node kind plus normalized semantic parts. Examples:
+
+- `project:frontend/app`
+- `contract:<contract-id>`
+- `route:<project>:<method>:<path>`
+- `flow:<flow-id>`
+- `feature:<feature-id>`
 
 ## Confidence Semantics
 
@@ -48,3 +73,7 @@ Project overlays mirror the workspace data in each project output directory:
 - removed contracts
 - changed contract issue/confidence
 - lost matched test coverage on feature flows
+
+## Language Inventory
+
+GoreGraph has deep route/API/test analyzers for Go, Java/Spring, JavaScript/TypeScript, Python, PHP, and Shell. It also detects and indexes best-effort symbols and imports for Rust, Kotlin, Scala, Swift, Ruby, C, C++, and C# so mixed-language workspaces still appear in `files.json`, `symbols-full.json`, `relations-full.json`, `graph-full.json`, and `analyzers.json`.

@@ -556,7 +556,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 0.8.9",
+		"goregraph 0.9.0",
 		"commit:",
 		"built:",
 		"go:",
@@ -565,6 +565,104 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("version output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunWorkspaceDashboardPrintsDashboardPath(t *testing.T) {
+	root := t.TempDir()
+	out := filepath.Join(root, ".goregraph-workspace")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "workspace-map.html"), []byte("<html></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "dashboard", root}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "workspace-map.html") {
+		t.Fatalf("stdout missing dashboard path:\n%s", stdout.String())
+	}
+}
+
+func TestRunWorkspaceRefreshRebuildsWorkspaceOverlayWithoutScanningSources(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	frontend := filepath.Join(workspace, "frontend", "app")
+	backend := filepath.Join(workspace, "microservices", "ms-user")
+	writeFile(t, frontend, "package.json", `{"name":"app"}`)
+	writeFile(t, frontend, "src/api/users.ts", "export function getUser(id) {\n  return fetch(`/users/${id}`);\n}\n")
+	writeFile(t, backend, "src/main/java/com/example/UserController.java", `package com.example;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+class UserController {
+  @GetMapping("/users/{userId}")
+  String get(@PathVariable String userId) {
+    return userId;
+  }
+}
+`)
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"workspace", "scan-all", workspace, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan-all exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	dashboard := filepath.Join(workspace, ".goregraph-workspace", "workspace-map.html")
+	if err := os.Remove(dashboard); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "refresh", workspace}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("refresh exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if _, err := os.Stat(dashboard); err != nil {
+		t.Fatalf("refresh should recreate dashboard: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Refreshed workspace overlay") ||
+		!strings.Contains(stdout.String(), "workspace-map.html") {
+		t.Fatalf("refresh output missing summary:\n%s", stdout.String())
+	}
+}
+
+func TestRunWorkspaceExplainPathAndImpactUseGeneratedWorkspaceGraph(t *testing.T) {
+	root := t.TempDir()
+	out := filepath.Join(root, ".goregraph-workspace")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	graph := `{"nodes":[{"id":"project:frontend/app","kind":"project","label":"frontend/app"},{"id":"contract:get-users","kind":"contract","label":"GET /users/{userId}","file":"src/api/users.ts"},{"id":"route:ms-user:get:/users/{userid}","kind":"route","label":"UserController.get","symbol":"UserController.get"}],"edges":[{"id":"edge:1","from":"project:frontend/app","to":"contract:get-users","kind":"declares_contract"},{"id":"edge:2","from":"contract:get-users","to":"route:ms-user:get:/users/{userid}","kind":"resolved_by","confidence":"RESOLVED"}]}`
+	if err := os.WriteFile(filepath.Join(out, "workspace-graph.json"), []byte(graph), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "feature-dossiers.json"), []byte(`[{"id":"feature:get-users","route":"GET /users/{userId}","source_flow_id":"flow:get-users","frontend_project":"frontend/app","backend_project":"services/ms-user"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "feature-flows.json"), []byte(`[{"id":"flow:get-users","frontend_project":"frontend/app","frontend_file":"src/api/users.ts","backend_project":"services/ms-user","backend_file":"UserController.java","http_method":"GET","path":"/users/{userId}"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range [][]string{
+		{"workspace", "explain", "GET /users/{userId}", "--workspace", root},
+		{"workspace", "path", "--from", "frontend/app", "--to", "UserController.get", "--workspace", root},
+		{"workspace", "impact", "--changed-file", "frontend/app/src/api/users.ts", "--workspace", root},
+	} {
+		var stdout, stderr bytes.Buffer
+		code := Run(args, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("%v exit code = %d, want 0; stderr=%s", args, code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "GET /users/{userId}") {
+			t.Fatalf("%v output missing route:\n%s", args, stdout.String())
 		}
 	}
 }

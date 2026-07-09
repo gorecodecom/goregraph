@@ -24,6 +24,7 @@ type workspaceIndexProject struct {
 	endpoints     []SpringEndpointRecord
 	endpointFlows []SpringEndpointFlowRecord
 	testMap       []TestMapRecord
+	dependencies  []WorkspaceServiceDependencyRecord
 }
 
 type workspaceBackendRoute struct {
@@ -68,6 +69,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	matches := buildWorkspaceContractMatches(indexed)
 	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
 	featureDossiers := buildFeatureDossiers(featureFlows, matches)
+	workspaceGraph := BuildWorkspaceGraph(registry, matches, featureFlows, featureDossiers)
+	serviceMap := BuildWorkspaceServiceMap(registry, matches, featureFlows, workspaceServiceDependencies(indexed))
+	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
@@ -87,6 +91,18 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 		return nil, err
 	}
 	if err := writeJSON(filepath.Join(workspaceOut, "feature-dossiers.json"), featureDossiers); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(filepath.Join(workspaceOut, "workspace-graph.json"), workspaceGraph); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(filepath.Join(workspaceOut, "workspace-service-map.json"), serviceMap); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(filepath.Join(workspaceOut, "workspace-endpoint-traces.json"), endpointTraces); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-map.html"), []byte(RenderWorkspaceDashboardHTMLWithModels(workspaceGraph, serviceMap, endpointTraces, matches, featureDossiers)), 0o644); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-context.md"), []byte(renderWorkspaceContextReport(context)), 0o644); err != nil {
@@ -129,6 +145,12 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "workspace-feature-dossiers.md"), []byte(renderFeatureDossiersReport(projectDossiers)), 0o644); err != nil {
+			return nil, err
+		}
+		if err := writeJSON(filepath.Join(out, "workspace-graph.json"), filterWorkspaceGraph(project.record.Path, workspaceGraph)); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(out, "workspace-map.md"), []byte(renderProjectWorkspaceMapPointer(workspaceRoot)), 0o644); err != nil {
 			return nil, err
 		}
 		if err := os.WriteFile(filepath.Join(out, "workspace-next-actions.md"), []byte(nextActions), 0o644); err != nil {
@@ -195,6 +217,9 @@ func workspaceRootScore(dir string) int {
 	}
 	if workspaceFileExists(filepath.Join(dir, ".goregraph-workspace", "registry.json")) {
 		score += 10
+	}
+	if info, err := os.Stat(filepath.Join(dir, ".goregraph-workspace")); err == nil && info.IsDir() {
+		score += 5
 	}
 	frontendGroups, backendGroups := workspaceGroupCounts(dir)
 	switch {
@@ -359,6 +384,14 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		}
 		if err := readWorkspaceJSON(filepath.Join(out, "api-contracts.json"), &loaded.contracts); err != nil && !os.IsNotExist(err) {
 			return nil, err
+		}
+		if err := readWorkspaceJSON(filepath.Join(out, "service-dependencies.json"), &loaded.dependencies); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		for i := range loaded.dependencies {
+			if loaded.dependencies[i].FromProject == "" {
+				loaded.dependencies[i].FromProject = project.Path
+			}
 		}
 		if err := readWorkspaceJSON(filepath.Join(out, "flows.json"), &loaded.codeFlows); err != nil && !os.IsNotExist(err) {
 			return nil, err
@@ -1196,6 +1229,54 @@ func filterFeatureDossiers(projectPath string, records []FeatureDossierRecord) [
 		}
 	}
 	return filtered
+}
+
+func filterWorkspaceGraph(projectPath string, graph WorkspaceGraphRecord) WorkspaceGraphRecord {
+	keep := map[string]bool{}
+	for _, node := range graph.Nodes {
+		if node.Project == projectPath || node.Kind == "project" && node.ID == StableWorkspaceID("project", projectPath) {
+			keep[node.ID] = true
+		}
+	}
+	changed := true
+	for changed {
+		changed = false
+		for _, edge := range graph.Edges {
+			if keep[edge.From] && !keep[edge.To] {
+				keep[edge.To] = true
+				changed = true
+			}
+			if keep[edge.To] && !keep[edge.From] {
+				keep[edge.From] = true
+				changed = true
+			}
+		}
+	}
+	filtered := WorkspaceGraphRecord{
+		SchemaVersion: graph.SchemaVersion,
+		Generated:     graph.Generated,
+		Root:          graph.Root,
+		Stats:         map[string]int{},
+	}
+	for _, node := range graph.Nodes {
+		if keep[node.ID] {
+			filtered.Nodes = append(filtered.Nodes, node)
+			filtered.Stats["nodes_"+node.Kind]++
+		}
+	}
+	for _, edge := range graph.Edges {
+		if keep[edge.From] && keep[edge.To] {
+			filtered.Edges = append(filtered.Edges, edge)
+			filtered.Stats["edges_"+edge.Kind]++
+		}
+	}
+	filtered.Stats["nodes_total"] = len(filtered.Nodes)
+	filtered.Stats["edges_total"] = len(filtered.Edges)
+	return filtered
+}
+
+func renderProjectWorkspaceMapPointer(workspaceRoot string) string {
+	return "# GoreGraph Workspace Map\n\nOpen the workspace dashboard at:\n\n`" + filepath.ToSlash(filepath.Join(workspaceRoot, ".goregraph-workspace", "workspace-map.html")) + "`\n"
 }
 
 func renderWorkspaceContextReport(record WorkspaceContextRecord) string {

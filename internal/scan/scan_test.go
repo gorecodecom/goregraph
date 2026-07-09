@@ -413,6 +413,60 @@ func main() {
 	http.HandleFunc("/health", healthHandler)
 }
 
+func TestRunExtractsAdditionalLanguageSymbolsAndRelations(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/lib.rs", "use crate::users;\nstruct UserRepo {}\nfn load_user() {}\n")
+	writeFile(t, root, "src/App.kt", "package demo\nimport demo.User\nclass App {\n fun start() {}\n}\n")
+	writeFile(t, root, "Sources/App.swift", "import Foundation\nstruct AppView {\n func render() {}\n}\n")
+	writeFile(t, root, "app/models/user.rb", "require 'json'\nclass User\n def name\n end\nend\n")
+	writeFile(t, root, "src/user.cpp", "#include <vector>\nclass UserService {};\nvoid loadUser() {}\n")
+	writeFile(t, root, "src/UserController.cs", "using System;\nnamespace Demo { class UserController { void Get() {} } }\n")
+
+	result, err := Run(root, testConfig())
+	if err != nil {
+		t.Fatalf("scan failed: %v", err)
+	}
+	if result.ScannedFiles != 6 {
+		t.Fatalf("scanned files = %d, want 6", result.ScannedFiles)
+	}
+
+	symbols := readJSONFile[[]RichSymbolRecord](t, filepath.Join(root, "goregraph-out", "symbols-full.json"))
+	relations := readJSONFile[[]RelationRecord](t, filepath.Join(root, "goregraph-out", "relations-full.json"))
+	analyzers := readJSONFile[[]AnalyzerRecord](t, filepath.Join(root, "goregraph-out", "analyzers.json"))
+
+	for _, want := range []struct {
+		language string
+		name     string
+		kind     string
+	}{
+		{"rust", "UserRepo", "struct"},
+		{"rust", "load_user", "function"},
+		{"kotlin", "App", "class"},
+		{"swift", "AppView", "struct"},
+		{"ruby", "User", "class"},
+		{"cpp", "UserService", "class"},
+		{"csharp", "UserController", "class"},
+	} {
+		assertRichSymbol(t, symbols, want.language, want.name, want.kind)
+	}
+	for _, want := range []struct {
+		from string
+		to   string
+	}{
+		{"src/lib.rs", "crate::users"},
+		{"src/App.kt", "demo.User"},
+		{"Sources/App.swift", "Foundation"},
+		{"app/models/user.rb", "json"},
+		{"src/user.cpp", "vector"},
+		{"src/UserController.cs", "System"},
+	} {
+		assertHasRelation(t, relations, want.from, want.to, "imports")
+	}
+	for _, language := range []string{"rust", "kotlin", "swift", "ruby", "cpp", "csharp"} {
+		assertHasAnalyzer(t, analyzers, language, false, false, false)
+	}
+}
+
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	checkHealth()
 }
@@ -754,6 +808,70 @@ export function PostHelper(dispatch, path) { return fetch(path, { method: "POST"
 	if !strings.Contains(apiReport, "GET `/productservice/users/{userId}/products`") || !strings.Contains(apiReport, "POST `/cadasters/{cadasterId}/users`") {
 		t.Fatalf("api contract report missing realistic helper calls:\n%s", apiReport)
 	}
+}
+
+func TestRunExtractsWekaRequestFrontendAPIContracts(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "apps/rdbv/package.json", `{"name":"@demo/rdbv"}`)
+	writeFile(t, root, "apps/rdbv/src/actions/regulations.ts", `import weka from "../weka";
+
+export async function fetchRegulations(filter: string) {
+  return await weka.request("GET", `+"`tree/regulations${filter}`"+`, { params: { active: true } });
+}
+
+export async function updateSearch(data: unknown) {
+  return weka.request('PUT', 'search', { data });
+}
+
+export async function addFavorite(userId: string, folderId: string) {
+  return weka.request(
+    "POST",
+    `+"`useritem/users/${userId}/folders/${folderId}/favorites`"+`,
+    {}
+  );
+}
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var api []APIContractRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "api-contracts.json"), &api)
+	treeContract := assertHasAPIContract(t, api, "GET", "/tree/regulations", "apps/rdbv/src/actions/regulations.ts")
+	if treeContract.ServiceCandidate != "ms-regulationtree" {
+		t.Fatalf("tree service candidate = %q, want ms-regulationtree", treeContract.ServiceCandidate)
+	}
+	assertHasAPIContract(t, api, "PUT", "/search", "apps/rdbv/src/actions/regulations.ts")
+	assertHasAPIContract(t, api, "POST", "/useritem/users/{userId}/folders/{folderId}/favorites", "apps/rdbv/src/actions/regulations.ts")
+}
+
+func TestRunExtractsWekaRequestInsideCreateAsyncAction(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/actions/regulations.js", `import {createAsyncAction} from 'redux-promise-middleware-actions';
+import weka from '../weka';
+
+export const getRegulations = createAsyncAction(
+    'REGULATIONS',
+    async (cachetArea, genre, params = {}) => {
+        const response = await weka.request(
+            'POST',
+            `+"`tree/cachetareas/${cachetArea}/genres/${genre}/regulations`"+`,
+            {data: params}
+        );
+        return response;
+    },
+    (cachetArea, genre) => ({cachetArea, genre})
+);
+`)
+
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	var api []APIContractRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "api-contracts.json"), &api)
+	assertHasAPIContract(t, api, "POST", "/tree/cachetareas/{cachetArea}/genres/{genre}/regulations", "src/actions/regulations.js")
 }
 
 func TestRunKeepsFrontendRouteHandlersInsideOwningApp(t *testing.T) {
@@ -1389,14 +1507,15 @@ func assertHasPackageEdge(t *testing.T, graph PackageGraphRecord, from, to strin
 	t.Fatalf("missing package edge %q -> %q in %#v", from, to, graph.Edges)
 }
 
-func assertHasAPIContract(t *testing.T, records []APIContractRecord, method, path, file string) {
+func assertHasAPIContract(t *testing.T, records []APIContractRecord, method, path, file string) APIContractRecord {
 	t.Helper()
 	for _, record := range records {
 		if record.HTTPMethod == method && record.Path == path && record.File == file {
-			return
+			return record
 		}
 	}
 	t.Fatalf("missing api contract method=%q path=%q file=%q in %#v", method, path, file, records)
+	return APIContractRecord{}
 }
 
 func assertHasAPIContractDynamicCandidates(t *testing.T, records []APIContractRecord, method, path string, candidates ...string) {

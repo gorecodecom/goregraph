@@ -214,6 +214,21 @@ class CadasterController {
 	readJSON(t, filepath.Join(workspace, ".goregraph-workspace", "registry.json"), &registry)
 	assertWorkspaceProject(t, registry, "frontend/frontend-monorepo", "indexed", true)
 	assertWorkspaceProject(t, registry, "microservices/ms-cadaster", "current", true)
+
+	var serviceMap WorkspaceServiceMapRecord
+	readJSON(t, filepath.Join(workspace, ".goregraph-workspace", "workspace-service-map.json"), &serviceMap)
+	if len(serviceMap.Edges) != 1 ||
+		serviceMap.Edges[0].FromProject != "frontend/frontend-monorepo" ||
+		serviceMap.Edges[0].ToProject != "microservices/ms-cadaster" ||
+		serviceMap.Edges[0].Resolved != 1 {
+		t.Fatalf("workspace service map missing directed frontend -> backend edge: %#v", serviceMap.Edges)
+	}
+
+	var traceIndex WorkspaceEndpointTraceIndexRecord
+	readJSON(t, filepath.Join(workspace, ".goregraph-workspace", "workspace-endpoint-traces.json"), &traceIndex)
+	if len(traceIndex.Traces) != 1 || traceIndex.Traces[0].Route != "GET /cadasters/{id}" {
+		t.Fatalf("workspace endpoint traces missing frontend contract trace: %#v", traceIndex.Traces)
+	}
 }
 
 func TestWorkspaceDiagnosticsDoNotKeepIndexedMissingRoutesAsUnscanned(t *testing.T) {

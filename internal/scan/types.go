@@ -733,6 +733,141 @@ type WorkspaceContractDiffRecord struct {
 	AfterConfidence  string `json:"after_confidence,omitempty"`
 }
 
+type WorkspaceGraphRecord struct {
+	SchemaVersion int                        `json:"schema_version"`
+	Generated     string                     `json:"generated,omitempty"`
+	Root          string                     `json:"root,omitempty"`
+	Nodes         []WorkspaceGraphNodeRecord `json:"nodes"`
+	Edges         []WorkspaceGraphEdgeRecord `json:"edges"`
+	Stats         map[string]int             `json:"stats,omitempty"`
+}
+
+type WorkspaceGraphNodeRecord struct {
+	ID         string            `json:"id"`
+	Kind       string            `json:"kind"`
+	Label      string            `json:"label"`
+	Project    string            `json:"project,omitempty"`
+	File       string            `json:"file,omitempty"`
+	Line       int               `json:"line,omitempty"`
+	Symbol     string            `json:"symbol,omitempty"`
+	Method     string            `json:"method,omitempty"`
+	Path       string            `json:"path,omitempty"`
+	Confidence string            `json:"confidence,omitempty"`
+	Risk       string            `json:"risk,omitempty"`
+	Meta       map[string]string `json:"meta,omitempty"`
+}
+
+type WorkspaceGraphEdgeRecord struct {
+	ID         string            `json:"id"`
+	From       string            `json:"from"`
+	To         string            `json:"to"`
+	Kind       string            `json:"kind"`
+	Confidence string            `json:"confidence,omitempty"`
+	Meta       map[string]string `json:"meta,omitempty"`
+}
+
+type WorkspaceExplainRecord struct {
+	Target      string                     `json:"target"`
+	MatchedNode WorkspaceGraphNodeRecord   `json:"matched_node"`
+	Neighbors   []WorkspaceGraphNodeRecord `json:"neighbors,omitempty"`
+	Edges       []WorkspaceGraphEdgeRecord `json:"edges,omitempty"`
+}
+
+type WorkspaceImpactRecord struct {
+	ChangedFiles     []string               `json:"changed_files"`
+	AffectedFeatures []FeatureDossierRecord `json:"affected_features"`
+	RiskSummary      map[string]int         `json:"risk_summary,omitempty"`
+}
+
+type WorkspaceServiceMapRecord struct {
+	SchemaVersion int                          `json:"schema_version"`
+	Generated     string                       `json:"generated,omitempty"`
+	Root          string                       `json:"root,omitempty"`
+	Nodes         []WorkspaceServiceNodeRecord `json:"nodes"`
+	Edges         []WorkspaceServiceEdgeRecord `json:"edges"`
+	Stats         map[string]int               `json:"stats,omitempty"`
+}
+
+type WorkspaceServiceDependencyRecord struct {
+	FromProject   string `json:"from_project"`
+	ToProject     string `json:"to_project,omitempty"`
+	ToService     string `json:"to_service,omitempty"`
+	Kind          string `json:"kind"`
+	Evidence      string `json:"evidence,omitempty"`
+	Confidence    string `json:"confidence"`
+	ResolutionKey string `json:"resolution_key,omitempty"`
+}
+
+type WorkspaceServiceNodeRecord struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Project  string `json:"project"`
+	Kind     string `json:"kind,omitempty"`
+	Role     string `json:"role,omitempty"`
+	Domain   string `json:"domain,omitempty"`
+	Service  string `json:"service,omitempty"`
+	Indexed  bool   `json:"indexed"`
+	Status   string `json:"status,omitempty"`
+	Incoming int    `json:"incoming,omitempty"`
+	Outgoing int    `json:"outgoing,omitempty"`
+}
+
+type WorkspaceServiceEdgeRecord struct {
+	ID          string   `json:"id"`
+	From        string   `json:"from"`
+	To          string   `json:"to"`
+	FromProject string   `json:"from_project"`
+	ToProject   string   `json:"to_project"`
+	Direction   string   `json:"direction"`
+	Total       int      `json:"total"`
+	Resolved    int      `json:"resolved,omitempty"`
+	Mismatched  int      `json:"mismatched,omitempty"`
+	Unresolved  int      `json:"unresolved,omitempty"`
+	OutOfScope  int      `json:"out_of_scope,omitempty"`
+	Risk        string   `json:"risk,omitempty"`
+	Endpoints   []string `json:"endpoints,omitempty"`
+	Problems    []string `json:"problems,omitempty"`
+	Evidence    []string `json:"evidence,omitempty"`
+}
+
+type WorkspaceEndpointTraceIndexRecord struct {
+	SchemaVersion int                            `json:"schema_version"`
+	Generated     string                         `json:"generated,omitempty"`
+	Traces        []WorkspaceEndpointTraceRecord `json:"traces"`
+	Stats         map[string]int                 `json:"stats,omitempty"`
+}
+
+type WorkspaceEndpointTraceRecord struct {
+	ID          string                             `json:"id"`
+	Route       string                             `json:"route"`
+	Method      string                             `json:"method,omitempty"`
+	Path        string                             `json:"path,omitempty"`
+	FromProject string                             `json:"from_project,omitempty"`
+	ToProject   string                             `json:"to_project,omitempty"`
+	Status      string                             `json:"status,omitempty"`
+	Risk        string                             `json:"risk,omitempty"`
+	Steps       []WorkspaceEndpointTraceStepRecord `json:"steps"`
+	Edges       []WorkspaceEndpointTraceEdgeRecord `json:"edges"`
+}
+
+type WorkspaceEndpointTraceStepRecord struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	Label      string `json:"label"`
+	Project    string `json:"project,omitempty"`
+	File       string `json:"file,omitempty"`
+	Line       int    `json:"line,omitempty"`
+	Symbol     string `json:"symbol,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+}
+
+type WorkspaceEndpointTraceEdgeRecord struct {
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Kind      string `json:"kind"`
+	Direction string `json:"direction"`
+}
+
 type SpringApplicationRecord struct {
 	Name             string `json:"name"`
 	File             string `json:"file"`

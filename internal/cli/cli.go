@@ -105,7 +105,7 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing|scan-all|clean|diff> [path] [options]\n")
+		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing|scan-all|refresh|clean|diff|dashboard|explain|path|impact> [path] [options]\n")
 		return 2
 	}
 	switch args[0] {
@@ -115,14 +115,259 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return runWorkspaceScanMissing(args[1:], stdout, stderr)
 	case "scan-all":
 		return runWorkspaceScanAll(args[1:], stdout, stderr)
+	case "refresh":
+		return runWorkspaceRefresh(args[1:], stdout, stderr)
 	case "clean":
 		return runWorkspaceClean(args[1:], stdout, stderr)
 	case "diff":
 		return runWorkspaceDiff(args[1:], stdout, stderr)
+	case "dashboard":
+		return runWorkspaceDashboard(args[1:], stdout, stderr)
+	case "explain":
+		return runWorkspaceExplain(args[1:], stdout, stderr)
+	case "path":
+		return runWorkspacePath(args[1:], stdout, stderr)
+	case "impact":
+		return runWorkspaceImpact(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown workspace command: %s\n", args[0])
 		return 2
 	}
+}
+
+func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
+	cfg := config.Defaults()
+	cfg.Workspace = true
+	root := "."
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			cfg.WorkspaceRoot = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace refresh [path] [--workspace <path>]\n\nRefreshes workspace overlays from existing project GoreGraph outputs without scanning source files.\n")
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			root = arg
+		}
+	}
+	registry, err := scan.ReconcileWorkspace(root, cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace refresh failed: %v\n", err)
+		return 1
+	}
+	if registry == nil {
+		fmt.Fprint(stderr, "error: workspace root not found or no projects discovered\n")
+		return 1
+	}
+	fmt.Fprintf(stdout, "Refreshed workspace overlay: %s\n", filepath.Join(registry.Root, ".goregraph-workspace"))
+	fmt.Fprintf(stdout, "- workspace-map.html\n")
+	fmt.Fprintf(stdout, "- workspace-service-map.json\n")
+	fmt.Fprintf(stdout, "- workspace-endpoint-traces.json\n")
+	return 0
+}
+
+func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
+	cfg := config.Defaults()
+	root := "."
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			cfg.WorkspaceRoot = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace dashboard [path] [--workspace <path>]\n\nPrints the generated workspace dashboard HTML path.\n")
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			root = arg
+		}
+	}
+	workspaceRoot, ok, err := scan.WorkspaceRoot(root, cfg)
+	if err != nil || !ok {
+		fmt.Fprintf(stderr, "error: workspace root not found: %v\n", err)
+		return 1
+	}
+	path := filepath.Join(workspaceRoot, ".goregraph-workspace", "workspace-map.html")
+	if _, err := os.Stat(path); err != nil {
+		fmt.Fprintf(stderr, "error: dashboard not found; run goregraph workspace scan-all first: %v\n", err)
+		return 1
+	}
+	abs, _ := filepath.Abs(path)
+	fmt.Fprintf(stdout, "%s\n", abs)
+	return 0
+}
+
+func runWorkspaceExplain(args []string, stdout, stderr io.Writer) int {
+	cfg := config.Defaults()
+	root := "."
+	target := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			cfg.WorkspaceRoot = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace explain <target> [--workspace <path>]\n\nExplains a route, file, symbol, contract, or feature from generated workspace outputs.\n")
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			if target == "" {
+				target = arg
+			} else {
+				target += " " + arg
+			}
+		}
+	}
+	if target == "" {
+		fmt.Fprint(stderr, "error: workspace explain requires a target\n")
+		return 2
+	}
+	workspaceRoot, ok, err := scan.WorkspaceRoot(root, cfg)
+	if err != nil || !ok {
+		fmt.Fprintf(stderr, "error: workspace root not found: %v\n", err)
+		return 1
+	}
+	record, err := scan.ExplainWorkspaceTarget(filepath.Join(workspaceRoot, ".goregraph-workspace"), target)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace explain failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write([]byte(scan.RenderWorkspaceExplain(record)))
+	return 0
+}
+
+func runWorkspacePath(args []string, stdout, stderr io.Writer) int {
+	cfg := config.Defaults()
+	root := "."
+	from := ""
+	to := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--from":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --from requires a target\n")
+				return 2
+			}
+			i++
+			from = args[i]
+		case "--to":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --to requires a target\n")
+				return 2
+			}
+			i++
+			to = args[i]
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			cfg.WorkspaceRoot = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace path --from <target> --to <target> [--workspace <path>]\n\nShows the shortest generated workspace graph path between two targets.\n")
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			root = arg
+		}
+	}
+	if from == "" || to == "" {
+		fmt.Fprint(stderr, "error: workspace path requires --from and --to\n")
+		return 2
+	}
+	workspaceRoot, ok, err := scan.WorkspaceRoot(root, cfg)
+	if err != nil || !ok {
+		fmt.Fprintf(stderr, "error: workspace root not found: %v\n", err)
+		return 1
+	}
+	nodes, edges, err := scan.WorkspacePath(filepath.Join(workspaceRoot, ".goregraph-workspace"), from, to)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace path failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write([]byte(scan.RenderWorkspacePath(nodes, edges)))
+	return 0
+}
+
+func runWorkspaceImpact(args []string, stdout, stderr io.Writer) int {
+	cfg := config.Defaults()
+	root := "."
+	var changedFiles []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--changed-file":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --changed-file requires a path\n")
+				return 2
+			}
+			i++
+			changedFiles = append(changedFiles, args[i])
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			cfg.WorkspaceRoot = args[i]
+		case "--help", "help":
+			fmt.Fprint(stdout, "Usage: goregraph workspace impact --changed-file <path> [--changed-file <path>] [--workspace <path>]\n\nShows affected feature dossiers for changed files using generated workspace outputs.\n")
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			root = arg
+		}
+	}
+	if len(changedFiles) == 0 {
+		fmt.Fprint(stderr, "error: workspace impact requires at least one --changed-file\n")
+		return 2
+	}
+	workspaceRoot, ok, err := scan.WorkspaceRoot(root, cfg)
+	if err != nil || !ok {
+		fmt.Fprintf(stderr, "error: workspace root not found: %v\n", err)
+		return 1
+	}
+	record, err := scan.WorkspaceImpact(filepath.Join(workspaceRoot, ".goregraph-workspace"), changedFiles)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace impact failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write([]byte(scan.RenderWorkspaceImpact(record)))
+	return 0
 }
 
 func runWorkspaceDiff(args []string, stdout, stderr io.Writer) int {
@@ -660,7 +905,7 @@ Commands:
   query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
   doctor <path>     Check generated output health
-  workspace         Show, scan, or clean workspace projects
+  workspace         Show, scan, clean, and inspect workspace projects
   mcp               Start the read-only MCP stdio server
   version           Print build metadata
   help              Show this help
@@ -681,7 +926,12 @@ Examples:
   goregraph workspace status .
   goregraph workspace scan-missing . --top 5
   goregraph workspace scan-all .
+  goregraph workspace refresh .
   goregraph workspace clean . --execute
+  goregraph workspace dashboard .
+  goregraph workspace explain "GET /users/{userId}"
+  goregraph workspace path --from frontend/app --to UserController.get
+  goregraph workspace impact --changed-file src/api/users.ts
   goregraph mcp
   goregraph version
 `)
@@ -694,14 +944,24 @@ Commands:
   status [path]        Show workspace projects and loaded indexes without scanning
   scan-missing [path]  Show prioritized missing service scans; add --execute to scan
   scan-all [path]      Scan every discovered project in the workspace
+  refresh [path]       Refresh workspace overlays without scanning source files
   clean [path]         Show generated workspace outputs; add --execute to remove
+  dashboard [path]     Print generated workspace dashboard path
+  explain <target>     Explain a route, file, symbol, contract, or feature
+  path                 Show graph path between two workspace targets
+  impact               Show affected features for changed files
 
 Examples:
   goregraph workspace status .
   goregraph workspace scan-missing .
   goregraph workspace scan-missing . --top 5 --execute
   goregraph workspace scan-all .
+  goregraph workspace refresh .
   goregraph workspace clean . --execute
+  goregraph workspace dashboard .
+  goregraph workspace explain "GET /users/{userId}"
+  goregraph workspace path --from frontend/app --to UserController.get
+  goregraph workspace impact --changed-file frontend/app/src/api/users.ts
 `)
 }
 

@@ -17,6 +17,22 @@ func detectLanguage(rel string) string {
 		return "go"
 	case ".java":
 		return "java"
+	case ".kt", ".kts":
+		return "kotlin"
+	case ".scala":
+		return "scala"
+	case ".rs":
+		return "rust"
+	case ".swift":
+		return "swift"
+	case ".rb":
+		return "ruby"
+	case ".cs":
+		return "csharp"
+	case ".c", ".h":
+		return "c"
+	case ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx":
+		return "cpp"
 	case ".py":
 		return "python"
 	case ".php":
