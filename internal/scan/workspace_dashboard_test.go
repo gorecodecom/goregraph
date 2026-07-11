@@ -254,6 +254,40 @@ func TestRenderWorkspaceDashboardHTMLExplainsDiagnosticGroupsAndAddsFileLinks(t 
 	}
 }
 
+func TestRenderWorkspaceDashboardHTMLSeparatesTreeDiagnosticsByCode(t *testing.T) {
+	traces := WorkspaceEndpointTraceIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Traces: []WorkspaceEndpointTraceRecord{
+			{
+				ID: "trace:tree-missing", Route: "GET /tree/topics", Path: "/tree/topics",
+				ToProject: "microservices/ms-regulationtree", Status: "UNRESOLVED", Risk: "indexed_backend_route_missing",
+			},
+			{
+				ID: "trace:tree-internal", Route: "GET /tree/search", Path: "/tree/search",
+				ToProject: "microservices/ms-regulationtree", Status: "RESOLVED", Risk: "frontend_internal_api",
+			},
+		},
+	}
+
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		traces,
+		nil,
+		nil,
+	)
+
+	for _, want := range []string{
+		"function diagnosticCode(trace)",
+		`return "tree-prefix|"+diagnosticCode(t)+"|"+(t.to_project||"unresolved")`,
+		"presentation:diagnosticPresentation(t)",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard html does not separate /tree diagnostics by code: missing %q", want)
+		}
+	}
+}
+
 func TestRenderWorkspaceDashboardHTMLEndpointsCombineInventoryAndTrace(t *testing.T) {
 	serviceMap := WorkspaceServiceMapRecord{
 		SchemaVersion: SchemaVersion,
