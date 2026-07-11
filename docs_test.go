@@ -28,3 +28,28 @@ func TestCommandsReferenceDocumentsEveryUserCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardDesignSystemDocumentsRequiredTokensAndBehavior(t *testing.T) {
+	content, err := os.ReadFile("docs/design-system.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, want := range []string{
+		"--color-background",
+		"--color-surface",
+		"--color-text",
+		"--color-muted",
+		"--color-accent",
+		"--color-focus",
+		"--space-1",
+		"--radius-control",
+		"prefers-reduced-motion",
+		"Selection does not relayout the Architecture view",
+		"Fit preserves search, filters, and selection",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("design system missing %q", want)
+		}
+	}
+}
