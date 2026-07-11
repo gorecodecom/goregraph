@@ -308,6 +308,43 @@ func TestRenderWorkspaceDashboardHTMLEndpointsCombineInventoryAndTrace(t *testin
 	}
 }
 
+func TestRenderWorkspaceDashboardHTMLEndpointTraceRestoresInventoryViewport(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+
+	for _, want := range []string{
+		"endpointInventoryViewport:null",
+		"function saveEndpointInventoryViewport()",
+		"state.endpointInventoryViewport={zoom:state.zoom,panX:state.panX,panY:state.panY}",
+		"function restoreEndpointInventoryViewport()",
+		"state.zoom=viewport.zoom;state.panX=viewport.panX;state.panY=viewport.panY",
+		"saveEndpointInventoryViewport();state.selected=id",
+		"restoreEndpointInventoryViewport();renderList();renderCanvas()",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard html missing endpoint inventory viewport behavior %q", want)
+		}
+	}
+
+	returnStart := strings.Index(html, "function returnToEndpointInventory()")
+	if returnStart < 0 {
+		t.Fatal("dashboard html missing endpoint inventory return function")
+	}
+	returnEnd := strings.Index(html[returnStart:], "function selectOrToggleItem")
+	if returnEnd < 0 {
+		t.Fatal("dashboard html missing endpoint inventory return function boundary")
+	}
+	returnBody := html[returnStart : returnStart+returnEnd]
+	if strings.Contains(returnBody, "state.query=") || strings.Contains(returnBody, "state.filter=") || strings.Contains(returnBody, "state.endpointService=") {
+		t.Fatalf("endpoint inventory return mutates preserved context: %s", returnBody)
+	}
+}
+
 func TestRenderWorkspaceDashboardHTMLShowsUnconnectedFrontendClients(t *testing.T) {
 	serviceMap := WorkspaceServiceMapRecord{
 		SchemaVersion: SchemaVersion,
