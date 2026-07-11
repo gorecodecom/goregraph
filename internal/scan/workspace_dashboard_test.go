@@ -39,24 +39,13 @@ func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) 
 		"<!doctype html>",
 		`id="workspace-search"`,
 		"data-kind-filter",
-		`data-view-mode="architecture"`,
-		`data-view-mode="services"`,
-		`data-view-mode="endpoint"`,
-		`data-view-mode="raw"`,
-		`data-view-mode="issues"`,
 		`id="clear-selection"`,
 		`id="zoom-in"`,
 		`id="zoom-out"`,
 		`id="reset-view"`,
 		`id="toggle-labels"`,
 		`id="graph-layer"`,
-		"Service Map",
-		"Architecture Map",
-		"Endpoint Trace",
-		"Open Issues",
-		"Issue Workbench",
 		"function buildIssueGroups",
-		"function renderIssueWorkbench",
 		"function sourceHref",
 		"function fileLink",
 		"Incoming",
@@ -68,11 +57,8 @@ func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) 
 		"MISMATCH",
 		"UNRESOLVED",
 		"OUT_OF_SCOPE",
-		"function renderServiceMap",
 		"function renderArchitectureMap",
 		"function renderEndpointTrace",
-		"Endpoint Paths",
-		"function renderEndpointPaths",
 		"function endpointPathRowsForService",
 		"function clearSelection",
 		"function serviceRole",
@@ -95,14 +81,56 @@ func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) 
 			t.Fatalf("dashboard html missing %q\n%s", want, html)
 		}
 	}
+	for _, want := range []string{
+		`data-view-mode="architecture"`,
+		`data-view-mode="endpoints"`,
+		`data-view-mode="diagnostics"`,
+		`const state={mode:"architecture"`,
+		"Architecture",
+		"Endpoints",
+		"Diagnostics",
+		"Isolate neighborhood",
+		"Show full architecture",
+		"How was this determined?",
+		"function fitVisibleContent",
+		"function zoomAtPoint",
+		"viewports:new Map()",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard html missing 0.9.1 behavior %q", want)
+		}
+	}
+
+	for _, unwanted := range []string{
+		`data-view-mode="services"`,
+		`data-view-mode="raw"`,
+		`data-view-mode="issues"`,
+		">Focused Service<",
+		">Endpoint Paths<",
+		">Open Issues<",
+	} {
+		if strings.Contains(html, unwanted) {
+			t.Fatalf("dashboard html retains removed top-level navigation %q", unwanted)
+		}
+	}
+
+	for _, want := range []string{
+		"See how projects and services communicate across the workspace.",
+		"Find an endpoint, inspect its consumers, and follow its implementation trace.",
+		"Review relationships GoreGraph could not safely confirm and learn what to check next.",
+		"Likely code defect",
+		"Missing scan coverage",
+		"Expected behavior",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard html missing explanatory copy %q", want)
+		}
+	}
 	if strings.Contains(html, "Connections</h3><p class=\"connection-help\">Connections show why this node exists") {
 		t.Fatalf("dashboard should not default to raw connection ID detail blocks")
 	}
 	if strings.Contains(html, "Shared / Internal") {
 		t.Fatalf("dashboard should not label unrelated frontend projects as shared/internal")
-	}
-	if !strings.Contains(html, `const state={mode:"issues"`) {
-		t.Fatalf("dashboard should open in issues mode when generated")
 	}
 	for _, want := range []string{`data-step-id`, `data-focus-id`, `trace-card`, `path-card`, "centerOnPosition", "truncateWord"} {
 		if !strings.Contains(html, want) {
