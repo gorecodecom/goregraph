@@ -46,6 +46,10 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 			"WINGET_TOKEN",
 		},
 		"docs/RELEASE.md": {
+			"v0.9.1",
+			"Architecture",
+			"Endpoints",
+			"Diagnostics",
 			"v0.1.1",
 			"goregraph version",
 			"GoReleaser",

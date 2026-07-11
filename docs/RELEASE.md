@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.9.0
+v0.9.1
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript/TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output. `v0.8.0` adds frontend API to backend route contract matching, safer URL normalization, and explicit weak/static contract issue reports. `v0.8.1` adds diagnostics, unscanned-service classification, and lower-noise affected output. `v0.8.2` adds zero-config workspace discovery and cross-project overlay refreshes. `v0.8.3` adds workspace query fallback, integrated workspace diagnostics, frontend consumers in endpoints, end-to-end workspace feature flows, stricter path matching, and generated-output gitignore handling. `v0.8.4` adds consistent workspace diagnostics, clearer frontend-consumer report scope, and actionable missing-test reasons in feature flows. `v0.8.5` adds frontend route/component context in workspace feature flows. `v0.8.6` adds component-aware frontend route flows and parent-aware workspace root detection. `v0.8.7` adds clearer workspace diagnostics when indexed services have no matching backend route. `v0.8.8` adds project-local workspace contract JSON overlays refreshed after later sibling scans. `v0.8.9` adds full-workspace scan and clean commands plus deeper workspace change-safety outputs. `v0.9.0` is the current local development version for the workspace understanding dashboard, graph navigation commands, and broader language inventory.
+`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript/TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output. `v0.8.0` adds frontend API to backend route contract matching, safer URL normalization, and explicit weak/static contract issue reports. `v0.8.1` adds diagnostics, unscanned-service classification, and lower-noise affected output. `v0.8.2` adds zero-config workspace discovery and cross-project overlay refreshes. `v0.8.3` adds workspace query fallback, integrated workspace diagnostics, frontend consumers in endpoints, end-to-end workspace feature flows, stricter path matching, and generated-output gitignore handling. `v0.8.4` adds consistent workspace diagnostics, clearer frontend-consumer report scope, and actionable missing-test reasons in feature flows. `v0.8.5` adds frontend route/component context in workspace feature flows. `v0.8.6` adds component-aware frontend route flows and parent-aware workspace root detection. `v0.8.7` adds clearer workspace diagnostics when indexed services have no matching backend route. `v0.8.8` adds project-local workspace contract JSON overlays refreshed after later sibling scans. `v0.8.9` adds full-workspace scan and clean commands plus deeper workspace change-safety outputs. `v0.9.0` adds the workspace understanding dashboard, graph navigation commands, and broader language inventory. `v0.9.1` is the current local development version for the Architecture-first dashboard foundation.
 
 Completed release checks:
 
@@ -233,6 +233,19 @@ Completed release checks:
 - Rust, Kotlin, Scala, Swift, Ruby, C, C++, and C# files are detected in the language inventory with best-effort symbol and import extraction.
 - `goregraph version` reports `0.9.0`.
 
+`v0.9.1` feature checks:
+
+- Architecture is the default top-level view and shows service relationships across the full workspace map.
+- Selecting a service highlights its direct incoming and outgoing relationships without auto-centering, relayout, or filtering unrelated services.
+- **Isolate neighborhood** explicitly limits Architecture to the selected service and its direct neighbors; **Show full architecture** restores the full map.
+- Endpoints combines provider-grouped endpoint inventory with the caller-to-provider implementation trace, and returning from a trace restores the inventory viewport.
+- Diagnostics replaces Open Issues as the top-level name and explains what GoreGraph could not safely confirm, why it matters, the available evidence, and what to check next.
+- **100%** resets zoom and pan only. **Fit** fits currently visible content without clearing search or selection, and each top-level view retains its own viewport.
+- Static-analysis results remain evidence, not runtime proof. Missing relationships can reflect dynamic behavior, generated code, runtime configuration, unsupported analysis, stale output, or projects that were not indexed.
+- Fresh-scan acceptance previews `goregraph workspace clean .`, reviews the listed generated paths, executes `goregraph workspace clean . --execute`, and then runs `goregraph workspace scan-all .` with the newly installed binary. Existing refreshed outputs are not accepted as a substitute.
+- `.goregraph-workspace/workspace-map.html` remains compatible with Schema 1 payloads.
+- `goregraph version` reports `0.9.1`.
+
 Remaining release-hardening items:
 
 - Validate GoreGraph against more real-world projects before considering `1.0.0`.
@@ -256,7 +269,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.9.0
+goregraph 0.9.1
 commit: <commit>
 built: <timestamp>
 go: <go-version>
