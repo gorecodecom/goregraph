@@ -238,7 +238,7 @@ Completed release checks:
 - Architecture is the default top-level view and shows service relationships across the full workspace map.
 - Selecting a service highlights its direct incoming and outgoing relationships without auto-centering, relayout, or filtering unrelated services.
 - **Isolate neighborhood** explicitly limits Architecture to the selected service and its direct neighbors; **Show full architecture** restores the full map.
-- Endpoints combines provider-grouped endpoint inventory with the caller-to-provider implementation trace, and returning from a trace restores the inventory viewport.
+- Endpoints lets users search for and select a service, inspect its caller -> endpoint -> provider rows, and open an implementation trace; returning from a trace restores the service inventory viewport.
 - Diagnostics replaces Open Issues as the top-level name and explains what GoreGraph could not safely confirm, why it matters, the available evidence, and what to check next.
 - **100%** resets zoom and pan only. **Fit** fits currently visible content without clearing search or selection, and each top-level view retains its own viewport.
 - Static-analysis results remain evidence, not runtime proof. Missing relationships can reflect dynamic behavior, generated code, runtime configuration, unsupported analysis, stale output, or projects that were not indexed.

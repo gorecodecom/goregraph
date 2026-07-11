@@ -651,7 +651,7 @@ Workspace files are additive overlays. `.goregraph-workspace/registry.json` list
 The workspace dashboard at `.goregraph-workspace/workspace-map.html` is a standalone offline UI organized around three questions:
 
 - **Architecture:** understand how projects and services communicate. Selecting a service highlights its direct incoming and outgoing relationships without changing the full map; **Isolate neighborhood** explicitly narrows the canvas, and **Show full architecture** returns to the complete map.
-- **Endpoints:** search the endpoint inventory by service or route, then open an endpoint to follow its caller-to-provider implementation trace. This combines the earlier Endpoint Paths and Endpoint Trace workflows in one view.
+- **Endpoints:** search for and select a service, inspect its caller -> endpoint -> provider rows, then open an endpoint to follow its implementation trace. This combines the earlier Endpoint Paths and Endpoint Trace workflows in one view.
 - **Diagnostics:** review relationships GoreGraph could not safely confirm, why each result matters, its available evidence, and what to check next. Categories distinguish likely code defects, missing scan coverage, dynamic or statically ambiguous paths, and expected frontend-internal behavior.
 
 Selection does not auto-center or relayout the graph. **100%** resets only zoom and pan, while **Fit** calculates a fit for the currently visible content without clearing the selection or search. Viewport state is retained per top-level view, including when returning from an endpoint trace to the endpoint inventory.
