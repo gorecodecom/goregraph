@@ -70,6 +70,44 @@ func TestDashboardViewportControlsPreserveUserContext(t *testing.T) {
 	}
 }
 
+func TestDashboardViewportUsesVisibleContentAndSVGCoordinates(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`data-viewport-background="true"`,
+		"function visibleContentBounds(layer)",
+		`querySelectorAll(":scope > :not([data-viewport-background])")`,
+		"function screenToSVGPoint(clientX,clientY)",
+		"createSVGPoint()",
+		"getScreenCTM().inverse()",
+		"svg.viewBox.baseVal",
+		"const point=screenToSVGPoint(e.clientX,e.clientY)",
+		`if(state.mode==="endpoints"&&traceById.has(state.selected)&&state.endpointInventoryViewport)`,
+		`if(mode==="endpoints"&&state.endpointInventoryViewport){restoreEndpointInventoryViewport();saveViewport(mode);}`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing reviewed viewport behavior %q", want)
+		}
+	}
+	fitStart := strings.Index(html, "function fitVisibleContent()")
+	if fitStart < 0 {
+		t.Fatal("dashboard missing Fit function")
+	}
+	fitEnd := strings.Index(html[fitStart:], "function saveEndpointInventoryViewport()")
+	if fitEnd < 0 {
+		t.Fatal("dashboard missing fit function boundaries")
+	}
+	fit := html[fitStart : fitStart+fitEnd]
+	if strings.Contains(fit, "clientWidth") || strings.Contains(fit, "clientHeight") {
+		t.Fatal("Fit must calculate in SVG user units, not CSS client pixels")
+	}
+}
+
 func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) {
 	graph := WorkspaceGraphRecord{
 		SchemaVersion: SchemaVersion,
