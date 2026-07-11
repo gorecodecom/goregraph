@@ -11,13 +11,11 @@ const workspaceDashboardShell = `<div class="shell">
 <div class="summary"><div class="metric"><strong id="service-count">0</strong><span>services</span></div><div class="metric"><strong id="edge-count">0</strong><span>relations</span></div><div class="metric"><strong id="trace-count">0</strong><span>traces</span></div></div>
 <h2>View</h2>
 <div class="modes">
-<button data-view-mode="issues" class="active">Open Issues</button>
-<button data-view-mode="architecture">Architecture Map</button>
-<button data-view-mode="services">Focused Service</button>
-<button data-view-mode="endpoint">Endpoint Trace</button>
-<button data-view-mode="raw">Endpoint Paths</button>
+<button data-view-mode="architecture" class="active">Architecture</button>
+<button data-view-mode="endpoints">Endpoints</button>
+<button data-view-mode="diagnostics">Diagnostics</button>
 </div>
-<p class="help" id="mode-help">Open Issues groups unresolved, mismatched, and out-of-scope contracts by cause so duplicates can be triaged as one problem family.</p>
+<p class="help" id="mode-help">See how projects and services communicate across the workspace. Select a service to highlight direct incoming and outgoing relationships without changing the layout.</p>
 <input id="workspace-search" aria-label="Search workspace map" placeholder="Search service, endpoint, route, file, symbol">
 <h2>Filter</h2>
 <div class="filters">
@@ -27,6 +25,7 @@ const workspaceDashboardShell = `<div class="shell">
 <button data-kind-filter="unresolved">Unresolved</button>
 </div>
 <div class="filters" style="margin-top:8px"><button id="clear-selection" type="button">Clear selection</button></div>
+<div class="filters" style="margin-top:8px"><button id="isolate-neighborhood" type="button" hidden>Isolate neighborhood</button><button id="show-full-architecture" type="button" hidden>Show full architecture</button></div>
 <h2 id="list-title">Services</h2>
 <div id="node-list" class="item-list"></div>
 <p id="result-note" class="result-note"></p>

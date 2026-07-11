@@ -23,6 +23,29 @@ func TestRenderWorkspaceDashboardHTMLKeepsPayloadOfflineAfterDecomposition(t *te
 	}
 }
 
+func TestDashboardArchitectureSelectionKeepsFullLayoutUntilExplicitIsolation(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`isolation:false`,
+		"function setArchitectureIsolation(enabled)",
+		"focused&&!focused.has(n.id)",
+		"state.isolation?allNodes.filter",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing stable focus behavior %q", want)
+		}
+	}
+	if strings.Contains(html, "state.selected?serviceFocus(state.selected):null;const nodes=focused?allNodes.filter") {
+		t.Fatal("ordinary selection must not filter Architecture nodes")
+	}
+}
+
 func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) {
 	graph := WorkspaceGraphRecord{
 		SchemaVersion: SchemaVersion,
@@ -214,7 +237,7 @@ func TestRenderWorkspaceDashboardHTMLGroupsOpenIssuesAndAddsFileLinks(t *testing
 	html := RenderWorkspaceDashboardHTMLWithModels(graph, serviceMap, traces, nil, nil)
 
 	for _, want := range []string{
-		`data-view-mode="issues"`,
+		`data-view-mode="diagnostics"`,
 		"Open Issues",
 		"Issue Workbench",
 		"function issueGroupKey",
