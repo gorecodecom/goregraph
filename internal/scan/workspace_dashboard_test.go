@@ -100,7 +100,7 @@ func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) 
 		"OUT_OF_SCOPE",
 		"function renderArchitectureMap",
 		"function renderEndpointTrace",
-		"function endpointPathRowsForService",
+		"function endpointRowsForService",
 		"function clearSelection",
 		"function serviceRole",
 		"function serviceDomain",
@@ -253,7 +253,7 @@ func TestRenderWorkspaceDashboardHTMLGroupsOpenIssuesAndAddsFileLinks(t *testing
 	}
 }
 
-func TestRenderWorkspaceDashboardHTMLEndpointPathsUseServiceRows(t *testing.T) {
+func TestRenderWorkspaceDashboardHTMLEndpointsCombineInventoryAndTrace(t *testing.T) {
 	serviceMap := WorkspaceServiceMapRecord{
 		SchemaVersion: SchemaVersion,
 		Nodes: []WorkspaceServiceNodeRecord{
@@ -284,16 +284,26 @@ func TestRenderWorkspaceDashboardHTMLEndpointPathsUseServiceRows(t *testing.T) {
 	)
 
 	for _, want := range []string{
-		"Endpoint Paths",
-		"function endpointPathRowsForService",
-		"function renderEndpointPaths",
+		"function renderEndpoints()",
+		"function endpointRowsForService(serviceId)",
+		"Endpoint inventory",
+		"Implementation trace",
+		"Back to endpoint inventory",
 		"Caller",
-		"Endpoint / relation",
-		"Provider / next hop",
+		"Endpoint",
+		"Provider",
 		"trace:get-user",
 	} {
 		if !strings.Contains(html, want) {
-			t.Fatalf("dashboard html missing endpoint path value %q\n%s", want, html)
+			t.Fatalf("dashboard html missing combined endpoint behavior %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"function renderEndpointPaths()",
+		"This replaces the low-level raw node cloud",
+	} {
+		if strings.Contains(html, unwanted) {
+			t.Fatalf("dashboard html retains removed endpoint behavior %q", unwanted)
 		}
 	}
 }
