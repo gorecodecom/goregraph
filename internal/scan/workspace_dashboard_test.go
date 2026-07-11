@@ -86,7 +86,7 @@ func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) 
 		`id="reset-view"`,
 		`id="toggle-labels"`,
 		`id="graph-layer"`,
-		"function buildIssueGroups",
+		"function buildDiagnosticGroups",
 		"function sourceHref",
 		"function fileLink",
 		"Incoming",
@@ -192,7 +192,7 @@ func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) 
 	}
 }
 
-func TestRenderWorkspaceDashboardHTMLGroupsOpenIssuesAndAddsFileLinks(t *testing.T) {
+func TestRenderWorkspaceDashboardHTMLExplainsDiagnosticGroupsAndAddsFileLinks(t *testing.T) {
 	graph := WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"}
 	serviceMap := WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion}
 	traces := WorkspaceEndpointTraceIndexRecord{
@@ -237,18 +237,19 @@ func TestRenderWorkspaceDashboardHTMLGroupsOpenIssuesAndAddsFileLinks(t *testing
 	html := RenderWorkspaceDashboardHTMLWithModels(graph, serviceMap, traces, nil, nil)
 
 	for _, want := range []string{
-		`data-view-mode="diagnostics"`,
-		"Open Issues",
-		"Issue Workbench",
-		"function issueGroupKey",
-		"function issueGroupTitle",
-		"RDBV /tree/*",
+		"Diagnostics",
+		"function buildDiagnosticGroups",
+		"function diagnosticPresentation",
+		"Likely code defect",
+		"Missing scan coverage",
+		"Dynamic or statically ambiguous",
+		"Expected behavior",
+		"What to check next",
 		"file://",
 		"src/api/tree.ts:42",
-		"method_mismatch",
 	} {
 		if !strings.Contains(html, want) {
-			t.Fatalf("dashboard html missing issue workbench value %q\n%s", want, html)
+			t.Fatalf("dashboard html missing diagnostic value %q", want)
 		}
 	}
 }
