@@ -46,6 +46,30 @@ func TestDashboardArchitectureSelectionKeepsFullLayoutUntilExplicitIsolation(t *
 	}
 }
 
+func TestDashboardViewportControlsPreserveUserContext(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		"function saveViewport(mode)",
+		"function restoreViewport(mode)",
+		"function fitVisibleContent()",
+		"getBBox()",
+		"function zoomAtPoint(factor,x,y)",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing viewport behavior %q", want)
+		}
+	}
+	if strings.Contains(html, `state.query="";state.selected=null`) {
+		t.Fatal("Fit must not clear query or selection")
+	}
+}
+
 func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) {
 	graph := WorkspaceGraphRecord{
 		SchemaVersion: SchemaVersion,
