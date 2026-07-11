@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestRenderWorkspaceDashboardHTMLKeepsPayloadOfflineAfterDecomposition(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{"<!doctype html>", "const workspacePayload =", `id="workspace-graph"`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("decomposed dashboard missing %q", want)
+		}
+	}
+	if strings.Contains(html, "https://") || strings.Contains(html, "http://") {
+		t.Fatal("dashboard must remain offline")
+	}
+}
+
 func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) {
 	graph := WorkspaceGraphRecord{
 		SchemaVersion: SchemaVersion,
