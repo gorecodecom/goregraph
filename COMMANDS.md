@@ -795,9 +795,9 @@ The dashboard is normally generated at:
 
 The 1.0.0 dashboard is organized around five views:
 
-- **Architecture** is the first and default view. Selecting a service highlights its direct incoming and outgoing relationships without moving the full map. **Isolate neighborhood** explicitly narrows the graph; **Show full architecture** restores it.
-- **Endpoints** shows the endpoint inventory for a selected service and opens a directed implementation trace for a selected endpoint. Selecting a trace step focuses that point in the path, and **Back to endpoint inventory** restores the inventory context.
-- **Data Flow** shows known request, field, persistence, and response mappings plus explicit unknown gaps.
+- **Architecture** is the first and default view. Solid teal `OUT` relationships, dashed amber `IN` relationships, visible card ports, and offset arrowheads make direction and attachment explicit without moving the full map. **Isolate neighborhood** explicitly narrows the graph; **Show full architecture** restores it.
+- **Endpoints** shows a normal-scale, scrollable caller -> endpoint -> provider inventory and opens a directed implementation trace for a selected endpoint. Long routes wrap instead of shrinking the view. **Back to endpoint inventory** restores service, filters, and scroll position.
+- **Data Flow** uses a sidebar master list and renders one selected request/field/persistence/response chain at normal scale, with unknown mappings displayed in place as explicit gaps.
 - **Diagnostics** explains relationships GoreGraph could not safely confirm, including the classification, reason, possible impact, evidence, and suggested next check. Expected frontend-internal behavior is distinguished from likely defects or incomplete scan coverage.
 - **Coverage** shows analyzer support per project, language, and capability as `COMPLETE`, `PARTIAL`, `UNAVAILABLE`, or `FAILED`. It describes analysis coverage, not whether source behavior exists.
 

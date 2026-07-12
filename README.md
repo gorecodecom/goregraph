@@ -651,9 +651,9 @@ Workspace files are additive overlays. `.goregraph-workspace/registry.json` list
 
 The workspace dashboard at `.goregraph-workspace/workspace-map.html` is a standalone offline UI organized around five questions:
 
-- **Architecture:** understand how projects and services communicate. Selecting a service highlights its direct incoming and outgoing relationships without changing the full map; **Isolate neighborhood** explicitly narrows the canvas, and **Show full architecture** returns to the complete map.
-- **Endpoints:** search for and select a service, inspect its caller -> endpoint -> provider rows, then open an endpoint to follow its implementation trace. This combines the earlier Endpoint Paths and Endpoint Trace workflows in one view.
-- **Data Flow:** inspect evidence-backed request fields, transformations, persistence, and response fields. Unknown mappings are displayed as explicit gaps instead of invented connections.
+- **Architecture:** understand how projects and services communicate. Selecting a service highlights outgoing relationships in solid teal and incoming relationships in dashed amber. Visible card-edge ports, larger arrowheads, and `IN`/`OUT` badges make attachment and direction explicit; **Isolate neighborhood** explicitly narrows the canvas, and **Show full architecture** returns to the complete map.
+- **Endpoints:** search for and select a service, inspect its caller -> endpoint -> provider rows in a normal-scale scrollable workbench, then open an endpoint to follow its implementation trace. Long routes wrap instead of shrinking the whole inventory.
+- **Data Flow:** select one endpoint from the sidebar, then inspect its evidence-backed request fields, transformations, persistence, and response fields as a readable chain. Unknown mappings are displayed at their position as explicit gaps instead of invented connections.
 - **Diagnostics:** review relationships GoreGraph could not safely confirm, why each result matters, its available evidence, and what to check next. Categories distinguish likely code defects, missing scan coverage, dynamic or statically ambiguous paths, and expected frontend-internal behavior.
 - **Coverage:** inspect which language and framework capabilities were analyzed completely, partially, not at all, or with a failure. Coverage describes analyzer support and is not proof that a source-code behavior is absent.
 
@@ -675,7 +675,7 @@ Version 1.0.0-rc.1 freezes Schema 2 and the documented CLI, Query, and MCP opera
 
 Version 1.0.0 promotes the accepted release candidate without contract changes. It is the stable local Schema 2, CLI, dashboard, Query, MCP, Markdown, and JSON contract. This repository state is not a public release until a separate push, tag, and publishing action is explicitly authorized.
 
-Selection does not auto-center or relayout the graph. **100%** resets only zoom and pan, while **Fit** calculates a fit for the currently visible content without clearing the selection or search. Viewport state is retained per top-level view, including when returning from an endpoint trace to the endpoint inventory.
+Selection does not auto-center or relayout a graph. **100%** resets only zoom and pan, while **Fit** calculates a fit for the currently visible graph without clearing selection or search. Graph controls appear only for Architecture and implementation traces. Endpoint Inventory and Data Flow use normal browser-scale HTML workbenches, so their text is readable without zoom. Returning from an endpoint trace restores the inventory filters, service, and scroll position.
 
 GoreGraph performs static analysis. A relationship that is absent from the dashboard is not proof that no runtime relationship exists: dynamic dispatch, generated routes, reflection, runtime configuration, unindexed projects, and unsupported analyzer capabilities can leave static evidence incomplete. Treat confidence labels and diagnostics as evidence-backed guidance, and inspect the cited source or run a fresh complete scan before drawing operational conclusions.
 
