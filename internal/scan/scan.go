@@ -33,6 +33,7 @@ var GeneratedFiles = []string{
 	"routes.json",
 	"flows.json",
 	"api-contracts.json",
+	"architecture-capabilities.json",
 	"service-dependencies.json",
 	"frontend-usage.json",
 	"contract-matches.json",
@@ -196,6 +197,7 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 			index.JavaSources = append(index.JavaSources, extractJavaSource(record, text))
 		}
 		mergeCodeIntelligence(&index.Code, extractCodeIntelligence(record, text))
+		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, extractArchitectureCapabilityFacts(record, text)...)
 		mergeWorkspaceIndex(&index.Workspace, extractWorkspaceRecord(record, text))
 		return nil
 	})
@@ -214,6 +216,7 @@ func fileRecord(rel string, size int64, body []byte) FileRecord {
 }
 
 func sortIndex(index *Index) {
+	sortArchitectureCapabilityFacts(index.ArchitectureCapabilities)
 	sort.Slice(index.Files, func(i, j int) bool { return index.Files[i].Path < index.Files[j].Path })
 	sort.Slice(index.Symbols, func(i, j int) bool {
 		if index.Symbols[i].File != index.Symbols[j].File {
@@ -275,7 +278,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	packageGraph := buildPackageGraph(index.Workspace)
 	mavenGraph := buildMavenGraph(index.Workspace)
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
-	capabilities := BuildCapabilityInventory(index.Files, index.Workspace)
+	capabilities := BuildCapabilityInventory(index.Files, index.Workspace, index.ArchitectureCapabilities)
 	coverage := BuildCoverage(index.Files, capabilities)
 	richSymbols := buildRichSymbols(index.Files, index.Symbols)
 	richRelations := buildRichRelations(index.Files, index.Relations)
@@ -313,6 +316,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"routes.json", routes},
 		{"flows.json", codeFlows},
 		{"api-contracts.json", index.Code.APIContracts},
+		{"architecture-capabilities.json", index.ArchitectureCapabilities},
 		{"service-dependencies.json", serviceDependencies},
 		{"frontend-usage.json", frontendUsage},
 		{"contract-matches.json", contractMatches},

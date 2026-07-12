@@ -7,12 +7,23 @@ type Result struct {
 }
 
 type Index struct {
-	Files       []FileRecord
-	Symbols     []SymbolRecord
-	Relations   []RelationRecord
-	JavaSources []JavaSourceRecord
-	Workspace   WorkspaceIndex
-	Code        CodeIntelligenceRecord
+	Files                    []FileRecord
+	Symbols                  []SymbolRecord
+	Relations                []RelationRecord
+	JavaSources              []JavaSourceRecord
+	Workspace                WorkspaceIndex
+	Code                     CodeIntelligenceRecord
+	ArchitectureCapabilities []ArchitectureCapabilityFact
+}
+
+type ArchitectureCapabilityFact struct {
+	ID         string       `json:"id"`
+	Language   string       `json:"language"`
+	Capability CapabilityID `json:"capability"`
+	Kind       string       `json:"kind"`
+	Framework  string       `json:"framework,omitempty"`
+	File       string       `json:"file"`
+	Line       int          `json:"line"`
 }
 
 type FileRecord struct {

@@ -45,7 +45,7 @@ type CoverageRecord struct {
 	FilesSeen    int                `json:"files_seen"`
 }
 
-func BuildCapabilityInventory(files []FileRecord, workspace WorkspaceIndex) []CapabilityRecord {
+func BuildCapabilityInventory(files []FileRecord, workspace WorkspaceIndex, facts ...[]ArchitectureCapabilityFact) []CapabilityRecord {
 	fileCounts := map[string]int{}
 	for _, file := range files {
 		if file.Language != "" && file.Language != "unknown" {
@@ -59,18 +59,28 @@ func BuildCapabilityInventory(files []FileRecord, workspace WorkspaceIndex) []Ca
 		fileCounts["node"] = len(workspace.NodePackages)
 	}
 	legacy := analyzerCapabilities()
+	evidence := map[string]map[CapabilityID][]string{}
+	if len(facts) > 0 {
+		for _, fact := range facts[0] {
+			if evidence[fact.Language] == nil {
+				evidence[fact.Language] = map[CapabilityID][]string{}
+			}
+			evidence[fact.Language][fact.Capability] = append(evidence[fact.Language][fact.Capability], fact.ID)
+		}
+	}
 	records := make([]CapabilityRecord, 0, len(fileCounts)*len(capabilityOrder))
 	for language, count := range fileCounts {
 		analyzer, known := legacy[language]
 		for _, capability := range capabilityOrder {
 			coverage, reason := capabilityCoverage(analyzer, known, capability)
 			records = append(records, CapabilityRecord{
-				ID:        capability,
-				Language:  language,
-				Adapter:   analyzer.Scope,
-				Coverage:  coverage,
-				Reason:    reason,
-				FilesSeen: count,
+				ID:          capability,
+				Language:    language,
+				Adapter:     analyzer.Scope,
+				Coverage:    coverage,
+				Reason:      reason,
+				FilesSeen:   count,
+				EvidenceIDs: evidence[language][capability],
 			})
 		}
 	}
@@ -103,6 +113,10 @@ func capabilityCoverage(analyzer AnalyzerRecord, known bool, capability Capabili
 	}
 	if complete[capability] {
 		return CoverageComplete, "The active analyzer emits this capability for indexed files."
+	}
+	if (analyzer.Language == "java" || analyzer.Language == "javascript" || analyzer.Language == "typescript") &&
+		(capability == CapabilityAPIClients || capability == CapabilityPersistence || capability == CapabilityMessaging || capability == CapabilityDataFlow) {
+		return CoverageComplete, "The reference adapter emits normalized facts for this capability; detected facts are linked as evidence."
 	}
 	if capability == CapabilityAPIClients && (analyzer.Language == "javascript" || analyzer.Language == "typescript") {
 		return CoveragePartial, "Supported client patterns are extracted; configurable and dynamic wrappers may remain unresolved."
