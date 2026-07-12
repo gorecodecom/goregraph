@@ -86,7 +86,7 @@ func TestDashboardArchitectureSelectionKeepsFullLayoutUntilExplicitIsolation(t *
 	for _, want := range []string{
 		`isolation:false`,
 		"function setArchitectureIsolation(enabled)",
-		"focused&&!focused.has(n.id)",
+		"focused&&!focused.has(node.id)",
 		"state.isolation?allNodes.filter",
 	} {
 		if !strings.Contains(html, want) {
@@ -95,6 +95,33 @@ func TestDashboardArchitectureSelectionKeepsFullLayoutUntilExplicitIsolation(t *
 	}
 	if strings.Contains(html, "state.selected?serviceFocus(state.selected):null;const nodes=focused?allNodes.filter") {
 		t.Fatal("ordinary selection must not filter Architecture nodes")
+	}
+}
+
+func TestDashboardArchitectureShowsDirectionAndExplicitCardPorts(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{
+		`id="arrow-outgoing"`,
+		`id="arrow-incoming"`,
+		`function architectureDirection(edge,selected)`,
+		`function architecturePortOffset(edges,edge,nodeId)`,
+		`function edgePortPoints(from,to,fromOffset,toOffset)`,
+		`class="edge-port source`,
+		`class="edge-port target`,
+		`class="direction-badge '+direction`,
+		`label=direction==="outgoing"?"OUT":"IN"`,
+		`marker-end="url(#arrow-`,
+		`.edge.incoming{`,
+		`stroke-dasharray:7 5`,
+		`.service-node rect{fill:var(--color-surface)`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing clear Architecture direction/port contract %q", want)
+		}
 	}
 }
 
