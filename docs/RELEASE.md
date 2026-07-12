@@ -8,7 +8,7 @@ Current release target:
 v1.0.0
 ```
 
-`1.0.0` is the accepted stable CLI and Schema 2 contract. Publishing still requires separate explicit authorization.
+`1.0.0` is the stable public CLI and Schema 2 contract. Pushing the annotated `v1.0.0` tag starts the GitHub Actions and GoReleaser publication workflow.
 
 ## Required Secrets
 
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` through `v0.9.8` established packaging, the Architecture-first dashboard, evidence, diagnostics, Query/MCP, directed traces, Data Flow, full Java/Spring, JS/TS/Node/React, Go, PHP, Rust, and Python adapters, honest Shell integration, and generic workspace discovery. `v1.0.0-rc.1` froze and passed the Schema 2 plus CLI/Query/MCP contracts. `v1.0.0` is the current accepted local version and changes no frozen contract from the release candidate.
+`v0.1.0` through `v0.9.8` established packaging, the Architecture-first dashboard, evidence, diagnostics, Query/MCP, directed traces, Data Flow, full Java/Spring, JS/TS/Node/React, Go, PHP, Rust, and Python adapters, honest Shell integration, and generic workspace discovery. `v1.0.0-rc.1` froze and passed the Schema 2 plus CLI/Query/MCP contracts. `v1.0.0` is the stable public release and changes no frozen contract from the release candidate.
 
 Milestone history includes `v0.9.4` for directed traces and Data Flow.
 
@@ -250,9 +250,10 @@ Completed release checks:
 - `.goregraph-workspace/workspace-map.html` remains compatible with Schema 1 payloads.
 - `goregraph version` reports `0.9.1`.
 
-Remaining release-hardening items:
+Remaining post-release checks:
 
-- Validate GoreGraph against more real-world projects before considering `1.0.0`.
+- Verify the GitHub release contains all configured platform archives and `checksums.txt`.
+- Verify the Homebrew tap installs and reports `1.0.0`.
 - Verify after tagging that the Scoop bucket was updated automatically.
 - Open the Winget PR manually when a new manifest branch is generated.
 - Wait for Microsoft acceptance before documenting Winget as an active install path.
@@ -289,8 +290,8 @@ schema: 2
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v0.9.0 -m "Release v0.9.0"
-   git push origin v0.9.0
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin v1.0.0
    ```
 
 5. GitHub Actions runs GoReleaser.
