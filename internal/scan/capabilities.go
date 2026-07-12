@@ -30,6 +30,7 @@ var capabilityOrder = []CapabilityID{
 
 type CapabilityRecord struct {
 	ID          CapabilityID `json:"id"`
+	Project     string       `json:"project,omitempty"`
 	Language    string       `json:"language"`
 	Adapter     string       `json:"adapter,omitempty"`
 	Coverage    Coverage     `json:"coverage"`

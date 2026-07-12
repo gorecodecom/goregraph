@@ -577,6 +577,26 @@ func TestDashboardEndpointFiltersSupportDebuggingAndSurviveTraceNavigation(t *te
 	}
 }
 
+func TestDashboardCoverageViewExplainsCapabilityMatrix(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, Capabilities: []CapabilityRecord{{ID: CapabilitySymbols, Language: "go", Coverage: CoverageComplete, Reason: "Go symbols extracted", FilesSeen: 2}}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{
+		`data-view-mode="coverage" aria-pressed="false">Coverage</button>`,
+		`const capabilities=serviceMap.capabilities||[]`,
+		`function renderCoverage()`,
+		`Capability coverage`,
+		`COMPLETE`, `PARTIAL`, `UNAVAILABLE`, `FAILED`,
+		`Coverage describes analyzer support, not whether source behavior exists.`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing coverage contract %q", want)
+		}
+	}
+}
+
 func TestDashboardGraphSelectionSupportsKeyboardAndAccessibleNames(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},

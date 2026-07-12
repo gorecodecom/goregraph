@@ -25,6 +25,7 @@ type workspaceIndexProject struct {
 	endpointFlows []SpringEndpointFlowRecord
 	testMap       []TestMapRecord
 	dependencies  []WorkspaceServiceDependencyRecord
+	capabilities  []CapabilityRecord
 }
 
 type workspaceBackendRoute struct {
@@ -71,6 +72,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	featureDossiers := buildFeatureDossiers(featureFlows, matches)
 	workspaceGraph := BuildWorkspaceGraph(registry, matches, featureFlows, featureDossiers)
 	serviceMap := BuildWorkspaceServiceMap(registry, matches, featureFlows, workspaceServiceDependencies(indexed))
+	for _, project := range indexed {
+		serviceMap.Capabilities = append(serviceMap.Capabilities, project.capabilities...)
+	}
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 
@@ -407,6 +411,12 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		}
 		if err := readWorkspaceJSON(filepath.Join(out, "test-map.json"), &loaded.testMap); err != nil && !os.IsNotExist(err) {
 			return nil, err
+		}
+		if err := readWorkspaceJSON(filepath.Join(out, "capabilities.json"), &loaded.capabilities); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		for i := range loaded.capabilities {
+			loaded.capabilities[i].Project = project.Path
 		}
 		result = append(result, loaded)
 	}

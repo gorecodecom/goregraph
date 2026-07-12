@@ -791,6 +791,7 @@ type WorkspaceServiceMapRecord struct {
 	Nodes         []WorkspaceServiceNodeRecord `json:"nodes"`
 	Edges         []WorkspaceServiceEdgeRecord `json:"edges"`
 	Stats         map[string]int               `json:"stats,omitempty"`
+	Capabilities  []CapabilityRecord           `json:"capabilities,omitempty"`
 }
 
 type WorkspaceServiceDependencyRecord struct {

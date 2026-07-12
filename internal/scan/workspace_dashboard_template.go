@@ -14,6 +14,7 @@ const workspaceDashboardShell = `<div class="shell">
 <button data-view-mode="architecture" class="active" aria-pressed="true">Architecture</button>
 <button data-view-mode="endpoints" aria-pressed="false">Endpoints</button>
 <button data-view-mode="diagnostics" aria-pressed="false">Diagnostics</button>
+<button data-view-mode="coverage" aria-pressed="false">Coverage</button>
 </div>
 <p class="help" id="mode-help">See how projects and services communicate across the workspace. Select a service to highlight direct incoming and outgoing relationships without changing the layout.</p>
 <input id="workspace-search" aria-label="Search workspace map" placeholder="Search service, endpoint, route, file, symbol">
