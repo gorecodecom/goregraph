@@ -56,6 +56,7 @@ func (Service) Run(request Request) (Result, error) {
 		end = len(items)
 	}
 	page := append([]Item(nil), items[offset:end]...)
+	warnings = compactWarnings(warnings, 12)
 	result := Result{Schema: scan.SchemaVersion, Task: request.Task, Freshness: "generated output loaded", CoverageWarnings: warnings, Items: page, Count: len(page), SuggestedNext: suggestedNext(request.Task)}
 	if end < len(items) {
 		result.Truncated = true
@@ -215,6 +216,13 @@ func appendUnique(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
+}
+func compactWarnings(values []string, limit int) []string {
+	if len(values) <= limit {
+		return values
+	}
+	result := append([]string(nil), values[:limit]...)
+	return append(result, fmt.Sprintf("%d additional coverage gaps omitted; continue the coverage query for details", len(values)-limit))
 }
 func suggestedNext(task string) string {
 	if task == "coverage" {
