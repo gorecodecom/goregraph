@@ -45,6 +45,19 @@ The design follows `docs/design-system.md`: technical, calm, precise, restrained
 - Returning to inventory restores the readable HTML layout and its scroll position.
 - Diagnostics and Coverage remain unchanged in this focused fix.
 
+## Architecture Direction Clarity
+
+- Preserve the full Architecture Map and its stable layout during ordinary selection.
+- Keep all unselected relationships visible but strongly subdued so they provide context without competing with the selected neighborhood.
+- Relative to the selected service, render outgoing relationships in the existing teal accent with a solid stroke.
+- Render incoming relationships in the existing warning/amber role color with a restrained dashed stroke.
+- Increase focused arrowhead size and contrast, and end the path before the target card so the arrowhead remains visible instead of disappearing under the card border.
+- Add a small semantic `OUT` badge to connected target cards and an `IN` badge to connected source cards. The badge describes the relationship relative to the selected service, not the global project type.
+- When a connected node has both incoming and outgoing relationships, show both compact badges.
+- Do not encode direction by color alone: stroke style, arrowhead, and the text badge provide redundant cues.
+- Keep optional edge labels limited to focused relationships; labels must not be required to understand direction.
+- The details panel continues to list incoming and outgoing relationships textually for exact inspection.
+
 ## Responsive Behavior
 
 - Desktop Endpoint Inventory uses three columns.
@@ -74,6 +87,7 @@ The design follows `docs/design-system.md`: technical, calm, precise, restrained
 - Assert Data Flow initially shows guidance and renders exactly one selected flow.
 - Assert toolbar visibility follows the view/trace rules.
 - Assert long route text wraps and interactive rows are keyboard accessible.
+- Assert selected Architecture relationships receive distinct incoming/outgoing classes, visible target arrowheads, and textual direction badges without changing node positions.
 - Run the full Go test suite and `go vet`.
 - Install the resulting local version, clean and rescan all 44 WEKA projects, then inspect the generated HTML contract.
 - Browser testing remains excluded unless the user explicitly reverses the earlier no-browser instruction; residual visual risk must be reported.
