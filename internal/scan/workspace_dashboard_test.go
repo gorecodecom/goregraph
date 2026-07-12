@@ -641,6 +641,12 @@ func TestDashboardCoverageViewExplainsCapabilityMatrix(t *testing.T) {
 		`data-view-mode="coverage" aria-pressed="false">Coverage</button>`,
 		`const capabilities=serviceMap.capabilities||[]`,
 		`function renderCoverage()`,
+		`function coverageGroups()`,
+		`function renderCoverageWorkbench()`,
+		`class="coverage-summary"`,
+		`class="coverage-table"`,
+		`Analyzed project/language groups`,
+		`Project/language analyzer gaps`,
 		`Capability coverage`,
 		`COMPLETE`, `PARTIAL`, `UNAVAILABLE`, `FAILED`,
 		`Coverage describes analyzer support, not whether source behavior exists.`,
@@ -648,6 +654,9 @@ func TestDashboardCoverageViewExplainsCapabilityMatrix(t *testing.T) {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing coverage contract %q", want)
 		}
+	}
+	if strings.Contains(html, `function renderCoverage(){const svg=`) {
+		t.Fatal("Coverage still renders all capability records into one scaled SVG")
 	}
 }
 
@@ -706,13 +715,14 @@ func TestDashboardSwitchesBetweenGraphAndReadableWorkbench(t *testing.T) {
 	)
 	for _, want := range []string{
 		`id="workspace-workbench" class="workspace-workbench" hidden`,
-		`function setCanvasPresentation(kind)`,
+		`function setCanvasPresentation(kind,mode)`,
 		`main.classList.toggle("workbench-view",workbench)`,
+		`main.dataset.activeView=mode`,
 		`document.getElementById("workspace-graph").hidden=workbench`,
 		`document.getElementById("workspace-workbench").hidden=!workbench`,
 		`document.querySelector(".canvas-tools").hidden=workbench`,
-		`setCanvasPresentation("workbench")`,
-		`setCanvasPresentation("graph")`,
+		`workbenchModes=new Set(["endpoints","data-flow","coverage"])`,
+		`setCanvasPresentation(workbench?"workbench":"graph",state.mode)`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing graph/workbench presentation contract %q", want)
