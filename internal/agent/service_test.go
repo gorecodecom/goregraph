@@ -87,3 +87,19 @@ func TestServiceExposesReferenceCapabilityEvidence(t *testing.T) {
 		t.Fatalf("architecture evidence: %#v %v", evidence, err)
 	}
 }
+
+func TestCoverageBoundsEvidenceByDetail(t *testing.T) {
+	record := scan.CapabilityRecord{ID: scan.CapabilityPersistence, Language: "java", Coverage: scan.CoverageComplete, Reason: "supported"}
+	for index := 0; index < 25; index++ {
+		record.EvidenceIDs = append(record.EvidenceIDs, "evidence")
+	}
+	if got := capabilityEvidence(record, "summary"); len(got) != 0 {
+		t.Fatalf("summary evidence count = %d, want 0", len(got))
+	}
+	if got := capabilityEvidence(record, "standard"); len(got) != 10 {
+		t.Fatalf("standard evidence count = %d, want 10", len(got))
+	}
+	if got := capabilityEvidence(record, "full"); len(got) != 25 {
+		t.Fatalf("full evidence count = %d, want 25", len(got))
+	}
+}

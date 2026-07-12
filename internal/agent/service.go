@@ -79,7 +79,7 @@ func loadTask(request Request) ([]Item, []string, error) {
 			if !matchesQuery(request.Query, record.Project, record.Language, string(record.ID), string(record.Coverage), record.Reason) {
 				continue
 			}
-			items = append(items, Item{ID: "capability:" + record.Project + ":" + record.Language + ":" + string(record.ID), Kind: "capability", Title: record.Language + " / " + string(record.ID), Summary: string(record.Coverage) + " — " + record.Reason, Project: record.Project, EvidenceIDs: record.EvidenceIDs})
+			items = append(items, Item{ID: "capability:" + record.Project + ":" + record.Language + ":" + string(record.ID), Kind: "capability", Title: record.Language + " / " + string(record.ID), Summary: string(record.Coverage) + " — " + record.Reason, Project: record.Project, EvidenceIDs: capabilityEvidence(record, request.Detail)})
 			if record.Coverage == scan.CoverageUnavailable || record.Coverage == scan.CoverageFailed {
 				warnings = appendUnique(warnings, record.Language+" / "+string(record.ID)+": "+string(record.Coverage))
 			}
@@ -215,6 +215,16 @@ func loadTask(request Request) ([]Item, []string, error) {
 	default:
 		return nil, nil, fmt.Errorf("unknown agent task %q", request.Task)
 	}
+}
+
+func capabilityEvidence(record scan.CapabilityRecord, detail string) []string {
+	if detail == "summary" {
+		return nil
+	}
+	if detail == "full" || len(record.EvidenceIDs) <= 10 {
+		return record.EvidenceIDs
+	}
+	return record.EvidenceIDs[:10]
 }
 
 func readOutput(root, name string, dest any) error {
