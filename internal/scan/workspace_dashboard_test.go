@@ -536,6 +536,19 @@ func TestDashboardServiceRelationRowsRemainVisibleButStatic(t *testing.T) {
 	}
 }
 
+func TestDashboardEndpointCardsReserveSpaceForWrappedTitles(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	if !strings.Contains(html, `rowH=112,top=132,leftX=70,midX=430,rightX=860,cardW=300,cardH=86`) {
+		t.Fatal("endpoint cards do not reserve enough vertical space for a wrapped title and metadata")
+	}
+}
+
 func TestDashboardGraphSelectionSupportsKeyboardAndAccessibleNames(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
