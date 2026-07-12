@@ -102,16 +102,17 @@ type RichSymbolRecord struct {
 }
 
 type RichRelationRecord struct {
-	ID              string  `json:"id"`
-	From            string  `json:"from"`
-	To              string  `json:"to"`
-	Type            string  `json:"type"`
-	Language        string  `json:"language,omitempty"`
-	Line            int     `json:"line,omitempty"`
-	SourceLocation  string  `json:"source_location,omitempty"`
-	Confidence      string  `json:"confidence"`
-	ConfidenceScore float64 `json:"confidence_score"`
-	Internal        bool    `json:"internal,omitempty"`
+	ID              string   `json:"id"`
+	From            string   `json:"from"`
+	To              string   `json:"to"`
+	Type            string   `json:"type"`
+	Language        string   `json:"language,omitempty"`
+	Line            int      `json:"line,omitempty"`
+	SourceLocation  string   `json:"source_location,omitempty"`
+	Confidence      string   `json:"confidence"`
+	ConfidenceScore float64  `json:"confidence_score"`
+	Internal        bool     `json:"internal,omitempty"`
+	EvidenceIDs     []string `json:"evidence_ids,omitempty"`
 }
 
 type RichGraph struct {
@@ -162,6 +163,7 @@ type CallGraphEdgeRecord struct {
 	Confidence      string          `json:"confidence"`
 	ConfidenceScore float64         `json:"confidence_score"`
 	Reason          string          `json:"reason,omitempty"`
+	EvidenceIDs     []string        `json:"evidence_ids,omitempty"`
 }
 
 type SpringEndpointFlowRecord struct {
@@ -255,6 +257,7 @@ type CodeRouteRecord struct {
 	Confidence         string   `json:"confidence"`
 	ConfidenceScore    float64  `json:"confidence_score,omitempty"`
 	Reason             string   `json:"reason,omitempty"`
+	EvidenceIDs        []string `json:"evidence_ids,omitempty"`
 }
 
 type CodeFlowRecord struct {
@@ -273,14 +276,15 @@ type CodeFlowRecord struct {
 }
 
 type CodeFlowStep struct {
-	Name       string `json:"name"`
-	Owner      string `json:"owner,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	Language   string `json:"language,omitempty"`
-	File       string `json:"file,omitempty"`
-	Line       int    `json:"line,omitempty"`
-	Confidence string `json:"confidence"`
-	Reason     string `json:"reason,omitempty"`
+	Name        string   `json:"name"`
+	Owner       string   `json:"owner,omitempty"`
+	Kind        string   `json:"kind,omitempty"`
+	Language    string   `json:"language,omitempty"`
+	File        string   `json:"file,omitempty"`
+	Line        int      `json:"line,omitempty"`
+	Confidence  string   `json:"confidence"`
+	Reason      string   `json:"reason,omitempty"`
+	EvidenceIDs []string `json:"evidence_ids,omitempty"`
 }
 
 type FrontendUsageRecord struct {
@@ -328,22 +332,23 @@ type QueryParamRecord struct {
 }
 
 type ContractMatchRecord struct {
-	APIHTTPMethod     string  `json:"api_http_method"`
-	APIPath           string  `json:"api_path"`
-	APIRawPath        string  `json:"api_raw_path,omitempty"`
-	APIFile           string  `json:"api_file"`
-	APILine           int     `json:"api_line,omitempty"`
-	APIApp            string  `json:"api_app,omitempty"`
-	BackendHTTPMethod string  `json:"backend_http_method,omitempty"`
-	BackendPath       string  `json:"backend_path,omitempty"`
-	BackendHandler    string  `json:"backend_handler,omitempty"`
-	BackendFile       string  `json:"backend_file,omitempty"`
-	BackendLine       int     `json:"backend_line,omitempty"`
-	ServiceCandidate  string  `json:"service_candidate,omitempty"`
-	Issue             string  `json:"issue,omitempty"`
-	Confidence        string  `json:"confidence"`
-	ConfidenceScore   float64 `json:"confidence_score"`
-	Reason            string  `json:"reason,omitempty"`
+	APIHTTPMethod     string   `json:"api_http_method"`
+	APIPath           string   `json:"api_path"`
+	APIRawPath        string   `json:"api_raw_path,omitempty"`
+	APIFile           string   `json:"api_file"`
+	APILine           int      `json:"api_line,omitempty"`
+	APIApp            string   `json:"api_app,omitempty"`
+	BackendHTTPMethod string   `json:"backend_http_method,omitempty"`
+	BackendPath       string   `json:"backend_path,omitempty"`
+	BackendHandler    string   `json:"backend_handler,omitempty"`
+	BackendFile       string   `json:"backend_file,omitempty"`
+	BackendLine       int      `json:"backend_line,omitempty"`
+	ServiceCandidate  string   `json:"service_candidate,omitempty"`
+	Issue             string   `json:"issue,omitempty"`
+	Confidence        string   `json:"confidence"`
+	ConfidenceScore   float64  `json:"confidence_score"`
+	Reason            string   `json:"reason,omitempty"`
+	EvidenceIDs       []string `json:"evidence_ids,omitempty"`
 }
 
 type DiagnosticsRecord struct {

@@ -273,7 +273,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	richSymbols := buildRichSymbols(index.Files, index.Symbols)
 	richRelations := buildRichRelations(index.Files, index.Relations)
 	richGraph := buildRichGraph(index.Files, richSymbols, richRelations)
-	evidence := BuildEvidence(filepath.Base(root), index.Files, richRelations, callGraph, routes, codeFlows)
+	evidence := LinkEvidenceReferences(filepath.Base(root), index.Files, richRelations, &callGraph, routes, codeFlows, contractMatches)
 	finished := time.Now().UTC()
 	manifest := Manifest{
 		Tool:        ToolName,
