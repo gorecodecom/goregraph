@@ -111,6 +111,8 @@ func checkJSONFiles(out string, result *Result) {
 		{"evidence.json", &[]scan.EvidenceRecord{}},
 		{"capabilities.json", &[]scan.CapabilityRecord{}},
 		{"coverage.json", &scan.CoverageRecord{}},
+		{"directed-traces.json", &scan.DirectedTraceIndexRecord{}},
+		{"data-flows.json", &[]scan.DataFlowRecord{}},
 		{"spring.json", &scan.SpringIndex{}},
 		{"audit.json", &scan.AuditRecord{}},
 	}
