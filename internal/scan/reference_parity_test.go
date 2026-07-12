@@ -37,7 +37,33 @@ app.post('/users', async function createUser(req,res) {
   const user=await prisma.user.create({data:req.body});
   await producer.send({topic:'users'});
   res.json(user);
-});`, "src/app.test.tsx": `test('saves user',()=>render(<Users/>));`}}}
+});`, "src/app.test.tsx": `test('saves user',()=>render(<Users/>));`}}, {name: "go", languages: []string{"go"}, files: map[string]string{"go.mod": "module example.com/users\n", "main.go": `package main
+func routes() { http.HandleFunc("/users", createUser) }
+func createUser(w http.ResponseWriter, r *http.Request) {
+  json.NewDecoder(r.Body).Decode(&user)
+  db.Exec("insert into users")
+  writer.WriteMessages(context.Background(), kafka.Message{})
+  client.Do(request)
+  json.NewEncoder(w).Encode(user)
+}
+func rpc() { grpc.NewServer() }
+`, "main_test.go": `package main
+func TestCreateUser(t *testing.T) { httptest.NewRecorder() }
+`}}, {name: "php", languages: []string{"php"}, files: map[string]string{"composer.json": `{"require":{}}`, "src/UserController.php": `<?php
+Route::post('/users', [UserController::class, 'create']);
+class User extends Model {}
+class UserController {
+  function create(Request $request) {
+    $request->validate([]);
+    $response = Http::post('/audit');
+    dispatch(new UserCreated());
+    return response()->json($response);
+  }
+}
+class UserGrpc extends Grpc\Client {}
+`, "tests/UserTest.php": `<?php
+class UserTest extends TestCase {}
+`}}}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()

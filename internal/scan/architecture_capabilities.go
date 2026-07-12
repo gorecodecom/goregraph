@@ -7,7 +7,7 @@ import (
 )
 
 func extractArchitectureCapabilityFacts(file FileRecord, body string) []ArchitectureCapabilityFact {
-	if file.Language != "java" && file.Language != "javascript" && file.Language != "typescript" {
+	if file.Language != "java" && file.Language != "javascript" && file.Language != "typescript" && file.Language != "go" && file.Language != "php" {
 		return nil
 	}
 	var facts []ArchitectureCapabilityFact
@@ -68,7 +68,7 @@ func architectureCapabilityMatches(language, line string) []architectureCapabili
 		if strings.Contains(trimmed, "@Test") || strings.Contains(trimmed, "MockMvc") || strings.Contains(trimmed, "WebTestClient") {
 			add(CapabilityTests, "test", "JUnit/Spring Test")
 		}
-	} else {
+	} else if language == "javascript" || language == "typescript" {
 		if strings.Contains(lower, "app.get(") || strings.Contains(lower, "app.post(") || strings.Contains(lower, "router.get(") || strings.Contains(lower, "router.post(") {
 			add(CapabilityRoutes, "http_route", "Express/Fastify")
 		}
@@ -95,6 +95,50 @@ func architectureCapabilityMatches(language, line string) []architectureCapabili
 		}
 		if strings.Contains(lower, "test(") || strings.Contains(lower, "it(") || strings.Contains(lower, "describe(") || strings.Contains(lower, "render(") {
 			add(CapabilityTests, "test", "Jest/Vitest/Node Test/RTL")
+		}
+	} else if language == "go" {
+		if strings.Contains(trimmed, "http.HandleFunc(") || strings.Contains(trimmed, ".HandleFunc(") || strings.Contains(trimmed, ".GET(") || strings.Contains(trimmed, ".POST(") || strings.Contains(trimmed, ".PUT(") || strings.Contains(trimmed, ".DELETE(") {
+			add(CapabilityRoutes, "http_route", "Go HTTP/router")
+		}
+		if strings.Contains(trimmed, "http.Get(") || strings.Contains(trimmed, "http.Post(") || strings.Contains(trimmed, "http.NewRequest(") || strings.Contains(trimmed, "client.Do(") {
+			add(CapabilityAPIClients, "http_client", "Go net/http")
+		}
+		if strings.Contains(trimmed, "sql.Open(") || strings.Contains(trimmed, "db.Query(") || strings.Contains(trimmed, "db.Exec(") || strings.Contains(lower, "gorm.") {
+			add(CapabilityPersistence, "persistence", "Go SQL/GORM")
+		}
+		if strings.Contains(lower, "kafka.newreader(") || strings.Contains(lower, "kafka.newwriter(") || strings.Contains(trimmed, "WriteMessages(") || strings.Contains(lower, "amqp.dial(") {
+			add(CapabilityMessaging, "message_consumer_or_producer", "Go Kafka/AMQP")
+		}
+		if strings.Contains(lower, "grpc.newserver(") || strings.Contains(trimmed, "RegisterService(") {
+			add(CapabilityMessaging, "rpc_service", "gRPC")
+		}
+		if strings.Contains(trimmed, "json.NewDecoder(") || strings.Contains(trimmed, "json.NewEncoder(") || strings.Contains(trimmed, ".Bind(") {
+			add(CapabilityDataFlow, "request_response_boundary", "Go HTTP")
+		}
+		if strings.HasPrefix(trimmed, "func Test") || strings.Contains(trimmed, "httptest.New") {
+			add(CapabilityTests, "test", "Go test/httptest")
+		}
+	} else if language == "php" {
+		if strings.Contains(trimmed, "Route::") || strings.Contains(trimmed, "#[Route(") || strings.Contains(trimmed, "@Route(") {
+			add(CapabilityRoutes, "http_route", "Laravel/Symfony")
+		}
+		if strings.Contains(trimmed, "Http::") || strings.Contains(trimmed, "GuzzleHttp") || strings.Contains(trimmed, "new Client(") {
+			add(CapabilityAPIClients, "http_client", "PHP HTTP client")
+		}
+		if strings.Contains(trimmed, "extends Model") || strings.Contains(trimmed, "EntityManager") || strings.Contains(trimmed, "new PDO(") || strings.Contains(lower, "doctrine") {
+			add(CapabilityPersistence, "persistence", "Eloquent/Doctrine/PDO")
+		}
+		if strings.Contains(trimmed, "Queue::") || strings.Contains(trimmed, "dispatch(") || strings.Contains(trimmed, "AMQP") || strings.Contains(trimmed, "MessageBusInterface") {
+			add(CapabilityMessaging, "message_consumer_or_producer", "PHP queue/messaging")
+		}
+		if strings.Contains(lower, "grpc\\client") || strings.Contains(trimmed, "BaseStub") {
+			add(CapabilityMessaging, "rpc_service", "gRPC")
+		}
+		if strings.Contains(trimmed, "->validate(") || strings.Contains(trimmed, "Request $") || strings.Contains(trimmed, "JsonResponse(") || strings.Contains(trimmed, "response()->json(") {
+			add(CapabilityDataFlow, "request_response_boundary", "PHP HTTP")
+		}
+		if strings.Contains(trimmed, "extends TestCase") || strings.HasPrefix(trimmed, "test(") || strings.HasPrefix(trimmed, "it(") {
+			add(CapabilityTests, "test", "PHPUnit/Pest")
 		}
 	}
 	return matches
