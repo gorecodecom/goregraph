@@ -26,6 +26,7 @@ type workspaceIndexProject struct {
 	testMap       []TestMapRecord
 	dependencies  []WorkspaceServiceDependencyRecord
 	capabilities  []CapabilityRecord
+	diagnostics   []CanonicalDiagnosticRecord
 }
 
 type workspaceBackendRoute struct {
@@ -74,6 +75,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	serviceMap := BuildWorkspaceServiceMap(registry, matches, featureFlows, workspaceServiceDependencies(indexed))
 	for _, project := range indexed {
 		serviceMap.Capabilities = append(serviceMap.Capabilities, project.capabilities...)
+		serviceMap.Diagnostics = append(serviceMap.Diagnostics, project.diagnostics...)
 	}
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
@@ -417,6 +419,9 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		}
 		for i := range loaded.capabilities {
 			loaded.capabilities[i].Project = project.Path
+		}
+		if err := readWorkspaceJSON(filepath.Join(out, "diagnostics-canonical.json"), &loaded.diagnostics); err != nil && !os.IsNotExist(err) {
+			return nil, err
 		}
 		result = append(result, loaded)
 	}

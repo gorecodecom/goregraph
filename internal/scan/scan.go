@@ -37,6 +37,7 @@ var GeneratedFiles = []string{
 	"frontend-usage.json",
 	"contract-matches.json",
 	"diagnostics.json",
+	"diagnostics-canonical.json",
 	"package-graph.json",
 	"maven-graph.json",
 	"analyzers.json",
@@ -270,6 +271,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
 	capabilities := BuildCapabilityInventory(index.Files, index.Workspace)
 	coverage := BuildCoverage(index.Files, capabilities)
+	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
 	richSymbols := buildRichSymbols(index.Files, index.Symbols)
 	richRelations := buildRichRelations(index.Files, index.Relations)
 	richGraph := buildRichGraph(index.Files, richSymbols, richRelations)
@@ -309,6 +311,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"frontend-usage.json", frontendUsage},
 		{"contract-matches.json", contractMatches},
 		{"diagnostics.json", diagnostics},
+		{"diagnostics-canonical.json", canonicalDiagnostics},
 		{"workspace-contract-matches.json", []WorkspaceContractMatchRecord{}},
 		{"workspace-feature-flows.json", []WorkspaceFeatureFlowRecord{}},
 		{"workspace-feature-dossiers.json", []FeatureDossierRecord{}},
