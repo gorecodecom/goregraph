@@ -109,6 +109,8 @@ func TestDashboardArchitectureShowsDirectionAndExplicitCardPorts(t *testing.T) {
 		`id="arrow-incoming"`,
 		`function architectureDirection(edge,selected)`,
 		`function architecturePortOffset(edges,edge,nodeId)`,
+		`const span=56`,
+		`return incident.length===1?0:-span/2+index*span/(incident.length-1)`,
 		`function edgePortPoints(from,to,fromOffset,toOffset)`,
 		`class="edge-port source`,
 		`class="edge-port target`,
@@ -669,7 +671,7 @@ func TestDashboardDataFlowShowsMappingsAndExplicitGaps(t *testing.T) {
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, DataFlows: []DataFlowRecord{{ID: "flow", Route: "POST /users", Gaps: []DataFlowGapRecord{{Reason: "Unknown transformation", Confidence: ConfidenceUnknown}}}}},
 		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
 	)
-	for _, want := range []string{`data-view-mode="data-flow"`, `const dataFlows=serviceMap.data_flows||[]`, `selectedDataFlow:null`, `function renderDataFlowList()`, `function renderDataFlowWorkbench()`, `Select a data flow`, `data-flow-chain`, `data-flow-node`, `data-flow-gap`, `Unknown transformation`, `aria-pressed="`, `showDataFlowNodeDetails(flow,node)`, `@media (max-width:900px){.data-flow-chain`} {
+	for _, want := range []string{`data-view-mode="data-flow"`, `const dataFlows=serviceMap.data_flows||[]`, `selectedDataFlow:null`, `function renderDataFlowList()`, `function renderDataFlowWorkbench()`, `Select a data flow`, `data-flow-chain`, `data-flow-node`, `data-flow-gap`, `Unknown transformation`, `aria-pressed="`, `showDataFlowNodeDetails(flow,node)`, `.workbench-kicker{`, `@media (max-width:900px){.data-flow-chain`} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing data-flow contract %q", want)
 		}
