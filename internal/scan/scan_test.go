@@ -46,6 +46,38 @@ func TestRunWritesDeterministicFilesManifestAndReport(t *testing.T) {
 	}
 }
 
+func TestRunWritesEvidenceCapabilitiesAndCoverageOutputs(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc main() {}\n")
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	for _, name := range []string{"evidence.json", "capabilities.json", "coverage.json", "coverage.md"} {
+		if _, err := os.Stat(filepath.Join(root, "goregraph-out", name)); err != nil {
+			t.Fatalf("%s was not written: %v", name, err)
+		}
+		if !containsString(GeneratedFiles, name) {
+			t.Fatalf("GeneratedFiles does not contain %s", name)
+		}
+	}
+	var capabilities []CapabilityRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "capabilities.json"), &capabilities)
+	assertCapabilityCoverage(t, capabilities, "go", CapabilitySymbols, CoverageComplete)
+	var coverage CoverageRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "coverage.json"), &coverage)
+	if coverage.FilesSeen != 1 || len(coverage.Capabilities) == 0 {
+		t.Fatalf("unexpected coverage: %#v", coverage)
+	}
+	var evidence []EvidenceRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "evidence.json"), &evidence)
+	if evidence == nil {
+		t.Fatal("evidence.json must encode an empty array, not null")
+	}
+	if body := readText(t, filepath.Join(root, "goregraph-out", "coverage.md")); !strings.Contains(body, "COMPLETE") || !strings.Contains(body, "UNAVAILABLE") {
+		t.Fatalf("coverage report does not explain status meanings:\n%s", body)
+	}
+}
+
 func TestRunExtractsSymbolsRelationsAndGraph(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.test/demo\n")

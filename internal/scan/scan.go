@@ -40,6 +40,9 @@ var GeneratedFiles = []string{
 	"package-graph.json",
 	"maven-graph.json",
 	"analyzers.json",
+	"evidence.json",
+	"capabilities.json",
+	"coverage.json",
 	"spring.json",
 	"workspace.md",
 	"endpoints.md",
@@ -70,6 +73,7 @@ var GeneratedFiles = []string{
 	"maven-graph.md",
 	"navigation.md",
 	"analyzers.md",
+	"coverage.md",
 	"affected.md",
 	"audit.json",
 	"report.md",
@@ -264,9 +268,12 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	packageGraph := buildPackageGraph(index.Workspace)
 	mavenGraph := buildMavenGraph(index.Workspace)
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
+	capabilities := BuildCapabilityInventory(index.Files, index.Workspace)
+	coverage := BuildCoverage(index.Files, capabilities)
 	richSymbols := buildRichSymbols(index.Files, index.Symbols)
 	richRelations := buildRichRelations(index.Files, index.Relations)
 	richGraph := buildRichGraph(index.Files, richSymbols, richRelations)
+	evidence := BuildEvidence(filepath.Base(root), index.Files, richRelations, callGraph, routes, codeFlows)
 	finished := time.Now().UTC()
 	manifest := Manifest{
 		Tool:        ToolName,
@@ -311,6 +318,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"package-graph.json", packageGraph},
 		{"maven-graph.json", mavenGraph},
 		{"analyzers.json", analyzers},
+		{"evidence.json", evidence},
+		{"capabilities.json", capabilities},
+		{"coverage.json", coverage},
 		{"spring.json", springIndex},
 		{"audit.json", audit},
 	}
@@ -349,6 +359,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"maven-graph.md", renderMavenGraphReport(mavenGraph)},
 		{"navigation.md", renderNavigationReport(index.Files, index.Symbols, index.Relations, routes, codeFlows, testMap, analyzers)},
 		{"analyzers.md", renderAnalyzersReport(analyzers)},
+		{"coverage.md", RenderCoverageReport(coverage)},
 		{"affected.md", renderAffectedReport(richGraph)},
 		{"entrypoints.md", renderEntrypointsReport(index.Files, index.Symbols, springIndex)},
 		{"test-map.md", renderTestMapReport(index.Relations, testMap)},

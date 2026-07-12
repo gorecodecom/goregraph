@@ -56,3 +56,16 @@ func TestEvidenceStatusDimensionsValidateIndependently(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildEvidenceIsDeterministicAndSourceBacked(t *testing.T) {
+	files := []FileRecord{{Path: "src/routes.go", Language: "go", Hash: "source-hash"}}
+	routes := []CodeRouteRecord{{Language: "go", Framework: "net/http", File: "src/routes.go", Line: 12, Reason: "route registration"}}
+	first := BuildEvidence("demo", files, nil, CallGraphRecord{}, routes, nil)
+	second := BuildEvidence("demo", files, nil, CallGraphRecord{}, routes, nil)
+	if len(first) != 1 || len(second) != 1 || first[0].ID != second[0].ID {
+		t.Fatalf("evidence is not deterministic: %#v / %#v", first, second)
+	}
+	if first[0].File != "src/routes.go" || first[0].SourceHash != "source-hash" {
+		t.Fatalf("evidence lost source identity: %#v", first[0])
+	}
+}
