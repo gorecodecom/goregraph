@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/scan"
+	traversal "github.com/gorecodecom/goregraph/internal/trace"
 )
 
 const defaultLimit = 20
@@ -146,6 +147,38 @@ func loadTask(request Request) ([]Item, []string, error) {
 			return nil, nil, err
 		}
 		return []Item{{ID: "change-context", Kind: "change_context", Title: "Generated change context", Summary: body}}, nil, nil
+	case "endpoint-trace", "symbol-trace":
+		var index scan.DirectedTraceIndexRecord
+		if err := readOutput(request.Root, "directed-traces.json", &index); err != nil {
+			return nil, nil, err
+		}
+		items := []Item{}
+		for _, record := range index.Traces {
+			if matchesQuery(request.Query, record.ID, record.Route) {
+				items = append(items, Item{ID: record.ID, Kind: "directed_trace", Title: firstText(record.Route, record.ID), Summary: fmt.Sprintf("%d nodes / %d edges", len(record.Nodes), len(record.Edges)), Data: map[string]any{"trace": record}})
+			}
+		}
+		return items, nil, nil
+	case "trace-from":
+		parts := strings.SplitN(request.Query, "#", 2)
+		if len(parts) != 2 {
+			return nil, nil, fmt.Errorf("trace-from query must be <trace-id>#<node-id>")
+		}
+		var index scan.DirectedTraceIndexRecord
+		if err := readOutput(request.Root, "directed-traces.json", &index); err != nil {
+			return nil, nil, err
+		}
+		for _, record := range index.Traces {
+			if record.ID != parts[0] {
+				continue
+			}
+			result, err := traversal.Traverse(record, parts[1], traversal.Options{})
+			if err != nil {
+				return nil, nil, err
+			}
+			return []Item{{ID: record.ID + "#" + parts[1], Kind: "trace_traversal", Title: "Trace from " + parts[1], Summary: record.Route, Data: map[string]any{"traversal": result}}}, nil, nil
+		}
+		return nil, nil, fmt.Errorf("directed trace %q not found", parts[0])
 	default:
 		return nil, nil, fmt.Errorf("unknown agent task %q", request.Task)
 	}
@@ -157,6 +190,9 @@ func readOutput(root, name string, dest any) error {
 		return err
 	}
 	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, name))
+	if os.IsNotExist(err) {
+		body, err = os.ReadFile(filepath.Join(root, ".goregraph-workspace", name))
+	}
 	if err != nil {
 		return fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
 	}

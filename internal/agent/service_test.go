@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,30 @@ import (
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
+
+func TestServiceReturnsDirectedTraceAndTraversal(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scan.Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	index := scan.DirectedTraceIndexRecord{SchemaVersion: 1, Traces: []scan.DirectedTraceRecord{{ID: "trace:1", Route: "GET /users", Nodes: []scan.DirectedTraceNodeRecord{{ID: "entry", Role: scan.TraceRoleAPIClient}, {ID: "repo", Role: scan.TraceRoleRepository}}, Edges: []scan.DirectedTraceEdgeRecord{{From: "entry", To: "repo"}}, EntryNodes: []string{"entry"}, ExitNodes: []string{"repo"}, MainPath: []string{"entry", "repo"}}}}
+	body, _ := json.Marshal(index)
+	if err := os.WriteFile(filepath.Join(root, "goregraph-out", "directed-traces.json"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{}
+	result, err := service.Run(Request{Root: root, Task: "endpoint-trace", Query: "GET /users"})
+	if err != nil || len(result.Items) != 1 {
+		t.Fatalf("trace result: %#v %v", result, err)
+	}
+	traversed, err := service.Run(Request{Root: root, Task: "trace-from", Query: "trace:1#entry"})
+	if err != nil || len(traversed.Items) != 1 {
+		t.Fatalf("traversal result: %#v %v", traversed, err)
+	}
+}
 
 func TestServiceBoundsResultsAndContinuesDeterministically(t *testing.T) {
 	root := t.TempDir()
