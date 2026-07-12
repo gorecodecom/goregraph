@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.9.2
+v0.9.3
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` through `v0.9.0` established packaging, static code graphs, cross-project contracts, and the workspace dashboard. `v0.9.1` delivered the Architecture-first dashboard foundation. `v0.9.2` is the current local development version for stable evidence, separated status dimensions, honest capability coverage, Endpoint debugging filters, Doctor integrity checks, and the Coverage dashboard.
+`v0.1.0` through `v0.9.0` established packaging, static code graphs, cross-project contracts, and the workspace dashboard. `v0.9.1` delivered the Architecture-first dashboard foundation. `v0.9.2` added stable evidence and honest capability coverage. `v0.9.3` is the current local development version for canonical diagnostics, bounded task-oriented Query/MCP operations, continuation, and primary agent Markdown entry points.
 
 `v0.9.2` acceptance requires `evidence.json`, `capabilities.json`, `coverage.json`, and `coverage.md`; additive `evidence_ids` on supported public facts; valid Doctor integrity checks; and a clean installed-binary workspace rescan. It does not claim full language parity, directed trace branching, or the Schema 2 public freeze.
 

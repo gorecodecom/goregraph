@@ -274,11 +274,11 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
 	capabilities := BuildCapabilityInventory(index.Files, index.Workspace)
 	coverage := BuildCoverage(index.Files, capabilities)
-	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
 	richSymbols := buildRichSymbols(index.Files, index.Symbols)
 	richRelations := buildRichRelations(index.Files, index.Relations)
 	richGraph := buildRichGraph(index.Files, richSymbols, richRelations)
 	evidence := LinkEvidenceReferences(filepath.Base(root), index.Files, richRelations, &callGraph, routes, codeFlows, contractMatches)
+	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
 	finished := time.Now().UTC()
 	manifest := Manifest{
 		Tool:        ToolName,

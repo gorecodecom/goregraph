@@ -947,7 +947,7 @@ goregraph version
 Expected output:
 
 ```text
-goregraph 0.9.2
+goregraph 0.9.3
 commit: dev
 built: unknown
 go: go1.26.x

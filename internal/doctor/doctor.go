@@ -104,6 +104,7 @@ func checkJSONFiles(out string, result *Result) {
 		{"api-contracts.json", &[]scan.APIContractRecord{}},
 		{"contract-matches.json", &[]scan.ContractMatchRecord{}},
 		{"diagnostics.json", &scan.DiagnosticsRecord{}},
+		{"diagnostics-canonical.json", &[]scan.CanonicalDiagnosticRecord{}},
 		{"package-graph.json", &scan.PackageGraphRecord{}},
 		{"maven-graph.json", &scan.MavenGraphRecord{}},
 		{"analyzers.json", &[]scan.AnalyzerRecord{}},
@@ -151,6 +152,7 @@ func checkEvidenceIntegrity(out string, result *Result) {
 	}
 	var routes []scan.CodeRouteRecord
 	var calls scan.CallGraphRecord
+	var diagnostics []scan.CanonicalDiagnosticRecord
 	if readJSON(filepath.Join(out, "routes.json"), &routes) == nil {
 		for _, route := range routes {
 			if danglingEvidence(route.EvidenceIDs, known) {
@@ -163,6 +165,14 @@ func checkEvidenceIntegrity(out string, result *Result) {
 		for _, edge := range calls.Edges {
 			if danglingEvidence(edge.EvidenceIDs, known) {
 				result.fail("evidence", "call edge contains a dangling evidence reference")
+				return
+			}
+		}
+	}
+	if readJSON(filepath.Join(out, "diagnostics-canonical.json"), &diagnostics) == nil {
+		for _, diagnostic := range diagnostics {
+			if diagnostic.ID == "" || diagnostic.Severity.Validate() != nil || diagnostic.Confidence.Validate() != nil || diagnostic.Resolution.Validate() != nil || danglingEvidence(diagnostic.EvidenceIDs, known) {
+				result.fail("diagnostics", "canonical diagnostic is invalid or contains dangling evidence")
 				return
 			}
 		}
