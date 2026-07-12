@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gorecodecom/goregraph/internal/agent"
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/doctor"
 	"github.com/gorecodecom/goregraph/internal/query"
@@ -101,7 +102,19 @@ func tools() []map[string]any {
 		tool("get_related_files", "Explain relations for a file."),
 		tool("explain_file", "Explain one indexed file or symbol."),
 		tool("doctor", "Check generated output health."),
+		agentTool("workspace_summary", "Return a compact workspace orientation."),
+		agentTool("service_context", "Return generated context for a service."),
+		agentTool("endpoint_search", "Search generated endpoint facts."),
+		agentTool("diagnostics", "Return canonical evidence-backed diagnostics."),
+		agentTool("coverage", "Return analyzer capability coverage."),
+		agentTool("evidence", "Return stable source evidence records."),
+		agentTool("tests", "Return generated test mappings."),
+		agentTool("change_context", "Return generated change context."),
 	}
+}
+
+func agentTool(name, description string) map[string]any {
+	return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"root": map[string]any{"type": "string"}, "query": map[string]any{"type": "string"}, "detail": map[string]any{"type": "string", "enum": []string{"summary", "standard", "full"}}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "continuation": map[string]any{"type": "string"}}}}
 }
 
 func tool(name, description string) map[string]any {
@@ -143,8 +156,25 @@ func callTool(name string, args map[string]any) (string, error) {
 	case "get_symbol":
 		return getSymbol(root, stringArg(args, "symbol", stringArg(args, "name", "")))
 	default:
+		if task, ok := agentTaskForTool(name); ok {
+			result, err := (agent.Service{}).Run(agent.Request{Root: root, Task: task, Query: stringArg(args, "query", ""), Detail: stringArg(args, "detail", "standard"), Limit: intArg(args, "limit", 20), Continuation: stringArg(args, "continuation", "")})
+			if err != nil {
+				return "", err
+			}
+			body, err := json.MarshalIndent(result, "", "  ")
+			if err != nil {
+				return "", err
+			}
+			return string(body) + "\n", nil
+		}
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
+}
+
+func agentTaskForTool(name string) (string, bool) {
+	tasks := map[string]string{"workspace_summary": "workspace-summary", "service_context": "service-context", "endpoint_search": "endpoint-search", "diagnostics": "diagnostics", "coverage": "coverage", "evidence": "evidence", "tests": "tests", "change_context": "change-context"}
+	task, ok := tasks[name]
+	return task, ok
 }
 
 func readReport(root string) (string, error) {
@@ -218,6 +248,17 @@ func stringArg(args map[string]any, name, fallback string) string {
 		return fallback
 	}
 	return text
+}
+func intArg(args map[string]any, name string, fallback int) int {
+	value, ok := args[name]
+	if !ok {
+		return fallback
+	}
+	number, ok := value.(float64)
+	if !ok {
+		return fallback
+	}
+	return int(number)
 }
 
 func okResponse(id any, result any) response {

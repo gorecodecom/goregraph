@@ -57,6 +57,25 @@ func TestServeReadsGeneratedOutputTool(t *testing.T) {
 	}
 }
 
+func TestServeExposesCompactAgentTools(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")
+	if _, err := scan.Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}` + "\n" + `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"coverage","arguments":{"root":"` + filepath.ToSlash(root) + `","limit":2}}}` + "\n")
+	var output bytes.Buffer
+	if err := Serve(input, &output); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	for _, want := range []string{"workspace_summary", "endpoint_search", "diagnostics", "coverage", "evidence", "change_context", `\"truncated\": true`, `\"continuation\":`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("MCP output missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestServeRejectsUnknownTool(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"write_file","arguments":{}}}` + "\n")
 	var output bytes.Buffer
