@@ -14,9 +14,9 @@ GoreGraph outputs are additive. Existing field meanings must remain stable; new 
 - `.goregraph-workspace/workspace-endpoint-traces.json`: readable endpoint traces from frontend consumer/API contract to backend route, handler, backend steps, tests, and risks.
 - `.goregraph-workspace/workspace-map.html`: Schema 1-compatible standalone offline dashboard. Its top-level UI is Architecture, Endpoints, and Diagnostics; the existing JSON payloads and field meanings remain compatible. Architecture keeps the full service map stable during ordinary selection and offers explicit neighborhood isolation, preserving the earlier Focused Service behavior without a separate top-level view. Endpoints lets users search for and select a service, inspect its caller -> endpoint -> provider rows, and open an implementation trace, preserving the earlier Endpoint Paths workflow through the service inventory. Diagnostics groups unresolved, mismatched, dynamic, and out-of-scope relationships by meaning and provides evidence and next checks. The dashboard includes per-view pan/zoom state, a visible-content Fit control, selectable nodes, source file/line links, confidence explanations, and incoming/outgoing relationship details.
 
-## Reference Adapter Evidence
+## Full Adapter Evidence
 
-- `architecture-capabilities.json`: normalized, deterministic file/line facts emitted by the Java/Spring and JavaScript/TypeScript/Node/React reference adapters for routes, API clients, tests, persistence, messaging/RPC, validation, and request/response boundaries.
+- `architecture-capabilities.json`: normalized, deterministic file/line facts emitted by the Java/Spring, JavaScript/TypeScript/Node/React, Go, and PHP full adapters for routes, API clients, tests, persistence, messaging/RPC, validation, and request/response boundaries.
 - `capabilities.json`: analyzer support declarations. Reference-adapter records link detected normalized facts through `evidence_ids`.
 - Query and MCP `coverage` return those evidence IDs; Query and MCP `evidence` resolve both source evidence and architecture-capability evidence.
 

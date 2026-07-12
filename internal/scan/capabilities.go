@@ -116,7 +116,7 @@ func capabilityCoverage(analyzer AnalyzerRecord, known bool, capability Capabili
 	}
 	if (analyzer.Language == "java" || analyzer.Language == "javascript" || analyzer.Language == "typescript" || analyzer.Language == "go" || analyzer.Language == "php") &&
 		(capability == CapabilityAPIClients || capability == CapabilityPersistence || capability == CapabilityMessaging || capability == CapabilityDataFlow) {
-		return CoverageComplete, "The reference adapter emits normalized facts for this capability; detected facts are linked as evidence."
+		return CoverageComplete, "The full adapter emits normalized facts for this capability; detected facts are linked as evidence."
 	}
 	if capability == CapabilityAPIClients && (analyzer.Language == "javascript" || analyzer.Language == "typescript") {
 		return CoveragePartial, "Supported client patterns are extracted; configurable and dynamic wrappers may remain unresolved."

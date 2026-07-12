@@ -198,7 +198,7 @@ What the generated files mean:
 - `routes.json`: normalized route records for Spring, Go, PHP/Laravel-style routes, JS/TS Express/Fastify-style routes, React Router routes, and Python FastAPI/Flask-style routes.
 - `flows.json`: normalized route-to-handler-to-call flow records across supported languages.
 - `api-contracts.json`: JavaScript/TypeScript HTTP client calls detected from supported helpers and `fetch`, including realistic helper argument shapes, method, raw path, normalized path, query metadata, service candidate, enclosing caller function or method when available, file, app, confidence, and reason.
-- `architecture-capabilities.json`: deterministic reference-adapter facts for routes, HTTP clients, tests, persistence, messaging/RPC, validation, and request/response boundaries, with language, framework, file, line, and stable evidence ID.
+- `architecture-capabilities.json`: deterministic full-adapter facts for routes, HTTP clients, tests, persistence, messaging/RPC, validation, and request/response boundaries, with language, framework, file, line, and stable evidence ID.
 - `frontend-usage.json`: frontend API usage chains from API contract back to the best matching frontend route flow, including route, component, API caller, confidence, and static evidence steps.
 - `contract-matches.json`: static frontend API call to backend route matches, including resolved method/path matches, method mismatches, missing backend routes, unscanned services, and unsafe dynamic URL patterns.
 - `diagnostics.json`: compact diagnosis index derived from routes, contracts, endpoint flows, route flows, and tests.
@@ -793,7 +793,7 @@ The dashboard is normally generated at:
 <workspace>/.goregraph-workspace/workspace-map.html
 ```
 
-The 0.9.5 dashboard is organized around five views:
+The 0.9.6 dashboard is organized around five views:
 
 - **Architecture** is the first and default view. Selecting a service highlights its direct incoming and outgoing relationships without moving the full map. **Isolate neighborhood** explicitly narrows the graph; **Show full architecture** restores it.
 - **Endpoints** shows the endpoint inventory for a selected service and opens a directed implementation trace for a selected endpoint. Selecting a trace step focuses that point in the path, and **Back to endpoint inventory** restores the inventory context.
@@ -949,7 +949,7 @@ goregraph version
 Expected output:
 
 ```text
-goregraph 0.9.5
+goregraph 0.9.6
 commit: dev
 built: unknown
 go: go1.26.x
