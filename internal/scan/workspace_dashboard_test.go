@@ -642,10 +642,13 @@ func TestDashboardDataFlowShowsMappingsAndExplicitGaps(t *testing.T) {
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, DataFlows: []DataFlowRecord{{ID: "flow", Route: "POST /users", Gaps: []DataFlowGapRecord{{Reason: "Unknown transformation", Confidence: ConfidenceUnknown}}}}},
 		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
 	)
-	for _, want := range []string{`data-view-mode="data-flow"`, `const dataFlows=serviceMap.data_flows||[]`, `function renderDataFlow()`, `Exact · Inferred · Weak · Missing`, `Unknown transformation`} {
+	for _, want := range []string{`data-view-mode="data-flow"`, `const dataFlows=serviceMap.data_flows||[]`, `selectedDataFlow:null`, `function renderDataFlowList()`, `function renderDataFlowWorkbench()`, `Select a data flow`, `data-flow-chain`, `data-flow-node`, `data-flow-gap`, `Unknown transformation`, `aria-pressed="`, `showDataFlowNodeDetails(flow,node)`, `@media (max-width:900px){.data-flow-chain`} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing data-flow contract %q", want)
 		}
+	}
+	if strings.Contains(html, `function renderDataFlow(){const svg=`) {
+		t.Fatal("Data Flow still renders every flow into a scaled SVG")
 	}
 }
 
