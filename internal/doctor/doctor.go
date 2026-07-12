@@ -42,6 +42,7 @@ func Run(root string) (Result, error) {
 
 	checkGeneratedFiles(out, manifest, &result)
 	checkJSONFiles(out, &result)
+	checkEvidenceIntegrity(out, &result)
 	checkStaleFiles(root, manifest, &result)
 	if result.Failures > 0 || result.Warnings > 0 {
 		result.fix("goregraph scan " + root)
@@ -106,6 +107,9 @@ func checkJSONFiles(out string, result *Result) {
 		{"package-graph.json", &scan.PackageGraphRecord{}},
 		{"maven-graph.json", &scan.MavenGraphRecord{}},
 		{"analyzers.json", &[]scan.AnalyzerRecord{}},
+		{"evidence.json", &[]scan.EvidenceRecord{}},
+		{"capabilities.json", &[]scan.CapabilityRecord{}},
+		{"coverage.json", &scan.CoverageRecord{}},
 		{"spring.json", &scan.SpringIndex{}},
 		{"audit.json", &scan.AuditRecord{}},
 	}
@@ -116,6 +120,63 @@ func checkJSONFiles(out string, result *Result) {
 		}
 		result.ok("json", check.name+" valid")
 	}
+}
+
+func checkEvidenceIntegrity(out string, result *Result) {
+	var evidence []scan.EvidenceRecord
+	var capabilities []scan.CapabilityRecord
+	var coverage scan.CoverageRecord
+	if readJSON(filepath.Join(out, "evidence.json"), &evidence) != nil || readJSON(filepath.Join(out, "capabilities.json"), &capabilities) != nil || readJSON(filepath.Join(out, "coverage.json"), &coverage) != nil {
+		return
+	}
+	known := map[string]bool{}
+	for _, record := range evidence {
+		if record.ID == "" || known[record.ID] {
+			result.fail("evidence", "duplicate or empty evidence ID")
+			return
+		}
+		known[record.ID] = true
+	}
+	for _, record := range capabilities {
+		if err := record.Coverage.Validate(); err != nil {
+			result.fail("coverage", "invalid coverage: "+err.Error())
+			return
+		}
+	}
+	for _, record := range coverage.Capabilities {
+		if err := record.Coverage.Validate(); err != nil {
+			result.fail("coverage", "invalid coverage: "+err.Error())
+			return
+		}
+	}
+	var routes []scan.CodeRouteRecord
+	var calls scan.CallGraphRecord
+	if readJSON(filepath.Join(out, "routes.json"), &routes) == nil {
+		for _, route := range routes {
+			if danglingEvidence(route.EvidenceIDs, known) {
+				result.fail("evidence", "route contains a dangling evidence reference")
+				return
+			}
+		}
+	}
+	if readJSON(filepath.Join(out, "callgraph.json"), &calls) == nil {
+		for _, edge := range calls.Edges {
+			if danglingEvidence(edge.EvidenceIDs, known) {
+				result.fail("evidence", "call edge contains a dangling evidence reference")
+				return
+			}
+		}
+	}
+	result.ok("evidence", "evidence integrity valid")
+}
+
+func danglingEvidence(ids []string, known map[string]bool) bool {
+	for _, id := range ids {
+		if !known[id] {
+			return true
+		}
+	}
+	return false
 }
 
 func checkStaleFiles(root string, manifest scan.Manifest, result *Result) {
