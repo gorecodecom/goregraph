@@ -52,6 +52,11 @@ The design follows `docs/design-system.md`: technical, calm, precise, restrained
 - Relative to the selected service, render outgoing relationships in the existing teal accent with a solid stroke.
 - Render incoming relationships in the existing warning/amber role color with a restrained dashed stroke.
 - Increase focused arrowhead size and contrast, and end the path before the target card so the arrowhead remains visible instead of disappearing under the card border.
+- Route every connected edge to an explicit card-edge port. A small visible port dot marks the exact source and target attachment point.
+- Render cards as fully opaque surfaces above background edges. A relationship that merely passes behind a card is masked and has no port, while a relationship attached to the card terminates at its visible port.
+- Keep a short, unobstructed terminal segment between the final curve and each port so crossings near the card cannot be mistaken for an attachment.
+- Choose the nearest sensible card side for each port from the relative node positions; do not force a line through the card interior.
+- Separate multiple focused connections at one card into vertically distributed ports instead of stacking every arrowhead on one indistinguishable point.
 - Add a small semantic `OUT` badge to connected target cards and an `IN` badge to connected source cards. The badge describes the relationship relative to the selected service, not the global project type.
 - When a connected node has both incoming and outgoing relationships, show both compact badges.
 - Do not encode direction by color alone: stroke style, arrowhead, and the text badge provide redundant cues.
@@ -87,7 +92,7 @@ The design follows `docs/design-system.md`: technical, calm, precise, restrained
 - Assert Data Flow initially shows guidance and renders exactly one selected flow.
 - Assert toolbar visibility follows the view/trace rules.
 - Assert long route text wraps and interactive rows are keyboard accessible.
-- Assert selected Architecture relationships receive distinct incoming/outgoing classes, visible target arrowheads, and textual direction badges without changing node positions.
+- Assert selected Architecture relationships receive distinct incoming/outgoing classes, explicit source/target ports, unobstructed target arrowheads, opaque card masking, and textual direction badges without changing node positions.
 - Run the full Go test suite and `go vet`.
 - Install the resulting local version, clean and rescan all 44 WEKA projects, then inspect the generated HTML contract.
 - Browser testing remains excluded unless the user explicitly reverses the earlier no-browser instruction; residual visual risk must be reported.
