@@ -4,7 +4,9 @@
 
 # GoreGraph
 
-GoreGraph is a local, deterministic code-intelligence CLI for creating project maps that humans and AI coding assistants can use as orientation.
+GoreGraph is a local, deterministic code-intelligence CLI. It scans source code without executing it and creates evidence-backed project maps for developers and AI coding assistants.
+
+It answers practical orientation questions: where a symbol is defined, what it calls, which HTTP route reaches it, which frontend API usage maps to a backend endpoint, and which tests or persistence boundaries are connected to it.
 
 The tool is intentionally conservative:
 
@@ -18,127 +20,14 @@ The tool is intentionally conservative:
 - writes scan output to `goregraph-out/` and, when a workspace is detected, workspace metadata to `.goregraph-workspace/`
 - may add generated GoreGraph output paths to the relevant `.gitignore` files
 
-## Status
+## What GoreGraph does
 
-GoreGraph is a usable local CLI for generating deterministic project indexes and human-readable project maps.
+- Indexes symbols, imports, calls, routes, tests, API clients, and persistence patterns from source code.
+- Connects frontend API usage to backend routes and shows the surrounding implementation path.
+- Builds a workspace map across repositories or services, including confidence, diagnostics, and source evidence.
+- Produces human-readable reports, machine-readable JSON, and an offline workspace dashboard.
 
-Implemented:
-
-- `goregraph help`
-- `goregraph scan`
-- `goregraph update`
-- `goregraph report`
-- `goregraph query`
-- `goregraph explain`
-- `goregraph doctor`
-- `goregraph workspace status`
-- `goregraph mcp`
-- `goregraph version`
-- deterministic `manifest.json`
-- deterministic `files.json`
-- deterministic `symbols.json`
-- deterministic `relations.json`
-- deterministic `graph.json`
-- deterministic `symbols-full.json`
-- deterministic `relations-full.json`
-- deterministic `graph-full.json`
-- deterministic `callgraph.json`
-- deterministic `endpoint-flows.json`
-- deterministic `test-map.json`
-- deterministic `routes.json`
-- deterministic `flows.json`
-- deterministic `api-contracts.json`
-- deterministic `architecture-capabilities.json` full-adapter evidence
-- deterministic `service-dependencies.json`
-- deterministic `frontend-usage.json`
-- deterministic `contract-matches.json`
-- deterministic `diagnostics.json`
-- deterministic `package-graph.json`
-- deterministic `maven-graph.json`
-- deterministic `analyzers.json`
-- deterministic `spring.json`
-- deterministic `audit.json`
-- deterministic `report.md`
-- deterministic `modules.md`
-- deterministic `workspace.md`
-- deterministic `endpoints.md`
-- deterministic `endpoint-flows.md`
-- deterministic `dependencies.md`
-- deterministic `callgraph.md`
-- deterministic `routes.md`
-- deterministic `flows.md`
-- deterministic `api-contracts.md`
-- deterministic `frontend-usage.md`
-- deterministic `contract-matches.md`
-- deterministic `potentially-broken-contracts.md`
-- deterministic `diagnostics.md`
-- deterministic `workspace-context.md`
-- deterministic `workspace-contract-matches.md`
-- deterministic `workspace-feature-flows.json`
-- deterministic `workspace-feature-flows.md`
-- deterministic `workspace-next-actions.md`
-- deterministic `frontend-consumers.md`
-- deterministic `package-graph.md`
-- deterministic `maven-graph.md`
-- deterministic `navigation.md`
-- deterministic `analyzers.md`
-- deterministic `affected.md`
-- deterministic `entrypoints.md`
-- deterministic `test-map.md`
-- workspace registry and cross-project overlay reports when a repository is part of a detected workspace
-- default exclusions
-- project `.gitignore` exclusions
-- automatic `.gitignore` entries for `goregraph-out/` and `.goregraph-workspace/`
-- optional `goregraph.yml`
-- local symbol extraction for Go, Python, PHP, Shell, Java, JavaScript, TypeScript, and Markdown
-- local relation extraction for Go, Python, PHP, Shell, Java, JavaScript, and TypeScript
-- simple test-to-source relations
-- local Go import resolution
-- local Python import resolution
-- local PHP namespace/use/include resolution
-- local Shell source resolution
-- universal rich graph output for all currently supported languages
-- Java internal/external import classification
-- Spring Boot application, controller, endpoint, service, repository, entity, bean, and dependency extraction
-- Java/Spring method call graph extraction
-- endpoint-to-controller-to-service-to-repository flow reports
-- method-aware Java test mapping and MockMvc endpoint matching
-- generic route, call, flow, and test mapping for Go, PHP, JavaScript, TypeScript/React, Python, and Shell
-- app-specific frontend route IDs for monorepos
-- component-aware frontend route flows that can follow JSX child components, React effect calls, and local event handlers to API callers
-- frontend usage chains that explain which route/component flow reaches a detected API caller
-- local JavaScript/TypeScript API helper and `fetch` contract extraction, including common helper calls such as `GetHelper(dispatch, "/path")`, `weka.request("GET", "path")`, and the enclosing API function/method name when available
-- Java backend service-client dependency extraction for common shared clients such as user, product, license, cadaster, document, and regulation services
-- frontend API to backend route contract matching with method mismatch, missing route, unscanned service, and unsafe dynamic URL reports
-- compact diagnostics report for entrypoints, risky contracts, unscanned services, untested endpoints, weak flows, and likely tests
-- zero-config workspace discovery for common layouts such as `frontend/` plus `microservices/`, including nested frontend group folders
-- workspace reconciliation that refreshes existing `goregraph-out/` overlays when later sibling scans add new service indexes
-- workspace next-action summaries for coverage, missing service scans, weak matches, and resolved flows without linked tests
-- Node workspace package dependency graph extraction
-- Maven dependency graph extraction from `pom.xml`
-- low-signal frontend noise filtering for declarations, archives, generated files, and common test utility calls
-- human-readable navigation and diagnostics reports for likely starting points, risks, and central local files
-- analyzer capability inventory for supported languages
-- Maven and Node workspace summaries
-- scan audit metadata showing normal scans used no network and executed no external commands
-- graph nodes for local files and external dependencies
-- inbound/outbound relation context in `goregraph explain`
-- index health checks with `goregraph doctor`
-- read-only MCP stdio server with `goregraph mcp`
-- build metadata with `goregraph version`
-- GoReleaser release configuration
-- GitHub Actions CI and release workflows
-
-Planned later:
-
-- richer parser support
-- code signing and notarization
-
-The next milestones are documented in `ROADMAP.md`.
-
-Every CLI command is documented in `COMMANDS.md`.
-
-Generated output compatibility is documented in `SCHEMA.md`.
+For command reference, see [`COMMANDS.md`](COMMANDS.md). The output contract is documented in [`OUTPUTS.md`](OUTPUTS.md) and [`SCHEMA.md`](SCHEMA.md); future work is in [`ROADMAP.md`](ROADMAP.md).
 
 ## Installation
 
@@ -293,61 +182,7 @@ From a project root:
 goregraph scan .
 ```
 
-This creates:
-
-```text
-goregraph-out/
-  manifest.json
-  files.json
-  symbols.json
-  relations.json
-  graph.json
-  symbols-full.json
-  relations-full.json
-  graph-full.json
-  callgraph.json
-  endpoint-flows.json
-  test-map.json
-  routes.json
-  flows.json
-  api-contracts.json
-  frontend-usage.json
-  contract-matches.json
-  diagnostics.json
-  package-graph.json
-  maven-graph.json
-  analyzers.json
-  spring.json
-  workspace.md
-  endpoints.md
-  endpoint-flows.md
-  dependencies.md
-  callgraph.md
-  routes.md
-  flows.md
-  api-contracts.md
-  frontend-usage.md
-  contract-matches.md
-  potentially-broken-contracts.md
-  diagnostics.md
-  workspace-context.md
-  workspace-contract-matches.json
-  workspace-contract-matches.md
-  workspace-feature-flows.json
-  workspace-feature-flows.md
-  workspace-next-actions.md
-  frontend-consumers.md
-  package-graph.md
-  maven-graph.md
-  navigation.md
-  analyzers.md
-  affected.md
-  audit.json
-  report.md
-  modules.md
-  entrypoints.md
-  test-map.md
-```
+This creates `goregraph-out/` with reports, a project graph, diagnostics, and JSON evidence. When GoreGraph detects a multi-project workspace, it also creates `.goregraph-workspace/` with cross-project contracts, feature flows, and the offline dashboard. See [`OUTPUTS.md`](OUTPUTS.md) for the complete output contract.
 
 Print the generated report:
 
@@ -582,18 +417,28 @@ goregraph version
 
 Print build metadata including version, commit, build date, Go version, platform, and schema version.
 
-## Language Support
+## Language Coverage
 
-Current extraction is local and deterministic. It does not run project code or call external services.
+Coverage describes the active static analyzer, not proof that a source behavior is absent. **Full** adapters emit normalized, file-and-line-backed evidence. **Integration** support provides symbols, imports, and calls without architecture capabilities. **Index** support provides best-effort symbol and import orientation. `—` means the capability is unavailable.
 
-- Go: packages, modules, functions, methods, types, tests, imports, local module import resolution, `net/http`/router routes, calls, route flows, and test mappings.
-- Python: classes, functions, methods, `test_` functions, imports, `from` imports, local module resolution, FastAPI/Flask-style routes, calls, route flows, test mappings, and main-guard entrypoints.
-- PHP: namespaces, classes, interfaces, traits, functions, methods, `use` imports, `require`/`include` relations, Composer PSR-4 autoload hints, Laravel-style routes, calls, test mappings, and `index.php` front controllers.
-- Shell: shell-script entrypoints, functions, `source`/`.` file relations, and function-call flows.
-- JavaScript/TypeScript: functions, classes, imports, exports, package scripts, Express/Fastify-style routes, React Router routes, app-specific route IDs in monorepos, realistic API helper/`fetch` contracts, app-aware handler resolution, calls, route flows, and test mappings.
-- Java: classes, interfaces, enums, imports, Maven dependency graphs, Spring endpoints, Spring dependencies, Java/Spring callgraph, endpoint flows, and test mappings.
-- Markdown: headings.
-- JSON/YAML and common build files: indexed as files and build/config context where supported.
+| Language / framework | Symbols | Imports | Calls | Routes | Tests | API clients | Persistence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Java / Spring | Full | Full | Full | Full | Full | Full | Full |
+| JavaScript / TypeScript / Node.js / React | Full | Full | Full | Full | Full | Full | Full |
+| Go | Full | Full | Full | Full | Full | Full | Full |
+| PHP | Full | Full | Full | Full | Full | Full | Full |
+| Rust | Full | Full | Full | Full | Full | Full | Full |
+| Python | Full | Full | Full | Full | Full | Full | Full |
+| Shell | Integration | Integration | Integration | — | — | — | — |
+| Kotlin | Index | Index | — | — | — | — | — |
+| Scala | Index | Index | — | — | — | — | — |
+| Swift | Index | Index | — | — | — | — | — |
+| Ruby | Index | Index | — | — | — | — | — |
+| C | Index | Index | — | — | — | — | — |
+| C++ | Index | Index | — | — | — | — | — |
+| C# | Index | Index | — | — | — | — | — |
+
+Full adapters also cover messaging/RPC and request-to-response data-flow evidence. Markdown, JSON, YAML, Maven, Node, and Composer are indexed as documents, metadata, or workspace context rather than source-language adapters.
 
 ## Output Files
 
@@ -659,27 +504,9 @@ The workspace dashboard at `.goregraph-workspace/workspace-map.html` is a standa
 
 Endpoints provides multi-select HTTP method filters, separate caller and provider service filters, and resolution-status filters. Filters remain active while a trace is open and after returning to the endpoint inventory.
 
-`evidence.json` stores deterministic root-relative source evidence with stable IDs. Generated route and call facts reference those records through additive `evidence_ids`. `capabilities.json`, `coverage.json`, and `coverage.md` report analyzer support separately from relationship confidence, match resolution, and diagnostic severity. Schema 2 freezes these meanings for 1.0; compatible updates may add optional fields but do not repurpose frozen fields.
+`evidence.json` stores deterministic root-relative source evidence with stable IDs. Generated route and call facts reference those records through additive `evidence_ids`. `capabilities.json`, `coverage.json`, and `coverage.md` report analyzer support separately from relationship confidence, match resolution, and diagnostic severity.
 
-Version 0.9.5 establishes Java/Spring and JavaScript/TypeScript/Node/React as the reference adapters. `architecture-capabilities.json` records deterministic file/line evidence for HTTP clients, routes, tests, persistence, messaging/RPC, validation, and request/response boundaries. Coverage and the Query/MCP `coverage` operation link to these facts; the `evidence` operation resolves the same IDs. Supported framework families include Spring MVC/WebFlux, Spring Data/JDBC, RestTemplate/WebClient/Feign-style clients, JUnit/Spring Test, Kafka/RabbitMQ/gRPC, Fetch/Axios, Express/Fastify, NestJS, Next.js, Prisma/TypeORM/Sequelize/Mongoose/SQL calls, Jest/Vitest/node:test, React Testing Library, KafkaJS/AMQP, and Node gRPC.
-
-The analysis remains static and pattern-backed. Runtime-generated routes, reflective dispatch, arbitrary client wrappers, dependency-injection aliases, ORM metaprogramming, and configuration assembled outside indexed source may remain gaps; GoreGraph reports those limits instead of inferring unsupported behavior.
-
-Version 0.9.6 extends the same normalized evidence and full common-capability gate to Go and PHP. Go families include net/http and common router registrations, net/http clients, database/sql and GORM, Go test/httptest, Kafka/AMQP, and gRPC. PHP families include Laravel/Symfony routes, Laravel HTTP/Guzzle-style clients, Eloquent/Doctrine/PDO, PHPUnit/Pest, queues/events/AMQP, and gRPC. Query, MCP, Doctor, Coverage, and the dashboard consume these records through the same language-neutral contracts introduced for the reference adapters.
-
-Version 0.9.7 promotes Rust to a full adapter. It extracts Rust functions and calls, `#[test]`/Tokio tests, Axum router registrations, Actix/Rocket route attributes, reqwest clients, SQLx/Diesel/SeaORM persistence, rdkafka/lapin messaging, tonic gRPC, and JSON request/response boundaries. Macro-generated handlers, custom proc macros, trait-object dispatch, and build-script-generated code remain explicit static-analysis limits.
-
-Version 0.9.8 promotes Python to the same full adapter contract for FastAPI/Flask/Django routes, requests/httpx/aiohttp clients, SQLAlchemy/Django ORM/DB-API persistence, pytest/unittest, Kafka/Celery/AMQP, gRPC, Pydantic validation, and web response boundaries. Generic root-level projects are classified from ecosystem markers, so backend discovery does not require WEKA group names or an `ms-` prefix. Shell remains an honest integration adapter for symbols, relations, and calls; unsupported route, persistence, and messaging capabilities stay `UNAVAILABLE`.
-
-Version 1.0.0-rc.1 freezes Schema 2 and the documented CLI, Query, and MCP operation names, bounds, continuation tokens, evidence semantics, and coverage meanings. Schema 1 output is migrated by installing the new binary, previewing and executing `goregraph workspace clean . --execute`, then running `goregraph workspace scan-all .`; GoreGraph does not mutate old output in place.
-
-Version 1.0.0 promotes the accepted release candidate without contract changes. It is the stable public Schema 2, CLI, dashboard, Query, MCP, Markdown, and JSON contract. The `v1.0.0` tag publishes cross-platform archives and checksums through the repository release workflow.
-
-Selection does not auto-center or relayout a graph. **100%** resets only zoom and pan, while **Fit** calculates a fit for the currently visible graph without clearing selection or search. Graph controls appear only for Architecture and implementation traces. Endpoint Inventory, Data Flow, and Coverage use dedicated normal browser-scale HTML workbenches, so their text is readable without zoom. Returning from an endpoint trace restores the inventory filters, service, and scroll position.
-
-GoreGraph performs static analysis. A relationship that is absent from the dashboard is not proof that no runtime relationship exists: dynamic dispatch, generated routes, reflection, runtime configuration, unindexed projects, and unsupported analyzer capabilities can leave static evidence incomplete. Treat confidence labels and diagnostics as evidence-backed guidance, and inspect the cited source or run a fresh complete scan before drawing operational conclusions.
-
-For release acceptance, first preview generated cleanup with `goregraph workspace clean .`, review the paths, then run `goregraph workspace clean . --execute` and `goregraph workspace scan-all .`. Validate only outputs produced by the newly installed binary and that fresh scan; `goregraph workspace refresh .` reuses existing project outputs and is not a substitute for this clean-scan workflow.
+The analysis remains static and pattern-backed. Runtime-generated routes, reflective dispatch, arbitrary client wrappers, dependency-injection aliases, ORM metaprogramming, and configuration assembled outside indexed source may remain gaps. A relationship absent from GoreGraph is therefore not proof that it does not exist at runtime; inspect the cited evidence and diagnostics before drawing operational conclusions.
 
 `package-graph.json` contains Node workspace package nodes and package-to-package dependency edges from `package.json`.
 
@@ -703,19 +530,11 @@ All normal output paths are relative to the scanned project root.
 
 `goregraph mcp` starts a read-only stdio server for MCP-capable tools.
 
-Version 0.9.3 adds task-oriented, bounded agent operations shared by Query and MCP: `workspace-summary`, `service-context`, `endpoint-search`, `diagnostics`, `coverage`, `evidence`, `tests`, and `change-context`. Query accepts `--format json|text|markdown`, `--detail summary|standard|full`, `--limit 1..100`, `--continue <token>`, and `--query <text>`. MCP exposes equivalent underscore-named read-only tools with strict input schemas. Results include freshness, coverage warnings, stable evidence references, truncation, continuation, and a suggested next operation.
-
-Primary agent entry points are `workspace-summary.md`, `architecture.md`, `diagnostics.md`, and `agent-guide.md`. Specialized generated reports remain available as references.
-
-Version 0.9.4 adds `directed-traces.json` and `data-flows.json`. Directed traces expose stable node roles, edges, entries, exits, a deterministic main path, branches, bounded cycles, upstream/downstream traversal, paths to persistence/messages/external services/tests, and explicit `Trace from here`. Query/MCP add `endpoint-trace`, `symbol-trace`, `trace-from`, and `data-flow`. Selecting a trace node never changes zoom, pan, or layout automatically.
-
 It:
 
-- reads an existing `goregraph-out/` or configured output directory
-- exposes query, summary, file, symbol, relation, explain, and doctor tools
-- does not scan automatically
-- does not write project files
-- does not open a network port
+- reads an existing `goregraph-out/` or configured output directory;
+- exposes bounded query, summary, evidence, diagnostics, trace, and coverage operations;
+- does not scan automatically, write project files, or open a network port.
 
 Run `goregraph scan .` first, then point the MCP client at the `goregraph mcp` command.
 
