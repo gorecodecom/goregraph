@@ -36,5 +36,6 @@ Use the existing local-first Avenir Next / Segoe UI / Helvetica / Arial stack. D
 - Inventory-like information uses semantic HTML at normal browser scale; it must never be shrunk to fit a large SVG viewBox.
 - Endpoints, Data Flow, and Coverage use dedicated HTML workbenches. Coverage groups capability records by project and language instead of scaling the complete inventory into one graph.
 - Pan, zoom, Fit, and relationship Labels are reserved for spatial graphs and implementation traces.
+- Implementation traces open at readable 100% card scale even when the complete path is wider or taller than the viewport. Pan explores the path; Fit is the explicit overview action.
 - Architecture focus uses redundant direction cues: outgoing is solid teal plus `OUT`, incoming is dashed amber plus `IN`, and both terminate at visible card-edge ports.
 - Cards are opaque above background edges. A line that passes behind a card has no port; a line attached to a card ends at an explicit port.

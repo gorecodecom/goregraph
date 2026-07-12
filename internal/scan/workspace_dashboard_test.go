@@ -497,7 +497,7 @@ func TestRenderWorkspaceDashboardHTMLEndpointTraceRestoresInventoryScroll(t *tes
 		"endpointInventoryScrollTop:0",
 		"function saveEndpointInventoryScroll()",
 		"state.endpointInventoryScrollTop=workbench.scrollTop",
-		"saveEndpointInventoryScroll();state.selected=id",
+		"saveEndpointInventoryScroll();resetTraceViewport();state.selected=id",
 		"state.selected=state.endpointService;state.focusStep=null;renderList();renderCanvas()",
 		"workbench.scrollTop=state.endpointInventoryScrollTop",
 	} {
@@ -671,6 +671,37 @@ func TestDashboardDirectedTraceSupportsTraceFromSelection(t *testing.T) {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing directed trace behavior %q", want)
 		}
+	}
+}
+
+func TestDashboardLongDirectedTraceStartsAtReadableScale(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion, Directed: []DirectedTraceRecord{{
+			ID: "long-trace",
+			Nodes: []DirectedTraceNodeRecord{
+				{ID: "controller", Role: TraceRoleController, Label: "Controller.handle"},
+				{ID: "service", Role: TraceRoleFunction, Label: "Service.execute"},
+				{ID: "repository", Role: TraceRoleRepository, Label: "Repository.save"},
+			},
+			MainPath: []string{"controller", "service", "repository"},
+		}}},
+		nil,
+		nil,
+	)
+
+	for _, want := range []string{
+		`function resetTraceViewport(){state.zoom=1;state.panX=0;state.panY=0;}`,
+		`setViewBox(width,760)`,
+		`resetTraceViewport();state.selected=id`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("long directed traces do not start at readable browser scale: missing %q", want)
+		}
+	}
+	if strings.Contains(html, `setViewBox(maxX,maxY)`) {
+		t.Fatal("directed trace still shrinks the complete path into the initial viewport")
 	}
 }
 

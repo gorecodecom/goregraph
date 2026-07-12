@@ -5,10 +5,10 @@
 Current release target:
 
 ```text
-v1.0.0
+v1.0.1
 ```
 
-`1.0.0` is the stable public CLI and Schema 2 contract. Pushing the annotated `v1.0.0` tag starts the GitHub Actions and GoReleaser publication workflow.
+`1.0.1` is the current patch target for readable long implementation traces. It preserves the stable public CLI and Schema 2 contract introduced by `1.0.0`.
 
 ## Required Secrets
 
@@ -274,7 +274,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.0.0
+goregraph 1.0.1
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -290,8 +290,8 @@ schema: 2
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v1.0.0 -m "Release v1.0.0"
-   git push origin v1.0.0
+   git tag -a v1.0.1 -m "Release v1.0.1"
+   git push origin v1.0.1
    ```
 
 5. GitHub Actions runs GoReleaser.
