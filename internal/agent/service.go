@@ -179,6 +179,18 @@ func loadTask(request Request) ([]Item, []string, error) {
 			return []Item{{ID: record.ID + "#" + parts[1], Kind: "trace_traversal", Title: "Trace from " + parts[1], Summary: record.Route, Data: map[string]any{"traversal": result}}}, nil, nil
 		}
 		return nil, nil, fmt.Errorf("directed trace %q not found", parts[0])
+	case "data-flow":
+		var records []scan.DataFlowRecord
+		if err := readOutput(request.Root, "data-flows.json", &records); err != nil {
+			return nil, nil, err
+		}
+		items := []Item{}
+		for _, record := range records {
+			if matchesQuery(request.Query, record.ID, record.Route, record.Project) {
+				items = append(items, Item{ID: record.ID, Kind: "data_flow", Title: record.Route, Summary: fmt.Sprintf("%d nodes / %d gaps", len(record.Nodes), len(record.Gaps)), Project: record.Project, Data: map[string]any{"flow": record}})
+			}
+		}
+		return items, nil, nil
 	default:
 		return nil, nil, fmt.Errorf("unknown agent task %q", request.Task)
 	}

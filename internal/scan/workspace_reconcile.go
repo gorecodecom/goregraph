@@ -70,9 +70,11 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	context := buildWorkspaceContext(registry, indexed)
 	matches := buildWorkspaceContractMatches(indexed)
 	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
+	dataFlows := BuildDataFlows(featureFlows)
 	featureDossiers := buildFeatureDossiers(featureFlows, matches)
 	workspaceGraph := BuildWorkspaceGraph(registry, matches, featureFlows, featureDossiers)
 	serviceMap := BuildWorkspaceServiceMap(registry, matches, featureFlows, workspaceServiceDependencies(indexed))
+	serviceMap.DataFlows = dataFlows
 	for _, project := range indexed {
 		serviceMap.Capabilities = append(serviceMap.Capabilities, project.capabilities...)
 		serviceMap.Diagnostics = append(serviceMap.Diagnostics, project.diagnostics...)
@@ -96,6 +98,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 		return nil, err
 	}
 	if err := writeJSON(filepath.Join(workspaceOut, "feature-flows.json"), featureFlows); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(filepath.Join(workspaceOut, "data-flows.json"), dataFlows); err != nil {
 		return nil, err
 	}
 	if err := writeJSON(filepath.Join(workspaceOut, "feature-dossiers.json"), featureDossiers); err != nil {

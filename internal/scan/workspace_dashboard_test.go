@@ -611,6 +611,19 @@ func TestDashboardDirectedTraceSupportsTraceFromSelection(t *testing.T) {
 	}
 }
 
+func TestDashboardDataFlowShowsMappingsAndExplicitGaps(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, DataFlows: []DataFlowRecord{{ID: "flow", Route: "POST /users", Gaps: []DataFlowGapRecord{{Reason: "Unknown transformation", Confidence: ConfidenceUnknown}}}}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{`data-view-mode="data-flow"`, `const dataFlows=serviceMap.data_flows||[]`, `function renderDataFlow()`, `Exact · Inferred · Weak · Missing`, `Unknown transformation`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing data-flow contract %q", want)
+		}
+	}
+}
+
 func TestDashboardGraphSelectionSupportsKeyboardAndAccessibleNames(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},

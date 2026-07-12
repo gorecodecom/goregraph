@@ -793,6 +793,7 @@ type WorkspaceServiceMapRecord struct {
 	Stats         map[string]int               `json:"stats,omitempty"`
 	Capabilities  []CapabilityRecord           `json:"capabilities,omitempty"`
 	Diagnostics   []CanonicalDiagnosticRecord  `json:"diagnostics,omitempty"`
+	DataFlows     []DataFlowRecord             `json:"data_flows,omitempty"`
 }
 
 type WorkspaceServiceDependencyRecord struct {
