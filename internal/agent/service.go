@@ -79,7 +79,7 @@ func loadTask(request Request) ([]Item, []string, error) {
 			if !matchesQuery(request.Query, record.Project, record.Language, string(record.ID), string(record.Coverage), record.Reason) {
 				continue
 			}
-			items = append(items, Item{ID: "capability:" + record.Project + ":" + record.Language + ":" + string(record.ID), Kind: "capability", Title: record.Language + " / " + string(record.ID), Summary: string(record.Coverage) + " — " + record.Reason, Project: record.Project})
+			items = append(items, Item{ID: "capability:" + record.Project + ":" + record.Language + ":" + string(record.ID), Kind: "capability", Title: record.Language + " / " + string(record.ID), Summary: string(record.Coverage) + " — " + record.Reason, Project: record.Project, EvidenceIDs: record.EvidenceIDs})
 			if record.Coverage == scan.CoverageUnavailable || record.Coverage == scan.CoverageFailed {
 				warnings = appendUnique(warnings, record.Language+" / "+string(record.ID)+": "+string(record.Coverage))
 			}
@@ -107,6 +107,15 @@ func loadTask(request Request) ([]Item, []string, error) {
 		for _, r := range records {
 			if matchesQuery(request.Query, r.ID, r.Project, r.File, r.Analyzer, r.Adapter, r.Method, r.Reason) {
 				items = append(items, Item{ID: r.ID, Kind: "evidence", Title: r.File, Summary: r.Method + " — " + r.Reason, Project: r.Project, File: r.File, Line: r.Start.Line})
+			}
+		}
+		var facts []scan.ArchitectureCapabilityFact
+		if err := readOutput(request.Root, "architecture-capabilities.json", &facts); err != nil {
+			return nil, nil, err
+		}
+		for _, fact := range facts {
+			if matchesQuery(request.Query, fact.ID, fact.Language, string(fact.Capability), fact.Kind, fact.Framework, fact.File) {
+				items = append(items, Item{ID: fact.ID, Kind: "architecture_capability_evidence", Title: fact.File, Summary: string(fact.Capability) + " — " + fact.Framework + " / " + fact.Kind, File: fact.File, Line: fact.Line})
 			}
 		}
 		return items, nil, nil

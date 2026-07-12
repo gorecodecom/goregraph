@@ -68,3 +68,22 @@ func TestServiceRejectsUnsafeBoundsAndReportsCoverage(t *testing.T) {
 		t.Fatal("invalid detail accepted")
 	}
 }
+
+func TestServiceExposesReferenceCapabilityEvidence(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "client.ts"), []byte("export const load = () => fetch('/users')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scan.Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	service := Service{}
+	coverage, err := service.Run(Request{Root: root, Task: "coverage", Query: "api_clients"})
+	if err != nil || len(coverage.Items) != 1 || len(coverage.Items[0].EvidenceIDs) == 0 {
+		t.Fatalf("coverage evidence: %#v %v", coverage, err)
+	}
+	evidence, err := service.Run(Request{Root: root, Task: "evidence", Query: coverage.Items[0].EvidenceIDs[0]})
+	if err != nil || len(evidence.Items) != 1 || evidence.Items[0].File != "client.ts" {
+		t.Fatalf("architecture evidence: %#v %v", evidence, err)
+	}
+}

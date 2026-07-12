@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.9.4
+v0.9.5
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` through `v0.9.0` established packaging, static code graphs, cross-project contracts, and the workspace dashboard. `v0.9.1` delivered the Architecture-first dashboard foundation. `v0.9.2` added stable evidence and coverage. `v0.9.3` added canonical diagnostics and agent entry points. `v0.9.4` is the current local development version for directed traces, bounded traversal, Trace from here, and the language-neutral Data Flow workbench.
+`v0.1.0` through `v0.9.0` established packaging, static code graphs, cross-project contracts, and the workspace dashboard. `v0.9.1` delivered the Architecture-first dashboard foundation. `v0.9.2` added stable evidence and coverage. `v0.9.3` added canonical diagnostics and agent entry points. `v0.9.4` added directed traces, bounded traversal, Trace from here, and the language-neutral Data Flow workbench. `v0.9.5` is the current local development version and establishes evidence-backed Java/Spring and JavaScript/TypeScript/Node/React reference-adapter parity.
 
 `v0.9.2` acceptance requires `evidence.json`, `capabilities.json`, `coverage.json`, and `coverage.md`; additive `evidence_ids` on supported public facts; valid Doctor integrity checks; and a clean installed-binary workspace rescan. It does not claim full language parity, directed trace branching, or the Schema 2 public freeze.
 
