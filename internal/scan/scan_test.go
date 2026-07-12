@@ -78,6 +78,20 @@ func TestRunWritesEvidenceCapabilitiesAndCoverageOutputs(t *testing.T) {
 	}
 }
 
+func TestRunWritesPrimaryAgentMarkdownEntryPoints(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc main(){}\n")
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"workspace-summary.md", "architecture.md", "diagnostics.md", "agent-guide.md"} {
+		body := readText(t, filepath.Join(root, "goregraph-out", name))
+		if !strings.Contains(body, "goregraph query") || !strings.Contains(body, "coverage") {
+			t.Fatalf("%s lacks agent orientation:\n%s", name, body)
+		}
+	}
+}
+
 func TestRunExtractsSymbolsRelationsAndGraph(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.test/demo\n")
