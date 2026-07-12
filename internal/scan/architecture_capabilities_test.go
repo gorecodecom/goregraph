@@ -62,6 +62,17 @@ func TestReferenceAdaptersRecognizeFrameworkCapabilityFamilies(t *testing.T) {
 		{"rust tonic", "rust", `tonic::transport::Server::builder()`, CapabilityMessaging},
 		{"rust json boundary", "rust", `async fn create(Json(user): Json<User>)`, CapabilityDataFlow},
 		{"rust test", "rust", `#[tokio::test]`, CapabilityTests},
+		{"python fastapi route", "python", `@app.post("/users")`, CapabilityRoutes},
+		{"python flask route", "python", `@app.get("/users")`, CapabilityRoutes},
+		{"python requests", "python", `requests.post("/users")`, CapabilityAPIClients},
+		{"python httpx", "python", `httpx.AsyncClient()`, CapabilityAPIClients},
+		{"python sqlalchemy", "python", `from sqlalchemy import select`, CapabilityPersistence},
+		{"python django orm", "python", `class User(models.Model):`, CapabilityPersistence},
+		{"python kafka", "python", `from kafka import KafkaProducer`, CapabilityMessaging},
+		{"python celery", "python", `from celery import Celery`, CapabilityMessaging},
+		{"python grpc", "python", `grpc.server(pool)`, CapabilityMessaging},
+		{"python pydantic", "python", `class User(BaseModel):`, CapabilityDataFlow},
+		{"pytest", "python", `def test_users():`, CapabilityTests},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

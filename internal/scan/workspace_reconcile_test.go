@@ -96,6 +96,33 @@ class CadasterController {
 	}
 }
 
+func TestWorkspaceDiscoveryDoesNotRequireWekaGroupsOrServicePrefixes(t *testing.T) {
+	workspace := t.TempDir()
+	web := filepath.Join(workspace, "customer-portal")
+	api := filepath.Join(workspace, "catalog-api")
+	writeFile(t, web, "package.json", `{"name":"customer-portal"}`)
+	writeFile(t, api, "pyproject.toml", "[project]\nname='catalog-api'\n")
+	projects, err := discoverWorkspaceProjects(workspace, web, "goregraph-out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertWorkspaceProjectKindAndService(t, projects, "customer-portal", "frontend", "")
+	assertWorkspaceProjectKindAndService(t, projects, "catalog-api", "backend", "catalog-api")
+}
+
+func assertWorkspaceProjectKindAndService(t *testing.T, projects []WorkspaceProjectRecord, path, kind, service string) {
+	t.Helper()
+	for _, project := range projects {
+		if project.Path == path {
+			if project.Kind != kind || project.Service != service {
+				t.Fatalf("project %s = kind %s service %s, want %s/%s", path, project.Kind, project.Service, kind, service)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing workspace project %s", path)
+}
+
 func TestLaterBackendScanRefreshesExistingFrontendWorkspaceOverlay(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "weka")
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")

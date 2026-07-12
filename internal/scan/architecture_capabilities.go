@@ -7,7 +7,7 @@ import (
 )
 
 func extractArchitectureCapabilityFacts(file FileRecord, body string) []ArchitectureCapabilityFact {
-	if file.Language != "java" && file.Language != "javascript" && file.Language != "typescript" && file.Language != "go" && file.Language != "php" && file.Language != "rust" {
+	if file.Language != "java" && file.Language != "javascript" && file.Language != "typescript" && file.Language != "go" && file.Language != "php" && file.Language != "rust" && file.Language != "python" {
 		return nil
 	}
 	var facts []ArchitectureCapabilityFact
@@ -161,6 +161,28 @@ func architectureCapabilityMatches(language, line string) []architectureCapabili
 		}
 		if strings.Contains(trimmed, "#[test]") || strings.Contains(trimmed, "#[tokio::test]") {
 			add(CapabilityTests, "test", "Rust test/tokio test")
+		}
+	} else if language == "python" {
+		if codePythonRouteRE.MatchString(trimmed) || strings.Contains(trimmed, "path(") || strings.Contains(trimmed, "re_path(") {
+			add(CapabilityRoutes, "http_route", "FastAPI/Flask/Django")
+		}
+		if strings.Contains(lower, "requests.get(") || strings.Contains(lower, "requests.post(") || strings.Contains(lower, "httpx.") || strings.Contains(lower, "aiohttp.") {
+			add(CapabilityAPIClients, "http_client", "Python requests/httpx/aiohttp")
+		}
+		if strings.Contains(lower, "sqlalchemy") || strings.Contains(lower, "django.db") || strings.Contains(lower, "models.model") || strings.Contains(lower, "psycopg") || strings.Contains(lower, ".execute(") {
+			add(CapabilityPersistence, "persistence", "SQLAlchemy/Django ORM/DB-API")
+		}
+		if strings.Contains(lower, "kafka") || strings.Contains(lower, "celery") || strings.Contains(lower, "pika.") {
+			add(CapabilityMessaging, "message_consumer_or_producer", "Python Kafka/Celery/AMQP")
+		}
+		if strings.Contains(lower, "grpc.") || strings.Contains(lower, "_pb2_grpc") {
+			add(CapabilityMessaging, "rpc_service", "Python gRPC")
+		}
+		if strings.Contains(trimmed, "BaseModel") || strings.Contains(lower, "request.json") || strings.Contains(lower, "jsonify(") || strings.Contains(trimmed, "JSONResponse(") {
+			add(CapabilityDataFlow, "request_response_boundary", "Python web/validation")
+		}
+		if strings.HasPrefix(trimmed, "def test_") || strings.Contains(lower, "pytest") || strings.Contains(trimmed, "unittest.TestCase") {
+			add(CapabilityTests, "test", "pytest/unittest")
 		}
 	}
 	return matches

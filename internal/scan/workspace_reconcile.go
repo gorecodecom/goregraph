@@ -315,12 +315,17 @@ func addWorkspaceProject(projects map[string]WorkspaceProjectRecord, workspaceRo
 		status = "current"
 		indexed = true
 	}
+	kind := workspaceProjectKind(group, abs)
+	service := workspaceProjectService(group, abs)
+	if service == "" && kind == "backend" {
+		service = filepath.Base(abs)
+	}
 	projects[rel] = WorkspaceProjectRecord{
 		Name:      filepath.Base(abs),
 		Path:      rel,
 		AbsPath:   filepath.ToSlash(abs),
-		Kind:      workspaceProjectKind(group, abs),
-		Service:   workspaceProjectService(group, abs),
+		Kind:      kind,
+		Service:   service,
 		Indexed:   indexed,
 		Status:    status,
 		OutputDir: outputDir,
@@ -348,7 +353,7 @@ func workspaceProjectKind(group, abs string) string {
 	if workspaceFileExists(filepath.Join(abs, "package.json")) {
 		return "frontend"
 	}
-	if workspaceFileExists(filepath.Join(abs, "pom.xml")) || workspaceFileExists(filepath.Join(abs, "build.gradle")) || workspaceFileExists(filepath.Join(abs, "build.gradle.kts")) {
+	if workspaceFileExists(filepath.Join(abs, "pom.xml")) || workspaceFileExists(filepath.Join(abs, "build.gradle")) || workspaceFileExists(filepath.Join(abs, "build.gradle.kts")) || workspaceFileExists(filepath.Join(abs, "go.mod")) || workspaceFileExists(filepath.Join(abs, "Cargo.toml")) || workspaceFileExists(filepath.Join(abs, "composer.json")) || workspaceFileExists(filepath.Join(abs, "pyproject.toml")) || workspaceFileExists(filepath.Join(abs, "requirements.txt")) || workspaceFileExists(filepath.Join(abs, "setup.py")) {
 		return "backend"
 	}
 	return "project"

@@ -74,6 +74,21 @@ async fn create_user(Json(user): Json<User>) -> Json<User> {
 }
 #[tokio::test]
 async fn creates_user() { create_user(request()).await; }
+`}}, {name: "python", languages: []string{"python"}, files: map[string]string{"requirements.txt": "fastapi\nsqlalchemy\nhttpx\n", "app.py": `from fastapi import FastAPI
+from pydantic import BaseModel
+app = FastAPI()
+class User(BaseModel):
+    name: str
+@app.post("/users")
+def create_user(user: User):
+    database.execute("insert into users")
+    requests.post("/audit")
+    kafka.send("users", user)
+    grpc.server(pool)
+    return JSONResponse(user.dict())
+`, "test_app.py": `import pytest
+def test_create_user():
+    create_user(User(name="Ada"))
 `}}}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
