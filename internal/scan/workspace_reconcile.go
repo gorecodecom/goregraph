@@ -78,6 +78,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 		serviceMap.Diagnostics = append(serviceMap.Diagnostics, project.diagnostics...)
 	}
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
+	directedTraces := BuildDirectedTraceIndex(endpointTraces)
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
@@ -106,6 +107,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 		return nil, err
 	}
 	if err := writeJSON(filepath.Join(workspaceOut, "workspace-endpoint-traces.json"), endpointTraces); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(filepath.Join(workspaceOut, "directed-traces.json"), directedTraces); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-map.html"), []byte(RenderWorkspaceDashboardHTMLWithModels(workspaceGraph, serviceMap, endpointTraces, matches, featureDossiers)), 0o644); err != nil {
