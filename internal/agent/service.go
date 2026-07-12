@@ -155,7 +155,13 @@ func loadTask(request Request) ([]Item, []string, error) {
 		items := []Item{}
 		for _, record := range index.Traces {
 			if matchesQuery(request.Query, record.ID, record.Route) {
-				items = append(items, Item{ID: record.ID, Kind: "directed_trace", Title: firstText(record.Route, record.ID), Summary: fmt.Sprintf("%d nodes / %d edges", len(record.Nodes), len(record.Edges)), Data: map[string]any{"trace": record}})
+				data := map[string]any(nil)
+				if request.Detail == "standard" {
+					data = map[string]any{"entry_nodes": record.EntryNodes, "exit_nodes": record.ExitNodes, "main_path": record.MainPath, "branches": len(record.Branches), "cycles": len(record.Cycles), "truncated": record.Truncated}
+				} else if request.Detail == "full" {
+					data = map[string]any{"trace": record}
+				}
+				items = append(items, Item{ID: record.ID, Kind: "directed_trace", Title: firstText(record.Route, record.ID), Summary: fmt.Sprintf("%d nodes / %d edges", len(record.Nodes), len(record.Edges)), Data: data})
 			}
 		}
 		return items, nil, nil
@@ -187,7 +193,13 @@ func loadTask(request Request) ([]Item, []string, error) {
 		items := []Item{}
 		for _, record := range records {
 			if matchesQuery(request.Query, record.ID, record.Route, record.Project) {
-				items = append(items, Item{ID: record.ID, Kind: "data_flow", Title: record.Route, Summary: fmt.Sprintf("%d nodes / %d gaps", len(record.Nodes), len(record.Gaps)), Project: record.Project, Data: map[string]any{"flow": record}})
+				data := map[string]any(nil)
+				if request.Detail == "standard" {
+					data = map[string]any{"gaps": record.Gaps}
+				} else if request.Detail == "full" {
+					data = map[string]any{"flow": record}
+				}
+				items = append(items, Item{ID: record.ID, Kind: "data_flow", Title: record.Route, Summary: fmt.Sprintf("%d nodes / %d gaps", len(record.Nodes), len(record.Gaps)), Project: record.Project, Data: data})
 			}
 		}
 		return items, nil, nil
