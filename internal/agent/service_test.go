@@ -47,7 +47,7 @@ func TestServiceBoundsResultsAndContinuesDeterministically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Schema != 1 || first.Task != "coverage" || len(first.Items) != 2 || !first.Truncated || first.Continuation == "" {
+	if first.Schema != scan.SchemaVersion || first.Task != "coverage" || len(first.Items) != 2 || !first.Truncated || first.Continuation == "" {
 		t.Fatalf("unexpected first result: %#v", first)
 	}
 	second, err := service.Run(Request{Root: root, Task: "coverage", Limit: 2, Continuation: first.Continuation})

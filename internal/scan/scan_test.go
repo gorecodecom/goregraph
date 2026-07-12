@@ -336,8 +336,8 @@ func TestRunProducesDeterministicManifestGoldenOutput(t *testing.T) {
 	if manifest.Tool != "goregraph" {
 		t.Fatalf("Tool = %q, want goregraph", manifest.Tool)
 	}
-	if manifest.Schema != 1 {
-		t.Fatalf("Schema = %d, want 1", manifest.Schema)
+	if manifest.Schema != SchemaVersion {
+		t.Fatalf("Schema = %d, want %d", manifest.Schema, SchemaVersion)
 	}
 	if manifest.OutputDir != "goregraph-out" {
 		t.Fatalf("OutputDir = %q, want goregraph-out", manifest.OutputDir)

@@ -15,7 +15,7 @@ import (
 
 const (
 	ToolName      = "goregraph"
-	SchemaVersion = 1
+	SchemaVersion = 2
 )
 
 var GeneratedFiles = []string{

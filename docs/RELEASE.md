@@ -5,10 +5,10 @@
 Current release target:
 
 ```text
-v0.9.8
+v1.0.0-rc.1
 ```
 
-`1.0.0` is reserved for a stable public CLI and schema contract.
+`1.0.0-rc.1` freezes the candidate public CLI and Schema 2 contract. `1.0.0` remains fixes-only and requires final acceptance.
 
 ## Required Secrets
 
@@ -22,7 +22,9 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` through `v0.9.0` established packaging, static code graphs, cross-project contracts, and the workspace dashboard. `v0.9.1` delivered the Architecture-first dashboard foundation. `v0.9.2` added stable evidence and coverage. `v0.9.3` added canonical diagnostics and agent entry points. `v0.9.4` added directed traces and Data Flow. `v0.9.5` established Java/Spring and JS/TS/Node/React parity. `v0.9.6` added Go and PHP parity. `v0.9.7` added Rust parity. `v0.9.8` is the current local development version and adds Python parity plus generic project-marker-based workspace discovery while retaining honest Shell integration coverage.
+`v0.1.0` through `v0.9.8` established packaging, the Architecture-first dashboard, evidence, diagnostics, Query/MCP, directed traces, Data Flow, full Java/Spring, JS/TS/Node/React, Go, PHP, Rust, and Python adapters, honest Shell integration, and generic workspace discovery. `v1.0.0-rc.1` is the current local development version and freezes Schema 2 plus the CLI/Query/MCP contracts for final acceptance.
+
+Milestone history includes `v0.9.4` for directed traces and Data Flow.
 
 `v0.9.2` acceptance requires `evidence.json`, `capabilities.json`, `coverage.json`, and `coverage.md`; additive `evidence_ids` on supported public facts; valid Doctor integrity checks; and a clean installed-binary workspace rescan. It does not claim full language parity, directed trace branching, or the Schema 2 public freeze.
 
@@ -271,12 +273,12 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 0.9.1
+goregraph 1.0.0-rc.1
 commit: <commit>
 built: <timestamp>
 go: <go-version>
 platform: <os>/<arch>
-schema: 1
+schema: 2
 ```
 
 ## Release Flow

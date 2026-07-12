@@ -556,12 +556,12 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 0.9.8",
+		"goregraph 1.0.0-rc.1",
 		"commit:",
 		"built:",
 		"go:",
 		"platform:",
-		"schema: 1",
+		"schema: 2",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("version output missing %q:\n%s", want, stdout.String())

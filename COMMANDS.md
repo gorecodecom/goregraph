@@ -593,7 +593,7 @@ Common output:
 
 ```text
 OK   output: goregraph-out exists
-OK   schema: version 1 supported
+OK   schema: version 2 supported
 WARN stale: 1 indexed files changed or disappeared
 
 Suggested fix:
@@ -793,7 +793,7 @@ The dashboard is normally generated at:
 <workspace>/.goregraph-workspace/workspace-map.html
 ```
 
-The 0.9.8 dashboard is organized around five views:
+The 1.0.0-rc.1 dashboard is organized around five views:
 
 - **Architecture** is the first and default view. Selecting a service highlights its direct incoming and outgoing relationships without moving the full map. **Isolate neighborhood** explicitly narrows the graph; **Show full architecture** restores it.
 - **Endpoints** shows the endpoint inventory for a selected service and opens a directed implementation trace for a selected endpoint. Selecting a trace step focuses that point in the path, and **Back to endpoint inventory** restores the inventory context.
@@ -949,12 +949,12 @@ goregraph version
 Expected output:
 
 ```text
-goregraph 0.9.8
+goregraph 1.0.0-rc.1
 commit: dev
 built: unknown
 go: go1.26.x
 platform: darwin/arm64
-schema: 1
+schema: 2
 ```
 
 Field meaning:

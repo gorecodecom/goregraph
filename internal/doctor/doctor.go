@@ -63,7 +63,7 @@ func checkManifest(out string, result *Result) (scan.Manifest, bool) {
 	result.ok("manifest", "manifest.json valid")
 
 	if manifest.Schema != scan.SchemaVersion {
-		result.fail("schema", fmt.Sprintf("version %d unsupported, want %d", manifest.Schema, scan.SchemaVersion))
+		result.fail("schema", fmt.Sprintf("version %d unsupported, want %d; reinstall GoreGraph, clean generated output, and rescan", manifest.Schema, scan.SchemaVersion))
 		return manifest, false
 	}
 	result.ok("schema", fmt.Sprintf("version %d supported", manifest.Schema))

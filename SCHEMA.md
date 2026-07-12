@@ -7,7 +7,7 @@ GoreGraph output is designed to be deterministic and safe for humans, CLI comman
 Current schema version:
 
 ```text
-1
+2
 ```
 
 The schema version is written to:
@@ -21,12 +21,16 @@ Example:
 ```json
 {
   "tool": "goregraph",
-  "schema": 1,
+  "schema": 2,
   "output_dir": "goregraph-out"
 }
 ```
 
 ## Compatibility Rule
+
+Schema 2 is the 1.0 contract candidate. Schema 1 indexes are not rewritten in place because mixed-generation workspaces could otherwise combine incompatible assumptions. Install the new binary, preview `goregraph workspace clean .`, execute only the listed generated output cleanup with `--execute`, and run `goregraph workspace scan-all .`. Doctor rejects stale Schema 1 manifests with this rescan guidance.
+
+Within Schema 2, existing fields and enum meanings are frozen. Compatible releases may add optional fields and new output files; they do not silently change existing field, evidence, coverage, confidence, resolution, severity, Query-task, or MCP-tool meanings.
 
 GoreGraph commands only support the current schema version.
 
