@@ -679,6 +679,23 @@ func TestDashboardDataFlowShowsMappingsAndExplicitGaps(t *testing.T) {
 	}
 }
 
+func TestDashboardDataFlowUsesSpecificHelpAndClearSelection(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{
+		`function modeHelpText(mode)`,
+		`case "data-flow":return "Choose one endpoint to inspect how request data reaches validation, persistence, messages, and the response."`,
+		`if(state.mode==="data-flow"){state.selectedDataFlow=null;state.selectedDataFlowNode=null;}`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing Data Flow help/clear behavior %q", want)
+		}
+	}
+}
+
 func TestDashboardSwitchesBetweenGraphAndReadableWorkbench(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
