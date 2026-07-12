@@ -16,7 +16,7 @@ GoreGraph outputs are additive. Existing field meanings must remain stable; new 
 
 ## Full Adapter Evidence
 
-- `architecture-capabilities.json`: normalized, deterministic file/line facts emitted by the Java/Spring, JavaScript/TypeScript/Node/React, Go, and PHP full adapters for routes, API clients, tests, persistence, messaging/RPC, validation, and request/response boundaries.
+- `architecture-capabilities.json`: normalized, deterministic file/line facts emitted by the Java/Spring, JavaScript/TypeScript/Node/React, Go, PHP, and Rust full adapters for routes, API clients, tests, persistence, messaging/RPC, validation, and request/response boundaries.
 - `capabilities.json`: analyzer support declarations. Reference-adapter records link detected normalized facts through `evidence_ids`.
 - Query and MCP `coverage` return those evidence IDs; Query and MCP `evidence` resolve both source evidence and architecture-capability evidence.
 
