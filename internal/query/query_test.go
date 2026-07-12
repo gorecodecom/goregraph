@@ -30,6 +30,23 @@ func TestSearchFindsMatchingSymbolsAndFiles(t *testing.T) {
 	}
 }
 
+func TestRunTaskReturnsBoundedJSONEnvelope(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")
+	if _, err := scan.Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunTask(TaskOptions{Root: root, Task: "coverage", Format: "json", Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"task": "coverage"`, `"truncated": true`, `"continuation":`} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("task result missing %q:\n%s", want, result)
+		}
+	}
+}
+
 func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")

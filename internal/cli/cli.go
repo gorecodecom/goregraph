@@ -760,6 +760,44 @@ func runQuery(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, "error: usage: goregraph query <path> <term>\n")
 		return 2
 	}
+	if isAgentQueryTask(args[1]) {
+		options := query.TaskOptions{Root: args[0], Task: args[1], Format: "json"}
+		for i := 2; i < len(args); i++ {
+			if i+1 >= len(args) {
+				fmt.Fprintf(stderr, "error: query option %s requires a value\n", args[i])
+				return 2
+			}
+			value := args[i+1]
+			i++
+			switch args[i-1] {
+			case "--query":
+				options.Query = value
+			case "--format":
+				options.Format = value
+			case "--detail":
+				options.Detail = value
+			case "--limit":
+				parsed, err := strconv.Atoi(value)
+				if err != nil {
+					fmt.Fprintln(stderr, "error: --limit must be an integer")
+					return 2
+				}
+				options.Limit = parsed
+			case "--continue":
+				options.Continuation = value
+			default:
+				fmt.Fprintf(stderr, "error: unknown query option %s\n", args[i-1])
+				return 2
+			}
+		}
+		result, err := query.RunTask(options)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: query failed: %v\n", err)
+			return 1
+		}
+		_, _ = stdout.Write([]byte(result))
+		return 0
+	}
 	result, err := query.Search(args[0], strings.Join(args[1:], " "))
 	if err != nil {
 		fmt.Fprintf(stderr, "error: query failed: %v\n", err)
@@ -767,6 +805,15 @@ func runQuery(args []string, stdout, stderr io.Writer) int {
 	}
 	_, _ = stdout.Write([]byte(result))
 	return 0
+}
+
+func isAgentQueryTask(value string) bool {
+	switch value {
+	case "workspace-summary", "service-context", "endpoint-search", "diagnostics", "coverage", "evidence", "tests", "change-context":
+		return true
+	default:
+		return false
+	}
 }
 
 func runExplain(args []string, stdout, stderr io.Writer) int {

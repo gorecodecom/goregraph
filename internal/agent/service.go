@@ -96,6 +96,55 @@ func loadTask(request Request) ([]Item, []string, error) {
 			items = append(items, Item{ID: record.ID, Kind: "diagnostic", Title: record.Title, Summary: record.Explanation, Confidence: string(record.Confidence), Resolution: string(record.Resolution), EvidenceIDs: record.EvidenceIDs, Data: map[string]any{"code": record.Code, "severity": record.Severity, "next_checks": record.NextChecks}})
 		}
 		return items, nil, nil
+	case "evidence":
+		var records []scan.EvidenceRecord
+		if err := readOutput(request.Root, "evidence.json", &records); err != nil {
+			return nil, nil, err
+		}
+		items := []Item{}
+		for _, r := range records {
+			if matchesQuery(request.Query, r.ID, r.Project, r.File, r.Analyzer, r.Adapter, r.Method, r.Reason) {
+				items = append(items, Item{ID: r.ID, Kind: "evidence", Title: r.File, Summary: r.Method + " — " + r.Reason, Project: r.Project, File: r.File, Line: r.Start.Line})
+			}
+		}
+		return items, nil, nil
+	case "tests":
+		var records []scan.TestMapRecord
+		if err := readOutput(request.Root, "test-map.json", &records); err != nil {
+			return nil, nil, err
+		}
+		items := []Item{}
+		for _, r := range records {
+			id := "test:" + r.TestFile + ":" + strconv.Itoa(r.Line)
+			if matchesQuery(request.Query, r.TestFile, r.TestMethod, r.TargetFile, r.TargetMethod, r.Path) {
+				items = append(items, Item{ID: id, Kind: "test", Title: firstText(r.TestMethod, r.TestFile), Summary: firstText(r.TargetMethod, r.Path, r.Type), File: r.TestFile, Line: r.Line, Confidence: r.Confidence})
+			}
+		}
+		return items, nil, nil
+	case "endpoint-search", "service-context":
+		var records []scan.CodeRouteRecord
+		if err := readOutput(request.Root, "routes.json", &records); err != nil {
+			return nil, nil, err
+		}
+		items := []Item{}
+		for _, r := range records {
+			if matchesQuery(request.Query, r.HTTPMethod, r.Path, r.Handler, r.File, r.Framework) {
+				items = append(items, Item{ID: firstText(r.RouteID, "route:"+r.File+":"+strconv.Itoa(r.Line)), Kind: "route", Title: r.HTTPMethod + " " + r.Path, Summary: r.Framework + " / " + r.Handler, File: r.File, Line: r.Line, Confidence: r.Confidence, EvidenceIDs: r.EvidenceIDs})
+			}
+		}
+		return items, nil, nil
+	case "workspace-summary":
+		var manifest scan.Manifest
+		if err := readOutput(request.Root, "manifest.json", &manifest); err != nil {
+			return nil, nil, err
+		}
+		return []Item{{ID: "workspace:" + manifest.ProjectRoot, Kind: "workspace", Title: manifest.ProjectRoot, Summary: fmt.Sprintf("%d indexed files; schema %d", manifest.Files, manifest.Schema), Data: map[string]any{"generated": manifest.Generated}}}, nil, nil
+	case "change-context":
+		body, err := readOutputText(request.Root, "affected.md")
+		if err != nil {
+			return nil, nil, err
+		}
+		return []Item{{ID: "change-context", Kind: "change_context", Title: "Generated change context", Summary: body}}, nil, nil
 	default:
 		return nil, nil, fmt.Errorf("unknown agent task %q", request.Task)
 	}
@@ -111,6 +160,25 @@ func readOutput(root, name string, dest any) error {
 		return fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
 	}
 	return json.Unmarshal(body, dest)
+}
+func readOutputText(root, name string) (string, error) {
+	cfg, err := config.Load(root)
+	if err != nil {
+		return "", err
+	}
+	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, name))
+	if err != nil {
+		return "", fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
+	}
+	return string(body), nil
+}
+func firstText(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return "unknown"
 }
 func matchesQuery(query string, values ...string) bool {
 	q := strings.ToLower(strings.TrimSpace(query))

@@ -8,9 +8,56 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gorecodecom/goregraph/internal/agent"
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
+
+type TaskOptions struct {
+	Root, Task, Query, Format, Detail, Continuation string
+	Limit                                           int
+}
+
+func RunTask(options TaskOptions) (string, error) {
+	result, err := (agent.Service{}).Run(agent.Request{Root: options.Root, Task: options.Task, Query: options.Query, Format: options.Format, Detail: options.Detail, Limit: options.Limit, Continuation: options.Continuation})
+	if err != nil {
+		return "", err
+	}
+	if options.Format == "text" || options.Format == "markdown" {
+		return renderTaskText(result, options.Format == "markdown"), nil
+	}
+	body, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(body) + "\n", nil
+}
+
+func renderTaskText(result agent.Result, markdown bool) string {
+	var lines []string
+	heading := "GoreGraph " + result.Task
+	if markdown {
+		heading = "# " + heading
+	}
+	lines = append(lines, heading, "")
+	for _, warning := range result.CoverageWarnings {
+		lines = append(lines, "WARNING: "+warning)
+	}
+	for _, item := range result.Items {
+		prefix := "- "
+		lines = append(lines, prefix+item.Title+" — "+item.Summary)
+	}
+	if len(result.Items) == 0 {
+		lines = append(lines, "No matching generated facts. Review coverage before concluding that the behavior is absent.")
+	}
+	if result.Continuation != "" {
+		lines = append(lines, "", "Continuation: "+result.Continuation)
+	}
+	if result.SuggestedNext != "" {
+		lines = append(lines, "Suggested next: "+result.SuggestedNext)
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
 
 func Search(root, term string) (string, error) {
 	term = strings.TrimSpace(term)
