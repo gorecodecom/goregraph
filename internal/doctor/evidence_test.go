@@ -47,6 +47,25 @@ func TestDoctorRejectsInvalidCoverageValue(t *testing.T) {
 	}
 }
 
+func TestDoctorRejectsDanglingCapabilityEvidence(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "client.ts"), []byte("export const load = () => fetch('/users')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scan.Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "goregraph-out", "architecture-capabilities.json")
+	writeTestJSON(t, path, []scan.ArchitectureCapabilityFact{})
+	result, err := Run(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failures == 0 || !containsLine(result.Lines, "dangling capability evidence") {
+		t.Fatalf("dangling capability evidence passed Doctor: %v", result.Lines)
+	}
+}
+
 func scannedProject(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

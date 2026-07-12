@@ -12,9 +12,15 @@ func extractArchitectureCapabilityFacts(file FileRecord, body string) []Architec
 	}
 	var facts []ArchitectureCapabilityFact
 	for index, line := range strings.Split(body, "\n") {
+		seen := map[string]bool{}
 		for _, match := range architectureCapabilityMatches(file.Language, line) {
+			key := string(match.capability) + ":" + match.kind + ":" + match.framework
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			facts = append(facts, ArchitectureCapabilityFact{
-				ID:         fmt.Sprintf("cap:%s:%s:%s:%d", file.Language, match.capability, file.Path, index+1),
+				ID:         fmt.Sprintf("cap:%s:%s:%s:%s:%d", file.Language, match.capability, match.kind, file.Path, index+1),
 				Language:   file.Language,
 				Capability: match.capability,
 				Kind:       match.kind,
@@ -41,6 +47,9 @@ func architectureCapabilityMatches(language, line string) []architectureCapabili
 		matches = append(matches, architectureCapabilityMatch{capability: capability, kind: kind, framework: framework})
 	}
 	if language == "java" {
+		if strings.Contains(trimmed, "@GetMapping") || strings.Contains(trimmed, "@PostMapping") || strings.Contains(trimmed, "@PutMapping") || strings.Contains(trimmed, "@DeleteMapping") || strings.Contains(trimmed, "@PatchMapping") || strings.Contains(trimmed, "@RequestMapping") {
+			add(CapabilityRoutes, "http_route", "Spring MVC/WebFlux")
+		}
 		if strings.Contains(trimmed, "RestTemplate") || strings.Contains(trimmed, "WebClient") || strings.Contains(trimmed, "FeignClient") || strings.Contains(trimmed, "HttpClient") {
 			add(CapabilityAPIClients, "http_client", "Spring/Java HTTP")
 		}
@@ -56,11 +65,23 @@ func architectureCapabilityMatches(language, line string) []architectureCapabili
 		if strings.Contains(trimmed, "@Valid") || strings.Contains(trimmed, "@Validated") {
 			add(CapabilityDataFlow, "validation_boundary", "Jakarta Validation")
 		}
+		if strings.Contains(trimmed, "@Test") || strings.Contains(trimmed, "MockMvc") || strings.Contains(trimmed, "WebTestClient") {
+			add(CapabilityTests, "test", "JUnit/Spring Test")
+		}
 	} else {
+		if strings.Contains(lower, "app.get(") || strings.Contains(lower, "app.post(") || strings.Contains(lower, "router.get(") || strings.Contains(lower, "router.post(") {
+			add(CapabilityRoutes, "http_route", "Express/Fastify")
+		}
+		if strings.Contains(trimmed, "@Controller(") || strings.Contains(trimmed, "@Get(") || strings.Contains(trimmed, "@Post(") {
+			add(CapabilityRoutes, "http_route", "NestJS")
+		}
+		if strings.Contains(lower, "nexthandler") || strings.Contains(lower, "nextrequest") || strings.Contains(lower, "getserversideprops") {
+			add(CapabilityRoutes, "http_route", "Next.js")
+		}
 		if strings.Contains(lower, "fetch(") || strings.Contains(lower, "axios.") || strings.Contains(lower, "httpclient.") {
 			add(CapabilityAPIClients, "http_client", "Web/Node HTTP")
 		}
-		if strings.Contains(lower, "prisma.") || strings.Contains(lower, "typeorm") || strings.Contains(lower, "sequelize") || strings.Contains(lower, "mongoose") {
+		if strings.Contains(lower, "prisma.") || strings.Contains(lower, "typeorm") || strings.Contains(lower, "sequelize") || strings.Contains(lower, "mongoose") || strings.Contains(lower, "db.query(") {
 			add(CapabilityPersistence, "persistence", "Node persistence")
 		}
 		if strings.Contains(lower, "producer.send(") || strings.Contains(lower, "consumer.subscribe(") || strings.Contains(lower, "kafka.") || strings.Contains(lower, "amqplib") {
@@ -71,6 +92,9 @@ func architectureCapabilityMatches(language, line string) []architectureCapabili
 		}
 		if strings.Contains(lower, "req.body") || strings.Contains(lower, "res.json(") {
 			add(CapabilityDataFlow, "request_response_boundary", "Node HTTP")
+		}
+		if strings.Contains(lower, "test(") || strings.Contains(lower, "it(") || strings.Contains(lower, "describe(") || strings.Contains(lower, "render(") {
+			add(CapabilityTests, "test", "Jest/Vitest/Node Test/RTL")
 		}
 	}
 	return matches

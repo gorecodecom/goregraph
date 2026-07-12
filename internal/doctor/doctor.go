@@ -102,6 +102,7 @@ func checkJSONFiles(out string, result *Result) {
 		{"routes.json", &[]scan.CodeRouteRecord{}},
 		{"flows.json", &[]scan.CodeFlowRecord{}},
 		{"api-contracts.json", &[]scan.APIContractRecord{}},
+		{"architecture-capabilities.json", &[]scan.ArchitectureCapabilityFact{}},
 		{"contract-matches.json", &[]scan.ContractMatchRecord{}},
 		{"diagnostics.json", &scan.DiagnosticsRecord{}},
 		{"diagnostics-canonical.json", &[]scan.CanonicalDiagnosticRecord{}},
@@ -127,9 +128,10 @@ func checkJSONFiles(out string, result *Result) {
 
 func checkEvidenceIntegrity(out string, result *Result) {
 	var evidence []scan.EvidenceRecord
+	var architectureFacts []scan.ArchitectureCapabilityFact
 	var capabilities []scan.CapabilityRecord
 	var coverage scan.CoverageRecord
-	if readJSON(filepath.Join(out, "evidence.json"), &evidence) != nil || readJSON(filepath.Join(out, "capabilities.json"), &capabilities) != nil || readJSON(filepath.Join(out, "coverage.json"), &coverage) != nil {
+	if readJSON(filepath.Join(out, "evidence.json"), &evidence) != nil || readJSON(filepath.Join(out, "architecture-capabilities.json"), &architectureFacts) != nil || readJSON(filepath.Join(out, "capabilities.json"), &capabilities) != nil || readJSON(filepath.Join(out, "coverage.json"), &coverage) != nil {
 		return
 	}
 	known := map[string]bool{}
@@ -140,9 +142,20 @@ func checkEvidenceIntegrity(out string, result *Result) {
 		}
 		known[record.ID] = true
 	}
+	for _, record := range architectureFacts {
+		if record.ID == "" || known[record.ID] {
+			result.fail("evidence", "duplicate or empty architecture capability evidence ID")
+			return
+		}
+		known[record.ID] = true
+	}
 	for _, record := range capabilities {
 		if err := record.Coverage.Validate(); err != nil {
 			result.fail("coverage", "invalid coverage: "+err.Error())
+			return
+		}
+		if danglingEvidence(record.EvidenceIDs, known) {
+			result.fail("evidence", "dangling capability evidence reference")
 			return
 		}
 	}
