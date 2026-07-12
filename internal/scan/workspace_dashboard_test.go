@@ -549,6 +549,34 @@ func TestDashboardEndpointCardsReserveSpaceForWrappedTitles(t *testing.T) {
 	}
 }
 
+func TestDashboardEndpointFiltersSupportDebuggingAndSurviveTraceNavigation(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`id="endpoint-filters"`,
+		`data-endpoint-method="DELETE"`,
+		`data-endpoint-method="PUT"`,
+		`id="endpoint-caller-filter" multiple`,
+		`id="endpoint-provider-filter" multiple`,
+		`data-endpoint-status="unresolved"`,
+		`id="clear-endpoint-filters"`,
+		`id="endpoint-filter-summary" aria-live="polite"`,
+		`endpointFilters:{methods:new Set(),callers:new Set(),providers:new Set(),statuses:new Set()}`,
+		`function endpointRowMatchesFilters(row)`,
+		`function clearEndpointFilters()`,
+		`returnToEndpointInventory(){if(!traceById.has(state.selected))return;`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing endpoint debugging filter contract %q", want)
+		}
+	}
+}
+
 func TestDashboardGraphSelectionSupportsKeyboardAndAccessibleNames(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
