@@ -46,7 +46,7 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 			"WINGET_TOKEN",
 		},
 		"docs/RELEASE.md": {
-			"v0.9.1",
+			"v0.9.2",
 			"Architecture",
 			"Endpoints",
 			"Diagnostics",

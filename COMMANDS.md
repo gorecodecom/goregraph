@@ -792,11 +792,12 @@ The dashboard is normally generated at:
 <workspace>/.goregraph-workspace/workspace-map.html
 ```
 
-The 0.9.1 dashboard is organized around three views:
+The 0.9.2 dashboard is organized around four views:
 
 - **Architecture** is the first and default view. Selecting a service highlights its direct incoming and outgoing relationships without moving the full map. **Isolate neighborhood** explicitly narrows the graph; **Show full architecture** restores it.
 - **Endpoints** shows the endpoint inventory for a selected service and opens a directed implementation trace for a selected endpoint. Selecting a trace step focuses that point in the path, and **Back to endpoint inventory** restores the inventory context.
 - **Diagnostics** explains relationships GoreGraph could not safely confirm, including the classification, reason, possible impact, evidence, and suggested next check. Expected frontend-internal behavior is distinguished from likely defects or incomplete scan coverage.
+- **Coverage** shows analyzer support per project, language, and capability as `COMPLETE`, `PARTIAL`, `UNAVAILABLE`, or `FAILED`. It describes analysis coverage, not whether source behavior exists.
 
 Important behavior:
 
@@ -946,7 +947,7 @@ goregraph version
 Expected output:
 
 ```text
-goregraph 0.9.1
+goregraph 0.9.2
 commit: dev
 built: unknown
 go: go1.26.x

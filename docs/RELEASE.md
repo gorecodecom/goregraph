@@ -5,7 +5,7 @@
 Current release target:
 
 ```text
-v0.9.1
+v0.9.2
 ```
 
 `1.0.0` is reserved for a stable public CLI and schema contract.
@@ -22,7 +22,9 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` has been released publicly. `v0.1.1` validated the package-manager release flow for Homebrew, Scoop, and manual Winget PR publishing. `v0.2.0` adds the universal safe code graph outputs and Java/Spring deep analysis. `v0.2.1` keeps those features and hardens the release workflow so Winget PR submission no longer turns otherwise successful releases red. `v0.4.0` adds endpoint hardening, Java/Spring call graph output, endpoint flows, method-aware test mapping, and analyzer inventory. `v0.5.0` adds route, flow, call, test, and navigation intelligence for Go, PHP, JavaScript/TypeScript/React, Python, and Shell. `v0.6.0` adds frontend monorepo hardening, package graphs, API contracts, and lower-noise JS/TS analysis. `v0.7.0` targets realistic frontend API helper extraction, app-aware frontend resolver ranking, and Maven dependency graph output. `v0.8.0` adds frontend API to backend route contract matching, safer URL normalization, and explicit weak/static contract issue reports. `v0.8.1` adds diagnostics, unscanned-service classification, and lower-noise affected output. `v0.8.2` adds zero-config workspace discovery and cross-project overlay refreshes. `v0.8.3` adds workspace query fallback, integrated workspace diagnostics, frontend consumers in endpoints, end-to-end workspace feature flows, stricter path matching, and generated-output gitignore handling. `v0.8.4` adds consistent workspace diagnostics, clearer frontend-consumer report scope, and actionable missing-test reasons in feature flows. `v0.8.5` adds frontend route/component context in workspace feature flows. `v0.8.6` adds component-aware frontend route flows and parent-aware workspace root detection. `v0.8.7` adds clearer workspace diagnostics when indexed services have no matching backend route. `v0.8.8` adds project-local workspace contract JSON overlays refreshed after later sibling scans. `v0.8.9` adds full-workspace scan and clean commands plus deeper workspace change-safety outputs. `v0.9.0` adds the workspace understanding dashboard, graph navigation commands, and broader language inventory. `v0.9.1` is the current local development version for the Architecture-first dashboard foundation.
+`v0.1.0` through `v0.9.0` established packaging, static code graphs, cross-project contracts, and the workspace dashboard. `v0.9.1` delivered the Architecture-first dashboard foundation. `v0.9.2` is the current local development version for stable evidence, separated status dimensions, honest capability coverage, Endpoint debugging filters, Doctor integrity checks, and the Coverage dashboard.
+
+`v0.9.2` acceptance requires `evidence.json`, `capabilities.json`, `coverage.json`, and `coverage.md`; additive `evidence_ids` on supported public facts; valid Doctor integrity checks; and a clean installed-binary workspace rescan. It does not claim full language parity, directed trace branching, or the Schema 2 public freeze.
 
 Completed release checks:
 
