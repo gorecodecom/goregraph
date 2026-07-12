@@ -568,7 +568,7 @@ func TestDashboardEndpointCardsReserveSpaceForWrappedTitles(t *testing.T) {
 		nil,
 		nil,
 	)
-	for _, want := range []string{`.endpoint-inventory-cell strong{font-size:14px;line-height:1.35;overflow-wrap:anywhere}`, `.endpoint-inventory-row{grid-template-columns:1fr}`} {
+	for _, want := range []string{`.endpoint-inventory-cell strong{font-size:14px;line-height:1.35;overflow-wrap:anywhere}`, `.endpoint-inventory-row{grid-template-columns:1fr}`, `.relation-row strong{display:block;font-size:14px;overflow-wrap:anywhere;word-break:break-word}`} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("endpoint rows do not preserve readable wrapped titles: missing %q", want)
 		}
@@ -716,11 +716,13 @@ func TestDashboardSwitchesBetweenGraphAndReadableWorkbench(t *testing.T) {
 	for _, want := range []string{
 		`id="workspace-workbench" class="workspace-workbench" hidden`,
 		`function setCanvasPresentation(kind,mode)`,
+		`function setElementHidden(element,hidden)`,
+		`if(hidden)element.setAttribute("hidden","");else element.removeAttribute("hidden")`,
 		`main.classList.toggle("workbench-view",workbench)`,
 		`main.dataset.activeView=mode`,
-		`document.getElementById("workspace-graph").hidden=workbench`,
-		`document.getElementById("workspace-workbench").hidden=!workbench`,
-		`document.querySelector(".canvas-tools").hidden=workbench`,
+		`setElementHidden(document.getElementById("workspace-graph"),workbench)`,
+		`setElementHidden(document.getElementById("workspace-workbench"),!workbench)`,
+		`setElementHidden(document.querySelector(".canvas-tools"),workbench)`,
 		`workbenchModes=new Set(["endpoints","data-flow","coverage"])`,
 		`setCanvasPresentation(workbench?"workbench":"graph",state.mode)`,
 	} {
