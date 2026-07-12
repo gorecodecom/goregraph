@@ -79,6 +79,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	}
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	directedTraces := BuildDirectedTraceIndex(endpointTraces)
+	endpointTraces.Directed = directedTraces.Traces
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")

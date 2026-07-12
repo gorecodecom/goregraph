@@ -842,6 +842,7 @@ type WorkspaceEndpointTraceIndexRecord struct {
 	Generated     string                         `json:"generated,omitempty"`
 	Traces        []WorkspaceEndpointTraceRecord `json:"traces"`
 	Stats         map[string]int                 `json:"stats,omitempty"`
+	Directed      []DirectedTraceRecord          `json:"directed,omitempty"`
 }
 
 type WorkspaceEndpointTraceRecord struct {

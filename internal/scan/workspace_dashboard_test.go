@@ -597,6 +597,20 @@ func TestDashboardCoverageViewExplainsCapabilityMatrix(t *testing.T) {
 	}
 }
 
+func TestDashboardDirectedTraceSupportsTraceFromSelection(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion, Directed: []DirectedTraceRecord{{ID: "trace", Nodes: []DirectedTraceNodeRecord{{ID: "handler", Role: TraceRoleController, Label: "UserController.delete"}}}}},
+		nil, nil,
+	)
+	for _, want := range []string{`const directedTraces=endpointTraces.directed||[]`, `function traceFromHere(id)`, `Trace from here`, `Controller / handler`, `Evidence`, `Selection does not move or relayout the trace.`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing directed trace behavior %q", want)
+		}
+	}
+}
+
 func TestDashboardGraphSelectionSupportsKeyboardAndAccessibleNames(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
