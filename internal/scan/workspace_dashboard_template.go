@@ -58,6 +58,7 @@ const workspaceDashboardShell = `<div class="shell">
 <span id="zoom-readout" class="readout" aria-live="polite">100%</span>
 </div>
 <svg id="workspace-graph" role="group" aria-label="Directed workspace relationship map"><defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8fa2ae"></path></marker><marker id="arrow-focus" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#0b6b79"></path></marker></defs><g id="graph-layer"></g></svg>
+<section id="workspace-workbench" class="workspace-workbench" hidden aria-label="Workspace data workbench"></section>
 </main>
 <section class="details" id="details"><p class="empty">Select a service or endpoint to inspect directed relationships.</p></section>
 </div>`

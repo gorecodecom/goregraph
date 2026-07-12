@@ -624,6 +624,28 @@ func TestDashboardDataFlowShowsMappingsAndExplicitGaps(t *testing.T) {
 	}
 }
 
+func TestDashboardSwitchesBetweenGraphAndReadableWorkbench(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{
+		`id="workspace-workbench" class="workspace-workbench" hidden`,
+		`function setCanvasPresentation(kind)`,
+		`main.classList.toggle("workbench-view",workbench)`,
+		`document.getElementById("workspace-graph").hidden=workbench`,
+		`document.getElementById("workspace-workbench").hidden=!workbench`,
+		`document.querySelector(".canvas-tools").hidden=workbench`,
+		`setCanvasPresentation("workbench")`,
+		`setCanvasPresentation("graph")`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing graph/workbench presentation contract %q", want)
+		}
+	}
+}
+
 func TestDashboardGraphSelectionSupportsKeyboardAndAccessibleNames(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
