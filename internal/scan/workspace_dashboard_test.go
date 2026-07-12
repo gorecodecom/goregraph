@@ -1,9 +1,40 @@
 package scan
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+func TestRenderWorkspaceDashboardHTMLEscapesInlineScriptPayload(t *testing.T) {
+	injected := `</script><script>globalThis.dashboardInjected=true</script>`
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: injected},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	if strings.Contains(html, injected) {
+		t.Fatal("dashboard payload must not contain a literal script-closing injection sequence")
+	}
+	const prefix = "const workspacePayload = "
+	start := strings.Index(html, prefix)
+	end := strings.Index(html[start+len(prefix):], ";\n")
+	if start < 0 || end < 0 {
+		t.Fatal("dashboard payload boundaries not found")
+	}
+	payload := html[start+len(prefix) : start+len(prefix)+end]
+	var decoded struct {
+		Graph WorkspaceGraphRecord `json:"graph"`
+	}
+	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("escaped dashboard payload is not valid JSON: %v", err)
+	}
+	if decoded.Graph.Root != injected {
+		t.Fatalf("escaped payload lost source data: got %q", decoded.Graph.Root)
+	}
+}
 
 func TestRenderWorkspaceDashboardHTMLKeepsPayloadOfflineAfterDecomposition(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
@@ -20,6 +51,27 @@ func TestRenderWorkspaceDashboardHTMLKeepsPayloadOfflineAfterDecomposition(t *te
 	}
 	if strings.Contains(html, "https://") || strings.Contains(html, "http://") {
 		t.Fatal("dashboard must remain offline")
+	}
+}
+
+func TestDashboardGridAvoidsHorizontalOverflowAtNarrowDesktopWidths(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`grid-template-columns:minmax(320px,380px) minmax(560px,1fr) minmax(320px,420px)`,
+		`@media (max-width:1240px){.shell{grid-template-columns:1fr;grid-template-areas:"side" "details" "main"}`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing responsive grid rule %q", want)
+		}
+	}
+	if strings.Contains(html, `grid-template-columns:420px minmax(760px,1fr) 480px`) {
+		t.Fatal("dashboard must not require a 1660px-wide three-column layout")
 	}
 }
 
@@ -87,8 +139,8 @@ func TestDashboardViewportUsesVisibleContentAndSVGCoordinates(t *testing.T) {
 		"getScreenCTM().inverse()",
 		"svg.viewBox.baseVal",
 		"const point=screenToSVGPoint(e.clientX,e.clientY)",
-		`if(state.mode==="endpoints"&&traceById.has(state.selected)&&state.endpointInventoryViewport)`,
-		`if(mode==="endpoints"&&state.endpointInventoryViewport){restoreEndpointInventoryViewport();saveViewport(mode);}`,
+		`if(state.mode==="endpoints"&&traceById.has(state.selected)){const inventory=consumeEndpointInventoryViewport()`,
+		`const endpointSnapshot=mode==="endpoints"?consumeEndpointInventoryViewport():null`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing reviewed viewport behavior %q", want)
@@ -172,7 +224,7 @@ func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) 
 		"function selectOrToggleItem",
 		"const serviceMap =",
 		"const endpointTraces =",
-		"frontend/app -> services/ms-user",
+		`frontend/app -\u003e services/ms-user`,
 		"function zoomBy",
 		"function panBy",
 		"user-select:none",
@@ -418,10 +470,11 @@ func TestRenderWorkspaceDashboardHTMLEndpointTraceRestoresInventoryViewport(t *t
 		"endpointInventoryViewport:null",
 		"function saveEndpointInventoryViewport()",
 		"state.endpointInventoryViewport={zoom:state.zoom,panX:state.panX,panY:state.panY}",
-		"function restoreEndpointInventoryViewport()",
+		"function consumeEndpointInventoryViewport()",
 		"state.zoom=viewport.zoom;state.panX=viewport.panX;state.panY=viewport.panY",
+		"state.endpointInventoryViewport=null",
 		"saveEndpointInventoryViewport();state.selected=id",
-		"restoreEndpointInventoryViewport();renderList();renderCanvas()",
+		"const viewport=consumeEndpointInventoryViewport();state.selected=state.endpointService;state.focusStep=null;renderList();renderCanvas();applyViewport(viewport);saveViewport(\"endpoints\")",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard html missing endpoint inventory viewport behavior %q", want)
@@ -439,6 +492,150 @@ func TestRenderWorkspaceDashboardHTMLEndpointTraceRestoresInventoryViewport(t *t
 	returnBody := html[returnStart : returnStart+returnEnd]
 	if strings.Contains(returnBody, "state.query=") || strings.Contains(returnBody, "state.filter=") || strings.Contains(returnBody, "state.endpointService=") {
 		t.Fatalf("endpoint inventory return mutates preserved context: %s", returnBody)
+	}
+}
+
+func TestDashboardEndpointInventorySnapshotIsConsumedOnce(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`function consumeEndpointInventoryViewport(){const viewport=state.endpointInventoryViewport;state.endpointInventoryViewport=null;return viewport;}`,
+		`if(state.mode==="endpoints"&&traceById.has(state.selected)){const inventory=consumeEndpointInventoryViewport();if(inventory)state.viewports.set("endpoints",inventory);else saveViewport("endpoints");}`,
+		`const endpointSnapshot=mode==="endpoints"?consumeEndpointInventoryViewport():null`,
+		`applyViewport(endpointSnapshot);saveViewport("endpoints")`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing one-shot endpoint viewport transition %q", want)
+		}
+	}
+}
+
+func TestDashboardServiceRelationRowsRemainVisibleButStatic(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`function endpointRowNode(row,cls,id,x,y,w,h,title,meta,selected)`,
+		`if(row.kind==="endpoint_trace")return boxNode`,
+		`role="presentation"`,
+		`if(row.kind==="endpoint_trace"){html+='<button class="relation-row" data-endpoint-id="'`,
+		`else{html+='<div class="relation-row static"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing static service relation behavior %q", want)
+		}
+	}
+}
+
+func TestDashboardGraphSelectionSupportsKeyboardAndAccessibleNames(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`tabindex="0" role="button" aria-label="`,
+		`el.addEventListener("keydown",function(e){if(e.key!=="Enter"&&e.key!==" ")return;e.preventDefault();e.stopPropagation();activateGraphItem(el.dataset.selectId);});`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing accessible graph selection %q", want)
+		}
+	}
+}
+
+func TestDashboardGraphSelectionDispatchesTraceStepsToTraceFocus(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`function isSelectedTraceStep(id){const trace=traceById.get(state.selected);return !!trace&&(trace.steps||[]).some(function(step){return step.id===id;});}`,
+		`function activateGraphItem(id){if(isSelectedTraceStep(id)){focusTraceStep(id);return;}selectOrToggleItem(id);}`,
+		`activateGraphItem(el.dataset.selectId)`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing trace-step graph dispatch %q", want)
+		}
+	}
+}
+
+func TestDashboardInteractiveSVGExposesFocusableDescendants(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	if !strings.Contains(html, `id="workspace-graph" role="group" aria-label="Directed workspace relationship map"`) {
+		t.Fatal("interactive workspace SVG must expose its focusable descendants as a labelled group")
+	}
+	if strings.Contains(html, `id="workspace-graph" role="img"`) {
+		t.Fatal("interactive workspace SVG must not hide descendant buttons behind an image role")
+	}
+}
+
+func TestDashboardControlStateUsesARIA(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`data-view-mode="architecture" class="active" aria-pressed="true"`,
+		`data-kind-filter="all" class="active" aria-pressed="true"`,
+		`id="toggle-labels" title="Toggle labels" aria-label="Toggle relationship labels" aria-pressed="false"`,
+		`id="zoom-readout" class="readout" aria-live="polite"`,
+		`id="result-note" class="result-note" aria-live="polite"`,
+		`btn.setAttribute("aria-pressed",String(btn.dataset.viewMode===mode))`,
+		`b.setAttribute("aria-pressed",String(b===btn))`,
+		`this.setAttribute("aria-pressed",String(state.labels))`,
+		`aria-label="Zoom out"`,
+		`aria-label="Zoom in"`,
+		`aria-label="Reset zoom and pan"`,
+		`aria-label="Fit visible graph"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing ARIA state contract %q", want)
+		}
+	}
+}
+
+func TestDashboardMobileGridOrdersDetailsBeforeCanvasAndEnlargesControls(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`grid-template-areas:"side main details"`,
+		`.side{grid-area:side`,
+		`main{grid-area:main`,
+		`.details{grid-area:details`,
+		`grid-template-areas:"side" "details" "main"`,
+		`.filters button,.modes button,.canvas-tools button{min-height:44px}`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing responsive details/control contract %q", want)
+		}
 	}
 }
 

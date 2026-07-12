@@ -31,7 +31,6 @@ func RenderWorkspaceDashboardHTMLWithModels(graph WorkspaceGraphRecord, serviceM
 func marshalDashboardPayload(value any) []byte {
 	var b bytes.Buffer
 	encoder := json.NewEncoder(&b)
-	encoder.SetEscapeHTML(false)
 	_ = encoder.Encode(value)
 	return bytes.TrimSpace(b.Bytes())
 }

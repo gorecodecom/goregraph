@@ -11,24 +11,24 @@ const workspaceDashboardShell = `<div class="shell">
 <div class="summary"><div class="metric"><strong id="service-count">0</strong><span>services</span></div><div class="metric"><strong id="edge-count">0</strong><span>relations</span></div><div class="metric"><strong id="trace-count">0</strong><span>traces</span></div></div>
 <h2>View</h2>
 <div class="modes">
-<button data-view-mode="architecture" class="active">Architecture</button>
-<button data-view-mode="endpoints">Endpoints</button>
-<button data-view-mode="diagnostics">Diagnostics</button>
+<button data-view-mode="architecture" class="active" aria-pressed="true">Architecture</button>
+<button data-view-mode="endpoints" aria-pressed="false">Endpoints</button>
+<button data-view-mode="diagnostics" aria-pressed="false">Diagnostics</button>
 </div>
 <p class="help" id="mode-help">See how projects and services communicate across the workspace. Select a service to highlight direct incoming and outgoing relationships without changing the layout.</p>
 <input id="workspace-search" aria-label="Search workspace map" placeholder="Search service, endpoint, route, file, symbol">
 <h2>Filter</h2>
 <div class="filters">
-<button data-kind-filter="all" class="active">All</button>
-<button data-kind-filter="risk">Risk</button>
-<button data-kind-filter="resolved">Resolved</button>
-<button data-kind-filter="unresolved">Unresolved</button>
+<button data-kind-filter="all" class="active" aria-pressed="true">All</button>
+<button data-kind-filter="risk" aria-pressed="false">Risk</button>
+<button data-kind-filter="resolved" aria-pressed="false">Resolved</button>
+<button data-kind-filter="unresolved" aria-pressed="false">Unresolved</button>
 </div>
 <div class="filters" style="margin-top:8px"><button id="clear-selection" type="button">Clear selection</button></div>
 <div class="filters" style="margin-top:8px"><button id="isolate-neighborhood" type="button" hidden>Isolate neighborhood</button><button id="show-full-architecture" type="button" hidden>Show full architecture</button></div>
 <h2 id="list-title">Services</h2>
 <div id="node-list" class="item-list"></div>
-<p id="result-note" class="result-note"></p>
+<p id="result-note" class="result-note" aria-live="polite"></p>
 <div class="glossary">
 <h2>Status glossary</h2>
 <p><strong>RESOLVED</strong>: frontend contract is mapped to a backend route.</p>
@@ -40,14 +40,14 @@ const workspaceDashboardShell = `<div class="shell">
 </aside>
 <main>
 <div class="canvas-tools">
-<button id="zoom-out" title="Zoom out">-</button>
-<button id="zoom-in" title="Zoom in">+</button>
-<button id="reset-view" title="Reset zoom and pan">100%</button>
-<button id="fit-button" title="Fit visible graph">Fit</button>
-<button id="toggle-labels" title="Toggle labels">Labels</button>
-<span id="zoom-readout" class="readout">100%</span>
+<button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+<button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+<button id="reset-view" title="Reset zoom and pan" aria-label="Reset zoom and pan">100%</button>
+<button id="fit-button" title="Fit visible graph" aria-label="Fit visible graph">Fit</button>
+<button id="toggle-labels" title="Toggle labels" aria-label="Toggle relationship labels" aria-pressed="false">Labels</button>
+<span id="zoom-readout" class="readout" aria-live="polite">100%</span>
 </div>
-<svg id="workspace-graph" role="img" aria-label="Directed workspace relationship map"><defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8fa2ae"></path></marker><marker id="arrow-focus" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#0b6b79"></path></marker></defs><g id="graph-layer"></g></svg>
+<svg id="workspace-graph" role="group" aria-label="Directed workspace relationship map"><defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8fa2ae"></path></marker><marker id="arrow-focus" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#0b6b79"></path></marker></defs><g id="graph-layer"></g></svg>
 </main>
 <section class="details" id="details"><p class="empty">Select a service or endpoint to inspect directed relationships.</p></section>
 </div>`
