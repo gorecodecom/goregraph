@@ -5,10 +5,10 @@
 Current release target:
 
 ```text
-v1.0.0-rc.1
+v1.0.0
 ```
 
-`1.0.0-rc.1` freezes the candidate public CLI and Schema 2 contract. `1.0.0` remains fixes-only and requires final acceptance.
+`1.0.0` is the accepted stable CLI and Schema 2 contract. Publishing still requires separate explicit authorization.
 
 ## Required Secrets
 
@@ -22,7 +22,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` through `v0.9.8` established packaging, the Architecture-first dashboard, evidence, diagnostics, Query/MCP, directed traces, Data Flow, full Java/Spring, JS/TS/Node/React, Go, PHP, Rust, and Python adapters, honest Shell integration, and generic workspace discovery. `v1.0.0-rc.1` is the current local development version and freezes Schema 2 plus the CLI/Query/MCP contracts for final acceptance.
+`v0.1.0` through `v0.9.8` established packaging, the Architecture-first dashboard, evidence, diagnostics, Query/MCP, directed traces, Data Flow, full Java/Spring, JS/TS/Node/React, Go, PHP, Rust, and Python adapters, honest Shell integration, and generic workspace discovery. `v1.0.0-rc.1` froze and passed the Schema 2 plus CLI/Query/MCP contracts. `v1.0.0` is the current accepted local version and changes no frozen contract from the release candidate.
 
 Milestone history includes `v0.9.4` for directed traces and Data Flow.
 
@@ -273,7 +273,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.0.0-rc.1
+goregraph 1.0.0
 commit: <commit>
 built: <timestamp>
 go: <go-version>

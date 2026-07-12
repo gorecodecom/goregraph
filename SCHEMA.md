@@ -28,7 +28,7 @@ Example:
 
 ## Compatibility Rule
 
-Schema 2 is the 1.0 contract candidate. Schema 1 indexes are not rewritten in place because mixed-generation workspaces could otherwise combine incompatible assumptions. Install the new binary, preview `goregraph workspace clean .`, execute only the listed generated output cleanup with `--execute`, and run `goregraph workspace scan-all .`. Doctor rejects stale Schema 1 manifests with this rescan guidance.
+Schema 2 is the stable 1.0 contract. Schema 1 indexes are not rewritten in place because mixed-generation workspaces could otherwise combine incompatible assumptions. Install the new binary, preview `goregraph workspace clean .`, execute only the listed generated output cleanup with `--execute`, and run `goregraph workspace scan-all .`. Doctor rejects stale Schema 1 manifests with this rescan guidance.
 
 Within Schema 2, existing fields and enum meanings are frozen. Compatible releases may add optional fields and new output files; they do not silently change existing field, evidence, coverage, confidence, resolution, severity, Query-task, or MCP-tool meanings.
 
