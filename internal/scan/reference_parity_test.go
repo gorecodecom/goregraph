@@ -63,6 +63,17 @@ class UserController {
 class UserGrpc extends Grpc\Client {}
 `, "tests/UserTest.php": `<?php
 class UserTest extends TestCase {}
+`}}, {name: "rust", languages: []string{"rust"}, files: map[string]string{"Cargo.toml": "[package]\nname='users'\nversion='0.1.0'\n", "src/main.rs": `use axum::{routing::post, Json, Router};
+fn routes() -> Router { Router::new().route("/users", post(create_user)) }
+async fn create_user(Json(user): Json<User>) -> Json<User> {
+  sqlx::query("insert into users").execute(&pool).await;
+  let _ = reqwest::Client::new().post("/audit").send().await;
+  let producer: rdkafka::producer::FutureProducer = producer();
+  tonic::transport::Server::builder();
+  Json(user)
+}
+#[tokio::test]
+async fn creates_user() { create_user(request()).await; }
 `}}}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,6 +95,21 @@ class UserTest extends TestCase {}
 				for _, capability := range []CapabilityID{CapabilityAPIClients, CapabilityPersistence, CapabilityMessaging, CapabilityDataFlow} {
 					assertArchitectureCapabilityFact(t, facts, language, capability)
 				}
+				if language == "rust" {
+					var routes []CodeRouteRecord
+					readJSON(t, filepath.Join(root, "goregraph-out", "routes.json"), &routes)
+					assertTypedRoute(t, routes, "rust", "POST", "/users", "create_user")
+					var calls CallGraphRecord
+					readJSON(t, filepath.Join(root, "goregraph-out", "callgraph.json"), &calls)
+					if len(calls.Edges) == 0 {
+						t.Fatal("Rust fixture produced no call edges")
+					}
+					var tests []TestMapRecord
+					readJSON(t, filepath.Join(root, "goregraph-out", "test-map.json"), &tests)
+					if len(tests) == 0 {
+						t.Fatal("Rust fixture produced no test mapping")
+					}
+				}
 			}
 		})
 	}
@@ -97,4 +123,14 @@ func assertArchitectureCapabilityFact(t *testing.T, facts []ArchitectureCapabili
 		}
 	}
 	t.Fatalf("missing evidence fact for %s/%s", language, capability)
+}
+
+func assertTypedRoute(t *testing.T, routes []CodeRouteRecord, language, method, path, handler string) {
+	t.Helper()
+	for _, route := range routes {
+		if route.Language == language && route.HTTPMethod == method && route.Path == path && route.Handler == handler {
+			return
+		}
+	}
+	t.Fatalf("missing route %s %s for %s handler %s", method, path, language, handler)
 }

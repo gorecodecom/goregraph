@@ -7,7 +7,7 @@ import (
 )
 
 func extractArchitectureCapabilityFacts(file FileRecord, body string) []ArchitectureCapabilityFact {
-	if file.Language != "java" && file.Language != "javascript" && file.Language != "typescript" && file.Language != "go" && file.Language != "php" {
+	if file.Language != "java" && file.Language != "javascript" && file.Language != "typescript" && file.Language != "go" && file.Language != "php" && file.Language != "rust" {
 		return nil
 	}
 	var facts []ArchitectureCapabilityFact
@@ -139,6 +139,28 @@ func architectureCapabilityMatches(language, line string) []architectureCapabili
 		}
 		if strings.Contains(trimmed, "extends TestCase") || strings.HasPrefix(trimmed, "test(") || strings.HasPrefix(trimmed, "it(") {
 			add(CapabilityTests, "test", "PHPUnit/Pest")
+		}
+	} else if language == "rust" {
+		if codeRustAttributeRouteRE.MatchString(trimmed) || codeRustRouterRouteRE.MatchString(trimmed) {
+			add(CapabilityRoutes, "http_route", "Axum/Actix/Rocket")
+		}
+		if strings.Contains(lower, "reqwest::") || strings.Contains(lower, "reqwest.") || strings.Contains(lower, "client.get(") || strings.Contains(lower, "client.post(") {
+			add(CapabilityAPIClients, "http_client", "Rust reqwest")
+		}
+		if strings.Contains(lower, "sqlx::") || strings.Contains(lower, "diesel::") || strings.Contains(lower, "sea_orm::") || strings.Contains(lower, ".execute(") {
+			add(CapabilityPersistence, "persistence", "Rust SQLx/Diesel/SeaORM")
+		}
+		if strings.Contains(lower, "rdkafka::") || strings.Contains(lower, "futureproducer") || strings.Contains(lower, "lapin::") {
+			add(CapabilityMessaging, "message_consumer_or_producer", "Rust Kafka/AMQP")
+		}
+		if strings.Contains(lower, "tonic::") || strings.Contains(lower, "server::builder") {
+			add(CapabilityMessaging, "rpc_service", "tonic gRPC")
+		}
+		if strings.Contains(trimmed, "Json<") || strings.Contains(trimmed, "web::Json") || strings.Contains(trimmed, "HttpResponse::") {
+			add(CapabilityDataFlow, "request_response_boundary", "Rust web")
+		}
+		if strings.Contains(trimmed, "#[test]") || strings.Contains(trimmed, "#[tokio::test]") {
+			add(CapabilityTests, "test", "Rust test/tokio test")
 		}
 	}
 	return matches

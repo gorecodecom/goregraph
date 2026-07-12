@@ -114,7 +114,7 @@ func capabilityCoverage(analyzer AnalyzerRecord, known bool, capability Capabili
 	if complete[capability] {
 		return CoverageComplete, "The active analyzer emits this capability for indexed files."
 	}
-	if (analyzer.Language == "java" || analyzer.Language == "javascript" || analyzer.Language == "typescript" || analyzer.Language == "go" || analyzer.Language == "php") &&
+	if (analyzer.Language == "java" || analyzer.Language == "javascript" || analyzer.Language == "typescript" || analyzer.Language == "go" || analyzer.Language == "php" || analyzer.Language == "rust") &&
 		(capability == CapabilityAPIClients || capability == CapabilityPersistence || capability == CapabilityMessaging || capability == CapabilityDataFlow) {
 		return CoverageComplete, "The full adapter emits normalized facts for this capability; detected facts are linked as evidence."
 	}

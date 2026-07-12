@@ -52,6 +52,16 @@ func TestReferenceAdaptersRecognizeFrameworkCapabilityFamilies(t *testing.T) {
 		{"php grpc", "php", `class UsersClient extends Grpc\Client {}`, CapabilityMessaging},
 		{"php validation", "php", `$request->validate([]);`, CapabilityDataFlow},
 		{"phpunit", "php", `class UsersTest extends TestCase {}`, CapabilityTests},
+		{"rust axum route", "rust", `Router::new().route("/users", post(create_user))`, CapabilityRoutes},
+		{"rust actix route", "rust", `#[post("/users")]`, CapabilityRoutes},
+		{"rust reqwest", "rust", `reqwest::Client::new()`, CapabilityAPIClients},
+		{"rust sqlx", "rust", `sqlx::query("select 1")`, CapabilityPersistence},
+		{"rust diesel", "rust", `use diesel::prelude::*;`, CapabilityPersistence},
+		{"rust kafka", "rust", `use rdkafka::producer::FutureProducer;`, CapabilityMessaging},
+		{"rust amqp", "rust", `use lapin::Connection;`, CapabilityMessaging},
+		{"rust tonic", "rust", `tonic::transport::Server::builder()`, CapabilityMessaging},
+		{"rust json boundary", "rust", `async fn create(Json(user): Json<User>)`, CapabilityDataFlow},
+		{"rust test", "rust", `#[tokio::test]`, CapabilityTests},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

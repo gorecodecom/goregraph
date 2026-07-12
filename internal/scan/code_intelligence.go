@@ -18,6 +18,7 @@ var (
 	codePythonClassRE         = regexp.MustCompile(`^(\s*)class\s+([A-Za-z_][A-Za-z0-9_]*)`)
 	codePythonFuncRE          = regexp.MustCompile(`^(\s*)def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	codeShellFuncRE           = regexp.MustCompile(`^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(\))\s*\{`)
+	codeRustFuncRE            = regexp.MustCompile(`^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	codeGoHTTPRouteRE         = regexp.MustCompile(`\b(?:http\.)?HandleFunc\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_][A-Za-z0-9_]*)`)
 	codeGoRouterRouteRE       = regexp.MustCompile(`\.\s*(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_][A-Za-z0-9_]*)`)
 	codePHPRouteRE            = regexp.MustCompile(`Route::(get|post|put|delete|patch|options|any)\s*\(\s*['"]([^'"]+)['"]\s*,\s*\[?\s*([A-Za-z_][A-Za-z0-9_]*)::class\s*,\s*['"]([^'"]+)['"]`)
@@ -28,6 +29,8 @@ var (
 	codeReduxFragmentRouteRE  = regexp.MustCompile(`<Fragment\b[^>]*\bforRoute=["']([^"']+)["']`)
 	codeReactObjectRouteRE    = regexp.MustCompile(`\bpath\s*:\s*["']([^"']+)["'][^,\n]*,\s*element\s*:\s*<([A-Za-z_$][A-Za-z0-9_$]*)`)
 	codePythonRouteRE         = regexp.MustCompile(`^\s*@([A-Za-z_][A-Za-z0-9_]*)\.(get|post|put|delete|patch|options|head|route)\s*\(\s*["']([^"']+)["']`)
+	codeRustAttributeRouteRE  = regexp.MustCompile(`^\s*#\[(get|post|put|delete|patch)\(\s*"([^"]+)"\s*\)\]`)
+	codeRustRouterRouteRE     = regexp.MustCompile(`\.route\(\s*"([^"]+)"\s*,\s*(get|post|put|delete|patch)\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*\)`)
 	codeCallRE                = regexp.MustCompile(`([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	codeMemberCallRE          = regexp.MustCompile(`([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\.|->|::)\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	codeJSXComponentOpenRE    = regexp.MustCompile(`<([A-Z][A-Za-z0-9_$]*)\b`)
@@ -42,7 +45,7 @@ func mergeCodeIntelligence(target *CodeIntelligenceRecord, next CodeIntelligence
 
 func extractCodeIntelligence(file FileRecord, body string) CodeIntelligenceRecord {
 	switch file.Language {
-	case "go", "php", "javascript", "typescript", "python", "shell":
+	case "go", "php", "javascript", "typescript", "python", "shell", "rust":
 	default:
 		return CodeIntelligenceRecord{}
 	}
@@ -77,9 +80,31 @@ func extractCodeFunctions(file FileRecord, lines []string) []CodeFunctionRecord 
 		return extractPythonCodeFunctions(file, lines)
 	case "shell":
 		return extractShellCodeFunctions(file, lines)
+	case "rust":
+		return extractRustCodeFunctions(file, lines)
 	default:
 		return nil
 	}
+}
+
+func extractRustCodeFunctions(file FileRecord, lines []string) []CodeFunctionRecord {
+	var functions []CodeFunctionRecord
+	pendingTest := false
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "#[test]" || strings.Contains(line, "#[tokio::test]") {
+			pendingTest = true
+			continue
+		}
+		if match := codeRustFuncRE.FindStringSubmatch(line); len(match) == 2 {
+			kind := "function"
+			if pendingTest || strings.HasSuffix(file.Path, "_test.rs") || strings.Contains(file.Path, "/tests/") {
+				kind = "test"
+			}
+			functions = append(functions, CodeFunctionRecord{Name: match[1], Kind: kind, Language: file.Language, File: file.Path, Line: i + 1, EndLine: findBraceBlockEnd(lines, i)})
+			pendingTest = false
+		}
+	}
+	return functions
 }
 
 func extractGoCodeFunctions(file FileRecord, lines []string) []CodeFunctionRecord {
@@ -202,6 +227,7 @@ func extractShellCodeFunctions(file FileRecord, lines []string) []CodeFunctionRe
 func extractCodeRoutes(file FileRecord, lines []string) []CodeRouteRecord {
 	var routes []CodeRouteRecord
 	var pendingPythonRoute *CodeRouteRecord
+	var pendingRustRoute *CodeRouteRecord
 	for i, line := range lines {
 		lineNo := i + 1
 		if isRouteCommentLine(file.Language, line) {
@@ -260,6 +286,22 @@ func extractCodeRoutes(file FileRecord, lines []string) []CodeRouteRecord {
 					routes = append(routes, *pendingPythonRoute)
 					pendingPythonRoute = nil
 				}
+			}
+		case "rust":
+			if match := codeRustAttributeRouteRE.FindStringSubmatch(line); len(match) == 3 {
+				route := codeRoute(file, "Actix/Rocket", "backend", strings.ToUpper(match[1]), match[2], "", lineNo)
+				pendingRustRoute = &route
+				continue
+			}
+			if pendingRustRoute != nil {
+				if match := codeRustFuncRE.FindStringSubmatch(line); len(match) == 2 {
+					pendingRustRoute.Handler = match[1]
+					routes = append(routes, *pendingRustRoute)
+					pendingRustRoute = nil
+				}
+			}
+			if match := codeRustRouterRouteRE.FindStringSubmatch(line); len(match) == 4 {
+				routes = append(routes, codeRoute(file, "Axum", "backend", strings.ToUpper(match[2]), match[1], match[3], lineNo))
 			}
 		}
 	}
