@@ -139,8 +139,6 @@ func TestDashboardViewportUsesVisibleContentAndSVGCoordinates(t *testing.T) {
 		"getScreenCTM().inverse()",
 		"svg.viewBox.baseVal",
 		"const point=screenToSVGPoint(e.clientX,e.clientY)",
-		`if(state.mode==="endpoints"&&traceById.has(state.selected)){const inventory=consumeEndpointInventoryViewport()`,
-		`const endpointSnapshot=mode==="endpoints"?consumeEndpointInventoryViewport():null`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing reviewed viewport behavior %q", want)
@@ -150,7 +148,7 @@ func TestDashboardViewportUsesVisibleContentAndSVGCoordinates(t *testing.T) {
 	if fitStart < 0 {
 		t.Fatal("dashboard missing Fit function")
 	}
-	fitEnd := strings.Index(html[fitStart:], "function saveEndpointInventoryViewport()")
+	fitEnd := strings.Index(html[fitStart:], "function saveEndpointInventoryScroll()")
 	if fitEnd < 0 {
 		t.Fatal("dashboard missing fit function boundaries")
 	}
@@ -287,7 +285,7 @@ func TestRenderWorkspaceDashboardHTMLContainsInteractiveGraphData(t *testing.T) 
 	if strings.Contains(html, "Shared / Internal") {
 		t.Fatalf("dashboard should not label unrelated frontend projects as shared/internal")
 	}
-	for _, want := range []string{`data-step-id`, `data-focus-id`, `trace-card`, `path-card`, "centerOnPosition", "truncateWord"} {
+	for _, want := range []string{`data-step-id`, `data-focus-id`, `trace-card`, `endpoint-inventory-row`, "centerOnPosition", "truncateWord"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard html missing usability hook %q", want)
 		}
@@ -457,7 +455,7 @@ func TestRenderWorkspaceDashboardHTMLEndpointsCombineInventoryAndTrace(t *testin
 	}
 }
 
-func TestRenderWorkspaceDashboardHTMLEndpointTraceRestoresInventoryViewport(t *testing.T) {
+func TestRenderWorkspaceDashboardHTMLEndpointTraceRestoresInventoryScroll(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
@@ -467,14 +465,12 @@ func TestRenderWorkspaceDashboardHTMLEndpointTraceRestoresInventoryViewport(t *t
 	)
 
 	for _, want := range []string{
-		"endpointInventoryViewport:null",
-		"function saveEndpointInventoryViewport()",
-		"state.endpointInventoryViewport={zoom:state.zoom,panX:state.panX,panY:state.panY}",
-		"function consumeEndpointInventoryViewport()",
-		"state.zoom=viewport.zoom;state.panX=viewport.panX;state.panY=viewport.panY",
-		"state.endpointInventoryViewport=null",
-		"saveEndpointInventoryViewport();state.selected=id",
-		"const viewport=consumeEndpointInventoryViewport();state.selected=state.endpointService;state.focusStep=null;renderList();renderCanvas();applyViewport(viewport);saveViewport(\"endpoints\")",
+		"endpointInventoryScrollTop:0",
+		"function saveEndpointInventoryScroll()",
+		"state.endpointInventoryScrollTop=workbench.scrollTop",
+		"saveEndpointInventoryScroll();state.selected=id",
+		"state.selected=state.endpointService;state.focusStep=null;renderList();renderCanvas()",
+		"workbench.scrollTop=state.endpointInventoryScrollTop",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard html missing endpoint inventory viewport behavior %q", want)
@@ -495,7 +491,7 @@ func TestRenderWorkspaceDashboardHTMLEndpointTraceRestoresInventoryViewport(t *t
 	}
 }
 
-func TestDashboardEndpointInventorySnapshotIsConsumedOnce(t *testing.T) {
+func TestDashboardEndpointInventoryScrollDoesNotResetFilters(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
@@ -504,10 +500,9 @@ func TestDashboardEndpointInventorySnapshotIsConsumedOnce(t *testing.T) {
 		nil,
 	)
 	for _, want := range []string{
-		`function consumeEndpointInventoryViewport(){const viewport=state.endpointInventoryViewport;state.endpointInventoryViewport=null;return viewport;}`,
-		`if(state.mode==="endpoints"&&traceById.has(state.selected)){const inventory=consumeEndpointInventoryViewport();if(inventory)state.viewports.set("endpoints",inventory);else saveViewport("endpoints");}`,
-		`const endpointSnapshot=mode==="endpoints"?consumeEndpointInventoryViewport():null`,
-		`applyViewport(endpointSnapshot);saveViewport("endpoints")`,
+		`endpointFilters:{methods:new Set(),callers:new Set(),providers:new Set(),statuses:new Set()}`,
+		`function saveEndpointInventoryScroll()`,
+		`function returnToEndpointInventory(){if(!traceById.has(state.selected))return;state.selected=state.endpointService;state.focusStep=null;renderList();renderCanvas();}`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing one-shot endpoint viewport transition %q", want)
@@ -544,8 +539,38 @@ func TestDashboardEndpointCardsReserveSpaceForWrappedTitles(t *testing.T) {
 		nil,
 		nil,
 	)
-	if !strings.Contains(html, `rowH=112,top=132,leftX=70,midX=430,rightX=860,cardW=300,cardH=86`) {
-		t.Fatal("endpoint cards do not reserve enough vertical space for a wrapped title and metadata")
+	for _, want := range []string{`.endpoint-inventory-cell strong{font-size:14px;line-height:1.35;overflow-wrap:anywhere}`, `.endpoint-inventory-row{grid-template-columns:1fr}`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("endpoint rows do not preserve readable wrapped titles: missing %q", want)
+		}
+	}
+}
+
+func TestDashboardEndpointInventoryUsesReadableRowsAtBrowserScale(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{
+		`function renderEndpointInventoryWorkbench()`,
+		`class="endpoint-inventory"`,
+		`class="endpoint-inventory-header"`,
+		`class="endpoint-inventory-row`,
+		`data-endpoint-id="`,
+		`aria-label="Open endpoint trace`,
+		`endpointInventoryCell("Caller",row.from,row.kind)`,
+		`endpointInventoryCell("Endpoint",row.route`,
+		`endpointInventoryCell("Provider",row.to,row.kind)`,
+		`endpointInventoryScrollTop:0`,
+		`workbench.scrollTop=state.endpointInventoryScrollTop`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing readable endpoint inventory contract %q", want)
+		}
+	}
+	if strings.Contains(html, `function renderEndpointInventory(){const svg=`) {
+		t.Fatal("endpoint inventory still renders its rows into the scaled SVG")
 	}
 }
 
