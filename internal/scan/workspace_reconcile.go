@@ -77,6 +77,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	featureDossiers := buildFeatureDossiers(featureFlows, matches)
 	workspaceGraph := BuildWorkspaceGraph(registry, matches, featureFlows, featureDossiers)
 	serviceMap := BuildWorkspaceServiceMap(registry, matches, featureFlows, workspaceServiceDependencies(indexed))
+	serviceMap.EditorURLTemplate = cfg.EditorURLTemplate
 	serviceMap.DataFlows = dataFlows
 	for _, project := range indexed {
 		serviceMap.Capabilities = append(serviceMap.Capabilities, project.capabilities...)

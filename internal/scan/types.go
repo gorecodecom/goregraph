@@ -822,6 +822,7 @@ type WorkspaceServiceMapRecord struct {
 	SchemaVersion      int                            `json:"schema_version"`
 	Generated          string                         `json:"generated,omitempty"`
 	Root               string                         `json:"root,omitempty"`
+	EditorURLTemplate  string                         `json:"editor_url_template,omitempty"`
 	Nodes              []WorkspaceServiceNodeRecord   `json:"nodes"`
 	Edges              []WorkspaceServiceEdgeRecord   `json:"edges"`
 	Stats              map[string]int                 `json:"stats,omitempty"`

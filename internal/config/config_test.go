@@ -32,6 +32,20 @@ func TestDefaultsMatchMVPSafetyModel(t *testing.T) {
 	}
 }
 
+func TestLoadEditorURLTemplate(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "goregraph.yml"), []byte("version: 1\neditor_url_template: vscode://file/{file}:{line}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EditorURLTemplate != "vscode://file/{file}:{line}" {
+		t.Fatalf("EditorURLTemplate = %q", cfg.EditorURLTemplate)
+	}
+}
+
 func TestLoadUsesDefaultsWhenProjectConfigIsMissing(t *testing.T) {
 	dir := t.TempDir()
 

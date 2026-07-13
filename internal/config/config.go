@@ -10,15 +10,16 @@ import (
 )
 
 type Config struct {
-	OutputDir        string
-	Include          []string
-	Exclude          []string
-	MaxFileSizeBytes int64
-	FollowSymlinks   bool
-	UseGitignore     bool
-	UpdateGitignore  bool
-	Workspace        bool
-	WorkspaceRoot    string
+	OutputDir         string
+	Include           []string
+	Exclude           []string
+	MaxFileSizeBytes  int64
+	FollowSymlinks    bool
+	UseGitignore      bool
+	UpdateGitignore   bool
+	Workspace         bool
+	WorkspaceRoot     string
+	EditorURLTemplate string
 }
 
 func Defaults() Config {
@@ -147,6 +148,11 @@ func applyProjectConfig(cfg *Config, body string) error {
 				return fmt.Errorf("update_gitignore must be true or false")
 			}
 			cfg.UpdateGitignore = parsed
+		case "editor_url_template":
+			if !strings.Contains(value, "{file}") {
+				return fmt.Errorf("editor_url_template must contain {file}")
+			}
+			cfg.EditorURLTemplate = value
 		default:
 			return fmt.Errorf("unsupported key %q", key)
 		}

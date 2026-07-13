@@ -1011,3 +1011,30 @@ func TestWorkspaceDashboardUsesExplicitArchitectureFocus(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceDashboardShowsCompleteEndpointSourceContext(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: `C:\workspace`},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, EditorURLTemplate: "vscode://file/{file}:{line}"},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion, Directed: []DirectedTraceRecord{{
+			ID:    "trace:users",
+			Nodes: []DirectedTraceNodeRecord{{ID: "handler", Role: TraceRoleController, Label: "UserController.get", Symbol: "UserController.get", Project: "services/users", File: `src\UserController.java`, Line: 42}},
+		}}},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		"function sourceActions",
+		"Copy path",
+		"Open source",
+		"editor_url_template",
+		`detailField("Service"`,
+		`detailField("Class / controller"`,
+		`detailField("File"`,
+		`detailField("Line"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing %q", want)
+		}
+	}
+}
