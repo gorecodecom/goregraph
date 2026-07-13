@@ -29,15 +29,18 @@ var capabilityOrder = []CapabilityID{
 }
 
 type CapabilityRecord struct {
-	ID          CapabilityID `json:"id"`
-	Project     string       `json:"project,omitempty"`
-	Language    string       `json:"language"`
-	Adapter     string       `json:"adapter,omitempty"`
-	Coverage    Coverage     `json:"coverage"`
-	Reason      string       `json:"reason"`
-	FilesSeen   int          `json:"files_seen"`
-	EvidenceIDs []string     `json:"evidence_ids,omitempty"`
-	Failure     string       `json:"failure,omitempty"`
+	ID                  CapabilityID `json:"id"`
+	Project             string       `json:"project,omitempty"`
+	Language            string       `json:"language"`
+	Adapter             string       `json:"adapter,omitempty"`
+	Coverage            Coverage     `json:"coverage"`
+	Reason              string       `json:"reason"`
+	StatusReason        string       `json:"status_reason"`
+	ExpectedUnavailable bool         `json:"expected_unavailable"`
+	SourceClass         string       `json:"source_class"`
+	FilesSeen           int          `json:"files_seen"`
+	EvidenceIDs         []string     `json:"evidence_ids,omitempty"`
+	Failure             string       `json:"failure,omitempty"`
 }
 
 type CoverageRecord struct {
@@ -73,14 +76,18 @@ func BuildCapabilityInventory(files []FileRecord, workspace WorkspaceIndex, fact
 		analyzer, known := legacy[language]
 		for _, capability := range capabilityOrder {
 			coverage, reason := capabilityCoverage(analyzer, known, capability)
+			sourceClass := capabilitySourceClass(language)
 			records = append(records, CapabilityRecord{
-				ID:          capability,
-				Language:    language,
-				Adapter:     analyzer.Scope,
-				Coverage:    coverage,
-				Reason:      reason,
-				FilesSeen:   count,
-				EvidenceIDs: evidence[language][capability],
+				ID:                  capability,
+				Language:            language,
+				Adapter:             analyzer.Scope,
+				Coverage:            coverage,
+				Reason:              reason,
+				StatusReason:        reason,
+				ExpectedUnavailable: coverage == CoverageUnavailable && sourceClass != "code",
+				SourceClass:         sourceClass,
+				FilesSeen:           count,
+				EvidenceIDs:         evidence[language][capability],
 			})
 		}
 	}
@@ -91,6 +98,21 @@ func BuildCapabilityInventory(files []FileRecord, workspace WorkspaceIndex, fact
 		return capabilityIndex(records[i].ID) < capabilityIndex(records[j].ID)
 	})
 	return records
+}
+
+func capabilitySourceClass(language string) string {
+	switch language {
+	case "markdown":
+		return "documentation"
+	case "yaml", "yml", "json", "xml", "toml", "properties":
+		return "configuration"
+	case "text":
+		return "text"
+	case "maven", "node", "gradle":
+		return "build"
+	default:
+		return "code"
+	}
 }
 
 func BuildCoverage(files []FileRecord, capabilities []CapabilityRecord) CoverageRecord {

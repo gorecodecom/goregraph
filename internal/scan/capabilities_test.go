@@ -15,6 +15,22 @@ func TestBuildCapabilityInventoryReportsHonestCoverage(t *testing.T) {
 	assertCapabilityCoverage(t, records, "kotlin", CapabilityCalls, CoverageUnavailable)
 }
 
+func TestGenericLanguagesExplainExpectedCoverage(t *testing.T) {
+	records := BuildCapabilityInventory([]FileRecord{
+		{Path: "README.md", Language: "markdown"},
+		{Path: "service.yml", Language: "yaml"},
+		{Path: "notes.txt", Language: "text"},
+	}, WorkspaceIndex{})
+	for _, record := range records {
+		if record.StatusReason == "" || record.SourceClass == "" {
+			t.Fatalf("record=%#v", record)
+		}
+		if record.Coverage == CoverageUnavailable && !record.ExpectedUnavailable {
+			t.Fatalf("expected unavailability is not marked: %#v", record)
+		}
+	}
+}
+
 func assertCapabilityCoverage(t *testing.T, records []CapabilityRecord, language string, capability CapabilityID, want Coverage) {
 	t.Helper()
 	for _, record := range records {

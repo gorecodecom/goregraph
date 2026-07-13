@@ -1092,3 +1092,19 @@ func TestWorkspaceDashboardUsesCanonicalDiagnosticAccounting(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceDashboardExplainsAndCollapsesExpectedCoverage(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, Capabilities: []CapabilityRecord{{
+			ID: CapabilitySymbols, Project: "app", Language: "markdown", Coverage: CoveragePartial,
+			StatusReason: "Generic indexing is best effort.", SourceClass: "documentation",
+		}}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{"status_reason", "expected_unavailable", "source_class", "coverage-source-group", "Expected analyzer gaps", "Analyzer execution failed"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing coverage explanation %q", want)
+		}
+	}
+}
