@@ -639,6 +639,12 @@ goregraph explain . src/main.go
 - inbound relations
 - likely tests
 
+## Compact task context
+
+Use `goregraph query <path> task-context --query "GET /users" --limit 20`
+to receive bounded routes, related tests, risks, source files and stable
+evidence IDs. Incomplete coverage is reported as uncertainty.
+
 ## Security Model
 
 GoreGraph is local and explicit.

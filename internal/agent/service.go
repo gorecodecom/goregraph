@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -156,6 +157,8 @@ func loadTask(request Request) ([]Item, []string, error) {
 			return nil, nil, err
 		}
 		return []Item{{ID: "change-context", Kind: "change_context", Title: "Generated change context", Summary: body}}, nil, nil
+	case "task-context":
+		return loadTaskContext(request)
 	case "endpoint-trace", "symbol-trace":
 		var index scan.DirectedTraceIndexRecord
 		if err := readOutput(request.Root, "directed-traces.json", &index); err != nil {
@@ -215,6 +218,121 @@ func loadTask(request Request) ([]Item, []string, error) {
 	default:
 		return nil, nil, fmt.Errorf("unknown agent task %q", request.Task)
 	}
+}
+
+func loadTaskContext(request Request) ([]Item, []string, error) {
+	var routes []scan.CodeRouteRecord
+	if err := readOutput(request.Root, "routes.json", &routes); err != nil {
+		return nil, nil, err
+	}
+	var mappings []scan.TestMapRecord
+	if err := readOutput(request.Root, "test-map.json", &mappings); err != nil {
+		return nil, nil, err
+	}
+	var diagnostics []scan.CanonicalDiagnosticRecord
+	if err := readOutput(request.Root, "diagnostics-canonical.json", &diagnostics); err != nil {
+		return nil, nil, err
+	}
+	var capabilities []scan.CapabilityRecord
+	if err := readOutput(request.Root, "capabilities.json", &capabilities); err != nil {
+		return nil, nil, err
+	}
+
+	context := TaskContextRecord{Target: request.Query, Freshness: "generated output loaded", SuggestedNext: "goregraph query <path> evidence --limit 20"}
+	for _, route := range routes {
+		if !matchesQuery(request.Query, route.RouteID, route.HTTPMethod, route.Path, route.Handler, route.File) {
+			continue
+		}
+		context.Endpoints = append(context.Endpoints, Item{
+			ID: firstText(route.RouteID, "route:"+route.File+":"+strconv.Itoa(route.Line)), Kind: "route",
+			Title: route.HTTPMethod + " " + route.Path, Summary: route.Framework + " / " + route.Handler,
+			File: route.File, Line: route.Line, Confidence: route.Confidence, EvidenceIDs: route.EvidenceIDs,
+		})
+		context.Files = append(context.Files, route.File)
+		context.EvidenceIDs = append(context.EvidenceIDs, route.EvidenceIDs...)
+		if route.App != "" {
+			context.Services = append(context.Services, route.App)
+		} else if route.Package != "" {
+			context.Services = append(context.Services, route.Package)
+		}
+	}
+	for _, mapping := range mappings {
+		if !matchesQuery(request.Query, mapping.TestFile, mapping.TestMethod, mapping.TargetFile, mapping.TargetMethod, mapping.HTTPMethod, mapping.Path) {
+			continue
+		}
+		context.Tests = append(context.Tests, Item{
+			ID: "test:" + mapping.TestFile + ":" + strconv.Itoa(mapping.Line), Kind: "test",
+			Title: firstText(mapping.TestMethod, mapping.TestFile), Summary: firstText(mapping.TargetMethod, mapping.Path, mapping.Type),
+			File: mapping.TestFile, Line: mapping.Line, Confidence: mapping.Confidence,
+		})
+		context.Files = append(context.Files, mapping.TestFile, mapping.TargetFile)
+	}
+	for _, diagnostic := range diagnostics {
+		if !matchesQuery(request.Query, diagnostic.ID, diagnostic.Code, diagnostic.Title, diagnostic.Explanation, strings.Join(diagnostic.AffectedArtifacts, " ")) {
+			continue
+		}
+		context.Risks = append(context.Risks, Item{
+			ID: diagnostic.ID, Kind: "diagnostic", Title: diagnostic.Title, Summary: diagnostic.Explanation,
+			Confidence: string(diagnostic.Confidence), Resolution: string(diagnostic.Resolution),
+			EvidenceIDs: diagnostic.EvidenceIDs, Data: map[string]any{"code": diagnostic.Code, "severity": diagnostic.Severity, "next_checks": diagnostic.NextChecks},
+		})
+		context.EvidenceIDs = append(context.EvidenceIDs, diagnostic.EvidenceIDs...)
+	}
+	for _, capability := range capabilities {
+		if capability.Coverage == scan.CoverageUnavailable || capability.Coverage == scan.CoverageFailed {
+			context.CoverageWarnings = append(context.CoverageWarnings, capability.Language+" / "+string(capability.ID)+": "+string(capability.Coverage))
+		}
+	}
+	context.Services = sortedUnique(context.Services)
+	context.Files = sortedUnique(context.Files)
+	context.EvidenceIDs = sortedUnique(context.EvidenceIDs)
+	context.CoverageWarnings = compactWarnings(sortedUnique(context.CoverageWarnings), 12)
+	sortItems(context.Endpoints)
+	sortItems(context.Tests)
+	sortItems(context.Risks)
+	context.Endpoints = boundedItems(context.Endpoints, request.Limit)
+	context.Tests = boundedItems(context.Tests, request.Limit)
+	context.Risks = boundedItems(context.Risks, request.Limit)
+
+	item := Item{
+		ID: "task-context:" + firstText(request.Query, "workspace"), Kind: "task_context",
+		Title:       firstText(request.Query, "Workspace task context"),
+		Summary:     fmt.Sprintf("%d endpoints, %d tests, %d risks", len(context.Endpoints), len(context.Tests), len(context.Risks)),
+		EvidenceIDs: context.EvidenceIDs,
+		Data: map[string]any{
+			"target": context.Target, "services": context.Services, "endpoints": context.Endpoints,
+			"files": context.Files, "tests": context.Tests, "risks": context.Risks,
+			"freshness": context.Freshness, "coverage_warnings": context.CoverageWarnings,
+			"suggested_next": context.SuggestedNext,
+		},
+	}
+	return []Item{item}, context.CoverageWarnings, nil
+}
+
+func boundedItems(items []Item, limit int) []Item {
+	if len(items) <= limit {
+		return items
+	}
+	return append([]Item(nil), items[:limit]...)
+}
+
+func sortItems(items []Item) {
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+}
+
+func sortedUnique(values []string) []string {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			set[value] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(set))
+	for value := range set {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func capabilityEvidence(record scan.CapabilityRecord, detail string) []string {

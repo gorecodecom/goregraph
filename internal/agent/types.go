@@ -25,6 +25,19 @@ type Item struct {
 	Data        map[string]any `json:"data,omitempty"`
 }
 
+type TaskContextRecord struct {
+	Target           string   `json:"target"`
+	Services         []string `json:"services,omitempty"`
+	Endpoints        []Item   `json:"endpoints,omitempty"`
+	Files            []string `json:"files,omitempty"`
+	Tests            []Item   `json:"tests,omitempty"`
+	Risks            []Item   `json:"risks,omitempty"`
+	EvidenceIDs      []string `json:"evidence_ids,omitempty"`
+	Freshness        string   `json:"freshness"`
+	CoverageWarnings []string `json:"coverage_warnings,omitempty"`
+	SuggestedNext    string   `json:"suggested_next,omitempty"`
+}
+
 type Result struct {
 	Schema           int      `json:"schema"`
 	Task             string   `json:"task"`

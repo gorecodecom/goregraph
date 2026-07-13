@@ -103,3 +103,57 @@ func TestCoverageBoundsEvidenceByDetail(t *testing.T) {
 		t.Fatalf("full evidence count = %d, want 25", len(got))
 	}
 }
+
+func TestServiceBuildsBoundedTaskContext(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scan.Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	writeTaskContextJSON(t, root, "routes.json", []scan.CodeRouteRecord{{
+		RouteID: "route:users", App: "accounts", HTTPMethod: "GET", Path: "/users",
+		Handler: "ListUsers", File: "internal/users.go", Line: 12,
+		Confidence: "EXACT", EvidenceIDs: []string{"evidence:route"},
+	}})
+	writeTaskContextJSON(t, root, "test-map.json", []scan.TestMapRecord{{
+		TestFile: "internal/users_test.go", TestMethod: "TestListUsers",
+		TargetFile: "internal/users.go", HTTPMethod: "GET", Path: "/users",
+		Type: "endpoint", Line: 8, Confidence: "EXACT",
+	}})
+	writeTaskContextJSON(t, root, "diagnostics-canonical.json", []scan.CanonicalDiagnosticRecord{{
+		ID: "diagnostic:users", Code: "method_mismatch", Title: "Method mismatch",
+		Explanation:       "GET route conflicts with a backend POST route.",
+		AffectedArtifacts: []string{"GET /users", "internal/users.go"},
+		EvidenceIDs:       []string{"evidence:route", "evidence:diagnostic"},
+	}})
+
+	result, err := (Service{}).Run(Request{Root: root, Task: "task-context", Query: "GET /users", Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Count != 1 || result.Items[0].Kind != "task_context" {
+		t.Fatalf("unexpected task context: %#v", result)
+	}
+	context := result.Items[0].Data
+	if context["target"] != "GET /users" || len(context["endpoints"].([]Item)) != 1 ||
+		len(context["tests"].([]Item)) != 1 || len(context["risks"].([]Item)) != 1 {
+		t.Fatalf("incomplete task context: %#v", context)
+	}
+	if got := result.Items[0].EvidenceIDs; len(got) != 2 ||
+		got[0] != "evidence:diagnostic" || got[1] != "evidence:route" {
+		t.Fatalf("evidence IDs = %#v", got)
+	}
+}
+
+func writeTaskContextJSON(t *testing.T, root, name string, value any) {
+	t.Helper()
+	body, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "goregraph-out", name), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

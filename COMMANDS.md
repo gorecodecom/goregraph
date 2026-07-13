@@ -2,6 +2,13 @@
 
 This file lists every user-facing GoreGraph command, what it does, and common variations.
 
+## Task context
+
+`goregraph query <path> task-context --query <route-or-symbol> --format markdown --limit 20`
+
+The equivalent MCP tool is `task_context`. Start with a narrow route, symbol,
+file, or service query and read only the cited source files.
+
 Installation commands such as `brew install gorecodecom/tap/goregraph` are documented in `README.md`. This file focuses on commands provided by the installed `goregraph` binary.
 
 For release acceptance or whenever generated workspace output may come from an older binary, verify the executable first and rebuild from a clean workspace:
