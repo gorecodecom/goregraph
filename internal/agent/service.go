@@ -158,7 +158,11 @@ func loadTask(request Request) ([]Item, []string, error) {
 		items := []Item{}
 		for _, r := range records {
 			if matchesQuery(request.Query, r.HTTPMethod, r.Path, r.Handler, r.File, r.Framework) {
-				items = append(items, Item{ID: firstText(r.RouteID, "route:"+r.File+":"+strconv.Itoa(r.Line)), Kind: "route", Title: r.HTTPMethod + " " + r.Path, Summary: r.Framework + " / " + r.Handler, File: r.File, Line: r.Line, Confidence: r.Confidence, EvidenceIDs: r.EvidenceIDs})
+				data := map[string]any(nil)
+				if request.Task == "service-context" && request.Query != "" {
+					data = map[string]any{"requested_scope": request.Query}
+				}
+				items = append(items, Item{ID: firstText(r.RouteID, "route:"+r.File+":"+strconv.Itoa(r.Line)), Kind: "route", Title: r.HTTPMethod + " " + r.Path, Summary: r.Framework + " / " + r.Handler, File: r.File, Line: r.Line, Confidence: r.Confidence, EvidenceIDs: r.EvidenceIDs, Data: data})
 			}
 		}
 		return items, nil, nil

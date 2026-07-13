@@ -59,10 +59,11 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	}
 
 	registry := WorkspaceRegistryRecord{
-		Root:      filepath.ToSlash(workspaceRoot),
-		Current:   workspaceRel(workspaceRoot, currentAbs),
-		Generated: time.Now().UTC().Format(time.RFC3339),
-		Projects:  projects,
+		Root:           filepath.ToSlash(workspaceRoot),
+		Current:        workspaceRel(workspaceRoot, currentAbs),
+		ReconciledFrom: workspaceRel(workspaceRoot, currentAbs),
+		Generated:      time.Now().UTC().Format(time.RFC3339),
+		Projects:       projects,
 	}
 
 	indexed, err := loadWorkspaceIndexes(projects)
@@ -510,7 +511,6 @@ func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspace
 	})
 	return WorkspaceContextRecord{
 		Root:                  registry.Root,
-		Current:               registry.Current,
 		LoadedIndexes:         loaded,
 		Projects:              registry.Projects,
 		KnownServices:         known,
@@ -1326,8 +1326,8 @@ func renderWorkspaceContextReport(record WorkspaceContextRecord) string {
 	var b strings.Builder
 	b.WriteString("# GoreGraph Workspace Context\n\n")
 	b.WriteString(fmt.Sprintf("- Workspace root: `%s`\n", record.Root))
-	if record.Current != "" {
-		b.WriteString(fmt.Sprintf("- Current project: `%s`\n", record.Current))
+	if record.RequestedScope != "" {
+		b.WriteString(fmt.Sprintf("- Requested scope: `%s`\n", record.RequestedScope))
 	}
 	b.WriteString("\n")
 	b.WriteString(renderWorkspaceContextSections(record))
@@ -1339,10 +1339,7 @@ func renderProjectWorkspaceContextReport(record WorkspaceContextRecord, projectP
 	b.WriteString("# GoreGraph Workspace Context\n\n")
 	b.WriteString(fmt.Sprintf("- Workspace root: `%s`\n", record.Root))
 	if projectPath != "" {
-		b.WriteString(fmt.Sprintf("- This project: `%s`\n", projectPath))
-	}
-	if record.Current != "" {
-		b.WriteString(fmt.Sprintf("- Last refreshed by: `%s`\n", record.Current))
+		b.WriteString(fmt.Sprintf("- Requested scope: `%s`\n", projectPath))
 	}
 	b.WriteString("\n")
 	b.WriteString(renderWorkspaceContextSections(record))

@@ -657,6 +657,11 @@ service, and evidence changes. The existing `goregraph workspace diff --before <
 root-cause families with affected counts, member diagnostics, evidence IDs, and
 the next suggested check instead of repeating equivalent route variants.
 
+Workspace-root context is neutral: it lists indexed projects and services but
+does not inherit the project that happened to trigger the last reconciliation.
+Project overlays and explicit `service-context`/`task-context` queries expose a
+`requested_scope` derived only from the actual invocation or query target.
+
 ## Security Model
 
 GoreGraph is local and explicit.

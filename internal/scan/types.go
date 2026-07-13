@@ -402,10 +402,11 @@ type DiagnosticFlowRecord struct {
 }
 
 type WorkspaceRegistryRecord struct {
-	Root      string                   `json:"root"`
-	Current   string                   `json:"current,omitempty"`
-	Generated string                   `json:"generated_at,omitempty"`
-	Projects  []WorkspaceProjectRecord `json:"projects"`
+	Root           string                   `json:"root"`
+	Current        string                   `json:"current,omitempty"`
+	ReconciledFrom string                   `json:"reconciled_from,omitempty"`
+	Generated      string                   `json:"generated_at,omitempty"`
+	Projects       []WorkspaceProjectRecord `json:"projects"`
 }
 
 type WorkspaceProjectRecord struct {
@@ -422,6 +423,7 @@ type WorkspaceProjectRecord struct {
 type WorkspaceContextRecord struct {
 	Root                  string                          `json:"root"`
 	Current               string                          `json:"current,omitempty"`
+	RequestedScope        string                          `json:"requested_scope,omitempty"`
 	LoadedIndexes         []WorkspaceProjectRecord        `json:"loaded_indexes"`
 	Projects              []WorkspaceProjectRecord        `json:"projects"`
 	KnownServices         []string                        `json:"known_services,omitempty"`

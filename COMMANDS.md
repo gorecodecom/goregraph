@@ -24,6 +24,12 @@ compared; generation timestamps are ignored.
 The equivalent MCP tool is `diagnostics`. Results are grouped by canonical root
 cause and retain stable member diagnostic and evidence IDs.
 
+## Workspace context scope
+
+Workspace-root context is intentionally neutral. Project-root reports show
+`Requested scope`; task results populate `requested_scope` only from an explicit
+query target. `reconciled_from` is operational provenance, not user task scope.
+
 Installation commands such as `brew install gorecodecom/tap/goregraph` are documented in `README.md`. This file focuses on commands provided by the installed `goregraph` binary.
 
 For release acceptance or whenever generated workspace output may come from an older binary, verify the executable first and rebuild from a clean workspace:

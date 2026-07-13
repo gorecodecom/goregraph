@@ -169,7 +169,7 @@ class CadasterController {
 	}
 
 	frontendContext := readText(t, filepath.Join(frontend, "goregraph-out", "workspace-context.md"))
-	if !strings.Contains(frontendContext, "This project: `frontend/frontend-monorepo`") || !strings.Contains(frontendContext, "Last refreshed by: `microservices/ms-cadaster`") {
+	if !strings.Contains(frontendContext, "Requested scope: `frontend/frontend-monorepo`") || strings.Contains(frontendContext, "Last refreshed by") {
 		t.Fatalf("frontend workspace context has misleading project labels:\n%s", frontendContext)
 	}
 
@@ -1525,6 +1525,24 @@ func TestWorkspaceDiffReportsContractAndCoverageChanges(t *testing.T) {
 		if !strings.Contains(report, want) {
 			t.Fatalf("workspace delta report missing %q:\n%s", want, report)
 		}
+	}
+}
+
+func TestWorkspaceContextIsNeutralAtRootAndScopedPerProject(t *testing.T) {
+	registry := WorkspaceRegistryRecord{
+		Root: "/workspace", Current: "microservices/update-info-cleaner",
+		Projects: []WorkspaceProjectRecord{{Path: "microservices/update-info-cleaner", Indexed: true}},
+	}
+	context := buildWorkspaceContext(registry, nil)
+	rootReport := renderWorkspaceContextReport(context)
+	t.Log("root context:\n" + rootReport)
+	if context.Current != "" || context.RequestedScope != "" || strings.Contains(rootReport, "Current project") || strings.Contains(rootReport, "Requested scope") {
+		t.Fatalf("workspace root inherited reconciliation source: %#v\n%s", context, rootReport)
+	}
+	projectReport := renderProjectWorkspaceContextReport(context, "microservices/update-info-cleaner")
+	t.Log("project context:\n" + projectReport)
+	if !strings.Contains(projectReport, "Requested scope: `microservices/update-info-cleaner`") || strings.Contains(projectReport, "Last refreshed by") {
+		t.Fatalf("project context lacks explicit request scope:\n%s", projectReport)
 	}
 }
 
