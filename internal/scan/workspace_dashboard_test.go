@@ -1059,3 +1059,19 @@ func TestWorkspaceDashboardExplainsDataFlowPurposeAndEvidence(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceDashboardRendersDiagnosticsAsHTMLWorkbench(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{"function renderDiagnosticsWorkbench", "diagnostic-row", "diagnostic-workbench", "normal vertical scrolling"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing %q", want)
+		}
+	}
+	if strings.Contains(html, "function renderDiagnostics(){const svg=") {
+		t.Fatal("Diagnostics still uses a fitted SVG")
+	}
+}
