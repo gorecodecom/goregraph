@@ -28,6 +28,7 @@ const workspaceDashboardShell = `<div class="shell">
 </div>
 <div class="filters" style="margin-top:8px"><button id="clear-selection" type="button">Clear selection</button></div>
 <div class="filters" style="margin-top:8px"><button id="isolate-neighborhood" type="button" hidden>Isolate neighborhood</button><button id="show-full-architecture" type="button" hidden>Show full architecture</button></div>
+<div class="filters" style="margin-top:8px"><button id="focus-selected" type="button" hidden>Focus selected</button><button id="back-to-full-architecture" type="button" hidden>Back to full architecture</button></div>
 <section id="endpoint-filters" class="endpoint-filters" hidden aria-label="Endpoint debugging filters">
 <h2>Endpoint debugging</h2>
 <div class="filters endpoint-methods" aria-label="HTTP methods"><button type="button" data-endpoint-method="GET" aria-pressed="false">GET</button><button type="button" data-endpoint-method="POST" aria-pressed="false">POST</button><button type="button" data-endpoint-method="PUT" aria-pressed="false">PUT</button><button type="button" data-endpoint-method="PATCH" aria-pressed="false">PATCH</button><button type="button" data-endpoint-method="DELETE" aria-pressed="false">DELETE</button><button type="button" data-endpoint-method="OTHER" aria-pressed="false">Other</button></div>

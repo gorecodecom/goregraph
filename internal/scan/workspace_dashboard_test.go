@@ -989,3 +989,25 @@ func TestWorkspaceDashboardBundlesBackgroundArchitectureEdges(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceDashboardUsesExplicitArchitectureFocus(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		"Focus selected",
+		"Back to full architecture",
+		"architectureFocused",
+		"savedFullArchitectureViewport",
+		"function enterArchitectureFocus",
+		"function leaveArchitectureFocus",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing %q", want)
+		}
+	}
+}
