@@ -969,3 +969,23 @@ func TestRenderWorkspaceDashboardHTMLWithModelsUsesFullEndpointTraces(t *testing
 		}
 	}
 }
+
+func TestWorkspaceDashboardBundlesBackgroundArchitectureEdges(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		"function architectureBundles",
+		"bundle-count",
+		"data-architecture-bundle",
+		"Unrelated relationships remain grouped",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing %q", want)
+		}
+	}
+}
