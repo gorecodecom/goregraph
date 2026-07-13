@@ -649,6 +649,10 @@ Generated task context also reports artifact-level freshness: GoreGraph version,
 Schema 2, and the current deterministic source fingerprint. Missing freshness is
 reported as uncertainty; rescan before treating missing facts as absent behavior.
 
+For reviews, `goregraph query <after-snapshot> workspace-delta --query <before-snapshot> --format markdown`
+returns a bounded, deterministic summary of route, contract, test-gap, coverage,
+service, and evidence changes. The existing `goregraph workspace diff --before <dir> --after <dir>` command remains available.
+
 ## Security Model
 
 GoreGraph is local and explicit.

@@ -103,6 +103,7 @@ func tools() []map[string]any {
 		tool("explain_file", "Explain one indexed file or symbol."),
 		tool("doctor", "Check generated output health."),
 		agentTool("workspace_summary", "Return a compact workspace orientation."),
+		agentTool("workspace_delta", "Compare a before workspace snapshot with the current root."),
 		agentTool("service_context", "Return generated context for a service."),
 		agentTool("endpoint_search", "Search generated endpoint facts."),
 		agentTool("task_context", "Return compact evidence-backed context for one change target."),
@@ -177,7 +178,7 @@ func callTool(name string, args map[string]any) (string, error) {
 }
 
 func agentTaskForTool(name string) (string, bool) {
-	tasks := map[string]string{"workspace_summary": "workspace-summary", "service_context": "service-context", "endpoint_search": "endpoint-search", "task_context": "task-context", "endpoint_trace": "endpoint-trace", "symbol_trace": "symbol-trace", "trace_from": "trace-from", "data_flow": "data-flow", "diagnostics": "diagnostics", "coverage": "coverage", "evidence": "evidence", "tests": "tests", "change_context": "change-context"}
+	tasks := map[string]string{"workspace_summary": "workspace-summary", "workspace_delta": "workspace-delta", "service_context": "service-context", "endpoint_search": "endpoint-search", "task_context": "task-context", "endpoint_trace": "endpoint-trace", "symbol_trace": "symbol-trace", "trace_from": "trace-from", "data_flow": "data-flow", "diagnostics": "diagnostics", "coverage": "coverage", "evidence": "evidence", "tests": "tests", "change_context": "change-context"}
 	task, ok := tasks[name]
 	return task, ok
 }

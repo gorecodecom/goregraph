@@ -9,6 +9,14 @@ This file lists every user-facing GoreGraph command, what it does, and common va
 The equivalent MCP tool is `task_context`. Start with a narrow route, symbol,
 file, or service query and read only the cited source files.
 
+## Workspace delta
+
+`goregraph query <after-snapshot> workspace-delta --query <before-snapshot> --format markdown --limit 20`
+
+The equivalent MCP tool is `workspace_delta`; pass the current snapshot as `root`
+and the previous snapshot directory as `query`. Stable IDs and semantic fields are
+compared; generation timestamps are ignored.
+
 Installation commands such as `brew install gorecodecom/tap/goregraph` are documented in `README.md`. This file focuses on commands provided by the installed `goregraph` binary.
 
 For release acceptance or whenever generated workspace output may come from an older binary, verify the executable first and rebuild from a clean workspace:

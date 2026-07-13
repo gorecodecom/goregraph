@@ -165,6 +165,15 @@ func loadTask(request Request) ([]Item, []string, error) {
 		return []Item{{ID: "change-context", Kind: "change_context", Title: "Generated change context", Summary: body}}, nil, nil
 	case "task-context":
 		return loadTaskContext(request)
+	case "workspace-delta":
+		if strings.TrimSpace(request.Query) == "" {
+			return nil, nil, fmt.Errorf("workspace-delta query must be the before snapshot directory")
+		}
+		diff, err := scan.WorkspaceDiff(request.Query, request.Root)
+		if err != nil {
+			return nil, nil, err
+		}
+		return []Item{{ID: "workspace-delta", Kind: "workspace_delta", Title: "Workspace delta", Summary: fmt.Sprintf("%d added routes, %d changed contracts, %d coverage regressions", len(diff.AddedRoutes), len(diff.ChangedContracts), len(diff.CoverageRegressions)), Data: map[string]any{"delta": diff}}}, nil, nil
 	case "endpoint-trace", "symbol-trace":
 		var index scan.DirectedTraceIndexRecord
 		if err := readOutput(request.Root, "directed-traces.json", &index); err != nil {

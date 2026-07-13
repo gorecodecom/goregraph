@@ -1475,14 +1475,29 @@ func TestBuildFeatureDossiersSummarizesChangeSafetySignals(t *testing.T) {
 func TestWorkspaceDiffReportsContractAndCoverageChanges(t *testing.T) {
 	before := WorkspaceSnapshotRecord{
 		Contracts: []WorkspaceContractMatchRecord{{ID: "a", APIHTTPMethod: "GET", APIPath: "/a", Issue: contractIssueMatched, Confidence: "RESOLVED"}},
-		Flows:     []WorkspaceFeatureFlowRecord{{ID: "flow-a", Tests: []TestMapRecord{{Confidence: "MATCHED"}}}},
+		Flows: []WorkspaceFeatureFlowRecord{
+			{ID: "flow-a", Tests: []TestMapRecord{{Confidence: "MATCHED"}}},
+			{ID: "flow-closed-gap"},
+		},
+		Traces:       []WorkspaceEndpointTraceRecord{{ID: "route-a", Route: "GET /a", Risk: "low", Steps: []WorkspaceEndpointTraceStepRecord{{ID: "evidence:a"}}}},
+		Services:     []WorkspaceServiceNodeRecord{{ID: "service:a", Project: "services/a"}},
+		Capabilities: []CapabilityRecord{{Project: "services/a", Language: "go", ID: CapabilityRoutes, Coverage: CoverageComplete}},
 	}
 	after := WorkspaceSnapshotRecord{
 		Contracts: []WorkspaceContractMatchRecord{
 			{ID: "a", APIHTTPMethod: "GET", APIPath: "/a", Issue: contractIssueIndexedBackendRouteMissing, Confidence: "UNRESOLVED"},
 			{ID: "b", APIHTTPMethod: "POST", APIPath: "/b", Issue: contractIssueMatched, Confidence: "RESOLVED"},
 		},
-		Flows: []WorkspaceFeatureFlowRecord{{ID: "flow-a"}},
+		Flows: []WorkspaceFeatureFlowRecord{
+			{ID: "flow-a"},
+			{ID: "flow-closed-gap", Tests: []TestMapRecord{{Confidence: "MATCHED"}}},
+		},
+		Traces: []WorkspaceEndpointTraceRecord{
+			{ID: "route-a", Route: "GET /a", Risk: "high", Steps: []WorkspaceEndpointTraceStepRecord{{ID: "evidence:a"}, {ID: "evidence:changed"}}},
+			{ID: "route-b", Route: "POST /b", Steps: []WorkspaceEndpointTraceStepRecord{{ID: "evidence:b"}}},
+		},
+		Services:     []WorkspaceServiceNodeRecord{{ID: "service:a", Project: "services/a"}, {ID: "service:b", Project: "services/b"}},
+		Capabilities: []CapabilityRecord{{Project: "services/a", Language: "go", ID: CapabilityRoutes, Coverage: CoveragePartial}},
 	}
 
 	diff := buildWorkspaceDiff(before, after)
@@ -1494,6 +1509,22 @@ func TestWorkspaceDiffReportsContractAndCoverageChanges(t *testing.T) {
 	}
 	if !containsString(diff.CoverageRegressions, "flow-a lost matched tests") {
 		t.Fatalf("missing coverage regression: %#v", diff)
+	}
+	if len(diff.AddedRoutes) != 1 || diff.AddedRoutes[0].ID != "route-b" || len(diff.ChangedRoutes) != 1 {
+		t.Fatalf("missing route delta: %#v", diff)
+	}
+	if !containsString(diff.NewTestGaps, "flow-a") || !containsString(diff.ClosedTestGaps, "flow-closed-gap") {
+		t.Fatalf("missing test-gap delta: %#v", diff)
+	}
+	if !containsString(diff.AddedServices, "service:b") || !containsString(diff.AddedEvidence, "evidence:b") {
+		t.Fatalf("missing service/evidence delta: %#v", diff)
+	}
+	report := RenderWorkspaceDiffReport(diff)
+	t.Log("\n" + report)
+	for _, want := range []string{"Added routes: 1", "Changed routes: 1", "New test gaps: 1", "Closed test gaps: 1"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("workspace delta report missing %q:\n%s", want, report)
+		}
 	}
 }
 

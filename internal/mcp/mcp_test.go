@@ -69,7 +69,7 @@ func TestServeExposesCompactAgentTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := output.String()
-	for _, want := range []string{"workspace_summary", "endpoint_search", "task_context", "diagnostics", "coverage", "evidence", "change_context", `\"truncated\": true`, `\"continuation\":`} {
+	for _, want := range []string{"workspace_summary", "workspace_delta", "endpoint_search", "task_context", "diagnostics", "coverage", "evidence", "change_context", `\"truncated\": true`, `\"continuation\":`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("MCP output missing %q:\n%s", want, got)
 		}

@@ -729,15 +729,36 @@ type FeatureDossierRecord struct {
 }
 
 type WorkspaceSnapshotRecord struct {
-	Contracts []WorkspaceContractMatchRecord `json:"contracts,omitempty"`
-	Flows     []WorkspaceFeatureFlowRecord   `json:"flows,omitempty"`
+	Contracts    []WorkspaceContractMatchRecord `json:"contracts,omitempty"`
+	Flows        []WorkspaceFeatureFlowRecord   `json:"flows,omitempty"`
+	Traces       []WorkspaceEndpointTraceRecord `json:"traces,omitempty"`
+	Services     []WorkspaceServiceNodeRecord   `json:"services,omitempty"`
+	Capabilities []CapabilityRecord             `json:"capabilities,omitempty"`
 }
 
 type WorkspaceDiffRecord struct {
 	NewContracts        []WorkspaceContractMatchRecord `json:"new_contracts,omitempty"`
 	RemovedContracts    []WorkspaceContractMatchRecord `json:"removed_contracts,omitempty"`
 	ChangedContracts    []WorkspaceContractDiffRecord  `json:"changed_contracts,omitempty"`
+	AddedRoutes         []WorkspaceEndpointTraceRecord `json:"added_routes,omitempty"`
+	RemovedRoutes       []WorkspaceEndpointTraceRecord `json:"removed_routes,omitempty"`
+	ChangedRoutes       []WorkspaceRouteDiffRecord     `json:"changed_routes,omitempty"`
+	NewTestGaps         []string                       `json:"new_test_gaps,omitempty"`
+	ClosedTestGaps      []string                       `json:"closed_test_gaps,omitempty"`
 	CoverageRegressions []string                       `json:"coverage_regressions,omitempty"`
+	AddedServices       []string                       `json:"added_services,omitempty"`
+	RemovedServices     []string                       `json:"removed_services,omitempty"`
+	AddedEvidence       []string                       `json:"added_evidence,omitempty"`
+	RemovedEvidence     []string                       `json:"removed_evidence,omitempty"`
+}
+
+type WorkspaceRouteDiffRecord struct {
+	ID           string `json:"id"`
+	Route        string `json:"route"`
+	BeforeStatus string `json:"before_status,omitempty"`
+	AfterStatus  string `json:"after_status,omitempty"`
+	BeforeRisk   string `json:"before_risk,omitempty"`
+	AfterRisk    string `json:"after_risk,omitempty"`
 }
 
 type WorkspaceContractDiffRecord struct {
