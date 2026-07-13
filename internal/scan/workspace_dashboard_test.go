@@ -102,7 +102,8 @@ func TestDashboardArchitectureSelectionKeepsFullLayoutUntilExplicitIsolation(t *
 		`isolation:false`,
 		"function setArchitectureIsolation(enabled)",
 		"focused&&!focused.has(node.id)",
-		"state.isolation?allNodes.filter",
+		"focusedMode=state.isolation||state.architectureFocused",
+		"nodes=focusedMode?allNodes.filter",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing stable focus behavior %q", want)
@@ -786,7 +787,7 @@ func TestDashboardSwitchesBetweenGraphAndReadableWorkbench(t *testing.T) {
 		`setElementHidden(document.getElementById("workspace-graph"),workbench)`,
 		`setElementHidden(document.getElementById("workspace-workbench"),!workbench)`,
 		`setElementHidden(document.querySelector(".canvas-tools"),workbench)`,
-		`workbenchModes=new Set(["endpoints","data-flow","coverage"])`,
+		`workbenchModes=new Set(["endpoints","data-flow","diagnostics","coverage"])`,
 		`setCanvasPresentation(workbench?"workbench":"graph",state.mode)`,
 	} {
 		if !strings.Contains(html, want) {
