@@ -10,6 +10,7 @@ const serviceEdges=serviceMap.edges||[];
 const capabilities=serviceMap.capabilities||[];
 const canonicalDiagnostics=serviceMap.diagnostics||[];
 const canonicalDiagnosticFamilies=serviceMap.diagnostic_families||[];
+const contractSummary=serviceMap.contract_summary||{total:0,resolved:0,missing_route:0,method_mismatch:0,dynamic_unresolved:0,out_of_scope:0,other:0};
 const canonicalDiagnosticByCode=new Map(canonicalDiagnostics.map(function(d){return [d.code,d];}));
 const dataFlows=serviceMap.data_flows||[];
 const traces=endpointTraces.traces||[];
@@ -21,6 +22,8 @@ const state={mode:"architecture",query:"",filter:"all",selected:null,selectedDat
 document.getElementById("service-count").textContent=serviceNodes.length;
 document.getElementById("edge-count").textContent=serviceEdges.length;
 document.getElementById("trace-count").textContent=traces.length;
+document.getElementById("contract-count").textContent=contractSummary.total;
+document.getElementById("contract-count").title=contractSummary.resolved+" resolved; "+contractSummary.missing_route+" missing route; "+contractSummary.method_mismatch+" method mismatch; "+contractSummary.dynamic_unresolved+" dynamic unresolved; "+contractSummary.out_of_scope+" out of scope; "+contractSummary.other+" other";
 function escapeHtml(v){return String(v||"").replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];});}
 function escapeAttr(v){return escapeHtml(v);}
 function shortLabel(v,max){v=String(v||"");max=max||58;return v.length>max?v.slice(0,max-3)+"...":v;}

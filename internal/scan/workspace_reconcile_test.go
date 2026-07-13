@@ -1998,6 +1998,33 @@ func TestWorkspaceNextActionsIncludesUnresolvedContractResolutionHints(t *testin
 	}
 }
 
+func TestWorkspaceNextActionsUsesCanonicalContractSummary(t *testing.T) {
+	report := renderWorkspaceNextActionsReport(
+		WorkspaceContextRecord{},
+		[]WorkspaceContractMatchRecord{
+			{Issue: contractIssueMatched, Confidence: "RESOLVED"},
+			{Issue: contractIssueIndexedBackendRouteMissing, Confidence: "UNRESOLVED"},
+			{Issue: contractIssueMethodMismatch, Confidence: "MISMATCH"},
+			{Issue: contractIssueDynamicEndpointUnresolved, Confidence: "UNRESOLVED"},
+			{Issue: contractIssueFrontendInternalAPI, Confidence: "OUT_OF_SCOPE"},
+		},
+		nil,
+	)
+	for _, want := range []string{
+		"Workspace contracts: 5 total",
+		"resolved: 1",
+		"missing route: 1",
+		"method mismatch: 1",
+		"dynamic unresolved: 1",
+		"out of scope: 1",
+		"other: 0",
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("next actions missing canonical contract count %q:\n%s", want, report)
+		}
+	}
+}
+
 func TestWorkspaceFeatureTestMatchesKnownBasePrefixes(t *testing.T) {
 	test := TestMapRecord{
 		Type:       "endpoint",

@@ -54,6 +54,43 @@ func TestBuildWorkspaceServiceMapCreatesDirectedServiceEdges(t *testing.T) {
 	}
 }
 
+func TestBuildWorkspaceContractSummaryBalancesEveryContract(t *testing.T) {
+	matches := make([]WorkspaceContractMatchRecord, 0, 178)
+	appendMatches := func(count int, issue, confidence string) {
+		for range count {
+			matches = append(matches, WorkspaceContractMatchRecord{Issue: issue, Confidence: confidence})
+		}
+	}
+	appendMatches(150, contractIssueMatched, "RESOLVED")
+	appendMatches(20, contractIssueIndexedBackendRouteMissing, "UNRESOLVED")
+	appendMatches(3, contractIssueMissingRoute, "UNRESOLVED")
+	appendMatches(3, contractIssueMethodMismatch, "MISMATCH")
+	appendMatches(1, contractIssueDynamicEndpointUnresolved, "UNRESOLVED")
+	appendMatches(1, contractIssueFrontendInternalAPI, "OUT_OF_SCOPE")
+
+	summary := BuildWorkspaceContractSummary(matches)
+	if summary.Total != 178 || summary.Resolved != 150 || summary.MissingRoute != 23 ||
+		summary.MethodMismatch != 3 || summary.DynamicUnresolved != 1 ||
+		summary.OutOfScope != 1 || summary.Other != 0 {
+		t.Fatalf("unexpected contract summary: %#v", summary)
+	}
+	accounted := summary.Resolved + summary.MissingRoute + summary.MethodMismatch +
+		summary.DynamicUnresolved + summary.OutOfScope + summary.Other
+	if summary.Total != accounted {
+		t.Fatalf("contract total %d does not balance with categories %d", summary.Total, accounted)
+	}
+}
+
+func TestBuildWorkspaceServiceMapPublishesContractSummary(t *testing.T) {
+	serviceMap := BuildWorkspaceServiceMap(WorkspaceRegistryRecord{}, []WorkspaceContractMatchRecord{
+		{Issue: contractIssueMatched, Confidence: "RESOLVED"},
+		{Issue: contractIssueMethodMismatch, Confidence: "MISMATCH"},
+	}, nil, nil)
+	if serviceMap.ContractSummary.Total != 2 || serviceMap.ContractSummary.Resolved != 1 || serviceMap.ContractSummary.MethodMismatch != 1 {
+		t.Fatalf("service map contract summary = %#v", serviceMap.ContractSummary)
+	}
+}
+
 func TestBuildWorkspaceServiceMapAggregatesMismatchAndUnresolvedCounts(t *testing.T) {
 	registry := WorkspaceRegistryRecord{
 		Root: "/workspace",

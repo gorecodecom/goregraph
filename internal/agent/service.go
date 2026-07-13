@@ -167,6 +167,16 @@ func loadTask(request Request) ([]Item, []string, error) {
 		}
 		return items, nil, nil
 	case "workspace-summary":
+		var serviceMap scan.WorkspaceServiceMapRecord
+		if err := readOutput(request.Root, "workspace-service-map.json", &serviceMap); err == nil {
+			return []Item{{
+				ID:      "workspace:" + serviceMap.Root,
+				Kind:    "workspace",
+				Title:   firstText(serviceMap.Root, request.Root),
+				Summary: fmt.Sprintf("%d services; %d contracts; %d resolved", len(serviceMap.Nodes), serviceMap.ContractSummary.Total, serviceMap.ContractSummary.Resolved),
+				Data:    map[string]any{"generated": serviceMap.Generated, "contract_summary": serviceMap.ContractSummary},
+			}}, nil, nil
+		}
 		var manifest scan.Manifest
 		if err := readOutput(request.Root, "manifest.json", &manifest); err != nil {
 			return nil, nil, err

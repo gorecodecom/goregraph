@@ -60,6 +60,37 @@ func TestServiceBoundsResultsAndContinuesDeterministically(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSummaryReturnsCanonicalContractCounts(t *testing.T) {
+	root := t.TempDir()
+	workspaceDir := filepath.Join(root, ".goregraph-workspace")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	serviceMap := scan.WorkspaceServiceMapRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Root:          root,
+		ContractSummary: scan.WorkspaceContractSummaryRecord{
+			Total: 2, Resolved: 1, MissingRoute: 1,
+		},
+	}
+	body, err := json.Marshal(serviceMap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceDir, "workspace-service-map.json"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (Service{}).Run(Request{Root: root, Task: "workspace-summary"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, ok := result.Items[0].Data["contract_summary"].(scan.WorkspaceContractSummaryRecord)
+	if !ok || summary.Total != 2 || summary.Resolved != 1 || summary.MissingRoute != 1 {
+		t.Fatalf("workspace summary contract counts = %#v", result.Items[0].Data["contract_summary"])
+	}
+}
+
 func TestServiceRejectsUnsafeBoundsAndReportsCoverage(t *testing.T) {
 	service := Service{}
 	if _, err := service.Run(Request{Root: t.TempDir(), Task: "coverage", Limit: 101}); err == nil {

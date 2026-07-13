@@ -58,7 +58,30 @@ func BuildWorkspaceServiceMap(registry WorkspaceRegistryRecord, matches []Worksp
 		}
 		builder.addDependencyEdge(dependency.FromProject, toProject, dependency)
 	}
-	return builder.record(registry.Root)
+	record := builder.record(registry.Root)
+	record.ContractSummary = BuildWorkspaceContractSummary(matches)
+	return record
+}
+
+func BuildWorkspaceContractSummary(matches []WorkspaceContractMatchRecord) WorkspaceContractSummaryRecord {
+	summary := WorkspaceContractSummaryRecord{Total: len(matches)}
+	for _, match := range matches {
+		switch {
+		case match.Issue == contractIssueMatched || strings.EqualFold(match.Confidence, "RESOLVED"):
+			summary.Resolved++
+		case match.Issue == contractIssueMethodMismatch || strings.EqualFold(match.Confidence, "MISMATCH"):
+			summary.MethodMismatch++
+		case match.Issue == contractIssueDynamicEndpointUnresolved || match.Issue == contractIssueUnsafeDynamic:
+			summary.DynamicUnresolved++
+		case match.Issue == contractIssueFrontendInternalAPI || strings.EqualFold(match.Confidence, "OUT_OF_SCOPE"):
+			summary.OutOfScope++
+		case match.Issue == contractIssueMissingRoute || match.Issue == contractIssueIndexedBackendRouteMissing || match.Issue == contractIssueScannedServiceNoRoute:
+			summary.MissingRoute++
+		default:
+			summary.Other++
+		}
+	}
+	return summary
 }
 
 type workspaceServiceMapBuilder struct {

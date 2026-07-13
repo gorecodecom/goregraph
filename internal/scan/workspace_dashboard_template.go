@@ -8,7 +8,7 @@ import (
 const workspaceDashboardShell = `<div class="shell">
 <aside class="side">
 <h1>GoreGraph Workspace</h1>
-<div class="summary"><div class="metric"><strong id="service-count">0</strong><span>services</span></div><div class="metric"><strong id="edge-count">0</strong><span>relations</span></div><div class="metric"><strong id="trace-count">0</strong><span>traces</span></div></div>
+<div class="summary"><div class="metric"><strong id="service-count">0</strong><span>services</span></div><div class="metric"><strong id="edge-count">0</strong><span>relations</span></div><div class="metric"><strong id="trace-count">0</strong><span>traces</span></div><div class="metric"><strong id="contract-count">0</strong><span>contracts</span></div></div>
 <h2>View</h2>
 <div class="modes">
 <button data-view-mode="architecture" class="active" aria-pressed="true">Architecture</button>

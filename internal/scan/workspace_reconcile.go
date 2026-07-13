@@ -1417,15 +1417,18 @@ func renderWorkspaceNextActionsReport(context WorkspaceContextRecord, matches []
 			indexedReferencedServices++
 		}
 	}
-	resolvedContracts := 0
-	for _, match := range matches {
-		if match.Issue == contractIssueMatched {
-			resolvedContracts++
-		}
-	}
+	contractSummary := BuildWorkspaceContractSummary(matches)
 	b.WriteString(fmt.Sprintf("- Projects indexed: %d / %d\n", indexedProjects, totalProjects))
 	b.WriteString(fmt.Sprintf("- Referenced services indexed: %d / %d\n", indexedReferencedServices, len(referencedServices)))
-	b.WriteString(fmt.Sprintf("- Workspace contracts resolved: %d / %d\n", resolvedContracts, len(matches)))
+	b.WriteString(fmt.Sprintf("- Workspace contracts: %d total; resolved: %d; missing route: %d; method mismatch: %d; dynamic unresolved: %d; out of scope: %d; other: %d\n",
+		contractSummary.Total,
+		contractSummary.Resolved,
+		contractSummary.MissingRoute,
+		contractSummary.MethodMismatch,
+		contractSummary.DynamicUnresolved,
+		contractSummary.OutOfScope,
+		contractSummary.Other,
+	))
 
 	b.WriteString("\n## Most Useful Next Scans\n\n")
 	wroteScan := false

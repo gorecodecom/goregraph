@@ -819,16 +819,27 @@ type WorkspaceImpactRecord struct {
 }
 
 type WorkspaceServiceMapRecord struct {
-	SchemaVersion      int                          `json:"schema_version"`
-	Generated          string                       `json:"generated,omitempty"`
-	Root               string                       `json:"root,omitempty"`
-	Nodes              []WorkspaceServiceNodeRecord `json:"nodes"`
-	Edges              []WorkspaceServiceEdgeRecord `json:"edges"`
-	Stats              map[string]int               `json:"stats,omitempty"`
-	Capabilities       []CapabilityRecord           `json:"capabilities,omitempty"`
-	Diagnostics        []CanonicalDiagnosticRecord  `json:"diagnostics,omitempty"`
-	DiagnosticFamilies []DiagnosticFamilyRecord     `json:"diagnostic_families,omitempty"`
-	DataFlows          []DataFlowRecord             `json:"data_flows,omitempty"`
+	SchemaVersion      int                            `json:"schema_version"`
+	Generated          string                         `json:"generated,omitempty"`
+	Root               string                         `json:"root,omitempty"`
+	Nodes              []WorkspaceServiceNodeRecord   `json:"nodes"`
+	Edges              []WorkspaceServiceEdgeRecord   `json:"edges"`
+	Stats              map[string]int                 `json:"stats,omitempty"`
+	Capabilities       []CapabilityRecord             `json:"capabilities,omitempty"`
+	Diagnostics        []CanonicalDiagnosticRecord    `json:"diagnostics,omitempty"`
+	DiagnosticFamilies []DiagnosticFamilyRecord       `json:"diagnostic_families,omitempty"`
+	ContractSummary    WorkspaceContractSummaryRecord `json:"contract_summary"`
+	DataFlows          []DataFlowRecord               `json:"data_flows,omitempty"`
+}
+
+type WorkspaceContractSummaryRecord struct {
+	Total             int `json:"total"`
+	Resolved          int `json:"resolved"`
+	MissingRoute      int `json:"missing_route"`
+	MethodMismatch    int `json:"method_mismatch"`
+	DynamicUnresolved int `json:"dynamic_unresolved"`
+	OutOfScope        int `json:"out_of_scope"`
+	Other             int `json:"other"`
 }
 
 type WorkspaceServiceDependencyRecord struct {

@@ -54,6 +54,21 @@ func TestRenderWorkspaceDashboardHTMLKeepsPayloadOfflineAfterDecomposition(t *te
 	}
 }
 
+func TestWorkspaceDashboardShowsCanonicalContractSummary(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, ContractSummary: WorkspaceContractSummaryRecord{Total: 5, Resolved: 2, MissingRoute: 1, MethodMismatch: 1, DynamicUnresolved: 1}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{`id="contract-count"`, "contract_summary", "contractSummary.resolved"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing contract summary marker %q", want)
+		}
+	}
+}
+
 func TestDashboardGridAvoidsHorizontalOverflowAtNarrowDesktopWidths(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
