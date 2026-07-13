@@ -23,7 +23,64 @@ func renderCanonicalDiagnosticsEntry(records []CanonicalDiagnosticRecord) string
 }
 
 func renderAgentGuideEntry() string {
-	return primaryReport("Agent Guide", "Start with compact generated tasks, follow stable evidence IDs, and read only the cited source locations needed for the change. UNAVAILABLE or FAILED coverage means analysis is incomplete; it never proves that behavior is absent.", "coverage")
+	return `# GoreGraph Agent Guide
+
+Start with the smallest bounded generated task. Follow stable evidence IDs and read only the cited source files needed for the change; incomplete coverage is uncertainty, never proof that behavior is absent.
+
+## Coverage orientation
+
+` + "```bash\n" + `goregraph query . coverage --format markdown --limit 20
+` + "```" + `
+
+## Endpoint change
+
+` + "```bash\n" + `goregraph query . task-context --query "GET /route" --format markdown --limit 20
+` + "```" + `
+MCP: ` + "`task_context`" + `
+
+## Service impact
+
+` + "```bash\n" + `goregraph query . service-context --query service-name --format markdown --limit 20
+` + "```" + `
+MCP: ` + "`service_context`" + `
+
+## Test gaps
+
+` + "```bash\n" + `goregraph query . tests --query route-or-file --format markdown --limit 20
+` + "```" + `
+MCP: ` + "`tests`" + `
+
+## Open contracts
+
+` + "```bash\n" + `goregraph query . diagnostics --query service-or-route --format markdown --limit 20
+` + "```" + `
+MCP: ` + "`diagnostics`" + `
+
+## Data flow
+
+` + "```bash\n" + `goregraph query . data-flow --query route --format markdown --limit 20
+` + "```" + `
+MCP: ` + "`data_flow`" + `
+
+## Workspace delta
+
+` + "```bash\n" + `goregraph query <after-snapshot> workspace-delta --query <before-snapshot> --format markdown --limit 20
+` + "```" + `
+MCP: ` + "`workspace_delta`" + `
+
+## Evidence lookup
+
+` + "```bash\n" + `goregraph query . evidence --query evidence-id --format markdown --limit 20
+` + "```" + `
+MCP: ` + "`evidence`" + `
+
+## Freshness check
+
+` + "```bash\n" + `goregraph query . task-context --query route-or-file --format markdown --limit 5
+goregraph doctor .
+` + "```" + `
+MCP: ` + "`task_context`" + `
+`
 }
 
 func primaryReport(title, summary, task string) string {

@@ -92,6 +92,28 @@ func TestRunWritesPrimaryAgentMarkdownEntryPoints(t *testing.T) {
 	}
 }
 
+func TestAgentGuideContainsTaskRecipesExactlyOnce(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc main(){}\n")
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	guide := readText(t, filepath.Join(root, "goregraph-out", "agent-guide.md"))
+	t.Log("\n" + guide)
+	for _, want := range []string{
+		"Endpoint change", "Service impact", "Test gaps", "Open contracts", "Data flow", "Workspace delta", "Evidence lookup", "Freshness check",
+		"task-context", "service-context", "tests", "diagnostics", "data-flow", "workspace-delta", "evidence", "task_context", "workspace_delta",
+		"read only the cited source files", "incomplete coverage is uncertainty",
+	} {
+		if !strings.Contains(guide, want) {
+			t.Fatalf("agent guide missing %q:\n%s", want, guide)
+		}
+	}
+	if count := strings.Count(guide, "goregraph query . coverage"); count != 1 {
+		t.Fatalf("coverage command occurs %d times, want 1:\n%s", count, guide)
+	}
+}
+
 func TestRunExtractsSymbolsRelationsAndGraph(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "go.mod", "module example.test/demo\n")
