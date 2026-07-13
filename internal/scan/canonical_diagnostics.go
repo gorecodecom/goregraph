@@ -24,15 +24,22 @@ type CanonicalDiagnosticRecord struct {
 }
 
 type DiagnosticFamilyRecord struct {
-	FamilyID       string   `json:"family_id"`
-	Code           string   `json:"code"`
-	Service        string   `json:"service,omitempty"`
-	RoutePattern   string   `json:"route_pattern,omitempty"`
-	RootCause      string   `json:"root_cause"`
-	AffectedCount  int      `json:"affected_count"`
-	DiagnosticIDs  []string `json:"diagnostic_ids"`
-	EvidenceIDs    []string `json:"evidence_ids,omitempty"`
-	SuggestedCheck string   `json:"suggested_check"`
+	FamilyID         string   `json:"family_id"`
+	Code             string   `json:"code"`
+	Service          string   `json:"service,omitempty"`
+	RoutePattern     string   `json:"route_pattern,omitempty"`
+	RootCause        string   `json:"root_cause"`
+	AffectedCount    int      `json:"affected_count"`
+	ObservedCount    int      `json:"observed_count"`
+	ResolvedCount    int      `json:"resolved_count"`
+	UnresolvedCount  int      `json:"unresolved_count"`
+	OutOfScopeCount  int      `json:"out_of_scope_count"`
+	LikelyOwner      string   `json:"likely_owner,omitempty"`
+	AffectedProjects []string `json:"affected_projects,omitempty"`
+	DiagnosticIDs    []string `json:"diagnostic_ids"`
+	EvidenceIDs      []string `json:"evidence_ids,omitempty"`
+	NextChecks       []string `json:"next_checks"`
+	SuggestedCheck   string   `json:"suggested_check"`
 }
 
 func BuildDiagnosticFamilies(project string, diagnostics []CanonicalDiagnosticRecord) []DiagnosticFamilyRecord {
@@ -50,16 +57,34 @@ func BuildDiagnosticFamilies(project string, diagnostics []CanonicalDiagnosticRe
 			if len(diagnostic.NextChecks) > 0 {
 				check = diagnostic.NextChecks[0]
 			}
-			family = &DiagnosticFamilyRecord{FamilyID: id, Code: diagnostic.Code, Service: project, RoutePattern: pattern, RootCause: diagnostic.Explanation, SuggestedCheck: check}
+			rootCause := diagnostic.Explanation
+			if rootCause == "" {
+				rootCause = diagnosticForCode(diagnostic.Code).Explanation
+			}
+			family = &DiagnosticFamilyRecord{FamilyID: id, Code: diagnostic.Code, Service: project, RoutePattern: pattern, RootCause: rootCause, LikelyOwner: project, AffectedProjects: nonEmptyStrings(project), SuggestedCheck: check}
 			byKey[key] = family
 		}
 		family.AffectedCount++
+		family.ObservedCount++
+		switch diagnostic.Resolution {
+		case ResolutionMatched:
+			family.ResolvedCount++
+		case ResolutionOutOfScope:
+			family.OutOfScopeCount++
+		default:
+			family.UnresolvedCount++
+		}
 		family.DiagnosticIDs = append(family.DiagnosticIDs, diagnostic.ID)
 		family.EvidenceIDs = append(family.EvidenceIDs, diagnostic.EvidenceIDs...)
+		family.NextChecks = append(family.NextChecks, diagnostic.NextChecks...)
 	}
 	result := make([]DiagnosticFamilyRecord, 0, len(byKey))
 	for _, family := range byKey {
 		family.EvidenceIDs = uniqueSortedStrings(family.EvidenceIDs)
+		family.NextChecks = uniqueSortedStrings(family.NextChecks)
+		if len(family.NextChecks) == 0 {
+			family.NextChecks = []string{family.SuggestedCheck}
+		}
 		result = append(result, *family)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].FamilyID < result[j].FamilyID })
@@ -136,7 +161,7 @@ func diagnosticForCode(code string) CanonicalDiagnosticRecord {
 	case "unscanned_service":
 		return CanonicalDiagnosticRecord{Title: "Referenced service is not indexed", Category: "missing_scan_coverage", Severity: SeverityWarning, Resolution: ResolutionUnresolved, Explanation: "A client contract references a service whose route index is not available in the current scan scope.", PossibleImpact: "Endpoint and impact results may be incomplete until the owning project is scanned.", NextChecks: []string{"Scan the owning service project.", "Confirm the configured service alias."}}
 	case "dynamic_endpoint_unresolved":
-		return CanonicalDiagnosticRecord{Title: "Endpoint is built dynamically", Category: "dynamic_or_ambiguous", Severity: SeverityWarning, Resolution: ResolutionPartial, Explanation: "The route contains runtime-composed values that static analysis cannot resolve safely.", PossibleImpact: "The provider and downstream path may be incomplete.", NextChecks: []string{"Inspect the source expression.", "Configure the project-specific route wrapper when stable."}}
+		return CanonicalDiagnosticRecord{Title: "Endpoint is built dynamically", Category: "dynamic_or_ambiguous", Severity: SeverityWarning, Resolution: ResolutionPartial, Explanation: "A dynamic route or service segment is composed at runtime, so static analysis cannot enumerate every possible provider safely.", PossibleImpact: "The provider and downstream path may be incomplete.", NextChecks: []string{"Inspect the dynamic variable or configuration value in the cited source expression.", "Compare its possible values with the expected service and route mapping."}}
 	case "analyzer_failed":
 		return CanonicalDiagnosticRecord{Title: "Analyzer capability failed", Category: "missing_scan_coverage", Severity: SeverityError, Resolution: ResolutionUnresolved, Explanation: "An expected analyzer capability failed and its facts are incomplete.", PossibleImpact: "Queries may omit relationships from the affected capability.", NextChecks: []string{"Run goregraph doctor and inspect the capability failure.", "Rescan after correcting the analyzer input."}}
 	default:

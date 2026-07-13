@@ -1075,3 +1075,20 @@ func TestWorkspaceDashboardRendersDiagnosticsAsHTMLWorkbench(t *testing.T) {
 		t.Fatal("Diagnostics still uses a fitted SVG")
 	}
 }
+
+func TestWorkspaceDashboardUsesCanonicalDiagnosticAccounting(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, DiagnosticFamilies: []DiagnosticFamilyRecord{{
+			FamilyID: "diagnostic-family:dynamic", Code: "dynamic_endpoint_unresolved", RoutePattern: "/documentdownload/{variant}",
+			RootCause: "A dynamic route segment prevents exhaustive static resolution.", ObservedCount: 4, ResolvedCount: 2,
+			UnresolvedCount: 2, LikelyOwner: "frontend/app", AffectedProjects: []string{"frontend/app"}, NextChecks: []string{"Inspect variant."},
+		}}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{"observed_count", "resolved_count", "unresolved_count", "out_of_scope_count", "likely_owner", "affected_projects", "next_checks"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing canonical diagnostic field %q", want)
+		}
+	}
+}

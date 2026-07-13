@@ -101,6 +101,26 @@ func TestServiceRejectsUnsafeBoundsAndReportsCoverage(t *testing.T) {
 	}
 }
 
+func TestServiceExposesDiagnosticFamilyAccounting(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "goregraph-out"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTaskContextJSON(t, root, "diagnostic-families.json", []scan.DiagnosticFamilyRecord{{
+		FamilyID: "diagnostic-family:dynamic", Code: "dynamic_endpoint_unresolved", Service: "frontend/app",
+		ObservedCount: 2, ResolvedCount: 1, UnresolvedCount: 1, LikelyOwner: "frontend/app",
+		AffectedProjects: []string{"frontend/app"}, NextChecks: []string{"Inspect variant."},
+	}})
+	result, err := (Service{}).Run(Request{Root: root, Task: "diagnostics"})
+	if err != nil || len(result.Items) != 1 {
+		t.Fatalf("diagnostics result=%#v err=%v", result, err)
+	}
+	data := result.Items[0].Data
+	if data["observed_count"] != 2 || data["unresolved_count"] != 1 || data["likely_owner"] != "frontend/app" {
+		t.Fatalf("diagnostic family data=%#v", data)
+	}
+}
+
 func TestServiceExposesReferenceCapabilityEvidence(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "client.ts"), []byte("export const load = () => fetch('/users')\n"), 0o644); err != nil {

@@ -1,6 +1,30 @@
 package scan
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestDiagnosticFamilyExplainsUnsafeDynamicEvidence(t *testing.T) {
+	families := BuildDiagnosticFamilies("frontend/app", []CanonicalDiagnosticRecord{{
+		ID: "d1", Code: "dynamic_endpoint_unresolved", Resolution: ResolutionPartial,
+		AffectedArtifacts: []string{"GET /documentdownload/{variant}"},
+		NextChecks:        []string{"Inspect the dynamic variant and its service mapping."},
+	}})
+	if len(families) != 1 {
+		t.Fatalf("families=%#v", families)
+	}
+	family := families[0]
+	if family.ObservedCount != 1 || family.UnresolvedCount != 1 || family.ResolvedCount != 0 || family.OutOfScopeCount != 0 {
+		t.Fatalf("family accounting=%#v", family)
+	}
+	if family.LikelyOwner != "frontend/app" || len(family.AffectedProjects) != 1 || len(family.NextChecks) == 0 {
+		t.Fatalf("family context=%#v", family)
+	}
+	if !strings.Contains(strings.ToLower(family.RootCause), "dynamic") {
+		t.Fatalf("root cause=%q", family.RootCause)
+	}
+}
 
 func TestCanonicalDiagnosticsSeparateExpectedBehaviorFromDefects(t *testing.T) {
 	matches := []ContractMatchRecord{

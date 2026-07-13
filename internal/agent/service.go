@@ -100,7 +100,7 @@ func loadTask(request Request) ([]Item, []string, error) {
 				if !matchesQuery(request.Query, family.FamilyID, family.Code, family.Service, family.RoutePattern, family.RootCause) {
 					continue
 				}
-				items = append(items, Item{ID: family.FamilyID, Kind: "diagnostic_family", Title: family.Code + " " + family.RoutePattern, Summary: family.RootCause, EvidenceIDs: family.EvidenceIDs, Data: map[string]any{"affected_count": family.AffectedCount, "diagnostic_ids": family.DiagnosticIDs, "suggested_check": family.SuggestedCheck}})
+				items = append(items, Item{ID: family.FamilyID, Kind: "diagnostic_family", Title: family.Code + " " + family.RoutePattern, Summary: family.RootCause, EvidenceIDs: family.EvidenceIDs, Data: map[string]any{"affected_count": family.AffectedCount, "observed_count": family.ObservedCount, "resolved_count": family.ResolvedCount, "unresolved_count": family.UnresolvedCount, "out_of_scope_count": family.OutOfScopeCount, "likely_owner": family.LikelyOwner, "affected_projects": family.AffectedProjects, "diagnostic_ids": family.DiagnosticIDs, "next_checks": family.NextChecks, "suggested_check": family.SuggestedCheck}})
 			}
 			return items, nil, nil
 		}
