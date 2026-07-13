@@ -887,6 +887,7 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 			record.FieldRisks = workspaceFieldRisks(match.FrontendResponseFields, record.BackendResponseFields)
 		}
 		record.PersistencePath = workspacePersistencePath(backendProject.spring, record.BackendSteps)
+		record = BuildCanonicalFeatureFlow(record)
 		records = append(records, record)
 	}
 	sort.Slice(records, func(i, j int) bool {

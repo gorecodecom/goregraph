@@ -44,11 +44,30 @@ func Run(root string) (Result, error) {
 	checkJSONFiles(out, &result)
 	checkFreshnessIntegrity(out, &result)
 	checkEvidenceIntegrity(out, &result)
+	checkCanonicalFeatureFlows(out, &result)
 	checkStaleFiles(root, manifest, &result)
 	if result.Failures > 0 || result.Warnings > 0 {
 		result.fix("goregraph scan " + root)
 	}
 	return result, nil
+}
+
+func checkCanonicalFeatureFlows(out string, result *Result) {
+	path := filepath.Join(out, "workspace-feature-flows.json")
+	var flows []scan.WorkspaceFeatureFlowRecord
+	if err := readJSON(path, &flows); err != nil {
+		if !os.IsNotExist(err) {
+			result.fail("feature-flows", "workspace-feature-flows.json invalid: "+err.Error())
+		}
+		return
+	}
+	for _, flow := range flows {
+		if err := scan.ValidateCanonicalFeatureFlow(flow); err != nil {
+			result.fail("feature-flows", err.Error())
+			return
+		}
+	}
+	result.ok("feature-flows", "canonical feature-flow references valid")
 }
 
 func checkManifest(out string, result *Result) (scan.Manifest, bool) {
