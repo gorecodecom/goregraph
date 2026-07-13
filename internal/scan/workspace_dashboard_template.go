@@ -13,6 +13,7 @@ const workspaceDashboardShell = `<div class="shell">
 <div class="modes">
 <button data-view-mode="architecture" class="active" aria-pressed="true">Architecture</button>
 <button data-view-mode="endpoints" aria-pressed="false">Endpoints</button>
+<button data-view-mode="feature-flow" aria-pressed="false">Feature Flow</button>
 <button data-view-mode="data-flow" aria-pressed="false">Data Flow</button>
 <button data-view-mode="diagnostics" aria-pressed="false">Diagnostics</button>
 <button data-view-mode="coverage" aria-pressed="false">Coverage</button>

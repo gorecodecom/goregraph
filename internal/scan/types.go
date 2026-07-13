@@ -833,6 +833,7 @@ type WorkspaceServiceMapRecord struct {
 	Diagnostics        []CanonicalDiagnosticRecord    `json:"diagnostics,omitempty"`
 	DiagnosticFamilies []DiagnosticFamilyRecord       `json:"diagnostic_families,omitempty"`
 	ContractSummary    WorkspaceContractSummaryRecord `json:"contract_summary"`
+	FeatureFlows       []WorkspaceFeatureFlowRecord   `json:"feature_flows,omitempty"`
 	DataFlows          []DataFlowRecord               `json:"data_flows,omitempty"`
 }
 

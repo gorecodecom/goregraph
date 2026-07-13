@@ -60,6 +60,7 @@ func BuildWorkspaceServiceMap(registry WorkspaceRegistryRecord, matches []Worksp
 	}
 	record := builder.record(registry.Root)
 	record.ContractSummary = BuildWorkspaceContractSummary(matches)
+	record.FeatureFlows = append([]WorkspaceFeatureFlowRecord(nil), flows...)
 	return record
 }
 

@@ -54,6 +54,14 @@ func TestBuildWorkspaceServiceMapCreatesDirectedServiceEdges(t *testing.T) {
 	}
 }
 
+func TestWorkspaceServiceMapCarriesCanonicalFeatureFlows(t *testing.T) {
+	flow := BuildCanonicalFeatureFlow(WorkspaceFeatureFlowRecord{ID: "flow", FrontendProject: "web", FrontendFile: "api.ts", HTTPMethod: "GET", Path: "/users", BackendProject: "users", Confidence: "RESOLVED"})
+	got := BuildWorkspaceServiceMap(WorkspaceRegistryRecord{}, nil, []WorkspaceFeatureFlowRecord{flow}, nil)
+	if len(got.FeatureFlows) != 1 || got.FeatureFlows[0].ModelVersion != 1 {
+		t.Fatalf("map=%#v", got)
+	}
+}
+
 func TestBuildWorkspaceContractSummaryBalancesEveryContract(t *testing.T) {
 	matches := make([]WorkspaceContractMatchRecord, 0, 178)
 	appendMatches := func(count int, issue, confidence string) {

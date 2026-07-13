@@ -787,7 +787,7 @@ func TestDashboardSwitchesBetweenGraphAndReadableWorkbench(t *testing.T) {
 		`setElementHidden(document.getElementById("workspace-graph"),workbench)`,
 		`setElementHidden(document.getElementById("workspace-workbench"),!workbench)`,
 		`setElementHidden(document.querySelector(".canvas-tools"),workbench)`,
-		`workbenchModes=new Set(["endpoints","data-flow","diagnostics","coverage"])`,
+		`workbenchModes=new Set(["endpoints","feature-flow","data-flow","diagnostics","coverage"])`,
 		`setCanvasPresentation(workbench?"workbench":"graph",state.mode)`,
 	} {
 		if !strings.Contains(html, want) {
@@ -1119,6 +1119,20 @@ func TestWorkspaceDashboardOwnsSelectionPerView(t *testing.T) {
 	for _, want := range []string{"selections:{architecture", "clearDetailsForMode", "Feature Flow context", "Coverage context"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardRendersCanonicalFeatureFlow(t *testing.T) {
+	flow := BuildCanonicalFeatureFlow(WorkspaceFeatureFlowRecord{ID: "flow:users", FrontendProject: "web", FrontendCaller: "loadUsers", FrontendFile: "api.ts", FrontendLine: 8, HTTPMethod: "GET", Path: "/users", BackendProject: "services/users", BackendService: "users", BackendController: "UserController", BackendMethod: "list", BackendFile: "UserController.java", BackendLine: 20, Confidence: "RESOLVED", Reason: "matched contract"})
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, FeatureFlows: []WorkspaceFeatureFlowRecord{flow}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{`data-view-mode="feature-flow"`, "Feature Flow", "renderFeatureFlowWorkbench", "feature-flow-stage", "sourceActions", "Open related Endpoint", "Open related Data Flow", "Resolved evidence", "Missing stage"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing Feature Flow behavior %q", want)
 		}
 	}
 }
