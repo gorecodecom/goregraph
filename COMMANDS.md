@@ -979,7 +979,7 @@ goregraph version
 Expected output:
 
 ```text
-goregraph 1.0.1
+goregraph 1.1.0
 commit: dev
 built: unknown
 go: go1.26.x

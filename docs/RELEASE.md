@@ -5,10 +5,21 @@
 Current release target:
 
 ```text
-v1.0.1
+v1.1.0
 ```
 
-`1.0.1` is the current patch target for readable long implementation traces. It preserves the stable public CLI and Schema 2 contract introduced by `1.0.0`.
+`1.1.0` is the current minor target for agent-first workspace intelligence. It preserves Schema 2 while adding compact task context, freshness and provenance, review-ready workspace deltas, root-cause diagnostic families, task-oriented agent recipes, task-relative workspace context, and canonical contract accounting.
+
+`1.1.0` acceptance requires:
+
+- one bounded `task-context` result across CLI, Query, and MCP;
+- artifact freshness and provenance in scan output and Doctor checks;
+- review-ready route, contract, test-gap, coverage, service, and evidence deltas;
+- canonical diagnostic families shared by generated output and the dashboard;
+- task-oriented agent recipes with one primary command per recipe;
+- root-neutral and project-specific workspace context;
+- balanced contract totals shared by JSON, Markdown, Query, MCP, and dashboard;
+- a clean installed-binary scan of the acceptance workspace.
 
 ## Required Secrets
 
@@ -274,7 +285,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.0.1
+goregraph 1.1.0
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -290,8 +301,8 @@ schema: 2
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v1.0.1 -m "Release v1.0.1"
-   git push origin v1.0.1
+   git tag -a v1.1.0 -m "Release v1.1.0"
+   git push origin v1.1.0
    ```
 
 5. GitHub Actions runs GoReleaser.
