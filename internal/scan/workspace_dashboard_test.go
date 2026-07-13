@@ -1108,3 +1108,16 @@ func TestWorkspaceDashboardExplainsAndCollapsesExpectedCoverage(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceDashboardOwnsSelectionPerView(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{"selections:{architecture", "clearDetailsForMode", "Feature Flow context", "Coverage context"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing %q", want)
+		}
+	}
+}
