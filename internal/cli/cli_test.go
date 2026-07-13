@@ -693,6 +693,23 @@ func TestRunUnknownCommandReturnsUsageError(t *testing.T) {
 	}
 }
 
+func TestRunQueryDispatchesTaskContext(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "main.go", "package main\n")
+	var scanOut, scanErr bytes.Buffer
+	if code := Run([]string{"scan", root, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
+		t.Fatalf("scan exit code = %d, stderr=%s", code, scanErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"query", root, "task-context", "--query", "main.go", "--format", "markdown", "--limit", "5"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "# GoreGraph task-context") {
+		t.Fatalf("task context was not rendered:\n%s", stdout.String())
+	}
+}
+
 func writeFile(t *testing.T, root, rel, body string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))

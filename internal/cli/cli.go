@@ -809,7 +809,7 @@ func runQuery(args []string, stdout, stderr io.Writer) int {
 
 func isAgentQueryTask(value string) bool {
 	switch value {
-	case "workspace-summary", "service-context", "endpoint-search", "endpoint-trace", "symbol-trace", "trace-from", "data-flow", "diagnostics", "coverage", "evidence", "tests", "change-context":
+	case "workspace-summary", "service-context", "endpoint-search", "task-context", "endpoint-trace", "symbol-trace", "trace-from", "data-flow", "diagnostics", "coverage", "evidence", "tests", "change-context":
 		return true
 	default:
 		return false
