@@ -21,3 +21,14 @@ func TestBuildDataFlowsKeepsKnownFieldsAndExplicitGaps(t *testing.T) {
 		}
 	}
 }
+
+func TestDataFlowExplainsStagesAndGaps(t *testing.T) {
+	records := BuildDataFlows([]WorkspaceFeatureFlowRecord{{ID: "flow", HTTPMethod: "POST", Path: "/users"}})
+	if len(records) != 1 || len(records[0].Gaps) == 0 {
+		t.Fatalf("records=%#v", records)
+	}
+	gap := records[0].Gaps[0]
+	if gap.NextCheck == "" || gap.Stage == "" {
+		t.Fatalf("gap lacks actionable context: %#v", gap)
+	}
+}

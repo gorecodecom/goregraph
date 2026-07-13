@@ -1038,3 +1038,24 @@ func TestWorkspaceDashboardShowsCompleteEndpointSourceContext(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceDashboardExplainsDataFlowPurposeAndEvidence(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{
+		"Endpoints show the call path",
+		"Data Flow shows the data path",
+		"Exact evidence",
+		"Inferred evidence",
+		"Weak evidence",
+		"Missing evidence",
+		"Open related Data Flow",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing %q", want)
+		}
+	}
+}

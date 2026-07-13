@@ -33,7 +33,9 @@ type DataFlowEdgeRecord struct {
 type DataFlowGapRecord struct {
 	From               string       `json:"from"`
 	To                 string       `json:"to"`
+	Stage              string       `json:"stage,omitempty"`
 	Reason             string       `json:"reason"`
+	NextCheck          string       `json:"next_check"`
 	RequiredCapability CapabilityID `json:"required_capability"`
 	Confidence         Confidence   `json:"confidence"`
 }
@@ -55,7 +57,7 @@ func BuildDataFlows(flows []WorkspaceFeatureFlowRecord) []DataFlowRecord {
 		for _, step := range flow.PersistencePath {
 			id := StableWorkspaceID("data-node", record.ID, "persistence", step.Repository, step.Method, step.Entity, step.Table)
 			record.Nodes = append(record.Nodes, DataFlowNodeRecord{ID: id, Role: "persistence", Label: firstNonEmpty(step.Repository+"."+step.Method, step.Entity, step.Table), File: step.File, Line: step.Line, Confidence: normalizeDiagnosticConfidence(step.Confidence)})
-			record.Gaps = append(record.Gaps, DataFlowGapRecord{From: last, To: id, Reason: "No field-level transformation mapping was extracted between request data and persistence.", RequiredCapability: CapabilityDataFlow, Confidence: ConfidenceUnknown})
+			record.Gaps = append(record.Gaps, DataFlowGapRecord{From: last, To: id, Stage: "transformation", Reason: "No field-level transformation mapping was extracted between request data and persistence.", NextCheck: "Inspect request-to-entity mapping code and the persistence assignment for this endpoint.", RequiredCapability: CapabilityDataFlow, Confidence: ConfidenceUnknown})
 			record.Edges = append(record.Edges, dataEdge(record.ID, last, id, "persists", ConfidenceInferred))
 			last = id
 		}
@@ -66,7 +68,7 @@ func BuildDataFlows(flows []WorkspaceFeatureFlowRecord) []DataFlowRecord {
 			last = id
 		}
 		if len(flow.BackendRequestFields) == 0 {
-			record.Gaps = append(record.Gaps, DataFlowGapRecord{From: inputID, Reason: "No request field shape was extracted.", RequiredCapability: CapabilityDataFlow, Confidence: ConfidenceUnknown})
+			record.Gaps = append(record.Gaps, DataFlowGapRecord{From: inputID, Stage: "request", Reason: "No request field shape was extracted.", NextCheck: "Inspect the endpoint request type and analyzer coverage for request fields.", RequiredCapability: CapabilityDataFlow, Confidence: ConfidenceUnknown})
 		}
 		records = append(records, record)
 	}
