@@ -645,6 +645,10 @@ Use `goregraph query <path> task-context --query "GET /users" --limit 20`
 to receive bounded routes, related tests, risks, source files and stable
 evidence IDs. Incomplete coverage is reported as uncertainty.
 
+Generated task context also reports artifact-level freshness: GoreGraph version,
+Schema 2, and the current deterministic source fingerprint. Missing freshness is
+reported as uncertainty; rescan before treating missing facts as absent behavior.
+
 ## Security Model
 
 GoreGraph is local and explicit.

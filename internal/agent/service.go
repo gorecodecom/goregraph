@@ -59,7 +59,13 @@ func (Service) Run(request Request) (Result, error) {
 	}
 	page := append([]Item(nil), items[offset:end]...)
 	warnings = compactWarnings(warnings, 12)
-	result := Result{Schema: scan.SchemaVersion, Task: request.Task, Freshness: "generated output loaded", CoverageWarnings: warnings, Items: page, Count: len(page), SuggestedNext: suggestedNext(request.Task)}
+	freshness := "generated output loaded"
+	if request.Task == "task-context" && len(page) > 0 {
+		if value, ok := page[0].Data["freshness"].(string); ok && value != "" {
+			freshness = value
+		}
+	}
+	result := Result{Schema: scan.SchemaVersion, Task: request.Task, Freshness: freshness, CoverageWarnings: warnings, Items: page, Count: len(page), SuggestedNext: suggestedNext(request.Task)}
 	if end < len(items) {
 		result.Truncated = true
 		result.Continuation = encodeContinuation(request.Task, end)
@@ -239,6 +245,13 @@ func loadTaskContext(request Request) ([]Item, []string, error) {
 	}
 
 	context := TaskContextRecord{Target: request.Query, Freshness: "generated output loaded", SuggestedNext: "goregraph query <path> evidence --limit 20"}
+	var freshness scan.ArtifactFreshnessIndex
+	if err := readOutput(request.Root, "freshness.json", &freshness); err != nil {
+		context.Freshness = "unknown: freshness metadata is missing; rescan before relying on absence"
+		context.CoverageWarnings = append(context.CoverageWarnings, context.Freshness)
+	} else {
+		context.Freshness = fmt.Sprintf("goregraph %s / schema %d / source fingerprint %s", freshness.GoreGraphVersion, freshness.Schema, freshness.SourceFingerprint)
+	}
 	for _, route := range routes {
 		if !matchesQuery(request.Query, route.RouteID, route.HTTPMethod, route.Path, route.Handler, route.File) {
 			continue

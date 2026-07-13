@@ -27,6 +27,7 @@ type workspaceIndexProject struct {
 	dependencies  []WorkspaceServiceDependencyRecord
 	capabilities  []CapabilityRecord
 	diagnostics   []CanonicalDiagnosticRecord
+	freshness     ArtifactFreshnessIndex
 }
 
 type workspaceBackendRoute struct {
@@ -83,6 +84,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	directedTraces := BuildDirectedTraceIndex(endpointTraces)
 	endpointTraces.Directed = directedTraces.Traces
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
+	workspaceFreshness := BuildWorkspaceFreshness(indexed, registry.Generated)
 
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
 	if err := os.MkdirAll(workspaceOut, 0o755); err != nil {
@@ -116,6 +118,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 		return nil, err
 	}
 	if err := writeJSON(filepath.Join(workspaceOut, "directed-traces.json"), directedTraces); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(filepath.Join(workspaceOut, "freshness.json"), workspaceFreshness); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-map.html"), []byte(RenderWorkspaceDashboardHTMLWithModels(workspaceGraph, serviceMap, endpointTraces, matches, featureDossiers)), 0o644); err != nil {
@@ -436,6 +441,9 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 			loaded.capabilities[i].Project = project.Path
 		}
 		if err := readWorkspaceJSON(filepath.Join(out, "diagnostics-canonical.json"), &loaded.diagnostics); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		if err := readWorkspaceJSON(filepath.Join(out, "freshness.json"), &loaded.freshness); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		result = append(result, loaded)

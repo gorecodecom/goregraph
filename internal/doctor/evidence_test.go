@@ -66,6 +66,22 @@ func TestDoctorRejectsDanglingCapabilityEvidence(t *testing.T) {
 	}
 }
 
+func TestDoctorRejectsInconsistentFreshness(t *testing.T) {
+	root := scannedProject(t)
+	path := filepath.Join(root, "goregraph-out", "freshness.json")
+	var freshness scan.ArtifactFreshnessIndex
+	readTestJSON(t, path, &freshness)
+	freshness.Artifacts[0].SourceFingerprint = "different"
+	writeTestJSON(t, path, freshness)
+	result, err := Run(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failures == 0 || !containsLine(result.Lines, "freshness provenance inconsistent") {
+		t.Fatalf("inconsistent freshness passed Doctor: %v", result.Lines)
+	}
+}
+
 func scannedProject(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

@@ -47,6 +47,21 @@ func TestRunTaskReturnsBoundedJSONEnvelope(t *testing.T) {
 	}
 }
 
+func TestRunTaskMarkdownShowsArtifactFreshness(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")
+	if _, err := scan.Run(root, config.Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunTask(TaskOptions{Root: root, Task: "task-context", Query: "main.go", Format: "markdown", Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, "Freshness: goregraph") || !strings.Contains(result, "source fingerprint") {
+		t.Fatalf("task markdown missing freshness provenance:\n%s", result)
+	}
+}
+
 func TestSearchReadsGeneratedOutputAliases(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")

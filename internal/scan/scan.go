@@ -20,6 +20,7 @@ const (
 
 var GeneratedFiles = []string{
 	"manifest.json",
+	"freshness.json",
 	"files.json",
 	"symbols.json",
 	"relations.json",
@@ -297,12 +298,14 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		GeneratedAt: finished.Format(time.RFC3339),
 		Git:         readGitMetadata(root),
 	}
+	freshness := BuildArtifactFreshness(manifest, index.Files, GeneratedFiles)
 	audit := newAuditRecord(root, cfg.OutputDir, started, finished, len(index.Files), skipped)
 	writes := []struct {
 		name  string
 		value any
 	}{
 		{"manifest.json", manifest},
+		{"freshness.json", freshness},
 		{"files.json", index.Files},
 		{"symbols.json", index.Symbols},
 		{"relations.json", index.Relations},

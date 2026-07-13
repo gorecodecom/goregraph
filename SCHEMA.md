@@ -114,6 +114,8 @@ Schema version 1 expects:
 
 `manifest.json` describes the generated output set.
 
+`freshness.json` records artifact generation time, GoreGraph version, Schema 2, a deterministic source fingerprint, stale state, and an explicit reason. Source fingerprints use sorted source paths and hashes; wall-clock generation metadata is excluded. Workspace reconciliation writes the same record shape to `.goregraph-workspace/freshness.json`, with project-relative artifact names. Missing freshness is uncertainty and requires a rescan before absence can be trusted.
+
 `files.json` lists indexed files with path, language, size, hash, and kind.
 
 `symbols.json` lists extracted symbols with name, kind, file, and line.

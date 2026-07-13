@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gorecodecom/goregraph/internal/config"
@@ -140,6 +141,9 @@ func TestServiceBuildsBoundedTaskContext(t *testing.T) {
 	if context["target"] != "GET /users" || len(context["endpoints"].([]Item)) != 1 ||
 		len(context["tests"].([]Item)) != 1 || len(context["risks"].([]Item)) != 1 {
 		t.Fatalf("incomplete task context: %#v", context)
+	}
+	if freshness, ok := context["freshness"].(string); !ok || !strings.Contains(freshness, "source fingerprint") {
+		t.Fatalf("task context freshness = %#v", context["freshness"])
 	}
 	if got := result.Items[0].EvidenceIDs; len(got) != 2 ||
 		got[0] != "evidence:diagnostic" || got[1] != "evidence:route" {

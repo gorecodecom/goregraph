@@ -39,7 +39,7 @@ func renderTaskText(result agent.Result, markdown bool) string {
 	if markdown {
 		heading = "# " + heading
 	}
-	lines = append(lines, heading, "")
+	lines = append(lines, heading, "", "Freshness: "+result.Freshness, "")
 	for _, warning := range result.CoverageWarnings {
 		lines = append(lines, "WARNING: "+warning)
 	}

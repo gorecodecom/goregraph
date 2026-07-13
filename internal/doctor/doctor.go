@@ -42,6 +42,7 @@ func Run(root string) (Result, error) {
 
 	checkGeneratedFiles(out, manifest, &result)
 	checkJSONFiles(out, &result)
+	checkFreshnessIntegrity(out, &result)
 	checkEvidenceIntegrity(out, &result)
 	checkStaleFiles(root, manifest, &result)
 	if result.Failures > 0 || result.Warnings > 0 {
@@ -90,6 +91,7 @@ func checkJSONFiles(out string, result *Result) {
 		dest any
 	}{
 		{"files.json", &[]scan.FileRecord{}},
+		{"freshness.json", &scan.ArtifactFreshnessIndex{}},
 		{"symbols.json", &[]scan.SymbolRecord{}},
 		{"relations.json", &[]scan.RelationRecord{}},
 		{"graph.json", &scan.Graph{}},
@@ -124,6 +126,27 @@ func checkJSONFiles(out string, result *Result) {
 		}
 		result.ok("json", check.name+" valid")
 	}
+}
+
+func checkFreshnessIntegrity(out string, result *Result) {
+	var index scan.ArtifactFreshnessIndex
+	if err := readJSON(filepath.Join(out, "freshness.json"), &index); err != nil {
+		return
+	}
+	if index.Schema != scan.SchemaVersion || index.GoreGraphVersion == "" || index.SourceFingerprint == "" || index.GeneratedAt == "" {
+		result.fail("freshness", "freshness provenance incomplete")
+		return
+	}
+	for _, record := range index.Artifacts {
+		if record.Artifact == "" || record.GeneratedAt == "" || record.GoreGraphVersion != index.GoreGraphVersion || record.Schema != index.Schema || record.SourceFingerprint != index.SourceFingerprint {
+			result.fail("freshness", "freshness provenance inconsistent")
+			return
+		}
+		if record.Stale {
+			result.warn("freshness", record.Artifact+" stale: "+record.Reason)
+		}
+	}
+	result.ok("freshness", "artifact provenance valid")
 }
 
 func checkEvidenceIntegrity(out string, result *Result) {
