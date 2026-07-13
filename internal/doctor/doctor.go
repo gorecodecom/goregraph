@@ -108,6 +108,7 @@ func checkJSONFiles(out string, result *Result) {
 		{"contract-matches.json", &[]scan.ContractMatchRecord{}},
 		{"diagnostics.json", &scan.DiagnosticsRecord{}},
 		{"diagnostics-canonical.json", &[]scan.CanonicalDiagnosticRecord{}},
+		{"diagnostic-families.json", &[]scan.DiagnosticFamilyRecord{}},
 		{"package-graph.json", &scan.PackageGraphRecord{}},
 		{"maven-graph.json", &scan.MavenGraphRecord{}},
 		{"analyzers.json", &[]scan.AnalyzerRecord{}},

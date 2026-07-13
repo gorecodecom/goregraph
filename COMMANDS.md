@@ -17,6 +17,13 @@ The equivalent MCP tool is `workspace_delta`; pass the current snapshot as `root
 and the previous snapshot directory as `query`. Stable IDs and semantic fields are
 compared; generation timestamps are ignored.
 
+## Diagnostic families
+
+`goregraph query <path> diagnostics --query <service-or-route> --format markdown --limit 20`
+
+The equivalent MCP tool is `diagnostics`. Results are grouped by canonical root
+cause and retain stable member diagnostic and evidence IDs.
+
 Installation commands such as `brew install gorecodecom/tap/goregraph` are documented in `README.md`. This file focuses on commands provided by the installed `goregraph` binary.
 
 For release acceptance or whenever generated workspace output may come from an older binary, verify the executable first and rebuild from a clean workspace:

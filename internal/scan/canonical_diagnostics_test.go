@@ -26,6 +26,29 @@ func TestCanonicalDiagnosticsSeparateExpectedBehaviorFromDefects(t *testing.T) {
 	}
 }
 
+func TestDiagnosticFamiliesCollapseRouteVariantsByRootCause(t *testing.T) {
+	records := []CanonicalDiagnosticRecord{
+		{ID: "diagnostic:a", Code: "indexed_backend_route_missing", Explanation: "No matching route.", AffectedArtifacts: []string{"GET /tree/alpha"}, EvidenceIDs: []string{"evidence:a"}, NextChecks: []string{"Check the backend route."}},
+		{ID: "diagnostic:b", Code: "indexed_backend_route_missing", Explanation: "No matching route.", AffectedArtifacts: []string{"GET /tree/beta/children"}, EvidenceIDs: []string{"evidence:b"}, NextChecks: []string{"Check the backend route."}},
+		{ID: "diagnostic:c", Code: "method_mismatch", Explanation: "HTTP method differs.", AffectedArtifacts: []string{"POST /tree/alpha"}, EvidenceIDs: []string{"evidence:c"}, NextChecks: []string{"Compare methods."}},
+	}
+	families := BuildDiagnosticFamilies("services/tree", records)
+	t.Logf("diagnostic families: %#v", families)
+	if len(families) != 2 {
+		t.Fatalf("families = %#v, want 2", families)
+	}
+	missing := families[0]
+	if missing.Code != "indexed_backend_route_missing" {
+		missing = families[1]
+	}
+	if missing.RoutePattern != "/tree/{variant}" || missing.AffectedCount != 2 || len(missing.DiagnosticIDs) != 2 || len(missing.EvidenceIDs) != 2 {
+		t.Fatalf("missing-route family not collapsed: %#v", missing)
+	}
+	if missing.FamilyID == "" || missing.RootCause == "" || missing.SuggestedCheck == "" {
+		t.Fatalf("family lacks guidance: %#v", missing)
+	}
+}
+
 func findCanonicalDiagnostic(t *testing.T, records []CanonicalDiagnosticRecord, code string) CanonicalDiagnosticRecord {
 	t.Helper()
 	for _, record := range records {

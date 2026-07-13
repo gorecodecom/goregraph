@@ -429,6 +429,23 @@ func TestRenderWorkspaceDashboardHTMLSeparatesTreeDiagnosticsByCode(t *testing.T
 	}
 }
 
+func TestRenderWorkspaceDashboardUsesCanonicalDiagnosticFamilies(t *testing.T) {
+	serviceMap := WorkspaceServiceMapRecord{
+		SchemaVersion: SchemaVersion,
+		DiagnosticFamilies: []DiagnosticFamilyRecord{{
+			FamilyID: "diagnostic-family:tree", Code: "indexed_backend_route_missing", Service: "services/tree",
+			RoutePattern: "/tree/{variant}", RootCause: "No indexed route matches.", AffectedCount: 2,
+			DiagnosticIDs: []string{"diagnostic:a", "diagnostic:b"}, SuggestedCheck: "Check the backend route.",
+		}},
+	}
+	html := RenderWorkspaceDashboardHTMLWithModels(WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, serviceMap, WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil)
+	for _, want := range []string{"diagnostic-family:tree", "canonicalDiagnosticFamilies", "canonicalDiagnosticFamilies.length"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard does not consume canonical diagnostic families: missing %q", want)
+		}
+	}
+}
+
 func TestRenderWorkspaceDashboardHTMLEndpointsCombineInventoryAndTrace(t *testing.T) {
 	serviceMap := WorkspaceServiceMapRecord{
 		SchemaVersion: SchemaVersion,

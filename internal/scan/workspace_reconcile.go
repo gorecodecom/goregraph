@@ -15,19 +15,20 @@ import (
 var workspaceGroupDirs = []string{"frontend", "frontends", "microservices", "services", "backends"}
 
 type workspaceIndexProject struct {
-	record        WorkspaceProjectRecord
-	routes        []CodeRouteRecord
-	relations     []RelationRecord
-	contracts     []APIContractRecord
-	codeFlows     []CodeFlowRecord
-	spring        SpringIndex
-	endpoints     []SpringEndpointRecord
-	endpointFlows []SpringEndpointFlowRecord
-	testMap       []TestMapRecord
-	dependencies  []WorkspaceServiceDependencyRecord
-	capabilities  []CapabilityRecord
-	diagnostics   []CanonicalDiagnosticRecord
-	freshness     ArtifactFreshnessIndex
+	record             WorkspaceProjectRecord
+	routes             []CodeRouteRecord
+	relations          []RelationRecord
+	contracts          []APIContractRecord
+	codeFlows          []CodeFlowRecord
+	spring             SpringIndex
+	endpoints          []SpringEndpointRecord
+	endpointFlows      []SpringEndpointFlowRecord
+	testMap            []TestMapRecord
+	dependencies       []WorkspaceServiceDependencyRecord
+	capabilities       []CapabilityRecord
+	diagnostics        []CanonicalDiagnosticRecord
+	diagnosticFamilies []DiagnosticFamilyRecord
+	freshness          ArtifactFreshnessIndex
 }
 
 type workspaceBackendRoute struct {
@@ -79,6 +80,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	for _, project := range indexed {
 		serviceMap.Capabilities = append(serviceMap.Capabilities, project.capabilities...)
 		serviceMap.Diagnostics = append(serviceMap.Diagnostics, project.diagnostics...)
+		serviceMap.DiagnosticFamilies = append(serviceMap.DiagnosticFamilies, project.diagnosticFamilies...)
 	}
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	directedTraces := BuildDirectedTraceIndex(endpointTraces)
@@ -441,6 +443,9 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 			loaded.capabilities[i].Project = project.Path
 		}
 		if err := readWorkspaceJSON(filepath.Join(out, "diagnostics-canonical.json"), &loaded.diagnostics); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		if err := readWorkspaceJSON(filepath.Join(out, "diagnostic-families.json"), &loaded.diagnosticFamilies); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		if err := readWorkspaceJSON(filepath.Join(out, "freshness.json"), &loaded.freshness); err != nil && !os.IsNotExist(err) {

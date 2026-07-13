@@ -23,6 +23,81 @@ type CanonicalDiagnosticRecord struct {
 	ConfigurationGuidance string     `json:"configuration_guidance,omitempty"`
 }
 
+type DiagnosticFamilyRecord struct {
+	FamilyID       string   `json:"family_id"`
+	Code           string   `json:"code"`
+	Service        string   `json:"service,omitempty"`
+	RoutePattern   string   `json:"route_pattern,omitempty"`
+	RootCause      string   `json:"root_cause"`
+	AffectedCount  int      `json:"affected_count"`
+	DiagnosticIDs  []string `json:"diagnostic_ids"`
+	EvidenceIDs    []string `json:"evidence_ids,omitempty"`
+	SuggestedCheck string   `json:"suggested_check"`
+}
+
+func BuildDiagnosticFamilies(project string, diagnostics []CanonicalDiagnosticRecord) []DiagnosticFamilyRecord {
+	records := append([]CanonicalDiagnosticRecord(nil), diagnostics...)
+	sort.Slice(records, func(i, j int) bool { return records[i].ID < records[j].ID })
+	byKey := map[string]*DiagnosticFamilyRecord{}
+	for _, diagnostic := range records {
+		pattern := diagnosticRoutePattern(diagnostic.AffectedArtifacts)
+		key := diagnostic.Code + "\x00" + project + "\x00" + pattern
+		family := byKey[key]
+		if family == nil {
+			id := stableDiagnosticID("family", key)
+			id = "diagnostic-family:" + strings.TrimPrefix(id, "diagnostic:")
+			check := "Inspect the cited evidence."
+			if len(diagnostic.NextChecks) > 0 {
+				check = diagnostic.NextChecks[0]
+			}
+			family = &DiagnosticFamilyRecord{FamilyID: id, Code: diagnostic.Code, Service: project, RoutePattern: pattern, RootCause: diagnostic.Explanation, SuggestedCheck: check}
+			byKey[key] = family
+		}
+		family.AffectedCount++
+		family.DiagnosticIDs = append(family.DiagnosticIDs, diagnostic.ID)
+		family.EvidenceIDs = append(family.EvidenceIDs, diagnostic.EvidenceIDs...)
+	}
+	result := make([]DiagnosticFamilyRecord, 0, len(byKey))
+	for _, family := range byKey {
+		family.EvidenceIDs = uniqueSortedStrings(family.EvidenceIDs)
+		result = append(result, *family)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].FamilyID < result[j].FamilyID })
+	return result
+}
+
+func diagnosticRoutePattern(artifacts []string) string {
+	for _, artifact := range artifacts {
+		for _, field := range strings.Fields(artifact) {
+			if !strings.HasPrefix(field, "/") {
+				continue
+			}
+			path := strings.SplitN(field, "?", 2)[0]
+			parts := strings.Split(strings.Trim(path, "/"), "/")
+			if len(parts) > 1 {
+				return "/" + parts[0] + "/{variant}"
+			}
+			return path
+		}
+	}
+	return ""
+}
+
+func uniqueSortedStrings(values []string) []string {
+	set := map[string]bool{}
+	for _, value := range values {
+		if value != "" {
+			set[value] = true
+		}
+	}
+	result := make([]string, 0, len(set))
+	for value := range set {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
 func BuildCanonicalDiagnostics(matches []ContractMatchRecord, capabilities []CapabilityRecord) []CanonicalDiagnosticRecord {
 	records := make([]CanonicalDiagnosticRecord, 0, len(matches))
 	for _, match := range matches {

@@ -653,6 +653,10 @@ For reviews, `goregraph query <after-snapshot> workspace-delta --query <before-s
 returns a bounded, deterministic summary of route, contract, test-gap, coverage,
 service, and evidence changes. The existing `goregraph workspace diff --before <dir> --after <dir>` command remains available.
 
+`goregraph query <path> diagnostics --limit 20` returns bounded canonical
+root-cause families with affected counts, member diagnostics, evidence IDs, and
+the next suggested check instead of repeating equivalent route variants.
+
 ## Security Model
 
 GoreGraph is local and explicit.

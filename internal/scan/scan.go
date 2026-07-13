@@ -40,6 +40,7 @@ var GeneratedFiles = []string{
 	"contract-matches.json",
 	"diagnostics.json",
 	"diagnostics-canonical.json",
+	"diagnostic-families.json",
 	"package-graph.json",
 	"maven-graph.json",
 	"analyzers.json",
@@ -286,6 +287,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	richGraph := buildRichGraph(index.Files, richSymbols, richRelations)
 	evidence := LinkEvidenceReferences(filepath.Base(root), index.Files, richRelations, &callGraph, routes, codeFlows, contractMatches)
 	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
+	diagnosticFamilies := BuildDiagnosticFamilies(filepath.Base(root), canonicalDiagnostics)
 	finished := time.Now().UTC()
 	manifest := Manifest{
 		Tool:        ToolName,
@@ -325,6 +327,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"contract-matches.json", contractMatches},
 		{"diagnostics.json", diagnostics},
 		{"diagnostics-canonical.json", canonicalDiagnostics},
+		{"diagnostic-families.json", diagnosticFamilies},
 		{"workspace-contract-matches.json", []WorkspaceContractMatchRecord{}},
 		{"workspace-feature-flows.json", []WorkspaceFeatureFlowRecord{}},
 		{"workspace-feature-dossiers.json", []FeatureDossierRecord{}},

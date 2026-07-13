@@ -93,6 +93,17 @@ func loadTask(request Request) ([]Item, []string, error) {
 		}
 		return items, warnings, nil
 	case "diagnostics":
+		var families []scan.DiagnosticFamilyRecord
+		if err := readOutput(request.Root, "diagnostic-families.json", &families); err == nil {
+			items := []Item{}
+			for _, family := range families {
+				if !matchesQuery(request.Query, family.FamilyID, family.Code, family.Service, family.RoutePattern, family.RootCause) {
+					continue
+				}
+				items = append(items, Item{ID: family.FamilyID, Kind: "diagnostic_family", Title: family.Code + " " + family.RoutePattern, Summary: family.RootCause, EvidenceIDs: family.EvidenceIDs, Data: map[string]any{"affected_count": family.AffectedCount, "diagnostic_ids": family.DiagnosticIDs, "suggested_check": family.SuggestedCheck}})
+			}
+			return items, nil, nil
+		}
 		var records []scan.CanonicalDiagnosticRecord
 		if err := readOutput(request.Root, "diagnostics-canonical.json", &records); err != nil {
 			return nil, nil, err
