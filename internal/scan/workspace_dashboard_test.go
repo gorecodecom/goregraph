@@ -994,6 +994,32 @@ func TestWorkspaceDashboardBundlesBackgroundArchitectureEdges(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDashboardUsesMockupArchitectureViews(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{`data-architecture-view="flow"`, `data-architecture-view="matrix"`, `data-architecture-view="selected"`, `main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:350px}`, "architecture-edge-layer", "architecture-node-layer", "architecture-label-layer", "architecture-call-pill", "architecture-legend", "setViewBox(layout.width,layout.height)", "otherPosition.x-gutter/2", "otherPosition.y+otherPosition.h/2", "y:190+index*90", "labelY=200+index*32", "svg{height:100vh}"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing mockup architecture contract %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardRendersArchitectureMatrixDetails(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{"function renderArchitectureMatrix", "function architectureProviderOrder", "architecture-matrix", "architecture-matrix-wrap{width:100%;min-width:0;overflow:auto}", `columns="190px repeat("`, `",96px)"`, "Consumer / provider", "data-architecture-edge", "architecture-matrix-detail", "View all relationships", "clamp(620px,calc(100vw - 1170px),920px)"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing architecture matrix contract %q", want)
+		}
+	}
+}
+
 func TestWorkspaceDashboardUsesExplicitArchitectureFocus(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},

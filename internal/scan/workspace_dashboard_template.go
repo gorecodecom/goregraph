@@ -51,6 +51,11 @@ const workspaceDashboardShell = `<div class="shell">
 </div>
 </aside>
 <main>
+<nav id="architecture-view-tabs" class="architecture-tabs" aria-label="Architecture presentation">
+<button type="button" data-architecture-view="flow" aria-pressed="true">Flow</button>
+<button type="button" data-architecture-view="matrix" aria-pressed="false">Matrix</button>
+<button type="button" data-architecture-view="selected" aria-pressed="false" disabled>Selected service</button>
+</nav>
 <div class="canvas-tools">
 <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
 <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
