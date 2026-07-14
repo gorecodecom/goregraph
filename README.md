@@ -27,6 +27,13 @@ The tool is intentionally conservative:
 - Builds a workspace map across repositories or services, including confidence, diagnostics, and source evidence.
 - Produces human-readable reports, machine-readable JSON, and an offline workspace dashboard.
 
+The workspace dashboard answers six separate questions without mixing their
+evidence models: Architecture maps services, Endpoints follows calls, Feature Flow
+shows an implementation chain, Data Flow follows fields, Diagnostics explains
+uncertainty, and Coverage distinguishes indexing completeness from analyzer
+support. Source locations, linked tests, safe verification commands, and bounded
+impact summaries remain evidence-backed and local.
+
 For command reference, see [`COMMANDS.md`](COMMANDS.md). The output contract is documented in [`OUTPUTS.md`](OUTPUTS.md) and [`SCHEMA.md`](SCHEMA.md); future work is in [`ROADMAP.md`](ROADMAP.md).
 
 ## Installation

@@ -34,7 +34,9 @@ Use the existing local-first Avenir Next / Segoe UI / Helvetica / Arial stack. D
 - Focus indicators are visible on every interactive element.
 - `prefers-reduced-motion` disables non-essential transitions.
 - Inventory-like information uses semantic HTML at normal browser scale; it must never be shrunk to fit a large SVG viewBox.
-- Endpoints, Data Flow, and Coverage use dedicated HTML workbenches. Coverage groups capability records by project and language instead of scaling the complete inventory into one graph.
+- Endpoints, Feature Flow, Data Flow, Diagnostics, and Coverage use dedicated semantic HTML workbenches. Coverage groups capability records by project and language instead of scaling the complete inventory into one graph.
+- The six top-level views answer distinct questions: Architecture shows service relationships; Endpoints shows call paths; Feature Flow shows the implementation chain; Data Flow shows field-level movement; Diagnostics explains uncertain relationships; Coverage separates workspace completeness from analyzer support.
+- At narrow widths the order is navigation, active workbench, then details. Multi-column verification, impact, and next-scan sections collapse to one column before text becomes cramped.
 - Pan, zoom, Fit, and relationship Labels are reserved for spatial graphs and implementation traces.
 - Implementation traces open at readable 100% card scale even when the complete path is wider or taller than the viewport. Pan explores the path; Fit is the explicit overview action.
 - Architecture focus uses redundant direction cues: outgoing is solid teal plus `OUT`, incoming is dashed amber plus `IN`, and both terminate at visible card-edge ports.

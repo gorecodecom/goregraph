@@ -24,6 +24,24 @@ compared; generation timestamps are ignored.
 The equivalent MCP tool is `diagnostics`. Results are grouped by canonical root
 cause and retain stable member diagnostic and evidence IDs.
 
+## Impact summary
+
+`goregraph query <path> impact-summary --query <route-or-flow> --format markdown --limit 20`
+
+The equivalent MCP tool is `impact_summary`. Results keep direct and indirect
+consumers, dependent tests, affected packages, public API surface, confidence,
+reasons, and coverage uncertainty separate. Traversal depth is bounded by the
+requested detail level and result pagination uses the normal continuation token.
+
+## Dashboard questions
+
+The offline workspace dashboard exposes six distinct views: Architecture for
+service relationships, Endpoints for call paths, Feature Flow for the functional
+implementation chain, Data Flow for field-level movement, Diagnostics for
+uncertain relationships, and Coverage for workspace completeness plus analyzer
+support. Inventory views use normal browser-scale HTML; zoom controls are reserved
+for spatial graphs and implementation traces.
+
 ## Workspace context scope
 
 Workspace-root context is intentionally neutral. Project-root reports show

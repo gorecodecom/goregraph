@@ -53,3 +53,16 @@ func TestDashboardDesignSystemDocumentsRequiredTokensAndBehavior(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardDocumentationCoversSixDistinctViews(t *testing.T) {
+	content, err := os.ReadFile("docs/OUTPUTS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, want := range []string{"Architecture", "Endpoints", "Feature Flow", "Data Flow", "Diagnostics", "Coverage", "100% scale", "prioritized next scans"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("dashboard documentation missing %q", want)
+		}
+	}
+}

@@ -79,7 +79,7 @@ func TestDashboardGridAvoidsHorizontalOverflowAtNarrowDesktopWidths(t *testing.T
 	)
 	for _, want := range []string{
 		`grid-template-columns:minmax(320px,380px) minmax(560px,1fr) minmax(320px,420px)`,
-		`@media (max-width:1240px){.shell{grid-template-columns:1fr;grid-template-areas:"side" "details" "main"}`,
+		`@media (max-width:1240px){.shell{grid-template-columns:1fr;grid-template-areas:"side" "main" "details"}`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing responsive grid rule %q", want)
@@ -877,7 +877,7 @@ func TestDashboardControlStateUsesARIA(t *testing.T) {
 	}
 }
 
-func TestDashboardMobileGridOrdersDetailsBeforeCanvasAndEnlargesControls(t *testing.T) {
+func TestDashboardMobileGridOrdersCanvasBeforeDetailsAndEnlargesControls(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
@@ -890,7 +890,7 @@ func TestDashboardMobileGridOrdersDetailsBeforeCanvasAndEnlargesControls(t *test
 		`.side{grid-area:side`,
 		`main{grid-area:main`,
 		`.details{grid-area:details`,
-		`grid-template-areas:"side" "details" "main"`,
+		`grid-template-areas:"side" "main" "details"`,
 		`.filters button,.modes button,.canvas-tools button{min-height:44px}`,
 	} {
 		if !strings.Contains(html, want) {
@@ -1170,6 +1170,15 @@ func TestWorkspaceDashboardShowsEvidenceBackedImpact(t *testing.T) {
 	for _, want := range []string{"impact_summaries", "Changing this may affect", "Direct consumers", "Indirect consumers", "Dependent tests", "Coverage uncertainty"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing impact behavior %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardCoversSixViewAcceptance(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion}, WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil)
+	for _, want := range []string{"Architecture", "Endpoints", "Feature Flow", "Data Flow", "Diagnostics", "Coverage", "@media (max-width:", "prefers-reduced-motion", "Focus selected", "Most useful next scans", "Changing this may affect", `grid-template-areas:"side" "main" "details"`, ".impact-grid,.feature-verification,.next-scans article{grid-template-columns:1fr}"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing visual acceptance marker %q", want)
 		}
 	}
 }
