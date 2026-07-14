@@ -710,6 +710,12 @@ func TestRunQueryDispatchesTaskContext(t *testing.T) {
 	}
 }
 
+func TestRunQueryRecognizesImpactSummaryTask(t *testing.T) {
+	if !isAgentQueryTask("impact-summary") {
+		t.Fatal("impact-summary must be dispatched through the agent query path")
+	}
+}
+
 func writeFile(t *testing.T, root, rel, body string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))
