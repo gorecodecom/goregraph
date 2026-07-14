@@ -119,7 +119,9 @@ func loadTask(request Request) ([]Item, []string, error) {
 	case "impact-summary":
 		var flows []scan.WorkspaceFeatureFlowRecord
 		if err := readOutput(request.Root, "workspace-feature-flows.json", &flows); err != nil {
-			return nil, nil, err
+			if workspaceErr := readOutput(request.Root, "feature-flows.json", &flows); workspaceErr != nil {
+				return nil, nil, err
+			}
 		}
 		var serviceMap scan.WorkspaceServiceMapRecord
 		_ = readOutput(request.Root, "workspace-service-map.json", &serviceMap)

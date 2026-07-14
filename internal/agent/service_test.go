@@ -234,6 +234,26 @@ func TestServiceReturnsImpactSummary(t *testing.T) {
 	}
 }
 
+func TestServiceReturnsImpactSummaryFromWorkspaceRoot(t *testing.T) {
+	root := t.TempDir()
+	workspaceOut := filepath.Join(root, ".goregraph-workspace")
+	if err := os.MkdirAll(workspaceOut, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	flows := []scan.WorkspaceFeatureFlowRecord{{ID: "flow", HTTPMethod: "GET", Path: "/documents", Nodes: []scan.CanonicalFlowNodeRecord{{ID: "api", Kind: "api_call"}, {ID: "endpoint", Kind: "endpoint"}}, Edges: []scan.CanonicalFlowEdgeRecord{{ID: "edge", FromNodeID: "api", ToNodeID: "endpoint", EdgeType: "invokes_api", Confidence: "RESOLVED", Reason: "match"}}}}
+	body, err := json.Marshal(flows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceOut, "feature-flows.json"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (Service{}).Run(Request{Root: root, Task: "impact-summary", Query: "/documents", Limit: 5})
+	if err != nil || len(result.Items) != 1 || result.Items[0].Kind != "impact_summary" {
+		t.Fatalf("workspace impact result=%#v err=%v", result, err)
+	}
+}
+
 func writeTaskContextJSON(t *testing.T, root, name string, value any) {
 	t.Helper()
 	body, err := json.Marshal(value)
