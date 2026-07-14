@@ -427,6 +427,7 @@ type WorkspaceContextRecord struct {
 	LoadedIndexes         []WorkspaceProjectRecord        `json:"loaded_indexes"`
 	Projects              []WorkspaceProjectRecord        `json:"projects"`
 	KnownServices         []string                        `json:"known_services,omitempty"`
+	ReferencedServices    []string                        `json:"referenced_services,omitempty"`
 	MissingServices       []string                        `json:"missing_services,omitempty"`
 	MissingServiceDetails []WorkspaceMissingServiceRecord `json:"missing_service_details,omitempty"`
 }
@@ -833,6 +834,7 @@ type WorkspaceServiceMapRecord struct {
 	Diagnostics        []CanonicalDiagnosticRecord    `json:"diagnostics,omitempty"`
 	DiagnosticFamilies []DiagnosticFamilyRecord       `json:"diagnostic_families,omitempty"`
 	ContractSummary    WorkspaceContractSummaryRecord `json:"contract_summary"`
+	WorkspaceCoverage  WorkspaceCoverageSummaryRecord `json:"workspace_coverage"`
 	FeatureFlows       []WorkspaceFeatureFlowRecord   `json:"feature_flows,omitempty"`
 	DataFlows          []DataFlowRecord               `json:"data_flows,omitempty"`
 }

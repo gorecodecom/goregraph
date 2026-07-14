@@ -174,7 +174,7 @@ func loadTask(request Request) ([]Item, []string, error) {
 				Kind:    "workspace",
 				Title:   firstText(serviceMap.Root, request.Root),
 				Summary: fmt.Sprintf("%d services; %d contracts; %d resolved", len(serviceMap.Nodes), serviceMap.ContractSummary.Total, serviceMap.ContractSummary.Resolved),
-				Data:    map[string]any{"generated": serviceMap.Generated, "contract_summary": serviceMap.ContractSummary},
+				Data:    map[string]any{"generated": serviceMap.Generated, "contract_summary": serviceMap.ContractSummary, "workspace_coverage": serviceMap.WorkspaceCoverage},
 			}}, nil, nil
 		}
 		var manifest scan.Manifest

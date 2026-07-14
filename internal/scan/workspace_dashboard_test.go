@@ -1136,3 +1136,16 @@ func TestWorkspaceDashboardRendersCanonicalFeatureFlow(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceDashboardShowsWorkspaceCoverageAndNextScans(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, WorkspaceCoverage: WorkspaceCoverageSummaryRecord{KnownProjects: 4, IndexedProjects: 2, ReferencedServices: 3, IndexedReferencedServices: 1, ContractSummary: WorkspaceContractSummaryRecord{Total: 10, Resolved: 6}, NextScans: []NextScanRecord{{Service: "users", Project: "services/users", AffectedContracts: 4, Command: "goregraph scan services/users"}}}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{"workspace_coverage", "Workspace coverage", "Most useful next scans", "indexed projects", "indexed referenced services", "resolved contracts", "goregraph scan services/users", "Missing coverage is uncertainty"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing workspace coverage behavior %q", want)
+		}
+	}
+}

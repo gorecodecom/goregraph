@@ -77,6 +77,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	featureDossiers := buildFeatureDossiers(featureFlows, matches)
 	workspaceGraph := BuildWorkspaceGraph(registry, matches, featureFlows, featureDossiers)
 	serviceMap := BuildWorkspaceServiceMap(registry, matches, featureFlows, workspaceServiceDependencies(indexed))
+	serviceMap.WorkspaceCoverage = BuildWorkspaceCoverage(context, serviceMap.ContractSummary)
 	serviceMap.EditorURLTemplate = cfg.EditorURLTemplate
 	serviceMap.DataFlows = dataFlows
 	for _, project := range indexed {
@@ -488,7 +489,12 @@ func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspace
 	}
 	sort.Strings(known)
 	var missing []string
+	var referencedServices []string
 	var missingDetails []WorkspaceMissingServiceRecord
+	for service := range referenced {
+		referencedServices = append(referencedServices, service)
+	}
+	sort.Strings(referencedServices)
 	for service, count := range referenced {
 		if !serviceSet[service] {
 			missing = append(missing, service)
@@ -515,6 +521,7 @@ func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspace
 		LoadedIndexes:         loaded,
 		Projects:              registry.Projects,
 		KnownServices:         known,
+		ReferencedServices:    referencedServices,
 		MissingServices:       missing,
 		MissingServiceDetails: missingDetails,
 	}
