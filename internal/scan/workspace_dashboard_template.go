@@ -64,6 +64,12 @@ const workspaceDashboardShell = `<div class="shell">
 <button id="toggle-labels" title="Toggle labels" aria-label="Toggle relationship labels" aria-pressed="false">Labels</button>
 <span id="zoom-readout" class="readout" aria-live="polite">100%</span>
 </div>
+<aside class="architecture-overlay-legend" aria-label="Architecture map legend">
+<span title="Calls grouped across services"><i class="architecture-legend-line grouped"></i>Grouped calls</span>
+<span title="Calls directly connected to the selected service"><i class="architecture-legend-line direct"></i>Direct calls</span>
+<span title="A relationship requiring attention"><i class="architecture-legend-line risk"></i>Risk</span>
+<span title="The currently selected service"><i class="architecture-legend-selection"></i>Selected</span>
+</aside>
 <svg id="workspace-graph" role="group" aria-label="Directed workspace relationship map"><defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8fa2ae"></path></marker><marker id="arrow-focus" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#0b6b79"></path></marker><marker id="arrow-outgoing" markerWidth="13" markerHeight="11" refX="11" refY="5.5" orient="auto"><path d="M0,0 L13,5.5 L0,11 z" fill="#0b6b79"></path></marker><marker id="arrow-incoming" markerWidth="13" markerHeight="11" refX="11" refY="5.5" orient="auto"><path d="M0,0 L13,5.5 L0,11 z" fill="#a56a00"></path></marker></defs><g id="graph-layer"></g></svg>
 <section id="workspace-workbench" class="workspace-workbench" hidden aria-label="Workspace data workbench"></section>
 </main>

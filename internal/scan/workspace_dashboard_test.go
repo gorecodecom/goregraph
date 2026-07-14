@@ -117,7 +117,7 @@ func TestDashboardArchitectureSelectionKeepsFullLayoutUntilExplicitIsolation(t *
 	}
 }
 
-func TestDashboardArchitectureShowsDirectionAndExplicitCardPorts(t *testing.T) {
+func TestDashboardArchitectureShowsDirectionalArrowsAndExplicitCardPorts(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
@@ -133,8 +133,6 @@ func TestDashboardArchitectureShowsDirectionAndExplicitCardPorts(t *testing.T) {
 		`function edgePortPoints(from,to,fromOffset,toOffset)`,
 		`class="edge-port source`,
 		`class="edge-port target`,
-		`class="direction-badge '+direction`,
-		`label=direction==="outgoing"?"OUT":"IN"`,
 		`marker-end="url(#arrow-`,
 		`.edge.incoming{`,
 		`stroke-dasharray:7 5`,
@@ -142,6 +140,14 @@ func TestDashboardArchitectureShowsDirectionAndExplicitCardPorts(t *testing.T) {
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing clear Architecture direction/port contract %q", want)
+		}
+	}
+	for _, obsolete := range []string{
+		`class="direction-badge '+direction`,
+		`label=direction==="outgoing"?"OUT":"IN"`,
+	} {
+		if strings.Contains(html, obsolete) {
+			t.Fatalf("dashboard still renders obsolete Architecture direction badge %q", obsolete)
 		}
 	}
 }
@@ -1003,6 +1009,32 @@ func TestWorkspaceDashboardUsesMockupArchitectureViews(t *testing.T) {
 	for _, want := range []string{`data-architecture-view="flow"`, `data-architecture-view="matrix"`, `data-architecture-view="selected"`, `main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:350px}`, "architecture-edge-layer", "architecture-node-layer", "architecture-label-layer", "architecture-call-pill", "architecture-legend", "setViewBox(layout.width,layout.height)", "otherPosition.x-gutter/2", "otherPosition.y+otherPosition.h/2", "y:190+index*90", "labelY=200+index*32", "svg{height:100vh}"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing mockup architecture contract %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardKeepsArchitectureExplanationVisible(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
+	)
+	for _, want := range []string{
+		`class="architecture-overlay-legend"`,
+		`aria-label="Architecture map legend"`,
+		"Statically detected API calls from ",
+		"Grouped calls",
+		"Direct calls",
+		"Risk",
+		"Selected",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing visible architecture explanation %q", want)
+		}
+	}
+	for _, unwanted := range []string{"function architectureDirectionBadges", "function architectureNodeDirections", "architectureLegend(42,layout.height-58)"} {
+		if strings.Contains(html, unwanted) {
+			t.Fatalf("dashboard still renders obsolete architecture cue %q", unwanted)
 		}
 	}
 }

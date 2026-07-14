@@ -39,5 +39,5 @@ Use the existing local-first Avenir Next / Segoe UI / Helvetica / Arial stack. D
 - At narrow widths the order is navigation, active workbench, then details. Multi-column verification, impact, and next-scan sections collapse to one column before text becomes cramped.
 - Pan, zoom, Fit, and relationship Labels are reserved for spatial graphs and implementation traces.
 - Implementation traces open at readable 100% card scale even when the complete path is wider or taller than the viewport. Pan explores the path; Fit is the explicit overview action.
-- Architecture focus uses redundant direction cues: outgoing is solid teal plus `OUT`, incoming is dashed amber plus `IN`, and both terminate at visible card-edge ports.
+- Architecture focus uses redundant direction cues: outgoing is solid teal, incoming is dashed amber, and both use arrowheads and terminate at visible card-edge ports. Text direction badges are omitted because the arrows already communicate direction.
 - Cards are opaque above background edges. A line that passes behind a card has no port; a line attached to a card ends at an explicit port.
