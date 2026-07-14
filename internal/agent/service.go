@@ -277,6 +277,10 @@ func loadTaskContext(request Request) ([]Item, []string, error) {
 	if err := readOutput(request.Root, "capabilities.json", &capabilities); err != nil {
 		return nil, nil, err
 	}
+	var featureFlows []scan.WorkspaceFeatureFlowRecord
+	_ = readOutput(request.Root, "workspace-feature-flows.json", &featureFlows)
+	testLinks := []scan.TestLinkRecord{}
+	verificationCommands := []scan.VerificationCommandRecord{}
 
 	context := TaskContextRecord{Target: request.Query, Freshness: "generated output loaded", SuggestedNext: "goregraph query <path> evidence --limit 20"}
 	var freshness scan.ArtifactFreshnessIndex
@@ -330,6 +334,13 @@ func loadTaskContext(request Request) ([]Item, []string, error) {
 			context.CoverageWarnings = append(context.CoverageWarnings, capability.Language+" / "+string(capability.ID)+": "+string(capability.Coverage))
 		}
 	}
+	for _, flow := range featureFlows {
+		if !matchesQuery(request.Query, flow.ID, flow.HTTPMethod, flow.Path, flow.FrontendProject, flow.BackendProject) {
+			continue
+		}
+		testLinks = append(testLinks, flow.TestLinks...)
+		verificationCommands = append(verificationCommands, flow.VerificationCommands...)
+	}
 	context.Services = sortedUnique(context.Services)
 	context.Files = sortedUnique(context.Files)
 	context.EvidenceIDs = sortedUnique(context.EvidenceIDs)
@@ -349,6 +360,7 @@ func loadTaskContext(request Request) ([]Item, []string, error) {
 		Data: map[string]any{
 			"target": context.Target, "services": context.Services, "endpoints": context.Endpoints,
 			"files": context.Files, "tests": context.Tests, "risks": context.Risks,
+			"test_links": testLinks, "verification_commands": verificationCommands,
 			"freshness": context.Freshness, "coverage_warnings": context.CoverageWarnings,
 			"suggested_next": context.SuggestedNext,
 		},

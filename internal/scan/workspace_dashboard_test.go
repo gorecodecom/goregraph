@@ -1149,3 +1149,13 @@ func TestWorkspaceDashboardShowsWorkspaceCoverageAndNextScans(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceDashboardShowsTestLinksAndVerificationCommands(t *testing.T) {
+	flow := BuildCanonicalFeatureFlow(WorkspaceFeatureFlowRecord{ID: "flow:test", HTTPMethod: "GET", Path: "/users", FrontendProject: "web", FrontendFile: "api.ts", BackendProject: "users", Tests: []TestMapRecord{{TestFile: "UserTest.java", TestMethod: "works", Confidence: "EXACT"}}, TestLinks: []TestLinkRecord{{ID: "test-link:1", Relation: "direct", TestFile: "UserTest.java", Confidence: "EXACT", Reason: "calls endpoint"}}, VerificationCommands: []VerificationCommandRecord{{Tool: "maven", WorkingDirectory: "users", Args: []string{"-Dtest=UserTest#works", "test"}, Display: "mvn -Dtest=UserTest#works test", Confidence: "EXACT", Reason: "detected Maven test"}}})
+	html := RenderWorkspaceDashboardHTMLWithModels(WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, FeatureFlows: []WorkspaceFeatureFlowRecord{flow}}, WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil)
+	for _, want := range []string{"test_links", "verification_commands", "Linked tests", "Verification commands", "No linked test detected", "mvn -Dtest=UserTest#works test"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing test verification behavior %q", want)
+		}
+	}
+}

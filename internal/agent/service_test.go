@@ -202,6 +202,26 @@ func TestServiceBuildsBoundedTaskContext(t *testing.T) {
 	}
 }
 
+func TestTaskContextExposesCanonicalTestLinksAndVerification(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "goregraph-out"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTaskContextJSON(t, root, "routes.json", []scan.CodeRouteRecord{})
+	writeTaskContextJSON(t, root, "test-map.json", []scan.TestMapRecord{})
+	writeTaskContextJSON(t, root, "diagnostics-canonical.json", []scan.CanonicalDiagnosticRecord{})
+	writeTaskContextJSON(t, root, "capabilities.json", []scan.CapabilityRecord{})
+	writeTaskContextJSON(t, root, "workspace-feature-flows.json", []scan.WorkspaceFeatureFlowRecord{{ID: "flow", HTTPMethod: "GET", Path: "/users", TestLinks: []scan.TestLinkRecord{{ID: "link", Relation: "direct", TestFile: "UserTest.java", Confidence: "EXACT", Reason: "calls endpoint"}}, VerificationCommands: []scan.VerificationCommandRecord{{Tool: "maven", Display: "mvn test", Confidence: "EXACT", Reason: "detected Maven"}}}})
+	result, err := (Service{}).Run(Request{Root: root, Task: "task-context", Query: "GET /users", Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := result.Items[0].Data
+	if len(data["test_links"].([]scan.TestLinkRecord)) != 1 || len(data["verification_commands"].([]scan.VerificationCommandRecord)) != 1 {
+		t.Fatalf("task context data=%#v", data)
+	}
+}
+
 func writeTaskContextJSON(t *testing.T, root, name string, value any) {
 	t.Helper()
 	body, err := json.Marshal(value)

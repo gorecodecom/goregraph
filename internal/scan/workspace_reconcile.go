@@ -331,14 +331,64 @@ func addWorkspaceProject(projects map[string]WorkspaceProjectRecord, workspaceRo
 		service = filepath.Base(abs)
 	}
 	projects[rel] = WorkspaceProjectRecord{
-		Name:      filepath.Base(abs),
-		Path:      rel,
-		AbsPath:   filepath.ToSlash(abs),
-		Kind:      kind,
-		Service:   service,
-		Indexed:   indexed,
-		Status:    status,
-		OutputDir: outputDir,
+		Name:        filepath.Base(abs),
+		Path:        rel,
+		AbsPath:     filepath.ToSlash(abs),
+		Kind:        kind,
+		BuildSystem: workspaceProjectBuildSystem(abs),
+		TestRunner:  workspaceProjectTestRunner(abs),
+		Service:     service,
+		Indexed:     indexed,
+		Status:      status,
+		OutputDir:   outputDir,
+	}
+}
+
+func workspaceProjectBuildSystem(abs string) string {
+	switch {
+	case workspaceFileExists(filepath.Join(abs, "pom.xml")):
+		return "maven"
+	case workspaceFileExists(filepath.Join(abs, "build.gradle")) || workspaceFileExists(filepath.Join(abs, "build.gradle.kts")):
+		return "gradle"
+	case workspaceFileExists(filepath.Join(abs, "package.json")):
+		return "node"
+	case workspaceFileExists(filepath.Join(abs, "go.mod")):
+		return "go"
+	default:
+		return ""
+	}
+}
+
+func workspaceProjectTestRunner(abs string) string {
+	for _, name := range []string{"playwright.config.ts", "playwright.config.js", "playwright.config.mjs"} {
+		if workspaceFileExists(filepath.Join(abs, name)) {
+			return "playwright"
+		}
+	}
+	for _, name := range []string{"vitest.config.ts", "vitest.config.js", "vitest.config.mts"} {
+		if workspaceFileExists(filepath.Join(abs, name)) {
+			return "vitest"
+		}
+	}
+	for _, name := range []string{"jest.config.ts", "jest.config.js", "jest.config.cjs"} {
+		if workspaceFileExists(filepath.Join(abs, name)) {
+			return "jest"
+		}
+	}
+	body, err := os.ReadFile(filepath.Join(abs, "package.json"))
+	if err != nil {
+		return ""
+	}
+	text := strings.ToLower(string(body))
+	switch {
+	case strings.Contains(text, "@playwright/test"):
+		return "playwright"
+	case strings.Contains(text, "vitest"):
+		return "vitest"
+	case strings.Contains(text, "jest"):
+		return "jest"
+	default:
+		return ""
 	}
 }
 
@@ -894,6 +944,8 @@ func buildWorkspaceFeatureFlows(projects []workspaceIndexProject, matches []Work
 			record.FieldRisks = workspaceFieldRisks(match.FrontendResponseFields, record.BackendResponseFields)
 		}
 		record.PersistencePath = workspacePersistencePath(backendProject.spring, record.BackendSteps)
+		record.TestLinks = BuildTestLinks(record)
+		record.VerificationCommands = BuildVerificationCommands(backendProject.record, record.Tests)
 		record = BuildCanonicalFeatureFlow(record)
 		records = append(records, record)
 	}

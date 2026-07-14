@@ -36,6 +36,9 @@ type CanonicalFlowEdgeRecord struct {
 
 func BuildCanonicalFeatureFlow(flow WorkspaceFeatureFlowRecord) WorkspaceFeatureFlowRecord {
 	flow.ModelVersion = canonicalFeatureFlowModelVersion
+	if len(flow.TestLinks) == 0 {
+		flow.TestLinks = BuildTestLinks(flow)
+	}
 	flow.Nodes = nil
 	flow.Edges = nil
 	seen := map[string]bool{}
