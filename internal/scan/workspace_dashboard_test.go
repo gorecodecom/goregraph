@@ -79,7 +79,10 @@ func TestDashboardGridAvoidsHorizontalOverflowAtNarrowDesktopWidths(t *testing.T
 	)
 	for _, want := range []string{
 		`grid-template-columns:minmax(320px,380px) minmax(560px,1fr) minmax(320px,420px)`,
-		`@media (max-width:1240px){.shell{grid-template-columns:1fr;grid-template-areas:"side" "main" "details"}`,
+		`height:100vh;min-height:0;overflow:hidden`,
+		`@media (max-width:1240px){.shell{grid-template-columns:1fr;grid-template-areas:"side" "main" "details";height:auto;min-height:100vh;overflow:visible}`,
+		`height:auto;min-height:100vh;overflow:visible`,
+		`.side,.details{max-height:55vh`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing responsive grid rule %q", want)
