@@ -5,20 +5,20 @@
 Current release target:
 
 ```text
-v1.1.0
+v1.2.0
 ```
 
-`1.1.0` is the current minor target for agent-first workspace intelligence. It preserves Schema 2 while adding compact task context, freshness and provenance, review-ready workspace deltas, root-cause diagnostic families, task-oriented agent recipes, task-relative workspace context, and canonical contract accounting.
+`1.2.0` is the current local minor target for workspace understanding. It preserves Schema 2 while adding canonical feature flows, prioritized workspace coverage, evidence-backed test and verification guidance, bounded impact summaries, and a six-view offline dashboard.
 
-`1.1.0` acceptance requires:
+`1.2.0` acceptance requires:
 
-- one bounded `task-context` result across CLI, Query, and MCP;
-- artifact freshness and provenance in scan output and Doctor checks;
-- review-ready route, contract, test-gap, coverage, service, and evidence deltas;
-- canonical diagnostic families shared by generated output and the dashboard;
-- task-oriented agent recipes with one primary command per recipe;
-- root-neutral and project-specific workspace context;
-- balanced contract totals shared by JSON, Markdown, Query, MCP, and dashboard;
+- canonical route-to-component-to-API-to-backend-to-persistence feature flows;
+- Architecture, Endpoints, Feature Flow, Data Flow, Diagnostics, and Coverage views;
+- prioritized next scans that distinguish workspace coverage from analyzer support;
+- linked tests and safe, evidence-backed verification commands;
+- `goregraph query <path> impact-summary` and MCP `impact_summary` parity;
+- additive Schema 2 compatibility for all new records and fields;
+- focused tests, full tests, vet, JavaScript syntax, and visual browser acceptance;
 - a clean installed-binary scan of the acceptance workspace.
 
 ## Required Secrets
@@ -285,7 +285,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.1.0
+goregraph 1.2.0
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -301,8 +301,8 @@ schema: 2
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v1.1.0 -m "Release v1.1.0"
-   git push origin v1.1.0
+   git tag -a v1.2.0 -m "Release v1.2.0"
+   git push origin v1.2.0
    ```
 
 5. GitHub Actions runs GoReleaser.

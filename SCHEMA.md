@@ -32,6 +32,11 @@ Schema 2 is the stable 1.0 contract. Schema 1 indexes are not rewritten in place
 
 Within Schema 2, existing fields and enum meanings are frozen. Compatible releases may add optional fields and new output files; they do not silently change existing field, evidence, coverage, confidence, resolution, severity, Query-task, or MCP-tool meanings.
 
+GoreGraph 1.2.0 follows that additive rule. Canonical feature-flow records,
+workspace coverage priorities, test links, verification commands, impact
+summaries, and the six-view dashboard extend Schema 2 without changing existing
+facts or requiring Schema 3.
+
 GoreGraph commands only support the current schema version.
 
 If generated output uses an unsupported schema, commands such as `doctor`, `query`, and MCP mode should report an actionable error and ask the user to refresh the output:
