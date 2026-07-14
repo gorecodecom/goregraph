@@ -1160,6 +1160,15 @@ func TestWorkspaceDashboardShowsTestLinksAndVerificationCommands(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDashboardBoundsDenseFeatureFlowEvidence(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion}, WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil)
+	for _, want := range []string{"featureFlowPreviewLimit=12", "previewItems", "more not shown", "featureFlowOverflowCard"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing dense feature-flow preview marker %q", want)
+		}
+	}
+}
+
 func TestWorkspaceDashboardShowsEvidenceBackedImpact(t *testing.T) {
 	serviceMap := WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, ImpactSummaries: []ImpactSummaryRecord{{
 		ID: "impact:users", TargetID: "flow", TargetLabel: "GET /users", RiskLevel: "medium",
