@@ -222,6 +222,18 @@ func TestTaskContextExposesCanonicalTestLinksAndVerification(t *testing.T) {
 	}
 }
 
+func TestServiceReturnsImpactSummary(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "goregraph-out"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTaskContextJSON(t, root, "workspace-feature-flows.json", []scan.WorkspaceFeatureFlowRecord{{ID: "flow", HTTPMethod: "GET", Path: "/users", Nodes: []scan.CanonicalFlowNodeRecord{{ID: "api", Kind: "api_call"}, {ID: "endpoint", Kind: "endpoint"}}, Edges: []scan.CanonicalFlowEdgeRecord{{ID: "edge", FromNodeID: "api", ToNodeID: "endpoint", EdgeType: "invokes_api", Confidence: "RESOLVED", Reason: "match"}}}})
+	result, err := (Service{}).Run(Request{Root: root, Task: "impact-summary", Query: "/users", Limit: 5})
+	if err != nil || len(result.Items) != 1 || result.Items[0].Kind != "impact_summary" {
+		t.Fatalf("impact result=%#v err=%v", result, err)
+	}
+}
+
 func writeTaskContextJSON(t *testing.T, root, name string, value any) {
 	t.Helper()
 	body, err := json.Marshal(value)

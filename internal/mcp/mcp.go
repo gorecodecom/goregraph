@@ -111,6 +111,7 @@ func tools() []map[string]any {
 		agentTool("symbol_trace", "Return directed traces containing a symbol."),
 		agentTool("trace_from", "Traverse upstream and downstream from a trace node."),
 		agentTool("data_flow", "Return evidence-backed data-flow mappings and explicit gaps."),
+		agentTool("impact_summary", "Return bounded evidence-backed impact and blast-radius summaries."),
 		agentTool("diagnostics", "Return canonical evidence-backed diagnostics."),
 		agentTool("coverage", "Return analyzer capability coverage."),
 		agentTool("evidence", "Return stable source evidence records."),
@@ -178,7 +179,7 @@ func callTool(name string, args map[string]any) (string, error) {
 }
 
 func agentTaskForTool(name string) (string, bool) {
-	tasks := map[string]string{"workspace_summary": "workspace-summary", "workspace_delta": "workspace-delta", "service_context": "service-context", "endpoint_search": "endpoint-search", "task_context": "task-context", "endpoint_trace": "endpoint-trace", "symbol_trace": "symbol-trace", "trace_from": "trace-from", "data_flow": "data-flow", "diagnostics": "diagnostics", "coverage": "coverage", "evidence": "evidence", "tests": "tests", "change_context": "change-context"}
+	tasks := map[string]string{"workspace_summary": "workspace-summary", "workspace_delta": "workspace-delta", "service_context": "service-context", "endpoint_search": "endpoint-search", "task_context": "task-context", "endpoint_trace": "endpoint-trace", "symbol_trace": "symbol-trace", "trace_from": "trace-from", "data_flow": "data-flow", "impact_summary": "impact-summary", "diagnostics": "diagnostics", "coverage": "coverage", "evidence": "evidence", "tests": "tests", "change_context": "change-context"}
 	task, ok := tasks[name]
 	return task, ok
 }

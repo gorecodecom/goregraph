@@ -839,6 +839,7 @@ type WorkspaceServiceMapRecord struct {
 	DiagnosticFamilies []DiagnosticFamilyRecord       `json:"diagnostic_families,omitempty"`
 	ContractSummary    WorkspaceContractSummaryRecord `json:"contract_summary"`
 	WorkspaceCoverage  WorkspaceCoverageSummaryRecord `json:"workspace_coverage"`
+	ImpactSummaries    []ImpactSummaryRecord          `json:"impact_summaries,omitempty"`
 	FeatureFlows       []WorkspaceFeatureFlowRecord   `json:"feature_flows,omitempty"`
 	DataFlows          []DataFlowRecord               `json:"data_flows,omitempty"`
 }

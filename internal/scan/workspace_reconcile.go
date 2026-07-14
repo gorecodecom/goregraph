@@ -78,6 +78,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	workspaceGraph := BuildWorkspaceGraph(registry, matches, featureFlows, featureDossiers)
 	serviceMap := BuildWorkspaceServiceMap(registry, matches, featureFlows, workspaceServiceDependencies(indexed))
 	serviceMap.WorkspaceCoverage = BuildWorkspaceCoverage(context, serviceMap.ContractSummary)
+	serviceMap.ImpactSummaries = BuildImpactSummaries(featureFlows, serviceMap, serviceMap.WorkspaceCoverage, 3)
 	serviceMap.EditorURLTemplate = cfg.EditorURLTemplate
 	serviceMap.DataFlows = dataFlows
 	for _, project := range indexed {

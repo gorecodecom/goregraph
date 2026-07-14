@@ -1159,3 +1159,17 @@ func TestWorkspaceDashboardShowsTestLinksAndVerificationCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceDashboardShowsEvidenceBackedImpact(t *testing.T) {
+	serviceMap := WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, ImpactSummaries: []ImpactSummaryRecord{{
+		ID: "impact:users", TargetID: "flow", TargetLabel: "GET /users", RiskLevel: "medium",
+		RiskReasons:     []string{"Public endpoint with one direct consumer."},
+		DirectConsumers: []ImpactItemRecord{{ID: "api", Relationship: "direct_consumer", Kind: "api_call", Project: "web", Confidence: "RESOLVED", Reason: "matched contract"}},
+	}}}
+	html := RenderWorkspaceDashboardHTMLWithModels(WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, serviceMap, WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil)
+	for _, want := range []string{"impact_summaries", "Changing this may affect", "Direct consumers", "Indirect consumers", "Dependent tests", "Coverage uncertainty"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing impact behavior %q", want)
+		}
+	}
+}

@@ -116,6 +116,30 @@ func loadTask(request Request) ([]Item, []string, error) {
 			items = append(items, Item{ID: record.ID, Kind: "diagnostic", Title: record.Title, Summary: record.Explanation, Confidence: string(record.Confidence), Resolution: string(record.Resolution), EvidenceIDs: record.EvidenceIDs, Data: map[string]any{"code": record.Code, "severity": record.Severity, "next_checks": record.NextChecks}})
 		}
 		return items, nil, nil
+	case "impact-summary":
+		var flows []scan.WorkspaceFeatureFlowRecord
+		if err := readOutput(request.Root, "workspace-feature-flows.json", &flows); err != nil {
+			return nil, nil, err
+		}
+		var serviceMap scan.WorkspaceServiceMapRecord
+		_ = readOutput(request.Root, "workspace-service-map.json", &serviceMap)
+		depth := 2
+		if request.Detail == "summary" {
+			depth = 1
+		} else if request.Detail == "full" {
+			depth = 3
+		}
+		summaries := scan.BuildImpactSummaries(flows, serviceMap, serviceMap.WorkspaceCoverage, depth)
+		items := []Item{}
+		warnings := []string{}
+		for _, summary := range summaries {
+			if !matchesQuery(request.Query, summary.ID, summary.TargetID, summary.TargetLabel, strings.Join(summary.AffectedPackages, " ")) {
+				continue
+			}
+			items = append(items, Item{ID: summary.ID, Kind: "impact_summary", Title: summary.TargetLabel, Summary: strings.ToUpper(summary.RiskLevel) + " — " + strings.Join(summary.RiskReasons, " "), Data: map[string]any{"impact": summary}})
+			warnings = append(warnings, summary.CoverageUncertainty...)
+		}
+		return items, warnings, nil
 	case "evidence":
 		var records []scan.EvidenceRecord
 		if err := readOutput(request.Root, "evidence.json", &records); err != nil {

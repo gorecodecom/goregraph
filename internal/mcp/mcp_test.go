@@ -76,6 +76,22 @@ func TestServeExposesCompactAgentTools(t *testing.T) {
 	}
 }
 
+func TestMCPMapsImpactSummaryTool(t *testing.T) {
+	if task, ok := agentTaskForTool("impact_summary"); !ok || task != "impact-summary" {
+		t.Fatalf("impact_summary mapping=%q ok=%v", task, ok)
+	}
+	listed := tools()
+	found := false
+	for _, item := range listed {
+		if item["name"] == "impact_summary" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("impact_summary tool is not listed")
+	}
+}
+
 func TestServeRejectsUnknownTool(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"write_file","arguments":{}}}` + "\n")
 	var output bytes.Buffer
