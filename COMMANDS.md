@@ -475,8 +475,9 @@ Blocker and failure statuses:
 Exit codes:
 
 - `0`: every repository is `up_to_date`, `would_update`, or `updated`
-- `1`: at least one repository is blocked or failed, including partial workspace
-  success
+- `1`: any operational failure, including a repository blocker or failure,
+  partial workspace success, a workspace configuration or discovery error, a
+  `gitupdate` infrastructure error, or a report rendering failure
 - `2`: command syntax, an option, or a format is invalid
 
 ## `goregraph report <path>`
