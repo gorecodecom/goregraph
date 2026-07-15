@@ -1006,9 +1006,17 @@ func TestWorkspaceDashboardUsesMockupArchitectureViews(t *testing.T) {
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
 		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
 	)
-	for _, want := range []string{`data-architecture-view="flow"`, `data-architecture-view="matrix"`, `data-architecture-view="selected"`, `main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:350px}`, "architecture-edge-layer", "architecture-node-layer", "architecture-label-layer", "architecture-call-pill", "architecture-legend", "setViewBox(layout.width,layout.height)", "otherPosition.x-gutter/2", "otherPosition.y+otherPosition.h/2", "y:190+index*90", "labelY=200+index*32", "svg{height:100vh}"} {
+	for _, want := range []string{`data-architecture-view="flow"`, `data-architecture-view="matrix"`, `data-architecture-view="selected"`, `main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:350px}`, "architecture-lane-layer", "architecture-edge-layer", "architecture-node-layer", "architecture-label-layer", "architectureDomains", "architectureDomainColor", "layout.domains", "architecture-call-pill", "architecture-legend", "setViewBox(layout.width,layout.height)", "otherPosition.x-gutter/2", "otherPosition.y+otherPosition.h/2", "y:190+index*90", "labelY=200+index*32", "svg{height:100vh}"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing mockup architecture contract %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		`const domains=["frontend","document","cadaster","identity","platform"]`,
+		`frontend:"Frontend clients"`, `document:"Documents / WPO"`,
+	} {
+		if strings.Contains(html, unwanted) {
+			t.Fatalf("architecture remains workspace-specific: %q", unwanted)
 		}
 	}
 }

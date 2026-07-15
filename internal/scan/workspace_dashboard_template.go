@@ -88,6 +88,8 @@ func renderWorkspaceDashboardDocument(title string, payload []byte) string {
 	b.WriteString("\n<script>\nconst workspacePayload = ")
 	b.Write(payload)
 	b.WriteString(";\n")
+	b.WriteString(workspaceDashboardArchitectureModelScript)
+	b.WriteString("\n")
 	b.WriteString(workspaceDashboardScript)
 	b.WriteString("\n</script>\n</body>\n</html>")
 	return b.String()
