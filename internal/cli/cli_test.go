@@ -238,6 +238,7 @@ func TestRunWorkspaceScanAllScansDiscoveredWorkspaceProjects(t *testing.T) {
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	task := filepath.Join(workspace, "microservices", "ms-task")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, ".gitignore", "dist/\n")
 	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
 		"  return fetch(`/cadasters/${id}`);\n"+
 		"}\n")
@@ -260,7 +261,7 @@ class CadasterController {
 	writeFile(t, task, "README.md", "# ms-task\n")
 	var stdout, stderr bytes.Buffer
 
-	code := Run([]string{"workspace", "scan-all", workspace, "--no-update-gitignore"}, &stdout, &stderr)
+	code := Run([]string{"workspace", "scan-all", workspace}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
@@ -279,6 +280,102 @@ class CadasterController {
 		if _, err := os.Stat(out); err != nil {
 			t.Fatalf("scan-all should create %s: %v", out, err)
 		}
+	}
+	gitignoreEntries := map[string][]string{
+		filepath.Join(frontend, ".gitignore"):  {"dist/", "# GoreGraph local scan output", "goregraph-out/"},
+		filepath.Join(cadaster, ".gitignore"):  {"# GoreGraph local scan output", "goregraph-out/"},
+		filepath.Join(task, ".gitignore"):      {"# GoreGraph local scan output", "goregraph-out/"},
+		filepath.Join(workspace, ".gitignore"): {"# GoreGraph local workspace output", ".goregraph-workspace/"},
+	}
+	for path, entries := range gitignoreEntries {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		for _, entry := range entries {
+			if !strings.Contains(string(body), entry) {
+				t.Fatalf("%s missing %q:\n%s", path, entry, string(body))
+			}
+		}
+		if !strings.Contains(stdout.String(), "Updated .gitignore: "+path) {
+			t.Fatalf("scan-all output missing changed path %s:\n%s", path, stdout.String())
+		}
+	}
+
+	var secondOut, secondErr bytes.Buffer
+	if code := Run([]string{"workspace", "scan-all", workspace}, &secondOut, &secondErr); code != 0 {
+		t.Fatalf("second scan-all exit code = %d, stderr=%s", code, secondErr.String())
+	}
+	if strings.Contains(secondOut.String(), "Updated .gitignore:") {
+		t.Fatalf("second scan-all reported unchanged .gitignore:\n%s", secondOut.String())
+	}
+	for path, entries := range gitignoreEntries {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s after second scan: %v", path, err)
+		}
+		for _, entry := range entries {
+			if count := strings.Count(string(body), entry); count != 1 {
+				t.Fatalf("%s entry %q count = %d, want 1:\n%s", path, entry, count, string(body))
+			}
+		}
+	}
+}
+
+func TestRunWorkspaceScanAllNoUpdateGitignoreLeavesFilesUntouched(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, ".gitignore", "dist/\n")
+	writeFile(t, cadaster, "README.md", "# ms-cadaster\n")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "scan-all", workspace, "--no-update-gitignore"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	frontendGitignore, err := os.ReadFile(filepath.Join(frontend, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(frontendGitignore) != "dist/\n" {
+		t.Fatalf("frontend .gitignore changed despite opt-out:\n%s", string(frontendGitignore))
+	}
+	for _, path := range []string{filepath.Join(cadaster, ".gitignore"), filepath.Join(workspace, ".gitignore")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s exists after opt-out, err=%v", path, err)
+		}
+	}
+	if strings.Contains(stdout.String(), "Updated .gitignore:") {
+		t.Fatalf("opt-out reported .gitignore changes:\n%s", stdout.String())
+	}
+}
+
+func TestRunWorkspaceScanAllUsesCustomProjectOutputInGitignore(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "weka")
+	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
+	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, frontend, "goregraph.yml", "output: .goregraph\n")
+	writeFile(t, cadaster, "README.md", "# ms-cadaster\n")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "scan-all", workspace}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	body, err := os.ReadFile(filepath.Join(frontend, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), ".goregraph/") || strings.Contains(string(body), "goregraph-out/") {
+		t.Fatalf("frontend .gitignore does not contain only the configured output:\n%s", string(body))
+	}
+	if !strings.Contains(stdout.String(), "Updated .gitignore: "+filepath.Join(frontend, ".gitignore")) {
+		t.Fatalf("scan-all output missing custom project .gitignore path:\n%s", stdout.String())
 	}
 }
 

@@ -600,9 +600,13 @@ func runWorkspaceScanAll(args []string, stdout, stderr io.Writer) int {
 		projectCfg.Workspace = true
 		projectCfg.WorkspaceRoot = plan.WorkspaceRoot
 		if projectCfg.UpdateGitignore {
-			if _, err := gitignore.EnsureOutputIgnored(item.AbsPath, projectCfg.OutputDir); err != nil {
+			changed, err := gitignore.EnsureOutputIgnored(item.AbsPath, projectCfg.OutputDir)
+			if err != nil {
 				fmt.Fprintf(stderr, "error: updating %s .gitignore failed: %v\n", item.Project, err)
 				return 1
+			}
+			if changed {
+				fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(item.AbsPath, ".gitignore"))
 			}
 		}
 		result, err := scan.Run(item.AbsPath, projectCfg)
@@ -614,9 +618,13 @@ func runWorkspaceScanAll(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "- Scanned `%s` (%d files, skipped %d)\n", item.Project, result.ScannedFiles, result.SkippedFiles)
 	}
 	if loaded.UpdateGitignore {
-		if _, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot); err != nil {
+		changed, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot)
+		if err != nil {
 			fmt.Fprintf(stderr, "error: updating workspace .gitignore failed: %v\n", err)
 			return 1
+		}
+		if changed {
+			fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(plan.WorkspaceRoot, ".gitignore"))
 		}
 	}
 	fmt.Fprintf(stdout, "\nScanned %d workspace project(s).\n", scanned)
