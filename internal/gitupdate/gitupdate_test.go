@@ -711,6 +711,53 @@ func TestRunExecuteFetchesSwitchesAndFastForwards(t *testing.T) {
 	}
 }
 
+func TestRunExecutePreflightBlockerReportsActualCheckout(t *testing.T) {
+	fixture := newGitFixture(t)
+	git(t, fixture.work, "switch", "-c", "feature")
+	targetCommit := fixture.commitAndPushFromPeer(t, "peer update\n")
+	git(t, fixture.work, "fetch", "origin")
+	headBefore := revParse(t, fixture.work, "HEAD")
+	if headBefore == targetCommit {
+		t.Fatalf("fixture HEAD = target commit %s, want different commits", headBefore)
+	}
+	writeFile(t, filepath.Join(fixture.work, "README.md"), "dirty\n")
+	before := map[string]string{
+		"branch":     git(t, fixture.work, "symbolic-ref", "--short", "HEAD"),
+		"head":       headBefore,
+		"status":     git(t, fixture.work, "status", "--porcelain=v1", "--untracked-files=all"),
+		"contents":   readFile(t, filepath.Join(fixture.work, "README.md")),
+		"remote_ref": revParse(t, fixture.work, "refs/remotes/origin/main"),
+	}
+
+	result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+	if result.Status != StatusDirty {
+		t.Fatalf("Status = %q, want %q; reason: %s", result.Status, StatusDirty, result.Reason)
+	}
+	if result.Executed {
+		t.Fatal("Executed = true, want false")
+	}
+	if result.BranchBefore != "feature" || result.BranchAfter != "feature" {
+		t.Fatalf("branches = %q -> %q, want feature -> feature", result.BranchBefore, result.BranchAfter)
+	}
+	if result.CommitBefore != headBefore || result.CommitAfter != headBefore {
+		t.Fatalf("commits = %q -> %q, want %q -> %q", result.CommitBefore, result.CommitAfter, headBefore, headBefore)
+	}
+	if result.Remediation == "" {
+		t.Fatal("Remediation is empty")
+	}
+
+	after := map[string]string{
+		"branch":     git(t, fixture.work, "symbolic-ref", "--short", "HEAD"),
+		"head":       revParse(t, fixture.work, "HEAD"),
+		"status":     git(t, fixture.work, "status", "--porcelain=v1", "--untracked-files=all"),
+		"contents":   readFile(t, filepath.Join(fixture.work, "README.md")),
+		"remote_ref": revParse(t, fixture.work, "refs/remotes/origin/main"),
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("repository changed for preflight blocker:\nbefore: %#v\nafter:  %#v", before, after)
+	}
+}
+
 func TestRunExecuteCreatesMissingTrackingBranch(t *testing.T) {
 	fixture := newGitFixture(t)
 	git(t, fixture.work, "switch", "-c", "feature")

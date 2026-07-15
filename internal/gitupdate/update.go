@@ -88,6 +88,9 @@ func inspectionFailedResult(target Target, root string, err error) RepositoryRes
 func executeUpdate(ctx context.Context, target Target, initial repositoryState, hooksDirectory string) RepositoryResult {
 	preflight := classifyPreview(target, initial)
 	if !canExecute(preflight.Status) {
+		preflight.BranchAfter = initial.branch
+		preflight.CommitAfter = initial.head
+		preflight.Executed = false
 		return preflight
 	}
 
