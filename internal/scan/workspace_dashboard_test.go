@@ -199,6 +199,121 @@ func TestDashboardArchitectureDomainLanesSupportPointerAndKeyboardFocus(t *testi
 	}
 }
 
+func TestDashboardArchitectureMatrixUsesSharedServiceSelectionState(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		"function setArchitectureServiceSelection(id)",
+		`state.architectureDirection="both"`,
+		"setArchitectureServiceSelection(edge.from)",
+		"setArchitectureServiceSelection(button.dataset.matrixProvider)",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing shared Architecture selection state %q", want)
+		}
+	}
+	matrixStart := strings.Index(html, "function renderArchitectureMatrix()")
+	if matrixStart < 0 {
+		t.Fatal("dashboard missing Architecture matrix function boundaries")
+	}
+	matrixEnd := strings.Index(html[matrixStart:], "function serviceFocus(id)")
+	if matrixEnd < 0 {
+		t.Fatal("dashboard missing Architecture matrix function boundaries")
+	}
+	matrix := html[matrixStart : matrixStart+matrixEnd]
+	for _, direct := range []string{"state.selected=edge.from", "state.selected=button.dataset.matrixProvider", "state.selections.architecture=state.selected"} {
+		if strings.Contains(matrix, direct) {
+			t.Fatalf("Architecture matrix bypasses shared selection state with %q", direct)
+		}
+	}
+}
+
+func TestDashboardSearchAndKindFiltersUseSharedDeselectionState(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		"function clearSelectedItemState()",
+		`applyViewport(saved);state.savedArchitectureServiceViewport=null`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing shared deselection state %q", want)
+		}
+	}
+	clearStart := strings.Index(html, "function clearSelectedItemState()")
+	clearEnd := strings.Index(html[clearStart:], "function clearSelection()")
+	if clearStart < 0 || clearEnd < 0 {
+		t.Fatal("dashboard missing shared deselection function boundaries")
+	}
+	clearState := html[clearStart : clearStart+clearEnd]
+	for _, want := range []string{
+		`if(state.mode==="architecture"){restoreArchitectureServiceViewport();hideArchitectureSelectionActions();}`,
+		`state.architectureFocused=false;state.savedFullArchitectureViewport=null`,
+	} {
+		if !strings.Contains(clearState, want) {
+			t.Fatalf("shared deselection state missing %q", want)
+		}
+	}
+	if !strings.Contains(html, "function hideArchitectureSelectionActions()") {
+		t.Fatal("dashboard missing shared Architecture selection-action cleanup")
+	}
+	searchStart := strings.Index(html, `document.getElementById("workspace-search").addEventListener`)
+	kindStart := strings.Index(html, `document.querySelectorAll("[data-kind-filter]").forEach(function(btn){btn.addEventListener`)
+	if searchStart < 0 || kindStart < 0 {
+		t.Fatal("dashboard missing search or kind-filter handler boundaries")
+	}
+	searchEnd := strings.Index(html[searchStart:], `document.querySelectorAll("[data-view-mode]")`)
+	kindEnd := strings.Index(html[kindStart:], `document.querySelectorAll("[data-endpoint-method]")`)
+	if searchEnd < 0 || kindEnd < 0 {
+		t.Fatal("dashboard missing search or kind-filter handler boundaries")
+	}
+	for name, handler := range map[string]string{
+		"search":      html[searchStart : searchStart+searchEnd],
+		"kind filter": html[kindStart : kindStart+kindEnd],
+	} {
+		if !strings.Contains(handler, "clearSelectedItemState();") {
+			t.Fatalf("%s does not use shared deselection state", name)
+		}
+		for _, direct := range []string{"state.selected=null", "state.selections[state.mode]=null", "state.isolation=false"} {
+			if strings.Contains(handler, direct) {
+				t.Fatalf("%s bypasses shared deselection state with %q", name, direct)
+			}
+		}
+	}
+}
+
+func TestDashboardArchitectureIsolationChangesPresentationOnly(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`presentationMode=state.architectureFocused?"focused":state.isolation?"isolated":"context"`,
+		`architecture-presentation '+presentationMode`,
+		`state.isolation?'Isolated neighborhood'`,
+		`.architecture-presentation.isolated .edge.dim,.architecture-presentation.focused .edge.dim{opacity:.02}`,
+		`.architecture-presentation.isolated .service-node.dim,.architecture-presentation.focused .service-node.dim{opacity:.12}`,
+		"layout=architectureLayout(allNodes,width)",
+		"canonicalEdges=serviceEdges.filter",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing presentation-only Architecture isolation %q", want)
+		}
+	}
+}
+
 func TestDashboardArchitectureShowsDirectionalArrowsAndExplicitCardPorts(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
