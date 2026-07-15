@@ -1,16 +1,28 @@
 # GoreGraph Release Checklist
 
-## Current Release
+## Current Source Target
 
-Current release target:
+Current unreleased source target:
 
 ```text
-v1.2.0
+v1.3.0
 ```
 
-`1.2.0` is the current local minor target for workspace understanding. It preserves Schema 2 while adding canonical feature flows, prioritized workspace coverage, evidence-backed test and verification guidance, bounded impact summaries, and a six-view offline dashboard.
+`1.3.0` is the current unreleased source target for preview-first safe Git updates. It preserves Schema 2 and adds:
 
-`1.2.0` acceptance requires:
+- preview-first project Git updates through `goregraph git update [path]`;
+- preview-first updates for each unique workspace repository through `goregraph workspace git update [path]`;
+- strictly local previews that use cached `origin` references and perform no network access;
+- explicit `--execute` updates that fetch, repeat safety checks, and only switch or fast-forward eligible clean repositories;
+- unchanged Schema 2 compatibility.
+
+No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.
+
+## Completed 1.2.0 Milestone
+
+`1.2.0` was the completed local minor milestone for workspace understanding. It preserved Schema 2 while adding canonical feature flows, prioritized workspace coverage, evidence-backed test and verification guidance, bounded impact summaries, and a six-view offline dashboard.
+
+`1.2.0` acceptance included:
 
 - canonical route-to-component-to-API-to-backend-to-persistence feature flows;
 - Architecture, Endpoints, Feature Flow, Data Flow, Diagnostics, and Coverage views;
@@ -285,7 +297,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.2.0
+goregraph 1.3.0
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -294,6 +306,8 @@ schema: 2
 ```
 
 ## Release Flow
+
+`v1.3.0` is not ready for this flow; the commands below retain the completed `v1.2.0` release example.
 
 1. Confirm `main` is clean and pushed.
 2. Confirm README installation instructions are current.

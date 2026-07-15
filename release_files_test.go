@@ -46,7 +46,9 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 			"WINGET_TOKEN",
 		},
 		"docs/RELEASE.md": {
+			"v1.3.0",
 			"v1.2.0",
+			"Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending.",
 			"Schema 2",
 			"v0.9.4",
 			"Architecture",
