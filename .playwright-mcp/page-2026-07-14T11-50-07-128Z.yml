@@ -1,0 +1,1231 @@
+- generic [ref=f7e2]:
+  - complementary [ref=f7e3]:
+    - heading "GoreGraph Workspace" [level=1] [ref=f7e4]
+    - generic [ref=f7e5]:
+      - generic [ref=f7e6]:
+        - strong [ref=f7e7]: "43"
+        - text: services
+      - generic [ref=f7e8]:
+        - strong [ref=f7e9]: "101"
+        - text: relations
+      - generic [ref=f7e10]:
+        - strong [ref=f7e11]: "177"
+        - text: traces
+      - generic [ref=f7e12]:
+        - strong [ref=f7e13]: "177"
+        - text: contracts
+    - heading "View" [level=2] [ref=f7e14]
+    - generic [ref=f7e15]:
+      - button "Architecture" [pressed] [ref=f7e16] [cursor=pointer]
+      - button "Endpoints" [ref=f7e17] [cursor=pointer]
+      - button "Feature Flow" [ref=f7e18] [cursor=pointer]
+      - button "Data Flow" [ref=f7e19] [cursor=pointer]
+      - button "Diagnostics" [ref=f7e20] [cursor=pointer]
+      - button "Coverage" [ref=f7e21] [cursor=pointer]
+    - paragraph [ref=f7e22]: See how projects and services communicate across the workspace. Select a service to highlight direct incoming and outgoing relationships without changing the layout.
+    - textbox "Search workspace map" [ref=f7e23]:
+      - /placeholder: Search service, endpoint, route, file, symbol
+    - heading "Filter" [level=2] [ref=f7e24]
+    - generic [ref=f7e25]:
+      - button "All" [pressed] [ref=f7e26] [cursor=pointer]
+      - button "Risk" [ref=f7e27] [cursor=pointer]
+      - button "Resolved" [ref=f7e28] [cursor=pointer]
+      - button "Unresolved" [ref=f7e29] [cursor=pointer]
+    - button "Clear selection" [ref=f7e31] [cursor=pointer]
+    - button "Isolate neighborhood" [ref=f7e449] [cursor=pointer]
+    - button "Focus selected" [ref=f7e451] [cursor=pointer]
+    - heading "Architecture Services" [level=2] [ref=f7e32]
+    - generic [ref=f7e33]:
+      - button "frontend 21 outgoing / 0 incoming / frontend/frontend" [ref=f7e2739] [cursor=pointer]:
+        - strong [ref=f7e2740]: frontend
+        - generic [ref=f7e2741]: 21 outgoing / 0 incoming / frontend/frontend
+      - button "frontend-monorepo 135 outgoing / 0 incoming / frontend/frontend-monorepo" [ref=f7e2742] [cursor=pointer]:
+        - strong [ref=f7e2743]: frontend-monorepo
+        - generic [ref=f7e2744]: 135 outgoing / 0 incoming / frontend/frontend-monorepo
+      - button "frontends 21 outgoing / 0 incoming / frontend/frontends" [ref=f7e2745] [cursor=pointer]:
+        - strong [ref=f7e2746]: frontends
+        - generic [ref=f7e2747]: 21 outgoing / 0 incoming / frontend/frontends
+      - button "playwright Scanned, no outgoing API calls detected / frontend/playwright" [ref=f7e2748] [cursor=pointer]:
+        - strong [ref=f7e2749]: playwright
+        - generic [ref=f7e2750]: Scanned, no outgoing API calls detected / frontend/playwright
+      - button "ms-adminui Scanned, no outgoing API calls detected / microservices/ms-adminui" [ref=f7e2751] [cursor=pointer]:
+        - strong [ref=f7e2752]: ms-adminui
+        - generic [ref=f7e2753]: Scanned, no outgoing API calls detected / microservices/ms-adminui
+      - button "ms-cadaster 36 outgoing / 2 incoming / microservices/ms-cadaster" [ref=f7e2754] [cursor=pointer]:
+        - strong [ref=f7e2755]: ms-cadaster
+        - generic [ref=f7e2756]: 36 outgoing / 2 incoming / microservices/ms-cadaster
+      - button "ms-cadasterexport 29 outgoing / 2 incoming / microservices/ms-cadasterexport" [ref=f7e2757] [cursor=pointer]:
+        - strong [ref=f7e2758]: ms-cadasterexport
+        - generic [ref=f7e2759]: 29 outgoing / 2 incoming / microservices/ms-cadasterexport
+      - button "ms-cadasterprotocol Scanned, no outgoing API calls detected / microservices/ms-cadasterprotocol" [ref=f7e2760] [cursor=pointer]:
+        - strong [ref=f7e2761]: ms-cadasterprotocol
+        - generic [ref=f7e2762]: Scanned, no outgoing API calls detected / microservices/ms-cadasterprotocol
+      - button "ms-cadasterregulation 41 outgoing / 28 incoming / microservices/ms-cadasterregulation" [ref=f7e2763] [cursor=pointer]:
+        - strong [ref=f7e2764]: ms-cadasterregulation
+        - generic [ref=f7e2765]: 41 outgoing / 28 incoming / microservices/ms-cadasterregulation
+      - button "ms-cadastertask 24 outgoing / 35 incoming / microservices/ms-cadastertask" [ref=f7e2766] [cursor=pointer]:
+        - strong [ref=f7e2767]: ms-cadastertask
+        - generic [ref=f7e2768]: 24 outgoing / 35 incoming / microservices/ms-cadastertask
+      - button "ms-cadasteruser 19 outgoing / 11 incoming / microservices/ms-cadasteruser" [ref=f7e2769] [cursor=pointer]:
+        - strong [ref=f7e2770]: ms-cadasteruser
+        - generic [ref=f7e2771]: 19 outgoing / 11 incoming / microservices/ms-cadasteruser
+      - button "ms-common 21 outgoing / 0 incoming / microservices/ms-common" [ref=f7e2772] [cursor=pointer]:
+        - strong [ref=f7e2773]: ms-common
+        - generic [ref=f7e2774]: 21 outgoing / 0 incoming / microservices/ms-common
+      - button "ms-containertree 11 outgoing / 7 incoming / microservices/ms-containertree" [ref=f7e2775] [cursor=pointer]:
+        - strong [ref=f7e2776]: ms-containertree
+        - generic [ref=f7e2777]: 11 outgoing / 7 incoming / microservices/ms-containertree
+      - button "ms-datawarehouse Scanned, no outgoing API calls detected / microservices/ms-datawarehouse" [ref=f7e2778] [cursor=pointer]:
+        - strong [ref=f7e2779]: ms-datawarehouse
+        - generic [ref=f7e2780]: Scanned, no outgoing API calls detected / microservices/ms-datawarehouse
+      - button "ms-documentdownload 10 outgoing / 4 incoming / microservices/ms-documentdownload" [ref=f7e2781] [cursor=pointer]:
+        - strong [ref=f7e2782]: ms-documentdownload
+        - generic [ref=f7e2783]: 10 outgoing / 4 incoming / microservices/ms-documentdownload
+      - button "ms-documentexport 17 outgoing / 2 incoming / microservices/ms-documentexport" [ref=f7e2784] [cursor=pointer]:
+        - strong [ref=f7e2785]: ms-documentexport
+        - generic [ref=f7e2786]: 17 outgoing / 2 incoming / microservices/ms-documentexport
+      - button "ms-documentinfo 17 outgoing / 5 incoming / microservices/ms-documentinfo" [ref=f7e2787] [cursor=pointer]:
+        - strong [ref=f7e2788]: ms-documentinfo
+        - generic [ref=f7e2789]: 17 outgoing / 5 incoming / microservices/ms-documentinfo
+      - button "ms-documenttopic 17 outgoing / 28 incoming / microservices/ms-documenttopic" [ref=f7e2790] [cursor=pointer]:
+        - strong [ref=f7e2791]: ms-documenttopic
+        - generic [ref=f7e2792]: 17 outgoing / 28 incoming / microservices/ms-documenttopic
+      - button "ms-example Scanned, no outgoing API calls detected / microservices/ms-example" [ref=f7e2793] [cursor=pointer]:
+        - strong [ref=f7e2794]: ms-example
+        - generic [ref=f7e2795]: Scanned, no outgoing API calls detected / microservices/ms-example
+      - button "ms-invoiceservice 0 outgoing / 1 incoming / microservices/ms-invoiceservice" [ref=f7e2796] [cursor=pointer]:
+        - strong [ref=f7e2797]: ms-invoiceservice
+        - generic [ref=f7e2798]: 0 outgoing / 1 incoming / microservices/ms-invoiceservice
+      - button "ms-knksync 7 outgoing / 0 incoming / microservices/ms-knksync" [ref=f7e2799] [cursor=pointer]:
+        - strong [ref=f7e2800]: ms-knksync
+        - generic [ref=f7e2801]: 7 outgoing / 0 incoming / microservices/ms-knksync
+      - button "ms-licenseservice 16 outgoing / 184 incoming / microservices/ms-licenseservice" [ref=f7e2802] [cursor=pointer]:
+        - strong [ref=f7e2803]: ms-licenseservice
+        - generic [ref=f7e2804]: 16 outgoing / 184 incoming / microservices/ms-licenseservice
+      - button "ms-mailsender Scanned, no outgoing API calls detected / microservices/ms-mailsender" [ref=f7e2805] [cursor=pointer]:
+        - strong [ref=f7e2806]: ms-mailsender
+        - generic [ref=f7e2807]: Scanned, no outgoing API calls detected / microservices/ms-mailsender
+      - button "ms-parent Scanned, no outgoing API calls detected / microservices/ms-parent" [ref=f7e2808] [cursor=pointer]:
+        - strong [ref=f7e2809]: ms-parent
+        - generic [ref=f7e2810]: Scanned, no outgoing API calls detected / microservices/ms-parent
+      - button "ms-pdfgenerator Scanned, no outgoing API calls detected / microservices/ms-pdfgenerator" [ref=f7e2811] [cursor=pointer]:
+        - strong [ref=f7e2812]: ms-pdfgenerator
+        - generic [ref=f7e2813]: Scanned, no outgoing API calls detected / microservices/ms-pdfgenerator
+      - button "ms-portal 45 outgoing / 12 incoming / microservices/ms-portal" [ref=f7e2814] [cursor=pointer]:
+        - strong [ref=f7e2815]: ms-portal
+        - generic [ref=f7e2816]: 45 outgoing / 12 incoming / microservices/ms-portal
+      - button "ms-productservice 9 outgoing / 143 incoming / microservices/ms-productservice" [ref=f7e2817] [cursor=pointer]:
+        - strong [ref=f7e2818]: ms-productservice
+        - generic [ref=f7e2819]: 9 outgoing / 143 incoming / microservices/ms-productservice
+      - button "ms-regulationchange 33 outgoing / 6 incoming / microservices/ms-regulationchange" [ref=f7e2820] [cursor=pointer]:
+        - strong [ref=f7e2821]: ms-regulationchange
+        - generic [ref=f7e2822]: 33 outgoing / 6 incoming / microservices/ms-regulationchange
+      - button "ms-regulationdownload 13 outgoing / 0 incoming / microservices/ms-regulationdownload" [ref=f7e2823] [cursor=pointer]:
+        - strong [ref=f7e2824]: ms-regulationdownload
+        - generic [ref=f7e2825]: 13 outgoing / 0 incoming / microservices/ms-regulationdownload
+      - button "ms-regulationexport 5 outgoing / 0 incoming / microservices/ms-regulationexport" [ref=f7e2826] [cursor=pointer]:
+        - strong [ref=f7e2827]: ms-regulationexport
+        - generic [ref=f7e2828]: 5 outgoing / 0 incoming / microservices/ms-regulationexport
+      - button "ms-regulationinfo 10 outgoing / 2 incoming / microservices/ms-regulationinfo" [ref=f7e2829] [cursor=pointer]:
+        - strong [ref=f7e2830]: ms-regulationinfo
+        - generic [ref=f7e2831]: 10 outgoing / 2 incoming / microservices/ms-regulationinfo
+      - button "ms-regulationtree 29 outgoing / 33 incoming / microservices/ms-regulationtree" [ref=f7e2832] [cursor=pointer]:
+        - strong [ref=f7e2833]: ms-regulationtree
+        - generic [ref=f7e2834]: 29 outgoing / 33 incoming / microservices/ms-regulationtree
+      - button "ms-search 27 outgoing / 9 incoming / microservices/ms-search" [ref=f7e2835] [cursor=pointer]:
+        - strong [ref=f7e2836]: ms-search
+        - generic [ref=f7e2837]: 27 outgoing / 9 incoming / microservices/ms-search
+      - button "ms-shopmgmt 14 outgoing / 0 incoming / microservices/ms-shopmgmt" [ref=f7e2838] [cursor=pointer]:
+        - strong [ref=f7e2839]: ms-shopmgmt
+        - generic [ref=f7e2840]: 14 outgoing / 0 incoming / microservices/ms-shopmgmt
+      - button "ms-sso 11 outgoing / 0 incoming / microservices/ms-sso" [ref=f7e2841] [cursor=pointer]:
+        - strong [ref=f7e2842]: ms-sso
+        - generic [ref=f7e2843]: 11 outgoing / 0 incoming / microservices/ms-sso
+      - button "ms-swlicenseservice 0 outgoing / 3 incoming / microservices/ms-swlicenseservice" [ref=f7e2844] [cursor=pointer]:
+        - strong [ref=f7e2845]: ms-swlicenseservice
+        - generic [ref=f7e2846]: 0 outgoing / 3 incoming / microservices/ms-swlicenseservice
+      - button "ms-task 39 outgoing / 11 incoming / microservices/ms-task" [ref=f7e2847] [cursor=pointer]:
+        - strong [ref=f7e2848]: ms-task
+        - generic [ref=f7e2849]: 39 outgoing / 11 incoming / microservices/ms-task
+      - button "ms-tradingpartner 7 outgoing / 0 incoming / microservices/ms-tradingpartner" [ref=f7e2850] [cursor=pointer]:
+        - strong [ref=f7e2851]: ms-tradingpartner
+        - generic [ref=f7e2852]: 7 outgoing / 0 incoming / microservices/ms-tradingpartner
+      - button "ms-updateinfomgmt Scanned, no outgoing API calls detected / microservices/ms-updateinfomgmt" [ref=f7e2853] [cursor=pointer]:
+        - strong [ref=f7e2854]: ms-updateinfomgmt
+        - generic [ref=f7e2855]: Scanned, no outgoing API calls detected / microservices/ms-updateinfomgmt
+      - button "ms-useritem 14 outgoing / 21 incoming / microservices/ms-useritem" [ref=f7e2856] [cursor=pointer]:
+        - strong [ref=f7e2857]: ms-useritem
+        - generic [ref=f7e2858]: 14 outgoing / 21 incoming / microservices/ms-useritem
+      - button "ms-userservice 11 outgoing / 160 incoming / microservices/ms-userservice" [ref=f7e2859] [cursor=pointer]:
+        - strong [ref=f7e2860]: ms-userservice
+        - generic [ref=f7e2861]: 11 outgoing / 160 incoming / microservices/ms-userservice
+      - button "product-data-importer Scanned, no outgoing API calls detected / microservices/product-data-importer" [ref=f7e2862] [cursor=pointer]:
+        - strong [ref=f7e2863]: product-data-importer
+        - generic [ref=f7e2864]: Scanned, no outgoing API calls detected / microservices/product-data-importer
+      - button "update-info-cleaner Scanned, no outgoing API calls detected / microservices/update-info-cleaner" [ref=f7e2865] [cursor=pointer]:
+        - strong [ref=f7e2866]: update-info-cleaner
+        - generic [ref=f7e2867]: Scanned, no outgoing API calls detected / microservices/update-info-cleaner
+    - paragraph [ref=f7e163]: Showing 43 architecture services.
+    - generic [ref=f7e164]:
+      - heading "Status glossary" [level=2] [ref=f7e165]
+      - paragraph [ref=f7e166]:
+        - strong [ref=f7e167]: RESOLVED
+        - text: ": frontend contract is mapped to a backend route."
+      - paragraph [ref=f7e168]:
+        - strong [ref=f7e169]: MISMATCH
+        - text: ": a related backend route exists, but method or path does not match exactly."
+      - paragraph [ref=f7e170]:
+        - strong [ref=f7e171]: UNRESOLVED
+        - text: ": no reliable backend route was found in indexed projects."
+      - paragraph [ref=f7e172]:
+        - strong [ref=f7e173]: OUT_OF_SCOPE
+        - text: ": intentionally not a backend service, for example a frontend-internal API."
+      - paragraph [ref=f7e174]:
+        - strong [ref=f7e175]: EXTRACTED
+        - text: ": read directly from source structure."
+        - strong [ref=f7e176]: MATCHED
+        - text: ": linked to a concrete route, symbol, or test."
+  - main [ref=f7e177]:
+    - navigation "Architecture presentation" [ref=f7e178]:
+      - button "Flow" [ref=f7e179] [cursor=pointer]
+      - button "Matrix" [active] [pressed] [ref=f7e180] [cursor=pointer]
+      - button "Selected service" [ref=f7e181] [cursor=pointer]
+    - region "Workspace data workbench" [ref=f7e2868]:
+      - generic [ref=f7e2870]:
+        - generic [ref=f7e2871]:
+          - strong [ref=f7e2872]: Consumer / provider
+          - button "Documents / WPO ms-containertree" [ref=f7e2873]:
+            - generic [ref=f7e2874]: Documents / WPO
+            - strong [ref=f7e2875]: ms-containertree
+          - button "Documents / WPO ms-documentdownload" [ref=f7e2876]:
+            - generic [ref=f7e2877]: Documents / WPO
+            - strong [ref=f7e2878]: ms-documentdownload
+          - button "Documents / WPO ms-documentexport" [ref=f7e2879]:
+            - generic [ref=f7e2880]: Documents / WPO
+            - strong [ref=f7e2881]: ms-documentexport
+          - button "Documents / WPO ms-documentinfo" [ref=f7e2882]:
+            - generic [ref=f7e2883]: Documents / WPO
+            - strong [ref=f7e2884]: ms-documentinfo
+          - button "Documents / WPO ms-documenttopic" [ref=f7e2885]:
+            - generic [ref=f7e2886]: Documents / WPO
+            - strong [ref=f7e2887]: ms-documenttopic
+          - button "Cadaster / Regulation ms-cadaster" [ref=f7e2888]:
+            - generic [ref=f7e2889]: Cadaster / Regulation
+            - strong [ref=f7e2890]: ms-cadaster
+          - button "Cadaster / Regulation ms-cadasterexport" [ref=f7e2891]:
+            - generic [ref=f7e2892]: Cadaster / Regulation
+            - strong [ref=f7e2893]: ms-cadasterexport
+          - button "Cadaster / Regulation ms-cadasterregulation" [ref=f7e2894]:
+            - generic [ref=f7e2895]: Cadaster / Regulation
+            - strong [ref=f7e2896]: ms-cadasterregulation
+          - button "Cadaster / Regulation ms-cadastertask" [ref=f7e2897]:
+            - generic [ref=f7e2898]: Cadaster / Regulation
+            - strong [ref=f7e2899]: ms-cadastertask
+          - button "Cadaster / Regulation ms-cadasteruser" [ref=f7e2900]:
+            - generic [ref=f7e2901]: Cadaster / Regulation
+            - strong [ref=f7e2902]: ms-cadasteruser
+          - button "Cadaster / Regulation ms-regulationchange" [ref=f7e2903]:
+            - generic [ref=f7e2904]: Cadaster / Regulation
+            - strong [ref=f7e2905]: ms-regulationchange
+          - button "Cadaster / Regulation ms-regulationinfo" [ref=f7e2906]:
+            - generic [ref=f7e2907]: Cadaster / Regulation
+            - strong [ref=f7e2908]: ms-regulationinfo
+          - button "Cadaster / Regulation ms-regulationtree" [ref=f7e2909]:
+            - generic [ref=f7e2910]: Cadaster / Regulation
+            - strong [ref=f7e2911]: ms-regulationtree
+          - button "Identity / Commerce ms-invoiceservice" [ref=f7e2912]:
+            - generic [ref=f7e2913]: Identity / Commerce
+            - strong [ref=f7e2914]: ms-invoiceservice
+          - button "Identity / Commerce ms-licenseservice" [ref=f7e2915]:
+            - generic [ref=f7e2916]: Identity / Commerce
+            - strong [ref=f7e2917]: ms-licenseservice
+          - button "Identity / Commerce ms-productservice" [ref=f7e2918]:
+            - generic [ref=f7e2919]: Identity / Commerce
+            - strong [ref=f7e2920]: ms-productservice
+          - button "Identity / Commerce ms-swlicenseservice" [ref=f7e2921]:
+            - generic [ref=f7e2922]: Identity / Commerce
+            - strong [ref=f7e2923]: ms-swlicenseservice
+          - button "Identity / Commerce ms-useritem" [ref=f7e2924]:
+            - generic [ref=f7e2925]: Identity / Commerce
+            - strong [ref=f7e2926]: ms-useritem
+          - button "Identity / Commerce ms-userservice" [ref=f7e2927]:
+            - generic [ref=f7e2928]: Identity / Commerce
+            - strong [ref=f7e2929]: ms-userservice
+          - button "Platform / Internal ms-portal" [ref=f7e2930]:
+            - generic [ref=f7e2931]: Platform / Internal
+            - strong [ref=f7e2932]: ms-portal
+          - button "Platform / Internal ms-search" [ref=f7e2933]:
+            - generic [ref=f7e2934]: Platform / Internal
+            - strong [ref=f7e2935]: ms-search
+          - button "Platform / Internal ms-task" [ref=f7e2936]:
+            - generic [ref=f7e2937]: Platform / Internal
+            - strong [ref=f7e2938]: ms-task
+        - heading "Frontend clients" [level=2] [ref=f7e2939]
+        - generic [ref=f7e2940]:
+          - button "frontend" [ref=f7e2941] [cursor=pointer]
+          - generic [ref=f7e2942]: –
+          - generic [ref=f7e2943]: –
+          - generic [ref=f7e2944]: –
+          - generic [ref=f7e2945]: –
+          - generic [ref=f7e2946]: –
+          - generic [ref=f7e2947]: –
+          - generic [ref=f7e2948]: –
+          - generic [ref=f7e2949]: –
+          - generic [ref=f7e2950]: –
+          - generic [ref=f7e2951]: –
+          - generic [ref=f7e2952]: –
+          - button [ref=f7e2953] [cursor=pointer]:
+            - strong [ref=f7e2955]: "1"
+          - button [ref=f7e2956] [cursor=pointer]:
+            - strong [ref=f7e2958]: "11"
+          - generic [ref=f7e2959]: –
+          - generic [ref=f7e2960]: –
+          - generic [ref=f7e2961]: –
+          - generic [ref=f7e2962]: –
+          - button [ref=f7e2963] [cursor=pointer]:
+            - strong [ref=f7e2965]: "6"
+          - button [ref=f7e2966] [cursor=pointer]:
+            - strong [ref=f7e2968]: "1"
+          - generic [ref=f7e2969]: –
+          - button [ref=f7e2970] [cursor=pointer]:
+            - strong [ref=f7e2972]: "2"
+          - generic [ref=f7e2973]: –
+        - generic [ref=f7e2974]:
+          - button "frontend-monorepo" [ref=f7e2975] [cursor=pointer]
+          - button [ref=f7e2976] [cursor=pointer]:
+            - strong [ref=f7e2978]: "7"
+          - button [ref=f7e2979] [cursor=pointer]:
+            - strong [ref=f7e2981]: "4"
+          - button [ref=f7e2982] [cursor=pointer]:
+            - strong [ref=f7e2984]: "2"
+          - button [ref=f7e2985] [cursor=pointer]:
+            - strong [ref=f7e2987]: "5"
+          - button [ref=f7e2988] [cursor=pointer]:
+            - strong [ref=f7e2990]: "15"
+          - button [ref=f7e2991] [cursor=pointer]:
+            - strong [ref=f7e2993]: "2"
+          - button [ref=f7e2994] [cursor=pointer]:
+            - strong [ref=f7e2996]: "2"
+          - button [ref=f7e2997] [cursor=pointer]:
+            - strong [ref=f7e2999]: "10"
+          - button [ref=f7e3000] [cursor=pointer]:
+            - strong [ref=f7e3002]: "19"
+          - button [ref=f7e3003] [cursor=pointer]:
+            - strong [ref=f7e3005]: "3"
+          - button [ref=f7e3006] [cursor=pointer]:
+            - strong [ref=f7e3008]: "6"
+          - generic [ref=f7e3009]: –
+          - button [ref=f7e3010] [cursor=pointer]:
+            - strong [ref=f7e3012]: "2"
+          - button [ref=f7e3013] [cursor=pointer]:
+            - strong [ref=f7e3015]: "1"
+          - button [ref=f7e3016] [cursor=pointer]:
+            - strong [ref=f7e3018]: "5"
+          - button [ref=f7e3019] [cursor=pointer]:
+            - strong [ref=f7e3021]: "6"
+          - button [ref=f7e3022] [cursor=pointer]:
+            - strong [ref=f7e3024]: "3"
+          - button [ref=f7e3025] [cursor=pointer]:
+            - strong [ref=f7e3027]: "9"
+          - button [ref=f7e3028] [cursor=pointer]:
+            - strong [ref=f7e3030]: "6"
+          - button [ref=f7e3031] [cursor=pointer]:
+            - strong [ref=f7e3033]: "12"
+          - button [ref=f7e3034] [cursor=pointer]:
+            - strong [ref=f7e3036]: "5"
+          - button [ref=f7e3037] [cursor=pointer]:
+            - strong [ref=f7e3039]: "11"
+        - generic [ref=f7e3040]:
+          - button "frontends" [ref=f7e3041] [cursor=pointer]
+          - generic [ref=f7e3042]: –
+          - generic [ref=f7e3043]: –
+          - generic [ref=f7e3044]: –
+          - generic [ref=f7e3045]: –
+          - generic [ref=f7e3046]: –
+          - generic [ref=f7e3047]: –
+          - generic [ref=f7e3048]: –
+          - generic [ref=f7e3049]: –
+          - generic [ref=f7e3050]: –
+          - generic [ref=f7e3051]: –
+          - generic [ref=f7e3052]: –
+          - button [ref=f7e3053] [cursor=pointer]:
+            - strong [ref=f7e3055]: "1"
+          - button [ref=f7e3056] [cursor=pointer]:
+            - strong [ref=f7e3058]: "11"
+          - generic [ref=f7e3059]: –
+          - generic [ref=f7e3060]: –
+          - generic [ref=f7e3061]: –
+          - generic [ref=f7e3062]: –
+          - button [ref=f7e3063] [cursor=pointer]:
+            - strong [ref=f7e3065]: "6"
+          - button [ref=f7e3066] [cursor=pointer]:
+            - strong [ref=f7e3068]: "1"
+          - generic [ref=f7e3069]: –
+          - button [ref=f7e3070] [cursor=pointer]:
+            - strong [ref=f7e3072]: "2"
+          - generic [ref=f7e3073]: –
+        - heading "Documents / WPO" [level=2] [ref=f7e3074]
+        - generic [ref=f7e3075]:
+          - button "ms-containertree" [ref=f7e3076] [cursor=pointer]
+          - generic [ref=f7e3077]: –
+          - generic [ref=f7e3078]: –
+          - generic [ref=f7e3079]: –
+          - generic [ref=f7e3080]: –
+          - generic [ref=f7e3081]: –
+          - generic [ref=f7e3082]: –
+          - generic [ref=f7e3083]: –
+          - generic [ref=f7e3084]: –
+          - generic [ref=f7e3085]: –
+          - generic [ref=f7e3086]: –
+          - generic [ref=f7e3087]: –
+          - generic [ref=f7e3088]: –
+          - generic [ref=f7e3089]: –
+          - generic [ref=f7e3090]: –
+          - button [ref=f7e3091] [cursor=pointer]:
+            - strong [ref=f7e3093]: "5"
+          - button [ref=f7e3094] [cursor=pointer]:
+            - strong [ref=f7e3096]: "6"
+          - generic [ref=f7e3097]: –
+          - generic [ref=f7e3098]: –
+          - generic [ref=f7e3099]: –
+          - generic [ref=f7e3100]: –
+          - generic [ref=f7e3101]: –
+          - generic [ref=f7e3102]: –
+        - generic [ref=f7e3103]:
+          - button "ms-documentdownload" [ref=f7e3104] [cursor=pointer]
+          - generic [ref=f7e3105]: –
+          - generic [ref=f7e3106]: –
+          - generic [ref=f7e3107]: –
+          - generic [ref=f7e3108]: –
+          - generic [ref=f7e3109]: –
+          - generic [ref=f7e3110]: –
+          - generic [ref=f7e3111]: –
+          - generic [ref=f7e3112]: –
+          - generic [ref=f7e3113]: –
+          - generic [ref=f7e3114]: –
+          - generic [ref=f7e3115]: –
+          - generic [ref=f7e3116]: –
+          - generic [ref=f7e3117]: –
+          - generic [ref=f7e3118]: –
+          - button [ref=f7e3119] [cursor=pointer]:
+            - strong [ref=f7e3121]: "10"
+          - generic [ref=f7e3122]: –
+          - generic [ref=f7e3123]: –
+          - generic [ref=f7e3124]: –
+          - generic [ref=f7e3125]: –
+          - generic [ref=f7e3126]: –
+          - generic [ref=f7e3127]: –
+          - generic [ref=f7e3128]: –
+        - generic [ref=f7e3129]:
+          - button "ms-documentexport" [ref=f7e3130] [cursor=pointer]
+          - generic [ref=f7e3131]: –
+          - generic [ref=f7e3132]: –
+          - generic [ref=f7e3133]: –
+          - generic [ref=f7e3134]: –
+          - generic [ref=f7e3135]: –
+          - generic [ref=f7e3136]: –
+          - generic [ref=f7e3137]: –
+          - generic [ref=f7e3138]: –
+          - generic [ref=f7e3139]: –
+          - generic [ref=f7e3140]: –
+          - generic [ref=f7e3141]: –
+          - generic [ref=f7e3142]: –
+          - generic [ref=f7e3143]: –
+          - generic [ref=f7e3144]: –
+          - button [ref=f7e3145] [cursor=pointer]:
+            - strong [ref=f7e3147]: "5"
+          - button [ref=f7e3148] [cursor=pointer]:
+            - strong [ref=f7e3150]: "12"
+          - generic [ref=f7e3151]: –
+          - generic [ref=f7e3152]: –
+          - generic [ref=f7e3153]: –
+          - generic [ref=f7e3154]: –
+          - generic [ref=f7e3155]: –
+          - generic [ref=f7e3156]: –
+        - generic [ref=f7e3157]:
+          - button "ms-documentinfo" [ref=f7e3158] [cursor=pointer]
+          - generic [ref=f7e3159]: –
+          - generic [ref=f7e3160]: –
+          - generic [ref=f7e3161]: –
+          - generic [ref=f7e3162]: –
+          - generic [ref=f7e3163]: –
+          - generic [ref=f7e3164]: –
+          - generic [ref=f7e3165]: –
+          - generic [ref=f7e3166]: –
+          - generic [ref=f7e3167]: –
+          - generic [ref=f7e3168]: –
+          - generic [ref=f7e3169]: –
+          - generic [ref=f7e3170]: –
+          - generic [ref=f7e3171]: –
+          - generic [ref=f7e3172]: –
+          - button [ref=f7e3173] [cursor=pointer]:
+            - strong [ref=f7e3175]: "8"
+          - button [ref=f7e3176] [cursor=pointer]:
+            - strong [ref=f7e3178]: "9"
+          - generic [ref=f7e3179]: –
+          - generic [ref=f7e3180]: –
+          - generic [ref=f7e3181]: –
+          - generic [ref=f7e3182]: –
+          - generic [ref=f7e3183]: –
+          - generic [ref=f7e3184]: –
+        - generic [ref=f7e3185]:
+          - button "ms-documenttopic" [ref=f7e3186] [cursor=pointer]
+          - generic [ref=f7e3187]: –
+          - generic [ref=f7e3188]: –
+          - generic [ref=f7e3189]: –
+          - generic [ref=f7e3190]: –
+          - generic [ref=f7e3191]: –
+          - generic [ref=f7e3192]: –
+          - generic [ref=f7e3193]: –
+          - generic [ref=f7e3194]: –
+          - generic [ref=f7e3195]: –
+          - generic [ref=f7e3196]: –
+          - generic [ref=f7e3197]: –
+          - generic [ref=f7e3198]: –
+          - generic [ref=f7e3199]: –
+          - generic [ref=f7e3200]: –
+          - button [ref=f7e3201] [cursor=pointer]:
+            - strong [ref=f7e3203]: "5"
+          - button [ref=f7e3204] [cursor=pointer]:
+            - strong [ref=f7e3206]: "12"
+          - generic [ref=f7e3207]: –
+          - generic [ref=f7e3208]: –
+          - generic [ref=f7e3209]: –
+          - generic [ref=f7e3210]: –
+          - generic [ref=f7e3211]: –
+          - generic [ref=f7e3212]: –
+        - heading "Cadaster / Regulation" [level=2] [ref=f7e3213]
+        - generic [ref=f7e3214]:
+          - button "ms-cadaster" [ref=f7e3215] [cursor=pointer]
+          - generic [ref=f7e3216]: –
+          - generic [ref=f7e3217]: –
+          - generic [ref=f7e3218]: –
+          - generic [ref=f7e3219]: –
+          - generic [ref=f7e3220]: –
+          - generic [ref=f7e3221]: –
+          - generic [ref=f7e3222]: –
+          - generic [ref=f7e3223]: –
+          - generic [ref=f7e3224]: –
+          - generic [ref=f7e3225]: –
+          - generic [ref=f7e3226]: –
+          - generic [ref=f7e3227]: –
+          - generic [ref=f7e3228]: –
+          - generic [ref=f7e3229]: –
+          - button [ref=f7e3230] [cursor=pointer]:
+            - strong [ref=f7e3232]: "11"
+          - button [ref=f7e3233] [cursor=pointer]:
+            - strong [ref=f7e3235]: "7"
+          - generic [ref=f7e3236]: –
+          - generic [ref=f7e3237]: –
+          - button [ref=f7e3238] [cursor=pointer]:
+            - strong [ref=f7e3240]: "18"
+          - generic [ref=f7e3241]: –
+          - generic [ref=f7e3242]: –
+          - generic [ref=f7e3243]: –
+        - generic [ref=f7e3244]:
+          - button "ms-cadasterexport" [ref=f7e3245] [cursor=pointer]
+          - generic [ref=f7e3246]: –
+          - generic [ref=f7e3247]: –
+          - generic [ref=f7e3248]: –
+          - generic [ref=f7e3249]: –
+          - generic [ref=f7e3250]: –
+          - generic [ref=f7e3251]: –
+          - generic [ref=f7e3252]: –
+          - button [ref=f7e3253] [cursor=pointer]:
+            - strong [ref=f7e3255]: "6"
+          - generic [ref=f7e3256]: –
+          - generic [ref=f7e3257]: –
+          - generic [ref=f7e3258]: –
+          - generic [ref=f7e3259]: –
+          - generic [ref=f7e3260]: –
+          - generic [ref=f7e3261]: –
+          - button [ref=f7e3262] [cursor=pointer]:
+            - strong [ref=f7e3264]: "7"
+          - button [ref=f7e3265] [cursor=pointer]:
+            - strong [ref=f7e3267]: "8"
+          - generic [ref=f7e3268]: –
+          - generic [ref=f7e3269]: –
+          - button [ref=f7e3270] [cursor=pointer]:
+            - strong [ref=f7e3272]: "8"
+          - generic [ref=f7e3273]: –
+          - generic [ref=f7e3274]: –
+          - generic [ref=f7e3275]: –
+        - generic [ref=f7e3276]:
+          - button "ms-cadasterregulation" [ref=f7e3277] [cursor=pointer]
+          - generic [ref=f7e3278]: –
+          - generic [ref=f7e3279]: –
+          - generic [ref=f7e3280]: –
+          - generic [ref=f7e3281]: –
+          - generic [ref=f7e3282]: –
+          - generic [ref=f7e3283]: –
+          - generic [ref=f7e3284]: –
+          - generic [ref=f7e3285]: –
+          - button [ref=f7e3286] [cursor=pointer]:
+            - strong [ref=f7e3288]: "7"
+          - generic [ref=f7e3289]: –
+          - generic [ref=f7e3290]: –
+          - generic [ref=f7e3291]: –
+          - button [ref=f7e3292] [cursor=pointer]:
+            - strong [ref=f7e3294]: "7"
+          - generic [ref=f7e3295]: –
+          - button [ref=f7e3296] [cursor=pointer]:
+            - strong [ref=f7e3298]: "10"
+          - button [ref=f7e3299] [cursor=pointer]:
+            - strong [ref=f7e3301]: "8"
+          - generic [ref=f7e3302]: –
+          - generic [ref=f7e3303]: –
+          - button [ref=f7e3304] [cursor=pointer]:
+            - strong [ref=f7e3306]: "9"
+          - generic [ref=f7e3307]: –
+          - generic [ref=f7e3308]: –
+          - generic [ref=f7e3309]: –
+        - generic [ref=f7e3310]:
+          - button "ms-cadastertask" [ref=f7e3311] [cursor=pointer]
+          - generic [ref=f7e3312]: –
+          - generic [ref=f7e3313]: –
+          - generic [ref=f7e3314]: –
+          - generic [ref=f7e3315]: –
+          - generic [ref=f7e3316]: –
+          - generic [ref=f7e3317]: –
+          - generic [ref=f7e3318]: –
+          - generic [ref=f7e3319]: –
+          - generic [ref=f7e3320]: –
+          - generic [ref=f7e3321]: –
+          - generic [ref=f7e3322]: –
+          - generic [ref=f7e3323]: –
+          - generic [ref=f7e3324]: –
+          - generic [ref=f7e3325]: –
+          - button [ref=f7e3326] [cursor=pointer]:
+            - strong [ref=f7e3328]: "11"
+          - generic [ref=f7e3329]: –
+          - generic [ref=f7e3330]: –
+          - generic [ref=f7e3331]: –
+          - button [ref=f7e3332] [cursor=pointer]:
+            - strong [ref=f7e3334]: "13"
+          - generic [ref=f7e3335]: –
+          - generic [ref=f7e3336]: –
+          - generic [ref=f7e3337]: –
+        - generic [ref=f7e3338]:
+          - button "ms-cadasteruser" [ref=f7e3339] [cursor=pointer]
+          - generic [ref=f7e3340]: –
+          - generic [ref=f7e3341]: –
+          - generic [ref=f7e3342]: –
+          - generic [ref=f7e3343]: –
+          - generic [ref=f7e3344]: –
+          - generic [ref=f7e3345]: –
+          - generic [ref=f7e3346]: –
+          - generic [ref=f7e3347]: –
+          - generic [ref=f7e3348]: –
+          - generic [ref=f7e3349]: –
+          - generic [ref=f7e3350]: –
+          - generic [ref=f7e3351]: –
+          - generic [ref=f7e3352]: –
+          - generic [ref=f7e3353]: –
+          - button [ref=f7e3354] [cursor=pointer]:
+            - strong [ref=f7e3356]: "8"
+          - generic [ref=f7e3357]: –
+          - generic [ref=f7e3358]: –
+          - generic [ref=f7e3359]: –
+          - button [ref=f7e3360] [cursor=pointer]:
+            - strong [ref=f7e3362]: "11"
+          - generic [ref=f7e3363]: –
+          - generic [ref=f7e3364]: –
+          - generic [ref=f7e3365]: –
+        - generic [ref=f7e3366]:
+          - button "ms-regulationchange" [ref=f7e3367] [cursor=pointer]
+          - generic [ref=f7e3368]: –
+          - generic [ref=f7e3369]: –
+          - generic [ref=f7e3370]: –
+          - generic [ref=f7e3371]: –
+          - generic [ref=f7e3372]: –
+          - generic [ref=f7e3373]: –
+          - generic [ref=f7e3374]: –
+          - button [ref=f7e3375] [cursor=pointer]:
+            - strong [ref=f7e3377]: "9"
+          - generic [ref=f7e3378]: –
+          - generic [ref=f7e3379]: –
+          - generic [ref=f7e3380]: –
+          - generic [ref=f7e3381]: –
+          - generic [ref=f7e3382]: –
+          - generic [ref=f7e3383]: –
+          - button [ref=f7e3384] [cursor=pointer]:
+            - strong [ref=f7e3386]: "8"
+          - button [ref=f7e3387] [cursor=pointer]:
+            - strong [ref=f7e3389]: "5"
+          - generic [ref=f7e3390]: –
+          - generic [ref=f7e3391]: –
+          - button [ref=f7e3392] [cursor=pointer]:
+            - strong [ref=f7e3394]: "11"
+          - generic [ref=f7e3395]: –
+          - generic [ref=f7e3396]: –
+          - generic [ref=f7e3397]: –
+        - generic [ref=f7e3398]:
+          - button "ms-regulationdownload" [ref=f7e3399] [cursor=pointer]
+          - generic [ref=f7e3400]: –
+          - generic [ref=f7e3401]: –
+          - generic [ref=f7e3402]: –
+          - generic [ref=f7e3403]: –
+          - generic [ref=f7e3404]: –
+          - generic [ref=f7e3405]: –
+          - generic [ref=f7e3406]: –
+          - generic [ref=f7e3407]: –
+          - generic [ref=f7e3408]: –
+          - generic [ref=f7e3409]: –
+          - generic [ref=f7e3410]: –
+          - generic [ref=f7e3411]: –
+          - generic [ref=f7e3412]: –
+          - generic [ref=f7e3413]: –
+          - button [ref=f7e3414] [cursor=pointer]:
+            - strong [ref=f7e3416]: "13"
+          - generic [ref=f7e3417]: –
+          - generic [ref=f7e3418]: –
+          - generic [ref=f7e3419]: –
+          - generic [ref=f7e3420]: –
+          - generic [ref=f7e3421]: –
+          - generic [ref=f7e3422]: –
+          - generic [ref=f7e3423]: –
+        - generic [ref=f7e3424]:
+          - button "ms-regulationexport" [ref=f7e3425] [cursor=pointer]
+          - generic [ref=f7e3426]: –
+          - generic [ref=f7e3427]: –
+          - generic [ref=f7e3428]: –
+          - generic [ref=f7e3429]: –
+          - generic [ref=f7e3430]: –
+          - generic [ref=f7e3431]: –
+          - generic [ref=f7e3432]: –
+          - generic [ref=f7e3433]: –
+          - generic [ref=f7e3434]: –
+          - generic [ref=f7e3435]: –
+          - generic [ref=f7e3436]: –
+          - generic [ref=f7e3437]: –
+          - generic [ref=f7e3438]: –
+          - generic [ref=f7e3439]: –
+          - button [ref=f7e3440] [cursor=pointer]:
+            - strong [ref=f7e3442]: "5"
+          - generic [ref=f7e3443]: –
+          - generic [ref=f7e3444]: –
+          - generic [ref=f7e3445]: –
+          - generic [ref=f7e3446]: –
+          - generic [ref=f7e3447]: –
+          - generic [ref=f7e3448]: –
+          - generic [ref=f7e3449]: –
+        - generic [ref=f7e3450]:
+          - button "ms-regulationinfo" [ref=f7e3451] [cursor=pointer]
+          - generic [ref=f7e3452]: –
+          - generic [ref=f7e3453]: –
+          - generic [ref=f7e3454]: –
+          - generic [ref=f7e3455]: –
+          - generic [ref=f7e3456]: –
+          - generic [ref=f7e3457]: –
+          - generic [ref=f7e3458]: –
+          - generic [ref=f7e3459]: –
+          - generic [ref=f7e3460]: –
+          - generic [ref=f7e3461]: –
+          - generic [ref=f7e3462]: –
+          - generic [ref=f7e3463]: –
+          - generic [ref=f7e3464]: –
+          - generic [ref=f7e3465]: –
+          - button [ref=f7e3466] [cursor=pointer]:
+            - strong [ref=f7e3468]: "5"
+          - button [ref=f7e3469] [cursor=pointer]:
+            - strong [ref=f7e3471]: "5"
+          - generic [ref=f7e3472]: –
+          - generic [ref=f7e3473]: –
+          - generic [ref=f7e3474]: –
+          - generic [ref=f7e3475]: –
+          - generic [ref=f7e3476]: –
+          - generic [ref=f7e3477]: –
+        - generic [ref=f7e3478]:
+          - button "ms-regulationtree" [ref=f7e3479] [cursor=pointer]
+          - generic [ref=f7e3480]: –
+          - generic [ref=f7e3481]: –
+          - generic [ref=f7e3482]: –
+          - generic [ref=f7e3483]: –
+          - generic [ref=f7e3484]: –
+          - generic [ref=f7e3485]: –
+          - generic [ref=f7e3486]: –
+          - generic [ref=f7e3487]: –
+          - generic [ref=f7e3488]: –
+          - generic [ref=f7e3489]: –
+          - generic [ref=f7e3490]: –
+          - generic [ref=f7e3491]: –
+          - generic [ref=f7e3492]: –
+          - generic [ref=f7e3493]: –
+          - button [ref=f7e3494] [cursor=pointer]:
+            - strong [ref=f7e3496]: "10"
+          - button [ref=f7e3497] [cursor=pointer]:
+            - strong [ref=f7e3499]: "10"
+          - generic [ref=f7e3500]: –
+          - generic [ref=f7e3501]: –
+          - button [ref=f7e3502] [cursor=pointer]:
+            - strong [ref=f7e3504]: "9"
+          - generic [ref=f7e3505]: –
+          - generic [ref=f7e3506]: –
+          - generic [ref=f7e3507]: –
+        - heading "Identity / Commerce" [level=2] [ref=f7e3508]
+        - generic [ref=f7e3509]:
+          - button "ms-licenseservice" [ref=f7e3510] [cursor=pointer]
+          - generic [ref=f7e3511]: –
+          - generic [ref=f7e3512]: –
+          - generic [ref=f7e3513]: –
+          - generic [ref=f7e3514]: –
+          - generic [ref=f7e3515]: –
+          - generic [ref=f7e3516]: –
+          - generic [ref=f7e3517]: –
+          - generic [ref=f7e3518]: –
+          - generic [ref=f7e3519]: –
+          - generic [ref=f7e3520]: –
+          - generic [ref=f7e3521]: –
+          - generic [ref=f7e3522]: –
+          - generic [ref=f7e3523]: –
+          - generic [ref=f7e3524]: –
+          - generic [ref=f7e3525]: –
+          - generic [ref=f7e3526]: –
+          - generic [ref=f7e3527]: –
+          - generic [ref=f7e3528]: –
+          - button [ref=f7e3529] [cursor=pointer]:
+            - strong [ref=f7e3531]: "16"
+          - generic [ref=f7e3532]: –
+          - generic [ref=f7e3533]: –
+          - generic [ref=f7e3534]: –
+        - generic [ref=f7e3535]:
+          - button "ms-productservice" [ref=f7e3536] [cursor=pointer]
+          - generic [ref=f7e3537]: –
+          - generic [ref=f7e3538]: –
+          - generic [ref=f7e3539]: –
+          - generic [ref=f7e3540]: –
+          - generic [ref=f7e3541]: –
+          - generic [ref=f7e3542]: –
+          - generic [ref=f7e3543]: –
+          - generic [ref=f7e3544]: –
+          - generic [ref=f7e3545]: –
+          - generic [ref=f7e3546]: –
+          - generic [ref=f7e3547]: –
+          - generic [ref=f7e3548]: –
+          - generic [ref=f7e3549]: –
+          - generic [ref=f7e3550]: –
+          - button [ref=f7e3551] [cursor=pointer]:
+            - strong [ref=f7e3553]: "9"
+          - generic [ref=f7e3554]: –
+          - generic [ref=f7e3555]: –
+          - generic [ref=f7e3556]: –
+          - generic [ref=f7e3557]: –
+          - generic [ref=f7e3558]: –
+          - generic [ref=f7e3559]: –
+          - generic [ref=f7e3560]: –
+        - generic [ref=f7e3561]:
+          - button "ms-shopmgmt" [ref=f7e3562] [cursor=pointer]
+          - generic [ref=f7e3563]: –
+          - generic [ref=f7e3564]: –
+          - generic [ref=f7e3565]: –
+          - generic [ref=f7e3566]: –
+          - generic [ref=f7e3567]: –
+          - generic [ref=f7e3568]: –
+          - generic [ref=f7e3569]: –
+          - generic [ref=f7e3570]: –
+          - generic [ref=f7e3571]: –
+          - generic [ref=f7e3572]: –
+          - generic [ref=f7e3573]: –
+          - generic [ref=f7e3574]: –
+          - generic [ref=f7e3575]: –
+          - generic [ref=f7e3576]: –
+          - generic [ref=f7e3577]: –
+          - button [ref=f7e3578] [cursor=pointer]:
+            - strong [ref=f7e3580]: "2"
+          - generic [ref=f7e3581]: –
+          - generic [ref=f7e3582]: –
+          - button [ref=f7e3583] [cursor=pointer]:
+            - strong [ref=f7e3585]: "12"
+          - generic [ref=f7e3586]: –
+          - generic [ref=f7e3587]: –
+          - generic [ref=f7e3588]: –
+        - generic [ref=f7e3589]:
+          - button "ms-useritem" [ref=f7e3590] [cursor=pointer]
+          - generic [ref=f7e3591]: –
+          - generic [ref=f7e3592]: –
+          - generic [ref=f7e3593]: –
+          - generic [ref=f7e3594]: –
+          - generic [ref=f7e3595]: –
+          - generic [ref=f7e3596]: –
+          - generic [ref=f7e3597]: –
+          - generic [ref=f7e3598]: –
+          - generic [ref=f7e3599]: –
+          - generic [ref=f7e3600]: –
+          - generic [ref=f7e3601]: –
+          - generic [ref=f7e3602]: –
+          - generic [ref=f7e3603]: –
+          - generic [ref=f7e3604]: –
+          - button [ref=f7e3605] [cursor=pointer]:
+            - strong [ref=f7e3607]: "5"
+          - button [ref=f7e3608] [cursor=pointer]:
+            - strong [ref=f7e3610]: "9"
+          - generic [ref=f7e3611]: –
+          - generic [ref=f7e3612]: –
+          - generic [ref=f7e3613]: –
+          - generic [ref=f7e3614]: –
+          - generic [ref=f7e3615]: –
+          - generic [ref=f7e3616]: –
+        - generic [ref=f7e3617]:
+          - button "ms-userservice" [ref=f7e3618] [cursor=pointer]
+          - generic [ref=f7e3619]: –
+          - generic [ref=f7e3620]: –
+          - generic [ref=f7e3621]: –
+          - generic [ref=f7e3622]: –
+          - generic [ref=f7e3623]: –
+          - generic [ref=f7e3624]: –
+          - generic [ref=f7e3625]: –
+          - generic [ref=f7e3626]: –
+          - generic [ref=f7e3627]: –
+          - button [ref=f7e3628] [cursor=pointer]:
+            - strong [ref=f7e3630]: "6"
+          - generic [ref=f7e3631]: –
+          - generic [ref=f7e3632]: –
+          - generic [ref=f7e3633]: –
+          - generic [ref=f7e3634]: –
+          - button [ref=f7e3635] [cursor=pointer]:
+            - strong [ref=f7e3637]: "5"
+          - generic [ref=f7e3638]: –
+          - generic [ref=f7e3639]: –
+          - generic [ref=f7e3640]: –
+          - generic [ref=f7e3641]: –
+          - generic [ref=f7e3642]: –
+          - generic [ref=f7e3643]: –
+          - generic [ref=f7e3644]: –
+        - heading "Platform / Internal" [level=2] [ref=f7e3645]
+        - generic [ref=f7e3646]:
+          - button "ms-common" [ref=f7e3647] [cursor=pointer]
+          - generic [ref=f7e3648]: –
+          - generic [ref=f7e3649]: –
+          - generic [ref=f7e3650]: –
+          - generic [ref=f7e3651]: –
+          - button [ref=f7e3652] [cursor=pointer]:
+            - strong [ref=f7e3654]: "2"
+          - generic [ref=f7e3655]: –
+          - generic [ref=f7e3656]: –
+          - button [ref=f7e3657] [cursor=pointer]:
+            - strong [ref=f7e3659]: "3"
+          - button [ref=f7e3660] [cursor=pointer]:
+            - strong [ref=f7e3662]: "2"
+          - button [ref=f7e3663] [cursor=pointer]:
+            - strong [ref=f7e3665]: "2"
+          - generic [ref=f7e3666]: –
+          - generic [ref=f7e3667]: –
+          - button [ref=f7e3668] [cursor=pointer]:
+            - strong [ref=f7e3670]: "2"
+          - generic [ref=f7e3671]: –
+          - button [ref=f7e3672] [cursor=pointer]:
+            - strong [ref=f7e3674]: "2"
+          - button [ref=f7e3675] [cursor=pointer]:
+            - strong [ref=f7e3677]: "4"
+          - generic [ref=f7e3678]: –
+          - generic [ref=f7e3679]: –
+          - button [ref=f7e3680] [cursor=pointer]:
+            - strong [ref=f7e3682]: "4"
+          - generic [ref=f7e3683]: –
+          - generic [ref=f7e3684]: –
+          - generic [ref=f7e3685]: –
+        - generic [ref=f7e3686]:
+          - button "ms-knksync" [ref=f7e3687] [cursor=pointer]
+          - generic [ref=f7e3688]: –
+          - generic [ref=f7e3689]: –
+          - generic [ref=f7e3690]: –
+          - generic [ref=f7e3691]: –
+          - generic [ref=f7e3692]: –
+          - generic [ref=f7e3693]: –
+          - generic [ref=f7e3694]: –
+          - generic [ref=f7e3695]: –
+          - generic [ref=f7e3696]: –
+          - generic [ref=f7e3697]: –
+          - generic [ref=f7e3698]: –
+          - generic [ref=f7e3699]: –
+          - generic [ref=f7e3700]: –
+          - generic [ref=f7e3701]: –
+          - generic [ref=f7e3702]: –
+          - generic [ref=f7e3703]: –
+          - generic [ref=f7e3704]: –
+          - generic [ref=f7e3705]: –
+          - button [ref=f7e3706] [cursor=pointer]:
+            - strong [ref=f7e3708]: "7"
+          - generic [ref=f7e3709]: –
+          - generic [ref=f7e3710]: –
+          - generic [ref=f7e3711]: –
+        - generic [ref=f7e3712]:
+          - button "ms-portal" [ref=f7e3713] [cursor=pointer]
+          - generic [ref=f7e3714]: –
+          - generic [ref=f7e3715]: –
+          - generic [ref=f7e3716]: –
+          - generic [ref=f7e3717]: –
+          - button [ref=f7e3718] [cursor=pointer]:
+            - strong [ref=f7e3720]: "11"
+          - generic [ref=f7e3721]: –
+          - generic [ref=f7e3722]: –
+          - generic [ref=f7e3723]: –
+          - button [ref=f7e3724] [cursor=pointer]:
+            - strong [ref=f7e3726]: "7"
+          - generic [ref=f7e3727]: –
+          - generic [ref=f7e3728]: –
+          - generic [ref=f7e3729]: –
+          - generic [ref=f7e3730]: –
+          - generic [ref=f7e3731]: –
+          - button [ref=f7e3732] [cursor=pointer]:
+            - strong [ref=f7e3734]: "10"
+          - button [ref=f7e3735] [cursor=pointer]:
+            - strong [ref=f7e3737]: "16"
+          - generic [ref=f7e3738]: –
+          - generic [ref=f7e3739]: –
+          - button [ref=f7e3740] [cursor=pointer]:
+            - strong [ref=f7e3742]: "1"
+          - generic [ref=f7e3743]: –
+          - generic [ref=f7e3744]: –
+          - generic [ref=f7e3745]: –
+        - generic [ref=f7e3746]:
+          - button "ms-search" [ref=f7e3747] [cursor=pointer]
+          - generic [ref=f7e3748]: –
+          - generic [ref=f7e3749]: –
+          - generic [ref=f7e3750]: –
+          - generic [ref=f7e3751]: –
+          - generic [ref=f7e3752]: –
+          - generic [ref=f7e3753]: –
+          - generic [ref=f7e3754]: –
+          - generic [ref=f7e3755]: –
+          - generic [ref=f7e3756]: –
+          - generic [ref=f7e3757]: –
+          - generic [ref=f7e3758]: –
+          - generic [ref=f7e3759]: –
+          - generic [ref=f7e3760]: –
+          - generic [ref=f7e3761]: –
+          - button [ref=f7e3762] [cursor=pointer]:
+            - strong [ref=f7e3764]: "6"
+          - button [ref=f7e3765] [cursor=pointer]:
+            - strong [ref=f7e3767]: "10"
+          - generic [ref=f7e3768]: –
+          - generic [ref=f7e3769]: –
+          - button [ref=f7e3770] [cursor=pointer]:
+            - strong [ref=f7e3772]: "11"
+          - generic [ref=f7e3773]: –
+          - generic [ref=f7e3774]: –
+          - generic [ref=f7e3775]: –
+        - generic [ref=f7e3776]:
+          - button "ms-sso" [ref=f7e3777] [cursor=pointer]
+          - generic [ref=f7e3778]: –
+          - generic [ref=f7e3779]: –
+          - generic [ref=f7e3780]: –
+          - generic [ref=f7e3781]: –
+          - generic [ref=f7e3782]: –
+          - generic [ref=f7e3783]: –
+          - generic [ref=f7e3784]: –
+          - generic [ref=f7e3785]: –
+          - generic [ref=f7e3786]: –
+          - generic [ref=f7e3787]: –
+          - generic [ref=f7e3788]: –
+          - generic [ref=f7e3789]: –
+          - generic [ref=f7e3790]: –
+          - generic [ref=f7e3791]: –
+          - button [ref=f7e3792] [cursor=pointer]:
+            - strong [ref=f7e3794]: "1"
+          - button [ref=f7e3795] [cursor=pointer]:
+            - strong [ref=f7e3797]: "4"
+          - generic [ref=f7e3798]: –
+          - generic [ref=f7e3799]: –
+          - button [ref=f7e3800] [cursor=pointer]:
+            - strong [ref=f7e3802]: "6"
+          - generic [ref=f7e3803]: –
+          - generic [ref=f7e3804]: –
+          - generic [ref=f7e3805]: –
+        - generic [ref=f7e3806]:
+          - button "ms-task" [ref=f7e3807] [cursor=pointer]
+          - generic [ref=f7e3808]: –
+          - generic [ref=f7e3809]: –
+          - generic [ref=f7e3810]: –
+          - generic [ref=f7e3811]: –
+          - generic [ref=f7e3812]: –
+          - generic [ref=f7e3813]: –
+          - generic [ref=f7e3814]: –
+          - generic [ref=f7e3815]: –
+          - generic [ref=f7e3816]: –
+          - generic [ref=f7e3817]: –
+          - generic [ref=f7e3818]: –
+          - generic [ref=f7e3819]: –
+          - generic [ref=f7e3820]: –
+          - generic [ref=f7e3821]: –
+          - button [ref=f7e3822] [cursor=pointer]:
+            - strong [ref=f7e3824]: "17"
+          - button [ref=f7e3825] [cursor=pointer]:
+            - strong [ref=f7e3827]: "9"
+          - generic [ref=f7e3828]: –
+          - generic [ref=f7e3829]: –
+          - button [ref=f7e3830] [cursor=pointer]:
+            - strong [ref=f7e3832]: "13"
+          - generic [ref=f7e3833]: –
+          - generic [ref=f7e3834]: –
+          - generic [ref=f7e3835]: –
+        - generic [ref=f7e3836]:
+          - button "ms-tradingpartner" [ref=f7e3837] [cursor=pointer]
+          - generic [ref=f7e3838]: –
+          - generic [ref=f7e3839]: –
+          - generic [ref=f7e3840]: –
+          - generic [ref=f7e3841]: –
+          - generic [ref=f7e3842]: –
+          - generic [ref=f7e3843]: –
+          - generic [ref=f7e3844]: –
+          - generic [ref=f7e3845]: –
+          - generic [ref=f7e3846]: –
+          - generic [ref=f7e3847]: –
+          - generic [ref=f7e3848]: –
+          - generic [ref=f7e3849]: –
+          - generic [ref=f7e3850]: –
+          - generic [ref=f7e3851]: –
+          - button [ref=f7e3852] [cursor=pointer]:
+            - strong [ref=f7e3854]: "3"
+          - button [ref=f7e3855] [cursor=pointer]:
+            - strong [ref=f7e3857]: "1"
+          - generic [ref=f7e3858]: –
+          - generic [ref=f7e3859]: –
+          - button [ref=f7e3860] [cursor=pointer]:
+            - strong [ref=f7e3862]: "3"
+          - generic [ref=f7e3863]: –
+          - generic [ref=f7e3864]: –
+          - generic [ref=f7e3865]: –
+  - generic [ref=f7e446]:
+    - heading "frontend-monorepo" [level=1] [ref=f7e3866]
+    - generic [ref=f7e3867]:
+      - generic [ref=f7e3868]:
+        - strong [ref=f7e3869]: Project
+        - generic [ref=f7e3870]: frontend/frontend-monorepo
+      - generic [ref=f7e3871]:
+        - strong [ref=f7e3872]: Kind
+        - generic [ref=f7e3873]: frontend
+      - generic [ref=f7e3874]:
+        - strong [ref=f7e3875]: Status
+        - generic [ref=f7e3876]: indexed
+    - generic [ref=f7e3877]:
+      - heading "Outgoing" [level=3] [ref=f7e3878]
+      - 'button "frontend/frontend-monorepo -> microservices/ms-cadaster GET /cadasters/{cadasterId} 2 resolved 0 mismatch 0 unresolved" [ref=f7e3879] [cursor=pointer]':
+        - strong [ref=f7e3880]: frontend/frontend-monorepo -> microservices/ms-cadaster
+        - generic [ref=f7e3881]: "GET /cadasters/{cadasterId}"
+        - generic [ref=f7e3882]: 2 resolved
+        - generic [ref=f7e3883]: 0 mismatch
+        - generic [ref=f7e3884]: 0 unresolved
+      - button "frontend/frontend-monorepo -> microservices/ms-cadasterexport GET /cadasters/export/settings | PUT /cadasters/export/settings 2 resolved 0 mismatch 0 unresolved" [ref=f7e3885] [cursor=pointer]:
+        - strong [ref=f7e3886]: frontend/frontend-monorepo -> microservices/ms-cadasterexport
+        - generic [ref=f7e3887]: GET /cadasters/export/settings | PUT /cadasters/export/settings
+        - generic [ref=f7e3888]: 2 resolved
+        - generic [ref=f7e3889]: 0 mismatch
+        - generic [ref=f7e3890]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-cadasterregulation PUT /cadasters/{cadasterId}/regulations/{objectId} - method_mismatch 8 resolved 2 mismatch 0 unresolved" [ref=f7e3891] [cursor=pointer]':
+        - strong [ref=f7e3892]: frontend/frontend-monorepo -> microservices/ms-cadasterregulation
+        - generic [ref=f7e3893]: "PUT /cadasters/{cadasterId}/regulations/{objectId} - method_mismatch"
+        - generic [ref=f7e3894]: 8 resolved
+        - generic [ref=f7e3895]: 2 mismatch
+        - generic [ref=f7e3896]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-cadastertask DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} | DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} | PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} 19 resolved 0 mismatch 0 unresolved" [ref=f7e3897] [cursor=pointer]':
+        - strong [ref=f7e3898]: frontend/frontend-monorepo -> microservices/ms-cadastertask
+        - generic [ref=f7e3899]: "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} | DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} | PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}"
+        - generic [ref=f7e3900]: 19 resolved
+        - generic [ref=f7e3901]: 0 mismatch
+        - generic [ref=f7e3902]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-cadasteruser GET /cadasters/{cadasterId}/users | PUT /cadasters/{cadasterId}/users 3 resolved 0 mismatch 0 unresolved" [ref=f7e3903] [cursor=pointer]':
+        - strong [ref=f7e3904]: frontend/frontend-monorepo -> microservices/ms-cadasteruser
+        - generic [ref=f7e3905]: "GET /cadasters/{cadasterId}/users | PUT /cadasters/{cadasterId}/users"
+        - generic [ref=f7e3906]: 3 resolved
+        - generic [ref=f7e3907]: 0 mismatch
+        - generic [ref=f7e3908]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-containertree GET /containertree/modules/{isbn}/breadcrumbs/{documentId} | GET /containertree/modules/{isbn}/containers 7 resolved 0 mismatch 0 unresolved" [ref=f7e3909] [cursor=pointer]':
+        - strong [ref=f7e3910]: frontend/frontend-monorepo -> microservices/ms-containertree
+        - generic [ref=f7e3911]: "GET /containertree/modules/{isbn}/breadcrumbs/{documentId} | GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f7e3912]: 7 resolved
+        - generic [ref=f7e3913]: 0 mismatch
+        - generic [ref=f7e3914]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-documentdownload GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic} | GET /documentdownload/modules/{isbn}/documents/{objectId}/search | GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{index} 4 resolved 0 mismatch 0 unresolved" [ref=f7e3915] [cursor=pointer]':
+        - strong [ref=f7e3916]: frontend/frontend-monorepo -> microservices/ms-documentdownload
+        - generic [ref=f7e3917]: "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic} | GET /documentdownload/modules/{isbn}/documents/{objectId}/search | GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{index}"
+        - generic [ref=f7e3918]: 4 resolved
+        - generic [ref=f7e3919]: 0 mismatch
+        - generic [ref=f7e3920]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-documentexport GET /documentexport/modules/{isbn}/documents/{objectId}/availability - indexed_backend_route_missing 1 resolved 0 mismatch 1 unresolved" [ref=f7e3921] [cursor=pointer]':
+        - strong [ref=f7e3922]: frontend/frontend-monorepo -> microservices/ms-documentexport
+        - generic [ref=f7e3923]: "GET /documentexport/modules/{isbn}/documents/{objectId}/availability - indexed_backend_route_missing"
+        - generic [ref=f7e3924]: 1 resolved
+        - generic [ref=f7e3925]: 0 mismatch
+        - generic [ref=f7e3926]: 1 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-documentinfo GET /documentinfo/modules/{isbn}/info | GET /documentinfo/modules/{isbn}/documents/{objectId}/metadata | GET /documentinfo/modules/{isbn}/documents/{objectId}/relatives 5 resolved 0 mismatch 0 unresolved" [ref=f7e3927] [cursor=pointer]':
+        - strong [ref=f7e3928]: frontend/frontend-monorepo -> microservices/ms-documentinfo
+        - generic [ref=f7e3929]: "GET /documentinfo/modules/{isbn}/info | GET /documentinfo/modules/{isbn}/documents/{objectId}/metadata | GET /documentinfo/modules/{isbn}/documents/{objectId}/relatives"
+        - generic [ref=f7e3930]: 5 resolved
+        - generic [ref=f7e3931]: 0 mismatch
+        - generic [ref=f7e3932]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-documenttopic GET /documenttopic/modules/{isbn}/{endpoint} - dynamic_endpoint_unresolved 14 resolved 0 mismatch 1 unresolved" [ref=f7e3933] [cursor=pointer]':
+        - strong [ref=f7e3934]: frontend/frontend-monorepo -> microservices/ms-documenttopic
+        - generic [ref=f7e3935]: "GET /documenttopic/modules/{isbn}/{endpoint} - dynamic_endpoint_unresolved"
+        - generic [ref=f7e3936]: 14 resolved
+        - generic [ref=f7e3937]: 0 mismatch
+        - generic [ref=f7e3938]: 1 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-invoiceservice GET /invoiceservice/users/{userId}/invoices 1 resolved 0 mismatch 0 unresolved" [ref=f7e3939] [cursor=pointer]':
+        - strong [ref=f7e3940]: frontend/frontend-monorepo -> microservices/ms-invoiceservice
+        - generic [ref=f7e3941]: "GET /invoiceservice/users/{userId}/invoices"
+        - generic [ref=f7e3942]: 1 resolved
+        - generic [ref=f7e3943]: 0 mismatch
+        - generic [ref=f7e3944]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-licenseservice PUT /productservice/users/{userId}/services/{serviceCode} - method_mismatch 4 resolved 1 mismatch 0 unresolved" [ref=f7e3945] [cursor=pointer]':
+        - strong [ref=f7e3946]: frontend/frontend-monorepo -> microservices/ms-licenseservice
+        - generic [ref=f7e3947]: "PUT /productservice/users/{userId}/services/{serviceCode} - method_mismatch"
+        - generic [ref=f7e3948]: 4 resolved
+        - generic [ref=f7e3949]: 1 mismatch
+        - generic [ref=f7e3950]: 0 unresolved
+      - button "frontend/frontend-monorepo -> microservices/ms-portal GET /portal/tasks/flyout | GET /portal/news | GET /portal/topics 12 resolved 0 mismatch 0 unresolved" [ref=f7e3951] [cursor=pointer]:
+        - strong [ref=f7e3952]: frontend/frontend-monorepo -> microservices/ms-portal
+        - generic [ref=f7e3953]: GET /portal/tasks/flyout | GET /portal/news | GET /portal/topics
+        - generic [ref=f7e3954]: 12 resolved
+        - generic [ref=f7e3955]: 0 mismatch
+        - generic [ref=f7e3956]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-productservice GET /productservice/users/{userId}/products | GET /productservice/users/{userId}/products/{baseCode}/support | GET /productservice/users/{userId}/products/{baseCode} 6 resolved 0 mismatch 0 unresolved" [ref=f7e3957] [cursor=pointer]':
+        - strong [ref=f7e3958]: frontend/frontend-monorepo -> microservices/ms-productservice
+        - generic [ref=f7e3959]: "GET /productservice/users/{userId}/products | GET /productservice/users/{userId}/products/{baseCode}/support | GET /productservice/users/{userId}/products/{baseCode}"
+        - generic [ref=f7e3960]: 6 resolved
+        - generic [ref=f7e3961]: 0 mismatch
+        - generic [ref=f7e3962]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-regulationchange POST /cadasters/{cadasterId}/regulations/changes/guidance | PUT /cadasters/{cadasterId}/regulations/changes/{type}/notice | PUT /cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster 6 resolved 0 mismatch 0 unresolved" [ref=f7e3963] [cursor=pointer]':
+        - strong [ref=f7e3964]: frontend/frontend-monorepo -> microservices/ms-regulationchange
+        - generic [ref=f7e3965]: "POST /cadasters/{cadasterId}/regulations/changes/guidance | PUT /cadasters/{cadasterId}/regulations/changes/{type}/notice | PUT /cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster"
+        - generic [ref=f7e3966]: 6 resolved
+        - generic [ref=f7e3967]: 0 mismatch
+        - generic [ref=f7e3968]: 0 unresolved
+      - button "frontend/frontend-monorepo -> microservices/ms-regulationtree GET /cadasters/tree/regulationtopics | GET /cadasters/tree/cachetareas 2 resolved 0 mismatch 0 unresolved" [ref=f7e3969] [cursor=pointer]:
+        - strong [ref=f7e3970]: frontend/frontend-monorepo -> microservices/ms-regulationtree
+        - generic [ref=f7e3971]: GET /cadasters/tree/regulationtopics | GET /cadasters/tree/cachetareas
+        - generic [ref=f7e3972]: 2 resolved
+        - generic [ref=f7e3973]: 0 mismatch
+        - generic [ref=f7e3974]: 0 unresolved
+      - button "frontend/frontend-monorepo -> microservices/ms-search PUT /search | GET /search/autocomplete 5 resolved 0 mismatch 0 unresolved" [ref=f7e3975] [cursor=pointer]:
+        - strong [ref=f7e3976]: frontend/frontend-monorepo -> microservices/ms-search
+        - generic [ref=f7e3977]: PUT /search | GET /search/autocomplete
+        - generic [ref=f7e3978]: 5 resolved
+        - generic [ref=f7e3979]: 0 mismatch
+        - generic [ref=f7e3980]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-swlicenseservice POST /swlicenseservice/key | GET /swlicenseservice/licenses/{licenseId}/basecodes/{baseCode}/keys | DELETE /swlicenseservice/key 3 resolved 0 mismatch 0 unresolved" [ref=f7e3981] [cursor=pointer]':
+        - strong [ref=f7e3982]: frontend/frontend-monorepo -> microservices/ms-swlicenseservice
+        - generic [ref=f7e3983]: "POST /swlicenseservice/key | GET /swlicenseservice/licenses/{licenseId}/basecodes/{baseCode}/keys | DELETE /swlicenseservice/key"
+        - generic [ref=f7e3984]: 3 resolved
+        - generic [ref=f7e3985]: 0 mismatch
+        - generic [ref=f7e3986]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-task POST /task/services/{serviceCode}/tasks/{taskId}/comments | PUT /task/services/{serviceCode}/tasks/{taskId} | DELETE /task/services/{serviceCode}/tasks/{taskId} 11 resolved 0 mismatch 0 unresolved" [ref=f7e3987] [cursor=pointer]':
+        - strong [ref=f7e3988]: frontend/frontend-monorepo -> microservices/ms-task
+        - generic [ref=f7e3989]: "POST /task/services/{serviceCode}/tasks/{taskId}/comments | PUT /task/services/{serviceCode}/tasks/{taskId} | DELETE /task/services/{serviceCode}/tasks/{taskId}"
+        - generic [ref=f7e3990]: 11 resolved
+        - generic [ref=f7e3991]: 0 mismatch
+        - generic [ref=f7e3992]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-useritem POST /useritem/users/{userId}/folders | POST /useritem/users/{userId}/folders/{folderId}/favorites | GET /useritem/users/{userId}/folders 9 resolved 0 mismatch 0 unresolved" [ref=f7e3993] [cursor=pointer]':
+        - strong [ref=f7e3994]: frontend/frontend-monorepo -> microservices/ms-useritem
+        - generic [ref=f7e3995]: "POST /useritem/users/{userId}/folders | POST /useritem/users/{userId}/folders/{folderId}/favorites | GET /useritem/users/{userId}/folders"
+        - generic [ref=f7e3996]: 9 resolved
+        - generic [ref=f7e3997]: 0 mismatch
+        - generic [ref=f7e3998]: 0 unresolved
+      - 'button "frontend/frontend-monorepo -> microservices/ms-userservice GET /userservice/users/{userId}/info | PUT /userservice/users/{userId}/image | DELETE /userservice/users/{userId}/image 6 resolved 0 mismatch 0 unresolved" [ref=f7e3999] [cursor=pointer]':
+        - strong [ref=f7e4000]: frontend/frontend-monorepo -> microservices/ms-userservice
+        - generic [ref=f7e4001]: "GET /userservice/users/{userId}/info | PUT /userservice/users/{userId}/image | DELETE /userservice/users/{userId}/image"
+        - generic [ref=f7e4002]: 6 resolved
+        - generic [ref=f7e4003]: 0 mismatch
+        - generic [ref=f7e4004]: 0 unresolved
+    - generic [ref=f7e4005]:
+      - heading "Incoming" [level=3] [ref=f7e4006]
+      - paragraph [ref=f7e4007]: None.

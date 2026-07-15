@@ -1,0 +1,143 @@
+- generic [ref=f3e5]:
+  - complementary [ref=f3e6]:
+    - generic [ref=f3e7]:
+      - generic [ref=f3e8]: G
+      - generic [ref=f3e9]:
+        - strong [ref=f3e10]: GoreGraph
+        - generic [ref=f3e11]: Workspace
+    - generic [ref=f3e12]:
+      - generic [ref=f3e13]:
+        - generic [ref=f3e14]: "43"
+        - generic [ref=f3e15]: services
+      - generic [ref=f3e16]:
+        - generic [ref=f3e17]: "101"
+        - generic [ref=f3e18]: relations
+      - generic [ref=f3e19]:
+        - generic [ref=f3e20]: "709"
+        - generic [ref=f3e21]: calls
+    - navigation [ref=f3e22]:
+      - button "Architecture" [ref=f3e23] [cursor=pointer]
+      - button "Endpoints" [ref=f3e24] [cursor=pointer]
+      - button "Data Flow" [ref=f3e25] [cursor=pointer]
+      - button "Diagnostics" [ref=f3e26] [cursor=pointer]
+      - button "Coverage" [ref=f3e27] [cursor=pointer]
+    - generic [ref=f3e28]:
+      - generic [ref=f3e29]: Find a service
+      - textbox "Search services" [ref=f3e30]
+    - generic [ref=f3e31]:
+      - generic [ref=f3e32]: Exploration path
+      - button "1 Domain overview Start with the mental model" [ref=f3e33] [cursor=pointer]:
+        - generic [ref=f3e34]: "1"
+        - generic [ref=f3e35]:
+          - generic [ref=f3e36]: Domain overview
+          - generic [ref=f3e37]: Start with the mental model
+      - button "2 Expand in context Open one domain without losing place" [ref=f3e38] [cursor=pointer]:
+        - generic [ref=f3e39]: "2"
+        - generic [ref=f3e40]:
+          - generic [ref=f3e41]: Expand in context
+          - generic [ref=f3e42]: Open one domain without losing place
+      - button "3 Focused service Inspect direct relationships" [ref=f3e43] [cursor=pointer]:
+        - generic [ref=f3e44]: "3"
+        - generic [ref=f3e45]:
+          - generic [ref=f3e46]: Focused service
+          - generic [ref=f3e47]: Inspect direct relationships
+    - generic [ref=f3e48]:
+      - generic [ref=f3e49]: Selected service
+      - generic [ref=f3e50]: ms-containertree
+      - generic [ref=f3e51]: microservices/ms-containertree
+  - main [ref=f3e52]:
+    - generic [ref=f3e53]:
+      - generic [ref=f3e54]:
+        - generic [ref=f3e55]: Architecture workspace
+        - heading "Focused service" [level=1] [ref=f3e772]
+      - generic [ref=f3e57]:
+        - button "overview" [ref=f3e58] [cursor=pointer]
+        - button "context" [ref=f3e59] [cursor=pointer]
+        - button "focus" [ref=f3e60] [cursor=pointer]
+    - generic [ref=f3e61]:
+      - generic [ref=f3e62]: Resolved
+      - generic [ref=f3e64]: Unresolved
+      - generic [ref=f3e66]: Mismatch
+      - emphasis [ref=f3e68]: Call counts come from detected API relationships
+    - generic [ref=f3e773]:
+      - generic [ref=f3e774]:
+        - generic [ref=f3e775]:
+          - heading "Only direct neighbors are shown" [level=2] [ref=f3e776]
+          - paragraph [ref=f3e777]: Incoming relationships stay left; outgoing relationships stay right.
+        - generic [ref=f3e778]: 1-hop focus
+      - generic [ref=f3e779]:
+        - generic [ref=f3e780]:
+          - generic [ref=f3e781]:
+            - generic [ref=f3e782]: Incoming
+            - heading "7 incoming calls" [level=3] [ref=f3e783]
+            - generic [ref=f3e784]: 1 direct relationships
+          - button "frontend-monorepo Frontend clients 7 calls" [ref=f3e786] [cursor=pointer]:
+            - generic [ref=f3e787]:
+              - generic [ref=f3e788]: frontend-monorepo
+              - generic [ref=f3e789]: Frontend clients
+            - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f3e790]: 7 calls
+        - article [ref=f3e792]:
+          - generic [ref=f3e793]: Selected service
+          - heading "ms-containertree" [level=2] [ref=f3e794]
+          - paragraph [ref=f3e795]: microservices/ms-containertree
+          - generic [ref=f3e796]:
+            - generic [ref=f3e797]:
+              - generic [ref=f3e798]: "7"
+              - generic [ref=f3e799]: incoming
+            - generic [ref=f3e800]:
+              - generic [ref=f3e801]: "11"
+              - generic [ref=f3e802]: outgoing
+            - generic [ref=f3e803]:
+              - generic [ref=f3e804]: "3"
+              - generic [ref=f3e805]: neighbors
+          - emphasis [ref=f3e806]: Documents / WPO
+        - generic [ref=f3e807]:
+          - generic [ref=f3e808]:
+            - generic [ref=f3e809]: Outgoing
+            - heading "11 outgoing calls" [level=3] [ref=f3e810]
+            - generic [ref=f3e811]: 2 direct relationships
+          - generic [ref=f3e812]:
+            - button "ms-productservice Identity / Commerce 6 calls" [ref=f3e813] [cursor=pointer]:
+              - generic [ref=f3e814]:
+                - generic [ref=f3e815]: ms-productservice
+                - generic [ref=f3e816]: Identity / Commerce
+              - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f3e817]: 6 calls
+            - button "ms-licenseservice Identity / Commerce 5 calls" [ref=f3e819] [cursor=pointer]:
+              - generic [ref=f3e820]:
+                - generic [ref=f3e821]: ms-licenseservice
+                - generic [ref=f3e822]: Identity / Commerce
+              - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f3e823]: 5 calls
+  - complementary [ref=f3e209]:
+    - generic [ref=f3e210]:
+      - generic [ref=f3e211]: Service inspector
+      - heading "ms-containertree" [level=2] [ref=f3e755]
+      - paragraph [ref=f3e213]: microservices/ms-containertree
+    - generic [ref=f3e214]:
+      - generic [ref=f3e215]:
+        - term [ref=f3e216]: Domain
+        - definition [ref=f3e217]: Documents / WPO
+      - generic [ref=f3e218]:
+        - term [ref=f3e219]: Kind
+        - definition [ref=f3e220]: backend
+      - generic [ref=f3e221]:
+        - term [ref=f3e222]: Status
+        - definition [ref=f3e223]: indexed
+    - generic [ref=f3e224]:
+      - button "Show in architecture" [ref=f3e225] [cursor=pointer]
+      - button "Focus service" [ref=f3e226] [cursor=pointer]
+    - generic [ref=f3e227]:
+      - button "Outgoing 2" [ref=f3e756] [cursor=pointer]
+      - button "Incoming 1" [ref=f3e757] [cursor=pointer]
+    - generic [ref=f3e230]:
+      - group [ref=f3e758]:
+        - generic "ms-productservice microservices/ms-productservice 6 calls" [ref=f3e759]:
+          - generic [ref=f3e760]:
+            - generic [ref=f3e761]: ms-productservice
+            - generic [ref=f3e762]: microservices/ms-productservice
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f3e763]: 6 calls
+      - group [ref=f3e765]:
+        - generic "ms-licenseservice microservices/ms-licenseservice 5 calls" [ref=f3e766]:
+          - generic [ref=f3e767]:
+            - generic [ref=f3e768]: ms-licenseservice
+            - generic [ref=f3e769]: microservices/ms-licenseservice
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f3e770]: 5 calls

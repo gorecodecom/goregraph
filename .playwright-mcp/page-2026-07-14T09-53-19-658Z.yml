@@ -1,0 +1,515 @@
+- generic [ref=f2e2]:
+  - complementary [ref=f2e3]:
+    - heading "GoreGraph Workspace" [level=1] [ref=f2e4]
+    - generic [ref=f2e5]:
+      - generic [ref=f2e6]:
+        - strong [ref=f2e7]: "43"
+        - text: services
+      - generic [ref=f2e8]:
+        - strong [ref=f2e9]: "101"
+        - text: relations
+      - generic [ref=f2e10]:
+        - strong [ref=f2e11]: "177"
+        - text: traces
+      - generic [ref=f2e12]:
+        - strong [ref=f2e13]: "177"
+        - text: contracts
+    - heading "View" [level=2] [ref=f2e14]
+    - generic [ref=f2e15]:
+      - button "Architecture" [ref=f2e16] [cursor=pointer]
+      - button "Endpoints" [ref=f2e17] [cursor=pointer]
+      - button "Feature Flow" [ref=f2e18] [cursor=pointer]
+      - button "Data Flow" [active] [pressed] [ref=f2e19] [cursor=pointer]
+      - button "Diagnostics" [ref=f2e20] [cursor=pointer]
+      - button "Coverage" [ref=f2e21] [cursor=pointer]
+    - paragraph [ref=f2e22]: Choose one endpoint to inspect how request data reaches validation, persistence, messages, and the response.
+    - textbox "Search workspace map" [ref=f2e23]:
+      - /placeholder: Search service, endpoint, route, file, symbol
+    - heading "Filter" [level=2] [ref=f2e24]
+    - generic [ref=f2e25]:
+      - button "All" [pressed] [ref=f2e26] [cursor=pointer]
+      - button "Risk" [ref=f2e27] [cursor=pointer]
+      - button "Resolved" [ref=f2e28] [cursor=pointer]
+      - button "Unresolved" [ref=f2e29] [cursor=pointer]
+    - button "Clear selection" [ref=f2e31] [cursor=pointer]
+    - heading "Data Flows" [level=2] [ref=f2e400]
+    - generic [ref=f2e33]:
+      - 'button "GET /cadasters/{cadasterId} 8 nodes / 2 explicit gaps" [ref=f2e401] [cursor=pointer]':
+        - strong [ref=f2e402]: "GET /cadasters/{cadasterId}"
+        - generic [ref=f2e403]: 8 nodes / 2 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/documents/focus 7 nodes / 1 explicit gaps" [ref=f2e404] [cursor=pointer]':
+        - strong [ref=f2e405]: "GET /documenttopic/modules/{isbn}/documents/focus"
+        - generic [ref=f2e406]: 7 nodes / 1 explicit gaps
+      - 'button "GET /cadasters/{cadasterId}/cadastertopics 3 nodes / 2 explicit gaps" [ref=f2e407] [cursor=pointer]':
+        - strong [ref=f2e408]: "GET /cadasters/{cadasterId}/cadastertopics"
+        - generic [ref=f2e409]: 3 nodes / 2 explicit gaps
+      - 'button "PUT /cadasters/{cadasterId}/regulations/changes/{type}/guidancenotice 2 nodes / 0 explicit gaps" [ref=f2e410] [cursor=pointer]':
+        - strong [ref=f2e411]: "PUT /cadasters/{cadasterId}/regulations/changes/{type}/guidancenotice"
+        - generic [ref=f2e412]: 2 nodes / 0 explicit gaps
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId} 8 nodes / 4 explicit gaps" [ref=f2e413] [cursor=pointer]':
+        - strong [ref=f2e414]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}"
+        - generic [ref=f2e415]: 8 nodes / 4 explicit gaps
+      - 'button "GET /documentdownload/modules/{isbn}/documents/{objectId}/search 4 nodes / 1 explicit gaps" [ref=f2e416] [cursor=pointer]':
+        - strong [ref=f2e417]: "GET /documentdownload/modules/{isbn}/documents/{objectId}/search"
+        - generic [ref=f2e418]: 4 nodes / 1 explicit gaps
+      - 'button "DELETE /userservice/users/{userId}/image 1 nodes / 1 explicit gaps" [ref=f2e419] [cursor=pointer]':
+        - strong [ref=f2e420]: "DELETE /userservice/users/{userId}/image"
+        - generic [ref=f2e421]: 1 nodes / 1 explicit gaps
+      - 'button "GET /cadasters/{cadasterId}/cachetareas 3 nodes / 2 explicit gaps" [ref=f2e422] [cursor=pointer]':
+        - strong [ref=f2e423]: "GET /cadasters/{cadasterId}/cachetareas"
+        - generic [ref=f2e424]: 3 nodes / 2 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/documents/freetext 7 nodes / 1 explicit gaps" [ref=f2e425] [cursor=pointer]':
+        - strong [ref=f2e426]: "GET /documenttopic/modules/{isbn}/documents/freetext"
+        - generic [ref=f2e427]: 7 nodes / 1 explicit gaps
+      - button "GET /search/autocomplete 4 nodes / 1 explicit gaps" [ref=f2e428] [cursor=pointer]:
+        - strong [ref=f2e429]: GET /search/autocomplete
+        - generic [ref=f2e430]: 4 nodes / 1 explicit gaps
+      - 'button "PUT /userservice/users/{userId}/image 2 nodes / 0 explicit gaps" [ref=f2e431] [cursor=pointer]':
+        - strong [ref=f2e432]: "PUT /userservice/users/{userId}/image"
+        - generic [ref=f2e433]: 2 nodes / 0 explicit gaps
+      - 'button "POST /cadastertask/cadasters/{cadasterId}/regulations/changes/taskstate 5 nodes / 0 explicit gaps" [ref=f2e434] [cursor=pointer]':
+        - strong [ref=f2e435]: "POST /cadastertask/cadasters/{cadasterId}/regulations/changes/taskstate"
+        - generic [ref=f2e436]: 5 nodes / 0 explicit gaps
+      - 'button "GET /documentinfo/modules/{isbn}/documents/{objectId}/metadata 5 nodes / 1 explicit gaps" [ref=f2e437] [cursor=pointer]':
+        - strong [ref=f2e438]: "GET /documentinfo/modules/{isbn}/documents/{objectId}/metadata"
+        - generic [ref=f2e439]: 5 nodes / 1 explicit gaps
+      - 'button "GET /cadastertask/responsible/{userId}/regulations/tasks 3 nodes / 1 explicit gaps" [ref=f2e440] [cursor=pointer]':
+        - strong [ref=f2e441]: "GET /cadastertask/responsible/{userId}/regulations/tasks"
+        - generic [ref=f2e442]: 3 nodes / 1 explicit gaps
+      - 'button "PUT /useritem/users/{userId}/folders/{folderId} 7 nodes / 1 explicit gaps" [ref=f2e443] [cursor=pointer]':
+        - strong [ref=f2e444]: "PUT /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f2e445]: 7 nodes / 1 explicit gaps
+      - 'button "GET /cadasters/{cadasterId}/regulations 2 nodes / 1 explicit gaps" [ref=f2e446] [cursor=pointer]':
+        - strong [ref=f2e447]: "GET /cadasters/{cadasterId}/regulations"
+        - generic [ref=f2e448]: 2 nodes / 1 explicit gaps
+      - button "POST /swlicenseservice/key 8 nodes / 0 explicit gaps" [ref=f2e449] [cursor=pointer]:
+        - strong [ref=f2e450]: POST /swlicenseservice/key
+        - generic [ref=f2e451]: 8 nodes / 0 explicit gaps
+      - 'button "PUT /cadasters/{cadasterId}/regulations/changes/{type}/notice 2 nodes / 0 explicit gaps" [ref=f2e452] [cursor=pointer]':
+        - strong [ref=f2e453]: "PUT /cadasters/{cadasterId}/regulations/changes/{type}/notice"
+        - generic [ref=f2e454]: 2 nodes / 0 explicit gaps
+      - button "GET /portal/tasks/detail 1 nodes / 1 explicit gaps" [ref=f2e455] [cursor=pointer]:
+        - strong [ref=f2e456]: GET /portal/tasks/detail
+        - generic [ref=f2e457]: 1 nodes / 1 explicit gaps
+      - button "PUT /search 15 nodes / 0 explicit gaps" [ref=f2e458] [cursor=pointer]:
+        - strong [ref=f2e459]: PUT /search
+        - generic [ref=f2e460]: 15 nodes / 0 explicit gaps
+      - 'button "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic} 4 nodes / 1 explicit gaps" [ref=f2e461] [cursor=pointer]':
+        - strong [ref=f2e462]: "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic}"
+        - generic [ref=f2e463]: 4 nodes / 1 explicit gaps
+      - 'button "PUT /documenttopic/modules/{isbn}/topics/{topicId}/state 1 nodes / 1 explicit gaps" [ref=f2e464] [cursor=pointer]':
+        - strong [ref=f2e465]: "PUT /documenttopic/modules/{isbn}/topics/{topicId}/state"
+        - generic [ref=f2e466]: 1 nodes / 1 explicit gaps
+      - 'button "GET /containertree/modules/{isbn}/containers 8 nodes / 1 explicit gaps" [ref=f2e467] [cursor=pointer]':
+        - strong [ref=f2e468]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f2e469]: 8 nodes / 1 explicit gaps
+      - 'button "GET /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks 1 nodes / 1 explicit gaps" [ref=f2e470] [cursor=pointer]':
+        - strong [ref=f2e471]: "GET /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks"
+        - generic [ref=f2e472]: 1 nodes / 1 explicit gaps
+      - 'button "GET /productservice/users/{userId}/products/{baseCode}/support 3 nodes / 1 explicit gaps" [ref=f2e473] [cursor=pointer]':
+        - strong [ref=f2e474]: "GET /productservice/users/{userId}/products/{baseCode}/support"
+        - generic [ref=f2e475]: 3 nodes / 1 explicit gaps
+      - 'button "GET /task/services/{isbn}/tasks 1 nodes / 1 explicit gaps" [ref=f2e476] [cursor=pointer]':
+        - strong [ref=f2e477]: "GET /task/services/{isbn}/tasks"
+        - generic [ref=f2e478]: 1 nodes / 1 explicit gaps
+      - 'button "GET /task/services/{serviceCode}/tasks 1 nodes / 1 explicit gaps" [ref=f2e479] [cursor=pointer]':
+        - strong [ref=f2e480]: "GET /task/services/{serviceCode}/tasks"
+        - generic [ref=f2e481]: 1 nodes / 1 explicit gaps
+      - 'button "DELETE /task/services/{serviceCode}/tasks/{taskId} 1 nodes / 1 explicit gaps" [ref=f2e482] [cursor=pointer]':
+        - strong [ref=f2e483]: "DELETE /task/services/{serviceCode}/tasks/{taskId}"
+        - generic [ref=f2e484]: 1 nodes / 1 explicit gaps
+      - 'button "POST /useritem/users/{userId}/folders 7 nodes / 1 explicit gaps" [ref=f2e485] [cursor=pointer]':
+        - strong [ref=f2e486]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f2e487]: 7 nodes / 1 explicit gaps
+      - 'button "GET /licenseservice/users/{userId}/licenses/{licenseId}/assignments 1 nodes / 1 explicit gaps" [ref=f2e488] [cursor=pointer]':
+        - strong [ref=f2e489]: "GET /licenseservice/users/{userId}/licenses/{licenseId}/assignments"
+        - generic [ref=f2e490]: 1 nodes / 1 explicit gaps
+      - button "PUT /cadasters/export/settings 4 nodes / 0 explicit gaps" [ref=f2e491] [cursor=pointer]:
+        - strong [ref=f2e492]: PUT /cadasters/export/settings
+        - generic [ref=f2e493]: 4 nodes / 0 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/topics/documentgenres 1 nodes / 1 explicit gaps" [ref=f2e494] [cursor=pointer]':
+        - strong [ref=f2e495]: "GET /documenttopic/modules/{isbn}/topics/documentgenres"
+        - generic [ref=f2e496]: 1 nodes / 1 explicit gaps
+      - 'button "GET /useritem/users/{userId}/folders/favorites 5 nodes / 1 explicit gaps" [ref=f2e497] [cursor=pointer]':
+        - strong [ref=f2e498]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=f2e499]: 5 nodes / 1 explicit gaps
+      - 'button "GET /productservice/users/{userId}/products/{baseCode}/support 3 nodes / 1 explicit gaps" [ref=f2e500] [cursor=pointer]':
+        - strong [ref=f2e501]: "GET /productservice/users/{userId}/products/{baseCode}/support"
+        - generic [ref=f2e502]: 3 nodes / 1 explicit gaps
+      - 'button "GET /documentinfo/modules/{isbn}/documents/{objectId}/toc 4 nodes / 1 explicit gaps" [ref=f2e503] [cursor=pointer]':
+        - strong [ref=f2e504]: "GET /documentinfo/modules/{isbn}/documents/{objectId}/toc"
+        - generic [ref=f2e505]: 4 nodes / 1 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/topics/{topicId} 11 nodes / 1 explicit gaps" [ref=f2e506] [cursor=pointer]':
+        - strong [ref=f2e507]: "GET /documenttopic/modules/{isbn}/topics/{topicId}"
+        - generic [ref=f2e508]: 11 nodes / 1 explicit gaps
+      - 'button "PUT /documenttopic/modules/{isbn}/topics/{topicId}/state 1 nodes / 1 explicit gaps" [ref=f2e509] [cursor=pointer]':
+        - strong [ref=f2e510]: "PUT /documenttopic/modules/{isbn}/topics/{topicId}/state"
+        - generic [ref=f2e511]: 1 nodes / 1 explicit gaps
+      - 'button "GET /documentinfo/modules/{isbn}/info 14 nodes / 1 explicit gaps" [ref=f2e512] [cursor=pointer]':
+        - strong [ref=f2e513]: "GET /documentinfo/modules/{isbn}/info"
+        - generic [ref=f2e514]: 14 nodes / 1 explicit gaps
+      - 'button "POST /documentexport/modules/{isbn}/documents/{objectId}/export 6 nodes / 0 explicit gaps" [ref=f2e515] [cursor=pointer]':
+        - strong [ref=f2e516]: "POST /documentexport/modules/{isbn}/documents/{objectId}/export"
+        - generic [ref=f2e517]: 6 nodes / 0 explicit gaps
+      - 'button "GET /useritem/users/{userId}/folders/favorites 5 nodes / 1 explicit gaps" [ref=f2e518] [cursor=pointer]':
+        - strong [ref=f2e519]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=f2e520]: 5 nodes / 1 explicit gaps
+      - 'button "GET /task/services/{serviceCode}/tasks/users 1 nodes / 1 explicit gaps" [ref=f2e521] [cursor=pointer]':
+        - strong [ref=f2e522]: "GET /task/services/{serviceCode}/tasks/users"
+        - generic [ref=f2e523]: 1 nodes / 1 explicit gaps
+      - 'button "POST /task/services/{serviceCode}/tasks 1 nodes / 1 explicit gaps" [ref=f2e524] [cursor=pointer]':
+        - strong [ref=f2e525]: "POST /task/services/{serviceCode}/tasks"
+        - generic [ref=f2e526]: 1 nodes / 1 explicit gaps
+      - 'button "GET /useritem/users/{userId}/folders/favorites 5 nodes / 1 explicit gaps" [ref=f2e527] [cursor=pointer]':
+        - strong [ref=f2e528]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=f2e529]: 5 nodes / 1 explicit gaps
+      - button "GET /portal/topics 2 nodes / 1 explicit gaps" [ref=f2e530] [cursor=pointer]:
+        - strong [ref=f2e531]: GET /portal/topics
+        - generic [ref=f2e532]: 2 nodes / 1 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/topics/{topicId}/relatives 4 nodes / 1 explicit gaps" [ref=f2e533] [cursor=pointer]':
+        - strong [ref=f2e534]: "GET /documenttopic/modules/{isbn}/topics/{topicId}/relatives"
+        - generic [ref=f2e535]: 4 nodes / 1 explicit gaps
+      - 'button "GET /containertree/modules/{isbn}/containers 8 nodes / 1 explicit gaps" [ref=f2e536] [cursor=pointer]':
+        - strong [ref=f2e537]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f2e538]: 8 nodes / 1 explicit gaps
+      - 'button "PUT /useritem/users/{userId}/folders/{folderId} 7 nodes / 1 explicit gaps" [ref=f2e539] [cursor=pointer]':
+        - strong [ref=f2e540]: "PUT /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f2e541]: 7 nodes / 1 explicit gaps
+      - 'button "POST /cadasters/{cadasterId}/regulations/changes/guidance 17 nodes / 0 explicit gaps" [ref=f2e542] [cursor=pointer]':
+        - strong [ref=f2e543]: "POST /cadasters/{cadasterId}/regulations/changes/guidance"
+        - generic [ref=f2e544]: 17 nodes / 0 explicit gaps
+      - 'button "PUT /portal/topics/{topicId}/services/{serviceCode} 4 nodes / 2 explicit gaps" [ref=f2e545] [cursor=pointer]':
+        - strong [ref=f2e546]: "PUT /portal/topics/{topicId}/services/{serviceCode}"
+        - generic [ref=f2e547]: 4 nodes / 2 explicit gaps
+      - 'button "GET /productservice/users/{userId}/products 9 nodes / 1 explicit gaps" [ref=f2e548] [cursor=pointer]':
+        - strong [ref=f2e549]: "GET /productservice/users/{userId}/products"
+        - generic [ref=f2e550]: 9 nodes / 1 explicit gaps
+      - 'button "GET /userservice/users/{userId}/info 7 nodes / 1 explicit gaps" [ref=f2e551] [cursor=pointer]':
+        - strong [ref=f2e552]: "GET /userservice/users/{userId}/info"
+        - generic [ref=f2e553]: 7 nodes / 1 explicit gaps
+      - 'button "POST /task/services/{serviceCode}/tasks/{taskId}/comments 1 nodes / 1 explicit gaps" [ref=f2e554] [cursor=pointer]':
+        - strong [ref=f2e555]: "POST /task/services/{serviceCode}/tasks/{taskId}/comments"
+        - generic [ref=f2e556]: 1 nodes / 1 explicit gaps
+      - 'button "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} 16 nodes / 0 explicit gaps" [ref=f2e557] [cursor=pointer]':
+        - strong [ref=f2e558]: "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}"
+        - generic [ref=f2e559]: 16 nodes / 0 explicit gaps
+      - 'button "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} 1 nodes / 1 explicit gaps" [ref=f2e560] [cursor=pointer]':
+        - strong [ref=f2e561]: "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}"
+        - generic [ref=f2e562]: 1 nodes / 1 explicit gaps
+      - 'button "GET /containertree/modules/{isbn}/containers 8 nodes / 1 explicit gaps" [ref=f2e563] [cursor=pointer]':
+        - strong [ref=f2e564]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f2e565]: 8 nodes / 1 explicit gaps
+      - button "POST /userservice/users/invite 8 nodes / 0 explicit gaps" [ref=f2e566] [cursor=pointer]:
+        - strong [ref=f2e567]: POST /userservice/users/invite
+        - generic [ref=f2e568]: 8 nodes / 0 explicit gaps
+      - 'button "PUT /useritem/users/{userId}/folders/{folderId} 7 nodes / 1 explicit gaps" [ref=f2e569] [cursor=pointer]':
+        - strong [ref=f2e570]: "PUT /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f2e571]: 7 nodes / 1 explicit gaps
+      - 'button "DELETE /task/services/{serviceCode}/tasks/{taskId} 1 nodes / 1 explicit gaps" [ref=f2e572] [cursor=pointer]':
+        - strong [ref=f2e573]: "DELETE /task/services/{serviceCode}/tasks/{taskId}"
+        - generic [ref=f2e574]: 1 nodes / 1 explicit gaps
+      - 'button "GET /portal/topics/{id} 3 nodes / 1 explicit gaps" [ref=f2e575] [cursor=pointer]':
+        - strong [ref=f2e576]: "GET /portal/topics/{id}"
+        - generic [ref=f2e577]: 3 nodes / 1 explicit gaps
+      - button "GET /cadastertask/cadasters/tasks 1 nodes / 1 explicit gaps" [ref=f2e578] [cursor=pointer]:
+        - strong [ref=f2e579]: GET /cadastertask/cadasters/tasks
+        - generic [ref=f2e580]: 1 nodes / 1 explicit gaps
+      - 'button "POST /useritem/users/{userId}/folders 7 nodes / 1 explicit gaps" [ref=f2e581] [cursor=pointer]':
+        - strong [ref=f2e582]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f2e583]: 7 nodes / 1 explicit gaps
+      - button "POST /cadasters/cadastertopics 4 nodes / 1 explicit gaps" [ref=f2e584] [cursor=pointer]:
+        - strong [ref=f2e585]: POST /cadasters/cadastertopics
+        - generic [ref=f2e586]: 4 nodes / 1 explicit gaps
+      - 'button "GET /cadasters/{cadasterId}/users 5 nodes / 2 explicit gaps" [ref=f2e587] [cursor=pointer]':
+        - strong [ref=f2e588]: "GET /cadasters/{cadasterId}/users"
+        - generic [ref=f2e589]: 5 nodes / 2 explicit gaps
+      - 'button "GET /swlicenseservice/licenses/{licenseId}/basecodes/{baseCode}/keys 4 nodes / 1 explicit gaps" [ref=f2e590] [cursor=pointer]':
+        - strong [ref=f2e591]: "GET /swlicenseservice/licenses/{licenseId}/basecodes/{baseCode}/keys"
+        - generic [ref=f2e592]: 4 nodes / 1 explicit gaps
+      - 'button "GET /cadastertask/users/{userId}/regulations/changes/tasks 4 nodes / 1 explicit gaps" [ref=f2e593] [cursor=pointer]':
+        - strong [ref=f2e594]: "GET /cadastertask/users/{userId}/regulations/changes/tasks"
+        - generic [ref=f2e595]: 4 nodes / 1 explicit gaps
+      - 'button "PUT /cadasters/{cadasterId}/cachetareas 7 nodes / 4 explicit gaps" [ref=f2e596] [cursor=pointer]':
+        - strong [ref=f2e597]: "PUT /cadasters/{cadasterId}/cachetareas"
+        - generic [ref=f2e598]: 7 nodes / 4 explicit gaps
+      - 'button "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} 16 nodes / 0 explicit gaps" [ref=f2e599] [cursor=pointer]':
+        - strong [ref=f2e600]: "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}"
+        - generic [ref=f2e601]: 16 nodes / 0 explicit gaps
+      - 'button "POST /useritem/users/{userId}/folders 7 nodes / 1 explicit gaps" [ref=f2e602] [cursor=pointer]':
+        - strong [ref=f2e603]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f2e604]: 7 nodes / 1 explicit gaps
+      - 'button "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} 1 nodes / 1 explicit gaps" [ref=f2e605] [cursor=pointer]':
+        - strong [ref=f2e606]: "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId}"
+        - generic [ref=f2e607]: 1 nodes / 1 explicit gaps
+      - 'button "POST /productservice/users/{userId}/products/{baseCode}/support 3 nodes / 0 explicit gaps" [ref=f2e608] [cursor=pointer]':
+        - strong [ref=f2e609]: "POST /productservice/users/{userId}/products/{baseCode}/support"
+        - generic [ref=f2e610]: 3 nodes / 0 explicit gaps
+      - 'button "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} 1 nodes / 1 explicit gaps" [ref=f2e611] [cursor=pointer]':
+        - strong [ref=f2e612]: "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}"
+        - generic [ref=f2e613]: 1 nodes / 1 explicit gaps
+      - 'button "POST /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks 1 nodes / 1 explicit gaps" [ref=f2e614] [cursor=pointer]':
+        - strong [ref=f2e615]: "POST /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks"
+        - generic [ref=f2e616]: 1 nodes / 1 explicit gaps
+      - 'button "PUT /task/services/{serviceCode}/tasks/{taskId} 1 nodes / 1 explicit gaps" [ref=f2e617] [cursor=pointer]':
+        - strong [ref=f2e618]: "PUT /task/services/{serviceCode}/tasks/{taskId}"
+        - generic [ref=f2e619]: 1 nodes / 1 explicit gaps
+      - button "GET /search/autocomplete 4 nodes / 1 explicit gaps" [ref=f2e620] [cursor=pointer]:
+        - strong [ref=f2e621]: GET /search/autocomplete
+        - generic [ref=f2e622]: 4 nodes / 1 explicit gaps
+      - button "GET /search/autocomplete 4 nodes / 1 explicit gaps" [ref=f2e623] [cursor=pointer]:
+        - strong [ref=f2e624]: GET /search/autocomplete
+        - generic [ref=f2e625]: 4 nodes / 1 explicit gaps
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId} 8 nodes / 4 explicit gaps" [ref=f2e626] [cursor=pointer]':
+        - strong [ref=f2e627]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}"
+        - generic [ref=f2e628]: 8 nodes / 4 explicit gaps
+      - 'button "GET /regulations/{objectId}/lras 4 nodes / 2 explicit gaps" [ref=f2e629] [cursor=pointer]':
+        - strong [ref=f2e630]: "GET /regulations/{objectId}/lras"
+        - generic [ref=f2e631]: 4 nodes / 2 explicit gaps
+      - 'button "DELETE /licenseservice/users/{userId}/licenses/{licenseId}/assignments/{assignedUserId} 1 nodes / 1 explicit gaps" [ref=f2e632] [cursor=pointer]':
+        - strong [ref=f2e633]: "DELETE /licenseservice/users/{userId}/licenses/{licenseId}/assignments/{assignedUserId}"
+        - generic [ref=f2e634]: 1 nodes / 1 explicit gaps
+      - 'button "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} 1 nodes / 1 explicit gaps" [ref=f2e635] [cursor=pointer]':
+        - strong [ref=f2e636]: "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId}"
+        - generic [ref=f2e637]: 1 nodes / 1 explicit gaps
+      - 'button "POST /useritem/users/{userId}/folders 7 nodes / 1 explicit gaps" [ref=f2e638] [cursor=pointer]':
+        - strong [ref=f2e639]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f2e640]: 7 nodes / 1 explicit gaps
+      - button "POST /cadasters/regulationtopics 4 nodes / 1 explicit gaps" [ref=f2e641] [cursor=pointer]:
+        - strong [ref=f2e642]: POST /cadasters/regulationtopics
+        - generic [ref=f2e643]: 4 nodes / 1 explicit gaps
+      - button "GET /cadasters/export/settings 3 nodes / 1 explicit gaps" [ref=f2e644] [cursor=pointer]:
+        - strong [ref=f2e645]: GET /cadasters/export/settings
+        - generic [ref=f2e646]: 3 nodes / 1 explicit gaps
+      - 'button "POST /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks 1 nodes / 1 explicit gaps" [ref=f2e647] [cursor=pointer]':
+        - strong [ref=f2e648]: "POST /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks"
+        - generic [ref=f2e649]: 1 nodes / 1 explicit gaps
+      - 'button "PUT /cadasters/{cadasterId}/regulations/{objectId}/changes/{lra} 28 nodes / 1 explicit gaps" [ref=f2e650] [cursor=pointer]':
+        - strong [ref=f2e651]: "PUT /cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}"
+        - generic [ref=f2e652]: 28 nodes / 1 explicit gaps
+      - 'button "GET /invoiceservice/users/{userId}/invoices 8 nodes / 1 explicit gaps" [ref=f2e653] [cursor=pointer]':
+        - strong [ref=f2e654]: "GET /invoiceservice/users/{userId}/invoices"
+        - generic [ref=f2e655]: 8 nodes / 1 explicit gaps
+      - 'button "GET /cadasters/{cadasterId}/users 5 nodes / 2 explicit gaps" [ref=f2e656] [cursor=pointer]':
+        - strong [ref=f2e657]: "GET /cadasters/{cadasterId}/users"
+        - generic [ref=f2e658]: 5 nodes / 2 explicit gaps
+      - button "DELETE /swlicenseservice/key 2 nodes / 0 explicit gaps" [ref=f2e659] [cursor=pointer]:
+        - strong [ref=f2e660]: DELETE /swlicenseservice/key
+        - generic [ref=f2e661]: 2 nodes / 0 explicit gaps
+      - 'button "GET /productservice/users/{userId}/products/{baseCode} 27 nodes / 1 explicit gaps" [ref=f2e662] [cursor=pointer]':
+        - strong [ref=f2e663]: "GET /productservice/users/{userId}/products/{baseCode}"
+        - generic [ref=f2e664]: 27 nodes / 1 explicit gaps
+      - 'button "GET /userservice/users/{userId}/info 7 nodes / 1 explicit gaps" [ref=f2e665] [cursor=pointer]':
+        - strong [ref=f2e666]: "GET /userservice/users/{userId}/info"
+        - generic [ref=f2e667]: 7 nodes / 1 explicit gaps
+      - 'button "PUT /userservice/users/{userId}/address 7 nodes / 0 explicit gaps" [ref=f2e668] [cursor=pointer]':
+        - strong [ref=f2e669]: "PUT /userservice/users/{userId}/address"
+        - generic [ref=f2e670]: 7 nodes / 0 explicit gaps
+      - 'button "PUT /productservice/users/{userId}/products/{baseCode} 2 nodes / 0 explicit gaps" [ref=f2e671] [cursor=pointer]':
+        - strong [ref=f2e672]: "PUT /productservice/users/{userId}/products/{baseCode}"
+        - generic [ref=f2e673]: 2 nodes / 0 explicit gaps
+      - 'button "GET /containertree/modules/{isbn}/breadcrumbs/{documentId} 3 nodes / 1 explicit gaps" [ref=f2e674] [cursor=pointer]':
+        - strong [ref=f2e675]: "GET /containertree/modules/{isbn}/breadcrumbs/{documentId}"
+        - generic [ref=f2e676]: 3 nodes / 1 explicit gaps
+      - button "PUT /search 15 nodes / 0 explicit gaps" [ref=f2e677] [cursor=pointer]:
+        - strong [ref=f2e678]: PUT /search
+        - generic [ref=f2e679]: 15 nodes / 0 explicit gaps
+      - button "PUT /search 15 nodes / 0 explicit gaps" [ref=f2e680] [cursor=pointer]:
+        - strong [ref=f2e681]: PUT /search
+        - generic [ref=f2e682]: 15 nodes / 0 explicit gaps
+      - button "GET /cadasters/tree/cachetareas 1 nodes / 1 explicit gaps" [ref=f2e683] [cursor=pointer]:
+        - strong [ref=f2e684]: GET /cadasters/tree/cachetareas
+        - generic [ref=f2e685]: 1 nodes / 1 explicit gaps
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId} 6 nodes / 2 explicit gaps" [ref=f2e686] [cursor=pointer]':
+        - strong [ref=f2e687]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f2e688]: 6 nodes / 2 explicit gaps
+      - 'button "POST /cadastertask/cadasters/{cadasterId}/regulations/taskstate 4 nodes / 0 explicit gaps" [ref=f2e689] [cursor=pointer]':
+        - strong [ref=f2e690]: "POST /cadastertask/cadasters/{cadasterId}/regulations/taskstate"
+        - generic [ref=f2e691]: 4 nodes / 0 explicit gaps
+      - 'button "GET /cadasters/{cadasterId} 8 nodes / 2 explicit gaps" [ref=f2e692] [cursor=pointer]':
+        - strong [ref=f2e693]: "GET /cadasters/{cadasterId}"
+        - generic [ref=f2e694]: 8 nodes / 2 explicit gaps
+      - 'button "PUT /cadasters/{cadasterId}/cadastertopics 7 nodes / 4 explicit gaps" [ref=f2e695] [cursor=pointer]':
+        - strong [ref=f2e696]: "PUT /cadasters/{cadasterId}/cadastertopics"
+        - generic [ref=f2e697]: 7 nodes / 4 explicit gaps
+      - button "PUT /search 15 nodes / 0 explicit gaps" [ref=f2e698] [cursor=pointer]:
+        - strong [ref=f2e699]: PUT /search
+        - generic [ref=f2e700]: 15 nodes / 0 explicit gaps
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId} 6 nodes / 2 explicit gaps" [ref=f2e701] [cursor=pointer]':
+        - strong [ref=f2e702]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f2e703]: 6 nodes / 2 explicit gaps
+      - 'button "POST /licenseservice/users/{userId}/licenses/{licenseId}/assignments 7 nodes / 0 explicit gaps" [ref=f2e704] [cursor=pointer]':
+        - strong [ref=f2e705]: "POST /licenseservice/users/{userId}/licenses/{licenseId}/assignments"
+        - generic [ref=f2e706]: 7 nodes / 0 explicit gaps
+      - button "PUT /portal/topics 7 nodes / 4 explicit gaps" [ref=f2e707] [cursor=pointer]:
+        - strong [ref=f2e708]: PUT /portal/topics
+        - generic [ref=f2e709]: 7 nodes / 4 explicit gaps
+      - 'button "GET /productservice/users/{userId}/services 2 nodes / 1 explicit gaps" [ref=f2e710] [cursor=pointer]':
+        - strong [ref=f2e711]: "GET /productservice/users/{userId}/services"
+        - generic [ref=f2e712]: 2 nodes / 1 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/topics/{topicId}/documentgenres 1 nodes / 1 explicit gaps" [ref=f2e713] [cursor=pointer]':
+        - strong [ref=f2e714]: "GET /documenttopic/modules/{isbn}/topics/{topicId}/documentgenres"
+        - generic [ref=f2e715]: 1 nodes / 1 explicit gaps
+      - 'button "GET /task/services/{serviceCode}/objects/{objectId}/tasks/count 1 nodes / 1 explicit gaps" [ref=f2e716] [cursor=pointer]':
+        - strong [ref=f2e717]: "GET /task/services/{serviceCode}/objects/{objectId}/tasks/count"
+        - generic [ref=f2e718]: 1 nodes / 1 explicit gaps
+      - 'button "GET /containertree/modules/{isbn}/containers 8 nodes / 1 explicit gaps" [ref=f2e719] [cursor=pointer]':
+        - strong [ref=f2e720]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f2e721]: 8 nodes / 1 explicit gaps
+      - 'button "GET /documentinfo/modules/{isbn}/documents/{objectId}/relatives 5 nodes / 1 explicit gaps" [ref=f2e722] [cursor=pointer]':
+        - strong [ref=f2e723]: "GET /documentinfo/modules/{isbn}/documents/{objectId}/relatives"
+        - generic [ref=f2e724]: 5 nodes / 1 explicit gaps
+      - 'button "GET /cadastertask/responsible/{userId}/regulations/changes/tasks 3 nodes / 1 explicit gaps" [ref=f2e725] [cursor=pointer]':
+        - strong [ref=f2e726]: "GET /cadastertask/responsible/{userId}/regulations/changes/tasks"
+        - generic [ref=f2e727]: 3 nodes / 1 explicit gaps
+      - button "GET /portal/tasks/flyout 1 nodes / 1 explicit gaps" [ref=f2e728] [cursor=pointer]:
+        - strong [ref=f2e729]: GET /portal/tasks/flyout
+        - generic [ref=f2e730]: 1 nodes / 1 explicit gaps
+      - 'button "POST /useritem/users/{userId}/folders/{folderId}/favorites 12 nodes / 4 explicit gaps" [ref=f2e731] [cursor=pointer]':
+        - strong [ref=f2e732]: "POST /useritem/users/{userId}/folders/{folderId}/favorites"
+        - generic [ref=f2e733]: 12 nodes / 4 explicit gaps
+      - 'button "PUT /cadasters/{cadasterId}/regulations/{objectId}/changes/{lra} 28 nodes / 1 explicit gaps" [ref=f2e734] [cursor=pointer]':
+        - strong [ref=f2e735]: "PUT /cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}"
+        - generic [ref=f2e736]: 28 nodes / 1 explicit gaps
+      - 'button "POST /documenttopic/modules/{isbn}/topics 3 nodes / 0 explicit gaps" [ref=f2e737] [cursor=pointer]':
+        - strong [ref=f2e738]: "POST /documenttopic/modules/{isbn}/topics"
+        - generic [ref=f2e739]: 3 nodes / 0 explicit gaps
+      - 'button "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic} 4 nodes / 1 explicit gaps" [ref=f2e740] [cursor=pointer]':
+        - strong [ref=f2e741]: "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic}"
+        - generic [ref=f2e742]: 4 nodes / 1 explicit gaps
+      - 'button "GET /portal/topics/{topicId}/services/news 2 nodes / 1 explicit gaps" [ref=f2e743] [cursor=pointer]':
+        - strong [ref=f2e744]: "GET /portal/topics/{topicId}/services/news"
+        - generic [ref=f2e745]: 2 nodes / 1 explicit gaps
+      - button "GET /cadasters/tree/regulationtopics 2 nodes / 1 explicit gaps" [ref=f2e746] [cursor=pointer]:
+        - strong [ref=f2e747]: GET /cadasters/tree/regulationtopics
+        - generic [ref=f2e748]: 2 nodes / 1 explicit gaps
+      - 'button "PUT /cadasters/{cadasterId}/users 9 nodes / 4 explicit gaps" [ref=f2e749] [cursor=pointer]':
+        - strong [ref=f2e750]: "PUT /cadasters/{cadasterId}/users"
+        - generic [ref=f2e751]: 9 nodes / 4 explicit gaps
+      - 'button "POST /documenttopic/modules/{isbn}/topics 3 nodes / 0 explicit gaps" [ref=f2e752] [cursor=pointer]':
+        - strong [ref=f2e753]: "POST /documenttopic/modules/{isbn}/topics"
+        - generic [ref=f2e754]: 3 nodes / 0 explicit gaps
+      - 'button "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} 16 nodes / 0 explicit gaps" [ref=f2e755] [cursor=pointer]':
+        - strong [ref=f2e756]: "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId}"
+        - generic [ref=f2e757]: 16 nodes / 0 explicit gaps
+      - button "GET /portal/news 5 nodes / 1 explicit gaps" [ref=f2e758] [cursor=pointer]:
+        - strong [ref=f2e759]: GET /portal/news
+        - generic [ref=f2e760]: 5 nodes / 1 explicit gaps
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favoriteId} 8 nodes / 4 explicit gaps" [ref=f2e761] [cursor=pointer]':
+        - strong [ref=f2e762]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favoriteId}"
+        - generic [ref=f2e763]: 8 nodes / 4 explicit gaps
+      - 'button "GET /useritem/users/{userId}/folders/favorites 5 nodes / 1 explicit gaps" [ref=f2e764] [cursor=pointer]':
+        - strong [ref=f2e765]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=f2e766]: 5 nodes / 1 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/documents/new 4 nodes / 1 explicit gaps" [ref=f2e767] [cursor=pointer]':
+        - strong [ref=f2e768]: "GET /documenttopic/modules/{isbn}/documents/new"
+        - generic [ref=f2e769]: 4 nodes / 1 explicit gaps
+      - 'button "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} 16 nodes / 0 explicit gaps" [ref=f2e770] [cursor=pointer]':
+        - strong [ref=f2e771]: "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId}"
+        - generic [ref=f2e772]: 16 nodes / 0 explicit gaps
+      - 'button "GET /documentinfo/modules/{isbn}/documents/{objectId}/authors 5 nodes / 1 explicit gaps" [ref=f2e773] [cursor=pointer]':
+        - strong [ref=f2e774]: "GET /documentinfo/modules/{isbn}/documents/{objectId}/authors"
+        - generic [ref=f2e775]: 5 nodes / 1 explicit gaps
+      - 'button "GET /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks 1 nodes / 1 explicit gaps" [ref=f2e776] [cursor=pointer]':
+        - strong [ref=f2e777]: "GET /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks"
+        - generic [ref=f2e778]: 1 nodes / 1 explicit gaps
+      - button "POST /portal/tasks/export 1 nodes / 1 explicit gaps" [ref=f2e779] [cursor=pointer]:
+        - strong [ref=f2e780]: POST /portal/tasks/export
+        - generic [ref=f2e781]: 1 nodes / 1 explicit gaps
+      - 'button "POST /task/services/{serviceCode}/tasks/{taskId}/comments 1 nodes / 1 explicit gaps" [ref=f2e782] [cursor=pointer]':
+        - strong [ref=f2e783]: "POST /task/services/{serviceCode}/tasks/{taskId}/comments"
+        - generic [ref=f2e784]: 1 nodes / 1 explicit gaps
+      - 'button "POST /useritem/users/{userId}/folders 7 nodes / 1 explicit gaps" [ref=f2e785] [cursor=pointer]':
+        - strong [ref=f2e786]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f2e787]: 7 nodes / 1 explicit gaps
+      - button "GET /portal/tasks/flyout 1 nodes / 1 explicit gaps" [ref=f2e788] [cursor=pointer]:
+        - strong [ref=f2e789]: GET /portal/tasks/flyout
+        - generic [ref=f2e790]: 1 nodes / 1 explicit gaps
+      - 'button "POST /useritem/users/{userId}/folders 7 nodes / 1 explicit gaps" [ref=f2e791] [cursor=pointer]':
+        - strong [ref=f2e792]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f2e793]: 7 nodes / 1 explicit gaps
+      - button "GET /portal/tasks/flyout 1 nodes / 1 explicit gaps" [ref=f2e794] [cursor=pointer]:
+        - strong [ref=f2e795]: GET /portal/tasks/flyout
+        - generic [ref=f2e796]: 1 nodes / 1 explicit gaps
+      - 'button "PUT /userservice/users/{userId} 7 nodes / 0 explicit gaps" [ref=f2e797] [cursor=pointer]':
+        - strong [ref=f2e798]: "PUT /userservice/users/{userId}"
+        - generic [ref=f2e799]: 7 nodes / 0 explicit gaps
+      - 'button "GET /userservice/users/{userId}/info 7 nodes / 1 explicit gaps" [ref=f2e800] [cursor=pointer]':
+        - strong [ref=f2e801]: "GET /userservice/users/{userId}/info"
+        - generic [ref=f2e802]: 7 nodes / 1 explicit gaps
+      - button "PUT /search 15 nodes / 0 explicit gaps" [ref=f2e803] [cursor=pointer]:
+        - strong [ref=f2e804]: PUT /search
+        - generic [ref=f2e805]: 15 nodes / 0 explicit gaps
+      - button "GET /search/autocomplete 4 nodes / 1 explicit gaps" [ref=f2e806] [cursor=pointer]:
+        - strong [ref=f2e807]: GET /search/autocomplete
+        - generic [ref=f2e808]: 4 nodes / 1 explicit gaps
+      - 'button "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{index} 4 nodes / 1 explicit gaps" [ref=f2e809] [cursor=pointer]':
+        - strong [ref=f2e810]: "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{index}"
+        - generic [ref=f2e811]: 4 nodes / 1 explicit gaps
+      - 'button "GET /useritem/users/{userId}/folders 4 nodes / 1 explicit gaps" [ref=f2e812] [cursor=pointer]':
+        - strong [ref=f2e813]: "GET /useritem/users/{userId}/folders"
+        - generic [ref=f2e814]: 4 nodes / 1 explicit gaps
+      - 'button "GET /containertree/modules/{isbn}/containers 8 nodes / 1 explicit gaps" [ref=f2e815] [cursor=pointer]':
+        - strong [ref=f2e816]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f2e817]: 8 nodes / 1 explicit gaps
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId} 6 nodes / 2 explicit gaps" [ref=f2e818] [cursor=pointer]':
+        - strong [ref=f2e819]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f2e820]: 6 nodes / 2 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/topics/firstletters 3 nodes / 1 explicit gaps" [ref=f2e821] [cursor=pointer]':
+        - strong [ref=f2e822]: "GET /documenttopic/modules/{isbn}/topics/firstletters"
+        - generic [ref=f2e823]: 3 nodes / 1 explicit gaps
+      - 'button "PUT /cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster 2 nodes / 0 explicit gaps" [ref=f2e824] [cursor=pointer]':
+        - strong [ref=f2e825]: "PUT /cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster"
+        - generic [ref=f2e826]: 2 nodes / 0 explicit gaps
+      - 'button "PUT /task/services/{serviceCode}/tasks/{taskId} 1 nodes / 1 explicit gaps" [ref=f2e827] [cursor=pointer]':
+        - strong [ref=f2e828]: "PUT /task/services/{serviceCode}/tasks/{taskId}"
+        - generic [ref=f2e829]: 1 nodes / 1 explicit gaps
+      - 'button "GET /cadastertask/users/{userId}/regulations/tasks 4 nodes / 1 explicit gaps" [ref=f2e830] [cursor=pointer]':
+        - strong [ref=f2e831]: "GET /cadastertask/users/{userId}/regulations/tasks"
+        - generic [ref=f2e832]: 4 nodes / 1 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/news 7 nodes / 1 explicit gaps" [ref=f2e833] [cursor=pointer]':
+        - strong [ref=f2e834]: "GET /documenttopic/modules/{isbn}/news"
+        - generic [ref=f2e835]: 7 nodes / 1 explicit gaps
+      - 'button "GET /containertree/modules/{isbn}/containers 8 nodes / 1 explicit gaps" [ref=f2e836] [cursor=pointer]':
+        - strong [ref=f2e837]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f2e838]: 8 nodes / 1 explicit gaps
+      - 'button "GET /documenttopic/modules/{isbn}/topics/inactives 5 nodes / 1 explicit gaps" [ref=f2e839] [cursor=pointer]':
+        - strong [ref=f2e840]: "GET /documenttopic/modules/{isbn}/topics/inactives"
+        - generic [ref=f2e841]: 5 nodes / 1 explicit gaps
+      - 'button "GET /cadasters/{cadasterId}/regulationtopics 3 nodes / 2 explicit gaps" [ref=f2e842] [cursor=pointer]':
+        - strong [ref=f2e843]: "GET /cadasters/{cadasterId}/regulationtopics"
+        - generic [ref=f2e844]: 3 nodes / 2 explicit gaps
+      - 'button "PUT /portal/topics/{topicId} 5 nodes / 2 explicit gaps" [ref=f2e845] [cursor=pointer]':
+        - strong [ref=f2e846]: "PUT /portal/topics/{topicId}"
+        - generic [ref=f2e847]: 5 nodes / 2 explicit gaps
+      - 'button "GET /regulations/{objectId}/lras 4 nodes / 2 explicit gaps" [ref=f2e848] [cursor=pointer]':
+        - strong [ref=f2e849]: "GET /regulations/{objectId}/lras"
+        - generic [ref=f2e850]: 4 nodes / 2 explicit gaps
+    - paragraph [ref=f2e163]: Showing 150 data flows.
+    - generic [ref=f2e164]:
+      - heading "Status glossary" [level=2] [ref=f2e165]
+      - paragraph [ref=f2e166]:
+        - strong [ref=f2e167]: RESOLVED
+        - text: ": frontend contract is mapped to a backend route."
+      - paragraph [ref=f2e168]:
+        - strong [ref=f2e169]: MISMATCH
+        - text: ": a related backend route exists, but method or path does not match exactly."
+      - paragraph [ref=f2e170]:
+        - strong [ref=f2e171]: UNRESOLVED
+        - text: ": no reliable backend route was found in indexed projects."
+      - paragraph [ref=f2e172]:
+        - strong [ref=f2e173]: OUT_OF_SCOPE
+        - text: ": intentionally not a backend service, for example a frontend-internal API."
+      - paragraph [ref=f2e174]:
+        - strong [ref=f2e175]: EXTRACTED
+        - text: ": read directly from source structure."
+        - strong [ref=f2e176]: MATCHED
+        - text: ": linked to a concrete route, symbol, or test."
+  - main [ref=f2e177]:
+    - region "Workspace data workbench" [ref=f2e851]:
+      - generic [ref=f2e852]:
+        - paragraph [ref=f2e853]: Data Flow
+        - heading "Select a data flow" [level=1] [ref=f2e854]
+        - paragraph [ref=f2e855]: Endpoints show the call path. Data Flow shows the data path through request, validation, transformation, persistence, messaging, and response stages.
+  - generic [ref=f2e398]:
+    - heading "Data Flow context" [level=1] [ref=f2e856]
+    - paragraph [ref=f2e857]: Select an item in this view to inspect its own evidence and source context.

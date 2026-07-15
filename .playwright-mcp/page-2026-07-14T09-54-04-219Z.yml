@@ -1,0 +1,284 @@
+- generic [ref=f2e2]:
+  - complementary [ref=f2e3]:
+    - heading "GoreGraph Workspace" [level=1] [ref=f2e4]
+    - generic [ref=f2e5]:
+      - generic [ref=f2e6]:
+        - strong [ref=f2e7]: "43"
+        - text: services
+      - generic [ref=f2e8]:
+        - strong [ref=f2e9]: "101"
+        - text: relations
+      - generic [ref=f2e10]:
+        - strong [ref=f2e11]: "177"
+        - text: traces
+      - generic [ref=f2e12]:
+        - strong [ref=f2e13]: "177"
+        - text: contracts
+    - heading "View" [level=2] [ref=f2e14]
+    - generic [ref=f2e15]:
+      - button "Architecture" [ref=f2e16] [cursor=pointer]
+      - button "Endpoints" [ref=f2e17] [cursor=pointer]
+      - button "Feature Flow" [ref=f2e18] [cursor=pointer]
+      - button "Data Flow" [ref=f2e19] [cursor=pointer]
+      - button "Diagnostics" [active] [pressed] [ref=f2e20] [cursor=pointer]
+      - button "Coverage" [ref=f2e21] [cursor=pointer]
+    - paragraph [ref=f2e22]: Review relationships GoreGraph could not safely confirm and learn what to check next.
+    - textbox "Search workspace map" [ref=f2e23]:
+      - /placeholder: Search service, endpoint, route, file, symbol
+    - heading "Filter" [level=2] [ref=f2e24]
+    - generic [ref=f2e25]:
+      - button "All" [pressed] [ref=f2e26] [cursor=pointer]
+      - button "Risk" [ref=f2e27] [cursor=pointer]
+      - button "Resolved" [ref=f2e28] [cursor=pointer]
+      - button "Unresolved" [ref=f2e29] [cursor=pointer]
+    - button "Clear selection" [ref=f2e31] [cursor=pointer]
+    - heading "Diagnostics" [level=2] [ref=f2e1365]
+    - generic [ref=f2e33]:
+      - 'button "unscanned_service /userservice/{variant} 8 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1366] [cursor=pointer]':
+        - strong [ref=f2e1367]: "unscanned_service /userservice/{variant}"
+        - generic [ref=f2e1368]: 8 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /regulations/{variant} 39 endpoints / unscanned service / unscanned_service / frontend" [ref=f2e1369] [cursor=pointer]':
+        - strong [ref=f2e1370]: "unscanned_service /regulations/{variant}"
+        - generic [ref=f2e1371]: 39 endpoints / unscanned service / unscanned_service / frontend
+      - 'button "unscanned_service /swlicenseservice/{variant} 3 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1372] [cursor=pointer]':
+        - strong [ref=f2e1373]: "unscanned_service /swlicenseservice/{variant}"
+        - generic [ref=f2e1374]: 3 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /documentinfo/{variant} 5 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1375] [cursor=pointer]':
+        - strong [ref=f2e1376]: "unscanned_service /documentinfo/{variant}"
+        - generic [ref=f2e1377]: 5 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /tree/{variant} 24 endpoints / unscanned service / unscanned_service / frontend" [ref=f2e1378] [cursor=pointer]':
+        - strong [ref=f2e1379]: "unscanned_service /tree/{variant}"
+        - generic [ref=f2e1380]: 24 endpoints / unscanned service / unscanned_service / frontend
+      - 'button "unsafe_dynamic /task/{variant} 35 endpoints / unsafe dynamic / unsafe_dynamic / frontend-monorepo" [ref=f2e1381] [cursor=pointer]':
+        - strong [ref=f2e1382]: "unsafe_dynamic /task/{variant}"
+        - generic [ref=f2e1383]: 35 endpoints / unsafe dynamic / unsafe_dynamic / frontend-monorepo
+      - 'button "unscanned_service /regulations/{variant} 39 endpoints / unscanned service / unscanned_service / frontends" [ref=f2e1384] [cursor=pointer]':
+        - strong [ref=f2e1385]: "unscanned_service /regulations/{variant}"
+        - generic [ref=f2e1386]: 39 endpoints / unscanned service / unscanned_service / frontends
+      - 'button "unscanned_service /licenseservice/{variant} 3 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1387] [cursor=pointer]':
+        - strong [ref=f2e1388]: "unscanned_service /licenseservice/{variant}"
+        - generic [ref=f2e1389]: 3 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - button "unscanned_service /search 10 endpoints / unscanned service / unscanned_service / frontend" [ref=f2e1390] [cursor=pointer]:
+        - strong [ref=f2e1391]: unscanned_service /search
+        - generic [ref=f2e1392]: 10 endpoints / unscanned service / unscanned_service / frontend
+      - 'button "unscanned_service /search/{variant} 10 endpoints / unscanned service / unscanned_service / frontends" [ref=f2e1393] [cursor=pointer]':
+        - strong [ref=f2e1394]: "unscanned_service /search/{variant}"
+        - generic [ref=f2e1395]: 10 endpoints / unscanned service / unscanned_service / frontends
+      - 'button "unscanned_service /useritem/{variant} 21 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1396] [cursor=pointer]':
+        - strong [ref=f2e1397]: "unscanned_service /useritem/{variant}"
+        - generic [ref=f2e1398]: 21 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /cadastertask/{variant} 19 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1399] [cursor=pointer]':
+        - strong [ref=f2e1400]: "unscanned_service /cadastertask/{variant}"
+        - generic [ref=f2e1401]: 19 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /tree/{variant} 24 endpoints / unscanned service / unscanned_service / frontends" [ref=f2e1402] [cursor=pointer]':
+        - strong [ref=f2e1403]: "unscanned_service /tree/{variant}"
+        - generic [ref=f2e1404]: 24 endpoints / unscanned service / unscanned_service / frontends
+      - 'button "unsafe_dynamic /documentdownload/{variant} 4 endpoints / unsafe dynamic / unsafe_dynamic / frontend-monorepo" [ref=f2e1405] [cursor=pointer]':
+        - strong [ref=f2e1406]: "unsafe_dynamic /documentdownload/{variant}"
+        - generic [ref=f2e1407]: 4 endpoints / unsafe dynamic / unsafe_dynamic / frontend-monorepo
+      - 'button "unscanned_service /useritem/{variant} 21 endpoints / unscanned service / unscanned_service / frontends" [ref=f2e1408] [cursor=pointer]':
+        - strong [ref=f2e1409]: "unscanned_service /useritem/{variant}"
+        - generic [ref=f2e1410]: 21 endpoints / unscanned service / unscanned_service / frontends
+      - 'button "unscanned_service /search/{variant} 10 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1411] [cursor=pointer]':
+        - strong [ref=f2e1412]: "unscanned_service /search/{variant}"
+        - generic [ref=f2e1413]: 10 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - button "unscanned_service /search 10 endpoints / unscanned service / unscanned_service / frontends" [ref=f2e1414] [cursor=pointer]:
+        - strong [ref=f2e1415]: unscanned_service /search
+        - generic [ref=f2e1416]: 10 endpoints / unscanned service / unscanned_service / frontends
+      - 'button "unscanned_service /cadasters/{variant} 40 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1417] [cursor=pointer]':
+        - strong [ref=f2e1418]: "unscanned_service /cadasters/{variant}"
+        - generic [ref=f2e1419]: 40 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /documentdownload/{variant} 4 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1420] [cursor=pointer]':
+        - strong [ref=f2e1421]: "unscanned_service /documentdownload/{variant}"
+        - generic [ref=f2e1422]: 4 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /invoiceservice/{variant} 1 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1423] [cursor=pointer]':
+        - strong [ref=f2e1424]: "unscanned_service /invoiceservice/{variant}"
+        - generic [ref=f2e1425]: 1 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /useritem/{variant} 21 endpoints / unscanned service / unscanned_service / frontend" [ref=f2e1426] [cursor=pointer]':
+        - strong [ref=f2e1427]: "unscanned_service /useritem/{variant}"
+        - generic [ref=f2e1428]: 21 endpoints / unscanned service / unscanned_service / frontend
+      - 'button "unscanned_service /userservice/{variant} 8 endpoints / unscanned service / unscanned_service / frontends" [ref=f2e1429] [cursor=pointer]':
+        - strong [ref=f2e1430]: "unscanned_service /userservice/{variant}"
+        - generic [ref=f2e1431]: 8 endpoints / unscanned service / unscanned_service / frontends
+      - 'button "unscanned_service /documenttopic/{variant} 15 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1432] [cursor=pointer]':
+        - strong [ref=f2e1433]: "unscanned_service /documenttopic/{variant}"
+        - generic [ref=f2e1434]: 15 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /containertree/{variant} 7 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1435] [cursor=pointer]':
+        - strong [ref=f2e1436]: "unscanned_service /containertree/{variant}"
+        - generic [ref=f2e1437]: 7 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - button "unscanned_service /search 10 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1438] [cursor=pointer]:
+        - strong [ref=f2e1439]: unscanned_service /search
+        - generic [ref=f2e1440]: 10 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /productservice/{variant} 8 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1441] [cursor=pointer]':
+        - strong [ref=f2e1442]: "unscanned_service /productservice/{variant}"
+        - generic [ref=f2e1443]: 8 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /documentexport/{variant} 2 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1444] [cursor=pointer]':
+        - strong [ref=f2e1445]: "unscanned_service /documentexport/{variant}"
+        - generic [ref=f2e1446]: 2 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /portal/{variant} 12 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1447] [cursor=pointer]':
+        - strong [ref=f2e1448]: "unscanned_service /portal/{variant}"
+        - generic [ref=f2e1449]: 12 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /task/{variant} 35 endpoints / unscanned service / unscanned_service / frontend-monorepo" [ref=f2e1450] [cursor=pointer]':
+        - strong [ref=f2e1451]: "unscanned_service /task/{variant}"
+        - generic [ref=f2e1452]: 35 endpoints / unscanned service / unscanned_service / frontend-monorepo
+      - 'button "unscanned_service /userservice/{variant} 8 endpoints / unscanned service / unscanned_service / frontend" [ref=f2e1453] [cursor=pointer]':
+        - strong [ref=f2e1454]: "unscanned_service /userservice/{variant}"
+        - generic [ref=f2e1455]: 8 endpoints / unscanned service / unscanned_service / frontend
+      - 'button "unscanned_service /search/{variant} 10 endpoints / unscanned service / unscanned_service / frontend" [ref=f2e1456] [cursor=pointer]':
+        - strong [ref=f2e1457]: "unscanned_service /search/{variant}"
+        - generic [ref=f2e1458]: 10 endpoints / unscanned service / unscanned_service / frontend
+    - paragraph [ref=f2e163]: Showing 31 diagnostics.
+    - generic [ref=f2e164]:
+      - heading "Status glossary" [level=2] [ref=f2e165]
+      - paragraph [ref=f2e166]:
+        - strong [ref=f2e167]: RESOLVED
+        - text: ": frontend contract is mapped to a backend route."
+      - paragraph [ref=f2e168]:
+        - strong [ref=f2e169]: MISMATCH
+        - text: ": a related backend route exists, but method or path does not match exactly."
+      - paragraph [ref=f2e170]:
+        - strong [ref=f2e171]: UNRESOLVED
+        - text: ": no reliable backend route was found in indexed projects."
+      - paragraph [ref=f2e172]:
+        - strong [ref=f2e173]: OUT_OF_SCOPE
+        - text: ": intentionally not a backend service, for example a frontend-internal API."
+      - paragraph [ref=f2e174]:
+        - strong [ref=f2e175]: EXTRACTED
+        - text: ": read directly from source structure."
+        - strong [ref=f2e176]: MATCHED
+        - text: ": linked to a concrete route, symbol, or test."
+  - main [ref=f2e177]:
+    - region "Workspace data workbench" [ref=f2e851]:
+      - generic [ref=f2e1459]:
+        - generic [ref=f2e1460]:
+          - paragraph [ref=f2e1461]: Diagnostic workbench
+          - heading "Relationships that need interpretation" [level=1] [ref=f2e1462]
+          - paragraph [ref=f2e1463]: Diagnostics use normal vertical scrolling and remain readable at 100%. Select a row for evidence, impact, ownership, and the next check.
+        - generic [ref=f2e1464]:
+          - 'button "unscanned_service /userservice/{variant} 8 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1465] [cursor=pointer]':
+            - strong [ref=f2e1466]: "unscanned_service /userservice/{variant}"
+            - generic [ref=f2e1467]: 8 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1468]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /regulations/{variant} 39 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1469] [cursor=pointer]':
+            - strong [ref=f2e1470]: "unscanned_service /regulations/{variant}"
+            - generic [ref=f2e1471]: 39 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1472]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /swlicenseservice/{variant} 3 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1473] [cursor=pointer]':
+            - strong [ref=f2e1474]: "unscanned_service /swlicenseservice/{variant}"
+            - generic [ref=f2e1475]: 3 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1476]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /documentinfo/{variant} 5 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1477] [cursor=pointer]':
+            - strong [ref=f2e1478]: "unscanned_service /documentinfo/{variant}"
+            - generic [ref=f2e1479]: 5 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1480]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /tree/{variant} 24 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1481] [cursor=pointer]':
+            - strong [ref=f2e1482]: "unscanned_service /tree/{variant}"
+            - generic [ref=f2e1483]: 24 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1484]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unsafe_dynamic /task/{variant} 35 endpoints · unsafe dynamic · unsafe_dynamic Inspect the cited evidence and affected artifacts." [ref=f2e1485] [cursor=pointer]':
+            - strong [ref=f2e1486]: "unsafe_dynamic /task/{variant}"
+            - generic [ref=f2e1487]: 35 endpoints · unsafe dynamic · unsafe_dynamic
+            - generic [ref=f2e1488]: Inspect the cited evidence and affected artifacts.
+          - 'button "unscanned_service /regulations/{variant} 39 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1489] [cursor=pointer]':
+            - strong [ref=f2e1490]: "unscanned_service /regulations/{variant}"
+            - generic [ref=f2e1491]: 39 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1492]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /licenseservice/{variant} 3 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1493] [cursor=pointer]':
+            - strong [ref=f2e1494]: "unscanned_service /licenseservice/{variant}"
+            - generic [ref=f2e1495]: 3 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1496]: Confirm the configured service alias. Scan the owning service project.
+          - button "unscanned_service /search 10 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1497] [cursor=pointer]:
+            - strong [ref=f2e1498]: unscanned_service /search
+            - generic [ref=f2e1499]: 10 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1500]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /search/{variant} 10 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1501] [cursor=pointer]':
+            - strong [ref=f2e1502]: "unscanned_service /search/{variant}"
+            - generic [ref=f2e1503]: 10 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1504]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /useritem/{variant} 21 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1505] [cursor=pointer]':
+            - strong [ref=f2e1506]: "unscanned_service /useritem/{variant}"
+            - generic [ref=f2e1507]: 21 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1508]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /cadastertask/{variant} 19 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1509] [cursor=pointer]':
+            - strong [ref=f2e1510]: "unscanned_service /cadastertask/{variant}"
+            - generic [ref=f2e1511]: 19 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1512]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /tree/{variant} 24 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1513] [cursor=pointer]':
+            - strong [ref=f2e1514]: "unscanned_service /tree/{variant}"
+            - generic [ref=f2e1515]: 24 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1516]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unsafe_dynamic /documentdownload/{variant} 4 endpoints · unsafe dynamic · unsafe_dynamic Inspect the cited evidence and affected artifacts." [ref=f2e1517] [cursor=pointer]':
+            - strong [ref=f2e1518]: "unsafe_dynamic /documentdownload/{variant}"
+            - generic [ref=f2e1519]: 4 endpoints · unsafe dynamic · unsafe_dynamic
+            - generic [ref=f2e1520]: Inspect the cited evidence and affected artifacts.
+          - 'button "unscanned_service /useritem/{variant} 21 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1521] [cursor=pointer]':
+            - strong [ref=f2e1522]: "unscanned_service /useritem/{variant}"
+            - generic [ref=f2e1523]: 21 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1524]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /search/{variant} 10 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1525] [cursor=pointer]':
+            - strong [ref=f2e1526]: "unscanned_service /search/{variant}"
+            - generic [ref=f2e1527]: 10 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1528]: Confirm the configured service alias. Scan the owning service project.
+          - button "unscanned_service /search 10 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1529] [cursor=pointer]:
+            - strong [ref=f2e1530]: unscanned_service /search
+            - generic [ref=f2e1531]: 10 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1532]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /cadasters/{variant} 40 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1533] [cursor=pointer]':
+            - strong [ref=f2e1534]: "unscanned_service /cadasters/{variant}"
+            - generic [ref=f2e1535]: 40 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1536]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /documentdownload/{variant} 4 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1537] [cursor=pointer]':
+            - strong [ref=f2e1538]: "unscanned_service /documentdownload/{variant}"
+            - generic [ref=f2e1539]: 4 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1540]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /invoiceservice/{variant} 1 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1541] [cursor=pointer]':
+            - strong [ref=f2e1542]: "unscanned_service /invoiceservice/{variant}"
+            - generic [ref=f2e1543]: 1 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1544]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /useritem/{variant} 21 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1545] [cursor=pointer]':
+            - strong [ref=f2e1546]: "unscanned_service /useritem/{variant}"
+            - generic [ref=f2e1547]: 21 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1548]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /userservice/{variant} 8 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1549] [cursor=pointer]':
+            - strong [ref=f2e1550]: "unscanned_service /userservice/{variant}"
+            - generic [ref=f2e1551]: 8 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1552]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /documenttopic/{variant} 15 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1553] [cursor=pointer]':
+            - strong [ref=f2e1554]: "unscanned_service /documenttopic/{variant}"
+            - generic [ref=f2e1555]: 15 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1556]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /containertree/{variant} 7 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1557] [cursor=pointer]':
+            - strong [ref=f2e1558]: "unscanned_service /containertree/{variant}"
+            - generic [ref=f2e1559]: 7 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1560]: Confirm the configured service alias. Scan the owning service project.
+          - button "unscanned_service /search 10 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1561] [cursor=pointer]:
+            - strong [ref=f2e1562]: unscanned_service /search
+            - generic [ref=f2e1563]: 10 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1564]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /productservice/{variant} 8 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1565] [cursor=pointer]':
+            - strong [ref=f2e1566]: "unscanned_service /productservice/{variant}"
+            - generic [ref=f2e1567]: 8 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1568]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /documentexport/{variant} 2 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1569] [cursor=pointer]':
+            - strong [ref=f2e1570]: "unscanned_service /documentexport/{variant}"
+            - generic [ref=f2e1571]: 2 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1572]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /portal/{variant} 12 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1573] [cursor=pointer]':
+            - strong [ref=f2e1574]: "unscanned_service /portal/{variant}"
+            - generic [ref=f2e1575]: 12 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1576]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /task/{variant} 35 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1577] [cursor=pointer]':
+            - strong [ref=f2e1578]: "unscanned_service /task/{variant}"
+            - generic [ref=f2e1579]: 35 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1580]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /userservice/{variant} 8 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1581] [cursor=pointer]':
+            - strong [ref=f2e1582]: "unscanned_service /userservice/{variant}"
+            - generic [ref=f2e1583]: 8 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1584]: Confirm the configured service alias. Scan the owning service project.
+          - 'button "unscanned_service /search/{variant} 10 endpoints · unscanned service · unscanned_service Confirm the configured service alias. Scan the owning service project." [ref=f2e1585] [cursor=pointer]':
+            - strong [ref=f2e1586]: "unscanned_service /search/{variant}"
+            - generic [ref=f2e1587]: 10 endpoints · unscanned service · unscanned_service
+            - generic [ref=f2e1588]: Confirm the configured service alias. Scan the owning service project.
+  - generic [ref=f2e398]:
+    - heading "Diagnostics context" [level=1] [ref=f2e1589]
+    - paragraph [ref=f2e1590]: Select an item in this view to inspect its own evidence and source context.

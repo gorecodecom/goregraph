@@ -1,0 +1,277 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - heading "GoreGraph Workspace" [level=1] [ref=e4]
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - strong [ref=e7]: "43"
+        - text: services
+      - generic [ref=e8]:
+        - strong [ref=e9]: "101"
+        - text: relations
+      - generic [ref=e10]:
+        - strong [ref=e11]: "177"
+        - text: traces
+      - generic [ref=e12]:
+        - strong [ref=e13]: "177"
+        - text: contracts
+    - heading "View" [level=2] [ref=e14]
+    - generic [ref=e15]:
+      - button "Architecture" [ref=e16] [cursor=pointer]
+      - button "Endpoints" [pressed] [ref=e17] [cursor=pointer]
+      - button "Feature Flow" [ref=e18] [cursor=pointer]
+      - button "Data Flow" [ref=e19] [cursor=pointer]
+      - button "Diagnostics" [ref=e20] [cursor=pointer]
+      - button "Coverage" [ref=e21] [cursor=pointer]
+    - paragraph [ref=e22]: Find an endpoint, inspect its consumers, and follow its implementation trace.
+    - textbox "Search workspace map" [ref=e23]:
+      - /placeholder: Search service, endpoint, route, file, symbol
+    - heading "Filter" [level=2] [ref=e24]
+    - generic [ref=e25]:
+      - button "All" [pressed] [ref=e26] [cursor=pointer]
+      - button "Risk" [ref=e27] [cursor=pointer]
+      - button "Resolved" [ref=e28] [cursor=pointer]
+      - button "Unresolved" [ref=e29] [cursor=pointer]
+    - button "Clear selection" [ref=e31] [cursor=pointer]
+    - region "Endpoint debugging filters" [ref=e2326]:
+      - heading "Endpoint debugging" [level=2] [ref=e2327]
+      - generic "HTTP methods" [ref=e2328]:
+        - button "GET" [ref=e2329] [cursor=pointer]
+        - button "POST" [ref=e2330] [cursor=pointer]
+        - button "PUT" [ref=e2331] [cursor=pointer]
+        - button "PATCH" [ref=e2332] [cursor=pointer]
+        - button "DELETE" [ref=e2333] [cursor=pointer]
+        - button "Other" [ref=e2334] [cursor=pointer]
+      - generic [ref=e2335]: Caller services
+      - listbox "Filter caller services" [ref=e2336]:
+        - option "frontend/frontend" [ref=e2337]
+      - generic [ref=e2338]: Provider services
+      - listbox "Filter provider services" [ref=e2339]:
+        - option "microservices/ms-regulationinfo" [ref=e2340]
+        - option "microservices/ms-regulationtree" [ref=e2341]
+        - option "microservices/ms-search" [ref=e2342]
+        - option "microservices/ms-useritem" [ref=e2343]
+        - option "microservices/ms-userservice" [ref=e2344]
+        - option "ms-regulationtree" [ref=e2345]
+      - generic "Endpoint status" [ref=e2346]:
+        - button "Resolved" [ref=e2347] [cursor=pointer]
+        - button "Unresolved" [ref=e2348] [cursor=pointer]
+        - button "Mismatch" [ref=e2349] [cursor=pointer]
+        - button "Out of scope" [ref=e2350] [cursor=pointer]
+      - button "Clear filters" [ref=e2351]
+      - paragraph [ref=e2352]: 32 of 32 endpoint relationships.
+    - heading "Endpoint Services" [level=2] [ref=e2353]
+    - generic [ref=e33]:
+      - button "frontend 21 outgoing / 0 incoming / frontend/frontend" [ref=e2889] [cursor=pointer]:
+        - strong [ref=e2890]: frontend
+        - generic [ref=e2891]: 21 outgoing / 0 incoming / frontend/frontend
+      - button "frontend-monorepo 135 outgoing / 0 incoming / frontend/frontend-monorepo" [ref=e2892] [cursor=pointer]:
+        - strong [ref=e2893]: frontend-monorepo
+        - generic [ref=e2894]: 135 outgoing / 0 incoming / frontend/frontend-monorepo
+      - button "frontends 21 outgoing / 0 incoming / frontend/frontends" [ref=e2895] [cursor=pointer]:
+        - strong [ref=e2896]: frontends
+        - generic [ref=e2897]: 21 outgoing / 0 incoming / frontend/frontends
+      - button "playwright Scanned, no outgoing API calls detected / frontend/playwright" [ref=e2898] [cursor=pointer]:
+        - strong [ref=e2899]: playwright
+        - generic [ref=e2900]: Scanned, no outgoing API calls detected / frontend/playwright
+      - button "ms-cadaster 36 outgoing / 2 incoming / microservices/ms-cadaster" [ref=e2901] [cursor=pointer]:
+        - strong [ref=e2902]: ms-cadaster
+        - generic [ref=e2903]: 36 outgoing / 2 incoming / microservices/ms-cadaster
+      - button "ms-cadasterexport 29 outgoing / 2 incoming / microservices/ms-cadasterexport" [ref=e2904] [cursor=pointer]:
+        - strong [ref=e2905]: ms-cadasterexport
+        - generic [ref=e2906]: 29 outgoing / 2 incoming / microservices/ms-cadasterexport
+      - button "ms-cadasterregulation 41 outgoing / 28 incoming / microservices/ms-cadasterregulation" [ref=e2907] [cursor=pointer]:
+        - strong [ref=e2908]: ms-cadasterregulation
+        - generic [ref=e2909]: 41 outgoing / 28 incoming / microservices/ms-cadasterregulation
+      - button "ms-cadastertask 24 outgoing / 35 incoming / microservices/ms-cadastertask" [ref=e2910] [cursor=pointer]:
+        - strong [ref=e2911]: ms-cadastertask
+        - generic [ref=e2912]: 24 outgoing / 35 incoming / microservices/ms-cadastertask
+      - button "ms-cadasteruser 19 outgoing / 11 incoming / microservices/ms-cadasteruser" [ref=e2913] [cursor=pointer]:
+        - strong [ref=e2914]: ms-cadasteruser
+        - generic [ref=e2915]: 19 outgoing / 11 incoming / microservices/ms-cadasteruser
+      - button "ms-common 21 outgoing / 0 incoming / microservices/ms-common" [ref=e2916] [cursor=pointer]:
+        - strong [ref=e2917]: ms-common
+        - generic [ref=e2918]: 21 outgoing / 0 incoming / microservices/ms-common
+      - button "ms-containertree 11 outgoing / 7 incoming / microservices/ms-containertree" [ref=e2919] [cursor=pointer]:
+        - strong [ref=e2920]: ms-containertree
+        - generic [ref=e2921]: 11 outgoing / 7 incoming / microservices/ms-containertree
+      - button "ms-documentdownload 10 outgoing / 4 incoming / microservices/ms-documentdownload" [ref=e2922] [cursor=pointer]:
+        - strong [ref=e2923]: ms-documentdownload
+        - generic [ref=e2924]: 10 outgoing / 4 incoming / microservices/ms-documentdownload
+      - button "ms-documentexport 17 outgoing / 2 incoming / microservices/ms-documentexport" [ref=e2925] [cursor=pointer]:
+        - strong [ref=e2926]: ms-documentexport
+        - generic [ref=e2927]: 17 outgoing / 2 incoming / microservices/ms-documentexport
+      - button "ms-documentinfo 17 outgoing / 5 incoming / microservices/ms-documentinfo" [ref=e2928] [cursor=pointer]:
+        - strong [ref=e2929]: ms-documentinfo
+        - generic [ref=e2930]: 17 outgoing / 5 incoming / microservices/ms-documentinfo
+      - button "ms-documenttopic 17 outgoing / 28 incoming / microservices/ms-documenttopic" [ref=e2931] [cursor=pointer]:
+        - strong [ref=e2932]: ms-documenttopic
+        - generic [ref=e2933]: 17 outgoing / 28 incoming / microservices/ms-documenttopic
+      - button "ms-invoiceservice 0 outgoing / 1 incoming / microservices/ms-invoiceservice" [ref=e2934] [cursor=pointer]:
+        - strong [ref=e2935]: ms-invoiceservice
+        - generic [ref=e2936]: 0 outgoing / 1 incoming / microservices/ms-invoiceservice
+      - button "ms-knksync 7 outgoing / 0 incoming / microservices/ms-knksync" [ref=e2937] [cursor=pointer]:
+        - strong [ref=e2938]: ms-knksync
+        - generic [ref=e2939]: 7 outgoing / 0 incoming / microservices/ms-knksync
+      - button "ms-licenseservice 16 outgoing / 184 incoming / microservices/ms-licenseservice" [ref=e2940] [cursor=pointer]:
+        - strong [ref=e2941]: ms-licenseservice
+        - generic [ref=e2942]: 16 outgoing / 184 incoming / microservices/ms-licenseservice
+      - button "ms-portal 45 outgoing / 12 incoming / microservices/ms-portal" [ref=e2943] [cursor=pointer]:
+        - strong [ref=e2944]: ms-portal
+        - generic [ref=e2945]: 45 outgoing / 12 incoming / microservices/ms-portal
+      - button "ms-productservice 9 outgoing / 143 incoming / microservices/ms-productservice" [ref=e2946] [cursor=pointer]:
+        - strong [ref=e2947]: ms-productservice
+        - generic [ref=e2948]: 9 outgoing / 143 incoming / microservices/ms-productservice
+      - button "ms-regulationchange 33 outgoing / 6 incoming / microservices/ms-regulationchange" [ref=e2949] [cursor=pointer]:
+        - strong [ref=e2950]: ms-regulationchange
+        - generic [ref=e2951]: 33 outgoing / 6 incoming / microservices/ms-regulationchange
+      - button "ms-regulationdownload 13 outgoing / 0 incoming / microservices/ms-regulationdownload" [ref=e2952] [cursor=pointer]:
+        - strong [ref=e2953]: ms-regulationdownload
+        - generic [ref=e2954]: 13 outgoing / 0 incoming / microservices/ms-regulationdownload
+      - button "ms-regulationexport 5 outgoing / 0 incoming / microservices/ms-regulationexport" [ref=e2955] [cursor=pointer]:
+        - strong [ref=e2956]: ms-regulationexport
+        - generic [ref=e2957]: 5 outgoing / 0 incoming / microservices/ms-regulationexport
+      - button "ms-regulationinfo 10 outgoing / 2 incoming / microservices/ms-regulationinfo" [ref=e2958] [cursor=pointer]:
+        - strong [ref=e2959]: ms-regulationinfo
+        - generic [ref=e2960]: 10 outgoing / 2 incoming / microservices/ms-regulationinfo
+      - button "ms-regulationtree 29 outgoing / 33 incoming / microservices/ms-regulationtree" [ref=e2961] [cursor=pointer]:
+        - strong [ref=e2962]: ms-regulationtree
+        - generic [ref=e2963]: 29 outgoing / 33 incoming / microservices/ms-regulationtree
+      - button "ms-search 27 outgoing / 9 incoming / microservices/ms-search" [ref=e2964] [cursor=pointer]:
+        - strong [ref=e2965]: ms-search
+        - generic [ref=e2966]: 27 outgoing / 9 incoming / microservices/ms-search
+      - button "ms-shopmgmt 14 outgoing / 0 incoming / microservices/ms-shopmgmt" [ref=e2967] [cursor=pointer]:
+        - strong [ref=e2968]: ms-shopmgmt
+        - generic [ref=e2969]: 14 outgoing / 0 incoming / microservices/ms-shopmgmt
+      - button "ms-sso 11 outgoing / 0 incoming / microservices/ms-sso" [ref=e2970] [cursor=pointer]:
+        - strong [ref=e2971]: ms-sso
+        - generic [ref=e2972]: 11 outgoing / 0 incoming / microservices/ms-sso
+      - button "ms-swlicenseservice 0 outgoing / 3 incoming / microservices/ms-swlicenseservice" [ref=e2973] [cursor=pointer]:
+        - strong [ref=e2974]: ms-swlicenseservice
+        - generic [ref=e2975]: 0 outgoing / 3 incoming / microservices/ms-swlicenseservice
+      - button "ms-task 39 outgoing / 11 incoming / microservices/ms-task" [ref=e2976] [cursor=pointer]:
+        - strong [ref=e2977]: ms-task
+        - generic [ref=e2978]: 39 outgoing / 11 incoming / microservices/ms-task
+      - button "ms-tradingpartner 7 outgoing / 0 incoming / microservices/ms-tradingpartner" [ref=e2979] [cursor=pointer]:
+        - strong [ref=e2980]: ms-tradingpartner
+        - generic [ref=e2981]: 7 outgoing / 0 incoming / microservices/ms-tradingpartner
+      - button "ms-useritem 14 outgoing / 21 incoming / microservices/ms-useritem" [ref=e2982] [cursor=pointer]:
+        - strong [ref=e2983]: ms-useritem
+        - generic [ref=e2984]: 14 outgoing / 21 incoming / microservices/ms-useritem
+      - button "ms-userservice 11 outgoing / 160 incoming / microservices/ms-userservice" [ref=e2985] [cursor=pointer]:
+        - strong [ref=e2986]: ms-userservice
+        - generic [ref=e2987]: 11 outgoing / 160 incoming / microservices/ms-userservice
+    - paragraph [ref=e163]: Showing 33 endpoint services.
+    - generic [ref=e164]:
+      - heading "Status glossary" [level=2] [ref=e165]
+      - paragraph [ref=e166]:
+        - strong [ref=e167]: RESOLVED
+        - text: ": frontend contract is mapped to a backend route."
+      - paragraph [ref=e168]:
+        - strong [ref=e169]: MISMATCH
+        - text: ": a related backend route exists, but method or path does not match exactly."
+      - paragraph [ref=e170]:
+        - strong [ref=e171]: UNRESOLVED
+        - text: ": no reliable backend route was found in indexed projects."
+      - paragraph [ref=e172]:
+        - strong [ref=e173]: OUT_OF_SCOPE
+        - text: ": intentionally not a backend service, for example a frontend-internal API."
+      - paragraph [ref=e174]:
+        - strong [ref=e175]: EXTRACTED
+        - text: ": read directly from source structure."
+        - strong [ref=e176]: MATCHED
+        - text: ": linked to a concrete route, symbol, or test."
+  - main [ref=e177]:
+    - generic [ref=e178]:
+      - button "Zoom out" [ref=e179] [cursor=pointer]: −
+      - button "Zoom in" [ref=e180] [cursor=pointer]: +
+      - button "Reset zoom and pan" [ref=e181] [cursor=pointer]: 100%
+      - button "Fit visible graph" [ref=e182] [cursor=pointer]: Fit
+      - button "Toggle relationship labels" [ref=e183] [cursor=pointer]: Labels
+      - generic [ref=e184]: 100%
+    - group "Directed workspace relationship map" [ref=e185]:
+      - generic [ref=e186]:
+        - generic [ref=e3158]: Directed implementation trace
+        - generic [ref=e3159]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=e3160]: Select any step for its role, source, evidence, and trace actions.
+        - button "Navigate / Event handler / src/pages/App/App.jsx" [ref=e3161]:
+          - generic [ref=e3163]: Navigate
+          - generic [ref=e3164]: Event handler /
+        - 'button "DELETE /useritem/users/{userId}/folders/{folderId} / API client / src/actions/widgets.js" [ref=e3165]':
+          - generic [ref=e3167]: DELETE
+          - generic [ref=e3168]: "/useritem/users/{userId}/fold..."
+          - generic [ref=e3169]: API client / src/actions/widgets.js
+        - 'button "DELETE /useritem/users/{userId}/folders/{folderId} / HTTP route / src/main/java/com/weka/wbp/api/useritem/controller/FavoriteFolderController.java" [ref=e3170]':
+          - generic [ref=e3172]: DELETE
+          - generic [ref=e3173]: "/useritem/users/{userId}/fold..."
+          - generic [ref=e3174]: HTTP route /
+        - button "FavoriteFolderController.deleteFavoriteFolder / Controller / handler / src/main/java/com/weka/wbp/api/useritem/controller/FavoriteFolderController.java" [ref=e3175]:
+          - generic [ref=e3177]: FavoriteFolderController.dele...
+          - generic [ref=e3178]: Controller / handler /
+        - button "FavoriteFolderController.deleteFavoriteFolder / Function / method / src/main/java/com/weka/wbp/api/useritem/controller/FavoriteFolderController.java" [ref=e3179]:
+          - generic [ref=e3181]: FavoriteFolderController.dele...
+          - generic [ref=e3182]: Function / method /
+        - button "FavoriteFolderService.deleteFolder / Function / method / src/main/java/com/weka/wbp/api/useritem/service/FavoriteFolderService.java" [ref=e3183]:
+          - generic [ref=e3185]: FavoriteFolderService.deleteF...
+          - generic [ref=e3186]: Function / method /
+        - button "WbpUserFavoriteFolderRepository.delete / Repository / src/main/java/com/weka/wbp/api/useritem/repository/WbpUserFavoriteFolderRepository.java" [ref=e3187]:
+          - generic [ref=e3189]: WbpUserFavoriteFolderReposito...
+          - generic [ref=e3190]: Repository /
+        - button "FavoriteFolderControllerTests.testDeleteFavoriteFolder_SsoAuth_filledFolder_ok / Test / src/test/java/com/weka/wbp/api/useritem/controller/FavoriteFolderControllerTests.java" [ref=e3191]:
+          - generic [ref=e3193]: FavoriteFolderControllerTests...
+          - generic [ref=e3194]: Test /
+        - button "FavoriteFolderControllerTests.testDeleteFavoriteFolder_filledFolder_ok / Test / src/test/java/com/weka/wbp/api/useritem/controller/FavoriteFolderControllerTests.java" [ref=e3195]:
+          - generic [ref=e3197]: FavoriteFolderControllerTests...
+          - generic [ref=e3198]: Test /
+        - button "FavoriteFolderControllerTests.testDeleteFavoriteFolder_noToken_unauthorized / Test / src/test/java/com/weka/wbp/api/useritem/controller/FavoriteFolderControllerTests.java" [ref=e3199]:
+          - generic [ref=e3201]: FavoriteFolderControllerTests...
+          - generic [ref=e3202]: Test /
+        - button "FavoriteFolderControllerTests.testDeleteFavoriteFolder_wrongFolder_forbidden / Test / src/test/java/com/weka/wbp/api/useritem/controller/FavoriteFolderControllerTests.java" [ref=e3203]:
+          - generic [ref=e3205]: FavoriteFolderControllerTests...
+          - generic [ref=e3206]: Test /
+        - button "FavoriteFolderControllerTests.testDeleteLastFavoriteFolder_emptyFolder_lastFolder_noContent / Test / src/test/java/com/weka/wbp/api/useritem/controller/FavoriteFolderControllerTests.java" [ref=e3207]:
+          - generic [ref=e3209]: FavoriteFolderControllerTests...
+          - generic [ref=e3210]: Test /
+  - generic [ref=e398]:
+    - button [ref=e3211] [cursor=pointer]:
+      - strong [ref=e3212]: Back to endpoint inventory
+    - heading "FavoriteFolderService.deleteFolder" [level=1] [ref=e3213]
+    - paragraph [ref=e3214]: Selection does not move or relayout the trace.
+    - generic [ref=e3215]:
+      - generic [ref=e3216]:
+        - strong [ref=e3217]: Role
+        - generic [ref=e3218]: Function / method
+      - generic [ref=e3219]:
+        - strong [ref=e3220]: Service
+        - generic [ref=e3221]: ms-useritem
+      - generic [ref=e3222]:
+        - strong [ref=e3223]: Project
+        - generic [ref=e3224]: microservices/ms-useritem
+      - generic [ref=e3225]:
+        - strong [ref=e3226]: Class / controller
+        - generic [ref=e3227]: FavoriteFolderService
+      - generic [ref=e3228]:
+        - strong [ref=e3229]: Full symbol
+        - generic [ref=e3230]: FavoriteFolderService.deleteFolder
+      - generic [ref=e3231]:
+        - strong [ref=e3232]: File
+        - generic [ref=e3233]: src/main/java/com/weka/wbp/api/useritem/service/FavoriteFolderService.java
+      - generic [ref=e3234]:
+        - strong [ref=e3235]: Line
+        - generic [ref=e3236]: "137"
+      - generic [ref=e3237]:
+        - strong [ref=e3238]: Source
+        - generic [ref=e3239]:
+          - text: src/main/java/com/weka/wbp/api/useritem/service/FavoriteFolderService.java:137
+          - generic [ref=e3240]:
+            - button "Copy path" [ref=e3241]
+            - link "Open source" [ref=e3242] [cursor=pointer]:
+              - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-useritem/src/main/java/com/weka/wbp/api/useritem/service/FavoriteFolderService.java#L137
+      - generic [ref=e3243]:
+        - strong [ref=e3244]: Confidence
+        - generic [ref=e3245]: EXTRACTED
+      - generic [ref=e3246]:
+        - strong [ref=e3247]: Evidence
+        - generic [ref=e3248]: No evidence reference recorded
+    - button "Trace from here Highlight the connected upstream and downstream subgraph without moving the viewport." [ref=e3249] [cursor=pointer]:
+      - strong [ref=e3250]: Trace from here
+      - generic [ref=e3251]: Highlight the connected upstream and downstream subgraph without moving the viewport.

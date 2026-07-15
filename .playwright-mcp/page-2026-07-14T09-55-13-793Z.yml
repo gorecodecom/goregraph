@@ -1,0 +1,1973 @@
+- generic [ref=f2e2]:
+  - complementary [ref=f2e3]:
+    - heading "GoreGraph Workspace" [level=1] [ref=f2e4]
+    - generic [ref=f2e5]:
+      - generic [ref=f2e6]:
+        - strong [ref=f2e7]: "43"
+        - text: services
+      - generic [ref=f2e8]:
+        - strong [ref=f2e9]: "101"
+        - text: relations
+      - generic [ref=f2e10]:
+        - strong [ref=f2e11]: "177"
+        - text: traces
+      - generic [ref=f2e12]:
+        - strong [ref=f2e13]: "177"
+        - text: contracts
+    - heading "View" [level=2] [ref=f2e14]
+    - generic [ref=f2e15]:
+      - button "Architecture" [ref=f2e16] [cursor=pointer]
+      - button "Endpoints" [ref=f2e17] [cursor=pointer]
+      - button "Feature Flow" [ref=f2e18] [cursor=pointer]
+      - button "Data Flow" [ref=f2e19] [cursor=pointer]
+      - button "Diagnostics" [ref=f2e20] [cursor=pointer]
+      - button "Coverage" [pressed] [ref=f2e21] [cursor=pointer]
+    - paragraph [ref=f2e22]: See which language and framework capabilities GoreGraph analyzed completely, partially, not at all, or with failures.
+    - textbox "Search workspace map" [ref=f2e23]:
+      - /placeholder: Search service, endpoint, route, file, symbol
+    - heading "Filter" [level=2] [ref=f2e24]
+    - generic [ref=f2e25]:
+      - button "All" [pressed] [ref=f2e26] [cursor=pointer]
+      - button "Risk" [ref=f2e27] [cursor=pointer]
+      - button "Resolved" [ref=f2e28] [cursor=pointer]
+      - button "Unresolved" [ref=f2e29] [cursor=pointer]
+    - button "Clear selection" [ref=f2e31] [cursor=pointer]
+    - heading "Coverage by project" [level=2] [ref=f2e1859]
+    - generic [ref=f2e33]:
+      - generic [ref=f2e1860] [cursor=pointer]:
+        - strong [ref=f2e1861]: frontend/frontend-monorepo / javascript
+        - generic [ref=f2e1862]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1863] [cursor=pointer]:
+        - strong [ref=f2e1864]: frontend/frontend-monorepo / json
+        - generic [ref=f2e1865]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1866] [cursor=pointer]:
+        - strong [ref=f2e1867]: frontend/frontend-monorepo / markdown
+        - generic [ref=f2e1868]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1869] [cursor=pointer]:
+        - strong [ref=f2e1870]: frontend/frontend-monorepo / node
+        - generic [ref=f2e1871]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1872] [cursor=pointer]:
+        - strong [ref=f2e1873]: frontend/frontend-monorepo / text
+        - generic [ref=f2e1874]: PARTIAL · 9 capabilities
+      - generic [ref=f2e1875] [cursor=pointer]:
+        - strong [ref=f2e1876]: frontend/frontend-monorepo / typescript
+        - generic [ref=f2e1877]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1878] [cursor=pointer]:
+        - strong [ref=f2e1879]: frontend/frontend-monorepo / yaml
+        - generic [ref=f2e1880]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1881] [cursor=pointer]:
+        - strong [ref=f2e1882]: frontend/frontend / javascript
+        - generic [ref=f2e1883]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1884] [cursor=pointer]:
+        - strong [ref=f2e1885]: frontend/frontend / json
+        - generic [ref=f2e1886]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1887] [cursor=pointer]:
+        - strong [ref=f2e1888]: frontend/frontend / markdown
+        - generic [ref=f2e1889]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1890] [cursor=pointer]:
+        - strong [ref=f2e1891]: frontend/frontend / node
+        - generic [ref=f2e1892]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1893] [cursor=pointer]:
+        - strong [ref=f2e1894]: frontend/frontend / python
+        - generic [ref=f2e1895]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1896] [cursor=pointer]:
+        - strong [ref=f2e1897]: frontend/frontend / text
+        - generic [ref=f2e1898]: PARTIAL · 9 capabilities
+      - generic [ref=f2e1899] [cursor=pointer]:
+        - strong [ref=f2e1900]: frontend/frontend / yaml
+        - generic [ref=f2e1901]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1902] [cursor=pointer]:
+        - strong [ref=f2e1903]: frontend/frontends / javascript
+        - generic [ref=f2e1904]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1905] [cursor=pointer]:
+        - strong [ref=f2e1906]: frontend/frontends / json
+        - generic [ref=f2e1907]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1908] [cursor=pointer]:
+        - strong [ref=f2e1909]: frontend/frontends / markdown
+        - generic [ref=f2e1910]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1911] [cursor=pointer]:
+        - strong [ref=f2e1912]: frontend/frontends / node
+        - generic [ref=f2e1913]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1914] [cursor=pointer]:
+        - strong [ref=f2e1915]: frontend/frontends / text
+        - generic [ref=f2e1916]: PARTIAL · 9 capabilities
+      - generic [ref=f2e1917] [cursor=pointer]:
+        - strong [ref=f2e1918]: frontend/frontends / typescript
+        - generic [ref=f2e1919]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1920] [cursor=pointer]:
+        - strong [ref=f2e1921]: frontend/frontends / yaml
+        - generic [ref=f2e1922]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1923] [cursor=pointer]:
+        - strong [ref=f2e1924]: frontend/playwright / javascript
+        - generic [ref=f2e1925]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1926] [cursor=pointer]:
+        - strong [ref=f2e1927]: frontend/playwright / json
+        - generic [ref=f2e1928]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1929] [cursor=pointer]:
+        - strong [ref=f2e1930]: frontend/playwright / markdown
+        - generic [ref=f2e1931]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1932] [cursor=pointer]:
+        - strong [ref=f2e1933]: frontend/playwright / node
+        - generic [ref=f2e1934]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1935] [cursor=pointer]:
+        - strong [ref=f2e1936]: frontend/playwright / text
+        - generic [ref=f2e1937]: PARTIAL · 9 capabilities
+      - generic [ref=f2e1938] [cursor=pointer]:
+        - strong [ref=f2e1939]: frontend/playwright / typescript
+        - generic [ref=f2e1940]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1941] [cursor=pointer]:
+        - strong [ref=f2e1942]: frontend/playwright / yaml
+        - generic [ref=f2e1943]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1944] [cursor=pointer]:
+        - strong [ref=f2e1945]: microservices/ms-adminui / java
+        - generic [ref=f2e1946]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1947] [cursor=pointer]:
+        - strong [ref=f2e1948]: microservices/ms-adminui / maven
+        - generic [ref=f2e1949]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1950] [cursor=pointer]:
+        - strong [ref=f2e1951]: microservices/ms-adminui / text
+        - generic [ref=f2e1952]: PARTIAL · 9 capabilities
+      - generic [ref=f2e1953] [cursor=pointer]:
+        - strong [ref=f2e1954]: microservices/ms-adminui / yaml
+        - generic [ref=f2e1955]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1956] [cursor=pointer]:
+        - strong [ref=f2e1957]: microservices/ms-cadaster / java
+        - generic [ref=f2e1958]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1959] [cursor=pointer]:
+        - strong [ref=f2e1960]: microservices/ms-cadaster / maven
+        - generic [ref=f2e1961]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1962] [cursor=pointer]:
+        - strong [ref=f2e1963]: microservices/ms-cadaster / text
+        - generic [ref=f2e1964]: PARTIAL · 9 capabilities
+      - generic [ref=f2e1965] [cursor=pointer]:
+        - strong [ref=f2e1966]: microservices/ms-cadaster / yaml
+        - generic [ref=f2e1967]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1968] [cursor=pointer]:
+        - strong [ref=f2e1969]: microservices/ms-cadasterexport / java
+        - generic [ref=f2e1970]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1971] [cursor=pointer]:
+        - strong [ref=f2e1972]: microservices/ms-cadasterexport / maven
+        - generic [ref=f2e1973]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1974] [cursor=pointer]:
+        - strong [ref=f2e1975]: microservices/ms-cadasterexport / text
+        - generic [ref=f2e1976]: PARTIAL · 9 capabilities
+      - generic [ref=f2e1977] [cursor=pointer]:
+        - strong [ref=f2e1978]: microservices/ms-cadasterexport / yaml
+        - generic [ref=f2e1979]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1980] [cursor=pointer]:
+        - strong [ref=f2e1981]: microservices/ms-cadasterprotocol / java
+        - generic [ref=f2e1982]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1983] [cursor=pointer]:
+        - strong [ref=f2e1984]: microservices/ms-cadasterprotocol / maven
+        - generic [ref=f2e1985]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1986] [cursor=pointer]:
+        - strong [ref=f2e1987]: microservices/ms-cadasterprotocol / text
+        - generic [ref=f2e1988]: PARTIAL · 9 capabilities
+      - generic [ref=f2e1989] [cursor=pointer]:
+        - strong [ref=f2e1990]: microservices/ms-cadasterprotocol / yaml
+        - generic [ref=f2e1991]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e1992] [cursor=pointer]:
+        - strong [ref=f2e1993]: microservices/ms-cadasterregulation / java
+        - generic [ref=f2e1994]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1995] [cursor=pointer]:
+        - strong [ref=f2e1996]: microservices/ms-cadasterregulation / maven
+        - generic [ref=f2e1997]: COMPLETE · 9 capabilities
+      - generic [ref=f2e1998] [cursor=pointer]:
+        - strong [ref=f2e1999]: microservices/ms-cadasterregulation / text
+        - generic [ref=f2e2000]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2001] [cursor=pointer]:
+        - strong [ref=f2e2002]: microservices/ms-cadasterregulation / yaml
+        - generic [ref=f2e2003]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2004] [cursor=pointer]:
+        - strong [ref=f2e2005]: microservices/ms-cadastertask / java
+        - generic [ref=f2e2006]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2007] [cursor=pointer]:
+        - strong [ref=f2e2008]: microservices/ms-cadastertask / maven
+        - generic [ref=f2e2009]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2010] [cursor=pointer]:
+        - strong [ref=f2e2011]: microservices/ms-cadastertask / text
+        - generic [ref=f2e2012]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2013] [cursor=pointer]:
+        - strong [ref=f2e2014]: microservices/ms-cadastertask / yaml
+        - generic [ref=f2e2015]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2016] [cursor=pointer]:
+        - strong [ref=f2e2017]: microservices/ms-cadasteruser / java
+        - generic [ref=f2e2018]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2019] [cursor=pointer]:
+        - strong [ref=f2e2020]: microservices/ms-cadasteruser / maven
+        - generic [ref=f2e2021]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2022] [cursor=pointer]:
+        - strong [ref=f2e2023]: microservices/ms-cadasteruser / text
+        - generic [ref=f2e2024]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2025] [cursor=pointer]:
+        - strong [ref=f2e2026]: microservices/ms-cadasteruser / yaml
+        - generic [ref=f2e2027]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2028] [cursor=pointer]:
+        - strong [ref=f2e2029]: microservices/ms-common / java
+        - generic [ref=f2e2030]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2031] [cursor=pointer]:
+        - strong [ref=f2e2032]: microservices/ms-common / maven
+        - generic [ref=f2e2033]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2034] [cursor=pointer]:
+        - strong [ref=f2e2035]: microservices/ms-common / text
+        - generic [ref=f2e2036]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2037] [cursor=pointer]:
+        - strong [ref=f2e2038]: microservices/ms-common / yaml
+        - generic [ref=f2e2039]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2040] [cursor=pointer]:
+        - strong [ref=f2e2041]: microservices/ms-containertree / java
+        - generic [ref=f2e2042]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2043] [cursor=pointer]:
+        - strong [ref=f2e2044]: microservices/ms-containertree / maven
+        - generic [ref=f2e2045]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2046] [cursor=pointer]:
+        - strong [ref=f2e2047]: microservices/ms-containertree / text
+        - generic [ref=f2e2048]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2049] [cursor=pointer]:
+        - strong [ref=f2e2050]: microservices/ms-containertree / yaml
+        - generic [ref=f2e2051]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2052] [cursor=pointer]:
+        - strong [ref=f2e2053]: microservices/ms-datawarehouse / java
+        - generic [ref=f2e2054]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2055] [cursor=pointer]:
+        - strong [ref=f2e2056]: microservices/ms-datawarehouse / maven
+        - generic [ref=f2e2057]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2058] [cursor=pointer]:
+        - strong [ref=f2e2059]: microservices/ms-datawarehouse / text
+        - generic [ref=f2e2060]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2061] [cursor=pointer]:
+        - strong [ref=f2e2062]: microservices/ms-datawarehouse / yaml
+        - generic [ref=f2e2063]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2064] [cursor=pointer]:
+        - strong [ref=f2e2065]: microservices/ms-documentdownload / java
+        - generic [ref=f2e2066]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2067] [cursor=pointer]:
+        - strong [ref=f2e2068]: microservices/ms-documentdownload / maven
+        - generic [ref=f2e2069]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2070] [cursor=pointer]:
+        - strong [ref=f2e2071]: microservices/ms-documentdownload / text
+        - generic [ref=f2e2072]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2073] [cursor=pointer]:
+        - strong [ref=f2e2074]: microservices/ms-documentdownload / yaml
+        - generic [ref=f2e2075]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2076] [cursor=pointer]:
+        - strong [ref=f2e2077]: microservices/ms-documentexport / java
+        - generic [ref=f2e2078]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2079] [cursor=pointer]:
+        - strong [ref=f2e2080]: microservices/ms-documentexport / maven
+        - generic [ref=f2e2081]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2082] [cursor=pointer]:
+        - strong [ref=f2e2083]: microservices/ms-documentexport / text
+        - generic [ref=f2e2084]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2085] [cursor=pointer]:
+        - strong [ref=f2e2086]: microservices/ms-documentexport / yaml
+        - generic [ref=f2e2087]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2088] [cursor=pointer]:
+        - strong [ref=f2e2089]: microservices/ms-documentinfo / java
+        - generic [ref=f2e2090]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2091] [cursor=pointer]:
+        - strong [ref=f2e2092]: microservices/ms-documentinfo / maven
+        - generic [ref=f2e2093]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2094] [cursor=pointer]:
+        - strong [ref=f2e2095]: microservices/ms-documentinfo / text
+        - generic [ref=f2e2096]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2097] [cursor=pointer]:
+        - strong [ref=f2e2098]: microservices/ms-documentinfo / yaml
+        - generic [ref=f2e2099]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2100] [cursor=pointer]:
+        - strong [ref=f2e2101]: microservices/ms-documenttopic / java
+        - generic [ref=f2e2102]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2103] [cursor=pointer]:
+        - strong [ref=f2e2104]: microservices/ms-documenttopic / maven
+        - generic [ref=f2e2105]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2106] [cursor=pointer]:
+        - strong [ref=f2e2107]: microservices/ms-documenttopic / text
+        - generic [ref=f2e2108]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2109] [cursor=pointer]:
+        - strong [ref=f2e2110]: microservices/ms-documenttopic / yaml
+        - generic [ref=f2e2111]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2112] [cursor=pointer]:
+        - strong [ref=f2e2113]: microservices/ms-example / java
+        - generic [ref=f2e2114]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2115] [cursor=pointer]:
+        - strong [ref=f2e2116]: microservices/ms-example / maven
+        - generic [ref=f2e2117]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2118] [cursor=pointer]:
+        - strong [ref=f2e2119]: microservices/ms-example / text
+        - generic [ref=f2e2120]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2121] [cursor=pointer]:
+        - strong [ref=f2e2122]: microservices/ms-example / yaml
+        - generic [ref=f2e2123]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2124] [cursor=pointer]:
+        - strong [ref=f2e2125]: microservices/ms-invoiceservice / java
+        - generic [ref=f2e2126]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2127] [cursor=pointer]:
+        - strong [ref=f2e2128]: microservices/ms-invoiceservice / maven
+        - generic [ref=f2e2129]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2130] [cursor=pointer]:
+        - strong [ref=f2e2131]: microservices/ms-invoiceservice / text
+        - generic [ref=f2e2132]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2133] [cursor=pointer]:
+        - strong [ref=f2e2134]: microservices/ms-invoiceservice / yaml
+        - generic [ref=f2e2135]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2136] [cursor=pointer]:
+        - strong [ref=f2e2137]: microservices/ms-knksync / java
+        - generic [ref=f2e2138]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2139] [cursor=pointer]:
+        - strong [ref=f2e2140]: microservices/ms-knksync / maven
+        - generic [ref=f2e2141]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2142] [cursor=pointer]:
+        - strong [ref=f2e2143]: microservices/ms-knksync / text
+        - generic [ref=f2e2144]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2145] [cursor=pointer]:
+        - strong [ref=f2e2146]: microservices/ms-knksync / yaml
+        - generic [ref=f2e2147]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2148] [cursor=pointer]:
+        - strong [ref=f2e2149]: microservices/ms-licenseservice / java
+        - generic [ref=f2e2150]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2151] [cursor=pointer]:
+        - strong [ref=f2e2152]: microservices/ms-licenseservice / markdown
+        - generic [ref=f2e2153]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2154] [cursor=pointer]:
+        - strong [ref=f2e2155]: microservices/ms-licenseservice / maven
+        - generic [ref=f2e2156]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2157] [cursor=pointer]:
+        - strong [ref=f2e2158]: microservices/ms-licenseservice / text
+        - generic [ref=f2e2159]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2160] [cursor=pointer]:
+        - strong [ref=f2e2161]: microservices/ms-licenseservice / yaml
+        - generic [ref=f2e2162]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2163] [cursor=pointer]:
+        - strong [ref=f2e2164]: microservices/ms-mailsender / java
+        - generic [ref=f2e2165]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2166] [cursor=pointer]:
+        - strong [ref=f2e2167]: microservices/ms-mailsender / maven
+        - generic [ref=f2e2168]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2169] [cursor=pointer]:
+        - strong [ref=f2e2170]: microservices/ms-mailsender / text
+        - generic [ref=f2e2171]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2172] [cursor=pointer]:
+        - strong [ref=f2e2173]: microservices/ms-mailsender / yaml
+        - generic [ref=f2e2174]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2175] [cursor=pointer]:
+        - strong [ref=f2e2176]: microservices/ms-parent / maven
+        - generic [ref=f2e2177]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2178] [cursor=pointer]:
+        - strong [ref=f2e2179]: microservices/ms-parent / text
+        - generic [ref=f2e2180]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2181] [cursor=pointer]:
+        - strong [ref=f2e2182]: microservices/ms-parent / yaml
+        - generic [ref=f2e2183]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2184] [cursor=pointer]:
+        - strong [ref=f2e2185]: microservices/ms-pdfgenerator / java
+        - generic [ref=f2e2186]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2187] [cursor=pointer]:
+        - strong [ref=f2e2188]: microservices/ms-pdfgenerator / markdown
+        - generic [ref=f2e2189]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2190] [cursor=pointer]:
+        - strong [ref=f2e2191]: microservices/ms-pdfgenerator / maven
+        - generic [ref=f2e2192]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2193] [cursor=pointer]:
+        - strong [ref=f2e2194]: microservices/ms-pdfgenerator / text
+        - generic [ref=f2e2195]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2196] [cursor=pointer]:
+        - strong [ref=f2e2197]: microservices/ms-pdfgenerator / yaml
+        - generic [ref=f2e2198]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2199] [cursor=pointer]:
+        - strong [ref=f2e2200]: microservices/ms-portal / java
+        - generic [ref=f2e2201]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2202] [cursor=pointer]:
+        - strong [ref=f2e2203]: microservices/ms-portal / maven
+        - generic [ref=f2e2204]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2205] [cursor=pointer]:
+        - strong [ref=f2e2206]: microservices/ms-portal / text
+        - generic [ref=f2e2207]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2208] [cursor=pointer]:
+        - strong [ref=f2e2209]: microservices/ms-portal / yaml
+        - generic [ref=f2e2210]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2211] [cursor=pointer]:
+        - strong [ref=f2e2212]: microservices/ms-productservice / java
+        - generic [ref=f2e2213]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2214] [cursor=pointer]:
+        - strong [ref=f2e2215]: microservices/ms-productservice / maven
+        - generic [ref=f2e2216]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2217] [cursor=pointer]:
+        - strong [ref=f2e2218]: microservices/ms-productservice / text
+        - generic [ref=f2e2219]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2220] [cursor=pointer]:
+        - strong [ref=f2e2221]: microservices/ms-productservice / yaml
+        - generic [ref=f2e2222]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2223] [cursor=pointer]:
+        - strong [ref=f2e2224]: microservices/ms-regulationchange / java
+        - generic [ref=f2e2225]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2226] [cursor=pointer]:
+        - strong [ref=f2e2227]: microservices/ms-regulationchange / maven
+        - generic [ref=f2e2228]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2229] [cursor=pointer]:
+        - strong [ref=f2e2230]: microservices/ms-regulationchange / text
+        - generic [ref=f2e2231]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2232] [cursor=pointer]:
+        - strong [ref=f2e2233]: microservices/ms-regulationchange / yaml
+        - generic [ref=f2e2234]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2235] [cursor=pointer]:
+        - strong [ref=f2e2236]: microservices/ms-regulationdownload / java
+        - generic [ref=f2e2237]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2238] [cursor=pointer]:
+        - strong [ref=f2e2239]: microservices/ms-regulationdownload / maven
+        - generic [ref=f2e2240]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2241] [cursor=pointer]:
+        - strong [ref=f2e2242]: microservices/ms-regulationdownload / text
+        - generic [ref=f2e2243]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2244] [cursor=pointer]:
+        - strong [ref=f2e2245]: microservices/ms-regulationdownload / yaml
+        - generic [ref=f2e2246]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2247] [cursor=pointer]:
+        - strong [ref=f2e2248]: microservices/ms-regulationexport / java
+        - generic [ref=f2e2249]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2250] [cursor=pointer]:
+        - strong [ref=f2e2251]: microservices/ms-regulationexport / maven
+        - generic [ref=f2e2252]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2253] [cursor=pointer]:
+        - strong [ref=f2e2254]: microservices/ms-regulationexport / text
+        - generic [ref=f2e2255]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2256] [cursor=pointer]:
+        - strong [ref=f2e2257]: microservices/ms-regulationexport / yaml
+        - generic [ref=f2e2258]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2259] [cursor=pointer]:
+        - strong [ref=f2e2260]: microservices/ms-regulationinfo / java
+        - generic [ref=f2e2261]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2262] [cursor=pointer]:
+        - strong [ref=f2e2263]: microservices/ms-regulationinfo / maven
+        - generic [ref=f2e2264]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2265] [cursor=pointer]:
+        - strong [ref=f2e2266]: microservices/ms-regulationinfo / text
+        - generic [ref=f2e2267]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2268] [cursor=pointer]:
+        - strong [ref=f2e2269]: microservices/ms-regulationinfo / yaml
+        - generic [ref=f2e2270]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2271] [cursor=pointer]:
+        - strong [ref=f2e2272]: microservices/ms-regulationtree / java
+        - generic [ref=f2e2273]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2274] [cursor=pointer]:
+        - strong [ref=f2e2275]: microservices/ms-regulationtree / maven
+        - generic [ref=f2e2276]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2277] [cursor=pointer]:
+        - strong [ref=f2e2278]: microservices/ms-regulationtree / text
+        - generic [ref=f2e2279]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2280] [cursor=pointer]:
+        - strong [ref=f2e2281]: microservices/ms-regulationtree / yaml
+        - generic [ref=f2e2282]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2283] [cursor=pointer]:
+        - strong [ref=f2e2284]: microservices/ms-search / java
+        - generic [ref=f2e2285]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2286] [cursor=pointer]:
+        - strong [ref=f2e2287]: microservices/ms-search / maven
+        - generic [ref=f2e2288]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2289] [cursor=pointer]:
+        - strong [ref=f2e2290]: microservices/ms-search / text
+        - generic [ref=f2e2291]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2292] [cursor=pointer]:
+        - strong [ref=f2e2293]: microservices/ms-search / yaml
+        - generic [ref=f2e2294]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2295] [cursor=pointer]:
+        - strong [ref=f2e2296]: microservices/ms-shopmgmt / java
+        - generic [ref=f2e2297]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2298] [cursor=pointer]:
+        - strong [ref=f2e2299]: microservices/ms-shopmgmt / markdown
+        - generic [ref=f2e2300]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2301] [cursor=pointer]:
+        - strong [ref=f2e2302]: microservices/ms-shopmgmt / maven
+        - generic [ref=f2e2303]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2304] [cursor=pointer]:
+        - strong [ref=f2e2305]: microservices/ms-shopmgmt / text
+        - generic [ref=f2e2306]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2307] [cursor=pointer]:
+        - strong [ref=f2e2308]: microservices/ms-shopmgmt / yaml
+        - generic [ref=f2e2309]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2310] [cursor=pointer]:
+        - strong [ref=f2e2311]: microservices/ms-sso / java
+        - generic [ref=f2e2312]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2313] [cursor=pointer]:
+        - strong [ref=f2e2314]: microservices/ms-sso / markdown
+        - generic [ref=f2e2315]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2316] [cursor=pointer]:
+        - strong [ref=f2e2317]: microservices/ms-sso / maven
+        - generic [ref=f2e2318]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2319] [cursor=pointer]:
+        - strong [ref=f2e2320]: microservices/ms-sso / text
+        - generic [ref=f2e2321]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2322] [cursor=pointer]:
+        - strong [ref=f2e2323]: microservices/ms-sso / yaml
+        - generic [ref=f2e2324]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2325] [cursor=pointer]:
+        - strong [ref=f2e2326]: microservices/ms-swlicenseservice / java
+        - generic [ref=f2e2327]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2328] [cursor=pointer]:
+        - strong [ref=f2e2329]: microservices/ms-swlicenseservice / markdown
+        - generic [ref=f2e2330]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2331] [cursor=pointer]:
+        - strong [ref=f2e2332]: microservices/ms-swlicenseservice / maven
+        - generic [ref=f2e2333]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2334] [cursor=pointer]:
+        - strong [ref=f2e2335]: microservices/ms-swlicenseservice / text
+        - generic [ref=f2e2336]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2337] [cursor=pointer]:
+        - strong [ref=f2e2338]: microservices/ms-swlicenseservice / yaml
+        - generic [ref=f2e2339]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2340] [cursor=pointer]:
+        - strong [ref=f2e2341]: microservices/ms-task / java
+        - generic [ref=f2e2342]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2343] [cursor=pointer]:
+        - strong [ref=f2e2344]: microservices/ms-task / maven
+        - generic [ref=f2e2345]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2346] [cursor=pointer]:
+        - strong [ref=f2e2347]: microservices/ms-task / text
+        - generic [ref=f2e2348]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2349] [cursor=pointer]:
+        - strong [ref=f2e2350]: microservices/ms-task / yaml
+        - generic [ref=f2e2351]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2352] [cursor=pointer]:
+        - strong [ref=f2e2353]: microservices/ms-tradingpartner / java
+        - generic [ref=f2e2354]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2355] [cursor=pointer]:
+        - strong [ref=f2e2356]: microservices/ms-tradingpartner / maven
+        - generic [ref=f2e2357]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2358] [cursor=pointer]:
+        - strong [ref=f2e2359]: microservices/ms-tradingpartner / text
+        - generic [ref=f2e2360]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2361] [cursor=pointer]:
+        - strong [ref=f2e2362]: microservices/ms-tradingpartner / yaml
+        - generic [ref=f2e2363]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2364] [cursor=pointer]:
+        - strong [ref=f2e2365]: microservices/ms-updateinfomgmt / java
+        - generic [ref=f2e2366]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2367] [cursor=pointer]:
+        - strong [ref=f2e2368]: microservices/ms-updateinfomgmt / markdown
+        - generic [ref=f2e2369]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2370] [cursor=pointer]:
+        - strong [ref=f2e2371]: microservices/ms-updateinfomgmt / maven
+        - generic [ref=f2e2372]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2373] [cursor=pointer]:
+        - strong [ref=f2e2374]: microservices/ms-updateinfomgmt / text
+        - generic [ref=f2e2375]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2376] [cursor=pointer]:
+        - strong [ref=f2e2377]: microservices/ms-updateinfomgmt / yaml
+        - generic [ref=f2e2378]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2379] [cursor=pointer]:
+        - strong [ref=f2e2380]: microservices/ms-useritem / java
+        - generic [ref=f2e2381]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2382] [cursor=pointer]:
+        - strong [ref=f2e2383]: microservices/ms-useritem / maven
+        - generic [ref=f2e2384]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2385] [cursor=pointer]:
+        - strong [ref=f2e2386]: microservices/ms-useritem / text
+        - generic [ref=f2e2387]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2388] [cursor=pointer]:
+        - strong [ref=f2e2389]: microservices/ms-useritem / yaml
+        - generic [ref=f2e2390]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2391] [cursor=pointer]:
+        - strong [ref=f2e2392]: microservices/ms-userservice / java
+        - generic [ref=f2e2393]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2394] [cursor=pointer]:
+        - strong [ref=f2e2395]: microservices/ms-userservice / markdown
+        - generic [ref=f2e2396]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2397] [cursor=pointer]:
+        - strong [ref=f2e2398]: microservices/ms-userservice / maven
+        - generic [ref=f2e2399]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2400] [cursor=pointer]:
+        - strong [ref=f2e2401]: microservices/ms-userservice / text
+        - generic [ref=f2e2402]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2403] [cursor=pointer]:
+        - strong [ref=f2e2404]: microservices/ms-userservice / yaml
+        - generic [ref=f2e2405]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2406] [cursor=pointer]:
+        - strong [ref=f2e2407]: microservices/product-data-importer / java
+        - generic [ref=f2e2408]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2409] [cursor=pointer]:
+        - strong [ref=f2e2410]: microservices/product-data-importer / markdown
+        - generic [ref=f2e2411]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2412] [cursor=pointer]:
+        - strong [ref=f2e2413]: microservices/product-data-importer / maven
+        - generic [ref=f2e2414]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2415] [cursor=pointer]:
+        - strong [ref=f2e2416]: microservices/product-data-importer / shell
+        - generic [ref=f2e2417]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2418] [cursor=pointer]:
+        - strong [ref=f2e2419]: microservices/product-data-importer / text
+        - generic [ref=f2e2420]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2421] [cursor=pointer]:
+        - strong [ref=f2e2422]: microservices/product-data-importer / yaml
+        - generic [ref=f2e2423]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2424] [cursor=pointer]:
+        - strong [ref=f2e2425]: microservices/update-info-cleaner / java
+        - generic [ref=f2e2426]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2427] [cursor=pointer]:
+        - strong [ref=f2e2428]: microservices/update-info-cleaner / markdown
+        - generic [ref=f2e2429]: UNAVAILABLE · 9 capabilities
+      - generic [ref=f2e2430] [cursor=pointer]:
+        - strong [ref=f2e2431]: microservices/update-info-cleaner / maven
+        - generic [ref=f2e2432]: COMPLETE · 9 capabilities
+      - generic [ref=f2e2433] [cursor=pointer]:
+        - strong [ref=f2e2434]: microservices/update-info-cleaner / shell
+        - generic [ref=f2e2435]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2436] [cursor=pointer]:
+        - strong [ref=f2e2437]: microservices/update-info-cleaner / text
+        - generic [ref=f2e2438]: PARTIAL · 9 capabilities
+      - generic [ref=f2e2439] [cursor=pointer]:
+        - strong [ref=f2e2440]: microservices/update-info-cleaner / yaml
+        - generic [ref=f2e2441]: UNAVAILABLE · 9 capabilities
+    - paragraph [ref=f2e163]: Showing 194 project/language groups.
+    - generic [ref=f2e164]:
+      - heading "Status glossary" [level=2] [ref=f2e165]
+      - paragraph [ref=f2e166]:
+        - strong [ref=f2e167]: RESOLVED
+        - text: ": frontend contract is mapped to a backend route."
+      - paragraph [ref=f2e168]:
+        - strong [ref=f2e169]: MISMATCH
+        - text: ": a related backend route exists, but method or path does not match exactly."
+      - paragraph [ref=f2e170]:
+        - strong [ref=f2e171]: UNRESOLVED
+        - text: ": no reliable backend route was found in indexed projects."
+      - paragraph [ref=f2e172]:
+        - strong [ref=f2e173]: OUT_OF_SCOPE
+        - text: ": intentionally not a backend service, for example a frontend-internal API."
+      - paragraph [ref=f2e174]:
+        - strong [ref=f2e175]: EXTRACTED
+        - text: ": read directly from source structure."
+        - strong [ref=f2e176]: MATCHED
+        - text: ": linked to a concrete route, symbol, or test."
+  - main [ref=f2e177]:
+    - region "Workspace data workbench" [ref=f2e851]:
+      - generic [ref=f2e2442]:
+        - paragraph [ref=f2e2443]: Workspace coverage
+        - heading "How complete the indexed workspace is" [level=1] [ref=f2e2444]
+        - paragraph [ref=f2e2445]: Missing coverage is uncertainty, never proof that a service, route, or test does not exist.
+      - generic [ref=f2e2446]:
+        - generic [ref=f2e2447]:
+          - strong [ref=f2e2448]: 43 / 43
+          - generic [ref=f2e2449]: indexed projects
+        - generic [ref=f2e2450]:
+          - strong [ref=f2e2451]: 17 / 17
+          - generic [ref=f2e2452]: indexed referenced services
+        - generic [ref=f2e2453]:
+          - strong [ref=f2e2454]: 150 / 177
+          - generic [ref=f2e2455]: resolved contracts
+        - generic [ref=f2e2456]:
+          - strong [ref=f2e2457]: "0"
+          - generic [ref=f2e2458]: useful next scans
+      - generic [ref=f2e2459]:
+        - heading "Most useful next scans" [level=2] [ref=f2e2460]
+        - paragraph [ref=f2e2461]: No unindexed referenced services were identified.
+      - generic [ref=f2e2462]:
+        - paragraph [ref=f2e2463]: Capability coverage
+        - heading "What GoreGraph could analyze" [level=1] [ref=f2e2464]
+        - paragraph [ref=f2e2465]: Coverage describes analyzer support, not whether source behavior exists. COMPLETE · PARTIAL · UNAVAILABLE · FAILED
+      - generic [ref=f2e2466]:
+        - generic [ref=f2e2467]:
+          - strong [ref=f2e2468]: "138"
+          - generic [ref=f2e2469]: Analyzed project/language groups
+        - generic [ref=f2e2470]:
+          - strong [ref=f2e2471]: "56"
+          - generic [ref=f2e2472]: Project/language analyzer gaps
+        - generic [ref=f2e2473]:
+          - strong [ref=f2e2474]: "45"
+          - generic [ref=f2e2475]: Partial capabilities
+        - generic [ref=f2e2476]:
+          - strong [ref=f2e2477]: "0"
+          - generic [ref=f2e2478]: Failed capabilities
+      - generic [ref=f2e2479]:
+        - generic [ref=f2e2480]:
+          - generic [ref=f2e2481]: Project
+          - generic [ref=f2e2482]: Language
+          - generic [ref=f2e2483]: Analysis status
+          - generic [ref=f2e2484]: Capabilities
+        - group [ref=f2e2485]:
+          - generic "Analyzer support · frontend/frontend-monorepo / javascript · COMPLETE" [ref=f2e2486] [cursor=pointer]
+          - article [ref=f2e2487]:
+            - strong [ref=f2e2488]: frontend/frontend-monorepo
+            - generic [ref=f2e2489]: javascript
+            - generic [ref=f2e2490]: COMPLETE
+            - generic [ref=f2e2491]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2492]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2493]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2494]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2495]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2496]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2497]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2498]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2499]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2500]: data_flow
+        - group [ref=f2e2501]:
+          - generic "Expected analyzer gaps · frontend/frontend-monorepo / json · COMPLETE" [ref=f2e2502] [cursor=pointer]
+        - group [ref=f2e2503]:
+          - generic "Expected analyzer gaps · frontend/frontend-monorepo / markdown · UNAVAILABLE" [active] [ref=f2e2504] [cursor=pointer]
+          - article [ref=f2e3799]:
+            - strong [ref=f2e3800]: frontend/frontend-monorepo
+            - generic [ref=f2e3801]: markdown
+            - generic [ref=f2e3802]: UNAVAILABLE
+            - generic [ref=f2e3803]:
+              - generic "The active analyzer does not emit this capability yet." [ref=f2e3804]: symbols
+              - generic "The active analyzer does not emit this capability yet." [ref=f2e3805]: relations
+              - generic "The active analyzer does not emit this capability yet." [ref=f2e3806]: calls
+              - generic "The active analyzer does not emit this capability yet." [ref=f2e3807]: routes
+              - generic "The active analyzer does not emit this capability yet." [ref=f2e3808]: api_clients
+              - generic "The active analyzer does not emit this capability yet." [ref=f2e3809]: tests
+              - generic "The active analyzer does not emit this capability yet." [ref=f2e3810]: persistence
+              - generic "The active analyzer does not emit this capability yet." [ref=f2e3811]: messaging
+              - generic "The active analyzer does not emit this capability yet." [ref=f2e3812]: data_flow
+        - group [ref=f2e2505]:
+          - generic "Analyzer support · frontend/frontend-monorepo / node · COMPLETE" [ref=f2e2506] [cursor=pointer]
+          - article [ref=f2e2507]:
+            - strong [ref=f2e2508]: frontend/frontend-monorepo
+            - generic [ref=f2e2509]: node
+            - generic [ref=f2e2510]: COMPLETE
+            - generic [ref=f2e2511]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2512]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2513]: relations
+        - group [ref=f2e2514]:
+          - generic "Expected analyzer gaps · frontend/frontend-monorepo / text · PARTIAL" [ref=f2e2515] [cursor=pointer]
+        - group [ref=f2e2516]:
+          - generic "Analyzer support · frontend/frontend-monorepo / typescript · COMPLETE" [ref=f2e2517] [cursor=pointer]
+          - article [ref=f2e2518]:
+            - strong [ref=f2e2519]: frontend/frontend-monorepo
+            - generic [ref=f2e2520]: typescript
+            - generic [ref=f2e2521]: COMPLETE
+            - generic [ref=f2e2522]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2523]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2524]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2525]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2526]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2527]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2528]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2529]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2530]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2531]: data_flow
+        - group [ref=f2e2532]:
+          - generic "Expected analyzer gaps · frontend/frontend-monorepo / yaml · UNAVAILABLE" [ref=f2e2533] [cursor=pointer]
+        - group [ref=f2e2534]:
+          - generic "Analyzer support · frontend/frontend / javascript · COMPLETE" [ref=f2e2535] [cursor=pointer]
+          - article [ref=f2e2536]:
+            - strong [ref=f2e2537]: frontend/frontend
+            - generic [ref=f2e2538]: javascript
+            - generic [ref=f2e2539]: COMPLETE
+            - generic [ref=f2e2540]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2541]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2542]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2543]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2544]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2545]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2546]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2547]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2548]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2549]: data_flow
+        - group [ref=f2e2550]:
+          - generic "Expected analyzer gaps · frontend/frontend / json · COMPLETE" [ref=f2e2551] [cursor=pointer]
+        - group [ref=f2e2552]:
+          - generic "Expected analyzer gaps · frontend/frontend / markdown · UNAVAILABLE" [ref=f2e2553] [cursor=pointer]
+        - group [ref=f2e2554]:
+          - generic "Analyzer support · frontend/frontend / node · COMPLETE" [ref=f2e2555] [cursor=pointer]
+          - article [ref=f2e2556]:
+            - strong [ref=f2e2557]: frontend/frontend
+            - generic [ref=f2e2558]: node
+            - generic [ref=f2e2559]: COMPLETE
+            - generic [ref=f2e2560]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2561]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2562]: relations
+        - group [ref=f2e2563]:
+          - generic "Analyzer support · frontend/frontend / python · COMPLETE" [ref=f2e2564] [cursor=pointer]
+          - article [ref=f2e2565]:
+            - strong [ref=f2e2566]: frontend/frontend
+            - generic [ref=f2e2567]: python
+            - generic [ref=f2e2568]: COMPLETE
+            - generic [ref=f2e2569]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2570]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2571]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2572]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2573]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2574]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2575]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2576]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2577]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2578]: data_flow
+        - group [ref=f2e2579]:
+          - generic "Expected analyzer gaps · frontend/frontend / text · PARTIAL" [ref=f2e2580] [cursor=pointer]
+        - group [ref=f2e2581]:
+          - generic "Expected analyzer gaps · frontend/frontend / yaml · UNAVAILABLE" [ref=f2e2582] [cursor=pointer]
+        - group [ref=f2e2583]:
+          - generic "Analyzer support · frontend/frontends / javascript · COMPLETE" [ref=f2e2584] [cursor=pointer]
+          - article [ref=f2e2585]:
+            - strong [ref=f2e2586]: frontend/frontends
+            - generic [ref=f2e2587]: javascript
+            - generic [ref=f2e2588]: COMPLETE
+            - generic [ref=f2e2589]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2590]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2591]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2592]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2593]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2594]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2595]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2596]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2597]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2598]: data_flow
+        - group [ref=f2e2599]:
+          - generic "Expected analyzer gaps · frontend/frontends / json · COMPLETE" [ref=f2e2600] [cursor=pointer]
+        - group [ref=f2e2601]:
+          - generic "Expected analyzer gaps · frontend/frontends / markdown · UNAVAILABLE" [ref=f2e2602] [cursor=pointer]
+        - group [ref=f2e2603]:
+          - generic "Analyzer support · frontend/frontends / node · COMPLETE" [ref=f2e2604] [cursor=pointer]
+          - article [ref=f2e2605]:
+            - strong [ref=f2e2606]: frontend/frontends
+            - generic [ref=f2e2607]: node
+            - generic [ref=f2e2608]: COMPLETE
+            - generic [ref=f2e2609]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2610]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2611]: relations
+        - group [ref=f2e2612]:
+          - generic "Expected analyzer gaps · frontend/frontends / text · PARTIAL" [ref=f2e2613] [cursor=pointer]
+        - group [ref=f2e2614]:
+          - generic "Analyzer support · frontend/frontends / typescript · COMPLETE" [ref=f2e2615] [cursor=pointer]
+          - article [ref=f2e2616]:
+            - strong [ref=f2e2617]: frontend/frontends
+            - generic [ref=f2e2618]: typescript
+            - generic [ref=f2e2619]: COMPLETE
+            - generic [ref=f2e2620]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2621]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2622]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2623]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2624]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2625]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2626]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2627]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2628]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2629]: data_flow
+        - group [ref=f2e2630]:
+          - generic "Expected analyzer gaps · frontend/frontends / yaml · UNAVAILABLE" [ref=f2e2631] [cursor=pointer]
+        - group [ref=f2e2632]:
+          - generic "Analyzer support · frontend/playwright / javascript · COMPLETE" [ref=f2e2633] [cursor=pointer]
+          - article [ref=f2e2634]:
+            - strong [ref=f2e2635]: frontend/playwright
+            - generic [ref=f2e2636]: javascript
+            - generic [ref=f2e2637]: COMPLETE
+            - generic [ref=f2e2638]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2639]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2640]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2641]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2642]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2643]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2644]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2645]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2646]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2647]: data_flow
+        - group [ref=f2e2648]:
+          - generic "Expected analyzer gaps · frontend/playwright / json · COMPLETE" [ref=f2e2649] [cursor=pointer]
+        - group [ref=f2e2650]:
+          - generic "Expected analyzer gaps · frontend/playwright / markdown · UNAVAILABLE" [ref=f2e2651] [cursor=pointer]
+        - group [ref=f2e2652]:
+          - generic "Analyzer support · frontend/playwright / node · COMPLETE" [ref=f2e2653] [cursor=pointer]
+          - article [ref=f2e2654]:
+            - strong [ref=f2e2655]: frontend/playwright
+            - generic [ref=f2e2656]: node
+            - generic [ref=f2e2657]: COMPLETE
+            - generic [ref=f2e2658]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2659]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2660]: relations
+        - group [ref=f2e2661]:
+          - generic "Expected analyzer gaps · frontend/playwright / text · PARTIAL" [ref=f2e2662] [cursor=pointer]
+        - group [ref=f2e2663]:
+          - generic "Analyzer support · frontend/playwright / typescript · COMPLETE" [ref=f2e2664] [cursor=pointer]
+          - article [ref=f2e2665]:
+            - strong [ref=f2e2666]: frontend/playwright
+            - generic [ref=f2e2667]: typescript
+            - generic [ref=f2e2668]: COMPLETE
+            - generic [ref=f2e2669]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2670]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2671]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2672]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2673]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2674]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2675]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2676]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2677]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2678]: data_flow
+        - group [ref=f2e2679]:
+          - generic "Expected analyzer gaps · frontend/playwright / yaml · UNAVAILABLE" [ref=f2e2680] [cursor=pointer]
+        - group [ref=f2e2681]:
+          - generic "Analyzer support · microservices/ms-adminui / java · COMPLETE" [ref=f2e2682] [cursor=pointer]
+          - article [ref=f2e2683]:
+            - strong [ref=f2e2684]: microservices/ms-adminui
+            - generic [ref=f2e2685]: java
+            - generic [ref=f2e2686]: COMPLETE
+            - generic [ref=f2e2687]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2688]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2689]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2690]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2691]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2692]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2693]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2694]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2695]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2696]: data_flow
+        - group [ref=f2e2697]:
+          - generic "Analyzer support · microservices/ms-adminui / maven · COMPLETE" [ref=f2e2698] [cursor=pointer]
+          - article [ref=f2e2699]:
+            - strong [ref=f2e2700]: microservices/ms-adminui
+            - generic [ref=f2e2701]: maven
+            - generic [ref=f2e2702]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2704]: relations
+        - group [ref=f2e2705]:
+          - generic "Expected analyzer gaps · microservices/ms-adminui / text · PARTIAL" [ref=f2e2706] [cursor=pointer]
+        - group [ref=f2e2707]:
+          - generic "Expected analyzer gaps · microservices/ms-adminui / yaml · UNAVAILABLE" [ref=f2e2708] [cursor=pointer]
+        - group [ref=f2e2709]:
+          - generic "Analyzer support · microservices/ms-cadaster / java · COMPLETE" [ref=f2e2710] [cursor=pointer]
+          - article [ref=f2e2711]:
+            - strong [ref=f2e2712]: microservices/ms-cadaster
+            - generic [ref=f2e2713]: java
+            - generic [ref=f2e2714]: COMPLETE
+            - generic [ref=f2e2715]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2716]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2717]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2718]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2719]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2720]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2721]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2722]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2723]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2724]: data_flow
+        - group [ref=f2e2725]:
+          - generic "Analyzer support · microservices/ms-cadaster / maven · COMPLETE" [ref=f2e2726] [cursor=pointer]
+          - article [ref=f2e2727]:
+            - strong [ref=f2e2728]: microservices/ms-cadaster
+            - generic [ref=f2e2729]: maven
+            - generic [ref=f2e2730]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2732]: relations
+        - group [ref=f2e2733]:
+          - generic "Expected analyzer gaps · microservices/ms-cadaster / text · PARTIAL" [ref=f2e2734] [cursor=pointer]
+        - group [ref=f2e2735]:
+          - generic "Expected analyzer gaps · microservices/ms-cadaster / yaml · UNAVAILABLE" [ref=f2e2736] [cursor=pointer]
+        - group [ref=f2e2737]:
+          - generic "Analyzer support · microservices/ms-cadasterexport / java · COMPLETE" [ref=f2e2738] [cursor=pointer]
+          - article [ref=f2e2739]:
+            - strong [ref=f2e2740]: microservices/ms-cadasterexport
+            - generic [ref=f2e2741]: java
+            - generic [ref=f2e2742]: COMPLETE
+            - generic [ref=f2e2743]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2744]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2745]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2746]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2747]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2748]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2749]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2750]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2751]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2752]: data_flow
+        - group [ref=f2e2753]:
+          - generic "Analyzer support · microservices/ms-cadasterexport / maven · COMPLETE" [ref=f2e2754] [cursor=pointer]
+          - article [ref=f2e2755]:
+            - strong [ref=f2e2756]: microservices/ms-cadasterexport
+            - generic [ref=f2e2757]: maven
+            - generic [ref=f2e2758]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2760]: relations
+        - group [ref=f2e2761]:
+          - generic "Expected analyzer gaps · microservices/ms-cadasterexport / text · PARTIAL" [ref=f2e2762] [cursor=pointer]
+        - group [ref=f2e2763]:
+          - generic "Expected analyzer gaps · microservices/ms-cadasterexport / yaml · UNAVAILABLE" [ref=f2e2764] [cursor=pointer]
+        - group [ref=f2e2765]:
+          - generic "Analyzer support · microservices/ms-cadasterprotocol / java · COMPLETE" [ref=f2e2766] [cursor=pointer]
+          - article [ref=f2e2767]:
+            - strong [ref=f2e2768]: microservices/ms-cadasterprotocol
+            - generic [ref=f2e2769]: java
+            - generic [ref=f2e2770]: COMPLETE
+            - generic [ref=f2e2771]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2772]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2773]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2774]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2775]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2776]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2777]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2778]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2779]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2780]: data_flow
+        - group [ref=f2e2781]:
+          - generic "Analyzer support · microservices/ms-cadasterprotocol / maven · COMPLETE" [ref=f2e2782] [cursor=pointer]
+          - article [ref=f2e2783]:
+            - strong [ref=f2e2784]: microservices/ms-cadasterprotocol
+            - generic [ref=f2e2785]: maven
+            - generic [ref=f2e2786]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2788]: relations
+        - group [ref=f2e2789]:
+          - generic "Expected analyzer gaps · microservices/ms-cadasterprotocol / text · PARTIAL" [ref=f2e2790] [cursor=pointer]
+        - group [ref=f2e2791]:
+          - generic "Expected analyzer gaps · microservices/ms-cadasterprotocol / yaml · UNAVAILABLE" [ref=f2e2792] [cursor=pointer]
+        - group [ref=f2e2793]:
+          - generic "Analyzer support · microservices/ms-cadasterregulation / java · COMPLETE" [ref=f2e2794] [cursor=pointer]
+          - article [ref=f2e2795]:
+            - strong [ref=f2e2796]: microservices/ms-cadasterregulation
+            - generic [ref=f2e2797]: java
+            - generic [ref=f2e2798]: COMPLETE
+            - generic [ref=f2e2799]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2800]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2801]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2802]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2803]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2804]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2805]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2806]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2807]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2808]: data_flow
+        - group [ref=f2e2809]:
+          - generic "Analyzer support · microservices/ms-cadasterregulation / maven · COMPLETE" [ref=f2e2810] [cursor=pointer]
+          - article [ref=f2e2811]:
+            - strong [ref=f2e2812]: microservices/ms-cadasterregulation
+            - generic [ref=f2e2813]: maven
+            - generic [ref=f2e2814]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2816]: relations
+        - group [ref=f2e2817]:
+          - generic "Expected analyzer gaps · microservices/ms-cadasterregulation / text · PARTIAL" [ref=f2e2818] [cursor=pointer]
+        - group [ref=f2e2819]:
+          - generic "Expected analyzer gaps · microservices/ms-cadasterregulation / yaml · UNAVAILABLE" [ref=f2e2820] [cursor=pointer]
+        - group [ref=f2e2821]:
+          - generic "Analyzer support · microservices/ms-cadastertask / java · COMPLETE" [ref=f2e2822] [cursor=pointer]
+          - article [ref=f2e2823]:
+            - strong [ref=f2e2824]: microservices/ms-cadastertask
+            - generic [ref=f2e2825]: java
+            - generic [ref=f2e2826]: COMPLETE
+            - generic [ref=f2e2827]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2828]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2829]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2830]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2831]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2832]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2833]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2834]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2835]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2836]: data_flow
+        - group [ref=f2e2837]:
+          - generic "Analyzer support · microservices/ms-cadastertask / maven · COMPLETE" [ref=f2e2838] [cursor=pointer]
+          - article [ref=f2e2839]:
+            - strong [ref=f2e2840]: microservices/ms-cadastertask
+            - generic [ref=f2e2841]: maven
+            - generic [ref=f2e2842]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2844]: relations
+        - group [ref=f2e2845]:
+          - generic "Expected analyzer gaps · microservices/ms-cadastertask / text · PARTIAL" [ref=f2e2846] [cursor=pointer]
+        - group [ref=f2e2847]:
+          - generic "Expected analyzer gaps · microservices/ms-cadastertask / yaml · UNAVAILABLE" [ref=f2e2848] [cursor=pointer]
+        - group [ref=f2e2849]:
+          - generic "Analyzer support · microservices/ms-cadasteruser / java · COMPLETE" [ref=f2e2850] [cursor=pointer]
+          - article [ref=f2e2851]:
+            - strong [ref=f2e2852]: microservices/ms-cadasteruser
+            - generic [ref=f2e2853]: java
+            - generic [ref=f2e2854]: COMPLETE
+            - generic [ref=f2e2855]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2856]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2857]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2858]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2859]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2860]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2861]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2862]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2863]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2864]: data_flow
+        - group [ref=f2e2865]:
+          - generic "Analyzer support · microservices/ms-cadasteruser / maven · COMPLETE" [ref=f2e2866] [cursor=pointer]
+          - article [ref=f2e2867]:
+            - strong [ref=f2e2868]: microservices/ms-cadasteruser
+            - generic [ref=f2e2869]: maven
+            - generic [ref=f2e2870]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2872]: relations
+        - group [ref=f2e2873]:
+          - generic "Expected analyzer gaps · microservices/ms-cadasteruser / text · PARTIAL" [ref=f2e2874] [cursor=pointer]
+        - group [ref=f2e2875]:
+          - generic "Expected analyzer gaps · microservices/ms-cadasteruser / yaml · UNAVAILABLE" [ref=f2e2876] [cursor=pointer]
+        - group [ref=f2e2877]:
+          - generic "Analyzer support · microservices/ms-common / java · COMPLETE" [ref=f2e2878] [cursor=pointer]
+          - article [ref=f2e2879]:
+            - strong [ref=f2e2880]: microservices/ms-common
+            - generic [ref=f2e2881]: java
+            - generic [ref=f2e2882]: COMPLETE
+            - generic [ref=f2e2883]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2884]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2885]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2886]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2887]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2888]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2889]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2890]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2891]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2892]: data_flow
+        - group [ref=f2e2893]:
+          - generic "Analyzer support · microservices/ms-common / maven · COMPLETE" [ref=f2e2894] [cursor=pointer]
+          - article [ref=f2e2895]:
+            - strong [ref=f2e2896]: microservices/ms-common
+            - generic [ref=f2e2897]: maven
+            - generic [ref=f2e2898]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2900]: relations
+        - group [ref=f2e2901]:
+          - generic "Expected analyzer gaps · microservices/ms-common / text · PARTIAL" [ref=f2e2902] [cursor=pointer]
+        - group [ref=f2e2903]:
+          - generic "Expected analyzer gaps · microservices/ms-common / yaml · UNAVAILABLE" [ref=f2e2904] [cursor=pointer]
+        - group [ref=f2e2905]:
+          - generic "Analyzer support · microservices/ms-containertree / java · COMPLETE" [ref=f2e2906] [cursor=pointer]
+          - article [ref=f2e2907]:
+            - strong [ref=f2e2908]: microservices/ms-containertree
+            - generic [ref=f2e2909]: java
+            - generic [ref=f2e2910]: COMPLETE
+            - generic [ref=f2e2911]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2912]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2913]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2914]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2915]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2916]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2917]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2918]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2919]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2920]: data_flow
+        - group [ref=f2e2921]:
+          - generic "Analyzer support · microservices/ms-containertree / maven · COMPLETE" [ref=f2e2922] [cursor=pointer]
+          - article [ref=f2e2923]:
+            - strong [ref=f2e2924]: microservices/ms-containertree
+            - generic [ref=f2e2925]: maven
+            - generic [ref=f2e2926]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2928]: relations
+        - group [ref=f2e2929]:
+          - generic "Expected analyzer gaps · microservices/ms-containertree / text · PARTIAL" [ref=f2e2930] [cursor=pointer]
+        - group [ref=f2e2931]:
+          - generic "Expected analyzer gaps · microservices/ms-containertree / yaml · UNAVAILABLE" [ref=f2e2932] [cursor=pointer]
+        - group [ref=f2e2933]:
+          - generic "Analyzer support · microservices/ms-datawarehouse / java · COMPLETE" [ref=f2e2934] [cursor=pointer]
+          - article [ref=f2e2935]:
+            - strong [ref=f2e2936]: microservices/ms-datawarehouse
+            - generic [ref=f2e2937]: java
+            - generic [ref=f2e2938]: COMPLETE
+            - generic [ref=f2e2939]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2940]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2941]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2942]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2943]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2944]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2945]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2946]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2947]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2948]: data_flow
+        - group [ref=f2e2949]:
+          - generic "Analyzer support · microservices/ms-datawarehouse / maven · COMPLETE" [ref=f2e2950] [cursor=pointer]
+          - article [ref=f2e2951]:
+            - strong [ref=f2e2952]: microservices/ms-datawarehouse
+            - generic [ref=f2e2953]: maven
+            - generic [ref=f2e2954]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2956]: relations
+        - group [ref=f2e2957]:
+          - generic "Expected analyzer gaps · microservices/ms-datawarehouse / text · PARTIAL" [ref=f2e2958] [cursor=pointer]
+        - group [ref=f2e2959]:
+          - generic "Expected analyzer gaps · microservices/ms-datawarehouse / yaml · UNAVAILABLE" [ref=f2e2960] [cursor=pointer]
+        - group [ref=f2e2961]:
+          - generic "Analyzer support · microservices/ms-documentdownload / java · COMPLETE" [ref=f2e2962] [cursor=pointer]
+          - article [ref=f2e2963]:
+            - strong [ref=f2e2964]: microservices/ms-documentdownload
+            - generic [ref=f2e2965]: java
+            - generic [ref=f2e2966]: COMPLETE
+            - generic [ref=f2e2967]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2968]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2969]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2970]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2971]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2972]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2973]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2974]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2975]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e2976]: data_flow
+        - group [ref=f2e2977]:
+          - generic "Analyzer support · microservices/ms-documentdownload / maven · COMPLETE" [ref=f2e2978] [cursor=pointer]
+          - article [ref=f2e2979]:
+            - strong [ref=f2e2980]: microservices/ms-documentdownload
+            - generic [ref=f2e2981]: maven
+            - generic [ref=f2e2982]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e2984]: relations
+        - group [ref=f2e2985]:
+          - generic "Expected analyzer gaps · microservices/ms-documentdownload / text · PARTIAL" [ref=f2e2986] [cursor=pointer]
+        - group [ref=f2e2987]:
+          - generic "Expected analyzer gaps · microservices/ms-documentdownload / yaml · UNAVAILABLE" [ref=f2e2988] [cursor=pointer]
+        - group [ref=f2e2989]:
+          - generic "Analyzer support · microservices/ms-documentexport / java · COMPLETE" [ref=f2e2990] [cursor=pointer]
+          - article [ref=f2e2991]:
+            - strong [ref=f2e2992]: microservices/ms-documentexport
+            - generic [ref=f2e2993]: java
+            - generic [ref=f2e2994]: COMPLETE
+            - generic [ref=f2e2995]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2996]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2997]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2998]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e2999]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3000]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3001]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3002]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3003]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3004]: data_flow
+        - group [ref=f2e3005]:
+          - generic "Analyzer support · microservices/ms-documentexport / maven · COMPLETE" [ref=f2e3006] [cursor=pointer]
+          - article [ref=f2e3007]:
+            - strong [ref=f2e3008]: microservices/ms-documentexport
+            - generic [ref=f2e3009]: maven
+            - generic [ref=f2e3010]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3012]: relations
+        - group [ref=f2e3013]:
+          - generic "Expected analyzer gaps · microservices/ms-documentexport / text · PARTIAL" [ref=f2e3014] [cursor=pointer]
+        - group [ref=f2e3015]:
+          - generic "Expected analyzer gaps · microservices/ms-documentexport / yaml · UNAVAILABLE" [ref=f2e3016] [cursor=pointer]
+        - group [ref=f2e3017]:
+          - generic "Analyzer support · microservices/ms-documentinfo / java · COMPLETE" [ref=f2e3018] [cursor=pointer]
+          - article [ref=f2e3019]:
+            - strong [ref=f2e3020]: microservices/ms-documentinfo
+            - generic [ref=f2e3021]: java
+            - generic [ref=f2e3022]: COMPLETE
+            - generic [ref=f2e3023]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3024]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3025]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3026]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3027]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3028]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3029]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3030]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3031]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3032]: data_flow
+        - group [ref=f2e3033]:
+          - generic "Analyzer support · microservices/ms-documentinfo / maven · COMPLETE" [ref=f2e3034] [cursor=pointer]
+          - article [ref=f2e3035]:
+            - strong [ref=f2e3036]: microservices/ms-documentinfo
+            - generic [ref=f2e3037]: maven
+            - generic [ref=f2e3038]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3040]: relations
+        - group [ref=f2e3041]:
+          - generic "Expected analyzer gaps · microservices/ms-documentinfo / text · PARTIAL" [ref=f2e3042] [cursor=pointer]
+        - group [ref=f2e3043]:
+          - generic "Expected analyzer gaps · microservices/ms-documentinfo / yaml · UNAVAILABLE" [ref=f2e3044] [cursor=pointer]
+        - group [ref=f2e3045]:
+          - generic "Analyzer support · microservices/ms-documenttopic / java · COMPLETE" [ref=f2e3046] [cursor=pointer]
+          - article [ref=f2e3047]:
+            - strong [ref=f2e3048]: microservices/ms-documenttopic
+            - generic [ref=f2e3049]: java
+            - generic [ref=f2e3050]: COMPLETE
+            - generic [ref=f2e3051]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3052]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3053]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3054]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3055]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3056]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3057]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3058]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3059]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3060]: data_flow
+        - group [ref=f2e3061]:
+          - generic "Analyzer support · microservices/ms-documenttopic / maven · COMPLETE" [ref=f2e3062] [cursor=pointer]
+          - article [ref=f2e3063]:
+            - strong [ref=f2e3064]: microservices/ms-documenttopic
+            - generic [ref=f2e3065]: maven
+            - generic [ref=f2e3066]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3068]: relations
+        - group [ref=f2e3069]:
+          - generic "Expected analyzer gaps · microservices/ms-documenttopic / text · PARTIAL" [ref=f2e3070] [cursor=pointer]
+        - group [ref=f2e3071]:
+          - generic "Expected analyzer gaps · microservices/ms-documenttopic / yaml · UNAVAILABLE" [ref=f2e3072] [cursor=pointer]
+        - group [ref=f2e3073]:
+          - generic "Analyzer support · microservices/ms-example / java · COMPLETE" [ref=f2e3074] [cursor=pointer]
+          - article [ref=f2e3075]:
+            - strong [ref=f2e3076]: microservices/ms-example
+            - generic [ref=f2e3077]: java
+            - generic [ref=f2e3078]: COMPLETE
+            - generic [ref=f2e3079]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3080]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3081]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3082]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3083]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3084]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3085]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3086]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3087]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3088]: data_flow
+        - group [ref=f2e3089]:
+          - generic "Analyzer support · microservices/ms-example / maven · COMPLETE" [ref=f2e3090] [cursor=pointer]
+          - article [ref=f2e3091]:
+            - strong [ref=f2e3092]: microservices/ms-example
+            - generic [ref=f2e3093]: maven
+            - generic [ref=f2e3094]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3096]: relations
+        - group [ref=f2e3097]:
+          - generic "Expected analyzer gaps · microservices/ms-example / text · PARTIAL" [ref=f2e3098] [cursor=pointer]
+        - group [ref=f2e3099]:
+          - generic "Expected analyzer gaps · microservices/ms-example / yaml · UNAVAILABLE" [ref=f2e3100] [cursor=pointer]
+        - group [ref=f2e3101]:
+          - generic "Analyzer support · microservices/ms-invoiceservice / java · COMPLETE" [ref=f2e3102] [cursor=pointer]
+          - article [ref=f2e3103]:
+            - strong [ref=f2e3104]: microservices/ms-invoiceservice
+            - generic [ref=f2e3105]: java
+            - generic [ref=f2e3106]: COMPLETE
+            - generic [ref=f2e3107]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3108]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3109]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3110]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3111]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3112]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3113]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3114]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3115]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3116]: data_flow
+        - group [ref=f2e3117]:
+          - generic "Analyzer support · microservices/ms-invoiceservice / maven · COMPLETE" [ref=f2e3118] [cursor=pointer]
+          - article [ref=f2e3119]:
+            - strong [ref=f2e3120]: microservices/ms-invoiceservice
+            - generic [ref=f2e3121]: maven
+            - generic [ref=f2e3122]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3124]: relations
+        - group [ref=f2e3125]:
+          - generic "Expected analyzer gaps · microservices/ms-invoiceservice / text · PARTIAL" [ref=f2e3126] [cursor=pointer]
+        - group [ref=f2e3127]:
+          - generic "Expected analyzer gaps · microservices/ms-invoiceservice / yaml · UNAVAILABLE" [ref=f2e3128] [cursor=pointer]
+        - group [ref=f2e3129]:
+          - generic "Analyzer support · microservices/ms-knksync / java · COMPLETE" [ref=f2e3130] [cursor=pointer]
+          - article [ref=f2e3131]:
+            - strong [ref=f2e3132]: microservices/ms-knksync
+            - generic [ref=f2e3133]: java
+            - generic [ref=f2e3134]: COMPLETE
+            - generic [ref=f2e3135]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3136]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3137]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3138]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3139]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3140]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3141]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3142]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3143]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3144]: data_flow
+        - group [ref=f2e3145]:
+          - generic "Analyzer support · microservices/ms-knksync / maven · COMPLETE" [ref=f2e3146] [cursor=pointer]
+          - article [ref=f2e3147]:
+            - strong [ref=f2e3148]: microservices/ms-knksync
+            - generic [ref=f2e3149]: maven
+            - generic [ref=f2e3150]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3152]: relations
+        - group [ref=f2e3153]:
+          - generic "Expected analyzer gaps · microservices/ms-knksync / text · PARTIAL" [ref=f2e3154] [cursor=pointer]
+        - group [ref=f2e3155]:
+          - generic "Expected analyzer gaps · microservices/ms-knksync / yaml · UNAVAILABLE" [ref=f2e3156] [cursor=pointer]
+        - group [ref=f2e3157]:
+          - generic "Analyzer support · microservices/ms-licenseservice / java · COMPLETE" [ref=f2e3158] [cursor=pointer]
+          - article [ref=f2e3159]:
+            - strong [ref=f2e3160]: microservices/ms-licenseservice
+            - generic [ref=f2e3161]: java
+            - generic [ref=f2e3162]: COMPLETE
+            - generic [ref=f2e3163]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3164]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3165]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3166]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3167]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3168]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3169]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3170]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3171]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3172]: data_flow
+        - group [ref=f2e3173]:
+          - generic "Expected analyzer gaps · microservices/ms-licenseservice / markdown · UNAVAILABLE" [ref=f2e3174] [cursor=pointer]
+        - group [ref=f2e3175]:
+          - generic "Analyzer support · microservices/ms-licenseservice / maven · COMPLETE" [ref=f2e3176] [cursor=pointer]
+          - article [ref=f2e3177]:
+            - strong [ref=f2e3178]: microservices/ms-licenseservice
+            - generic [ref=f2e3179]: maven
+            - generic [ref=f2e3180]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3182]: relations
+        - group [ref=f2e3183]:
+          - generic "Expected analyzer gaps · microservices/ms-licenseservice / text · PARTIAL" [ref=f2e3184] [cursor=pointer]
+        - group [ref=f2e3185]:
+          - generic "Expected analyzer gaps · microservices/ms-licenseservice / yaml · UNAVAILABLE" [ref=f2e3186] [cursor=pointer]
+        - group [ref=f2e3187]:
+          - generic "Analyzer support · microservices/ms-mailsender / java · COMPLETE" [ref=f2e3188] [cursor=pointer]
+          - article [ref=f2e3189]:
+            - strong [ref=f2e3190]: microservices/ms-mailsender
+            - generic [ref=f2e3191]: java
+            - generic [ref=f2e3192]: COMPLETE
+            - generic [ref=f2e3193]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3194]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3195]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3196]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3197]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3198]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3199]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3200]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3201]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3202]: data_flow
+        - group [ref=f2e3203]:
+          - generic "Analyzer support · microservices/ms-mailsender / maven · COMPLETE" [ref=f2e3204] [cursor=pointer]
+          - article [ref=f2e3205]:
+            - strong [ref=f2e3206]: microservices/ms-mailsender
+            - generic [ref=f2e3207]: maven
+            - generic [ref=f2e3208]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3210]: relations
+        - group [ref=f2e3211]:
+          - generic "Expected analyzer gaps · microservices/ms-mailsender / text · PARTIAL" [ref=f2e3212] [cursor=pointer]
+        - group [ref=f2e3213]:
+          - generic "Expected analyzer gaps · microservices/ms-mailsender / yaml · UNAVAILABLE" [ref=f2e3214] [cursor=pointer]
+        - group [ref=f2e3215]:
+          - generic "Analyzer support · microservices/ms-parent / maven · COMPLETE" [ref=f2e3216] [cursor=pointer]
+          - article [ref=f2e3217]:
+            - strong [ref=f2e3218]: microservices/ms-parent
+            - generic [ref=f2e3219]: maven
+            - generic [ref=f2e3220]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3222]: relations
+        - group [ref=f2e3223]:
+          - generic "Expected analyzer gaps · microservices/ms-parent / text · PARTIAL" [ref=f2e3224] [cursor=pointer]
+        - group [ref=f2e3225]:
+          - generic "Expected analyzer gaps · microservices/ms-parent / yaml · UNAVAILABLE" [ref=f2e3226] [cursor=pointer]
+        - group [ref=f2e3227]:
+          - generic "Analyzer support · microservices/ms-pdfgenerator / java · COMPLETE" [ref=f2e3228] [cursor=pointer]
+          - article [ref=f2e3229]:
+            - strong [ref=f2e3230]: microservices/ms-pdfgenerator
+            - generic [ref=f2e3231]: java
+            - generic [ref=f2e3232]: COMPLETE
+            - generic [ref=f2e3233]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3234]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3235]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3236]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3237]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3238]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3239]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3240]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3241]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3242]: data_flow
+        - group [ref=f2e3243]:
+          - generic "Expected analyzer gaps · microservices/ms-pdfgenerator / markdown · UNAVAILABLE" [ref=f2e3244] [cursor=pointer]
+        - group [ref=f2e3245]:
+          - generic "Analyzer support · microservices/ms-pdfgenerator / maven · COMPLETE" [ref=f2e3246] [cursor=pointer]
+          - article [ref=f2e3247]:
+            - strong [ref=f2e3248]: microservices/ms-pdfgenerator
+            - generic [ref=f2e3249]: maven
+            - generic [ref=f2e3250]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3252]: relations
+        - group [ref=f2e3253]:
+          - generic "Expected analyzer gaps · microservices/ms-pdfgenerator / text · PARTIAL" [ref=f2e3254] [cursor=pointer]
+        - group [ref=f2e3255]:
+          - generic "Expected analyzer gaps · microservices/ms-pdfgenerator / yaml · UNAVAILABLE" [ref=f2e3256] [cursor=pointer]
+        - group [ref=f2e3257]:
+          - generic "Analyzer support · microservices/ms-portal / java · COMPLETE" [ref=f2e3258] [cursor=pointer]
+          - article [ref=f2e3259]:
+            - strong [ref=f2e3260]: microservices/ms-portal
+            - generic [ref=f2e3261]: java
+            - generic [ref=f2e3262]: COMPLETE
+            - generic [ref=f2e3263]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3264]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3265]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3266]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3267]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3268]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3269]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3270]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3271]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3272]: data_flow
+        - group [ref=f2e3273]:
+          - generic "Analyzer support · microservices/ms-portal / maven · COMPLETE" [ref=f2e3274] [cursor=pointer]
+          - article [ref=f2e3275]:
+            - strong [ref=f2e3276]: microservices/ms-portal
+            - generic [ref=f2e3277]: maven
+            - generic [ref=f2e3278]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3280]: relations
+        - group [ref=f2e3281]:
+          - generic "Expected analyzer gaps · microservices/ms-portal / text · PARTIAL" [ref=f2e3282] [cursor=pointer]
+        - group [ref=f2e3283]:
+          - generic "Expected analyzer gaps · microservices/ms-portal / yaml · UNAVAILABLE" [ref=f2e3284] [cursor=pointer]
+        - group [ref=f2e3285]:
+          - generic "Analyzer support · microservices/ms-productservice / java · COMPLETE" [ref=f2e3286] [cursor=pointer]
+          - article [ref=f2e3287]:
+            - strong [ref=f2e3288]: microservices/ms-productservice
+            - generic [ref=f2e3289]: java
+            - generic [ref=f2e3290]: COMPLETE
+            - generic [ref=f2e3291]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3292]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3293]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3294]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3295]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3296]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3297]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3298]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3299]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3300]: data_flow
+        - group [ref=f2e3301]:
+          - generic "Analyzer support · microservices/ms-productservice / maven · COMPLETE" [ref=f2e3302] [cursor=pointer]
+          - article [ref=f2e3303]:
+            - strong [ref=f2e3304]: microservices/ms-productservice
+            - generic [ref=f2e3305]: maven
+            - generic [ref=f2e3306]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3308]: relations
+        - group [ref=f2e3309]:
+          - generic "Expected analyzer gaps · microservices/ms-productservice / text · PARTIAL" [ref=f2e3310] [cursor=pointer]
+        - group [ref=f2e3311]:
+          - generic "Expected analyzer gaps · microservices/ms-productservice / yaml · UNAVAILABLE" [ref=f2e3312] [cursor=pointer]
+        - group [ref=f2e3313]:
+          - generic "Analyzer support · microservices/ms-regulationchange / java · COMPLETE" [ref=f2e3314] [cursor=pointer]
+          - article [ref=f2e3315]:
+            - strong [ref=f2e3316]: microservices/ms-regulationchange
+            - generic [ref=f2e3317]: java
+            - generic [ref=f2e3318]: COMPLETE
+            - generic [ref=f2e3319]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3320]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3321]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3322]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3323]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3324]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3325]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3326]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3327]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3328]: data_flow
+        - group [ref=f2e3329]:
+          - generic "Analyzer support · microservices/ms-regulationchange / maven · COMPLETE" [ref=f2e3330] [cursor=pointer]
+          - article [ref=f2e3331]:
+            - strong [ref=f2e3332]: microservices/ms-regulationchange
+            - generic [ref=f2e3333]: maven
+            - generic [ref=f2e3334]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3336]: relations
+        - group [ref=f2e3337]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationchange / text · PARTIAL" [ref=f2e3338] [cursor=pointer]
+        - group [ref=f2e3339]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationchange / yaml · UNAVAILABLE" [ref=f2e3340] [cursor=pointer]
+        - group [ref=f2e3341]:
+          - generic "Analyzer support · microservices/ms-regulationdownload / java · COMPLETE" [ref=f2e3342] [cursor=pointer]
+          - article [ref=f2e3343]:
+            - strong [ref=f2e3344]: microservices/ms-regulationdownload
+            - generic [ref=f2e3345]: java
+            - generic [ref=f2e3346]: COMPLETE
+            - generic [ref=f2e3347]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3348]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3349]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3350]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3351]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3352]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3353]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3354]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3355]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3356]: data_flow
+        - group [ref=f2e3357]:
+          - generic "Analyzer support · microservices/ms-regulationdownload / maven · COMPLETE" [ref=f2e3358] [cursor=pointer]
+          - article [ref=f2e3359]:
+            - strong [ref=f2e3360]: microservices/ms-regulationdownload
+            - generic [ref=f2e3361]: maven
+            - generic [ref=f2e3362]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3364]: relations
+        - group [ref=f2e3365]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationdownload / text · PARTIAL" [ref=f2e3366] [cursor=pointer]
+        - group [ref=f2e3367]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationdownload / yaml · UNAVAILABLE" [ref=f2e3368] [cursor=pointer]
+        - group [ref=f2e3369]:
+          - generic "Analyzer support · microservices/ms-regulationexport / java · COMPLETE" [ref=f2e3370] [cursor=pointer]
+          - article [ref=f2e3371]:
+            - strong [ref=f2e3372]: microservices/ms-regulationexport
+            - generic [ref=f2e3373]: java
+            - generic [ref=f2e3374]: COMPLETE
+            - generic [ref=f2e3375]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3376]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3377]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3378]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3379]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3380]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3381]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3382]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3383]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3384]: data_flow
+        - group [ref=f2e3385]:
+          - generic "Analyzer support · microservices/ms-regulationexport / maven · COMPLETE" [ref=f2e3386] [cursor=pointer]
+          - article [ref=f2e3387]:
+            - strong [ref=f2e3388]: microservices/ms-regulationexport
+            - generic [ref=f2e3389]: maven
+            - generic [ref=f2e3390]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3392]: relations
+        - group [ref=f2e3393]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationexport / text · PARTIAL" [ref=f2e3394] [cursor=pointer]
+        - group [ref=f2e3395]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationexport / yaml · UNAVAILABLE" [ref=f2e3396] [cursor=pointer]
+        - group [ref=f2e3397]:
+          - generic "Analyzer support · microservices/ms-regulationinfo / java · COMPLETE" [ref=f2e3398] [cursor=pointer]
+          - article [ref=f2e3399]:
+            - strong [ref=f2e3400]: microservices/ms-regulationinfo
+            - generic [ref=f2e3401]: java
+            - generic [ref=f2e3402]: COMPLETE
+            - generic [ref=f2e3403]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3404]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3405]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3406]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3407]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3408]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3409]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3410]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3411]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3412]: data_flow
+        - group [ref=f2e3413]:
+          - generic "Analyzer support · microservices/ms-regulationinfo / maven · COMPLETE" [ref=f2e3414] [cursor=pointer]
+          - article [ref=f2e3415]:
+            - strong [ref=f2e3416]: microservices/ms-regulationinfo
+            - generic [ref=f2e3417]: maven
+            - generic [ref=f2e3418]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3420]: relations
+        - group [ref=f2e3421]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationinfo / text · PARTIAL" [ref=f2e3422] [cursor=pointer]
+        - group [ref=f2e3423]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationinfo / yaml · UNAVAILABLE" [ref=f2e3424] [cursor=pointer]
+        - group [ref=f2e3425]:
+          - generic "Analyzer support · microservices/ms-regulationtree / java · COMPLETE" [ref=f2e3426] [cursor=pointer]
+          - article [ref=f2e3427]:
+            - strong [ref=f2e3428]: microservices/ms-regulationtree
+            - generic [ref=f2e3429]: java
+            - generic [ref=f2e3430]: COMPLETE
+            - generic [ref=f2e3431]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3432]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3433]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3434]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3435]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3436]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3437]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3438]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3439]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3440]: data_flow
+        - group [ref=f2e3441]:
+          - generic "Analyzer support · microservices/ms-regulationtree / maven · COMPLETE" [ref=f2e3442] [cursor=pointer]
+          - article [ref=f2e3443]:
+            - strong [ref=f2e3444]: microservices/ms-regulationtree
+            - generic [ref=f2e3445]: maven
+            - generic [ref=f2e3446]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3448]: relations
+        - group [ref=f2e3449]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationtree / text · PARTIAL" [ref=f2e3450] [cursor=pointer]
+        - group [ref=f2e3451]:
+          - generic "Expected analyzer gaps · microservices/ms-regulationtree / yaml · UNAVAILABLE" [ref=f2e3452] [cursor=pointer]
+        - group [ref=f2e3453]:
+          - generic "Analyzer support · microservices/ms-search / java · COMPLETE" [ref=f2e3454] [cursor=pointer]
+          - article [ref=f2e3455]:
+            - strong [ref=f2e3456]: microservices/ms-search
+            - generic [ref=f2e3457]: java
+            - generic [ref=f2e3458]: COMPLETE
+            - generic [ref=f2e3459]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3460]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3461]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3462]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3463]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3464]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3465]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3466]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3467]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3468]: data_flow
+        - group [ref=f2e3469]:
+          - generic "Analyzer support · microservices/ms-search / maven · COMPLETE" [ref=f2e3470] [cursor=pointer]
+          - article [ref=f2e3471]:
+            - strong [ref=f2e3472]: microservices/ms-search
+            - generic [ref=f2e3473]: maven
+            - generic [ref=f2e3474]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3476]: relations
+        - group [ref=f2e3477]:
+          - generic "Expected analyzer gaps · microservices/ms-search / text · PARTIAL" [ref=f2e3478] [cursor=pointer]
+        - group [ref=f2e3479]:
+          - generic "Expected analyzer gaps · microservices/ms-search / yaml · UNAVAILABLE" [ref=f2e3480] [cursor=pointer]
+        - group [ref=f2e3481]:
+          - generic "Analyzer support · microservices/ms-shopmgmt / java · COMPLETE" [ref=f2e3482] [cursor=pointer]
+          - article [ref=f2e3483]:
+            - strong [ref=f2e3484]: microservices/ms-shopmgmt
+            - generic [ref=f2e3485]: java
+            - generic [ref=f2e3486]: COMPLETE
+            - generic [ref=f2e3487]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3488]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3489]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3490]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3491]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3492]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3493]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3494]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3495]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3496]: data_flow
+        - group [ref=f2e3497]:
+          - generic "Expected analyzer gaps · microservices/ms-shopmgmt / markdown · UNAVAILABLE" [ref=f2e3498] [cursor=pointer]
+        - group [ref=f2e3499]:
+          - generic "Analyzer support · microservices/ms-shopmgmt / maven · COMPLETE" [ref=f2e3500] [cursor=pointer]
+          - article [ref=f2e3501]:
+            - strong [ref=f2e3502]: microservices/ms-shopmgmt
+            - generic [ref=f2e3503]: maven
+            - generic [ref=f2e3504]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3506]: relations
+        - group [ref=f2e3507]:
+          - generic "Expected analyzer gaps · microservices/ms-shopmgmt / text · PARTIAL" [ref=f2e3508] [cursor=pointer]
+        - group [ref=f2e3509]:
+          - generic "Expected analyzer gaps · microservices/ms-shopmgmt / yaml · UNAVAILABLE" [ref=f2e3510] [cursor=pointer]
+        - group [ref=f2e3511]:
+          - generic "Analyzer support · microservices/ms-sso / java · COMPLETE" [ref=f2e3512] [cursor=pointer]
+          - article [ref=f2e3513]:
+            - strong [ref=f2e3514]: microservices/ms-sso
+            - generic [ref=f2e3515]: java
+            - generic [ref=f2e3516]: COMPLETE
+            - generic [ref=f2e3517]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3518]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3519]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3520]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3521]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3522]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3523]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3524]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3525]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3526]: data_flow
+        - group [ref=f2e3527]:
+          - generic "Expected analyzer gaps · microservices/ms-sso / markdown · UNAVAILABLE" [ref=f2e3528] [cursor=pointer]
+        - group [ref=f2e3529]:
+          - generic "Analyzer support · microservices/ms-sso / maven · COMPLETE" [ref=f2e3530] [cursor=pointer]
+          - article [ref=f2e3531]:
+            - strong [ref=f2e3532]: microservices/ms-sso
+            - generic [ref=f2e3533]: maven
+            - generic [ref=f2e3534]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3536]: relations
+        - group [ref=f2e3537]:
+          - generic "Expected analyzer gaps · microservices/ms-sso / text · PARTIAL" [ref=f2e3538] [cursor=pointer]
+        - group [ref=f2e3539]:
+          - generic "Expected analyzer gaps · microservices/ms-sso / yaml · UNAVAILABLE" [ref=f2e3540] [cursor=pointer]
+        - group [ref=f2e3541]:
+          - generic "Analyzer support · microservices/ms-swlicenseservice / java · COMPLETE" [ref=f2e3542] [cursor=pointer]
+          - article [ref=f2e3543]:
+            - strong [ref=f2e3544]: microservices/ms-swlicenseservice
+            - generic [ref=f2e3545]: java
+            - generic [ref=f2e3546]: COMPLETE
+            - generic [ref=f2e3547]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3548]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3549]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3550]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3551]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3552]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3553]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3554]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3555]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3556]: data_flow
+        - group [ref=f2e3557]:
+          - generic "Expected analyzer gaps · microservices/ms-swlicenseservice / markdown · UNAVAILABLE" [ref=f2e3558] [cursor=pointer]
+        - group [ref=f2e3559]:
+          - generic "Analyzer support · microservices/ms-swlicenseservice / maven · COMPLETE" [ref=f2e3560] [cursor=pointer]
+          - article [ref=f2e3561]:
+            - strong [ref=f2e3562]: microservices/ms-swlicenseservice
+            - generic [ref=f2e3563]: maven
+            - generic [ref=f2e3564]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3566]: relations
+        - group [ref=f2e3567]:
+          - generic "Expected analyzer gaps · microservices/ms-swlicenseservice / text · PARTIAL" [ref=f2e3568] [cursor=pointer]
+        - group [ref=f2e3569]:
+          - generic "Expected analyzer gaps · microservices/ms-swlicenseservice / yaml · UNAVAILABLE" [ref=f2e3570] [cursor=pointer]
+        - group [ref=f2e3571]:
+          - generic "Analyzer support · microservices/ms-task / java · COMPLETE" [ref=f2e3572] [cursor=pointer]
+          - article [ref=f2e3573]:
+            - strong [ref=f2e3574]: microservices/ms-task
+            - generic [ref=f2e3575]: java
+            - generic [ref=f2e3576]: COMPLETE
+            - generic [ref=f2e3577]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3578]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3579]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3580]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3581]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3582]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3583]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3584]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3585]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3586]: data_flow
+        - group [ref=f2e3587]:
+          - generic "Analyzer support · microservices/ms-task / maven · COMPLETE" [ref=f2e3588] [cursor=pointer]
+          - article [ref=f2e3589]:
+            - strong [ref=f2e3590]: microservices/ms-task
+            - generic [ref=f2e3591]: maven
+            - generic [ref=f2e3592]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3594]: relations
+        - group [ref=f2e3595]:
+          - generic "Expected analyzer gaps · microservices/ms-task / text · PARTIAL" [ref=f2e3596] [cursor=pointer]
+        - group [ref=f2e3597]:
+          - generic "Expected analyzer gaps · microservices/ms-task / yaml · UNAVAILABLE" [ref=f2e3598] [cursor=pointer]
+        - group [ref=f2e3599]:
+          - generic "Analyzer support · microservices/ms-tradingpartner / java · COMPLETE" [ref=f2e3600] [cursor=pointer]
+          - article [ref=f2e3601]:
+            - strong [ref=f2e3602]: microservices/ms-tradingpartner
+            - generic [ref=f2e3603]: java
+            - generic [ref=f2e3604]: COMPLETE
+            - generic [ref=f2e3605]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3606]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3607]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3608]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3609]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3610]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3611]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3612]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3613]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3614]: data_flow
+        - group [ref=f2e3615]:
+          - generic "Analyzer support · microservices/ms-tradingpartner / maven · COMPLETE" [ref=f2e3616] [cursor=pointer]
+          - article [ref=f2e3617]:
+            - strong [ref=f2e3618]: microservices/ms-tradingpartner
+            - generic [ref=f2e3619]: maven
+            - generic [ref=f2e3620]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3622]: relations
+        - group [ref=f2e3623]:
+          - generic "Expected analyzer gaps · microservices/ms-tradingpartner / text · PARTIAL" [ref=f2e3624] [cursor=pointer]
+        - group [ref=f2e3625]:
+          - generic "Expected analyzer gaps · microservices/ms-tradingpartner / yaml · UNAVAILABLE" [ref=f2e3626] [cursor=pointer]
+        - group [ref=f2e3627]:
+          - generic "Analyzer support · microservices/ms-updateinfomgmt / java · COMPLETE" [ref=f2e3628] [cursor=pointer]
+          - article [ref=f2e3629]:
+            - strong [ref=f2e3630]: microservices/ms-updateinfomgmt
+            - generic [ref=f2e3631]: java
+            - generic [ref=f2e3632]: COMPLETE
+            - generic [ref=f2e3633]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3634]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3635]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3636]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3637]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3638]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3639]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3640]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3641]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3642]: data_flow
+        - group [ref=f2e3643]:
+          - generic "Expected analyzer gaps · microservices/ms-updateinfomgmt / markdown · UNAVAILABLE" [ref=f2e3644] [cursor=pointer]
+        - group [ref=f2e3645]:
+          - generic "Analyzer support · microservices/ms-updateinfomgmt / maven · COMPLETE" [ref=f2e3646] [cursor=pointer]
+          - article [ref=f2e3647]:
+            - strong [ref=f2e3648]: microservices/ms-updateinfomgmt
+            - generic [ref=f2e3649]: maven
+            - generic [ref=f2e3650]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3652]: relations
+        - group [ref=f2e3653]:
+          - generic "Expected analyzer gaps · microservices/ms-updateinfomgmt / text · PARTIAL" [ref=f2e3654] [cursor=pointer]
+        - group [ref=f2e3655]:
+          - generic "Expected analyzer gaps · microservices/ms-updateinfomgmt / yaml · UNAVAILABLE" [ref=f2e3656] [cursor=pointer]
+        - group [ref=f2e3657]:
+          - generic "Analyzer support · microservices/ms-useritem / java · COMPLETE" [ref=f2e3658] [cursor=pointer]
+          - article [ref=f2e3659]:
+            - strong [ref=f2e3660]: microservices/ms-useritem
+            - generic [ref=f2e3661]: java
+            - generic [ref=f2e3662]: COMPLETE
+            - generic [ref=f2e3663]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3664]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3665]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3666]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3667]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3668]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3669]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3670]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3671]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3672]: data_flow
+        - group [ref=f2e3673]:
+          - generic "Analyzer support · microservices/ms-useritem / maven · COMPLETE" [ref=f2e3674] [cursor=pointer]
+          - article [ref=f2e3675]:
+            - strong [ref=f2e3676]: microservices/ms-useritem
+            - generic [ref=f2e3677]: maven
+            - generic [ref=f2e3678]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3680]: relations
+        - group [ref=f2e3681]:
+          - generic "Expected analyzer gaps · microservices/ms-useritem / text · PARTIAL" [ref=f2e3682] [cursor=pointer]
+        - group [ref=f2e3683]:
+          - generic "Expected analyzer gaps · microservices/ms-useritem / yaml · UNAVAILABLE" [ref=f2e3684] [cursor=pointer]
+        - group [ref=f2e3685]:
+          - generic "Analyzer support · microservices/ms-userservice / java · COMPLETE" [ref=f2e3686] [cursor=pointer]
+          - article [ref=f2e3687]:
+            - strong [ref=f2e3688]: microservices/ms-userservice
+            - generic [ref=f2e3689]: java
+            - generic [ref=f2e3690]: COMPLETE
+            - generic [ref=f2e3691]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3692]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3693]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3694]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3695]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3696]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3697]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3698]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3699]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3700]: data_flow
+        - group [ref=f2e3701]:
+          - generic "Expected analyzer gaps · microservices/ms-userservice / markdown · UNAVAILABLE" [ref=f2e3702] [cursor=pointer]
+        - group [ref=f2e3703]:
+          - generic "Analyzer support · microservices/ms-userservice / maven · COMPLETE" [ref=f2e3704] [cursor=pointer]
+          - article [ref=f2e3705]:
+            - strong [ref=f2e3706]: microservices/ms-userservice
+            - generic [ref=f2e3707]: maven
+            - generic [ref=f2e3708]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3710]: relations
+        - group [ref=f2e3711]:
+          - generic "Expected analyzer gaps · microservices/ms-userservice / text · PARTIAL" [ref=f2e3712] [cursor=pointer]
+        - group [ref=f2e3713]:
+          - generic "Expected analyzer gaps · microservices/ms-userservice / yaml · UNAVAILABLE" [ref=f2e3714] [cursor=pointer]
+        - group [ref=f2e3715]:
+          - generic "Analyzer support · microservices/product-data-importer / java · COMPLETE" [ref=f2e3716] [cursor=pointer]
+          - article [ref=f2e3717]:
+            - strong [ref=f2e3718]: microservices/product-data-importer
+            - generic [ref=f2e3719]: java
+            - generic [ref=f2e3720]: COMPLETE
+            - generic [ref=f2e3721]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3722]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3723]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3724]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3725]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3726]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3727]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3728]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3729]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3730]: data_flow
+        - group [ref=f2e3731]:
+          - generic "Expected analyzer gaps · microservices/product-data-importer / markdown · UNAVAILABLE" [ref=f2e3732] [cursor=pointer]
+        - group [ref=f2e3733]:
+          - generic "Analyzer support · microservices/product-data-importer / maven · COMPLETE" [ref=f2e3734] [cursor=pointer]
+          - article [ref=f2e3735]:
+            - strong [ref=f2e3736]: microservices/product-data-importer
+            - generic [ref=f2e3737]: maven
+            - generic [ref=f2e3738]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3740]: relations
+        - group [ref=f2e3741]:
+          - generic "Analyzer support · microservices/product-data-importer / shell · PARTIAL" [ref=f2e3742] [cursor=pointer]
+          - article [ref=f2e3743]:
+            - strong [ref=f2e3744]: microservices/product-data-importer
+            - generic [ref=f2e3745]: shell
+            - generic [ref=f2e3746]: PARTIAL
+            - generic [ref=f2e3747]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3748]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3749]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3750]: calls
+              - generic "Call and route steps exist, but field-level data flow is not yet complete." [ref=f2e3751]: data_flow
+        - group [ref=f2e3752]:
+          - generic "Expected analyzer gaps · microservices/product-data-importer / text · PARTIAL" [ref=f2e3753] [cursor=pointer]
+        - group [ref=f2e3754]:
+          - generic "Expected analyzer gaps · microservices/product-data-importer / yaml · UNAVAILABLE" [ref=f2e3755] [cursor=pointer]
+        - group [ref=f2e3756]:
+          - generic "Analyzer support · microservices/update-info-cleaner / java · COMPLETE" [ref=f2e3757] [cursor=pointer]
+          - article [ref=f2e3758]:
+            - strong [ref=f2e3759]: microservices/update-info-cleaner
+            - generic [ref=f2e3760]: java
+            - generic [ref=f2e3761]: COMPLETE
+            - generic [ref=f2e3762]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3763]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3764]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3765]: calls
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3766]: routes
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3767]: api_clients
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3768]: tests
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3769]: persistence
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3770]: messaging
+              - generic "The full adapter emits normalized facts for this capability; detected facts are linked as evidence." [ref=f2e3771]: data_flow
+        - group [ref=f2e3772]:
+          - generic "Expected analyzer gaps · microservices/update-info-cleaner / markdown · UNAVAILABLE" [ref=f2e3773] [cursor=pointer]
+        - group [ref=f2e3774]:
+          - generic "Analyzer support · microservices/update-info-cleaner / maven · COMPLETE" [ref=f2e3775] [cursor=pointer]
+          - article [ref=f2e3776]:
+            - strong [ref=f2e3777]: microservices/update-info-cleaner
+            - generic [ref=f2e3778]: maven
+            - generic [ref=f2e3779]: COMPLETE
+            - generic "The active analyzer emits this capability for indexed files." [ref=f2e3781]: relations
+        - group [ref=f2e3782]:
+          - generic "Analyzer support · microservices/update-info-cleaner / shell · PARTIAL" [ref=f2e3783] [cursor=pointer]
+          - article [ref=f2e3784]:
+            - strong [ref=f2e3785]: microservices/update-info-cleaner
+            - generic [ref=f2e3786]: shell
+            - generic [ref=f2e3787]: PARTIAL
+            - generic [ref=f2e3788]:
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3789]: symbols
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3790]: relations
+              - generic "The active analyzer emits this capability for indexed files." [ref=f2e3791]: calls
+              - generic "Call and route steps exist, but field-level data flow is not yet complete." [ref=f2e3792]: data_flow
+        - group [ref=f2e3793]:
+          - generic "Expected analyzer gaps · microservices/update-info-cleaner / text · PARTIAL" [ref=f2e3794] [cursor=pointer]
+        - group [ref=f2e3795]:
+          - generic "Expected analyzer gaps · microservices/update-info-cleaner / yaml · UNAVAILABLE" [ref=f2e3796] [cursor=pointer]
+  - generic [ref=f2e398]:
+    - heading "Coverage context" [level=1] [ref=f2e3797]
+    - paragraph [ref=f2e3798]: Select an item in this view to inspect its own evidence and source context.

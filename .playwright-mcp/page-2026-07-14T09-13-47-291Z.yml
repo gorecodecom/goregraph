@@ -1,0 +1,620 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - heading "GoreGraph Workspace" [level=1] [ref=e4]
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - strong [ref=e7]: "43"
+        - text: services
+      - generic [ref=e8]:
+        - strong [ref=e9]: "101"
+        - text: relations
+      - generic [ref=e10]:
+        - strong [ref=e11]: "177"
+        - text: traces
+      - generic [ref=e12]:
+        - strong [ref=e13]: "177"
+        - text: contracts
+    - heading "View" [level=2] [ref=e14]
+    - generic [ref=e15]:
+      - button "Architecture" [ref=e16] [cursor=pointer]
+      - button "Endpoints" [active] [pressed] [ref=e17] [cursor=pointer]
+      - button "Feature Flow" [ref=e18] [cursor=pointer]
+      - button "Data Flow" [ref=e19] [cursor=pointer]
+      - button "Diagnostics" [ref=e20] [cursor=pointer]
+      - button "Coverage" [ref=e21] [cursor=pointer]
+    - paragraph [ref=e22]: Find an endpoint, inspect its consumers, and follow its implementation trace.
+    - textbox "Search workspace map" [ref=e23]:
+      - /placeholder: Search service, endpoint, route, file, symbol
+    - heading "Filter" [level=2] [ref=e24]
+    - generic [ref=e25]:
+      - button "All" [pressed] [ref=e26] [cursor=pointer]
+      - button "Risk" [ref=e27] [cursor=pointer]
+      - button "Resolved" [ref=e28] [cursor=pointer]
+      - button "Unresolved" [ref=e29] [cursor=pointer]
+    - button "Clear selection" [ref=e31] [cursor=pointer]
+    - region "Endpoint debugging filters" [ref=e2326]:
+      - heading "Endpoint debugging" [level=2] [ref=e2327]
+      - generic "HTTP methods" [ref=e2328]:
+        - button "GET" [ref=e2329] [cursor=pointer]
+        - button "POST" [ref=e2330] [cursor=pointer]
+        - button "PUT" [ref=e2331] [cursor=pointer]
+        - button "PATCH" [ref=e2332] [cursor=pointer]
+        - button "DELETE" [ref=e2333] [cursor=pointer]
+        - button "Other" [ref=e2334] [cursor=pointer]
+      - generic [ref=e2335]: Caller services
+      - listbox "Filter caller services" [ref=e2336]:
+        - option "frontend/frontend" [ref=e2337]
+      - generic [ref=e2338]: Provider services
+      - listbox "Filter provider services" [ref=e2339]:
+        - option "microservices/ms-regulationinfo" [ref=e2340]
+        - option "microservices/ms-regulationtree" [ref=e2341]
+        - option "microservices/ms-search" [ref=e2342]
+        - option "microservices/ms-useritem" [ref=e2343]
+        - option "microservices/ms-userservice" [ref=e2344]
+        - option "ms-regulationtree" [ref=e2345]
+      - generic "Endpoint status" [ref=e2346]:
+        - button "Resolved" [ref=e2347] [cursor=pointer]
+        - button "Unresolved" [ref=e2348] [cursor=pointer]
+        - button "Mismatch" [ref=e2349] [cursor=pointer]
+        - button "Out of scope" [ref=e2350] [cursor=pointer]
+      - button "Clear filters" [ref=e2351]
+      - paragraph [ref=e2352]: 32 of 32 endpoint relationships.
+    - heading "Endpoint Services" [level=2] [ref=e2353]
+    - generic [ref=e33]:
+      - button "frontend 21 outgoing / 0 incoming / frontend/frontend" [ref=e2354] [cursor=pointer]:
+        - strong [ref=e2355]: frontend
+        - generic [ref=e2356]: 21 outgoing / 0 incoming / frontend/frontend
+      - button "frontend-monorepo 135 outgoing / 0 incoming / frontend/frontend-monorepo" [ref=e2357] [cursor=pointer]:
+        - strong [ref=e2358]: frontend-monorepo
+        - generic [ref=e2359]: 135 outgoing / 0 incoming / frontend/frontend-monorepo
+      - button "frontends 21 outgoing / 0 incoming / frontend/frontends" [ref=e2360] [cursor=pointer]:
+        - strong [ref=e2361]: frontends
+        - generic [ref=e2362]: 21 outgoing / 0 incoming / frontend/frontends
+      - button "playwright Scanned, no outgoing API calls detected / frontend/playwright" [ref=e2363] [cursor=pointer]:
+        - strong [ref=e2364]: playwright
+        - generic [ref=e2365]: Scanned, no outgoing API calls detected / frontend/playwright
+      - button "ms-cadaster 36 outgoing / 2 incoming / microservices/ms-cadaster" [ref=e2366] [cursor=pointer]:
+        - strong [ref=e2367]: ms-cadaster
+        - generic [ref=e2368]: 36 outgoing / 2 incoming / microservices/ms-cadaster
+      - button "ms-cadasterexport 29 outgoing / 2 incoming / microservices/ms-cadasterexport" [ref=e2369] [cursor=pointer]:
+        - strong [ref=e2370]: ms-cadasterexport
+        - generic [ref=e2371]: 29 outgoing / 2 incoming / microservices/ms-cadasterexport
+      - button "ms-cadasterregulation 41 outgoing / 28 incoming / microservices/ms-cadasterregulation" [ref=e2372] [cursor=pointer]:
+        - strong [ref=e2373]: ms-cadasterregulation
+        - generic [ref=e2374]: 41 outgoing / 28 incoming / microservices/ms-cadasterregulation
+      - button "ms-cadastertask 24 outgoing / 35 incoming / microservices/ms-cadastertask" [ref=e2375] [cursor=pointer]:
+        - strong [ref=e2376]: ms-cadastertask
+        - generic [ref=e2377]: 24 outgoing / 35 incoming / microservices/ms-cadastertask
+      - button "ms-cadasteruser 19 outgoing / 11 incoming / microservices/ms-cadasteruser" [ref=e2378] [cursor=pointer]:
+        - strong [ref=e2379]: ms-cadasteruser
+        - generic [ref=e2380]: 19 outgoing / 11 incoming / microservices/ms-cadasteruser
+      - button "ms-common 21 outgoing / 0 incoming / microservices/ms-common" [ref=e2381] [cursor=pointer]:
+        - strong [ref=e2382]: ms-common
+        - generic [ref=e2383]: 21 outgoing / 0 incoming / microservices/ms-common
+      - button "ms-containertree 11 outgoing / 7 incoming / microservices/ms-containertree" [ref=e2384] [cursor=pointer]:
+        - strong [ref=e2385]: ms-containertree
+        - generic [ref=e2386]: 11 outgoing / 7 incoming / microservices/ms-containertree
+      - button "ms-documentdownload 10 outgoing / 4 incoming / microservices/ms-documentdownload" [ref=e2387] [cursor=pointer]:
+        - strong [ref=e2388]: ms-documentdownload
+        - generic [ref=e2389]: 10 outgoing / 4 incoming / microservices/ms-documentdownload
+      - button "ms-documentexport 17 outgoing / 2 incoming / microservices/ms-documentexport" [ref=e2390] [cursor=pointer]:
+        - strong [ref=e2391]: ms-documentexport
+        - generic [ref=e2392]: 17 outgoing / 2 incoming / microservices/ms-documentexport
+      - button "ms-documentinfo 17 outgoing / 5 incoming / microservices/ms-documentinfo" [ref=e2393] [cursor=pointer]:
+        - strong [ref=e2394]: ms-documentinfo
+        - generic [ref=e2395]: 17 outgoing / 5 incoming / microservices/ms-documentinfo
+      - button "ms-documenttopic 17 outgoing / 28 incoming / microservices/ms-documenttopic" [ref=e2396] [cursor=pointer]:
+        - strong [ref=e2397]: ms-documenttopic
+        - generic [ref=e2398]: 17 outgoing / 28 incoming / microservices/ms-documenttopic
+      - button "ms-invoiceservice 0 outgoing / 1 incoming / microservices/ms-invoiceservice" [ref=e2399] [cursor=pointer]:
+        - strong [ref=e2400]: ms-invoiceservice
+        - generic [ref=e2401]: 0 outgoing / 1 incoming / microservices/ms-invoiceservice
+      - button "ms-knksync 7 outgoing / 0 incoming / microservices/ms-knksync" [ref=e2402] [cursor=pointer]:
+        - strong [ref=e2403]: ms-knksync
+        - generic [ref=e2404]: 7 outgoing / 0 incoming / microservices/ms-knksync
+      - button "ms-licenseservice 16 outgoing / 184 incoming / microservices/ms-licenseservice" [ref=e2405] [cursor=pointer]:
+        - strong [ref=e2406]: ms-licenseservice
+        - generic [ref=e2407]: 16 outgoing / 184 incoming / microservices/ms-licenseservice
+      - button "ms-portal 45 outgoing / 12 incoming / microservices/ms-portal" [ref=e2408] [cursor=pointer]:
+        - strong [ref=e2409]: ms-portal
+        - generic [ref=e2410]: 45 outgoing / 12 incoming / microservices/ms-portal
+      - button "ms-productservice 9 outgoing / 143 incoming / microservices/ms-productservice" [ref=e2411] [cursor=pointer]:
+        - strong [ref=e2412]: ms-productservice
+        - generic [ref=e2413]: 9 outgoing / 143 incoming / microservices/ms-productservice
+      - button "ms-regulationchange 33 outgoing / 6 incoming / microservices/ms-regulationchange" [ref=e2414] [cursor=pointer]:
+        - strong [ref=e2415]: ms-regulationchange
+        - generic [ref=e2416]: 33 outgoing / 6 incoming / microservices/ms-regulationchange
+      - button "ms-regulationdownload 13 outgoing / 0 incoming / microservices/ms-regulationdownload" [ref=e2417] [cursor=pointer]:
+        - strong [ref=e2418]: ms-regulationdownload
+        - generic [ref=e2419]: 13 outgoing / 0 incoming / microservices/ms-regulationdownload
+      - button "ms-regulationexport 5 outgoing / 0 incoming / microservices/ms-regulationexport" [ref=e2420] [cursor=pointer]:
+        - strong [ref=e2421]: ms-regulationexport
+        - generic [ref=e2422]: 5 outgoing / 0 incoming / microservices/ms-regulationexport
+      - button "ms-regulationinfo 10 outgoing / 2 incoming / microservices/ms-regulationinfo" [ref=e2423] [cursor=pointer]:
+        - strong [ref=e2424]: ms-regulationinfo
+        - generic [ref=e2425]: 10 outgoing / 2 incoming / microservices/ms-regulationinfo
+      - button "ms-regulationtree 29 outgoing / 33 incoming / microservices/ms-regulationtree" [ref=e2426] [cursor=pointer]:
+        - strong [ref=e2427]: ms-regulationtree
+        - generic [ref=e2428]: 29 outgoing / 33 incoming / microservices/ms-regulationtree
+      - button "ms-search 27 outgoing / 9 incoming / microservices/ms-search" [ref=e2429] [cursor=pointer]:
+        - strong [ref=e2430]: ms-search
+        - generic [ref=e2431]: 27 outgoing / 9 incoming / microservices/ms-search
+      - button "ms-shopmgmt 14 outgoing / 0 incoming / microservices/ms-shopmgmt" [ref=e2432] [cursor=pointer]:
+        - strong [ref=e2433]: ms-shopmgmt
+        - generic [ref=e2434]: 14 outgoing / 0 incoming / microservices/ms-shopmgmt
+      - button "ms-sso 11 outgoing / 0 incoming / microservices/ms-sso" [ref=e2435] [cursor=pointer]:
+        - strong [ref=e2436]: ms-sso
+        - generic [ref=e2437]: 11 outgoing / 0 incoming / microservices/ms-sso
+      - button "ms-swlicenseservice 0 outgoing / 3 incoming / microservices/ms-swlicenseservice" [ref=e2438] [cursor=pointer]:
+        - strong [ref=e2439]: ms-swlicenseservice
+        - generic [ref=e2440]: 0 outgoing / 3 incoming / microservices/ms-swlicenseservice
+      - button "ms-task 39 outgoing / 11 incoming / microservices/ms-task" [ref=e2441] [cursor=pointer]:
+        - strong [ref=e2442]: ms-task
+        - generic [ref=e2443]: 39 outgoing / 11 incoming / microservices/ms-task
+      - button "ms-tradingpartner 7 outgoing / 0 incoming / microservices/ms-tradingpartner" [ref=e2444] [cursor=pointer]:
+        - strong [ref=e2445]: ms-tradingpartner
+        - generic [ref=e2446]: 7 outgoing / 0 incoming / microservices/ms-tradingpartner
+      - button "ms-useritem 14 outgoing / 21 incoming / microservices/ms-useritem" [ref=e2447] [cursor=pointer]:
+        - strong [ref=e2448]: ms-useritem
+        - generic [ref=e2449]: 14 outgoing / 21 incoming / microservices/ms-useritem
+      - button "ms-userservice 11 outgoing / 160 incoming / microservices/ms-userservice" [ref=e2450] [cursor=pointer]:
+        - strong [ref=e2451]: ms-userservice
+        - generic [ref=e2452]: 11 outgoing / 160 incoming / microservices/ms-userservice
+    - paragraph [ref=e163]: Showing 33 endpoint services.
+    - generic [ref=e164]:
+      - heading "Status glossary" [level=2] [ref=e165]
+      - paragraph [ref=e166]:
+        - strong [ref=e167]: RESOLVED
+        - text: ": frontend contract is mapped to a backend route."
+      - paragraph [ref=e168]:
+        - strong [ref=e169]: MISMATCH
+        - text: ": a related backend route exists, but method or path does not match exactly."
+      - paragraph [ref=e170]:
+        - strong [ref=e171]: UNRESOLVED
+        - text: ": no reliable backend route was found in indexed projects."
+      - paragraph [ref=e172]:
+        - strong [ref=e173]: OUT_OF_SCOPE
+        - text: ": intentionally not a backend service, for example a frontend-internal API."
+      - paragraph [ref=e174]:
+        - strong [ref=e175]: EXTRACTED
+        - text: ": read directly from source structure."
+        - strong [ref=e176]: MATCHED
+        - text: ": linked to a concrete route, symbol, or test."
+  - main [ref=e177]:
+    - region "Workspace data workbench" [ref=e2453]:
+      - generic [ref=e2454]:
+        - paragraph [ref=e2455]: Endpoint inventory
+        - heading "Caller → Endpoint → Provider" [level=1] [ref=e2456]
+        - paragraph [ref=e2457]: Select a relationship to follow its implementation trace. Filters never change text size or layout scale.
+      - generic [ref=e2458]:
+        - generic [ref=e2459]:
+          - generic [ref=e2460]: Caller
+          - generic [ref=e2461]: Endpoint
+          - generic [ref=e2462]: Provider
+        - 'button "Open endpoint trace DELETE /useritem/users/{userId}/folders/{folderId}" [ref=e2463] [cursor=pointer]':
+          - generic [ref=e2464]:
+            - strong [ref=e2465]: frontend/frontend
+            - generic [ref=e2466]: endpoint_trace
+          - generic [ref=e2467]:
+            - strong [ref=e2468]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+            - generic [ref=e2469]: RESOLVED / matched
+          - generic [ref=e2470]:
+            - strong [ref=e2471]: microservices/ms-useritem
+            - generic [ref=e2472]: endpoint_trace
+        - 'button "Open endpoint trace DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}" [ref=e2473] [cursor=pointer]':
+          - generic [ref=e2474]:
+            - strong [ref=e2475]: frontend/frontend
+            - generic [ref=e2476]: endpoint_trace
+          - generic [ref=e2477]:
+            - strong [ref=e2478]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}"
+            - generic [ref=e2479]: RESOLVED / matched
+          - generic [ref=e2480]:
+            - strong [ref=e2481]: microservices/ms-useritem
+            - generic [ref=e2482]: endpoint_trace
+        - 'button "Open endpoint trace GET /regulations/{objectId}/lras" [ref=e2483] [cursor=pointer]':
+          - generic [ref=e2484]:
+            - strong [ref=e2485]: frontend/frontend
+            - generic [ref=e2486]: endpoint_trace
+          - generic [ref=e2487]:
+            - strong [ref=e2488]: "GET /regulations/{objectId}/lras"
+            - generic [ref=e2489]: RESOLVED / matched
+          - generic [ref=e2490]:
+            - strong [ref=e2491]: microservices/ms-regulationinfo
+            - generic [ref=e2492]: endpoint_trace
+        - button "Open endpoint trace GET /search/autocomplete" [ref=e2493] [cursor=pointer]:
+          - generic [ref=e2494]:
+            - strong [ref=e2495]: frontend/frontend
+            - generic [ref=e2496]: endpoint_trace
+          - generic [ref=e2497]:
+            - strong [ref=e2498]: GET /search/autocomplete
+            - generic [ref=e2499]: RESOLVED / matched
+          - generic [ref=e2500]:
+            - strong [ref=e2501]: microservices/ms-search
+            - generic [ref=e2502]: endpoint_trace
+        - button "Open endpoint trace GET /tree/cachetareas/inactives" [ref=e2503] [cursor=pointer]:
+          - generic [ref=e2504]:
+            - strong [ref=e2505]: frontend/frontend
+            - generic [ref=e2506]: endpoint_trace
+          - generic [ref=e2507]:
+            - strong [ref=e2508]: GET /tree/cachetareas/inactives
+            - generic [ref=e2509]: UNRESOLVED / indexed_backend_route_missing
+          - generic [ref=e2510]:
+            - strong [ref=e2511]: ms-regulationtree
+            - generic [ref=e2512]: endpoint_trace
+        - button "Open endpoint trace GET /tree/regulations" [ref=e2513] [cursor=pointer]:
+          - generic [ref=e2514]:
+            - strong [ref=e2515]: frontend/frontend
+            - generic [ref=e2516]: endpoint_trace
+          - generic [ref=e2517]:
+            - strong [ref=e2518]: GET /tree/regulations
+            - generic [ref=e2519]: UNRESOLVED / indexed_backend_route_missing
+          - generic [ref=e2520]:
+            - strong [ref=e2521]: ms-regulationtree
+            - generic [ref=e2522]: endpoint_trace
+        - button "Open endpoint trace GET /tree/regulationtopics" [ref=e2523] [cursor=pointer]:
+          - generic [ref=e2524]:
+            - strong [ref=e2525]: frontend/frontend
+            - generic [ref=e2526]: endpoint_trace
+          - generic [ref=e2527]:
+            - strong [ref=e2528]: GET /tree/regulationtopics
+            - generic [ref=e2529]: UNRESOLVED / indexed_backend_route_missing
+          - generic [ref=e2530]:
+            - strong [ref=e2531]: ms-regulationtree
+            - generic [ref=e2532]: endpoint_trace
+        - 'button "Open endpoint trace GET /useritem/users/{userId}/folders/favorites" [ref=e2533] [cursor=pointer]':
+          - generic [ref=e2534]:
+            - strong [ref=e2535]: frontend/frontend
+            - generic [ref=e2536]: endpoint_trace
+          - generic [ref=e2537]:
+            - strong [ref=e2538]: "GET /useritem/users/{userId}/folders/favorites"
+            - generic [ref=e2539]: RESOLVED / matched
+          - generic [ref=e2540]:
+            - strong [ref=e2541]: microservices/ms-useritem
+            - generic [ref=e2542]: endpoint_trace
+        - 'button "Open endpoint trace GET /userservice/users/{userId}/info" [ref=e2543] [cursor=pointer]':
+          - generic [ref=e2544]:
+            - strong [ref=e2545]: frontend/frontend
+            - generic [ref=e2546]: endpoint_trace
+          - generic [ref=e2547]:
+            - strong [ref=e2548]: "GET /userservice/users/{userId}/info"
+            - generic [ref=e2549]: RESOLVED / matched
+          - generic [ref=e2550]:
+            - strong [ref=e2551]: microservices/ms-userservice
+            - generic [ref=e2552]: endpoint_trace
+        - button "Open endpoint trace POST /tree/cachetareas" [ref=e2553] [cursor=pointer]:
+          - generic [ref=e2554]:
+            - strong [ref=e2555]: frontend/frontend
+            - generic [ref=e2556]: endpoint_trace
+          - generic [ref=e2557]:
+            - strong [ref=e2558]: POST /tree/cachetareas
+            - generic [ref=e2559]: UNRESOLVED / indexed_backend_route_missing
+          - generic [ref=e2560]:
+            - strong [ref=e2561]: ms-regulationtree
+            - generic [ref=e2562]: endpoint_trace
+        - 'button "Open endpoint trace POST /tree/cachetareas/{cachetArea}/genres" [ref=e2563] [cursor=pointer]':
+          - generic [ref=e2564]:
+            - strong [ref=e2565]: frontend/frontend
+            - generic [ref=e2566]: endpoint_trace
+          - generic [ref=e2567]:
+            - strong [ref=e2568]: "POST /tree/cachetareas/{cachetArea}/genres"
+            - generic [ref=e2569]: UNRESOLVED / indexed_backend_route_missing
+          - generic [ref=e2570]:
+            - strong [ref=e2571]: ms-regulationtree
+            - generic [ref=e2572]: endpoint_trace
+        - 'button "Open endpoint trace POST /tree/cachetareas/{cachetArea}/genres/{genre}/regulations" [ref=e2573] [cursor=pointer]':
+          - generic [ref=e2574]:
+            - strong [ref=e2575]: frontend/frontend
+            - generic [ref=e2576]: endpoint_trace
+          - generic [ref=e2577]:
+            - strong [ref=e2578]: "POST /tree/cachetareas/{cachetArea}/genres/{genre}/regulations"
+            - generic [ref=e2579]: UNRESOLVED / indexed_backend_route_missing
+          - generic [ref=e2580]:
+            - strong [ref=e2581]: ms-regulationtree
+            - generic [ref=e2582]: endpoint_trace
+        - 'button "Open endpoint trace POST /useritem/users/{userId}/folders" [ref=e2583] [cursor=pointer]':
+          - generic [ref=e2584]:
+            - strong [ref=e2585]: frontend/frontend
+            - generic [ref=e2586]: endpoint_trace
+          - generic [ref=e2587]:
+            - strong [ref=e2588]: "POST /useritem/users/{userId}/folders"
+            - generic [ref=e2589]: RESOLVED / matched
+          - generic [ref=e2590]:
+            - strong [ref=e2591]: microservices/ms-useritem
+            - generic [ref=e2592]: endpoint_trace
+        - button "Open endpoint trace PUT /search" [ref=e2593] [cursor=pointer]:
+          - generic [ref=e2594]:
+            - strong [ref=e2595]: frontend/frontend
+            - generic [ref=e2596]: endpoint_trace
+          - generic [ref=e2597]:
+            - strong [ref=e2598]: PUT /search
+            - generic [ref=e2599]: RESOLVED / matched
+          - generic [ref=e2600]:
+            - strong [ref=e2601]: microservices/ms-search
+            - generic [ref=e2602]: endpoint_trace
+        - 'button "Open endpoint trace PUT /tree/cachetareas/{cachetArea}" [ref=e2603] [cursor=pointer]':
+          - generic [ref=e2604]:
+            - strong [ref=e2605]: frontend/frontend
+            - generic [ref=e2606]: endpoint_trace
+          - generic [ref=e2607]:
+            - strong [ref=e2608]: "PUT /tree/cachetareas/{cachetArea}"
+            - generic [ref=e2609]: UNRESOLVED / indexed_backend_route_missing
+          - generic [ref=e2610]:
+            - strong [ref=e2611]: ms-regulationtree
+            - generic [ref=e2612]: endpoint_trace
+        - 'button "Open endpoint trace PUT /useritem/users/{userId}/folders/{folderId}" [ref=e2613] [cursor=pointer]':
+          - generic [ref=e2614]:
+            - strong [ref=e2615]: frontend/frontend
+            - generic [ref=e2616]: endpoint_trace
+          - generic [ref=e2617]:
+            - strong [ref=e2618]: "PUT /useritem/users/{userId}/folders/{folderId}"
+            - generic [ref=e2619]: RESOLVED / matched
+          - generic [ref=e2620]:
+            - strong [ref=e2621]: microservices/ms-useritem
+            - generic [ref=e2622]: endpoint_trace
+        - 'group "Service relationship GET /regulations/{objectId}/lras" [ref=e2623]':
+          - generic [ref=e2624]:
+            - strong [ref=e2625]: frontend/frontend
+            - generic [ref=e2626]: service_relation
+          - generic [ref=e2627]:
+            - strong [ref=e2628]: "GET /regulations/{objectId}/lras"
+            - generic [ref=e2629]: resolved / resolved
+          - generic [ref=e2630]:
+            - strong [ref=e2631]: microservices/ms-regulationinfo
+            - generic [ref=e2632]: service_relation
+        - group "Service relationship POST /tree/cachetareas" [ref=e2633]:
+          - generic [ref=e2634]:
+            - strong [ref=e2635]: frontend/frontend
+            - generic [ref=e2636]: service_relation
+          - generic [ref=e2637]:
+            - strong [ref=e2638]: POST /tree/cachetareas
+            - generic [ref=e2639]: has_unresolved / has_unresolved
+          - generic [ref=e2640]:
+            - strong [ref=e2641]: microservices/ms-regulationtree
+            - generic [ref=e2642]: service_relation
+        - 'group "Service relationship PUT /tree/cachetareas/{cachetArea}" [ref=e2643]':
+          - generic [ref=e2644]:
+            - strong [ref=e2645]: frontend/frontend
+            - generic [ref=e2646]: service_relation
+          - generic [ref=e2647]:
+            - strong [ref=e2648]: "PUT /tree/cachetareas/{cachetArea}"
+            - generic [ref=e2649]: has_unresolved / has_unresolved
+          - generic [ref=e2650]:
+            - strong [ref=e2651]: microservices/ms-regulationtree
+            - generic [ref=e2652]: service_relation
+        - group "Service relationship GET /tree/cachetareas/inactives" [ref=e2653]:
+          - generic [ref=e2654]:
+            - strong [ref=e2655]: frontend/frontend
+            - generic [ref=e2656]: service_relation
+          - generic [ref=e2657]:
+            - strong [ref=e2658]: GET /tree/cachetareas/inactives
+            - generic [ref=e2659]: has_unresolved / has_unresolved
+          - generic [ref=e2660]:
+            - strong [ref=e2661]: microservices/ms-regulationtree
+            - generic [ref=e2662]: service_relation
+        - 'group "Service relationship POST /tree/cachetareas/{cachetArea}/genres" [ref=e2663]':
+          - generic [ref=e2664]:
+            - strong [ref=e2665]: frontend/frontend
+            - generic [ref=e2666]: service_relation
+          - generic [ref=e2667]:
+            - strong [ref=e2668]: "POST /tree/cachetareas/{cachetArea}/genres"
+            - generic [ref=e2669]: has_unresolved / has_unresolved
+          - generic [ref=e2670]:
+            - strong [ref=e2671]: microservices/ms-regulationtree
+            - generic [ref=e2672]: service_relation
+        - group "Service relationship GET /tree/regulationtopics" [ref=e2673]:
+          - generic [ref=e2674]:
+            - strong [ref=e2675]: frontend/frontend
+            - generic [ref=e2676]: service_relation
+          - generic [ref=e2677]:
+            - strong [ref=e2678]: GET /tree/regulationtopics
+            - generic [ref=e2679]: has_unresolved / has_unresolved
+          - generic [ref=e2680]:
+            - strong [ref=e2681]: microservices/ms-regulationtree
+            - generic [ref=e2682]: service_relation
+        - 'group "Service relationship POST /tree/cachetareas/{cachetArea}/genres/{genre}/regulations" [ref=e2683]':
+          - generic [ref=e2684]:
+            - strong [ref=e2685]: frontend/frontend
+            - generic [ref=e2686]: service_relation
+          - generic [ref=e2687]:
+            - strong [ref=e2688]: "POST /tree/cachetareas/{cachetArea}/genres/{genre}/regulations"
+            - generic [ref=e2689]: has_unresolved / has_unresolved
+          - generic [ref=e2690]:
+            - strong [ref=e2691]: microservices/ms-regulationtree
+            - generic [ref=e2692]: service_relation
+        - group "Service relationship GET /tree/regulations" [ref=e2693]:
+          - generic [ref=e2694]:
+            - strong [ref=e2695]: frontend/frontend
+            - generic [ref=e2696]: service_relation
+          - generic [ref=e2697]:
+            - strong [ref=e2698]: GET /tree/regulations
+            - generic [ref=e2699]: has_unresolved / has_unresolved
+          - generic [ref=e2700]:
+            - strong [ref=e2701]: microservices/ms-regulationtree
+            - generic [ref=e2702]: service_relation
+        - group "Service relationship PUT /search" [ref=e2703]:
+          - generic [ref=e2704]:
+            - strong [ref=e2705]: frontend/frontend
+            - generic [ref=e2706]: service_relation
+          - generic [ref=e2707]:
+            - strong [ref=e2708]: PUT /search
+            - generic [ref=e2709]: resolved / resolved
+          - generic [ref=e2710]:
+            - strong [ref=e2711]: microservices/ms-search
+            - generic [ref=e2712]: service_relation
+        - group "Service relationship GET /search/autocomplete" [ref=e2713]:
+          - generic [ref=e2714]:
+            - strong [ref=e2715]: frontend/frontend
+            - generic [ref=e2716]: service_relation
+          - generic [ref=e2717]:
+            - strong [ref=e2718]: GET /search/autocomplete
+            - generic [ref=e2719]: resolved / resolved
+          - generic [ref=e2720]:
+            - strong [ref=e2721]: microservices/ms-search
+            - generic [ref=e2722]: service_relation
+        - 'group "Service relationship GET /useritem/users/{userId}/folders/favorites" [ref=e2723]':
+          - generic [ref=e2724]:
+            - strong [ref=e2725]: frontend/frontend
+            - generic [ref=e2726]: service_relation
+          - generic [ref=e2727]:
+            - strong [ref=e2728]: "GET /useritem/users/{userId}/folders/favorites"
+            - generic [ref=e2729]: resolved / resolved
+          - generic [ref=e2730]:
+            - strong [ref=e2731]: microservices/ms-useritem
+            - generic [ref=e2732]: service_relation
+        - 'group "Service relationship POST /useritem/users/{userId}/folders" [ref=e2733]':
+          - generic [ref=e2734]:
+            - strong [ref=e2735]: frontend/frontend
+            - generic [ref=e2736]: service_relation
+          - generic [ref=e2737]:
+            - strong [ref=e2738]: "POST /useritem/users/{userId}/folders"
+            - generic [ref=e2739]: resolved / resolved
+          - generic [ref=e2740]:
+            - strong [ref=e2741]: microservices/ms-useritem
+            - generic [ref=e2742]: service_relation
+        - 'group "Service relationship PUT /useritem/users/{userId}/folders/{folderId}" [ref=e2743]':
+          - generic [ref=e2744]:
+            - strong [ref=e2745]: frontend/frontend
+            - generic [ref=e2746]: service_relation
+          - generic [ref=e2747]:
+            - strong [ref=e2748]: "PUT /useritem/users/{userId}/folders/{folderId}"
+            - generic [ref=e2749]: resolved / resolved
+          - generic [ref=e2750]:
+            - strong [ref=e2751]: microservices/ms-useritem
+            - generic [ref=e2752]: service_relation
+        - 'group "Service relationship DELETE /useritem/users/{userId}/folders/{folderId}" [ref=e2753]':
+          - generic [ref=e2754]:
+            - strong [ref=e2755]: frontend/frontend
+            - generic [ref=e2756]: service_relation
+          - generic [ref=e2757]:
+            - strong [ref=e2758]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+            - generic [ref=e2759]: resolved / resolved
+          - generic [ref=e2760]:
+            - strong [ref=e2761]: microservices/ms-useritem
+            - generic [ref=e2762]: service_relation
+        - 'group "Service relationship DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}" [ref=e2763]':
+          - generic [ref=e2764]:
+            - strong [ref=e2765]: frontend/frontend
+            - generic [ref=e2766]: service_relation
+          - generic [ref=e2767]:
+            - strong [ref=e2768]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}"
+            - generic [ref=e2769]: resolved / resolved
+          - generic [ref=e2770]:
+            - strong [ref=e2771]: microservices/ms-useritem
+            - generic [ref=e2772]: service_relation
+        - 'group "Service relationship GET /userservice/users/{userId}/info" [ref=e2773]':
+          - generic [ref=e2774]:
+            - strong [ref=e2775]: frontend/frontend
+            - generic [ref=e2776]: service_relation
+          - generic [ref=e2777]:
+            - strong [ref=e2778]: "GET /userservice/users/{userId}/info"
+            - generic [ref=e2779]: resolved / resolved
+          - generic [ref=e2780]:
+            - strong [ref=e2781]: microservices/ms-userservice
+            - generic [ref=e2782]: service_relation
+  - generic [ref=e398]:
+    - heading "frontend" [level=1] [ref=e2783]
+    - generic [ref=e2784]:
+      - generic [ref=e2785]:
+        - strong [ref=e2786]: Project
+        - generic [ref=e2787]: frontend/frontend
+      - generic [ref=e2788]:
+        - strong [ref=e2789]: View
+        - generic [ref=e2790]: Endpoint inventory for the selected service.
+    - generic [ref=e2791]:
+      - heading "Endpoint inventory" [level=3] [ref=e2792]
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId} frontend/frontend -> microservices/ms-useritem / RESOLVED" [ref=e2793] [cursor=pointer]':
+        - strong [ref=e2794]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=e2795]: frontend/frontend -> microservices/ms-useritem / RESOLVED
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId} frontend/frontend -> microservices/ms-useritem / RESOLVED" [ref=e2796] [cursor=pointer]':
+        - strong [ref=e2797]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}"
+        - generic [ref=e2798]: frontend/frontend -> microservices/ms-useritem / RESOLVED
+      - 'button "GET /regulations/{objectId}/lras frontend/frontend -> microservices/ms-regulationinfo / RESOLVED" [ref=e2799] [cursor=pointer]':
+        - strong [ref=e2800]: "GET /regulations/{objectId}/lras"
+        - generic [ref=e2801]: frontend/frontend -> microservices/ms-regulationinfo / RESOLVED
+      - button "GET /search/autocomplete frontend/frontend -> microservices/ms-search / RESOLVED" [ref=e2802] [cursor=pointer]:
+        - strong [ref=e2803]: GET /search/autocomplete
+        - generic [ref=e2804]: frontend/frontend -> microservices/ms-search / RESOLVED
+      - button "GET /tree/cachetareas/inactives frontend/frontend -> ms-regulationtree / UNRESOLVED" [ref=e2805] [cursor=pointer]:
+        - strong [ref=e2806]: GET /tree/cachetareas/inactives
+        - generic [ref=e2807]: frontend/frontend -> ms-regulationtree / UNRESOLVED
+      - button "GET /tree/regulations frontend/frontend -> ms-regulationtree / UNRESOLVED" [ref=e2808] [cursor=pointer]:
+        - strong [ref=e2809]: GET /tree/regulations
+        - generic [ref=e2810]: frontend/frontend -> ms-regulationtree / UNRESOLVED
+      - button "GET /tree/regulationtopics frontend/frontend -> ms-regulationtree / UNRESOLVED" [ref=e2811] [cursor=pointer]:
+        - strong [ref=e2812]: GET /tree/regulationtopics
+        - generic [ref=e2813]: frontend/frontend -> ms-regulationtree / UNRESOLVED
+      - 'button "GET /useritem/users/{userId}/folders/favorites frontend/frontend -> microservices/ms-useritem / RESOLVED" [ref=e2814] [cursor=pointer]':
+        - strong [ref=e2815]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=e2816]: frontend/frontend -> microservices/ms-useritem / RESOLVED
+      - 'button "GET /userservice/users/{userId}/info frontend/frontend -> microservices/ms-userservice / RESOLVED" [ref=e2817] [cursor=pointer]':
+        - strong [ref=e2818]: "GET /userservice/users/{userId}/info"
+        - generic [ref=e2819]: frontend/frontend -> microservices/ms-userservice / RESOLVED
+      - button "POST /tree/cachetareas frontend/frontend -> ms-regulationtree / UNRESOLVED" [ref=e2820] [cursor=pointer]:
+        - strong [ref=e2821]: POST /tree/cachetareas
+        - generic [ref=e2822]: frontend/frontend -> ms-regulationtree / UNRESOLVED
+      - 'button "POST /tree/cachetareas/{cachetArea}/genres frontend/frontend -> ms-regulationtree / UNRESOLVED" [ref=e2823] [cursor=pointer]':
+        - strong [ref=e2824]: "POST /tree/cachetareas/{cachetArea}/genres"
+        - generic [ref=e2825]: frontend/frontend -> ms-regulationtree / UNRESOLVED
+      - 'button "POST /tree/cachetareas/{cachetArea}/genres/{genre}/regulations frontend/frontend -> ms-regulationtree / UNRESOLVED" [ref=e2826] [cursor=pointer]':
+        - strong [ref=e2827]: "POST /tree/cachetareas/{cachetArea}/genres/{genre}/regulations"
+        - generic [ref=e2828]: frontend/frontend -> ms-regulationtree / UNRESOLVED
+      - 'button "POST /useritem/users/{userId}/folders frontend/frontend -> microservices/ms-useritem / RESOLVED" [ref=e2829] [cursor=pointer]':
+        - strong [ref=e2830]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=e2831]: frontend/frontend -> microservices/ms-useritem / RESOLVED
+      - button "PUT /search frontend/frontend -> microservices/ms-search / RESOLVED" [ref=e2832] [cursor=pointer]:
+        - strong [ref=e2833]: PUT /search
+        - generic [ref=e2834]: frontend/frontend -> microservices/ms-search / RESOLVED
+      - 'button "PUT /tree/cachetareas/{cachetArea} frontend/frontend -> ms-regulationtree / UNRESOLVED" [ref=e2835] [cursor=pointer]':
+        - strong [ref=e2836]: "PUT /tree/cachetareas/{cachetArea}"
+        - generic [ref=e2837]: frontend/frontend -> ms-regulationtree / UNRESOLVED
+      - 'button "PUT /useritem/users/{userId}/folders/{folderId} frontend/frontend -> microservices/ms-useritem / RESOLVED" [ref=e2838] [cursor=pointer]':
+        - strong [ref=e2839]: "PUT /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=e2840]: frontend/frontend -> microservices/ms-useritem / RESOLVED
+      - generic [ref=e2841]:
+        - strong [ref=e2842]: "GET /regulations/{objectId}/lras"
+        - generic [ref=e2843]: frontend/frontend -> microservices/ms-regulationinfo / resolved
+      - generic [ref=e2844]:
+        - strong [ref=e2845]: POST /tree/cachetareas
+        - generic [ref=e2846]: frontend/frontend -> microservices/ms-regulationtree / has_unresolved
+      - generic [ref=e2847]:
+        - strong [ref=e2848]: "PUT /tree/cachetareas/{cachetArea}"
+        - generic [ref=e2849]: frontend/frontend -> microservices/ms-regulationtree / has_unresolved
+      - generic [ref=e2850]:
+        - strong [ref=e2851]: GET /tree/cachetareas/inactives
+        - generic [ref=e2852]: frontend/frontend -> microservices/ms-regulationtree / has_unresolved
+      - generic [ref=e2853]:
+        - strong [ref=e2854]: "POST /tree/cachetareas/{cachetArea}/genres"
+        - generic [ref=e2855]: frontend/frontend -> microservices/ms-regulationtree / has_unresolved
+      - generic [ref=e2856]:
+        - strong [ref=e2857]: GET /tree/regulationtopics
+        - generic [ref=e2858]: frontend/frontend -> microservices/ms-regulationtree / has_unresolved
+      - generic [ref=e2859]:
+        - strong [ref=e2860]: "POST /tree/cachetareas/{cachetArea}/genres/{genre}/regulations"
+        - generic [ref=e2861]: frontend/frontend -> microservices/ms-regulationtree / has_unresolved
+      - generic [ref=e2862]:
+        - strong [ref=e2863]: GET /tree/regulations
+        - generic [ref=e2864]: frontend/frontend -> microservices/ms-regulationtree / has_unresolved
+      - generic [ref=e2865]:
+        - strong [ref=e2866]: PUT /search
+        - generic [ref=e2867]: frontend/frontend -> microservices/ms-search / resolved
+      - generic [ref=e2868]:
+        - strong [ref=e2869]: GET /search/autocomplete
+        - generic [ref=e2870]: frontend/frontend -> microservices/ms-search / resolved
+      - generic [ref=e2871]:
+        - strong [ref=e2872]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=e2873]: frontend/frontend -> microservices/ms-useritem / resolved
+      - generic [ref=e2874]:
+        - strong [ref=e2875]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=e2876]: frontend/frontend -> microservices/ms-useritem / resolved
+      - generic [ref=e2877]:
+        - strong [ref=e2878]: "PUT /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=e2879]: frontend/frontend -> microservices/ms-useritem / resolved
+      - generic [ref=e2880]:
+        - strong [ref=e2881]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=e2882]: frontend/frontend -> microservices/ms-useritem / resolved
+      - generic [ref=e2883]:
+        - strong [ref=e2884]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}"
+        - generic [ref=e2885]: frontend/frontend -> microservices/ms-useritem / resolved
+      - generic [ref=e2886]:
+        - strong [ref=e2887]: "GET /userservice/users/{userId}/info"
+        - generic [ref=e2888]: frontend/frontend -> microservices/ms-userservice / resolved

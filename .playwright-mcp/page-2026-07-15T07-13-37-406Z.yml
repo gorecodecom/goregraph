@@ -1,0 +1,305 @@
+- generic [ref=f4e5]:
+  - complementary [ref=f4e6]:
+    - generic [ref=f4e7]:
+      - generic [ref=f4e8]: G
+      - generic [ref=f4e9]:
+        - strong [ref=f4e10]: GoreGraph
+        - generic [ref=f4e11]: Workspace
+    - generic [ref=f4e12]:
+      - generic [ref=f4e13]:
+        - generic [ref=f4e14]: "43"
+        - generic [ref=f4e15]: services
+      - generic [ref=f4e16]:
+        - generic [ref=f4e17]: "101"
+        - generic [ref=f4e18]: relations
+      - generic [ref=f4e19]:
+        - generic [ref=f4e20]: "709"
+        - generic [ref=f4e21]: calls
+    - navigation [ref=f4e22]:
+      - button "Architecture" [ref=f4e23] [cursor=pointer]
+      - button "Endpoints" [ref=f4e24] [cursor=pointer]
+      - button "Data Flow" [ref=f4e25] [cursor=pointer]
+      - button "Diagnostics" [ref=f4e26] [cursor=pointer]
+      - button "Coverage" [ref=f4e27] [cursor=pointer]
+    - generic [ref=f4e28]:
+      - generic [ref=f4e29]: Find a service
+      - textbox "Search services" [ref=f4e30]: documentdownload
+      - button "ms-documentdownload microservices/ms-documentdownload" [ref=f4e379] [cursor=pointer]:
+        - generic [ref=f4e380]: ms-documentdownload
+        - generic [ref=f4e381]: microservices/ms-documentdownload
+    - generic [ref=f4e31]:
+      - generic [ref=f4e32]: Exploration path
+      - button "1 Domain overview Start with the mental model" [ref=f4e33] [cursor=pointer]:
+        - generic [ref=f4e34]: "1"
+        - generic [ref=f4e35]:
+          - generic [ref=f4e36]: Domain overview
+          - generic [ref=f4e37]: Start with the mental model
+      - button "2 Expand in context Open one domain without losing place" [ref=f4e38] [cursor=pointer]:
+        - generic [ref=f4e39]: "2"
+        - generic [ref=f4e40]:
+          - generic [ref=f4e41]: Expand in context
+          - generic [ref=f4e42]: Open one domain without losing place
+      - button "3 Focused service Inspect direct relationships" [ref=f4e43] [cursor=pointer]:
+        - generic [ref=f4e44]: "3"
+        - generic [ref=f4e45]:
+          - generic [ref=f4e46]: Focused service
+          - generic [ref=f4e47]: Inspect direct relationships
+    - generic [ref=f4e48]:
+      - generic [ref=f4e49]: Selected service
+      - generic [ref=f4e50]: frontend-monorepo
+      - generic [ref=f4e51]: frontend/frontend-monorepo
+  - main [ref=f4e52]:
+    - generic [ref=f4e53]:
+      - generic [ref=f4e54]:
+        - generic [ref=f4e55]: Architecture workspace
+        - heading "Expanded domain in context" [level=1] [ref=f4e382]
+      - generic [ref=f4e57]:
+        - button "overview" [ref=f4e58] [cursor=pointer]
+        - button "context" [ref=f4e59] [cursor=pointer]
+        - button "focus" [ref=f4e60] [cursor=pointer]
+    - generic [ref=f4e61]:
+      - generic [ref=f4e62]: Resolved
+      - generic [ref=f4e64]: Unresolved
+      - generic [ref=f4e66]: Mismatch
+      - emphasis [ref=f4e68]: Call counts come from detected API relationships
+    - generic [ref=f4e383]:
+      - generic [ref=f4e384]:
+        - generic [ref=f4e385]: Showing frontend-monorepo in the stable architecture
+        - generic [ref=f4e386]: One domain is expanded; unrelated domains stay summarized.
+        - button "Open focused view" [ref=f4e387] [cursor=pointer]
+      - generic [ref=f4e388]:
+        - button "Frontend clients 4" [ref=f4e389] [cursor=pointer]:
+          - text: Frontend clients
+          - generic [ref=f4e390]: "4"
+        - button "Documents / WPO 5" [ref=f4e391] [cursor=pointer]:
+          - text: Documents / WPO
+          - generic [ref=f4e392]: "5"
+        - button "Cadaster / Regulation 11" [ref=f4e393] [cursor=pointer]:
+          - text: Cadaster / Regulation
+          - generic [ref=f4e394]: "11"
+        - button "Identity / Commerce 8" [ref=f4e395] [cursor=pointer]:
+          - text: Identity / Commerce
+          - generic [ref=f4e396]: "8"
+        - button "Platform / Internal 15" [ref=f4e397] [cursor=pointer]:
+          - text: Platform / Internal
+          - generic [ref=f4e398]: "15"
+      - generic [ref=f4e399]:
+        - article [ref=f4e400]:
+          - generic [ref=f4e401]:
+            - generic [ref=f4e402]:
+              - generic [ref=f4e403]: Expanded domain
+              - heading "Frontend clients" [level=3] [ref=f4e404]
+            - button "Expanded" [ref=f4e405] [cursor=pointer]
+          - generic [ref=f4e406]:
+            - generic [ref=f4e407]:
+              - button "frontend frontend/frontend" [ref=f4e408] [cursor=pointer]:
+                - generic [ref=f4e409]:
+                  - generic [ref=f4e410]: frontend
+                  - generic [ref=f4e411]: frontend/frontend
+              - button "Focus" [ref=f4e412] [cursor=pointer]
+            - generic [ref=f4e413]:
+              - button "frontend-monorepo frontend/frontend-monorepo" [ref=f4e414] [cursor=pointer]:
+                - generic [ref=f4e415]:
+                  - generic [ref=f4e416]: frontend-monorepo
+                  - generic [ref=f4e417]: frontend/frontend-monorepo
+              - button "Focus" [ref=f4e418] [cursor=pointer]
+            - generic [ref=f4e419]:
+              - button "frontends frontend/frontends" [ref=f4e420] [cursor=pointer]:
+                - generic [ref=f4e421]:
+                  - generic [ref=f4e422]: frontends
+                  - generic [ref=f4e423]: frontend/frontends
+              - button "Focus" [ref=f4e424] [cursor=pointer]
+            - generic [ref=f4e425]:
+              - button "playwright frontend/playwright" [ref=f4e426] [cursor=pointer]:
+                - generic [ref=f4e427]:
+                  - generic [ref=f4e428]: playwright
+                  - generic [ref=f4e429]: frontend/playwright
+              - button "Focus" [ref=f4e430] [cursor=pointer]
+        - article [ref=f4e431]:
+          - generic [ref=f4e432]:
+            - generic [ref=f4e433]:
+              - generic [ref=f4e434]: Domain summary
+              - heading "Documents / WPO" [level=3] [ref=f4e435]
+            - button "Expand" [ref=f4e436] [cursor=pointer]
+          - generic [ref=f4e437]:
+            - generic [ref=f4e438]: "33"
+            - generic [ref=f4e439]: calls from selected domain
+            - generic [ref=f4e440]: 5 services / 2 with risk
+        - article [ref=f4e441]:
+          - generic [ref=f4e442]:
+            - generic [ref=f4e443]:
+              - generic [ref=f4e444]: Domain summary
+              - heading "Cadaster / Regulation" [level=3] [ref=f4e445]
+            - button "Expand" [ref=f4e446] [cursor=pointer]
+          - generic [ref=f4e447]:
+            - generic [ref=f4e448]: "68"
+            - generic [ref=f4e449]: calls from selected domain
+            - generic [ref=f4e450]: 11 services / 1 with risk
+        - article [ref=f4e451]:
+          - generic [ref=f4e452]:
+            - generic [ref=f4e453]:
+              - generic [ref=f4e454]: Domain summary
+              - heading "Identity / Commerce" [level=3] [ref=f4e455]
+            - button "Expand" [ref=f4e456] [cursor=pointer]
+          - generic [ref=f4e457]:
+            - generic [ref=f4e458]: "44"
+            - generic [ref=f4e459]: calls from selected domain
+            - generic [ref=f4e460]: 8 services / 0 with risk
+        - article [ref=f4e461]:
+          - generic [ref=f4e462]:
+            - generic [ref=f4e463]:
+              - generic [ref=f4e464]: Domain summary
+              - heading "Platform / Internal" [level=3] [ref=f4e465]
+            - button "Expand" [ref=f4e466] [cursor=pointer]
+          - generic [ref=f4e467]:
+            - generic [ref=f4e468]: "32"
+            - generic [ref=f4e469]: calls from selected domain
+            - generic [ref=f4e470]: 15 services / 0 with risk
+  - complementary [ref=f4e209]:
+    - generic [ref=f4e210]:
+      - generic [ref=f4e211]: Service inspector
+      - heading "frontend-monorepo" [level=2] [ref=f4e212]
+      - paragraph [ref=f4e213]: frontend/frontend-monorepo
+    - generic [ref=f4e214]:
+      - generic [ref=f4e215]:
+        - term [ref=f4e216]: Domain
+        - definition [ref=f4e217]: Frontend clients
+      - generic [ref=f4e218]:
+        - term [ref=f4e219]: Kind
+        - definition [ref=f4e220]: frontend
+      - generic [ref=f4e221]:
+        - term [ref=f4e222]: Status
+        - definition [ref=f4e223]: indexed
+    - generic [ref=f4e224]:
+      - button "Show in architecture" [active] [ref=f4e225] [cursor=pointer]
+      - button "Focus service" [ref=f4e226] [cursor=pointer]
+    - generic [ref=f4e227]:
+      - button "Outgoing 21" [ref=f4e228] [cursor=pointer]
+      - button "Incoming 0" [ref=f4e229] [cursor=pointer]
+    - generic [ref=f4e230]:
+      - group [ref=f4e231]:
+        - generic "ms-cadastertask microservices/ms-cadastertask 19 calls" [ref=f4e232]:
+          - generic [ref=f4e233]:
+            - generic [ref=f4e234]: ms-cadastertask
+            - generic [ref=f4e235]: microservices/ms-cadastertask
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e236]: 19 calls
+      - group [ref=f4e238]:
+        - generic "ms-documenttopic microservices/ms-documenttopic 15 calls" [ref=f4e239]:
+          - generic [ref=f4e240]:
+            - generic [ref=f4e241]: ms-documenttopic
+            - generic [ref=f4e242]: microservices/ms-documenttopic
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e243]: 15 calls
+      - group [ref=f4e245]:
+        - generic "ms-portal microservices/ms-portal 12 calls" [ref=f4e246]:
+          - generic [ref=f4e247]:
+            - generic [ref=f4e248]: ms-portal
+            - generic [ref=f4e249]: microservices/ms-portal
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e250]: 12 calls
+      - group [ref=f4e252]:
+        - generic "ms-task microservices/ms-task 11 calls" [ref=f4e253]:
+          - generic [ref=f4e254]:
+            - generic [ref=f4e255]: ms-task
+            - generic [ref=f4e256]: microservices/ms-task
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e257]: 11 calls
+      - group [ref=f4e259]:
+        - generic "ms-cadasterregulation microservices/ms-cadasterregulation 10 calls" [ref=f4e260]:
+          - generic [ref=f4e261]:
+            - generic [ref=f4e262]: ms-cadasterregulation
+            - generic [ref=f4e263]: microservices/ms-cadasterregulation
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e264]: 10 calls
+      - group [ref=f4e266]:
+        - generic "ms-useritem microservices/ms-useritem 9 calls" [ref=f4e267]:
+          - generic [ref=f4e268]:
+            - generic [ref=f4e269]: ms-useritem
+            - generic [ref=f4e270]: microservices/ms-useritem
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e271]: 9 calls
+      - group [ref=f4e273]:
+        - generic "ms-containertree microservices/ms-containertree 7 calls" [ref=f4e274]:
+          - generic [ref=f4e275]:
+            - generic [ref=f4e276]: ms-containertree
+            - generic [ref=f4e277]: microservices/ms-containertree
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e278]: 7 calls
+      - group [ref=f4e280]:
+        - generic "ms-productservice microservices/ms-productservice 6 calls" [ref=f4e281]:
+          - generic [ref=f4e282]:
+            - generic [ref=f4e283]: ms-productservice
+            - generic [ref=f4e284]: microservices/ms-productservice
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e285]: 6 calls
+      - group [ref=f4e287]:
+        - generic "ms-regulationchange microservices/ms-regulationchange 6 calls" [ref=f4e288]:
+          - generic [ref=f4e289]:
+            - generic [ref=f4e290]: ms-regulationchange
+            - generic [ref=f4e291]: microservices/ms-regulationchange
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e292]: 6 calls
+      - group [ref=f4e294]:
+        - generic "ms-userservice microservices/ms-userservice 6 calls" [ref=f4e295]:
+          - generic [ref=f4e296]:
+            - generic [ref=f4e297]: ms-userservice
+            - generic [ref=f4e298]: microservices/ms-userservice
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e299]: 6 calls
+      - group [ref=f4e301]:
+        - generic "ms-documentinfo microservices/ms-documentinfo 5 calls" [ref=f4e302]:
+          - generic [ref=f4e303]:
+            - generic [ref=f4e304]: ms-documentinfo
+            - generic [ref=f4e305]: microservices/ms-documentinfo
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e306]: 5 calls
+      - group [ref=f4e308]:
+        - generic "ms-licenseservice microservices/ms-licenseservice 5 calls" [ref=f4e309]:
+          - generic [ref=f4e310]:
+            - generic [ref=f4e311]: ms-licenseservice
+            - generic [ref=f4e312]: microservices/ms-licenseservice
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e313]: 5 calls
+      - group [ref=f4e315]:
+        - generic "ms-search microservices/ms-search 5 calls" [ref=f4e316]:
+          - generic [ref=f4e317]:
+            - generic [ref=f4e318]: ms-search
+            - generic [ref=f4e319]: microservices/ms-search
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e320]: 5 calls
+      - group [ref=f4e322]:
+        - generic "ms-documentdownload microservices/ms-documentdownload 4 calls" [ref=f4e323]:
+          - generic [ref=f4e324]:
+            - generic [ref=f4e325]: ms-documentdownload
+            - generic [ref=f4e326]: microservices/ms-documentdownload
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e327]: 4 calls
+      - group [ref=f4e329]:
+        - generic "ms-cadasteruser microservices/ms-cadasteruser 3 calls" [ref=f4e330]:
+          - generic [ref=f4e331]:
+            - generic [ref=f4e332]: ms-cadasteruser
+            - generic [ref=f4e333]: microservices/ms-cadasteruser
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e334]: 3 calls
+      - group [ref=f4e336]:
+        - generic "ms-swlicenseservice microservices/ms-swlicenseservice 3 calls" [ref=f4e337]:
+          - generic [ref=f4e338]:
+            - generic [ref=f4e339]: ms-swlicenseservice
+            - generic [ref=f4e340]: microservices/ms-swlicenseservice
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e341]: 3 calls
+      - group [ref=f4e343]:
+        - generic "ms-cadaster microservices/ms-cadaster 2 calls" [ref=f4e344]:
+          - generic [ref=f4e345]:
+            - generic [ref=f4e346]: ms-cadaster
+            - generic [ref=f4e347]: microservices/ms-cadaster
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e348]: 2 calls
+      - group [ref=f4e350]:
+        - generic "ms-cadasterexport microservices/ms-cadasterexport 2 calls" [ref=f4e351]:
+          - generic [ref=f4e352]:
+            - generic [ref=f4e353]: ms-cadasterexport
+            - generic [ref=f4e354]: microservices/ms-cadasterexport
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e355]: 2 calls
+      - group [ref=f4e357]:
+        - generic "ms-documentexport microservices/ms-documentexport 2 calls" [ref=f4e358]:
+          - generic [ref=f4e359]:
+            - generic [ref=f4e360]: ms-documentexport
+            - generic [ref=f4e361]: microservices/ms-documentexport
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e362]: 2 calls
+      - group [ref=f4e364]:
+        - generic "ms-regulationtree microservices/ms-regulationtree 2 calls" [ref=f4e365]:
+          - generic [ref=f4e366]:
+            - generic [ref=f4e367]: ms-regulationtree
+            - generic [ref=f4e368]: microservices/ms-regulationtree
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e369]: 2 calls
+      - group [ref=f4e371]:
+        - generic "ms-invoiceservice microservices/ms-invoiceservice 1 call" [ref=f4e372]:
+          - generic [ref=f4e373]:
+            - generic [ref=f4e374]: ms-invoiceservice
+            - generic [ref=f4e375]: microservices/ms-invoiceservice
+          - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e376]: 1 call

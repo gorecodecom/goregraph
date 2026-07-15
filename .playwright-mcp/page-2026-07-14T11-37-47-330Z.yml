@@ -1,0 +1,359 @@
+- generic [ref=f6e2]:
+  - complementary [ref=f6e3]:
+    - heading "GoreGraph Workspace" [level=1] [ref=f6e4]
+    - generic [ref=f6e5]:
+      - generic [ref=f6e6]:
+        - strong [ref=f6e7]: "43"
+        - text: services
+      - generic [ref=f6e8]:
+        - strong [ref=f6e9]: "101"
+        - text: relations
+      - generic [ref=f6e10]:
+        - strong [ref=f6e11]: "177"
+        - text: traces
+      - generic [ref=f6e12]:
+        - strong [ref=f6e13]: "177"
+        - text: contracts
+    - heading "View" [level=2] [ref=f6e14]
+    - generic [ref=f6e15]:
+      - button "Architecture" [pressed] [ref=f6e16] [cursor=pointer]
+      - button "Endpoints" [ref=f6e17] [cursor=pointer]
+      - button "Feature Flow" [ref=f6e18] [cursor=pointer]
+      - button "Data Flow" [ref=f6e19] [cursor=pointer]
+      - button "Diagnostics" [ref=f6e20] [cursor=pointer]
+      - button "Coverage" [ref=f6e21] [cursor=pointer]
+    - paragraph [ref=f6e22]: See how projects and services communicate across the workspace. Select a service to highlight direct incoming and outgoing relationships without changing the layout.
+    - textbox "Search workspace map" [ref=f6e23]:
+      - /placeholder: Search service, endpoint, route, file, symbol
+    - heading "Filter" [level=2] [ref=f6e24]
+    - generic [ref=f6e25]:
+      - button "All" [pressed] [ref=f6e26] [cursor=pointer]
+      - button "Risk" [ref=f6e27] [cursor=pointer]
+      - button "Resolved" [ref=f6e28] [cursor=pointer]
+      - button "Unresolved" [ref=f6e29] [cursor=pointer]
+    - button "Clear selection" [ref=f6e31] [cursor=pointer]
+    - heading "Architecture Services" [level=2] [ref=f6e32]
+    - generic [ref=f6e33]:
+      - button "frontend 21 outgoing / 0 incoming / frontend/frontend" [ref=f6e34] [cursor=pointer]:
+        - strong [ref=f6e35]: frontend
+        - generic [ref=f6e36]: 21 outgoing / 0 incoming / frontend/frontend
+      - button "frontend-monorepo 135 outgoing / 0 incoming / frontend/frontend-monorepo" [ref=f6e37] [cursor=pointer]:
+        - strong [ref=f6e38]: frontend-monorepo
+        - generic [ref=f6e39]: 135 outgoing / 0 incoming / frontend/frontend-monorepo
+      - button "frontends 21 outgoing / 0 incoming / frontend/frontends" [ref=f6e40] [cursor=pointer]:
+        - strong [ref=f6e41]: frontends
+        - generic [ref=f6e42]: 21 outgoing / 0 incoming / frontend/frontends
+      - button "playwright Scanned, no outgoing API calls detected / frontend/playwright" [ref=f6e43] [cursor=pointer]:
+        - strong [ref=f6e44]: playwright
+        - generic [ref=f6e45]: Scanned, no outgoing API calls detected / frontend/playwright
+      - button "ms-adminui Scanned, no outgoing API calls detected / microservices/ms-adminui" [ref=f6e46] [cursor=pointer]:
+        - strong [ref=f6e47]: ms-adminui
+        - generic [ref=f6e48]: Scanned, no outgoing API calls detected / microservices/ms-adminui
+      - button "ms-cadaster 36 outgoing / 2 incoming / microservices/ms-cadaster" [ref=f6e49] [cursor=pointer]:
+        - strong [ref=f6e50]: ms-cadaster
+        - generic [ref=f6e51]: 36 outgoing / 2 incoming / microservices/ms-cadaster
+      - button "ms-cadasterexport 29 outgoing / 2 incoming / microservices/ms-cadasterexport" [ref=f6e52] [cursor=pointer]:
+        - strong [ref=f6e53]: ms-cadasterexport
+        - generic [ref=f6e54]: 29 outgoing / 2 incoming / microservices/ms-cadasterexport
+      - button "ms-cadasterprotocol Scanned, no outgoing API calls detected / microservices/ms-cadasterprotocol" [ref=f6e55] [cursor=pointer]:
+        - strong [ref=f6e56]: ms-cadasterprotocol
+        - generic [ref=f6e57]: Scanned, no outgoing API calls detected / microservices/ms-cadasterprotocol
+      - button "ms-cadasterregulation 41 outgoing / 28 incoming / microservices/ms-cadasterregulation" [ref=f6e58] [cursor=pointer]:
+        - strong [ref=f6e59]: ms-cadasterregulation
+        - generic [ref=f6e60]: 41 outgoing / 28 incoming / microservices/ms-cadasterregulation
+      - button "ms-cadastertask 24 outgoing / 35 incoming / microservices/ms-cadastertask" [ref=f6e61] [cursor=pointer]:
+        - strong [ref=f6e62]: ms-cadastertask
+        - generic [ref=f6e63]: 24 outgoing / 35 incoming / microservices/ms-cadastertask
+      - button "ms-cadasteruser 19 outgoing / 11 incoming / microservices/ms-cadasteruser" [ref=f6e64] [cursor=pointer]:
+        - strong [ref=f6e65]: ms-cadasteruser
+        - generic [ref=f6e66]: 19 outgoing / 11 incoming / microservices/ms-cadasteruser
+      - button "ms-common 21 outgoing / 0 incoming / microservices/ms-common" [ref=f6e67] [cursor=pointer]:
+        - strong [ref=f6e68]: ms-common
+        - generic [ref=f6e69]: 21 outgoing / 0 incoming / microservices/ms-common
+      - button "ms-containertree 11 outgoing / 7 incoming / microservices/ms-containertree" [ref=f6e70] [cursor=pointer]:
+        - strong [ref=f6e71]: ms-containertree
+        - generic [ref=f6e72]: 11 outgoing / 7 incoming / microservices/ms-containertree
+      - button "ms-datawarehouse Scanned, no outgoing API calls detected / microservices/ms-datawarehouse" [ref=f6e73] [cursor=pointer]:
+        - strong [ref=f6e74]: ms-datawarehouse
+        - generic [ref=f6e75]: Scanned, no outgoing API calls detected / microservices/ms-datawarehouse
+      - button "ms-documentdownload 10 outgoing / 4 incoming / microservices/ms-documentdownload" [ref=f6e76] [cursor=pointer]:
+        - strong [ref=f6e77]: ms-documentdownload
+        - generic [ref=f6e78]: 10 outgoing / 4 incoming / microservices/ms-documentdownload
+      - button "ms-documentexport 17 outgoing / 2 incoming / microservices/ms-documentexport" [ref=f6e79] [cursor=pointer]:
+        - strong [ref=f6e80]: ms-documentexport
+        - generic [ref=f6e81]: 17 outgoing / 2 incoming / microservices/ms-documentexport
+      - button "ms-documentinfo 17 outgoing / 5 incoming / microservices/ms-documentinfo" [ref=f6e82] [cursor=pointer]:
+        - strong [ref=f6e83]: ms-documentinfo
+        - generic [ref=f6e84]: 17 outgoing / 5 incoming / microservices/ms-documentinfo
+      - button "ms-documenttopic 17 outgoing / 28 incoming / microservices/ms-documenttopic" [ref=f6e85] [cursor=pointer]:
+        - strong [ref=f6e86]: ms-documenttopic
+        - generic [ref=f6e87]: 17 outgoing / 28 incoming / microservices/ms-documenttopic
+      - button "ms-example Scanned, no outgoing API calls detected / microservices/ms-example" [ref=f6e88] [cursor=pointer]:
+        - strong [ref=f6e89]: ms-example
+        - generic [ref=f6e90]: Scanned, no outgoing API calls detected / microservices/ms-example
+      - button "ms-invoiceservice 0 outgoing / 1 incoming / microservices/ms-invoiceservice" [ref=f6e91] [cursor=pointer]:
+        - strong [ref=f6e92]: ms-invoiceservice
+        - generic [ref=f6e93]: 0 outgoing / 1 incoming / microservices/ms-invoiceservice
+      - button "ms-knksync 7 outgoing / 0 incoming / microservices/ms-knksync" [ref=f6e94] [cursor=pointer]:
+        - strong [ref=f6e95]: ms-knksync
+        - generic [ref=f6e96]: 7 outgoing / 0 incoming / microservices/ms-knksync
+      - button "ms-licenseservice 16 outgoing / 184 incoming / microservices/ms-licenseservice" [ref=f6e97] [cursor=pointer]:
+        - strong [ref=f6e98]: ms-licenseservice
+        - generic [ref=f6e99]: 16 outgoing / 184 incoming / microservices/ms-licenseservice
+      - button "ms-mailsender Scanned, no outgoing API calls detected / microservices/ms-mailsender" [ref=f6e100] [cursor=pointer]:
+        - strong [ref=f6e101]: ms-mailsender
+        - generic [ref=f6e102]: Scanned, no outgoing API calls detected / microservices/ms-mailsender
+      - button "ms-parent Scanned, no outgoing API calls detected / microservices/ms-parent" [ref=f6e103] [cursor=pointer]:
+        - strong [ref=f6e104]: ms-parent
+        - generic [ref=f6e105]: Scanned, no outgoing API calls detected / microservices/ms-parent
+      - button "ms-pdfgenerator Scanned, no outgoing API calls detected / microservices/ms-pdfgenerator" [ref=f6e106] [cursor=pointer]:
+        - strong [ref=f6e107]: ms-pdfgenerator
+        - generic [ref=f6e108]: Scanned, no outgoing API calls detected / microservices/ms-pdfgenerator
+      - button "ms-portal 45 outgoing / 12 incoming / microservices/ms-portal" [ref=f6e109] [cursor=pointer]:
+        - strong [ref=f6e110]: ms-portal
+        - generic [ref=f6e111]: 45 outgoing / 12 incoming / microservices/ms-portal
+      - button "ms-productservice 9 outgoing / 143 incoming / microservices/ms-productservice" [ref=f6e112] [cursor=pointer]:
+        - strong [ref=f6e113]: ms-productservice
+        - generic [ref=f6e114]: 9 outgoing / 143 incoming / microservices/ms-productservice
+      - button "ms-regulationchange 33 outgoing / 6 incoming / microservices/ms-regulationchange" [ref=f6e115] [cursor=pointer]:
+        - strong [ref=f6e116]: ms-regulationchange
+        - generic [ref=f6e117]: 33 outgoing / 6 incoming / microservices/ms-regulationchange
+      - button "ms-regulationdownload 13 outgoing / 0 incoming / microservices/ms-regulationdownload" [ref=f6e118] [cursor=pointer]:
+        - strong [ref=f6e119]: ms-regulationdownload
+        - generic [ref=f6e120]: 13 outgoing / 0 incoming / microservices/ms-regulationdownload
+      - button "ms-regulationexport 5 outgoing / 0 incoming / microservices/ms-regulationexport" [ref=f6e121] [cursor=pointer]:
+        - strong [ref=f6e122]: ms-regulationexport
+        - generic [ref=f6e123]: 5 outgoing / 0 incoming / microservices/ms-regulationexport
+      - button "ms-regulationinfo 10 outgoing / 2 incoming / microservices/ms-regulationinfo" [ref=f6e124] [cursor=pointer]:
+        - strong [ref=f6e125]: ms-regulationinfo
+        - generic [ref=f6e126]: 10 outgoing / 2 incoming / microservices/ms-regulationinfo
+      - button "ms-regulationtree 29 outgoing / 33 incoming / microservices/ms-regulationtree" [ref=f6e127] [cursor=pointer]:
+        - strong [ref=f6e128]: ms-regulationtree
+        - generic [ref=f6e129]: 29 outgoing / 33 incoming / microservices/ms-regulationtree
+      - button "ms-search 27 outgoing / 9 incoming / microservices/ms-search" [ref=f6e130] [cursor=pointer]:
+        - strong [ref=f6e131]: ms-search
+        - generic [ref=f6e132]: 27 outgoing / 9 incoming / microservices/ms-search
+      - button "ms-shopmgmt 14 outgoing / 0 incoming / microservices/ms-shopmgmt" [ref=f6e133] [cursor=pointer]:
+        - strong [ref=f6e134]: ms-shopmgmt
+        - generic [ref=f6e135]: 14 outgoing / 0 incoming / microservices/ms-shopmgmt
+      - button "ms-sso 11 outgoing / 0 incoming / microservices/ms-sso" [ref=f6e136] [cursor=pointer]:
+        - strong [ref=f6e137]: ms-sso
+        - generic [ref=f6e138]: 11 outgoing / 0 incoming / microservices/ms-sso
+      - button "ms-swlicenseservice 0 outgoing / 3 incoming / microservices/ms-swlicenseservice" [ref=f6e139] [cursor=pointer]:
+        - strong [ref=f6e140]: ms-swlicenseservice
+        - generic [ref=f6e141]: 0 outgoing / 3 incoming / microservices/ms-swlicenseservice
+      - button "ms-task 39 outgoing / 11 incoming / microservices/ms-task" [ref=f6e142] [cursor=pointer]:
+        - strong [ref=f6e143]: ms-task
+        - generic [ref=f6e144]: 39 outgoing / 11 incoming / microservices/ms-task
+      - button "ms-tradingpartner 7 outgoing / 0 incoming / microservices/ms-tradingpartner" [ref=f6e145] [cursor=pointer]:
+        - strong [ref=f6e146]: ms-tradingpartner
+        - generic [ref=f6e147]: 7 outgoing / 0 incoming / microservices/ms-tradingpartner
+      - button "ms-updateinfomgmt Scanned, no outgoing API calls detected / microservices/ms-updateinfomgmt" [ref=f6e148] [cursor=pointer]:
+        - strong [ref=f6e149]: ms-updateinfomgmt
+        - generic [ref=f6e150]: Scanned, no outgoing API calls detected / microservices/ms-updateinfomgmt
+      - button "ms-useritem 14 outgoing / 21 incoming / microservices/ms-useritem" [ref=f6e151] [cursor=pointer]:
+        - strong [ref=f6e152]: ms-useritem
+        - generic [ref=f6e153]: 14 outgoing / 21 incoming / microservices/ms-useritem
+      - button "ms-userservice 11 outgoing / 160 incoming / microservices/ms-userservice" [ref=f6e154] [cursor=pointer]:
+        - strong [ref=f6e155]: ms-userservice
+        - generic [ref=f6e156]: 11 outgoing / 160 incoming / microservices/ms-userservice
+      - button "product-data-importer Scanned, no outgoing API calls detected / microservices/product-data-importer" [ref=f6e157] [cursor=pointer]:
+        - strong [ref=f6e158]: product-data-importer
+        - generic [ref=f6e159]: Scanned, no outgoing API calls detected / microservices/product-data-importer
+      - button "update-info-cleaner Scanned, no outgoing API calls detected / microservices/update-info-cleaner" [ref=f6e160] [cursor=pointer]:
+        - strong [ref=f6e161]: update-info-cleaner
+        - generic [ref=f6e162]: Scanned, no outgoing API calls detected / microservices/update-info-cleaner
+    - paragraph [ref=f6e163]: Showing 43 architecture services.
+    - generic [ref=f6e164]:
+      - heading "Status glossary" [level=2] [ref=f6e165]
+      - paragraph [ref=f6e166]:
+        - strong [ref=f6e167]: RESOLVED
+        - text: ": frontend contract is mapped to a backend route."
+      - paragraph [ref=f6e168]:
+        - strong [ref=f6e169]: MISMATCH
+        - text: ": a related backend route exists, but method or path does not match exactly."
+      - paragraph [ref=f6e170]:
+        - strong [ref=f6e171]: UNRESOLVED
+        - text: ": no reliable backend route was found in indexed projects."
+      - paragraph [ref=f6e172]:
+        - strong [ref=f6e173]: OUT_OF_SCOPE
+        - text: ": intentionally not a backend service, for example a frontend-internal API."
+      - paragraph [ref=f6e174]:
+        - strong [ref=f6e175]: EXTRACTED
+        - text: ": read directly from source structure."
+        - strong [ref=f6e176]: MATCHED
+        - text: ": linked to a concrete route, symbol, or test."
+  - main [ref=f6e177]:
+    - navigation "Architecture presentation" [ref=f6e178]:
+      - button "Flow" [pressed] [ref=f6e179] [cursor=pointer]
+      - button "Matrix" [ref=f6e180] [cursor=pointer]
+      - button "Selected service" [disabled] [ref=f6e181]
+    - generic [ref=f6e182]:
+      - button "Zoom out" [ref=f6e183] [cursor=pointer]: −
+      - button "Zoom in" [ref=f6e184] [cursor=pointer]: +
+      - button "Reset zoom and pan" [ref=f6e185] [cursor=pointer]: 100%
+      - button "Fit visible graph" [ref=f6e186] [cursor=pointer]: Fit
+      - button "Toggle relationship labels" [ref=f6e187] [cursor=pointer]: Labels
+      - generic [ref=f6e188]: 100%
+    - group "Directed workspace relationship map" [ref=f6e189]:
+      - generic [ref=f6e190]:
+        - generic [ref=f6e192]: Architecture flow
+        - generic [ref=f6e193]: Unrelated relationships remain grouped; select a service to reveal direct calls without moving the architecture.
+        - generic [ref=f6e194]: Frontend clients
+        - generic [ref=f6e195]: Documents / WPO
+        - generic [ref=f6e196]: Cadaster / Regulation
+        - generic [ref=f6e197]: Identity / Commerce
+        - generic [ref=f6e198]: Platform / Internal
+        - generic [ref=f6e216]:
+          - button "frontend / 21 outgoing | 0 incoming" [ref=f6e217]:
+            - generic [ref=f6e219]: frontend
+            - generic [ref=f6e220]: 21 outgoing | 0 incoming
+          - button "frontend-monorepo / 135 outgoing | 0 incoming" [ref=f6e221]:
+            - generic [ref=f6e223]: frontend-monorepo
+            - generic [ref=f6e224]: 135 outgoing | 0 incoming
+          - button "frontends / 21 outgoing | 0 incoming" [ref=f6e225]:
+            - generic [ref=f6e227]: frontends
+            - generic [ref=f6e228]: 21 outgoing | 0 incoming
+          - button "playwright / 0 outgoing | 0 incoming" [ref=f6e229]:
+            - generic [ref=f6e231]: playwright
+            - generic [ref=f6e232]: 0 outgoing | 0 incoming
+          - button "ms-adminui / 0 outgoing | 0 incoming" [ref=f6e233]:
+            - generic [ref=f6e235]: ms-adminui
+            - generic [ref=f6e236]: 0 outgoing | 0 incoming
+          - button "ms-cadaster / 36 outgoing | 2 incoming" [ref=f6e237]:
+            - generic [ref=f6e239]: ms-cadaster
+            - generic [ref=f6e240]: 36 outgoing | 2 incoming
+          - button "ms-cadasterexport / 29 outgoing | 2 incoming" [ref=f6e241]:
+            - generic [ref=f6e243]: ms-cadasterexport
+            - generic [ref=f6e244]: 29 outgoing | 2 incoming
+          - button "ms-cadasterprotocol / 0 outgoing | 0 incoming" [ref=f6e245]:
+            - generic [ref=f6e247]: ms-cadasterprotocol
+            - generic [ref=f6e248]: 0 outgoing | 0 incoming
+          - button "ms-cadasterregulation / 41 outgoing | 28 incoming" [ref=f6e249]:
+            - generic [ref=f6e251]: ms-cadasterregulation
+            - generic [ref=f6e252]: 41 outgoing | 28 incoming
+          - button "ms-cadastertask / 24 outgoing | 35 incoming" [ref=f6e253]:
+            - generic [ref=f6e255]: ms-cadastertask
+            - generic [ref=f6e256]: 24 outgoing | 35 incoming
+          - button "ms-cadasteruser / 19 outgoing | 11 incoming" [ref=f6e257]:
+            - generic [ref=f6e259]: ms-cadasteruser
+            - generic [ref=f6e260]: 19 outgoing | 11 incoming
+          - button "ms-common / 21 outgoing | 0 incoming" [ref=f6e261]:
+            - generic [ref=f6e263]: ms-common
+            - generic [ref=f6e264]: 21 outgoing | 0 incoming
+          - button "ms-containertree / 11 outgoing | 7 incoming" [ref=f6e265]:
+            - generic [ref=f6e267]: ms-containertree
+            - generic [ref=f6e268]: 11 outgoing | 7 incoming
+          - button "ms-datawarehouse / 0 outgoing | 0 incoming" [ref=f6e269]:
+            - generic [ref=f6e271]: ms-datawarehouse
+            - generic [ref=f6e272]: 0 outgoing | 0 incoming
+          - button "ms-documentdownload / 10 outgoing | 4 incoming" [ref=f6e273]:
+            - generic [ref=f6e275]: ms-documentdownload
+            - generic [ref=f6e276]: 10 outgoing | 4 incoming
+          - button "ms-documentexport / 17 outgoing | 2 incoming" [ref=f6e277]:
+            - generic [ref=f6e279]: ms-documentexport
+            - generic [ref=f6e280]: 17 outgoing | 2 incoming
+          - button "ms-documentinfo / 17 outgoing | 5 incoming" [ref=f6e281]:
+            - generic [ref=f6e283]: ms-documentinfo
+            - generic [ref=f6e284]: 17 outgoing | 5 incoming
+          - button "ms-documenttopic / 17 outgoing | 28 incoming" [ref=f6e285]:
+            - generic [ref=f6e287]: ms-documenttopic
+            - generic [ref=f6e288]: 17 outgoing | 28 incoming
+          - button "ms-example / 0 outgoing | 0 incoming" [ref=f6e289]:
+            - generic [ref=f6e291]: ms-example
+            - generic [ref=f6e292]: 0 outgoing | 0 incoming
+          - button "ms-invoiceservice / 0 outgoing | 1 incoming" [ref=f6e293]:
+            - generic [ref=f6e295]: ms-invoiceservice
+            - generic [ref=f6e296]: 0 outgoing | 1 incoming
+          - button "ms-knksync / 7 outgoing | 0 incoming" [ref=f6e297]:
+            - generic [ref=f6e299]: ms-knksync
+            - generic [ref=f6e300]: 7 outgoing | 0 incoming
+          - button "ms-licenseservice / 16 outgoing | 184 incoming" [ref=f6e301]:
+            - generic [ref=f6e303]: ms-licenseservice
+            - generic [ref=f6e304]: 16 outgoing | 184 incoming
+          - button "ms-mailsender / 0 outgoing | 0 incoming" [ref=f6e305]:
+            - generic [ref=f6e307]: ms-mailsender
+            - generic [ref=f6e308]: 0 outgoing | 0 incoming
+          - button "ms-parent / 0 outgoing | 0 incoming" [ref=f6e309]:
+            - generic [ref=f6e311]: ms-parent
+            - generic [ref=f6e312]: 0 outgoing | 0 incoming
+          - button "ms-pdfgenerator / 0 outgoing | 0 incoming" [ref=f6e313]:
+            - generic [ref=f6e315]: ms-pdfgenerator
+            - generic [ref=f6e316]: 0 outgoing | 0 incoming
+          - button "ms-portal / 45 outgoing | 12 incoming" [ref=f6e317]:
+            - generic [ref=f6e319]: ms-portal
+            - generic [ref=f6e320]: 45 outgoing | 12 incoming
+          - button "ms-productservice / 9 outgoing | 143 incoming" [ref=f6e321]:
+            - generic [ref=f6e323]: ms-productservice
+            - generic [ref=f6e324]: 9 outgoing | 143 incoming
+          - button "ms-regulationchange / 33 outgoing | 6 incoming" [ref=f6e325]:
+            - generic [ref=f6e327]: ms-regulationchange
+            - generic [ref=f6e328]: 33 outgoing | 6 incoming
+          - button "ms-regulationdownload / 13 outgoing | 0 incoming" [ref=f6e329]:
+            - generic [ref=f6e331]: ms-regulationdownload
+            - generic [ref=f6e332]: 13 outgoing | 0 incoming
+          - button "ms-regulationexport / 5 outgoing | 0 incoming" [ref=f6e333]:
+            - generic [ref=f6e335]: ms-regulationexport
+            - generic [ref=f6e336]: 5 outgoing | 0 incoming
+          - button "ms-regulationinfo / 10 outgoing | 2 incoming" [ref=f6e337]:
+            - generic [ref=f6e339]: ms-regulationinfo
+            - generic [ref=f6e340]: 10 outgoing | 2 incoming
+          - button "ms-regulationtree / 29 outgoing | 33 incoming" [ref=f6e341]:
+            - generic [ref=f6e343]: ms-regulationtree
+            - generic [ref=f6e344]: 29 outgoing | 33 incoming
+          - button "ms-search / 27 outgoing | 9 incoming" [ref=f6e345]:
+            - generic [ref=f6e347]: ms-search
+            - generic [ref=f6e348]: 27 outgoing | 9 incoming
+          - button "ms-shopmgmt / 14 outgoing | 0 incoming" [ref=f6e349]:
+            - generic [ref=f6e351]: ms-shopmgmt
+            - generic [ref=f6e352]: 14 outgoing | 0 incoming
+          - button "ms-sso / 11 outgoing | 0 incoming" [ref=f6e353]:
+            - generic [ref=f6e355]: ms-sso
+            - generic [ref=f6e356]: 11 outgoing | 0 incoming
+          - button "ms-swlicenseservice / 0 outgoing | 3 incoming" [ref=f6e357]:
+            - generic [ref=f6e359]: ms-swlicenseservice
+            - generic [ref=f6e360]: 0 outgoing | 3 incoming
+          - button "ms-task / 39 outgoing | 11 incoming" [ref=f6e361]:
+            - generic [ref=f6e363]: ms-task
+            - generic [ref=f6e364]: 39 outgoing | 11 incoming
+          - button "ms-tradingpartner / 7 outgoing | 0 incoming" [ref=f6e365]:
+            - generic [ref=f6e367]: ms-tradingpartner
+            - generic [ref=f6e368]: 7 outgoing | 0 incoming
+          - button "ms-updateinfomgmt / 0 outgoing | 0 incoming" [ref=f6e369]:
+            - generic [ref=f6e371]: ms-updateinfomgmt
+            - generic [ref=f6e372]: 0 outgoing | 0 incoming
+          - button "ms-useritem / 14 outgoing | 21 incoming" [ref=f6e373]:
+            - generic [ref=f6e375]: ms-useritem
+            - generic [ref=f6e376]: 14 outgoing | 21 incoming
+          - button "ms-userservice / 11 outgoing | 160 incoming" [ref=f6e377]:
+            - generic [ref=f6e379]: ms-userservice
+            - generic [ref=f6e380]: 11 outgoing | 160 incoming
+          - button "product-data-importer / 0 outgoing | 0 incoming" [ref=f6e381]:
+            - generic [ref=f6e383]: product-data-importer
+            - generic [ref=f6e384]: 0 outgoing | 0 incoming
+          - button "update-info-cleaner / 0 outgoing | 0 incoming" [ref=f6e385]:
+            - generic [ref=f6e387]: update-info-cleaner
+            - generic [ref=f6e388]: 0 outgoing | 0 incoming
+        - generic [ref=f6e389]:
+          - generic [ref=f6e390]: 29 calls
+          - generic [ref=f6e393]: 210 calls
+          - generic [ref=f6e396]: 72 calls
+          - generic [ref=f6e399]: 36 calls
+          - generic [ref=f6e402]: 10 calls
+          - generic [ref=f6e405]: 22 calls
+          - generic [ref=f6e408]: 16 calls
+          - generic [ref=f6e411]: 17 calls
+          - generic [ref=f6e414]: 39 calls
+          - generic [ref=f6e417]: 5 calls
+          - generic [ref=f6e420]: 32 calls
+          - generic [ref=f6e423]: 6 calls
+          - generic [ref=f6e426]: 58 calls
+          - generic [ref=f6e429]: 16 calls
+          - generic [ref=f6e432]: 13 calls
+          - generic [ref=f6e435]: 128 calls
+        - generic [ref=f6e438]:
+          - generic [ref=f6e440]: Bundled calls
+          - generic [ref=f6e442]: Direct calls
+          - generic [ref=f6e443]: Risk
+          - generic [ref=f6e445]: Selected
+  - paragraph [ref=f6e447]: Select a service or endpoint to inspect directed relationships.

@@ -1,0 +1,926 @@
+- generic [ref=f1e2]:
+  - complementary [ref=f1e3]:
+    - heading "GoreGraph Workspace" [level=1] [ref=f1e4]
+    - generic [ref=f1e5]:
+      - generic [ref=f1e6]:
+        - strong [ref=f1e7]: "43"
+        - text: services
+      - generic [ref=f1e8]:
+        - strong [ref=f1e9]: "101"
+        - text: relations
+      - generic [ref=f1e10]:
+        - strong [ref=f1e11]: "177"
+        - text: traces
+      - generic [ref=f1e12]:
+        - strong [ref=f1e13]: "177"
+        - text: contracts
+    - heading "View" [level=2] [ref=f1e14]
+    - generic [ref=f1e15]:
+      - button "Architecture" [ref=f1e16] [cursor=pointer]
+      - button "Endpoints" [ref=f1e17] [cursor=pointer]
+      - button "Feature Flow" [pressed] [ref=f1e18] [cursor=pointer]
+      - button "Data Flow" [ref=f1e19] [cursor=pointer]
+      - button "Diagnostics" [ref=f1e20] [cursor=pointer]
+      - button "Coverage" [ref=f1e21] [cursor=pointer]
+    - paragraph [ref=f1e22]: Follow one feature from frontend route and component through API, backend, persistence, and linked tests.
+    - textbox "Search workspace map" [ref=f1e23]:
+      - /placeholder: Search service, endpoint, route, file, symbol
+    - heading "Filter" [level=2] [ref=f1e24]
+    - generic [ref=f1e25]:
+      - button "All" [pressed] [ref=f1e26] [cursor=pointer]
+      - button "Risk" [ref=f1e27] [cursor=pointer]
+      - button "Resolved" [ref=f1e28] [cursor=pointer]
+      - button "Unresolved" [ref=f1e29] [cursor=pointer]
+    - button "Clear selection" [ref=f1e31] [cursor=pointer]
+    - heading "Feature Flows" [level=2] [ref=f1e400]
+    - generic [ref=f1e33]:
+      - button "PUT /search frontend/frontend → microservices/ms-search · RESOLVED" [ref=f1e858] [cursor=pointer]:
+        - strong [ref=f1e859]: PUT /search
+        - generic [ref=f1e860]: frontend/frontend → microservices/ms-search · RESOLVED
+      - button "GET /search/autocomplete frontend/frontend → microservices/ms-search · RESOLVED" [ref=f1e861] [cursor=pointer]:
+        - strong [ref=f1e862]: GET /search/autocomplete
+        - generic [ref=f1e863]: frontend/frontend → microservices/ms-search · RESOLVED
+      - 'button "GET /userservice/users/{userId}/info frontend/frontend → microservices/ms-userservice · RESOLVED" [ref=f1e864] [cursor=pointer]':
+        - strong [ref=f1e865]: "GET /userservice/users/{userId}/info"
+        - generic [ref=f1e866]: frontend/frontend → microservices/ms-userservice · RESOLVED
+      - 'button "GET /useritem/users/{userId}/folders/favorites frontend/frontend → microservices/ms-useritem · RESOLVED" [ref=f1e867] [cursor=pointer]':
+        - strong [ref=f1e868]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=f1e869]: frontend/frontend → microservices/ms-useritem · RESOLVED
+      - 'button "POST /useritem/users/{userId}/folders frontend/frontend → microservices/ms-useritem · RESOLVED" [ref=f1e870] [cursor=pointer]':
+        - strong [ref=f1e871]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f1e872]: frontend/frontend → microservices/ms-useritem · RESOLVED
+      - 'button "PUT /useritem/users/{userId}/folders/{folderId} frontend/frontend → microservices/ms-useritem · RESOLVED" [ref=f1e873] [cursor=pointer]':
+        - strong [ref=f1e874]: "PUT /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f1e875]: frontend/frontend → microservices/ms-useritem · RESOLVED
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId} frontend/frontend → microservices/ms-useritem · RESOLVED" [ref=f1e876] [cursor=pointer]':
+        - strong [ref=f1e877]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f1e878]: frontend/frontend → microservices/ms-useritem · RESOLVED
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId} frontend/frontend → microservices/ms-useritem · RESOLVED" [ref=f1e879] [cursor=pointer]':
+        - strong [ref=f1e880]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}"
+        - generic [ref=f1e881]: frontend/frontend → microservices/ms-useritem · RESOLVED
+      - 'button "POST /useritem/users/{userId}/folders frontend/frontend → microservices/ms-useritem · RESOLVED" [ref=f1e882] [cursor=pointer]':
+        - strong [ref=f1e883]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f1e884]: frontend/frontend → microservices/ms-useritem · RESOLVED
+      - 'button "GET /regulations/{objectId}/lras frontend/frontend → microservices/ms-regulationinfo · RESOLVED" [ref=f1e885] [cursor=pointer]':
+        - strong [ref=f1e886]: "GET /regulations/{objectId}/lras"
+        - generic [ref=f1e887]: frontend/frontend → microservices/ms-regulationinfo · RESOLVED
+      - 'button "GET /invoiceservice/users/{userId}/invoices frontend/frontend-monorepo → microservices/ms-invoiceservice · RESOLVED" [ref=f1e888] [cursor=pointer]':
+        - strong [ref=f1e889]: "GET /invoiceservice/users/{userId}/invoices"
+        - generic [ref=f1e890]: frontend/frontend-monorepo → microservices/ms-invoiceservice · RESOLVED
+      - button "POST /swlicenseservice/key frontend/frontend-monorepo → microservices/ms-swlicenseservice · RESOLVED" [ref=f1e891] [cursor=pointer]:
+        - strong [ref=f1e892]: POST /swlicenseservice/key
+        - generic [ref=f1e893]: frontend/frontend-monorepo → microservices/ms-swlicenseservice · RESOLVED
+      - 'button "GET /swlicenseservice/licenses/{licenseId}/basecodes/{baseCode}/keys frontend/frontend-monorepo → microservices/ms-swlicenseservice · RESOLVED" [ref=f1e894] [cursor=pointer]':
+        - strong [ref=f1e895]: "GET /swlicenseservice/licenses/{licenseId}/basecodes/{baseCode}/keys"
+        - generic [ref=f1e896]: frontend/frontend-monorepo → microservices/ms-swlicenseservice · RESOLVED
+      - button "DELETE /swlicenseservice/key frontend/frontend-monorepo → microservices/ms-swlicenseservice · RESOLVED" [ref=f1e897] [cursor=pointer]:
+        - strong [ref=f1e898]: DELETE /swlicenseservice/key
+        - generic [ref=f1e899]: frontend/frontend-monorepo → microservices/ms-swlicenseservice · RESOLVED
+      - 'button "GET /licenseservice/users/{userId}/licenses/{licenseId}/assignments frontend/frontend-monorepo → microservices/ms-licenseservice · RESOLVED" [ref=f1e900] [cursor=pointer]':
+        - strong [ref=f1e901]: "GET /licenseservice/users/{userId}/licenses/{licenseId}/assignments"
+        - generic [ref=f1e902]: frontend/frontend-monorepo → microservices/ms-licenseservice · RESOLVED
+      - 'button "POST /licenseservice/users/{userId}/licenses/{licenseId}/assignments frontend/frontend-monorepo → microservices/ms-licenseservice · RESOLVED" [ref=f1e903] [cursor=pointer]':
+        - strong [ref=f1e904]: "POST /licenseservice/users/{userId}/licenses/{licenseId}/assignments"
+        - generic [ref=f1e905]: frontend/frontend-monorepo → microservices/ms-licenseservice · RESOLVED
+      - 'button "DELETE /licenseservice/users/{userId}/licenses/{licenseId}/assignments/{assignedUserId} frontend/frontend-monorepo → microservices/ms-licenseservice · RESOLVED" [ref=f1e906] [cursor=pointer]':
+        - strong [ref=f1e907]: "DELETE /licenseservice/users/{userId}/licenses/{licenseId}/assignments/{assignedUserId}"
+        - generic [ref=f1e908]: frontend/frontend-monorepo → microservices/ms-licenseservice · RESOLVED
+      - 'button "GET /productservice/users/{userId}/products frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED" [ref=f1e909] [cursor=pointer]':
+        - strong [ref=f1e910]: "GET /productservice/users/{userId}/products"
+        - generic [ref=f1e911]: frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED
+      - 'button "GET /productservice/users/{userId}/services frontend/frontend-monorepo → microservices/ms-licenseservice · RESOLVED" [ref=f1e912] [cursor=pointer]':
+        - strong [ref=f1e913]: "GET /productservice/users/{userId}/services"
+        - generic [ref=f1e914]: frontend/frontend-monorepo → microservices/ms-licenseservice · RESOLVED
+      - 'button "GET /productservice/users/{userId}/products/{baseCode}/support frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED" [ref=f1e915] [cursor=pointer]':
+        - strong [ref=f1e916]: "GET /productservice/users/{userId}/products/{baseCode}/support"
+        - generic [ref=f1e917]: frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED
+      - 'button "GET /productservice/users/{userId}/products/{baseCode} frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED" [ref=f1e918] [cursor=pointer]':
+        - strong [ref=f1e919]: "GET /productservice/users/{userId}/products/{baseCode}"
+        - generic [ref=f1e920]: frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED
+      - 'button "GET /productservice/users/{userId}/products/{baseCode}/support frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED" [ref=f1e921] [cursor=pointer]':
+        - strong [ref=f1e922]: "GET /productservice/users/{userId}/products/{baseCode}/support"
+        - generic [ref=f1e923]: frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED
+      - 'button "POST /productservice/users/{userId}/products/{baseCode}/support frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED" [ref=f1e924] [cursor=pointer]':
+        - strong [ref=f1e925]: "POST /productservice/users/{userId}/products/{baseCode}/support"
+        - generic [ref=f1e926]: frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED
+      - 'button "PUT /productservice/users/{userId}/products/{baseCode} frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED" [ref=f1e927] [cursor=pointer]':
+        - strong [ref=f1e928]: "PUT /productservice/users/{userId}/products/{baseCode}"
+        - generic [ref=f1e929]: frontend/frontend-monorepo → microservices/ms-productservice · RESOLVED
+      - 'button "GET /userservice/users/{userId}/info frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED" [ref=f1e930] [cursor=pointer]':
+        - strong [ref=f1e931]: "GET /userservice/users/{userId}/info"
+        - generic [ref=f1e932]: frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED
+      - 'button "PUT /userservice/users/{userId}/image frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED" [ref=f1e933] [cursor=pointer]':
+        - strong [ref=f1e934]: "PUT /userservice/users/{userId}/image"
+        - generic [ref=f1e935]: frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED
+      - 'button "DELETE /userservice/users/{userId}/image frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED" [ref=f1e936] [cursor=pointer]':
+        - strong [ref=f1e937]: "DELETE /userservice/users/{userId}/image"
+        - generic [ref=f1e938]: frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED
+      - 'button "PUT /userservice/users/{userId} frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED" [ref=f1e939] [cursor=pointer]':
+        - strong [ref=f1e940]: "PUT /userservice/users/{userId}"
+        - generic [ref=f1e941]: frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED
+      - 'button "PUT /userservice/users/{userId}/address frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED" [ref=f1e942] [cursor=pointer]':
+        - strong [ref=f1e943]: "PUT /userservice/users/{userId}/address"
+        - generic [ref=f1e944]: frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED
+      - button "GET /portal/tasks/flyout frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e945] [cursor=pointer]:
+        - strong [ref=f1e946]: GET /portal/tasks/flyout
+        - generic [ref=f1e947]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - button "GET /portal/news frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e948] [cursor=pointer]:
+        - strong [ref=f1e949]: GET /portal/news
+        - generic [ref=f1e950]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - button "GET /portal/topics frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e951] [cursor=pointer]:
+        - strong [ref=f1e952]: GET /portal/topics
+        - generic [ref=f1e953]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - 'button "GET /portal/topics/{id} frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e954] [cursor=pointer]':
+        - strong [ref=f1e955]: "GET /portal/topics/{id}"
+        - generic [ref=f1e956]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - 'button "PUT /portal/topics/{topicId} frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e957] [cursor=pointer]':
+        - strong [ref=f1e958]: "PUT /portal/topics/{topicId}"
+        - generic [ref=f1e959]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - 'button "GET /portal/topics/{topicId}/services/news frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e960] [cursor=pointer]':
+        - strong [ref=f1e961]: "GET /portal/topics/{topicId}/services/news"
+        - generic [ref=f1e962]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - 'button "PUT /portal/topics/{topicId}/services/{serviceCode} frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e963] [cursor=pointer]':
+        - strong [ref=f1e964]: "PUT /portal/topics/{topicId}/services/{serviceCode}"
+        - generic [ref=f1e965]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - button "PUT /portal/topics frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e966] [cursor=pointer]:
+        - strong [ref=f1e967]: PUT /portal/topics
+        - generic [ref=f1e968]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - 'button "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e969] [cursor=pointer]':
+        - strong [ref=f1e970]: "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}"
+        - generic [ref=f1e971]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e972] [cursor=pointer]':
+        - strong [ref=f1e973]: "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId}"
+        - generic [ref=f1e974]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e975] [cursor=pointer]':
+        - strong [ref=f1e976]: "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}"
+        - generic [ref=f1e977]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e978] [cursor=pointer]':
+        - strong [ref=f1e979]: "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId}"
+        - generic [ref=f1e980]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "GET /cadasters/{cadasterId}/users frontend/frontend-monorepo → microservices/ms-cadasteruser · RESOLVED" [ref=f1e981] [cursor=pointer]':
+        - strong [ref=f1e982]: "GET /cadasters/{cadasterId}/users"
+        - generic [ref=f1e983]: frontend/frontend-monorepo → microservices/ms-cadasteruser · RESOLVED
+      - 'button "GET /cadasters/{cadasterId} frontend/frontend-monorepo → microservices/ms-cadaster · RESOLVED" [ref=f1e984] [cursor=pointer]':
+        - strong [ref=f1e985]: "GET /cadasters/{cadasterId}"
+        - generic [ref=f1e986]: frontend/frontend-monorepo → microservices/ms-cadaster · RESOLVED
+      - 'button "POST /task/services/{serviceCode}/tasks/{taskId}/comments frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e987] [cursor=pointer]':
+        - strong [ref=f1e988]: "POST /task/services/{serviceCode}/tasks/{taskId}/comments"
+        - generic [ref=f1e989]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "PUT /task/services/{serviceCode}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e990] [cursor=pointer]':
+        - strong [ref=f1e991]: "PUT /task/services/{serviceCode}/tasks/{taskId}"
+        - generic [ref=f1e992]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "DELETE /task/services/{serviceCode}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e993] [cursor=pointer]':
+        - strong [ref=f1e994]: "DELETE /task/services/{serviceCode}/tasks/{taskId}"
+        - generic [ref=f1e995]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - button "PUT /search frontend/frontend-monorepo → microservices/ms-search · RESOLVED" [ref=f1e996] [cursor=pointer]:
+        - strong [ref=f1e997]: PUT /search
+        - generic [ref=f1e998]: frontend/frontend-monorepo → microservices/ms-search · RESOLVED
+      - button "GET /portal/tasks/detail frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e999] [cursor=pointer]:
+        - strong [ref=f1e1000]: GET /portal/tasks/detail
+        - generic [ref=f1e1001]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - button "POST /portal/tasks/export frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e1002] [cursor=pointer]:
+        - strong [ref=f1e1003]: POST /portal/tasks/export
+        - generic [ref=f1e1004]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - 'button "GET /cadasters/{cadasterId}/users frontend/frontend-monorepo → microservices/ms-cadasteruser · RESOLVED" [ref=f1e1005] [cursor=pointer]':
+        - strong [ref=f1e1006]: "GET /cadasters/{cadasterId}/users"
+        - generic [ref=f1e1007]: frontend/frontend-monorepo → microservices/ms-cadasteruser · RESOLVED
+      - 'button "GET /cadasters/{cadasterId} frontend/frontend-monorepo → microservices/ms-cadaster · RESOLVED" [ref=f1e1008] [cursor=pointer]':
+        - strong [ref=f1e1009]: "GET /cadasters/{cadasterId}"
+        - generic [ref=f1e1010]: frontend/frontend-monorepo → microservices/ms-cadaster · RESOLVED
+      - 'button "POST /cadasters/{cadasterId}/regulations/changes/guidance frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED" [ref=f1e1011] [cursor=pointer]':
+        - strong [ref=f1e1012]: "POST /cadasters/{cadasterId}/regulations/changes/guidance"
+        - generic [ref=f1e1013]: frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED
+      - 'button "PUT /cadasters/{cadasterId}/regulations/changes/{type}/notice frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED" [ref=f1e1014] [cursor=pointer]':
+        - strong [ref=f1e1015]: "PUT /cadasters/{cadasterId}/regulations/changes/{type}/notice"
+        - generic [ref=f1e1016]: frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED
+      - 'button "PUT /cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED" [ref=f1e1017] [cursor=pointer]':
+        - strong [ref=f1e1018]: "PUT /cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster"
+        - generic [ref=f1e1019]: frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED
+      - 'button "PUT /cadasters/{cadasterId}/regulations/changes/{type}/guidancenotice frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED" [ref=f1e1020] [cursor=pointer]':
+        - strong [ref=f1e1021]: "PUT /cadasters/{cadasterId}/regulations/changes/{type}/guidancenotice"
+        - generic [ref=f1e1022]: frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED
+      - button "POST /userservice/users/invite frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED" [ref=f1e1023] [cursor=pointer]:
+        - strong [ref=f1e1024]: POST /userservice/users/invite
+        - generic [ref=f1e1025]: frontend/frontend-monorepo → microservices/ms-userservice · RESOLVED
+      - 'button "PUT /cadasters/{cadasterId}/users frontend/frontend-monorepo → microservices/ms-cadasteruser · RESOLVED" [ref=f1e1026] [cursor=pointer]':
+        - strong [ref=f1e1027]: "PUT /cadasters/{cadasterId}/users"
+        - generic [ref=f1e1028]: frontend/frontend-monorepo → microservices/ms-cadasteruser · RESOLVED
+      - button "GET /cadasters/tree/regulationtopics frontend/frontend-monorepo → microservices/ms-regulationtree · RESOLVED" [ref=f1e1029] [cursor=pointer]:
+        - strong [ref=f1e1030]: GET /cadasters/tree/regulationtopics
+        - generic [ref=f1e1031]: frontend/frontend-monorepo → microservices/ms-regulationtree · RESOLVED
+      - button "POST /cadasters/cadastertopics frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED" [ref=f1e1032] [cursor=pointer]:
+        - strong [ref=f1e1033]: POST /cadasters/cadastertopics
+        - generic [ref=f1e1034]: frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED
+      - 'button "GET /cadasters/{cadasterId}/cadastertopics frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED" [ref=f1e1035] [cursor=pointer]':
+        - strong [ref=f1e1036]: "GET /cadasters/{cadasterId}/cadastertopics"
+        - generic [ref=f1e1037]: frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED
+      - 'button "PUT /cadasters/{cadasterId}/cadastertopics frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED" [ref=f1e1038] [cursor=pointer]':
+        - strong [ref=f1e1039]: "PUT /cadasters/{cadasterId}/cadastertopics"
+        - generic [ref=f1e1040]: frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED
+      - button "POST /cadasters/regulationtopics frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED" [ref=f1e1041] [cursor=pointer]:
+        - strong [ref=f1e1042]: POST /cadasters/regulationtopics
+        - generic [ref=f1e1043]: frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED
+      - 'button "GET /cadasters/{cadasterId}/regulationtopics frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED" [ref=f1e1044] [cursor=pointer]':
+        - strong [ref=f1e1045]: "GET /cadasters/{cadasterId}/regulationtopics"
+        - generic [ref=f1e1046]: frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED
+      - button "GET /cadasters/tree/cachetareas frontend/frontend-monorepo → microservices/ms-regulationtree · RESOLVED" [ref=f1e1047] [cursor=pointer]:
+        - strong [ref=f1e1048]: GET /cadasters/tree/cachetareas
+        - generic [ref=f1e1049]: frontend/frontend-monorepo → microservices/ms-regulationtree · RESOLVED
+      - 'button "GET /cadasters/{cadasterId}/cachetareas frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED" [ref=f1e1050] [cursor=pointer]':
+        - strong [ref=f1e1051]: "GET /cadasters/{cadasterId}/cachetareas"
+        - generic [ref=f1e1052]: frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED
+      - 'button "PUT /cadasters/{cadasterId}/cachetareas frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED" [ref=f1e1053] [cursor=pointer]':
+        - strong [ref=f1e1054]: "PUT /cadasters/{cadasterId}/cachetareas"
+        - generic [ref=f1e1055]: frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED
+      - button "GET /cadasters/export/settings frontend/frontend-monorepo → microservices/ms-cadasterexport · RESOLVED" [ref=f1e1056] [cursor=pointer]:
+        - strong [ref=f1e1057]: GET /cadasters/export/settings
+        - generic [ref=f1e1058]: frontend/frontend-monorepo → microservices/ms-cadasterexport · RESOLVED
+      - button "PUT /cadasters/export/settings frontend/frontend-monorepo → microservices/ms-cadasterexport · RESOLVED" [ref=f1e1059] [cursor=pointer]:
+        - strong [ref=f1e1060]: PUT /cadasters/export/settings
+        - generic [ref=f1e1061]: frontend/frontend-monorepo → microservices/ms-cadasterexport · RESOLVED
+      - button "GET /portal/tasks/flyout frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e1062] [cursor=pointer]:
+        - strong [ref=f1e1063]: GET /portal/tasks/flyout
+        - generic [ref=f1e1064]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - 'button "PUT /cadasters/{cadasterId}/regulations/{objectId}/changes/{lra} frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED" [ref=f1e1065] [cursor=pointer]':
+        - strong [ref=f1e1066]: "PUT /cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}"
+        - generic [ref=f1e1067]: frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED
+      - 'button "PUT /cadasters/{cadasterId}/regulations/{objectId}/changes/{lra} frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED" [ref=f1e1068] [cursor=pointer]':
+        - strong [ref=f1e1069]: "PUT /cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}"
+        - generic [ref=f1e1070]: frontend/frontend-monorepo → microservices/ms-regulationchange · RESOLVED
+      - 'button "GET /cadasters/{cadasterId}/regulations frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED" [ref=f1e1071] [cursor=pointer]':
+        - strong [ref=f1e1072]: "GET /cadasters/{cadasterId}/regulations"
+        - generic [ref=f1e1073]: frontend/frontend-monorepo → microservices/ms-cadasterregulation · RESOLVED
+      - 'button "GET /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1074] [cursor=pointer]':
+        - strong [ref=f1e1075]: "GET /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks"
+        - generic [ref=f1e1076]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "POST /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1077] [cursor=pointer]':
+        - strong [ref=f1e1078]: "POST /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks"
+        - generic [ref=f1e1079]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1080] [cursor=pointer]':
+        - strong [ref=f1e1081]: "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}"
+        - generic [ref=f1e1082]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1083] [cursor=pointer]':
+        - strong [ref=f1e1084]: "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}"
+        - generic [ref=f1e1085]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "GET /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1086] [cursor=pointer]':
+        - strong [ref=f1e1087]: "GET /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks"
+        - generic [ref=f1e1088]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "POST /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1089] [cursor=pointer]':
+        - strong [ref=f1e1090]: "POST /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks"
+        - generic [ref=f1e1091]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1092] [cursor=pointer]':
+        - strong [ref=f1e1093]: "PUT /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId}"
+        - generic [ref=f1e1094]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1095] [cursor=pointer]':
+        - strong [ref=f1e1096]: "DELETE /cadastertask/cadasters/{cadasterId}/regulations/{objectId}/changes/{lra}/tasks/{taskId}"
+        - generic [ref=f1e1097]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "POST /cadastertask/cadasters/{cadasterId}/regulations/changes/taskstate frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1098] [cursor=pointer]':
+        - strong [ref=f1e1099]: "POST /cadastertask/cadasters/{cadasterId}/regulations/changes/taskstate"
+        - generic [ref=f1e1100]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "POST /cadastertask/cadasters/{cadasterId}/regulations/taskstate frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1101] [cursor=pointer]':
+        - strong [ref=f1e1102]: "POST /cadastertask/cadasters/{cadasterId}/regulations/taskstate"
+        - generic [ref=f1e1103]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "GET /cadastertask/responsible/{userId}/regulations/tasks frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1104] [cursor=pointer]':
+        - strong [ref=f1e1105]: "GET /cadastertask/responsible/{userId}/regulations/tasks"
+        - generic [ref=f1e1106]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "GET /cadastertask/responsible/{userId}/regulations/changes/tasks frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1107] [cursor=pointer]':
+        - strong [ref=f1e1108]: "GET /cadastertask/responsible/{userId}/regulations/changes/tasks"
+        - generic [ref=f1e1109]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "GET /cadastertask/users/{userId}/regulations/changes/tasks frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1110] [cursor=pointer]':
+        - strong [ref=f1e1111]: "GET /cadastertask/users/{userId}/regulations/changes/tasks"
+        - generic [ref=f1e1112]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "GET /cadastertask/users/{userId}/regulations/tasks frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1113] [cursor=pointer]':
+        - strong [ref=f1e1114]: "GET /cadastertask/users/{userId}/regulations/tasks"
+        - generic [ref=f1e1115]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - button "GET /cadastertask/cadasters/tasks frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED" [ref=f1e1116] [cursor=pointer]:
+        - strong [ref=f1e1117]: GET /cadastertask/cadasters/tasks
+        - generic [ref=f1e1118]: frontend/frontend-monorepo → microservices/ms-cadastertask · RESOLVED
+      - 'button "GET /documentinfo/modules/{isbn}/info frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED" [ref=f1e1119] [cursor=pointer]':
+        - strong [ref=f1e1120]: "GET /documentinfo/modules/{isbn}/info"
+        - generic [ref=f1e1121]: frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED
+      - 'button "GET /containertree/modules/{isbn}/breadcrumbs/{documentId} frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED" [ref=f1e1122] [cursor=pointer]':
+        - strong [ref=f1e1123]: "GET /containertree/modules/{isbn}/breadcrumbs/{documentId}"
+        - generic [ref=f1e1124]: frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED
+      - button "GET /portal/tasks/flyout frontend/frontend-monorepo → microservices/ms-portal · RESOLVED" [ref=f1e1125] [cursor=pointer]:
+        - strong [ref=f1e1126]: GET /portal/tasks/flyout
+        - generic [ref=f1e1127]: frontend/frontend-monorepo → microservices/ms-portal · RESOLVED
+      - 'button "GET /containertree/modules/{isbn}/containers frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED" [ref=f1e1128] [cursor=pointer]':
+        - strong [ref=f1e1129]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f1e1130]: frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED
+      - 'button "GET /containertree/modules/{isbn}/containers frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED" [ref=f1e1131] [cursor=pointer]':
+        - strong [ref=f1e1132]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f1e1133]: frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED
+      - 'button "GET /containertree/modules/{isbn}/containers frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED" [ref=f1e1134] [cursor=pointer]':
+        - strong [ref=f1e1135]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f1e1136]: frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED
+      - 'button "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic} frontend/frontend-monorepo → microservices/ms-documentdownload · RESOLVED" [ref=f1e1137] [cursor=pointer]':
+        - strong [ref=f1e1138]: "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic}"
+        - generic [ref=f1e1139]: frontend/frontend-monorepo → microservices/ms-documentdownload · RESOLVED
+      - 'button "POST /task/services/{serviceCode}/tasks frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e1140] [cursor=pointer]':
+        - strong [ref=f1e1141]: "POST /task/services/{serviceCode}/tasks"
+        - generic [ref=f1e1142]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "POST /task/services/{serviceCode}/tasks/{taskId}/comments frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e1143] [cursor=pointer]':
+        - strong [ref=f1e1144]: "POST /task/services/{serviceCode}/tasks/{taskId}/comments"
+        - generic [ref=f1e1145]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "PUT /task/services/{serviceCode}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e1146] [cursor=pointer]':
+        - strong [ref=f1e1147]: "PUT /task/services/{serviceCode}/tasks/{taskId}"
+        - generic [ref=f1e1148]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "DELETE /task/services/{serviceCode}/tasks/{taskId} frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e1149] [cursor=pointer]':
+        - strong [ref=f1e1150]: "DELETE /task/services/{serviceCode}/tasks/{taskId}"
+        - generic [ref=f1e1151]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "GET /task/services/{serviceCode}/tasks frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e1152] [cursor=pointer]':
+        - strong [ref=f1e1153]: "GET /task/services/{serviceCode}/tasks"
+        - generic [ref=f1e1154]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "GET /task/services/{serviceCode}/tasks/users frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e1155] [cursor=pointer]':
+        - strong [ref=f1e1156]: "GET /task/services/{serviceCode}/tasks/users"
+        - generic [ref=f1e1157]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "GET /task/services/{serviceCode}/objects/{objectId}/tasks/count frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e1158] [cursor=pointer]':
+        - strong [ref=f1e1159]: "GET /task/services/{serviceCode}/objects/{objectId}/tasks/count"
+        - generic [ref=f1e1160]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic} frontend/frontend-monorepo → microservices/ms-documentdownload · RESOLVED" [ref=f1e1161] [cursor=pointer]':
+        - strong [ref=f1e1162]: "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic}"
+        - generic [ref=f1e1163]: frontend/frontend-monorepo → microservices/ms-documentdownload · RESOLVED
+      - 'button "GET /documentinfo/modules/{isbn}/documents/{objectId}/metadata frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED" [ref=f1e1164] [cursor=pointer]':
+        - strong [ref=f1e1165]: "GET /documentinfo/modules/{isbn}/documents/{objectId}/metadata"
+        - generic [ref=f1e1166]: frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED
+      - 'button "GET /documentinfo/modules/{isbn}/documents/{objectId}/relatives frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED" [ref=f1e1167] [cursor=pointer]':
+        - strong [ref=f1e1168]: "GET /documentinfo/modules/{isbn}/documents/{objectId}/relatives"
+        - generic [ref=f1e1169]: frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED
+      - 'button "GET /documentinfo/modules/{isbn}/documents/{objectId}/toc frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED" [ref=f1e1170] [cursor=pointer]':
+        - strong [ref=f1e1171]: "GET /documentinfo/modules/{isbn}/documents/{objectId}/toc"
+        - generic [ref=f1e1172]: frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED
+      - 'button "GET /documentinfo/modules/{isbn}/documents/{objectId}/authors frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED" [ref=f1e1173] [cursor=pointer]':
+        - strong [ref=f1e1174]: "GET /documentinfo/modules/{isbn}/documents/{objectId}/authors"
+        - generic [ref=f1e1175]: frontend/frontend-monorepo → microservices/ms-documentinfo · RESOLVED
+      - 'button "GET /documentdownload/modules/{isbn}/documents/{objectId}/search frontend/frontend-monorepo → microservices/ms-documentdownload · RESOLVED" [ref=f1e1176] [cursor=pointer]':
+        - strong [ref=f1e1177]: "GET /documentdownload/modules/{isbn}/documents/{objectId}/search"
+        - generic [ref=f1e1178]: frontend/frontend-monorepo → microservices/ms-documentdownload · RESOLVED
+      - 'button "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{index} frontend/frontend-monorepo → microservices/ms-documentdownload · RESOLVED" [ref=f1e1179] [cursor=pointer]':
+        - strong [ref=f1e1180]: "GET /documentdownload/modules/{isbn}/documents/{objectId}/fragments/{index}"
+        - generic [ref=f1e1181]: frontend/frontend-monorepo → microservices/ms-documentdownload · RESOLVED
+      - 'button "POST /useritem/users/{userId}/folders frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED" [ref=f1e1182] [cursor=pointer]':
+        - strong [ref=f1e1183]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f1e1184]: frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED
+      - 'button "POST /useritem/users/{userId}/folders/{folderId}/favorites frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED" [ref=f1e1185] [cursor=pointer]':
+        - strong [ref=f1e1186]: "POST /useritem/users/{userId}/folders/{folderId}/favorites"
+        - generic [ref=f1e1187]: frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED
+      - 'button "GET /useritem/users/{userId}/folders frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED" [ref=f1e1188] [cursor=pointer]':
+        - strong [ref=f1e1189]: "GET /useritem/users/{userId}/folders"
+        - generic [ref=f1e1190]: frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/topics/inactives frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1191] [cursor=pointer]':
+        - strong [ref=f1e1192]: "GET /documenttopic/modules/{isbn}/topics/inactives"
+        - generic [ref=f1e1193]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "PUT /documenttopic/modules/{isbn}/topics/{topicId}/state frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1194] [cursor=pointer]':
+        - strong [ref=f1e1195]: "PUT /documenttopic/modules/{isbn}/topics/{topicId}/state"
+        - generic [ref=f1e1196]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /containertree/modules/{isbn}/containers frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED" [ref=f1e1197] [cursor=pointer]':
+        - strong [ref=f1e1198]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f1e1199]: frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED
+      - 'button "GET /containertree/modules/{isbn}/containers frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED" [ref=f1e1200] [cursor=pointer]':
+        - strong [ref=f1e1201]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f1e1202]: frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED
+      - 'button "GET /containertree/modules/{isbn}/containers frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED" [ref=f1e1203] [cursor=pointer]':
+        - strong [ref=f1e1204]: "GET /containertree/modules/{isbn}/containers"
+        - generic [ref=f1e1205]: frontend/frontend-monorepo → microservices/ms-containertree · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/documents/focus frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1206] [cursor=pointer]':
+        - strong [ref=f1e1207]: "GET /documenttopic/modules/{isbn}/documents/focus"
+        - generic [ref=f1e1208]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/documents/freetext frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1209] [cursor=pointer]':
+        - strong [ref=f1e1210]: "GET /documenttopic/modules/{isbn}/documents/freetext"
+        - generic [ref=f1e1211]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/documents/new frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1212] [cursor=pointer]':
+        - strong [ref=f1e1213]: "GET /documenttopic/modules/{isbn}/documents/new"
+        - generic [ref=f1e1214]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /task/services/{isbn}/tasks frontend/frontend-monorepo → microservices/ms-task · RESOLVED" [ref=f1e1215] [cursor=pointer]':
+        - strong [ref=f1e1216]: "GET /task/services/{isbn}/tasks"
+        - generic [ref=f1e1217]: frontend/frontend-monorepo → microservices/ms-task · RESOLVED
+      - 'button "POST /documenttopic/modules/{isbn}/topics frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1218] [cursor=pointer]':
+        - strong [ref=f1e1219]: "POST /documenttopic/modules/{isbn}/topics"
+        - generic [ref=f1e1220]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/topics/firstletters frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1221] [cursor=pointer]':
+        - strong [ref=f1e1222]: "GET /documenttopic/modules/{isbn}/topics/firstletters"
+        - generic [ref=f1e1223]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/topics/{topicId} frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1224] [cursor=pointer]':
+        - strong [ref=f1e1225]: "GET /documenttopic/modules/{isbn}/topics/{topicId}"
+        - generic [ref=f1e1226]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/topics/{topicId}/documentgenres frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1227] [cursor=pointer]':
+        - strong [ref=f1e1228]: "GET /documenttopic/modules/{isbn}/topics/{topicId}/documentgenres"
+        - generic [ref=f1e1229]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/topics/{topicId}/relatives frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1230] [cursor=pointer]':
+        - strong [ref=f1e1231]: "GET /documenttopic/modules/{isbn}/topics/{topicId}/relatives"
+        - generic [ref=f1e1232]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "POST /documenttopic/modules/{isbn}/topics frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1233] [cursor=pointer]':
+        - strong [ref=f1e1234]: "POST /documenttopic/modules/{isbn}/topics"
+        - generic [ref=f1e1235]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "PUT /documenttopic/modules/{isbn}/topics/{topicId}/state frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1236] [cursor=pointer]':
+        - strong [ref=f1e1237]: "PUT /documenttopic/modules/{isbn}/topics/{topicId}/state"
+        - generic [ref=f1e1238]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/news frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1239] [cursor=pointer]':
+        - strong [ref=f1e1240]: "GET /documenttopic/modules/{isbn}/news"
+        - generic [ref=f1e1241]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "GET /documenttopic/modules/{isbn}/topics/documentgenres frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED" [ref=f1e1242] [cursor=pointer]':
+        - strong [ref=f1e1243]: "GET /documenttopic/modules/{isbn}/topics/documentgenres"
+        - generic [ref=f1e1244]: frontend/frontend-monorepo → microservices/ms-documenttopic · RESOLVED
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favoriteId} frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED" [ref=f1e1245] [cursor=pointer]':
+        - strong [ref=f1e1246]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favoriteId}"
+        - generic [ref=f1e1247]: frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED
+      - 'button "GET /useritem/users/{userId}/folders/favorites frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED" [ref=f1e1248] [cursor=pointer]':
+        - strong [ref=f1e1249]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=f1e1250]: frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED
+      - 'button "GET /useritem/users/{userId}/folders/favorites frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED" [ref=f1e1251] [cursor=pointer]':
+        - strong [ref=f1e1252]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=f1e1253]: frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED
+      - 'button "POST /useritem/users/{userId}/folders frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED" [ref=f1e1254] [cursor=pointer]':
+        - strong [ref=f1e1255]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f1e1256]: frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId} frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED" [ref=f1e1257] [cursor=pointer]':
+        - strong [ref=f1e1258]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f1e1259]: frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED
+      - 'button "PUT /useritem/users/{userId}/folders/{folderId} frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED" [ref=f1e1260] [cursor=pointer]':
+        - strong [ref=f1e1261]: "PUT /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f1e1262]: frontend/frontend-monorepo → microservices/ms-useritem · RESOLVED
+      - button "PUT /search frontend/frontend-monorepo → microservices/ms-search · RESOLVED" [ref=f1e1263] [cursor=pointer]:
+        - strong [ref=f1e1264]: PUT /search
+        - generic [ref=f1e1265]: frontend/frontend-monorepo → microservices/ms-search · RESOLVED
+      - button "GET /search/autocomplete frontend/frontend-monorepo → microservices/ms-search · RESOLVED" [ref=f1e1266] [cursor=pointer]:
+        - strong [ref=f1e1267]: GET /search/autocomplete
+        - generic [ref=f1e1268]: frontend/frontend-monorepo → microservices/ms-search · RESOLVED
+      - button "GET /search/autocomplete frontend/frontend-monorepo → microservices/ms-search · RESOLVED" [ref=f1e1269] [cursor=pointer]:
+        - strong [ref=f1e1270]: GET /search/autocomplete
+        - generic [ref=f1e1271]: frontend/frontend-monorepo → microservices/ms-search · RESOLVED
+      - button "PUT /search frontend/frontend-monorepo → microservices/ms-search · RESOLVED" [ref=f1e1272] [cursor=pointer]:
+        - strong [ref=f1e1273]: PUT /search
+        - generic [ref=f1e1274]: frontend/frontend-monorepo → microservices/ms-search · RESOLVED
+      - 'button "POST /documentexport/modules/{isbn}/documents/{objectId}/export frontend/frontend-monorepo → microservices/ms-documentexport · RESOLVED" [ref=f1e1275] [cursor=pointer]':
+        - strong [ref=f1e1276]: "POST /documentexport/modules/{isbn}/documents/{objectId}/export"
+        - generic [ref=f1e1277]: frontend/frontend-monorepo → microservices/ms-documentexport · RESOLVED
+      - button "PUT /search frontend/frontends → microservices/ms-search · RESOLVED" [ref=f1e1278] [cursor=pointer]:
+        - strong [ref=f1e1279]: PUT /search
+        - generic [ref=f1e1280]: frontend/frontends → microservices/ms-search · RESOLVED
+      - button "GET /search/autocomplete frontend/frontends → microservices/ms-search · RESOLVED" [ref=f1e1281] [cursor=pointer]:
+        - strong [ref=f1e1282]: GET /search/autocomplete
+        - generic [ref=f1e1283]: frontend/frontends → microservices/ms-search · RESOLVED
+      - 'button "GET /userservice/users/{userId}/info frontend/frontends → microservices/ms-userservice · RESOLVED" [ref=f1e1284] [cursor=pointer]':
+        - strong [ref=f1e1285]: "GET /userservice/users/{userId}/info"
+        - generic [ref=f1e1286]: frontend/frontends → microservices/ms-userservice · RESOLVED
+      - 'button "GET /useritem/users/{userId}/folders/favorites frontend/frontends → microservices/ms-useritem · RESOLVED" [ref=f1e1287] [cursor=pointer]':
+        - strong [ref=f1e1288]: "GET /useritem/users/{userId}/folders/favorites"
+        - generic [ref=f1e1289]: frontend/frontends → microservices/ms-useritem · RESOLVED
+      - 'button "POST /useritem/users/{userId}/folders frontend/frontends → microservices/ms-useritem · RESOLVED" [ref=f1e1290] [cursor=pointer]':
+        - strong [ref=f1e1291]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f1e1292]: frontend/frontends → microservices/ms-useritem · RESOLVED
+      - 'button "PUT /useritem/users/{userId}/folders/{folderId} frontend/frontends → microservices/ms-useritem · RESOLVED" [ref=f1e1293] [cursor=pointer]':
+        - strong [ref=f1e1294]: "PUT /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f1e1295]: frontend/frontends → microservices/ms-useritem · RESOLVED
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId} frontend/frontends → microservices/ms-useritem · RESOLVED" [ref=f1e1296] [cursor=pointer]':
+        - strong [ref=f1e1297]: "DELETE /useritem/users/{userId}/folders/{folderId}"
+        - generic [ref=f1e1298]: frontend/frontends → microservices/ms-useritem · RESOLVED
+      - 'button "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId} frontend/frontends → microservices/ms-useritem · RESOLVED" [ref=f1e1299] [cursor=pointer]':
+        - strong [ref=f1e1300]: "DELETE /useritem/users/{userId}/folders/{folderId}/favorites/{favouriteId}"
+        - generic [ref=f1e1301]: frontend/frontends → microservices/ms-useritem · RESOLVED
+      - 'button "POST /useritem/users/{userId}/folders frontend/frontends → microservices/ms-useritem · RESOLVED" [ref=f1e1302] [cursor=pointer]':
+        - strong [ref=f1e1303]: "POST /useritem/users/{userId}/folders"
+        - generic [ref=f1e1304]: frontend/frontends → microservices/ms-useritem · RESOLVED
+      - 'button "GET /regulations/{objectId}/lras frontend/frontends → microservices/ms-regulationinfo · RESOLVED" [ref=f1e1305] [cursor=pointer]':
+        - strong [ref=f1e1306]: "GET /regulations/{objectId}/lras"
+        - generic [ref=f1e1307]: frontend/frontends → microservices/ms-regulationinfo · RESOLVED
+    - paragraph [ref=f1e163]: Showing 150 feature flows.
+    - generic [ref=f1e164]:
+      - heading "Status glossary" [level=2] [ref=f1e165]
+      - paragraph [ref=f1e166]:
+        - strong [ref=f1e167]: RESOLVED
+        - text: ": frontend contract is mapped to a backend route."
+      - paragraph [ref=f1e168]:
+        - strong [ref=f1e169]: MISMATCH
+        - text: ": a related backend route exists, but method or path does not match exactly."
+      - paragraph [ref=f1e170]:
+        - strong [ref=f1e171]: UNRESOLVED
+        - text: ": no reliable backend route was found in indexed projects."
+      - paragraph [ref=f1e172]:
+        - strong [ref=f1e173]: OUT_OF_SCOPE
+        - text: ": intentionally not a backend service, for example a frontend-internal API."
+      - paragraph [ref=f1e174]:
+        - strong [ref=f1e175]: EXTRACTED
+        - text: ": read directly from source structure."
+        - strong [ref=f1e176]: MATCHED
+        - text: ": linked to a concrete route, symbol, or test."
+  - main [ref=f1e177]:
+    - region "Workspace data workbench" [ref=f1e851]:
+      - generic [ref=f1e1308]:
+        - paragraph [ref=f1e1309]: Feature Flow
+        - heading "PUT /search" [level=1] [ref=f1e1310]
+        - paragraph [ref=f1e1311]: Feature Flow shows the implementation chain from route and component through API, backend, persistence, and tests. Resolved evidence
+      - generic [ref=f1e1312]:
+        - article [ref=f1e1313]:
+          - button "Frontend route /* frontend/frontend · workspace-root:/* · Weak evidence" [ref=f1e1314] [cursor=pointer]:
+            - generic [ref=f1e1315]: Frontend route
+            - strong [ref=f1e1316]: /*
+            - generic [ref=f1e1317]: frontend/frontend · workspace-root:/* · Weak evidence
+          - generic [ref=f1e1318]:
+            - text: src/pages/App/App.jsx:109
+            - generic [ref=f1e1319]:
+              - button "Copy path" [ref=f1e1320]
+              - link "Open source" [ref=f1e1321] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/frontend/frontend/src/pages/App/App.jsx#L109
+        - generic [ref=f1e1322]: →
+        - article [ref=f1e1323]:
+          - button "Component Navigate frontend/frontend · Navigate · Weak evidence" [ref=f1e1324] [cursor=pointer]:
+            - generic [ref=f1e1325]: Component
+            - strong [ref=f1e1326]: Navigate
+            - generic [ref=f1e1327]: frontend/frontend · Navigate · Weak evidence
+          - generic [ref=f1e1328]:
+            - text: src/pages/App/App.jsx:109
+            - generic [ref=f1e1329]:
+              - button "Copy path" [ref=f1e1330]
+              - link "Open source" [ref=f1e1331] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/frontend/frontend/src/pages/App/App.jsx#L109
+        - generic [ref=f1e1332]: →
+        - article [ref=f1e1333]:
+          - button "API call PUT /search frontend/frontend · ms-search · Resolved evidence" [ref=f1e1334] [cursor=pointer]:
+            - generic [ref=f1e1335]: API call
+            - strong [ref=f1e1336]: PUT /search
+            - generic [ref=f1e1337]: frontend/frontend · ms-search · Resolved evidence
+          - generic [ref=f1e1338]:
+            - text: src/actions/search.js:34
+            - generic [ref=f1e1339]:
+              - button "Copy path" [ref=f1e1340]
+              - link "Open source" [ref=f1e1341] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/frontend/frontend/src/actions/search.js#L34
+        - generic [ref=f1e1342]: →
+        - article [ref=f1e1343]:
+          - button "Backend endpoint search microservices/ms-search · ms-search · SearchController.search · Resolved evidence" [ref=f1e1344] [cursor=pointer]:
+            - generic [ref=f1e1345]: Backend endpoint
+            - strong [ref=f1e1346]: search
+            - generic [ref=f1e1347]: microservices/ms-search · ms-search · SearchController.search · Resolved evidence
+          - generic [ref=f1e1348]:
+            - text: src/main/java/com/weka/wbp/api/search/controller/SearchController.java:103
+            - generic [ref=f1e1349]:
+              - button "Copy path" [ref=f1e1350]
+              - link "Open source" [ref=f1e1351] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/main/java/com/weka/wbp/api/search/controller/SearchController.java#L103
+        - generic [ref=f1e1352]: →
+        - article [ref=f1e1353]:
+          - button "Service / persistence Navigate frontend/frontend · Navigate · Resolved evidence" [ref=f1e1354] [cursor=pointer]:
+            - generic [ref=f1e1355]: Service / persistence
+            - strong [ref=f1e1356]: Navigate
+            - generic [ref=f1e1357]: frontend/frontend · Navigate · Resolved evidence
+          - generic [ref=f1e1358]:
+            - text: src/pages/App/App.jsx:109
+            - generic [ref=f1e1359]:
+              - button "Copy path" [ref=f1e1360]
+              - link "Open source" [ref=f1e1361] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/frontend/frontend/src/pages/App/App.jsx#L109
+        - article [ref=f1e1362]:
+          - button "Service / persistence search microservices/ms-search · ms-search · SearchController.search · Resolved evidence" [ref=f1e1363] [cursor=pointer]:
+            - generic [ref=f1e1364]: Service / persistence
+            - strong [ref=f1e1365]: search
+            - generic [ref=f1e1366]: microservices/ms-search · ms-search · SearchController.search · Resolved evidence
+          - generic [ref=f1e1367]:
+            - text: src/main/java/com/weka/wbp/api/search/controller/SearchController.java:103
+            - generic [ref=f1e1368]:
+              - button "Copy path" [ref=f1e1369]
+              - link "Open source" [ref=f1e1370] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/main/java/com/weka/wbp/api/search/controller/SearchController.java#L103
+        - article [ref=f1e1371]:
+          - button "Service / persistence getServices microservices/ms-search · ms-search · CachingService.getServices · Resolved evidence" [ref=f1e1372] [cursor=pointer]:
+            - generic [ref=f1e1373]: Service / persistence
+            - strong [ref=f1e1374]: getServices
+            - generic [ref=f1e1375]: microservices/ms-search · ms-search · CachingService.getServices · Resolved evidence
+          - generic [ref=f1e1376]:
+            - text: src/main/java/com/weka/wbp/api/search/service/CachingService.java:22
+            - generic [ref=f1e1377]:
+              - button "Copy path" [ref=f1e1378]
+              - link "Open source" [ref=f1e1379] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/main/java/com/weka/wbp/api/search/service/CachingService.java#L22
+        - article [ref=f1e1380]:
+          - button "Service / persistence getSolrConfig microservices/ms-search · ms-search · ApplicationConfig.getSolrConfig · Resolved evidence" [ref=f1e1381] [cursor=pointer]:
+            - generic [ref=f1e1382]: Service / persistence
+            - strong [ref=f1e1383]: getSolrConfig
+            - generic [ref=f1e1384]: microservices/ms-search · ms-search · ApplicationConfig.getSolrConfig · Resolved evidence
+          - generic [ref=f1e1385]:
+            - text: src/main/java/com/weka/wbp/api/search/config/ApplicationConfig.java:30
+            - generic [ref=f1e1386]:
+              - button "Copy path" [ref=f1e1387]
+              - link "Open source" [ref=f1e1388] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/main/java/com/weka/wbp/api/search/config/ApplicationConfig.java#L30
+        - article [ref=f1e1389]:
+          - button "Service / persistence search microservices/ms-search · ms-search · SearchService.search · Resolved evidence" [ref=f1e1390] [cursor=pointer]:
+            - generic [ref=f1e1391]: Service / persistence
+            - strong [ref=f1e1392]: search
+            - generic [ref=f1e1393]: microservices/ms-search · ms-search · SearchService.search · Resolved evidence
+          - generic [ref=f1e1394]:
+            - text: src/main/java/com/weka/wbp/api/search/service/SearchService.java:138
+            - generic [ref=f1e1395]:
+              - button "Copy path" [ref=f1e1396]
+              - link "Open source" [ref=f1e1397] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/main/java/com/weka/wbp/api/search/service/SearchService.java#L138
+        - article [ref=f1e1398]:
+          - button "Service / persistence throwExceptionIfUserHasNoAccessRightsForModule microservices/ms-search · ms-search · AccessService.throwExceptionIfUserHasNoAccessRightsForModule · Resolved evidence" [ref=f1e1399] [cursor=pointer]:
+            - generic [ref=f1e1400]: Service / persistence
+            - strong [ref=f1e1401]: throwExceptionIfUserHasNoAccessRightsForModule
+            - generic [ref=f1e1402]: microservices/ms-search · ms-search · AccessService.throwExceptionIfUserHasNoAccessRightsForModule · Resolved evidence
+          - generic [ref=f1e1403]:
+            - text: src/main/java/com/weka/wbp/api/search/service/AccessService.java:32
+            - generic [ref=f1e1404]:
+              - button "Copy path" [ref=f1e1405]
+              - link "Open source" [ref=f1e1406] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/main/java/com/weka/wbp/api/search/service/AccessService.java#L32
+        - article [ref=f1e1407]:
+          - button "Service / persistence builder microservices/ms-search · ms-search · ProductTip.builder · Resolved evidence" [ref=f1e1408] [cursor=pointer]:
+            - generic [ref=f1e1409]: Service / persistence
+            - strong [ref=f1e1410]: builder
+            - generic [ref=f1e1411]: microservices/ms-search · ms-search · ProductTip.builder · Resolved evidence
+          - generic [ref=f1e1412]:
+            - text: src/main/java/com/weka/wbp/api/search/model/ProductTip.java:17
+            - generic [ref=f1e1413]:
+              - button "Copy path" [ref=f1e1414]
+              - link "Open source" [ref=f1e1415] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/main/java/com/weka/wbp/api/search/model/ProductTip.java#L17
+        - article [ref=f1e1416]:
+          - button "Service / persistence create microservices/ms-search · ms-search · Restrictions.create · Resolved evidence" [ref=f1e1417] [cursor=pointer]:
+            - generic [ref=f1e1418]: Service / persistence
+            - strong [ref=f1e1419]: create
+            - generic [ref=f1e1420]: microservices/ms-search · ms-search · Restrictions.create · Resolved evidence
+          - generic [ref=f1e1421]:
+            - text: src/main/java/com/weka/wbp/api/search/model/request/Restrictions.java:40
+            - generic [ref=f1e1422]:
+              - button "Copy path" [ref=f1e1423]
+              - link "Open source" [ref=f1e1424] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/main/java/com/weka/wbp/api/search/model/request/Restrictions.java#L40
+        - generic [ref=f1e1425]: →
+        - article [ref=f1e1426]:
+          - button "Tests testDidyoumeanNotContainSpaces microservices/ms-search · SearchControllerTests.testDidyoumeanNotContainSpaces · Resolved evidence" [ref=f1e1427] [cursor=pointer]:
+            - generic [ref=f1e1428]: Tests
+            - strong [ref=f1e1429]: testDidyoumeanNotContainSpaces
+            - generic [ref=f1e1430]: microservices/ms-search · SearchControllerTests.testDidyoumeanNotContainSpaces · Resolved evidence
+          - generic [ref=f1e1431]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:468
+            - generic [ref=f1e1432]:
+              - button "Copy path" [ref=f1e1433]
+              - link "Open source" [ref=f1e1434] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L468
+        - article [ref=f1e1435]:
+          - button "Tests testDidyoumeanNotContainSpaces microservices/ms-search · SearchControllerTests.testDidyoumeanNotContainSpaces · Missing evidence" [ref=f1e1436] [cursor=pointer]:
+            - generic [ref=f1e1437]: Tests
+            - strong [ref=f1e1438]: testDidyoumeanNotContainSpaces
+            - generic [ref=f1e1439]: microservices/ms-search · SearchControllerTests.testDidyoumeanNotContainSpaces · Missing evidence
+          - generic [ref=f1e1440]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:471
+            - generic [ref=f1e1441]:
+              - button "Copy path" [ref=f1e1442]
+              - link "Open source" [ref=f1e1443] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L471
+        - article [ref=f1e1444]:
+          - button "Tests testDocumentLinkTypeRdbv microservices/ms-search · SearchControllerTests.testDocumentLinkTypeRdbv · Missing evidence" [ref=f1e1445] [cursor=pointer]:
+            - generic [ref=f1e1446]: Tests
+            - strong [ref=f1e1447]: testDocumentLinkTypeRdbv
+            - generic [ref=f1e1448]: microservices/ms-search · SearchControllerTests.testDocumentLinkTypeRdbv · Missing evidence
+          - generic [ref=f1e1449]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:277
+            - generic [ref=f1e1450]:
+              - button "Copy path" [ref=f1e1451]
+              - link "Open source" [ref=f1e1452] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L277
+        - article [ref=f1e1453]:
+          - button "Tests testDocumentLinkTypeSmartPilot microservices/ms-search · SearchControllerTests.testDocumentLinkTypeSmartPilot · Resolved evidence" [ref=f1e1454] [cursor=pointer]:
+            - generic [ref=f1e1455]: Tests
+            - strong [ref=f1e1456]: testDocumentLinkTypeSmartPilot
+            - generic [ref=f1e1457]: microservices/ms-search · SearchControllerTests.testDocumentLinkTypeSmartPilot · Resolved evidence
+          - generic [ref=f1e1458]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:254
+            - generic [ref=f1e1459]:
+              - button "Copy path" [ref=f1e1460]
+              - link "Open source" [ref=f1e1461] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L254
+        - article [ref=f1e1462]:
+          - button "Tests testDocumentLinkTypeSmartPilot microservices/ms-search · SearchControllerTests.testDocumentLinkTypeSmartPilot · Missing evidence" [ref=f1e1463] [cursor=pointer]:
+            - generic [ref=f1e1464]: Tests
+            - strong [ref=f1e1465]: testDocumentLinkTypeSmartPilot
+            - generic [ref=f1e1466]: microservices/ms-search · SearchControllerTests.testDocumentLinkTypeSmartPilot · Missing evidence
+          - generic [ref=f1e1467]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:258
+            - generic [ref=f1e1468]:
+              - button "Copy path" [ref=f1e1469]
+              - link "Open source" [ref=f1e1470] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L258
+        - article [ref=f1e1471]:
+          - button "Tests testDocumentType microservices/ms-search · SearchControllerTests.testDocumentType · Resolved evidence" [ref=f1e1472] [cursor=pointer]:
+            - generic [ref=f1e1473]: Tests
+            - strong [ref=f1e1474]: testDocumentType
+            - generic [ref=f1e1475]: microservices/ms-search · SearchControllerTests.testDocumentType · Resolved evidence
+          - generic [ref=f1e1476]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:236
+            - generic [ref=f1e1477]:
+              - button "Copy path" [ref=f1e1478]
+              - link "Open source" [ref=f1e1479] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L236
+        - article [ref=f1e1480]:
+          - button "Tests testDocumentType microservices/ms-search · SearchControllerTests.testDocumentType · Missing evidence" [ref=f1e1481] [cursor=pointer]:
+            - generic [ref=f1e1482]: Tests
+            - strong [ref=f1e1483]: testDocumentType
+            - generic [ref=f1e1484]: microservices/ms-search · SearchControllerTests.testDocumentType · Missing evidence
+          - generic [ref=f1e1485]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:240
+            - generic [ref=f1e1486]:
+              - button "Copy path" [ref=f1e1487]
+              - link "Open source" [ref=f1e1488] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L240
+        - article [ref=f1e1489]:
+          - button "Tests testFallbackForMultiWordSearch microservices/ms-search · SearchControllerTests.testFallbackForMultiWordSearch · Resolved evidence" [ref=f1e1490] [cursor=pointer]:
+            - generic [ref=f1e1491]: Tests
+            - strong [ref=f1e1492]: testFallbackForMultiWordSearch
+            - generic [ref=f1e1493]: microservices/ms-search · SearchControllerTests.testFallbackForMultiWordSearch · Resolved evidence
+          - generic [ref=f1e1494]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:733
+            - generic [ref=f1e1495]:
+              - button "Copy path" [ref=f1e1496]
+              - link "Open source" [ref=f1e1497] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L733
+        - article [ref=f1e1498]:
+          - button "Tests testFallbackForMultiWordSearch microservices/ms-search · SearchControllerTests.testFallbackForMultiWordSearch · Missing evidence" [ref=f1e1499] [cursor=pointer]:
+            - generic [ref=f1e1500]: Tests
+            - strong [ref=f1e1501]: testFallbackForMultiWordSearch
+            - generic [ref=f1e1502]: microservices/ms-search · SearchControllerTests.testFallbackForMultiWordSearch · Missing evidence
+          - generic [ref=f1e1503]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:736
+            - generic [ref=f1e1504]:
+              - button "Copy path" [ref=f1e1505]
+              - link "Open source" [ref=f1e1506] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L736
+        - article [ref=f1e1507]:
+          - button "Tests testRdbvDocuments microservices/ms-search · SearchControllerTests.testRdbvDocuments · Missing evidence" [ref=f1e1508] [cursor=pointer]:
+            - generic [ref=f1e1509]: Tests
+            - strong [ref=f1e1510]: testRdbvDocuments
+            - generic [ref=f1e1511]: microservices/ms-search · SearchControllerTests.testRdbvDocuments · Missing evidence
+          - generic [ref=f1e1512]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:370
+            - generic [ref=f1e1513]:
+              - button "Copy path" [ref=f1e1514]
+              - link "Open source" [ref=f1e1515] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L370
+        - article [ref=f1e1516]:
+          - button "Tests testRdbvDocuments_withSsoAuth microservices/ms-search · SearchControllerTests.testRdbvDocuments_withSsoAuth · Missing evidence" [ref=f1e1517] [cursor=pointer]:
+            - generic [ref=f1e1518]: Tests
+            - strong [ref=f1e1519]: testRdbvDocuments_withSsoAuth
+            - generic [ref=f1e1520]: microservices/ms-search · SearchControllerTests.testRdbvDocuments_withSsoAuth · Missing evidence
+          - generic [ref=f1e1521]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:392
+            - generic [ref=f1e1522]:
+              - button "Copy path" [ref=f1e1523]
+              - link "Open source" [ref=f1e1524] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L392
+        - article [ref=f1e1525]:
+          - button "Tests testRegulationdateIsNull microservices/ms-search · SearchControllerTests.testRegulationdateIsNull · Resolved evidence" [ref=f1e1526] [cursor=pointer]:
+            - generic [ref=f1e1527]: Tests
+            - strong [ref=f1e1528]: testRegulationdateIsNull
+            - generic [ref=f1e1529]: microservices/ms-search · SearchControllerTests.testRegulationdateIsNull · Resolved evidence
+          - generic [ref=f1e1530]:
+            - text: src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java:485
+            - generic [ref=f1e1531]:
+              - button "Copy path" [ref=f1e1532]
+              - link "Open source" [ref=f1e1533] [cursor=pointer]:
+                - /url: file:///C:/Users/goretzkh/projects/weka/microservices/ms-search/src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java#L485
+        - generic [ref=f1e1534]:
+          - generic [ref=f1e1535]: Tests
+          - strong [ref=f1e1536]: 69 more not shown
+          - generic [ref=f1e1537]: Use Query for the complete evidence set.
+      - generic [ref=f1e1538]:
+        - generic [ref=f1e1539]:
+          - heading "Linked tests" [level=2] [ref=f1e1540]
+          - article [ref=f1e1541]:
+            - strong [ref=f1e1542]: direct
+            - generic [ref=f1e1543]: testDidyoumeanNotContainSpaces · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · EXTRACTED · test method calls production method
+          - article [ref=f1e1544]:
+            - strong [ref=f1e1545]: direct
+            - generic [ref=f1e1546]: testDidyoumeanNotContainSpaces · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · MATCHED · extracted test HTTP request matched endpoint pattern
+          - article [ref=f1e1547]:
+            - strong [ref=f1e1548]: direct
+            - generic [ref=f1e1549]: testDocumentLinkTypeRdbv · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · MATCHED · extracted test HTTP request matched endpoint pattern
+          - article [ref=f1e1550]:
+            - strong [ref=f1e1551]: direct
+            - generic [ref=f1e1552]: testDocumentLinkTypeSmartPilot · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · EXTRACTED · test method calls production method
+          - article [ref=f1e1553]:
+            - strong [ref=f1e1554]: direct
+            - generic [ref=f1e1555]: testDocumentLinkTypeSmartPilot · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · MATCHED · extracted test HTTP request matched endpoint pattern
+          - article [ref=f1e1556]:
+            - strong [ref=f1e1557]: direct
+            - generic [ref=f1e1558]: testDocumentType · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · EXTRACTED · test method calls production method
+          - article [ref=f1e1559]:
+            - strong [ref=f1e1560]: direct
+            - generic [ref=f1e1561]: testDocumentType · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · MATCHED · extracted test HTTP request matched endpoint pattern
+          - article [ref=f1e1562]:
+            - strong [ref=f1e1563]: direct
+            - generic [ref=f1e1564]: testFallbackForMultiWordSearch · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · EXTRACTED · test method calls production method
+          - article [ref=f1e1565]:
+            - strong [ref=f1e1566]: direct
+            - generic [ref=f1e1567]: testFallbackForMultiWordSearch · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · MATCHED · extracted test HTTP request matched endpoint pattern
+          - article [ref=f1e1568]:
+            - strong [ref=f1e1569]: direct
+            - generic [ref=f1e1570]: testRdbvDocuments · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · MATCHED · extracted test HTTP request matched endpoint pattern
+          - article [ref=f1e1571]:
+            - strong [ref=f1e1572]: direct
+            - generic [ref=f1e1573]: testRdbvDocuments_withSsoAuth · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · MATCHED · extracted test HTTP request matched endpoint pattern
+          - article [ref=f1e1574]:
+            - strong [ref=f1e1575]: direct
+            - generic [ref=f1e1576]: testRegulationdateIsNull · src/test/java/com/weka/wbp/api/search/controller/SearchControllerTests.java · EXTRACTED · test method calls production method
+          - paragraph [ref=f1e1577]: Showing 12 of 81 linked tests. 69 more not shown.
+        - generic [ref=f1e1578]:
+          - heading "Verification commands" [level=2] [ref=f1e1579]
+          - article [ref=f1e1580]:
+            - strong [ref=f1e1581]: maven
+            - code [ref=f1e1582]: mvn -Dtest=SearchControllerTests#testDidyoumeanNotContainSpaces test
+          - article [ref=f1e1583]:
+            - strong [ref=f1e1584]: maven
+            - code [ref=f1e1585]: mvn -Dtest=SearchControllerTests#testDidyoumeanNotContainSpaces test
+          - article [ref=f1e1586]:
+            - strong [ref=f1e1587]: maven
+            - code [ref=f1e1588]: mvn -Dtest=SearchControllerTests#testDocumentLinkTypeRdbv test
+          - article [ref=f1e1589]:
+            - strong [ref=f1e1590]: maven
+            - code [ref=f1e1591]: mvn -Dtest=SearchControllerTests#testDocumentLinkTypeSmartPilot test
+          - article [ref=f1e1592]:
+            - strong [ref=f1e1593]: maven
+            - code [ref=f1e1594]: mvn -Dtest=SearchControllerTests#testDocumentLinkTypeSmartPilot test
+          - article [ref=f1e1595]:
+            - strong [ref=f1e1596]: maven
+            - code [ref=f1e1597]: mvn -Dtest=SearchControllerTests#testDocumentType test
+          - article [ref=f1e1598]:
+            - strong [ref=f1e1599]: maven
+            - code [ref=f1e1600]: mvn -Dtest=SearchControllerTests#testDocumentType test
+          - article [ref=f1e1601]:
+            - strong [ref=f1e1602]: maven
+            - code [ref=f1e1603]: mvn -Dtest=SearchControllerTests#testFallbackForMultiWordSearch test
+          - article [ref=f1e1604]:
+            - strong [ref=f1e1605]: maven
+            - code [ref=f1e1606]: mvn -Dtest=SearchControllerTests#testFallbackForMultiWordSearch test
+          - article [ref=f1e1607]:
+            - strong [ref=f1e1608]: maven
+            - code [ref=f1e1609]: mvn -Dtest=SearchControllerTests#testRdbvDocuments test
+          - article [ref=f1e1610]:
+            - strong [ref=f1e1611]: maven
+            - code [ref=f1e1612]: mvn -Dtest=SearchControllerTests#testRdbvDocuments_withSsoAuth test
+          - article [ref=f1e1613]:
+            - strong [ref=f1e1614]: maven
+            - code [ref=f1e1615]: mvn -Dtest=SearchControllerTests#testRegulationdateIsNull test
+          - paragraph [ref=f1e1616]: Showing 12 of 81 verification commands. 69 more not shown.
+      - generic [ref=f1e1617]:
+        - heading "Changing this may affect" [level=2] [ref=f1e1618]
+        - paragraph [ref=f1e1619]:
+          - strong [ref=f1e1620]: MEDIUM
+          - text: · The target has a public API surface or direct consumers.
+        - generic [ref=f1e1621]:
+          - generic [ref=f1e1622]:
+            - heading "Direct consumers" [level=3] [ref=f1e1623]
+            - article [ref=f1e1624]:
+              - strong [ref=f1e1625]: fetchSuggestions
+              - generic [ref=f1e1626]: direct_consumer · api_call · frontend/frontend-monorepo · RESOLVED · frontend api contract resolved to indexed backend endpoint
+          - generic [ref=f1e1627]:
+            - heading "Indirect consumers" [level=3] [ref=f1e1628]
+            - paragraph [ref=f1e1629]: None detected.
+          - generic [ref=f1e1630]:
+            - heading "Dependent tests" [level=3] [ref=f1e1631]
+            - article [ref=f1e1632]:
+              - strong [ref=f1e1633]: AutocompleteControllerTests.testAutocompleteWithUmlauteWithoutSpecialCharacters
+              - generic [ref=f1e1634]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1635]:
+              - strong [ref=f1e1636]: AutocompleteControllerTests.testAutocompleteWithoutUmlauteWithSpecialCharacters
+              - generic [ref=f1e1637]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1638]:
+              - strong [ref=f1e1639]: AutocompleteControllerTests.testAutocompleteWithoutUmlauteWithoutSpecialCharacters
+              - generic [ref=f1e1640]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1641]:
+              - strong [ref=f1e1642]: AutocompleteControllerTests.testAutocomplete_availableSearchRestrictionsAll_ok
+              - generic [ref=f1e1643]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1644]:
+              - strong [ref=f1e1645]: AutocompleteControllerTests.testAutocomplete_availableSearchRestrictionsDguv_ok
+              - generic [ref=f1e1646]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1647]:
+              - strong [ref=f1e1648]: AutocompleteControllerTests.testAutocomplete_availableSearchRestrictionsGuidance_ok
+              - generic [ref=f1e1649]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1650]:
+              - strong [ref=f1e1651]: AutocompleteControllerTests.testAutocomplete_availableSearchRestrictionsPostingLaws_ok
+              - generic [ref=f1e1652]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1653]:
+              - strong [ref=f1e1654]: AutocompleteControllerTests.testAutocomplete_jsonStructure_ok
+              - generic [ref=f1e1655]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1656]:
+              - strong [ref=f1e1657]: AutocompleteControllerTests.testAutocomplete_manyLicenses_quickFilter
+              - generic [ref=f1e1658]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1659]:
+              - strong [ref=f1e1660]: AutocompleteControllerTests.testAutocomplete_noLicenses_authorisationRdbv
+              - generic [ref=f1e1661]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1662]:
+              - strong [ref=f1e1663]: AutocompleteControllerTests.testAutocomplete_noLicenses_authorisationWpo
+              - generic [ref=f1e1664]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - article [ref=f1e1665]:
+              - strong [ref=f1e1666]: AutocompleteControllerTests.testAutocomplete_solrError_emptyResult
+              - generic [ref=f1e1667]: dependent_test · test · microservices/ms-search · MATCHED · extracted test HTTP request matched endpoint pattern
+            - paragraph [ref=f1e1668]: Showing 12 of 16 dependent tests. 4 more not shown.
+        - heading "Coverage uncertainty" [level=3] [ref=f1e1669]
+        - paragraph [ref=f1e1670]: No coverage warning recorded for this bounded result.
+      - generic [ref=f1e1671]:
+        - button "Open related Endpoint" [ref=f1e1672] [cursor=pointer]
+        - button "Open related Data Flow" [ref=f1e1673] [cursor=pointer]
+  - generic [ref=f1e398]:
+    - heading "Feature Flow context" [level=1] [ref=f1e856]
+    - paragraph [ref=f1e857]: Select an item in this view to inspect its own evidence and source context.

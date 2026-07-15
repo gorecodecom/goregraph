@@ -1,0 +1,136 @@
+- generic [ref=f4e5]:
+  - complementary [ref=f4e6]:
+    - generic [ref=f4e7]:
+      - generic [ref=f4e8]: G
+      - generic [ref=f4e9]:
+        - strong [ref=f4e10]: GoreGraph
+        - generic [ref=f4e11]: Workspace
+    - generic [ref=f4e12]:
+      - generic [ref=f4e13]:
+        - generic [ref=f4e14]: "43"
+        - generic [ref=f4e15]: services
+      - generic [ref=f4e16]:
+        - generic [ref=f4e17]: "101"
+        - generic [ref=f4e18]: relations
+      - generic [ref=f4e19]:
+        - generic [ref=f4e20]: "709"
+        - generic [ref=f4e21]: calls
+    - navigation [ref=f4e22]:
+      - button "Architecture" [ref=f4e23] [cursor=pointer]
+      - button "Endpoints" [ref=f4e24] [cursor=pointer]
+      - button "Data Flow" [ref=f4e25] [cursor=pointer]
+      - button "Diagnostics" [ref=f4e26] [cursor=pointer]
+      - button "Coverage" [ref=f4e27] [cursor=pointer]
+    - generic [ref=f4e28]:
+      - generic [ref=f4e29]: Find a service
+      - textbox "Search services" [ref=f4e30]: documentdownload
+      - button "ms-documentdownload microservices/ms-documentdownload" [ref=f4e379] [cursor=pointer]:
+        - generic [ref=f4e380]: ms-documentdownload
+        - generic [ref=f4e381]: microservices/ms-documentdownload
+    - generic [ref=f4e31]:
+      - generic [ref=f4e32]: Exploration path
+      - button "1 Domain overview Start with the mental model" [ref=f4e33] [cursor=pointer]:
+        - generic [ref=f4e34]: "1"
+        - generic [ref=f4e35]:
+          - generic [ref=f4e36]: Domain overview
+          - generic [ref=f4e37]: Start with the mental model
+      - button "2 Expand in context Open one domain without losing place" [ref=f4e38] [cursor=pointer]:
+        - generic [ref=f4e39]: "2"
+        - generic [ref=f4e40]:
+          - generic [ref=f4e41]: Expand in context
+          - generic [ref=f4e42]: Open one domain without losing place
+      - button "3 Focused service Inspect direct relationships" [ref=f4e43] [cursor=pointer]:
+        - generic [ref=f4e44]: "3"
+        - generic [ref=f4e45]:
+          - generic [ref=f4e46]: Focused service
+          - generic [ref=f4e47]: Inspect direct relationships
+    - generic [ref=f4e48]:
+      - generic [ref=f4e49]: Selected service
+      - generic [ref=f4e50]: ms-documentdownload
+      - generic [ref=f4e51]: microservices/ms-documentdownload
+  - main [ref=f4e52]:
+    - generic [ref=f4e53]:
+      - generic [ref=f4e54]:
+        - generic [ref=f4e55]: Architecture workspace
+        - heading "Focused service" [level=1] [ref=f4e471]
+      - generic [ref=f4e57]:
+        - button "overview" [ref=f4e58] [cursor=pointer]
+        - button "context" [ref=f4e59] [cursor=pointer]
+        - button "focus" [ref=f4e60] [cursor=pointer]
+    - generic [ref=f4e61]:
+      - generic [ref=f4e62]: Resolved
+      - generic [ref=f4e64]: Unresolved
+      - generic [ref=f4e66]: Mismatch
+      - emphasis [ref=f4e68]: Call counts come from detected API relationships
+    - generic [ref=f4e472]:
+      - generic [ref=f4e473]:
+        - generic [ref=f4e474]:
+          - heading "Only direct neighbors are shown" [level=2] [ref=f4e475]
+          - paragraph [ref=f4e476]: Incoming relationships stay left; outgoing relationships stay right.
+        - generic [ref=f4e477]: 1-hop focus
+      - generic [ref=f4e478]:
+        - generic [ref=f4e479]:
+          - generic [ref=f4e480]:
+            - generic [ref=f4e481]: Incoming
+            - heading "4 incoming calls" [level=3] [ref=f4e482]
+            - generic [ref=f4e483]: 1 direct relationships
+          - button "frontend-monorepo Frontend clients 4 calls" [ref=f4e485] [cursor=pointer]:
+            - generic [ref=f4e486]:
+              - generic [ref=f4e487]: frontend-monorepo
+              - generic [ref=f4e488]: Frontend clients
+            - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e489]: 4 calls
+        - article [ref=f4e491]:
+          - generic [ref=f4e492]: Selected service
+          - heading "ms-documentdownload" [level=2] [ref=f4e493]
+          - paragraph [ref=f4e494]: microservices/ms-documentdownload
+          - generic [ref=f4e495]:
+            - generic [ref=f4e496]:
+              - generic [ref=f4e497]: "4"
+              - generic [ref=f4e498]: incoming
+            - generic [ref=f4e499]:
+              - generic [ref=f4e500]: "10"
+              - generic [ref=f4e501]: outgoing
+            - generic [ref=f4e502]:
+              - generic [ref=f4e503]: "2"
+              - generic [ref=f4e504]: neighbors
+          - emphasis [ref=f4e505]: Documents / WPO
+        - generic [ref=f4e506]:
+          - generic [ref=f4e507]:
+            - generic [ref=f4e508]: Outgoing
+            - heading "10 outgoing calls" [level=3] [ref=f4e509]
+            - generic [ref=f4e510]: 1 direct relationships
+          - button "ms-licenseservice Identity / Commerce 10 calls" [ref=f4e512] [cursor=pointer]:
+            - generic [ref=f4e513]:
+              - generic [ref=f4e514]: ms-licenseservice
+              - generic [ref=f4e515]: Identity / Commerce
+            - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e516]: 10 calls
+  - complementary [ref=f4e209]:
+    - generic [ref=f4e210]:
+      - generic [ref=f4e211]: Service inspector
+      - heading "ms-documentdownload" [level=2] [ref=f4e518]
+      - paragraph [ref=f4e213]: microservices/ms-documentdownload
+    - generic [ref=f4e214]:
+      - generic [ref=f4e215]:
+        - term [ref=f4e216]: Domain
+        - definition [ref=f4e217]: Documents / WPO
+      - generic [ref=f4e218]:
+        - term [ref=f4e219]: Kind
+        - definition [ref=f4e220]: backend
+      - generic [ref=f4e221]:
+        - term [ref=f4e222]: Status
+        - definition [ref=f4e223]: indexed
+    - generic [ref=f4e224]:
+      - button "Show in architecture" [ref=f4e225] [cursor=pointer]
+      - button "Focus service" [ref=f4e226] [cursor=pointer]
+    - generic [ref=f4e227]:
+      - button "Outgoing 1" [ref=f4e519] [cursor=pointer]
+      - button "Incoming 1" [ref=f4e520] [cursor=pointer]
+    - group [ref=f4e521]:
+      - generic "ms-licenseservice microservices/ms-licenseservice 10 calls" [active] [ref=f4e522]:
+        - generic [ref=f4e523]:
+          - generic [ref=f4e524]: ms-licenseservice
+          - generic [ref=f4e525]: microservices/ms-licenseservice
+        - generic "Calls are API relationships detected from the source service to this target in the current workspace scan." [ref=f4e526]: 10 calls
+      - generic [ref=f4e528]:
+        - paragraph [ref=f4e529]: 10 resolved / mismatch / unresolved
+        - code [ref=f4e530]: java_service_client
