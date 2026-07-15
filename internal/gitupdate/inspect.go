@@ -16,6 +16,7 @@ type repositoryState struct {
 	head              string
 	targetBranch      string
 	targetCommit      string
+	targetLocalExists bool
 	dirty             bool
 	operation         string
 	currentComparison branchComparison
@@ -98,6 +99,7 @@ func inspectRepository(ctx context.Context, root string) (repositoryState, error
 	if state.targetBranch == "" {
 		return state, nil
 	}
+	_, state.targetLocalExists = refCommit(ctx, root, "refs/heads/"+state.targetBranch)
 
 	if state.branch != "" {
 		state.currentComparison, err = compareBranch(ctx, root, state.branch)

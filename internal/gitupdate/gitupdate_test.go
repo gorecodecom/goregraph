@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMain(m *testing.M) {
@@ -124,6 +125,16 @@ func preview(t *testing.T, targets ...Target) Report {
 	t.Helper()
 
 	report, err := Run(context.Background(), targets, Options{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	return report
+}
+
+func execute(t *testing.T, targets ...Target) Report {
+	t.Helper()
+
+	report, err := Run(context.Background(), targets, Options{Execute: true})
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -421,4 +432,211 @@ func TestRunPreviewDisablesLazyPromisorFetch(t *testing.T) {
 	if remoteAfter := revParse(t, fixture.work, "refs/remotes/origin/main"); remoteAfter != remoteBefore {
 		t.Fatalf("origin/main changed: got %s, want %s", remoteAfter, remoteBefore)
 	}
+}
+
+func TestRunExecuteFetchesSwitchesAndFastForwards(t *testing.T) {
+	fixture := newGitFixture(t)
+	git(t, fixture.work, "switch", "-c", "feature")
+	targetCommit := fixture.commitAndPushFromPeer(t, "peer update\n")
+
+	report := execute(t, Target{Path: fixture.work})
+	result := onlyResult(t, report)
+	if report.Mode != ModeExecute {
+		t.Fatalf("Mode = %q, want %q", report.Mode, ModeExecute)
+	}
+	if result.Status != StatusUpdated {
+		t.Fatalf("Status = %q, want %q; reason: %s", result.Status, StatusUpdated, result.Reason)
+	}
+	if !result.Executed {
+		t.Fatal("Executed = false, want true")
+	}
+	if result.BranchBefore != "feature" || result.BranchAfter != "main" {
+		t.Fatalf("branches = %q -> %q, want feature -> main", result.BranchBefore, result.BranchAfter)
+	}
+	if result.CommitAfter != targetCommit || revParse(t, fixture.work, "HEAD") != targetCommit {
+		t.Fatalf("CommitAfter = %q and HEAD = %q, want %q", result.CommitAfter, revParse(t, fixture.work, "HEAD"), targetCommit)
+	}
+	if contents := readFile(t, filepath.Join(fixture.work, "README.md")); contents != "peer update\n" {
+		t.Fatalf("README.md = %q, want peer update", contents)
+	}
+}
+
+func TestRunExecuteCreatesMissingTrackingBranch(t *testing.T) {
+	fixture := newGitFixture(t)
+	git(t, fixture.work, "switch", "-c", "feature")
+	git(t, fixture.work, "branch", "-D", "main")
+	targetCommit := fixture.commitAndPushFromPeer(t, "peer update\n")
+
+	result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+	if result.Status != StatusUpdated {
+		t.Fatalf("Status = %q, want %q; reason: %s", result.Status, StatusUpdated, result.Reason)
+	}
+	if result.BranchAfter != "main" || result.CommitAfter != targetCommit {
+		t.Fatalf("result = branch %q at %q, want main at %q", result.BranchAfter, result.CommitAfter, targetCommit)
+	}
+	if upstream := git(t, fixture.work, "rev-parse", "--abbrev-ref", "main@{upstream}"); upstream != "origin/main" {
+		t.Fatalf("main upstream = %q, want origin/main", upstream)
+	}
+}
+
+func TestRunExecuteReportsUpToDateAfterFetch(t *testing.T) {
+	fixture := newGitFixture(t)
+
+	result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+	if result.Status != StatusUpToDate {
+		t.Fatalf("Status = %q, want %q; reason: %s", result.Status, StatusUpToDate, result.Reason)
+	}
+	if !result.Executed {
+		t.Fatal("Executed = false, want true after fetch")
+	}
+	if result.BranchBefore != "main" || result.BranchAfter != "main" || result.CommitBefore != result.CommitAfter {
+		t.Fatalf("unexpected result state: %#v", result)
+	}
+}
+
+func TestRunExecuteReportsFetchFailureWithoutCheckoutChange(t *testing.T) {
+	fixture := newGitFixture(t)
+	git(t, fixture.work, "switch", "-c", "feature")
+	writeFile(t, filepath.Join(fixture.work, "feature.txt"), "feature\n")
+	git(t, fixture.work, "add", "feature.txt")
+	git(t, fixture.work, "commit", "-m", "feature")
+	missingRemote := filepath.Join(filepath.Dir(fixture.remote), "missing.git")
+	git(t, fixture.work, "remote", "set-url", "origin", missingRemote)
+	before := map[string]string{
+		"branch":   git(t, fixture.work, "symbolic-ref", "--short", "HEAD"),
+		"head":     revParse(t, fixture.work, "HEAD"),
+		"status":   git(t, fixture.work, "status", "--porcelain=v1", "--untracked-files=all"),
+		"readme":   readFile(t, filepath.Join(fixture.work, "README.md")),
+		"feature":  readFile(t, filepath.Join(fixture.work, "feature.txt")),
+		"main_ref": revParse(t, fixture.work, "refs/heads/main"),
+	}
+
+	result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+	if result.Status != StatusFetchFailed {
+		t.Fatalf("Status = %q, want %q; reason: %s", result.Status, StatusFetchFailed, result.Reason)
+	}
+	if !result.Executed || result.Remediation == "" {
+		t.Fatalf("Executed = %t and Remediation = %q, want true and non-empty", result.Executed, result.Remediation)
+	}
+	if result.BranchAfter != before["branch"] || result.CommitAfter != before["head"] {
+		t.Fatalf("reported checkout = %q at %q, want unchanged %q at %q", result.BranchAfter, result.CommitAfter, before["branch"], before["head"])
+	}
+	after := map[string]string{
+		"branch":   git(t, fixture.work, "symbolic-ref", "--short", "HEAD"),
+		"head":     revParse(t, fixture.work, "HEAD"),
+		"status":   git(t, fixture.work, "status", "--porcelain=v1", "--untracked-files=all"),
+		"readme":   readFile(t, filepath.Join(fixture.work, "README.md")),
+		"feature":  readFile(t, filepath.Join(fixture.work, "feature.txt")),
+		"main_ref": revParse(t, fixture.work, "refs/heads/main"),
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("checkout changed after fetch failure:\nbefore: %#v\nafter:  %#v", before, after)
+	}
+}
+
+func TestRunExecuteDisablesCheckoutAndMergeHooks(t *testing.T) {
+	fixture := newGitFixture(t)
+	git(t, fixture.work, "switch", "-c", "feature")
+	targetCommit := fixture.commitAndPushFromPeer(t, "peer update\n")
+	marker := filepath.Join(t.TempDir(), "hook-invoked")
+	hooksDir := filepath.Join(fixture.work, ".git", "hooks")
+	for _, hook := range []string{"post-checkout", "post-merge"} {
+		hookPath := filepath.Join(hooksDir, hook)
+		writeFile(t, hookPath, "#!/bin/sh\nprintf '%s\\n' invoked >> '"+marker+"'\nexit 1\n")
+		if err := os.Chmod(hookPath, 0o700); err != nil {
+			t.Fatalf("chmod %s: %v", hookPath, err)
+		}
+	}
+
+	result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+	if result.Status != StatusUpdated || result.CommitAfter != targetCommit {
+		t.Fatalf("result = %#v, want updated to %s", result, targetCommit)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("repository hook executed: %v", err)
+	}
+}
+
+func TestRunExecuteRechecksDirtyAheadAndDivergedAfterFetch(t *testing.T) {
+	t.Run("dirty after fetch starts", func(t *testing.T) {
+		fixture := newGitFixture(t)
+		fixture.commitAndPushFromPeer(t, "peer update\n")
+		gitDir := git(t, fixture.work, "rev-parse", "--absolute-git-dir")
+		fetchHead := filepath.Join(gitDir, "FETCH_HEAD")
+		if err := os.Remove(fetchHead); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove FETCH_HEAD: %v", err)
+		}
+		dirtied := make(chan error, 1)
+		go func() {
+			for {
+				if _, err := os.Stat(fetchHead); err == nil {
+					dirtied <- os.WriteFile(filepath.Join(fixture.work, "late-untracked.txt"), []byte("dirty\n"), 0o600)
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}()
+
+		result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+		select {
+		case err := <-dirtied:
+			if err != nil {
+				t.Fatalf("create dirty file after fetch started: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("fetch did not create FETCH_HEAD")
+		}
+		if result.Status != StatusDirty || !result.Executed {
+			t.Fatalf("result = %#v, want executed dirty blocker", result)
+		}
+	})
+
+	t.Run("ahead after fetch", func(t *testing.T) {
+		fixture := newGitFixture(t)
+		initialCommit := revParse(t, fixture.work, "HEAD")
+		fixture.commitAndPushFromPeer(t, "peer update\n")
+		git(t, fixture.work, "fetch", "origin")
+		git(t, fixture.work, "merge", "--ff-only", "origin/main")
+		git(t, fixture.peer, "reset", "--hard", initialCommit)
+		git(t, fixture.peer, "push", "--force", "origin", "main")
+
+		result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+		if result.Status != StatusAhead || !result.Executed {
+			t.Fatalf("result = %#v, want executed ahead blocker", result)
+		}
+		if head := revParse(t, fixture.work, "HEAD"); head != result.CommitBefore {
+			t.Fatalf("HEAD = %s, want unchanged %s", head, result.CommitBefore)
+		}
+		if result.BranchAfter != "main" || result.CommitAfter != result.CommitBefore {
+			t.Fatalf("reported checkout = %q at %q, want unchanged main at %q", result.BranchAfter, result.CommitAfter, result.CommitBefore)
+		}
+	})
+
+	t.Run("diverged after fetch", func(t *testing.T) {
+		fixture := newGitFixture(t)
+		writeFile(t, filepath.Join(fixture.work, "local.txt"), "local\n")
+		git(t, fixture.work, "add", "local.txt")
+		git(t, fixture.work, "commit", "-m", "shared tip")
+		git(t, fixture.work, "push", "origin", "main")
+		git(t, fixture.peer, "fetch", "origin")
+		git(t, fixture.peer, "reset", "--hard", "origin/main")
+		git(t, fixture.work, "fetch", "origin")
+		localCommit := revParse(t, fixture.work, "HEAD")
+		git(t, fixture.peer, "reset", "--hard", "HEAD^")
+		writeFile(t, filepath.Join(fixture.peer, "remote.txt"), "remote\n")
+		git(t, fixture.peer, "add", "remote.txt")
+		git(t, fixture.peer, "commit", "-m", "replacement tip")
+		git(t, fixture.peer, "push", "--force", "origin", "main")
+
+		result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+		if result.Status != StatusDiverged || !result.Executed {
+			t.Fatalf("result = %#v, want executed diverged blocker", result)
+		}
+		if head := revParse(t, fixture.work, "HEAD"); head != localCommit {
+			t.Fatalf("HEAD = %s, want unchanged %s", head, localCommit)
+		}
+		if result.BranchAfter != "main" || result.CommitAfter != localCommit {
+			t.Fatalf("reported checkout = %q at %q, want unchanged main at %q", result.BranchAfter, result.CommitAfter, localCommit)
+		}
+	})
 }

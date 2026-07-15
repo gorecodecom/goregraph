@@ -2,8 +2,8 @@ package gitupdate
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 )
@@ -23,7 +23,16 @@ func Run(ctx context.Context, targets []Target, options Options) (Report, error)
 	}
 	if options.Execute {
 		report.Mode = ModeExecute
-		return report, errors.New("Git update execution is not implemented")
+	}
+
+	var hooksDirectory string
+	if options.Execute {
+		var err error
+		hooksDirectory, err = os.MkdirTemp("", "goregraph-git-hooks-")
+		if err != nil {
+			return report, fmt.Errorf("create empty Git hooks directory: %w", err)
+		}
+		defer os.RemoveAll(hooksDirectory)
 	}
 
 	repositories := collectRepositoryTargets(ctx, targets)
@@ -45,13 +54,116 @@ func Run(ctx context.Context, targets []Target, options Options) (Report, error)
 			if err != nil {
 				return report, fmt.Errorf("inspect %s: %w", repository.target.Path, err)
 			}
-			result = classifyPreview(repository.target, state)
+			if options.Execute {
+				result = executeUpdate(ctx, repository.target, state, hooksDirectory)
+			} else {
+				result = classifyPreview(repository.target, state)
+			}
 		}
 		report.Repositories = append(report.Repositories, result)
 		report.Summary[result.Status]++
 	}
 
 	return report, nil
+}
+
+func executeUpdate(ctx context.Context, target Target, initial repositoryState, hooksDirectory string) RepositoryResult {
+	preflight := classifyPreview(target, initial)
+	if !canExecute(preflight.Status) {
+		return preflight
+	}
+
+	preflight.Executed = true
+	hookConfig := "core.hooksPath=" + hooksDirectory
+	if _, err := runGitWithEnv(ctx, initial.root, []string{"GIT_TERMINAL_PROMPT=0"},
+		"-c", hookConfig, "fetch", "--prune", "origin"); err != nil {
+		preflight.BranchAfter = initial.branch
+		preflight.CommitAfter = initial.head
+		return fetchFailedResult(preflight, err)
+	}
+
+	fetched, err := inspectRepository(ctx, initial.root)
+	if err != nil {
+		preflight.BranchAfter = initial.branch
+		preflight.CommitAfter = initial.head
+		return fetchFailedResult(preflight, fmt.Errorf("inspect after fetch: %w", err))
+	}
+	afterFetch := classifyExecutedState(target, initial, fetched)
+	if !canExecute(afterFetch.Status) {
+		return afterFetch
+	}
+
+	if fetched.targetLocalExists {
+		_, err = runGit(ctx, initial.root, "-c", hookConfig, "switch", fetched.targetBranch)
+	} else {
+		_, err = runGit(ctx, initial.root, "-c", hookConfig, "switch", "--track", "-c", fetched.targetBranch, "origin/"+fetched.targetBranch)
+	}
+	if err != nil {
+		return mutationFailureResult(ctx, target, initial, afterFetch, "switch", err)
+	}
+
+	if _, err = runGit(ctx, initial.root, "-c", hookConfig, "merge", "--ff-only", "origin/"+fetched.targetBranch); err != nil {
+		return mutationFailureResult(ctx, target, initial, afterFetch, "fast-forward", err)
+	}
+
+	final, err := inspectRepository(ctx, initial.root)
+	if err != nil {
+		afterFetch.BranchAfter = fetched.targetBranch
+		afterFetch.CommitAfter = fetched.targetCommit
+		return fetchFailedResult(afterFetch, fmt.Errorf("inspect final repository state: %w", err))
+	}
+	result := RepositoryResult{
+		Path:         target.Path,
+		GitRoot:      final.root,
+		Remote:       final.remoteURL,
+		BranchBefore: initial.branch,
+		BranchAfter:  final.branch,
+		CommitBefore: initial.head,
+		CommitAfter:  final.head,
+		Executed:     true,
+	}
+	if initial.branch != final.branch || initial.head != final.head {
+		result.Status = StatusUpdated
+		result.Reason = fmt.Sprintf("switched to and fast-forwarded %s from origin/%s", final.branch, final.branch)
+	} else {
+		result.Status = StatusUpToDate
+		result.Reason = fmt.Sprintf("%s already matches fetched origin/%s", final.branch, final.branch)
+	}
+	return result
+}
+
+func canExecute(status Status) bool {
+	return status == StatusWouldUpdate || status == StatusUpToDate
+}
+
+func classifyExecutedState(target Target, initial, current repositoryState) RepositoryResult {
+	result := classifyPreview(target, current)
+	result.BranchBefore = initial.branch
+	result.BranchAfter = current.branch
+	result.CommitBefore = initial.head
+	result.CommitAfter = current.head
+	result.Executed = true
+	return result
+}
+
+func fetchFailedResult(result RepositoryResult, err error) RepositoryResult {
+	result.Status = StatusFetchFailed
+	result.Reason = err.Error()
+	result.Remediation = "Fetch origin and update the default branch manually after resolving the Git error."
+	result.Executed = true
+	return result
+}
+
+func mutationFailureResult(ctx context.Context, target Target, initial repositoryState, fallback RepositoryResult, operation string, operationErr error) RepositoryResult {
+	current, err := inspectRepository(ctx, initial.root)
+	if err == nil {
+		classified := classifyExecutedState(target, initial, current)
+		if !canExecute(classified.Status) {
+			return classified
+		}
+		fallback = classified
+	}
+	return fetchFailedResult(fallback, fmt.Errorf("%s default branch: %w", operation, operationErr))
 }
 
 func collectRepositoryTargets(ctx context.Context, targets []Target) []repositoryTarget {
