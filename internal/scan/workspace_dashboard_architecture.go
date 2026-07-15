@@ -37,4 +37,9 @@ function architectureFocusModel(nodes,edges,options){
   (edges||[]).forEach(function(edge){if(!architectureDirectionMatches(edge,options.selected,options.domain,options.direction||"both",nodeByID))return;if(options.riskOnly&&!architectureEdgeRisk(edge))return;edgeIDs.add(edge.id);nodeIDs.add(edge.from);nodeIDs.add(edge.to);});
   return {nodeIDs:nodeIDs,edgeIDs:edgeIDs};
 }
+function architectureDirectNeighborhood(edges,selected){
+  const nodeIDs=new Set();if(!selected)return nodeIDs;nodeIDs.add(selected);
+  (edges||[]).forEach(function(edge){if(edge.from===selected||edge.to===selected){nodeIDs.add(edge.from);nodeIDs.add(edge.to);}});
+  return nodeIDs;
+}
 `

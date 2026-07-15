@@ -256,8 +256,7 @@ func TestDashboardSearchAndKindFiltersUseSharedDeselectionState(t *testing.T) {
 	}
 	clearState := html[clearStart : clearStart+clearEnd]
 	for _, want := range []string{
-		`if(state.mode==="architecture"){restoreArchitectureServiceViewport();hideArchitectureSelectionActions();}`,
-		`state.architectureFocused=false;state.savedFullArchitectureViewport=null`,
+		`if(state.mode==="architecture"){clearArchitectureServiceState();return;}`,
 	} {
 		if !strings.Contains(clearState, want) {
 			t.Fatalf("shared deselection state missing %q", want)
@@ -311,6 +310,79 @@ func TestDashboardArchitectureIsolationChangesPresentationOnly(t *testing.T) {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing presentation-only Architecture isolation %q", want)
 		}
+	}
+}
+
+func TestDashboardDomainAndResetUseSharedArchitectureServiceCleanup(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		"function clearArchitectureServiceState()",
+		"const restoredServiceViewport=restoreArchitectureServiceViewport()",
+		"if(!restoredServiceViewport&&state.architectureFocused&&state.savedFullArchitectureViewport)applyViewport(state.savedFullArchitectureViewport)",
+		"state.isolation=false;state.architectureFocused=false;state.savedFullArchitectureViewport=null",
+		"hideArchitectureSelectionActions()",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing shared Architecture cleanup %q", want)
+		}
+	}
+	functionBody := func(start, end string) string {
+		t.Helper()
+		from := strings.Index(html, start)
+		if from < 0 {
+			t.Fatalf("dashboard missing function start %q", start)
+		}
+		to := strings.Index(html[from:], end)
+		if to < 0 {
+			t.Fatalf("dashboard missing function end %q", end)
+		}
+		return html[from : from+to]
+	}
+	domain := functionBody("function setArchitectureDomain(domain)", "function setArchitectureDirection(direction)")
+	reset := functionBody("function resetArchitectureFocus()", "function setArchitectureServiceSelection(id)")
+	for name, body := range map[string]string{"domain": domain, "reset": reset} {
+		if !strings.Contains(body, "clearArchitectureServiceState();") {
+			t.Fatalf("%s transition bypasses shared Architecture cleanup", name)
+		}
+		for _, direct := range []string{"state.selected=null", "state.selections.architecture=null", "state.isolation=false", "state.architectureFocused=false", "state.savedFullArchitectureViewport=null"} {
+			if strings.Contains(body, direct) {
+				t.Fatalf("%s transition directly clears service state with %q", name, direct)
+			}
+		}
+	}
+	if cleanup, saveDomain := strings.Index(domain, "clearArchitectureServiceState();"), strings.Index(domain, "if(domain&&!state.architectureDomain)state.savedArchitectureDomainViewport="); cleanup < 0 || saveDomain < 0 || cleanup > saveDomain {
+		t.Fatal("domain transition must restore service/focused viewport before saving the domain viewport")
+	}
+	if saveDomain, cleanup, restoreDomain := strings.Index(reset, "const savedDomain=state.savedArchitectureDomainViewport"), strings.Index(reset, "clearArchitectureServiceState();"), strings.Index(reset, "if(savedDomain)applyViewport(savedDomain)"); saveDomain < 0 || cleanup < saveDomain || restoreDomain < cleanup {
+		t.Fatal("reset must save the domain viewport, clear service focus, then restore the domain viewport")
+	}
+}
+
+func TestDashboardArchitectureAutoFitUsesCanonicalDirectNeighborhood(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		"function architectureDirectNeighborhood(edges,selected)",
+		"neighborhoodNodeIDs=architectureDirectNeighborhood(canonicalEdges,state.selected)",
+		"fitArchitectureNeighborhoodIfNeeded(neighborhoodNodeIDs)",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing canonical direct-neighborhood auto-fit %q", want)
+		}
+	}
+	if strings.Contains(html, "fitArchitectureNeighborhoodIfNeeded(focus.nodeIDs)") {
+		t.Fatal("Architecture auto-fit must not reuse direction/risk/domain emphasis nodes")
 	}
 }
 

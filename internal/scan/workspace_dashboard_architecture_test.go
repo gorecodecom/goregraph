@@ -141,3 +141,23 @@ func TestArchitectureRiskFocusChangesEmphasisNotLayout(t *testing.T) {
 		t.Fatalf("risk focus = %#v", result)
 	}
 }
+
+func TestArchitectureDirectNeighborhoodIgnoresDirectionAndRiskEmphasis(t *testing.T) {
+	var result struct {
+		Focused      []string
+		Neighborhood []string
+	}
+	runArchitectureModel(t, `(()=>{
+		const nodes=[{id:"web",domain:"experience"},{id:"orders",domain:"commerce"},{id:"billing",domain:"commerce"},{id:"audit",domain:"observability"}];
+		const edges=[{id:"web-orders",from:"web",to:"orders",resolved:1},{id:"orders-billing",from:"orders",to:"billing",resolved:1},{id:"orders-audit",from:"orders",to:"audit",unresolved:1,risk:"has_unresolved"}];
+		const focus=architectureFocusModel(nodes,edges,{selected:"orders",direction:"outgoing",riskOnly:true});
+		const neighborhood=architectureDirectNeighborhood(edges,"orders");
+		return {Focused:Array.from(focus.nodeIDs).sort(),Neighborhood:Array.from(neighborhood).sort()};
+	})()`, &result)
+	if strings.Join(result.Focused, ",") != "audit,orders" {
+		t.Fatalf("focused nodes = %v", result.Focused)
+	}
+	if strings.Join(result.Neighborhood, ",") != "audit,billing,orders,web" {
+		t.Fatalf("direct neighborhood = %v", result.Neighborhood)
+	}
+}
