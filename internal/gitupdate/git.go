@@ -37,3 +37,21 @@ func runGitWithEnv(ctx context.Context, dir string, environment []string, args .
 	}
 	return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 }
+
+func gitInfrastructureError(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+
+	var execError *exec.Error
+	if errors.As(err, &execError) {
+		return err
+	}
+
+	var pathError *os.PathError
+	if errors.As(err, &pathError) && pathError.Op == "fork/exec" {
+		return err
+	}
+
+	return nil
+}

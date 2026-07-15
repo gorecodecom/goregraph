@@ -304,6 +304,86 @@ func TestRunSortsRepositoryResultsByCanonicalRoot(t *testing.T) {
 	}
 }
 
+func TestRunProcessesSafeRepositoryAfterInspectionFailure(t *testing.T) {
+	fixture := newGitFixture(t)
+	brokenRepository := filepath.Join(filepath.Dir(fixture.work), "a-broken")
+	git(t, filepath.Dir(brokenRepository), "init", "--initial-branch=main", brokenRepository)
+	targetCommit := fixture.commitAndPushFromPeer(t, "peer update\n")
+
+	report, err := Run(context.Background(), []Target{
+		{Path: fixture.work},
+		{Path: brokenRepository},
+	}, Options{Execute: true})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(report.Repositories) != 2 {
+		t.Fatalf("len(Repositories) = %d, want 2", len(report.Repositories))
+	}
+
+	failed := report.Repositories[0]
+	if failed.Path != brokenRepository || failed.GitRoot != canonicalTestPath(t, brokenRepository) {
+		t.Fatalf("failed repository identity = path %q, root %q; want %q", failed.Path, failed.GitRoot, brokenRepository)
+	}
+	if failed.Status != StatusFetchFailed || failed.Executed {
+		t.Fatalf("failed result = %#v, want unexecuted fetch_failed", failed)
+	}
+	if !strings.Contains(failed.Reason, "rev-parse HEAD") || failed.Remediation == "" {
+		t.Fatalf("failed result reason/remediation = %q / %q, want precise inspection failure", failed.Reason, failed.Remediation)
+	}
+
+	updated := report.Repositories[1]
+	if updated.Path != fixture.work || updated.Status != StatusUpdated || !updated.Executed {
+		t.Fatalf("safe result = %#v, want executed update after inspection failure", updated)
+	}
+	if updated.CommitAfter != targetCommit || revParse(t, fixture.work, "HEAD") != targetCommit {
+		t.Fatalf("safe repository was not updated to %s: %#v", targetCommit, updated)
+	}
+	if report.Summary[StatusFetchFailed] != 1 || report.Summary[StatusUpdated] != 1 {
+		t.Fatalf("Summary = %#v, want one fetch_failed and one updated", report.Summary)
+	}
+	if report.ExitCode() != 1 {
+		t.Fatalf("ExitCode() = %d, want 1 for partial success", report.ExitCode())
+	}
+}
+
+func TestRunPropagatesGitResolverInfrastructureFailure(t *testing.T) {
+	path := t.TempDir()
+	t.Setenv("PATH", t.TempDir())
+
+	report, err := Run(context.Background(), []Target{{Path: path}}, Options{})
+	if err == nil {
+		t.Fatalf("Run() error = nil, want Git process infrastructure error; report: %#v", report)
+	}
+	if !errors.Is(err, exec.ErrNotFound) {
+		t.Fatalf("Run() error = %v, want errors.Is(exec.ErrNotFound)", err)
+	}
+	if len(report.Repositories) != 0 || len(report.Summary) != 0 {
+		t.Fatalf("report = %#v, want no repository classification after global resolver failure", report)
+	}
+}
+
+func TestRunDeduplicatesSymlinkAliases(t *testing.T) {
+	fixture := newGitFixture(t)
+	alias := filepath.Join(t.TempDir(), "checkout-alias")
+	if err := os.Symlink(fixture.work, alias); err != nil {
+		t.Fatalf("create checkout symlink: %v", err)
+	}
+	expectedPaths := []string{fixture.work, alias}
+	sort.Strings(expectedPaths)
+
+	result := onlyResult(t, preview(t,
+		Target{Path: fixture.work},
+		Target{Path: alias},
+	))
+	if result.Path != expectedPaths[0] {
+		t.Fatalf("Path = %q, want lexicographically first alias %q", result.Path, expectedPaths[0])
+	}
+	if result.GitRoot != canonicalTestPath(t, fixture.work) {
+		t.Fatalf("GitRoot = %q, want canonical checkout root %q", result.GitRoot, canonicalTestPath(t, fixture.work))
+	}
+}
+
 func canonicalTestPath(t *testing.T, path string) string {
 	t.Helper()
 	absolute, err := filepath.Abs(path)

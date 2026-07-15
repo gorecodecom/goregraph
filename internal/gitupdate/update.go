@@ -35,7 +35,10 @@ func Run(ctx context.Context, targets []Target, options Options) (Report, error)
 		defer os.RemoveAll(hooksDirectory)
 	}
 
-	repositories := collectRepositoryTargets(ctx, targets)
+	repositories, err := collectRepositoryTargets(ctx, targets)
+	if err != nil {
+		return report, err
+	}
 	for _, repository := range repositories {
 		if err := ctx.Err(); err != nil {
 			return report, err
@@ -52,9 +55,11 @@ func Run(ctx context.Context, targets []Target, options Options) (Report, error)
 		} else {
 			state, err := inspectRepository(ctx, repository.root)
 			if err != nil {
-				return report, fmt.Errorf("inspect %s: %w", repository.target.Path, err)
-			}
-			if options.Execute {
+				if infrastructureErr := gitInfrastructureError(ctx, err); infrastructureErr != nil {
+					return report, fmt.Errorf("inspect %s: %w", repository.target.Path, infrastructureErr)
+				}
+				result = inspectionFailedResult(repository.target, repository.root, err)
+			} else if options.Execute {
 				result = executeUpdate(ctx, repository.target, state, hooksDirectory)
 			} else {
 				result = classifyPreview(repository.target, state)
@@ -68,6 +73,16 @@ func Run(ctx context.Context, targets []Target, options Options) (Report, error)
 	}
 
 	return report, nil
+}
+
+func inspectionFailedResult(target Target, root string, err error) RepositoryResult {
+	return RepositoryResult{
+		Path:        target.Path,
+		GitRoot:     root,
+		Status:      StatusFetchFailed,
+		Reason:      fmt.Sprintf("inspect repository: %v", err),
+		Remediation: "Repair the repository so Git can read HEAD and repository state, then retry the update.",
+	}
 }
 
 func executeUpdate(ctx context.Context, target Target, initial repositoryState, hooksDirectory string) RepositoryResult {
@@ -179,12 +194,15 @@ func mutationFailureResult(ctx context.Context, target Target, initial repositor
 	return fetchFailedResult(fallback, fmt.Errorf("%s default branch: %w", operation, operationErr))
 }
 
-func collectRepositoryTargets(ctx context.Context, targets []Target) []repositoryTarget {
+func collectRepositoryTargets(ctx context.Context, targets []Target) ([]repositoryTarget, error) {
 	repositories := make([]repositoryTarget, 0, len(targets))
 	seenRoots := make(map[string]int)
 	seenNonRepositories := make(map[string]struct{})
 
 	for _, target := range targets {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		root, err := canonicalGitRoot(ctx, target.Path)
 		if err == nil {
 			if index, exists := seenRoots[root]; exists {
@@ -196,6 +214,9 @@ func collectRepositoryTargets(ctx context.Context, targets []Target) []repositor
 			seenRoots[root] = len(repositories)
 			repositories = append(repositories, repositoryTarget{target: target, root: root, sortKey: root})
 			continue
+		}
+		if infrastructureErr := gitInfrastructureError(ctx, err); infrastructureErr != nil {
+			return nil, fmt.Errorf("resolve Git root for %s: %w", target.Path, infrastructureErr)
 		}
 
 		sortKey := target.Path
@@ -212,7 +233,7 @@ func collectRepositoryTargets(ctx context.Context, targets []Target) []repositor
 	sort.Slice(repositories, func(i, j int) bool {
 		return repositories[i].sortKey < repositories[j].sortKey
 	})
-	return repositories
+	return repositories, nil
 }
 
 func classifyPreview(target Target, state repositoryState) RepositoryResult {
