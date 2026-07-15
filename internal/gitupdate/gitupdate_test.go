@@ -836,7 +836,7 @@ func TestRunExecuteRejectsTargetFiltersWithoutInvokingThem(t *testing.T) {
 				t.Fatalf("locate test executable: %v", err)
 			}
 			globalConfig := filepath.Join(t.TempDir(), "gitconfig")
-			writeFile(t, globalConfig, "[filter \"unsafe\"]\n\t"+command+" = "+executable+"\n")
+			writeFile(t, globalConfig, "[filter \"unsafe\"]\n\t"+command+" = "+executable+"\n\trequired = true\n")
 			writeFile(t, filepath.Join(fixture.peer, ".gitattributes"), "*.payload filter=unsafe\n")
 			writeFile(t, filepath.Join(fixture.peer, "remote.payload"), "remote\n")
 			git(t, fixture.peer, "add", ".gitattributes", "remote.payload")
@@ -892,6 +892,61 @@ func TestRunPreviewRejectsCommonWorktreeAttributesWithoutInvokingFilter(t *testi
 	assertMarkerAbsent(t, marker)
 }
 
+func TestRunPreviewRejectsNestedIndexAttributesWithoutInvokingFilter(t *testing.T) {
+	for _, command := range []string{"clean", "process"} {
+		t.Run(command, func(t *testing.T) {
+			fixture := newGitFixture(t)
+			nestedDirectory := filepath.Join(fixture.work, "nested")
+			if err := os.Mkdir(nestedDirectory, 0o700); err != nil {
+				t.Fatalf("create nested directory: %v", err)
+			}
+			attributesPath := filepath.Join(nestedDirectory, ".gitattributes")
+			payloadPath := filepath.Join(nestedDirectory, "indexed.payload")
+			writeFile(t, attributesPath, "*.payload filter=unsafe\n")
+			writeFile(t, payloadPath, "indexed\n")
+			git(t, fixture.work, "add", "nested/.gitattributes", "nested/indexed.payload")
+			git(t, fixture.work, "commit", "-m", "add indexed attributes")
+			git(t, fixture.work, "push", "origin", "main")
+			git(t, fixture.work, "fetch", "origin")
+			if err := os.Remove(attributesPath); err != nil {
+				t.Fatalf("remove worktree attributes: %v", err)
+			}
+			writeFile(t, payloadPath, "force filter\n")
+			marker := filepath.Join(t.TempDir(), command+"-index-filter-invoked")
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatalf("locate test executable: %v", err)
+			}
+			globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+			writeFile(t, globalConfig, "[filter \"unsafe\"]\n\t"+command+" = "+executable+"\n\trequired = true\n")
+			t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+			t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
+			headBefore := revParse(t, fixture.work, "HEAD")
+			remoteBefore := revParse(t, fixture.work, "refs/remotes/origin/main")
+
+			report, err := Run(context.Background(), []Target{{Path: fixture.work}}, Options{})
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			result := onlyResult(t, report)
+			assertSafetyRefusal(t, result, "index", false)
+			assertMarkerAbsent(t, marker)
+			if result.BranchAfter != "main" || result.CommitAfter != headBefore {
+				t.Fatalf("reported checkout = %q at %q, want unchanged main at %q", result.BranchAfter, result.CommitAfter, headBefore)
+			}
+			if head := revParse(t, fixture.work, "HEAD"); head != headBefore {
+				t.Fatalf("HEAD = %s, want unchanged %s", head, headBefore)
+			}
+			if remote := revParse(t, fixture.work, "refs/remotes/origin/main"); remote != remoteBefore {
+				t.Fatalf("origin/main = %s, want unchanged %s", remote, remoteBefore)
+			}
+			if contents := readFile(t, payloadPath); contents != "force filter\n" {
+				t.Fatalf("payload = %q, want unchanged", contents)
+			}
+		})
+	}
+}
+
 func TestRunExecuteRejectsUnsafeRemoteHelpers(t *testing.T) {
 	for _, remoteURL := range []string{"ext::sh -c false", "unknown::payload"} {
 		t.Run(remoteURL, func(t *testing.T) {
@@ -901,6 +956,41 @@ func TestRunExecuteRejectsUnsafeRemoteHelpers(t *testing.T) {
 			result := onlyResult(t, execute(t, Target{Path: fixture.work}))
 			assertSafetyRefusal(t, result, "transport", false)
 		})
+	}
+}
+
+func TestRunExecuteRejectsNonSchemeRemoteHelperWithoutInvokingIt(t *testing.T) {
+	fixture := newGitFixture(t)
+	marker := filepath.Join(t.TempDir(), "remote-helper-invoked")
+	t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+	helperDirectory := t.TempDir()
+	if err := os.Symlink(executable, filepath.Join(helperDirectory, "git-remote-1foo")); err != nil {
+		t.Fatalf("install remote helper marker: %v", err)
+	}
+	t.Setenv("PATH", helperDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	git(t, fixture.work, "remote", "set-url", "origin", "1foo::payload")
+	headBefore := revParse(t, fixture.work, "HEAD")
+	remoteBefore := revParse(t, fixture.work, "refs/remotes/origin/main")
+
+	report, err := Run(context.Background(), []Target{{Path: fixture.work}}, Options{Execute: true})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	result := onlyResult(t, report)
+	assertSafetyRefusal(t, result, "transport", false)
+	assertMarkerAbsent(t, marker)
+	if result.BranchAfter != "main" || result.CommitAfter != headBefore {
+		t.Fatalf("reported checkout = %q at %q, want unchanged main at %q", result.BranchAfter, result.CommitAfter, headBefore)
+	}
+	if head := revParse(t, fixture.work, "HEAD"); head != headBefore {
+		t.Fatalf("HEAD = %s, want unchanged %s", head, headBefore)
+	}
+	if remote := revParse(t, fixture.work, "refs/remotes/origin/main"); remote != remoteBefore {
+		t.Fatalf("origin/main = %s, want unchanged %s", remote, remoteBefore)
 	}
 }
 

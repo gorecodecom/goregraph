@@ -15,7 +15,7 @@ type safetyFinding struct {
 	remediation string
 }
 
-func inspectLocalSafety(root string) safetyFinding {
+func inspectLocalSafety(ctx context.Context, root string) safetyFinding {
 	configPaths, commonDirectory, err := localConfigPaths(root)
 	if err != nil {
 		return safetyInspectionFailure("repository Git configuration", err)
@@ -37,7 +37,10 @@ func inspectLocalSafety(root string) safetyFinding {
 	if err != nil {
 		return safetyInspectionFailure("working-tree .gitattributes", err)
 	}
-	return finding
+	if finding.reason != "" {
+		return finding
+	}
+	return inspectIndexAttributes(ctx, root)
 }
 
 func localConfigPaths(root string) ([]string, string, error) {
@@ -269,9 +272,38 @@ func inspectTargetTreeSafety(ctx context.Context, root, commit string) safetyFin
 	return safetyFinding{}
 }
 
+func inspectIndexAttributes(ctx context.Context, root string) safetyFinding {
+	output, err := runGit(ctx, root, "ls-files", "--stage", "-z")
+	if err != nil {
+		return safetyInspectionFailure("index .gitattributes", err)
+	}
+	for _, record := range strings.Split(output, "\x00") {
+		metadata, name, found := strings.Cut(record, "\t")
+		if !found || !isAttributesPath(name) {
+			continue
+		}
+		fields := strings.Fields(metadata)
+		if len(fields) != 3 {
+			return safetyInspectionFailure("index .gitattributes", fmt.Errorf("unexpected ls-files record %q", record))
+		}
+		contents, catErr := runGit(ctx, root, "cat-file", "blob", fields[1])
+		if catErr != nil {
+			return safetyInspectionFailure("index .gitattributes", catErr)
+		}
+		if finding := inspectAttributesContents("index "+name, contents); finding.reason != "" {
+			return finding
+		}
+	}
+	return safetyFinding{}
+}
+
+func isAttributesPath(name string) bool {
+	return name == ".gitattributes" || strings.HasSuffix(name, "/.gitattributes")
+}
+
 func unsafeRemoteTransport(remoteURL string) safetyFinding {
 	lower := strings.ToLower(strings.TrimSpace(remoteURL))
-	if helper := strings.Index(lower, "::"); helper > 0 && validScheme(lower[:helper]) {
+	if helper := strings.Index(lower, "::"); helper > 0 {
 		return unsafeTransportFinding(remoteURL)
 	}
 	if separator := strings.Index(lower, "://"); separator > 0 {
@@ -284,16 +316,6 @@ func unsafeRemoteTransport(remoteURL string) safetyFinding {
 		}
 	}
 	return safetyFinding{}
-}
-
-func validScheme(value string) bool {
-	for index, character := range value {
-		if character >= 'a' && character <= 'z' || character >= '0' && character <= '9' && index > 0 || index > 0 && (character == '+' || character == '-' || character == '.') {
-			continue
-		}
-		return false
-	}
-	return value != ""
 }
 
 func unsafeTransportFinding(remoteURL string) safetyFinding {

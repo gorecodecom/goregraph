@@ -73,7 +73,7 @@ func canonicalPath(path string) (string, error) {
 }
 
 func inspectRepository(ctx context.Context, root string) (repositoryState, error) {
-	state := repositoryState{root: root, safety: inspectLocalSafety(root)}
+	state := repositoryState{root: root, safety: inspectLocalSafety(ctx, root)}
 	var err error
 
 	state.head, err = runGit(ctx, root, "rev-parse", "HEAD")
