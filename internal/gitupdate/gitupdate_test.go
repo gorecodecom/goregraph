@@ -15,6 +15,12 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("GOREGRAPH_TEST_SSH_ARGUMENTS") != "" && filepath.Base(os.Args[0]) == "ssh" {
+		recordSSHInvocation()
+	}
+	if os.Getenv("GOREGRAPH_TEST_GIT_LOG") != "" && filepath.Base(os.Args[0]) == "git" {
+		runGitLoggingProcess()
+	}
 	if os.Getenv("GOREGRAPH_TEST_GIT_BARRIER_DIR") != "" && filepath.Base(os.Args[0]) == "git" {
 		runGitBarrierProcess()
 	}
@@ -29,6 +35,49 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(m.Run())
+}
+
+func recordSSHInvocation() {
+	contents := strings.Join(os.Args[1:], "\n") + "\n" +
+		"GIT_TERMINAL_PROMPT=" + os.Getenv("GIT_TERMINAL_PROMPT") + "\n" +
+		"GCM_INTERACTIVE=" + os.Getenv("GCM_INTERACTIVE") + "\n"
+	if err := os.WriteFile(os.Getenv("GOREGRAPH_TEST_SSH_ARGUMENTS"), []byte(contents), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(98)
+	}
+	os.Exit(97)
+}
+
+func runGitLoggingProcess() {
+	log, err := os.OpenFile(os.Getenv("GOREGRAPH_TEST_GIT_LOG"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(98)
+	}
+	if _, err := fmt.Fprintln(log, strings.Join(os.Args[1:], "\x1f")); err != nil {
+		_ = log.Close()
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(98)
+	}
+	if err := log.Close(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(98)
+	}
+
+	realGit := os.Getenv("GOREGRAPH_TEST_REAL_GIT")
+	cmd := exec.Command(realGit, os.Args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			os.Exit(exitError.ExitCode())
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(98)
+	}
+	os.Exit(0)
 }
 
 func runGitBarrierProcess() {
@@ -831,6 +880,152 @@ func TestRunExecuteReportsFetchFailureWithoutCheckoutChange(t *testing.T) {
 	}
 }
 
+func TestRunExecutePinsFetchToOriginHeadsAndPreservesLocalRefs(t *testing.T) {
+	fixture := newGitFixture(t)
+	initialHead := revParse(t, fixture.work, "HEAD")
+
+	git(t, fixture.peer, "switch", "-c", "obsolete")
+	writeFile(t, filepath.Join(fixture.peer, "obsolete.txt"), "obsolete\n")
+	git(t, fixture.peer, "add", "obsolete.txt")
+	git(t, fixture.peer, "commit", "-m", "add obsolete branch")
+	git(t, fixture.peer, "push", "-u", "origin", "obsolete")
+	git(t, fixture.peer, "switch", "main")
+	git(t, fixture.work, "fetch", "origin")
+	git(t, fixture.peer, "push", "origin", "--delete", "obsolete")
+
+	git(t, fixture.peer, "switch", "-c", "new-remote")
+	writeFile(t, filepath.Join(fixture.peer, "remote.txt"), "remote branch\n")
+	git(t, fixture.peer, "add", "remote.txt")
+	git(t, fixture.peer, "commit", "-m", "add remote branch")
+	newRemoteCommit := revParse(t, fixture.peer, "HEAD")
+	git(t, fixture.peer, "push", "-u", "origin", "new-remote")
+	git(t, fixture.peer, "switch", "main")
+	targetCommit := fixture.commitAndPushFromPeer(t, "remote update\n")
+
+	git(t, fixture.work, "branch", "protected", initialHead)
+	git(t, fixture.work, "tag", "protected-tag", initialHead)
+	git(t, fixture.work, "config", "--replace-all", "remote.origin.fetch", "+refs/heads/main:refs/heads/protected")
+	git(t, fixture.work, "config", "fetch.pruneTags", "true")
+	git(t, fixture.work, "config", "remote.origin.pruneTags", "true")
+
+	result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+	if result.Status != StatusUpdated {
+		t.Fatalf("Status = %q, want %q; reason: %s", result.Status, StatusUpdated, result.Reason)
+	}
+	if protected := revParse(t, fixture.work, "refs/heads/protected"); protected != initialHead {
+		t.Fatalf("protected local branch = %s, want unchanged %s", protected, initialHead)
+	}
+	if protectedTag := revParse(t, fixture.work, "refs/tags/protected-tag"); protectedTag != initialHead {
+		t.Fatalf("protected local tag = %s, want unchanged %s", protectedTag, initialHead)
+	}
+	if originMain := revParse(t, fixture.work, "refs/remotes/origin/main"); originMain != targetCommit {
+		t.Fatalf("origin/main = %s, want fetched %s", originMain, targetCommit)
+	}
+	if originNew := revParse(t, fixture.work, "refs/remotes/origin/new-remote"); originNew != newRemoteCommit {
+		t.Fatalf("origin/new-remote = %s, want fetched %s", originNew, newRemoteCommit)
+	}
+	originRefs := strings.Fields(git(t, fixture.work, "for-each-ref", "--format=%(refname)", "refs/remotes/origin"))
+	if containsArgument(originRefs, "refs/remotes/origin/obsolete") {
+		t.Fatalf("obsolete origin ref was not pruned: %v", originRefs)
+	}
+}
+
+func TestRunExecutePinsFetchAndSwitchSafetyFlags(t *testing.T) {
+	fixture := newGitFixture(t)
+	git(t, fixture.work, "switch", "-c", "feature")
+	logPath := installGitCommandLog(t)
+
+	result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+	if result.Status != StatusUpdated {
+		t.Fatalf("Status = %q, want %q; reason: %s", result.Status, StatusUpdated, result.Reason)
+	}
+
+	commands := readLoggedGitCommands(t, logPath)
+	fetch := loggedGitCommand(t, commands, "fetch")
+	for _, expected := range []string{
+		"--prune",
+		"--no-prune-tags",
+		"--no-tags",
+		"--no-recurse-submodules",
+		"--no-auto-maintenance",
+		"+refs/heads/*:refs/remotes/origin/*",
+	} {
+		if !containsArgument(fetch, expected) {
+			t.Fatalf("fetch command does not contain %q: %v", expected, fetch)
+		}
+	}
+	switchCommand := loggedGitCommand(t, commands, "switch")
+	if !containsArgument(switchCommand, "--no-recurse-submodules") {
+		t.Fatalf("switch command does not disable submodule recursion: %v", switchCommand)
+	}
+}
+
+func TestRunExecuteUsesBoundedNonInteractiveSSH(t *testing.T) {
+	fixture := newGitFixture(t)
+	git(t, fixture.work, "remote", "set-url", "origin", "git@example.invalid:owner/repository.git")
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+	fakeSSHDirectory := t.TempDir()
+	if err := os.Symlink(executable, filepath.Join(fakeSSHDirectory, "ssh")); err != nil {
+		t.Fatalf("install fake SSH: %v", err)
+	}
+	argumentsPath := filepath.Join(t.TempDir(), "ssh-arguments")
+	t.Setenv("GOREGRAPH_TEST_SSH_ARGUMENTS", argumentsPath)
+	t.Setenv("PATH", fakeSSHDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	report, err := Run(ctx, []Target{{Path: fixture.work}}, Options{Execute: true})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("SSH execution exceeded bounded context: %v", ctx.Err())
+	}
+	result := onlyResult(t, report)
+	if result.Status != StatusFetchFailed || !result.Executed {
+		t.Fatalf("result = %#v, want executed fetch failure", result)
+	}
+
+	invocation := readFile(t, argumentsPath)
+	for _, expected := range []string{
+		"-oBatchMode=yes",
+		"-oStrictHostKeyChecking=yes",
+		"GIT_TERMINAL_PROMPT=0",
+		"GCM_INTERACTIVE=never",
+	} {
+		if !strings.Contains(invocation, expected) {
+			t.Fatalf("fake SSH invocation does not contain %q:\n%s", expected, invocation)
+		}
+	}
+}
+
+func TestUsesSSHTransportForSSHAndSCPURLsOnly(t *testing.T) {
+	tests := []struct {
+		name      string
+		remoteURL string
+		want      bool
+	}{
+		{name: "SSH URL", remoteURL: "ssh://git@example.invalid/owner/repository.git", want: true},
+		{name: "SCP URL", remoteURL: "git@example.invalid:owner/repository.git", want: true},
+		{name: "HTTPS URL", remoteURL: "https://example.invalid/owner/repository.git", want: false},
+		{name: "file URL", remoteURL: "file:///tmp/repository.git", want: false},
+		{name: "absolute path", remoteURL: "/tmp/repository.git", want: false},
+		{name: "relative path with colon", remoteURL: "./directory:name/repository.git", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := usesSSHTransport(test.remoteURL); got != test.want {
+				t.Fatalf("usesSSHTransport(%q) = %t, want %t", test.remoteURL, got, test.want)
+			}
+		})
+	}
+}
+
 func TestRunExecuteDisablesCheckoutAndMergeHooks(t *testing.T) {
 	fixture := newGitFixture(t)
 	git(t, fixture.work, "switch", "-c", "feature")
@@ -969,6 +1164,50 @@ func installGitFetchBarrier(t *testing.T) string {
 	return barrierDirectory
 }
 
+func installGitCommandLog(t *testing.T) string {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("locate real Git: %v", err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+	wrapperDirectory := t.TempDir()
+	if err := os.Symlink(executable, filepath.Join(wrapperDirectory, "git")); err != nil {
+		t.Fatalf("install Git command logger: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "git-commands")
+	t.Setenv("GOREGRAPH_TEST_GIT_LOG", logPath)
+	t.Setenv("GOREGRAPH_TEST_REAL_GIT", realGit)
+	t.Setenv("PATH", wrapperDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return logPath
+}
+
+func readLoggedGitCommands(t *testing.T, path string) [][]string {
+	t.Helper()
+	contents := readFile(t, path)
+	commands := make([][]string, 0)
+	for _, line := range strings.Split(strings.TrimSpace(contents), "\n") {
+		if line != "" {
+			commands = append(commands, strings.Split(line, "\x1f"))
+		}
+	}
+	return commands
+}
+
+func loggedGitCommand(t *testing.T, commands [][]string, operation string) []string {
+	t.Helper()
+	for _, command := range commands {
+		if containsArgument(command, operation) {
+			return command
+		}
+	}
+	t.Fatalf("no logged Git %s command: %v", operation, commands)
+	return nil
+}
+
 func waitForBarrier(ctx context.Context, path string) error {
 	ticker := time.NewTicker(time.Millisecond)
 	defer ticker.Stop()
@@ -1065,6 +1304,66 @@ func TestRunRejectsExecutableLocalGitConfigWithoutInvokingIt(t *testing.T) {
 	}
 }
 
+func TestRunExecuteRejectsAdditionalExecutableConfigBeforeFetch(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value func(string) string
+	}{
+		{
+			name: "alternate refs command",
+			key:  "core.alternateRefsCommand",
+			value: func(executable string) string {
+				return executable
+			},
+		},
+		{
+			name: "recent objects hook",
+			key:  "gc.recentObjectsHook",
+			value: func(executable string) string {
+				return executable
+			},
+		},
+		{
+			name: "quoted command-valued submodule update",
+			key:  "submodule.unsafe.update",
+			value: func(executable string) string {
+				return " !" + executable
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newGitFixture(t)
+			fixture.commitAndPushFromPeer(t, test.name+"\n")
+			marker := filepath.Join(t.TempDir(), "command-invoked")
+			t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatalf("locate test executable: %v", err)
+			}
+			git(t, fixture.work, "config", test.key, test.value(executable))
+			headBefore := revParse(t, fixture.work, "HEAD")
+			remoteBefore := revParse(t, fixture.work, "refs/remotes/origin/main")
+
+			report, err := Run(context.Background(), []Target{{Path: fixture.work}}, Options{Execute: true})
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			result := onlyResult(t, report)
+			assertSafetyRefusal(t, result, strings.ToLower(test.key), false)
+			assertMarkerAbsent(t, marker)
+			if head := revParse(t, fixture.work, "HEAD"); head != headBefore {
+				t.Fatalf("HEAD = %s, want unchanged %s", head, headBefore)
+			}
+			if remote := revParse(t, fixture.work, "refs/remotes/origin/main"); remote != remoteBefore {
+				t.Fatalf("origin/main = %s, want unchanged %s", remote, remoteBefore)
+			}
+		})
+	}
+}
+
 func TestRunExecuteRejectsTargetFiltersWithoutInvokingThem(t *testing.T) {
 	for _, command := range []string{"smudge", "process"} {
 		t.Run(command, func(t *testing.T) {
@@ -1101,6 +1400,68 @@ func TestRunExecuteRejectsTargetFiltersWithoutInvokingThem(t *testing.T) {
 				t.Fatalf("origin/main = %s, want fetched %s", remote, targetCommit)
 			}
 		})
+	}
+}
+
+func TestRunExecuteRejectsUnsafeExistingLocalTargetTreeBeforeSwitch(t *testing.T) {
+	fixture := newGitFixture(t)
+	initialHead := revParse(t, fixture.work, "HEAD")
+	git(t, fixture.work, "switch", "-c", "feature")
+	git(t, fixture.work, "switch", "main")
+	writeFile(t, filepath.Join(fixture.work, ".gitattributes"), "*.payload filter=unsafe\n")
+	writeFile(t, filepath.Join(fixture.work, "local.payload"), "unsafe local target\n")
+	git(t, fixture.work, "add", ".gitattributes", "local.payload")
+	git(t, fixture.work, "commit", "-m", "add unsafe local target tree")
+	unsafeLocalMain := revParse(t, fixture.work, "HEAD")
+	git(t, fixture.work, "push", "origin", "main")
+	git(t, fixture.work, "fetch", "origin")
+
+	git(t, fixture.peer, "fetch", "origin")
+	git(t, fixture.peer, "reset", "--hard", "origin/main")
+	git(t, fixture.peer, "rm", ".gitattributes", "local.payload")
+	git(t, fixture.peer, "commit", "-m", "remove unsafe target attributes")
+	safeRemoteMain := revParse(t, fixture.peer, "HEAD")
+	git(t, fixture.peer, "push", "origin", "main")
+	git(t, fixture.work, "switch", "feature")
+	for _, path := range []string{
+		filepath.Join(fixture.work, ".gitattributes"),
+		filepath.Join(fixture.work, "local.payload"),
+	} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove switched-away target file %s: %v", path, err)
+		}
+	}
+	if status := git(t, fixture.work, "status", "--porcelain=v1", "--untracked-files=all"); status != "" {
+		t.Fatalf("feature checkout is not clean before execution: %s", status)
+	}
+
+	marker := filepath.Join(t.TempDir(), "local-target-filter-invoked")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	writeFile(t, globalConfig, "[filter \"unsafe\"]\n\tsmudge = "+executable+"\n\trequired = true\n")
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
+
+	result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+	assertSafetyRefusal(t, result, "local branch main", true)
+	assertMarkerAbsent(t, marker)
+	if branch := git(t, fixture.work, "branch", "--show-current"); branch != "feature" {
+		t.Fatalf("current branch = %q, want unchanged feature", branch)
+	}
+	if head := revParse(t, fixture.work, "HEAD"); head != initialHead {
+		t.Fatalf("HEAD = %s, want unchanged %s", head, initialHead)
+	}
+	if main := revParse(t, fixture.work, "refs/heads/main"); main != unsafeLocalMain {
+		t.Fatalf("main = %s, want unchanged %s", main, unsafeLocalMain)
+	}
+	if remote := revParse(t, fixture.work, "refs/remotes/origin/main"); remote != safeRemoteMain {
+		t.Fatalf("origin/main = %s, want fetched %s", remote, safeRemoteMain)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.work, "local.payload")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe payload was checked out or cannot be inspected: %v", err)
 	}
 }
 

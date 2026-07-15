@@ -127,7 +127,7 @@ func inspectLocalConfig(configPath string) (safetyFinding, error) {
 			continue
 		}
 		key := strings.ToLower(section + "." + variable)
-		if unsafeLocalConfigKey(key) {
+		if unsafeLocalConfig(key, configValue(line, variable)) {
 			return safetyFinding{
 				reason:      fmt.Sprintf("repository-local Git configuration %s may execute a command", key),
 				remediation: fmt.Sprintf("Remove repository-local %s and run the Git update again.", key),
@@ -179,9 +179,33 @@ func configVariable(line string) string {
 	return strings.ToLower(strings.TrimSpace(line[:end]))
 }
 
+func configValue(line, variable string) string {
+	value := ""
+	if equals := strings.IndexByte(line, '='); equals >= 0 {
+		value = strings.TrimSpace(line[equals+1:])
+	} else if len(line) > len(variable) {
+		value = strings.TrimSpace(line[len(variable):])
+	}
+	if strings.HasPrefix(value, `"`) {
+		if unquoted, err := strconv.Unquote(value); err == nil {
+			return unquoted
+		}
+	}
+	return value
+}
+
+func unsafeLocalConfig(key, value string) bool {
+	if unsafeLocalConfigKey(key) {
+		return true
+	}
+	return strings.HasPrefix(key, "submodule.") &&
+		strings.HasSuffix(key, ".update") &&
+		strings.HasPrefix(strings.TrimSpace(value), "!")
+}
+
 func unsafeLocalConfigKey(key string) bool {
 	switch key {
-	case "core.askpass", "core.attributesfile", "core.sshcommand", "core.gitproxy", "credential.helper", "remote.origin.uploadpack", "remote.origin.vcs":
+	case "core.askpass", "core.attributesfile", "core.alternaterefscommand", "core.sshcommand", "core.gitproxy", "credential.helper", "gc.recentobjectshook", "remote.origin.uploadpack", "remote.origin.vcs":
 		return true
 	}
 	if strings.HasPrefix(key, "credential.") && strings.HasSuffix(key, ".helper") {
@@ -247,10 +271,10 @@ func inspectAttributesContents(source, contents string) safetyFinding {
 	return safetyFinding{}
 }
 
-func inspectTargetTreeSafety(ctx context.Context, root, commit string) safetyFinding {
-	output, err := runGit(ctx, root, "ls-tree", "-r", "-z", commit)
+func inspectTreeSafety(ctx context.Context, root, revision, source string) safetyFinding {
+	output, err := runGit(ctx, root, "ls-tree", "-r", "-z", revision)
 	if err != nil {
-		return safetyInspectionFailure("target tree .gitattributes", err)
+		return safetyInspectionFailure(source+" .gitattributes", err)
 	}
 	for _, record := range strings.Split(output, "\x00") {
 		metadata, name, found := strings.Cut(record, "\t")
@@ -259,13 +283,13 @@ func inspectTargetTreeSafety(ctx context.Context, root, commit string) safetyFin
 		}
 		fields := strings.Fields(metadata)
 		if len(fields) != 3 || fields[1] != "blob" {
-			return safetyInspectionFailure("target tree .gitattributes", fmt.Errorf("unexpected ls-tree record %q", record))
+			return safetyInspectionFailure(source+" .gitattributes", fmt.Errorf("unexpected ls-tree record %q", record))
 		}
 		contents, catErr := runGit(ctx, root, "cat-file", "blob", fields[2])
 		if catErr != nil {
-			return safetyInspectionFailure("target tree .gitattributes", catErr)
+			return safetyInspectionFailure(source+" .gitattributes", catErr)
 		}
-		if finding := inspectAttributesContents(name, contents); finding.reason != "" {
+		if finding := inspectAttributesContents(source+" "+name, contents); finding.reason != "" {
 			return finding
 		}
 	}

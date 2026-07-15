@@ -397,12 +397,16 @@ Execution sequence for each eligible repository:
 2. Inspect the working tree, active Git operation, HEAD, origin, branches,
    commits, worktrees, repository-local Git configuration, and attributes.
 3. Stop without mutation if the local state is unsafe.
-4. Run `git fetch --prune origin` with hooks disabled and terminal prompting
-   disabled.
+4. Fetch the inspected `origin` URL with the explicit refspec
+   `+refs/heads/*:refs/remotes/origin/*`, `--prune`, `--no-prune-tags`,
+   `--no-tags`, `--no-recurse-submodules`, and `--no-auto-maintenance`.
+   Hooks, terminal prompts, and credential-manager interaction are disabled;
+   SSH and scp-style transports use batch mode with strict host-key checking.
 5. Resolve the default branch again and repeat all safety checks against the
    fetched references.
-6. Switch to the resolved local default branch, or create its exact tracking
-   branch from `origin/<branch>` when the local branch does not exist.
+6. With submodule recursion disabled, switch to the resolved local default
+   branch, or create its exact tracking branch from `origin/<branch>` when the
+   local branch does not exist.
 7. Run `git merge --ff-only origin/<branch>` with hooks disabled.
 8. Inspect and report the final branch and commit.
 

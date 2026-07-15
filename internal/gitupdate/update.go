@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 type repositoryTarget struct {
@@ -96,8 +97,21 @@ func executeUpdate(ctx context.Context, target Target, initial repositoryState, 
 
 	preflight.Executed = true
 	hookConfig := "core.hooksPath=" + hooksDirectory
-	if _, err := runGitWithEnv(ctx, initial.root, []string{"GIT_TERMINAL_PROMPT=0"},
-		"-c", hookConfig, "fetch", "--prune", "origin"); err != nil {
+	if _, err := runGitWithEnv(
+		ctx,
+		initial.root,
+		fetchEnvironment(initial.remoteURL),
+		"-c", hookConfig,
+		"fetch",
+		"--prune",
+		"--no-prune-tags",
+		"--no-tags",
+		"--no-recurse-submodules",
+		"--no-auto-maintenance",
+		"--",
+		initial.remoteURL,
+		"+refs/heads/*:refs/remotes/origin/*",
+	); err != nil {
 		preflight.BranchAfter = initial.branch
 		preflight.CommitAfter = initial.head
 		return fetchFailedResult(preflight, err)
@@ -113,14 +127,27 @@ func executeUpdate(ctx context.Context, target Target, initial repositoryState, 
 	if !canExecute(afterFetch.Status) {
 		return afterFetch
 	}
-	if finding := inspectTargetTreeSafety(ctx, fetched.root, fetched.targetCommit); finding.reason != "" {
+	if finding := inspectTreeSafety(ctx, fetched.root, fetched.targetCommit, "target tree"); finding.reason != "" {
 		return safetyRefusalResult(afterFetch, finding)
+	}
+	if fetched.targetLocalExists {
+		localSource := "local branch " + fetched.targetBranch
+		localCommit, exists := refCommit(ctx, fetched.root, "refs/heads/"+fetched.targetBranch)
+		if !exists {
+			return safetyRefusalResult(afterFetch, safetyInspectionFailure(
+				localSource+" .gitattributes",
+				fmt.Errorf("cannot resolve refs/heads/%s", fetched.targetBranch),
+			))
+		}
+		if finding := inspectTreeSafety(ctx, fetched.root, localCommit, localSource); finding.reason != "" {
+			return safetyRefusalResult(afterFetch, finding)
+		}
 	}
 
 	if fetched.targetLocalExists {
-		_, err = runGit(ctx, initial.root, "-c", hookConfig, "switch", fetched.targetBranch)
+		_, err = runGit(ctx, initial.root, "-c", hookConfig, "switch", "--no-recurse-submodules", fetched.targetBranch)
 	} else {
-		_, err = runGit(ctx, initial.root, "-c", hookConfig, "switch", "--track", "-c", fetched.targetBranch, "origin/"+fetched.targetBranch)
+		_, err = runGit(ctx, initial.root, "-c", hookConfig, "switch", "--no-recurse-submodules", "--track", "-c", fetched.targetBranch, "origin/"+fetched.targetBranch)
 	}
 	if err != nil {
 		return mutationFailureResult(ctx, target, initial, afterFetch, "switch", err)
@@ -154,6 +181,35 @@ func executeUpdate(ctx context.Context, target Target, initial repositoryState, 
 		result.Reason = fmt.Sprintf("%s already matches fetched origin/%s", final.branch, final.branch)
 	}
 	return result
+}
+
+func fetchEnvironment(remoteURL string) []string {
+	environment := []string{
+		"GIT_TERMINAL_PROMPT=0",
+		"GCM_INTERACTIVE=never",
+	}
+	if usesSSHTransport(remoteURL) {
+		environment = append(environment, "GIT_SSH_COMMAND=ssh -oBatchMode=yes -oStrictHostKeyChecking=yes")
+	}
+	return environment
+}
+
+func usesSSHTransport(remoteURL string) bool {
+	value := strings.TrimSpace(remoteURL)
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "ssh://") {
+		return true
+	}
+	if strings.Contains(lower, "://") || strings.Contains(lower, "::") {
+		return false
+	}
+
+	colon := strings.IndexByte(value, ':')
+	if colon <= 0 {
+		return false
+	}
+	slash := strings.IndexAny(value, `/\`)
+	return slash < 0 || colon < slash
 }
 
 func canExecute(status Status) bool {

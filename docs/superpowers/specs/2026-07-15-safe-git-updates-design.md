@@ -1,7 +1,7 @@
 # Safe Git Updates Before Scans
 
-**Status:** Approved design  
-**Date:** 2026-07-15  
+**Status:** Approved design
+**Date:** 2026-07-15
 **Issue:** [#26](https://github.com/gorecodecom/goregraph/issues/26)
 
 ## Goal
@@ -91,8 +91,10 @@ The target branch is resolved independently for every repository:
 2. otherwise use `origin/main` or `origin/master` only when exactly one exists;
 3. otherwise report `default_branch_unknown` with remediation.
 
-Execution performs `git fetch --prune origin` and repeats default-branch and
-repository-state inspection before changing the checkout. Preview never fetches.
+Execution fetches the inspected `origin` URL with an explicit remote-heads
+refspec into `refs/remotes/origin/*`, prunes only that namespace, and repeats
+default-branch and repository-state inspection before changing the checkout.
+Preview never fetches.
 
 When the resolved remote default branch has no local branch, execution may create
 an exact tracking branch from `origin/<branch>`. It must not guess another remote
@@ -128,10 +130,14 @@ For each eligible repository, execution performs:
 2. inspect the working tree, active operation, HEAD, remotes, branches, commits,
    and worktrees;
 3. block without mutation when local inspection finds an unsafe state;
-4. run `git fetch --prune origin` with hooks disabled;
+4. fetch the inspected `origin` URL with the explicit refspec
+   `+refs/heads/*:refs/remotes/origin/*`, `--prune`, `--no-prune-tags`,
+   `--no-tags`, `--no-recurse-submodules`, and `--no-auto-maintenance`, with
+   hooks, terminal prompts, and credential-manager interaction disabled, and
+   with SSH/scp batch mode and strict host-key checking when applicable;
 5. repeat branch resolution and all safety checks against the fetched refs;
-6. switch to the resolved local default branch, or create its exact tracking
-   branch when it does not exist;
+6. with submodule recursion disabled, switch to the resolved local default
+   branch, or create its exact tracking branch when it does not exist;
 7. run `git merge --ff-only origin/<branch>` with hooks disabled;
 8. inspect and report the final branch and commit.
 
