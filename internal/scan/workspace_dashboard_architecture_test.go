@@ -3,6 +3,7 @@ package scan
 import (
 	"encoding/json"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -46,25 +47,64 @@ func runArchitectureModel(t *testing.T, expression string, target any) {
 }
 
 func TestArchitectureModelDerivesDynamicDomainsAndStablePositions(t *testing.T) {
+	nodes, err := json.Marshal(denseArchitectureFixture().Nodes)
+	if err != nil {
+		t.Fatalf("encode dense architecture fixture: %v", err)
+	}
+	type position struct {
+		X      float64 `json:"x"`
+		Y      int     `json:"y"`
+		Lane   int     `json:"lane"`
+		Width  int     `json:"w"`
+		Height int     `json:"h"`
+		Domain string  `json:"domain"`
+	}
 	var result struct {
-		Domains   []string       `json:"domains"`
-		Positions map[string]any `json:"positions"`
+		Domains   []string            `json:"domains"`
+		First     map[string]position `json:"first"`
+		Repeated  map[string]position `json:"repeated"`
+		Reordered map[string]position `json:"reordered"`
 	}
 	runArchitectureModel(t, `(()=>{
-		const nodes=[
-			{id:"web",label:"Customer Web",project:"apps/web",domain:"experience"},
-			{id:"orders",label:"Order Service",project:"services/orders",domain:"commerce"},
-			{id:"audit",label:"Audit Service",project:"services/audit",domain:"observability"},
-			{id:"worker",label:"Invoice Worker",project:"workers/invoice",domain:"operations"}
-		];
-		const layout=architectureLayout(nodes,1280);
-		return {domains:layout.domains.map(d=>d.id),positions:Object.fromEntries(layout.positions)};
+		const nodes=`+string(nodes)+`;
+		const localeCompare=String.prototype.localeCompare;
+		String.prototype.localeCompare=function(){throw new Error("architecture ordering must be locale independent");};
+		try {
+			const first=architectureLayout(nodes,1280);
+			const repeated=architectureLayout(nodes,1280);
+			const reordered=architectureLayout(nodes.slice().reverse(),1280);
+			return {
+				domains:first.domains.map(function(domain){return domain.id;}),
+				first:Object.fromEntries(first.positions),
+				repeated:Object.fromEntries(repeated.positions),
+				reordered:Object.fromEntries(reordered.positions)
+			};
+		} finally {
+			String.prototype.localeCompare=localeCompare;
+		}
 	})()`, &result)
 	want := []string{"commerce", "experience", "observability", "operations"}
-	if strings.Join(result.Domains, ",") != strings.Join(want, ",") {
+	if !reflect.DeepEqual(result.Domains, want) {
 		t.Fatalf("domains = %v, want %v", result.Domains, want)
 	}
-	if len(result.Positions) != 4 {
-		t.Fatalf("positions = %d, want all 4 services", len(result.Positions))
+	wantPositions := map[string]position{
+		"service:billing": {X: 42, Y: 190, Lane: 0, Width: 224, Height: 74, Domain: "commerce"},
+		"service:orders":  {X: 42, Y: 280, Lane: 0, Width: 224, Height: 74, Domain: "commerce"},
+		"service:admin":   {X: 367.3333333333333, Y: 190, Lane: 1, Width: 224, Height: 74, Domain: "experience"},
+		"service:web":     {X: 367.3333333333333, Y: 280, Lane: 1, Width: 224, Height: 74, Domain: "experience"},
+		"service:audit":   {X: 692.6666666666666, Y: 190, Lane: 2, Width: 224, Height: 74, Domain: "observability"},
+		"service:worker":  {X: 1018, Y: 190, Lane: 3, Width: 224, Height: 74, Domain: "operations"},
+	}
+	if !reflect.DeepEqual(result.First, wantPositions) {
+		t.Fatalf("positions = %#v, want %#v", result.First, wantPositions)
+	}
+	if !reflect.DeepEqual(result.Repeated, result.First) {
+		t.Fatalf("repeated positions changed: first=%#v repeated=%#v", result.First, result.Repeated)
+	}
+	if !reflect.DeepEqual(result.Reordered, result.First) {
+		t.Fatalf("input order changed positions: first=%#v reordered=%#v", result.First, result.Reordered)
+	}
+	if strings.Contains(workspaceDashboardArchitectureModelScript, "localeCompare") {
+		t.Fatal("architecture model ordering must not depend on localeCompare")
 	}
 }

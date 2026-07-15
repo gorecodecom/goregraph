@@ -9,10 +9,11 @@ const architectureLanePalette=[
 function architectureDomainKey(node){const value=String(node&&node.domain||"").trim().toLowerCase();return value||"unassigned";}
 function architectureDomainLabel(domain){return String(domain||"unassigned").split(/[._\-/]+/).filter(Boolean).map(function(word){return word.charAt(0).toUpperCase()+word.slice(1);}).join(" ")||"Unassigned";}
 function architectureDomainColor(domain){let hash=2166136261;String(domain||"unassigned").split("").forEach(function(character){hash^=character.charCodeAt(0);hash=Math.imul(hash,16777619);});return architectureLanePalette[(hash>>>0)%architectureLanePalette.length];}
+function architectureStringCompare(a,b){a=String(a||"");b=String(b||"");return a<b?-1:a>b?1:0;}
 function architectureDomains(nodes){
   const groups=new Map();
   (nodes||[]).forEach(function(node){const id=architectureDomainKey(node);if(!groups.has(id))groups.set(id,[]);groups.get(id).push(node);});
-  return Array.from(groups.entries()).map(function(entry){const id=entry[0],domainNodes=entry[1].slice().sort(function(a,b){return String(a.label||a.project||a.id).localeCompare(String(b.label||b.project||b.id))||String(a.id).localeCompare(String(b.id));});return {id:id,label:architectureDomainLabel(id),color:architectureDomainColor(id),nodes:domainNodes};}).sort(function(a,b){return a.label.localeCompare(b.label)||a.id.localeCompare(b.id);});
+  return Array.from(groups.entries()).map(function(entry){const id=entry[0],domainNodes=entry[1].slice().sort(function(a,b){return architectureStringCompare(a.label||a.project||a.id,b.label||b.project||b.id)||architectureStringCompare(a.id,b.id);});return {id:id,label:architectureDomainLabel(id),color:architectureDomainColor(id),nodes:domainNodes};}).sort(function(a,b){return architectureStringCompare(a.label,b.label)||architectureStringCompare(a.id,b.id);});
 }
 function architectureLayout(nodes,width){
   const domains=architectureDomains(nodes),layoutWidth=Math.max(width||0,Math.max(1040,domains.length*300+84)),margin=42,cardWidth=224,cardHeight=74;

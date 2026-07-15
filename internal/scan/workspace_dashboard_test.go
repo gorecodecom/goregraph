@@ -93,10 +93,10 @@ func TestDashboardGridAvoidsHorizontalOverflowAtNarrowDesktopWidths(t *testing.T
 	}
 }
 
-func TestDashboardArchitectureSelectionKeepsFullLayoutUntilExplicitIsolation(t *testing.T) {
+func TestDashboardArchitectureSelectionKeepsCanonicalLayoutAcrossFocusStates(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"},
-		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
 		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
 		nil,
 		nil,
@@ -105,15 +105,56 @@ func TestDashboardArchitectureSelectionKeepsFullLayoutUntilExplicitIsolation(t *
 		`isolation:false`,
 		"function setArchitectureIsolation(enabled)",
 		"focused&&!focused.has(node.id)",
-		"focusedMode=state.isolation||state.architectureFocused",
-		"nodes=focusedMode?allNodes.filter",
+		"canonicalNodes=serviceNodes",
+		"layout=architectureLayout(canonicalNodes,width)",
+		"canonicalNodeIds=new Set(canonicalNodes.map",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing stable focus behavior %q", want)
 		}
 	}
-	if strings.Contains(html, "state.selected?serviceFocus(state.selected):null;const nodes=focused?allNodes.filter") {
-		t.Fatal("ordinary selection must not filter Architecture nodes")
+	for _, unstable := range []string{
+		"nodes=focusedMode?allNodes.filter",
+		"layout=architectureLayout(nodes,width)",
+		"layout=architectureLayout(allNodes,width)",
+	} {
+		if strings.Contains(html, unstable) {
+			t.Fatalf("architecture layout still depends on a changing subset %q", unstable)
+		}
+	}
+}
+
+func TestDashboardArchitectureDomainLanesSupportPointerAndKeyboardFocus(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`architectureDomain:null`,
+		"function focusArchitectureDomain(domain)",
+		"function wireArchitectureLanes()",
+		`lane.addEventListener("pointerdown"`,
+		`lane.addEventListener("click"`,
+		`event.key==="Enter"||event.key===" "`,
+		"event.preventDefault()",
+		"wireArchitectureLanes();",
+		"state.architectureDomain===domain.id",
+		"architectureStringCompare",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing interactive architecture domain behavior %q", want)
+		}
+	}
+	for _, localeSensitive := range []string{
+		"Array.from(bundles.values()).sort(function(a,b){return a.id.localeCompare(b.id);})",
+		"architectureDomainLabel(serviceDomain(a)).localeCompare",
+	} {
+		if strings.Contains(html, localeSensitive) {
+			t.Fatalf("architecture ordering remains locale-sensitive: %q", localeSensitive)
+		}
 	}
 }
 
