@@ -22,6 +22,7 @@ type repositoryState struct {
 	currentComparison branchComparison
 	targetComparison  branchComparison
 	worktreeConflict  string
+	safety            safetyFinding
 }
 
 type branchComparison struct {
@@ -72,7 +73,7 @@ func canonicalPath(path string) (string, error) {
 }
 
 func inspectRepository(ctx context.Context, root string) (repositoryState, error) {
-	state := repositoryState{root: root}
+	state := repositoryState{root: root, safety: inspectLocalSafety(root)}
 	var err error
 
 	state.head, err = runGit(ctx, root, "rev-parse", "HEAD")
@@ -80,6 +81,9 @@ func inspectRepository(ctx context.Context, root string) (repositoryState, error
 		return state, err
 	}
 	state.branch, _ = runGit(ctx, root, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if state.safety.reason != "" {
+		return state, nil
+	}
 	state.operation, err = activeOperation(ctx, root)
 	if err != nil {
 		return state, err
@@ -92,6 +96,9 @@ func inspectRepository(ctx context.Context, root string) (repositoryState, error
 
 	state.remoteURL, _ = runGit(ctx, root, "remote", "get-url", "origin")
 	if state.remoteURL == "" {
+		return state, nil
+	}
+	if state.safety = unsafeRemoteTransport(state.remoteURL); state.safety.reason != "" {
 		return state, nil
 	}
 

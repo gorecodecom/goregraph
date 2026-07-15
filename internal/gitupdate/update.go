@@ -92,6 +92,9 @@ func executeUpdate(ctx context.Context, target Target, initial repositoryState, 
 	if !canExecute(afterFetch.Status) {
 		return afterFetch
 	}
+	if finding := inspectTargetTreeSafety(ctx, fetched.root, fetched.targetCommit); finding.reason != "" {
+		return safetyRefusalResult(afterFetch, finding)
+	}
 
 	if fetched.targetLocalExists {
 		_, err = runGit(ctx, initial.root, "-c", hookConfig, "switch", fetched.targetBranch)
@@ -154,6 +157,13 @@ func fetchFailedResult(result RepositoryResult, err error) RepositoryResult {
 	return result
 }
 
+func safetyRefusalResult(result RepositoryResult, finding safetyFinding) RepositoryResult {
+	result.Status = StatusFetchFailed
+	result.Reason = finding.reason
+	result.Remediation = finding.remediation
+	return result
+}
+
 func mutationFailureResult(ctx context.Context, target Target, initial repositoryState, fallback RepositoryResult, operation string, operationErr error) RepositoryResult {
 	current, err := inspectRepository(ctx, initial.root)
 	if err == nil {
@@ -211,6 +221,10 @@ func classifyPreview(target Target, state repositoryState) RepositoryResult {
 	}
 
 	switch {
+	case state.safety.reason != "":
+		result.BranchAfter = state.branch
+		result.CommitAfter = state.head
+		return safetyRefusalResult(result, state.safety)
 	case state.operation != "":
 		result.Status = StatusOperationProgress
 		result.Reason = "a Git operation is in progress"

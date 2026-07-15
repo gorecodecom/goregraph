@@ -2,6 +2,8 @@ package gitupdate
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,8 +14,12 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("GOREGRAPH_TEST_GIT_BARRIER_DIR") != "" && filepath.Base(os.Args[0]) == "git" {
+		runGitBarrierProcess()
+	}
 	for _, environment := range []string{
 		"GOREGRAPH_TEST_FSMONITOR_MARKER",
+		"GOREGRAPH_TEST_GIT_COMMAND_MARKER",
 		"GOREGRAPH_TEST_LAZY_FETCH_MARKER",
 	} {
 		if marker := os.Getenv(environment); marker != "" {
@@ -22,6 +28,55 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(m.Run())
+}
+
+func runGitBarrierProcess() {
+	realGit := os.Getenv("GOREGRAPH_TEST_REAL_GIT")
+	cmd := exec.Command(realGit, os.Args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			os.Exit(exitError.ExitCode())
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(98)
+	}
+	if !containsArgument(os.Args[1:], "fetch") {
+		os.Exit(0)
+	}
+
+	barrierDirectory := os.Getenv("GOREGRAPH_TEST_GIT_BARRIER_DIR")
+	if err := os.WriteFile(filepath.Join(barrierDirectory, "ready"), []byte("ready\n"), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(98)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(barrierDirectory, "release")); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(98)
+		}
+		if time.Now().After(deadline) {
+			fmt.Fprintln(os.Stderr, "timed out waiting for fetch barrier release")
+			os.Exit(98)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	os.Exit(0)
+}
+
+func containsArgument(arguments []string, expected string) bool {
+	for _, argument := range arguments {
+		if argument == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func TestReportExitCode(t *testing.T) {
@@ -406,7 +461,9 @@ func TestRunPreviewDisablesLazyPromisorFetch(t *testing.T) {
 	git(t, fixture.work, "update-ref", "refs/remotes/origin/main", missingCommit)
 	git(t, fixture.work, "config", "remote.origin.promisor", "true")
 	git(t, fixture.work, "config", "remote.origin.partialclonefilter", "blob:none")
-	git(t, fixture.work, "config", "remote.origin.uploadpack", executable)
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	writeFile(t, globalConfig, "[remote \"origin\"]\n\tuploadpack = "+executable+"\n")
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
 
 	gitDir := git(t, fixture.work, "rev-parse", "--absolute-git-dir")
 	missingObject := filepath.Join(gitDir, "objects", missingCommit[:2], missingCommit[2:])
@@ -561,31 +618,37 @@ func TestRunExecuteRechecksDirtyAheadAndDivergedAfterFetch(t *testing.T) {
 	t.Run("dirty after fetch starts", func(t *testing.T) {
 		fixture := newGitFixture(t)
 		fixture.commitAndPushFromPeer(t, "peer update\n")
-		gitDir := git(t, fixture.work, "rev-parse", "--absolute-git-dir")
-		fetchHead := filepath.Join(gitDir, "FETCH_HEAD")
-		if err := os.Remove(fetchHead); err != nil && !os.IsNotExist(err) {
-			t.Fatalf("remove FETCH_HEAD: %v", err)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		barrierDirectory := installGitFetchBarrier(t)
+		type runOutcome struct {
+			report Report
+			err    error
 		}
-		dirtied := make(chan error, 1)
+		outcomes := make(chan runOutcome, 1)
 		go func() {
-			for {
-				if _, err := os.Stat(fetchHead); err == nil {
-					dirtied <- os.WriteFile(filepath.Join(fixture.work, "late-untracked.txt"), []byte("dirty\n"), 0o600)
-					return
-				}
-				time.Sleep(time.Millisecond)
-			}
+			report, err := Run(ctx, []Target{{Path: fixture.work}}, Options{Execute: true})
+			outcomes <- runOutcome{report: report, err: err}
 		}()
 
-		result := onlyResult(t, execute(t, Target{Path: fixture.work}))
-		select {
-		case err := <-dirtied:
-			if err != nil {
-				t.Fatalf("create dirty file after fetch started: %v", err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("fetch did not create FETCH_HEAD")
+		if err := waitForBarrier(ctx, filepath.Join(barrierDirectory, "ready")); err != nil {
+			t.Fatalf("wait for completed fetch: %v", err)
 		}
+		writeFile(t, filepath.Join(fixture.work, "late-untracked.txt"), "dirty\n")
+		if err := os.WriteFile(filepath.Join(barrierDirectory, "release"), []byte("release\n"), 0o600); err != nil {
+			t.Fatalf("release fetch barrier: %v", err)
+		}
+
+		var outcome runOutcome
+		select {
+		case outcome = <-outcomes:
+		case <-ctx.Done():
+			t.Fatalf("Run() did not finish: %v", ctx.Err())
+		}
+		if outcome.err != nil {
+			t.Fatalf("Run() error = %v", outcome.err)
+		}
+		result := onlyResult(t, outcome.report)
 		if result.Status != StatusDirty || !result.Executed {
 			t.Fatalf("result = %#v, want executed dirty blocker", result)
 		}
@@ -639,4 +702,254 @@ func TestRunExecuteRechecksDirtyAheadAndDivergedAfterFetch(t *testing.T) {
 			t.Fatalf("reported checkout = %q at %q, want unchanged main at %q", result.BranchAfter, result.CommitAfter, localCommit)
 		}
 	})
+}
+
+func installGitFetchBarrier(t *testing.T) string {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("locate real Git: %v", err)
+	}
+	barrierDirectory, err := os.MkdirTemp("/tmp", "goregraph-fetch-barrier-")
+	if err != nil {
+		t.Fatalf("create fetch barrier directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(barrierDirectory) })
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+	wrapperDirectory := t.TempDir()
+	if err := os.Symlink(executable, filepath.Join(wrapperDirectory, "git")); err != nil {
+		t.Fatalf("install Git fetch barrier: %v", err)
+	}
+	t.Setenv("GOREGRAPH_TEST_GIT_BARRIER_DIR", barrierDirectory)
+	t.Setenv("GOREGRAPH_TEST_REAL_GIT", realGit)
+	t.Setenv("PATH", wrapperDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return barrierDirectory
+}
+
+func waitForBarrier(ctx context.Context, path string) error {
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if _, err := os.Stat(path); err == nil {
+				return nil
+			} else if !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+}
+
+func TestRunRejectsExecutableLocalGitConfigWithoutInvokingIt(t *testing.T) {
+	t.Run("fetch upload pack", func(t *testing.T) {
+		fixture := newGitFixture(t)
+		fixture.commitAndPushFromPeer(t, "peer update\n")
+		marker := filepath.Join(t.TempDir(), "upload-pack-invoked")
+		t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
+		executable, err := os.Executable()
+		if err != nil {
+			t.Fatalf("locate test executable: %v", err)
+		}
+		git(t, fixture.work, "config", "remote.origin.uploadpack", executable)
+		headBefore := revParse(t, fixture.work, "HEAD")
+		remoteBefore := revParse(t, fixture.work, "refs/remotes/origin/main")
+
+		report, err := Run(context.Background(), []Target{{Path: fixture.work}}, Options{Execute: true})
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		result := onlyResult(t, report)
+		assertSafetyRefusal(t, result, "remote.origin.uploadpack", false)
+		if result.BranchAfter != "main" || result.CommitAfter != headBefore {
+			t.Fatalf("reported checkout = %q at %q, want unchanged main at %q", result.BranchAfter, result.CommitAfter, headBefore)
+		}
+		assertMarkerAbsent(t, marker)
+		if head := revParse(t, fixture.work, "HEAD"); head != headBefore {
+			t.Fatalf("HEAD = %s, want unchanged %s", head, headBefore)
+		}
+		if remote := revParse(t, fixture.work, "refs/remotes/origin/main"); remote != remoteBefore {
+			t.Fatalf("origin/main = %s, want unchanged %s", remote, remoteBefore)
+		}
+	})
+
+	t.Run("clean filter during preview", func(t *testing.T) {
+		fixture := newGitFixture(t)
+		writeFile(t, filepath.Join(fixture.work, ".gitattributes"), "README.md filter=unsafe\n")
+		git(t, fixture.work, "add", ".gitattributes")
+		git(t, fixture.work, "commit", "-m", "add attributes")
+		marker := filepath.Join(t.TempDir(), "clean-filter-invoked")
+		t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
+		executable, err := os.Executable()
+		if err != nil {
+			t.Fatalf("locate test executable: %v", err)
+		}
+		git(t, fixture.work, "config", "filter.unsafe.clean", executable)
+		writeFile(t, filepath.Join(fixture.work, "README.md"), "force clean filter\n")
+
+		report, err := Run(context.Background(), []Target{{Path: fixture.work}}, Options{})
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		assertSafetyRefusal(t, onlyResult(t, report), "filter.unsafe.clean", false)
+		assertMarkerAbsent(t, marker)
+	})
+
+	for _, key := range []string{
+		"filter.unsafe.smudge",
+		"filter.unsafe.process",
+		"core.askPass",
+		"core.attributesFile",
+		"core.sshCommand",
+		"core.gitProxy",
+		"credential.helper",
+		"credential.https://example.invalid.helper",
+		"remote.origin.vcs",
+		"url.ext::unsafe.insteadOf",
+	} {
+		t.Run(key, func(t *testing.T) {
+			fixture := newGitFixture(t)
+			git(t, fixture.work, "config", key, "/definitely/not/executed")
+
+			report, err := Run(context.Background(), []Target{{Path: fixture.work}}, Options{Execute: true})
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			assertSafetyRefusal(t, onlyResult(t, report), strings.ToLower(key), false)
+		})
+	}
+}
+
+func TestRunExecuteRejectsTargetFiltersWithoutInvokingThem(t *testing.T) {
+	for _, command := range []string{"smudge", "process"} {
+		t.Run(command, func(t *testing.T) {
+			fixture := newGitFixture(t)
+			git(t, fixture.work, "switch", "-c", "feature")
+			marker := filepath.Join(t.TempDir(), command+"-filter-invoked")
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatalf("locate test executable: %v", err)
+			}
+			globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+			writeFile(t, globalConfig, "[filter \"unsafe\"]\n\t"+command+" = "+executable+"\n")
+			writeFile(t, filepath.Join(fixture.peer, ".gitattributes"), "*.payload filter=unsafe\n")
+			writeFile(t, filepath.Join(fixture.peer, "remote.payload"), "remote\n")
+			git(t, fixture.peer, "add", ".gitattributes", "remote.payload")
+			git(t, fixture.peer, "commit", "-m", "add filtered payload")
+			targetCommit := revParse(t, fixture.peer, "HEAD")
+			git(t, fixture.peer, "push", "origin", "main")
+			t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
+			t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+			headBefore := revParse(t, fixture.work, "HEAD")
+			mainBefore := revParse(t, fixture.work, "refs/heads/main")
+
+			result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+			assertSafetyRefusal(t, result, ".gitattributes", true)
+			assertMarkerAbsent(t, marker)
+			if head := revParse(t, fixture.work, "HEAD"); head != headBefore {
+				t.Fatalf("HEAD = %s, want unchanged %s", head, headBefore)
+			}
+			if main := revParse(t, fixture.work, "refs/heads/main"); main != mainBefore {
+				t.Fatalf("main = %s, want unchanged %s", main, mainBefore)
+			}
+			if remote := revParse(t, fixture.work, "refs/remotes/origin/main"); remote != targetCommit {
+				t.Fatalf("origin/main = %s, want fetched %s", remote, targetCommit)
+			}
+		})
+	}
+}
+
+func TestRunPreviewRejectsCommonWorktreeAttributesWithoutInvokingFilter(t *testing.T) {
+	fixture := newGitFixture(t)
+	linkedWorktree := filepath.Join(filepath.Dir(fixture.work), "linked-worktree")
+	git(t, fixture.work, "worktree", "add", "-b", "feature", linkedWorktree)
+	marker := filepath.Join(t.TempDir(), "linked-clean-filter-invoked")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	writeFile(t, globalConfig, "[filter \"unsafe\"]\n\tclean = "+executable+"\n")
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
+	commonDirectory := git(t, linkedWorktree, "rev-parse", "--git-common-dir")
+	if !filepath.IsAbs(commonDirectory) {
+		commonDirectory = filepath.Join(linkedWorktree, commonDirectory)
+	}
+	writeFile(t, filepath.Join(commonDirectory, "info", "attributes"), "README.md filter=unsafe\n")
+	writeFile(t, filepath.Join(linkedWorktree, "README.md"), "force clean filter\n")
+
+	report, err := Run(context.Background(), []Target{{Path: linkedWorktree}}, Options{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	assertSafetyRefusal(t, onlyResult(t, report), "info/attributes", false)
+	assertMarkerAbsent(t, marker)
+}
+
+func TestRunExecuteRejectsUnsafeRemoteHelpers(t *testing.T) {
+	for _, remoteURL := range []string{"ext::sh -c false", "unknown::payload"} {
+		t.Run(remoteURL, func(t *testing.T) {
+			fixture := newGitFixture(t)
+			git(t, fixture.work, "remote", "set-url", "origin", remoteURL)
+
+			result := onlyResult(t, execute(t, Target{Path: fixture.work}))
+			assertSafetyRefusal(t, result, "transport", false)
+		})
+	}
+}
+
+func TestRunExecuteContinuesAfterSafetyRefusal(t *testing.T) {
+	first := newGitFixture(t)
+	second := newGitFixture(t)
+	unsafe, safe := first, second
+	if unsafe.work > safe.work {
+		unsafe, safe = safe, unsafe
+	}
+	marker := filepath.Join(t.TempDir(), "unsafe-command-invoked")
+	t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+	git(t, unsafe.work, "config", "remote.origin.uploadpack", executable)
+	targetCommit := safe.commitAndPushFromPeer(t, "safe update\n")
+
+	report := execute(t, Target{Path: unsafe.work}, Target{Path: safe.work})
+	if len(report.Repositories) != 2 {
+		t.Fatalf("len(Repositories) = %d, want 2", len(report.Repositories))
+	}
+	assertSafetyRefusal(t, report.Repositories[0], "remote.origin.uploadpack", false)
+	if result := report.Repositories[1]; result.Status != StatusUpdated || result.CommitAfter != targetCommit {
+		t.Fatalf("later repository result = %#v, want updated to %s", result, targetCommit)
+	}
+	assertMarkerAbsent(t, marker)
+}
+
+func assertSafetyRefusal(t *testing.T, result RepositoryResult, reasonFragment string, executed bool) {
+	t.Helper()
+	if result.Status != StatusFetchFailed {
+		t.Fatalf("Status = %q, want %q; reason: %s", result.Status, StatusFetchFailed, result.Reason)
+	}
+	if result.Executed != executed {
+		t.Fatalf("Executed = %t, want %t", result.Executed, executed)
+	}
+	if !strings.Contains(strings.ToLower(result.Reason), strings.ToLower(reasonFragment)) {
+		t.Fatalf("Reason = %q, want fragment %q", result.Reason, reasonFragment)
+	}
+	if result.Remediation == "" {
+		t.Fatal("Remediation is empty")
+	}
+}
+
+func assertMarkerAbsent(t *testing.T, marker string) {
+	t.Helper()
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("configured command executed: %v", err)
+	}
 }
