@@ -303,9 +303,6 @@ func isAttributesPath(name string) bool {
 
 func unsafeRemoteTransport(remoteURL string) safetyFinding {
 	lower := strings.ToLower(strings.TrimSpace(remoteURL))
-	if helper := strings.Index(lower, "::"); helper > 0 {
-		return unsafeTransportFinding(remoteURL)
-	}
 	if separator := strings.Index(lower, "://"); separator > 0 {
 		scheme := lower[:separator]
 		switch scheme {
@@ -314,6 +311,9 @@ func unsafeRemoteTransport(remoteURL string) safetyFinding {
 		default:
 			return unsafeTransportFinding(remoteURL)
 		}
+	}
+	if helper := strings.Index(lower, "::"); helper > 0 {
+		return unsafeTransportFinding(remoteURL)
 	}
 	return safetyFinding{}
 }

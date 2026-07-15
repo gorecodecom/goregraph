@@ -994,6 +994,34 @@ func TestRunExecuteRejectsNonSchemeRemoteHelperWithoutInvokingIt(t *testing.T) {
 	}
 }
 
+func TestUnsafeRemoteTransportAllowsStandardIPv6URLs(t *testing.T) {
+	for _, remoteURL := range []string{
+		"ssh://[2001:db8::1]/repo.git",
+		"https://[::1]/repo.git",
+	} {
+		t.Run(remoteURL, func(t *testing.T) {
+			if finding := unsafeRemoteTransport(remoteURL); finding.reason != "" {
+				t.Fatalf("unsafeRemoteTransport(%q) reason = %q, want allowed", remoteURL, finding.reason)
+			}
+		})
+	}
+}
+
+func TestUnsafeRemoteTransportRejectsHelpersAndUnknownSchemes(t *testing.T) {
+	for _, remoteURL := range []string{
+		"1foo::payload",
+		"ext::sh -c false",
+		"unknown::payload",
+		"unknown://example.invalid/repo.git",
+	} {
+		t.Run(remoteURL, func(t *testing.T) {
+			if finding := unsafeRemoteTransport(remoteURL); finding.reason == "" {
+				t.Fatalf("unsafeRemoteTransport(%q) returned no safety finding", remoteURL)
+			}
+		})
+	}
+}
+
 func TestRunExecuteContinuesAfterSafetyRefusal(t *testing.T) {
 	first := newGitFixture(t)
 	second := newGitFixture(t)
