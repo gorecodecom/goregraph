@@ -108,6 +108,9 @@ func TestDashboardArchitectureSelectionKeepsCanonicalLayoutAcrossFocusStates(t *
 		"canonicalNodes=serviceNodes",
 		"layout=architectureLayout(canonicalNodes,width)",
 		"canonicalNodeIds=new Set(canonicalNodes.map",
+		"focusScope=(state.isolation||state.architectureFocused)&&focused?focused:null",
+		"architectureNodeDimmed(node,emphasizedNodeIds,focusScope)",
+		"architectureEdgeDimmed(edge,emphasizedEdgeIds,focusScope)",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing stable focus behavior %q", want)
@@ -124,6 +127,38 @@ func TestDashboardArchitectureSelectionKeepsCanonicalLayoutAcrossFocusStates(t *
 	}
 }
 
+func TestDashboardArchitectureKeepsCanonicalEdgeAndBundleMembership(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		"canonicalEdges=serviceEdges.filter",
+		"emphasizedEdgeIds=new Set(filteredServiceEdges().map",
+		"bundleModels=architectureBundles(canonicalEdges)",
+		"focusedEdges=canonicalEdges.filter",
+		"function architectureEdgeDimmed(edge,emphasizedEdgeIds,focusScope)",
+		`(dim?' dim':'')`,
+		`.edge.architecture-bundle.dim{`,
+		`.bundle-count.dim,.architecture-call-pill.dim{`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing canonical architecture edge behavior %q", want)
+		}
+	}
+	for _, unstable := range []string{
+		"visibleEdges=filteredServiceEdges()",
+		"architectureBundles(backgroundEdges)",
+	} {
+		if strings.Contains(html, unstable) {
+			t.Fatalf("architecture edge membership still changes with emphasis %q", unstable)
+		}
+	}
+}
+
 func TestDashboardArchitectureDomainLanesSupportPointerAndKeyboardFocus(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"},
@@ -134,12 +169,17 @@ func TestDashboardArchitectureDomainLanesSupportPointerAndKeyboardFocus(t *testi
 	)
 	for _, want := range []string{
 		`architectureDomain:null`,
-		"function focusArchitectureDomain(domain)",
+		"function restoreArchitectureDomainFocus(domain)",
+		"function focusArchitectureDomain(domain,restoreFocus)",
+		"if(restoreFocus)restoreArchitectureDomainFocus(domain)",
 		"function wireArchitectureLanes()",
 		`lane.addEventListener("pointerdown"`,
 		`lane.addEventListener("click"`,
 		`event.key==="Enter"||event.key===" "`,
 		"event.preventDefault()",
+		"lane.focus()",
+		"activate(false)",
+		"activate(true)",
 		"wireArchitectureLanes();",
 		"state.architectureDomain===domain.id",
 		"architectureStringCompare",
