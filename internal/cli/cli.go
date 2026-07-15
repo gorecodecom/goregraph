@@ -36,6 +36,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runExplain(args[1:], stdout, stderr)
 	case "doctor":
 		return runDoctor(args[1:], stdout, stderr)
+	case "git":
+		return runGit(args[1:], stdout, stderr)
 	case "workspace":
 		return runWorkspace(args[1:], stdout, stderr)
 	case "mcp":
@@ -105,7 +107,7 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing|scan-all|refresh|clean|diff|dashboard|explain|path|impact> [path] [options]\n")
+		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing|scan-all|refresh|clean|diff|dashboard|explain|path|impact|git> [path] [options]\n")
 		return 2
 	}
 	switch args[0] {
@@ -129,6 +131,8 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return runWorkspacePath(args[1:], stdout, stderr)
 	case "impact":
 		return runWorkspaceImpact(args[1:], stdout, stderr)
+	case "git":
+		return runWorkspaceGit(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown workspace command: %s\n", args[0])
 		return 2
@@ -960,6 +964,7 @@ Commands:
   query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
   doctor <path>     Check generated output health
+  git update [path] Preview or execute a safe Git update
   workspace         Show, scan, clean, and inspect workspace projects
   mcp               Start the read-only MCP stdio server
   version           Print build metadata
@@ -978,9 +983,13 @@ Examples:
   goregraph query . audit
   goregraph explain . src/main.go
   goregraph doctor .
+  goregraph git update .
+  goregraph git update . --execute
   goregraph workspace status .
   goregraph workspace scan-missing . --top 5
   goregraph workspace scan-all .
+  goregraph workspace git update .
+  goregraph workspace git update . --execute
   goregraph workspace refresh .
   goregraph workspace clean . --execute
   goregraph workspace dashboard .
@@ -1005,12 +1014,15 @@ Commands:
   explain <target>     Explain a route, file, symbol, contract, or feature
   path                 Show graph path between two workspace targets
   impact               Show affected features for changed files
+  git update [path]    Preview or execute safe updates for workspace Git repositories
 
 Examples:
   goregraph workspace status .
   goregraph workspace scan-missing .
   goregraph workspace scan-missing . --top 5 --execute
   goregraph workspace scan-all .
+  goregraph workspace git update .
+  goregraph workspace git update . --execute
   goregraph workspace refresh .
   goregraph workspace clean . --execute
   goregraph workspace dashboard .
