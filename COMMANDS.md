@@ -353,6 +353,132 @@ goregraph update
 goregraph update --no-update-gitignore
 ```
 
+## `goregraph git update [path]`
+
+Safely previews or updates the Git repository containing `[path]`. The path
+defaults to `.`.
+
+This command updates source checkouts. It is separate from `goregraph update`,
+which rebuilds the current project's GoreGraph index.
+
+Examples:
+
+```bash
+goregraph git update .
+goregraph git update . --execute
+goregraph git update . --format json
+```
+
+Options:
+
+- `--execute`: fetch and apply an eligible safe update. Without this option, the
+  command is a preview.
+- `--format text|json`: select text or indented JSON output. The default is
+  `text`.
+
+Preview behavior:
+
+- performs strictly local, read-only Git inspection
+- makes no network request and does not fetch or update remote references
+- does not change the branch, checkout, index, working tree, or project files
+- does not run Git hooks, project code, or a GoreGraph scan
+- uses only cached `origin` references and disables lazy fetching
+
+The preview resolves the default branch from cached `origin/HEAD`. If that is
+unavailable, it uses `origin/main` or `origin/master` only when exactly one of
+those cached references exists. A preview can therefore be stale when the remote
+has changed since the last fetch, and it cannot discover a new remote default
+branch. `would_update` describes the change relative to the cached reference;
+`--execute` fetches and repeats the inspection before changing the checkout.
+
+Execution sequence for each eligible repository:
+
+1. Resolve and canonicalize the containing Git root.
+2. Inspect the working tree, active Git operation, HEAD, origin, branches,
+   commits, worktrees, repository-local Git configuration, and attributes.
+3. Stop without mutation if the local state is unsafe.
+4. Run `git fetch --prune origin` with hooks disabled and terminal prompting
+   disabled.
+5. Resolve the default branch again and repeat all safety checks against the
+   fetched references.
+6. Switch to the resolved local default branch, or create its exact tracking
+   branch from `origin/<branch>` when the local branch does not exist.
+7. Run `git merge --ff-only origin/<branch>` with hooks disabled.
+8. Inspect and report the final branch and commit.
+
+Execution may update cached remote references even when a later safety check
+blocks the checkout update. A fetch failure leaves the checkout unchanged.
+
+Safety behavior:
+
+- never stashes, resets, rebases, force-switches, force-updates, discards files,
+  or creates merge commits
+- never continues or aborts an existing merge, rebase, cherry-pick, or revert
+- starts Git directly without a shell
+- supplies an empty temporary `core.hooksPath` to fetch, switch, and merge, so
+  repository hooks do not run
+- refuses repository-local Git settings that may execute commands, active Git
+  filter attributes, and custom or unsupported remote transports
+- does not run project code or start a GoreGraph scan
+
+Text and JSON are rendered from the same report. The report contains:
+
+- `mode`: `preview` or `execute`
+- `workspace_root`: the detected root for workspace updates; omitted for a
+  single-repository update
+- `repositories`: deterministic repository results
+- `summary`: result counts grouped by status
+
+Every repository result uses these fields; optional empty values are omitted from
+JSON:
+
+- `path`: requested project or workspace member path
+- `git_root`: canonical repository root
+- `remote`: resolved `origin` URL
+- `branch_before`: checked-out branch before processing
+- `branch_after`: resolved target branch in preview, or actual final branch in
+  execute mode
+- `commit_before`: checked-out commit before processing
+- `commit_after`: cached target commit in preview, or actual final commit in
+  execute mode
+- `status`: stable status value
+- `reason`: evidence for the classification
+- `remediation`: next action for a blocker; omitted from JSON and shown as `-` in
+  text when no remediation is needed
+- `executed`: whether a mutating Git process was started. Preflight blockers are
+  `false`; a fetch that was started is `true`, even if it failed.
+
+Successful statuses:
+
+- `up_to_date`: the default branch already matches the relevant cached or
+  freshly fetched `origin` reference
+- `would_update`: preview would switch or fast-forward using the cached reference
+- `updated`: execution switched or fast-forwarded the repository successfully
+
+Blocker and failure statuses:
+
+- `dirty`: tracked, untracked, staged, or unstaged changes exist
+- `ahead`: the current or target branch has local commits not in its matching
+  remote reference
+- `diverged`: the current or target branch and its matching remote reference
+  both have unique commits
+- `not_git`: the requested path is not inside a Git repository
+- `missing_remote`: `origin` is not configured
+- `blocked_worktree`: the target branch is checked out in another worktree
+- `detached_head`: HEAD is detached
+- `operation_in_progress`: a merge, rebase, cherry-pick, or revert is active
+- `default_branch_unknown`: cached or fetched origin references do not identify
+  one unambiguous default branch
+- `fetch_failed`: fetch, inspection, switch, or fast-forward failed, or a safety
+  inspection refused the operation
+
+Exit codes:
+
+- `0`: every repository is `up_to_date`, `would_update`, or `updated`
+- `1`: at least one repository is blocked or failed, including partial workspace
+  success
+- `2`: command syntax, an option, or a format is invalid
+
 ## `goregraph report <path>`
 
 Prints the generated Markdown project report.
@@ -697,6 +823,44 @@ Important behavior:
 - does not scan
 - does not write files
 - uses the same auto-detection as `goregraph scan`
+
+## `goregraph workspace git update [path]`
+
+Previews or executes safe Git updates for every project discovered in the
+workspace containing `[path]`. The path defaults to `.`.
+
+Examples:
+
+```bash
+goregraph workspace git update .
+goregraph workspace git update . --execute
+goregraph workspace git update . --format json
+```
+
+This command uses the same preview, execution, safety, status, field, format, and
+exit-code behavior as `goregraph git update`. In addition, it:
+
+- uses normal GoreGraph workspace discovery
+- resolves canonical Git roots and reports each unique repository once, so
+  multiple projects in one monorepo do not cause repeated updates
+- processes repositories in deterministic canonical-root order
+- continues after a blocked or failed repository, allowing safe repositories to
+  succeed
+- returns exit code `1` after processing every repository when any result is a
+  blocker or failure, including a mix of successful and unsuccessful results
+
+Recommended update-then-scan flow:
+
+```bash
+goregraph workspace git update .
+goregraph workspace git update . --execute
+goregraph workspace scan-all .
+```
+
+Review the preview before adding `--execute`. If execution reports a blocker or
+failure, follow its remediation and retry before relying on a new workspace scan.
+Git updates and scans remain separate so network access and checkout changes are
+always explicit.
 
 ## `goregraph workspace scan-missing [path]`
 

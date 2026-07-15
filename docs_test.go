@@ -16,10 +16,12 @@ func TestCommandsReferenceDocumentsEveryUserCommand(t *testing.T) {
 		"goregraph help",
 		"goregraph scan",
 		"goregraph update",
+		"goregraph git update",
 		"goregraph report",
 		"goregraph query",
 		"goregraph explain",
 		"goregraph doctor",
+		"goregraph workspace git update",
 		"goregraph mcp",
 		"goregraph version",
 	} {

@@ -11,7 +11,8 @@ It answers practical orientation questions: where a symbol is defined, what it c
 The tool is intentionally conservative:
 
 - no AI calls
-- no network access
+- no network access during scans or Git-update previews; only an explicit Git
+  update command with `--execute` fetches `origin`
 - no telemetry
 - no project code execution
 - no Git hooks
@@ -77,7 +78,17 @@ brew upgrade goregraph
 
 ### Scoop Windows
 
-Recommended Windows installation until Winget publishing is approved:
+If Scoop is not installed, open a regular, non-administrative PowerShell and run:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+```
+
+For other bootstrap options, see the
+[official Scoop installer documentation](https://github.com/ScoopInstaller/Install).
+
+Then add the GoreCode bucket and install GoreGraph:
 
 ```powershell
 scoop bucket add gorecode https://github.com/gorecodecom/scoop-bucket
@@ -191,6 +202,33 @@ goregraph scan .
 ```
 
 This creates `goregraph-out/` with reports, a project graph, diagnostics, and JSON evidence. When GoreGraph detects a multi-project workspace, it also creates `.goregraph-workspace/` with cross-project contracts, feature flows, and the offline dashboard. See [`OUTPUTS.md`](OUTPUTS.md) for the complete output contract.
+
+### Update source safely before scanning
+
+For a single repository, preview the update first and execute it explicitly after
+reviewing the result:
+
+```bash
+goregraph git update .
+goregraph git update . --execute
+```
+
+The preview is strictly local and uses cached `origin` references. `--execute`
+fetches `origin`, repeats the safety checks, and only switches or fast-forwards an
+eligible clean repository. It never stashes, resets, rebases, force-switches, runs
+repository hooks, or executes project code. Add `--format json` for structured
+output.
+
+For a workspace, update each unique Git repository before rebuilding the indexes:
+
+```bash
+goregraph workspace git update .
+goregraph workspace git update . --execute
+goregraph workspace scan-all .
+```
+
+Workspace execution continues after blockers so eligible repositories can still
+update, then returns a non-zero exit code when any repository needs attention.
 
 Print the generated report:
 
@@ -352,6 +390,20 @@ goregraph update
 ```
 
 Refresh the current project's `goregraph-out/`.
+
+```bash
+goregraph git update [path]
+```
+
+Preview a strictly local safe Git update. Add `--execute` to fetch and apply an
+eligible switch or fast-forward, and add `--format json` for structured output.
+
+```bash
+goregraph workspace git update [path]
+```
+
+Preview safe updates for every unique Git repository in a detected workspace.
+Add `--execute` to fetch and apply eligible updates.
 
 ```bash
 goregraph report <path>
@@ -677,7 +729,7 @@ GoreGraph is local and explicit.
 GoreGraph does not:
 
 - call AI providers
-- call external network services
+- access the network during scans, Git-update previews, or other read-only commands
 - install Git hooks
 - modify agent instruction files
 - modify editor settings
@@ -689,6 +741,8 @@ GoreGraph does:
 - read files under the selected scan root
 - write to `goregraph-out/`
 - write workspace registry/overlay files under a detected workspace root and already indexed sibling output directories
+- fetch `origin` and safely switch or fast-forward eligible repositories only
+  when a Git update command with `--execute` is explicitly requested
 - optionally update project and workspace root `.gitignore` files for generated GoreGraph output
 
 ## License
