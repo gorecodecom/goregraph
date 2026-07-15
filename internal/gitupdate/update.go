@@ -61,6 +61,9 @@ func Run(ctx context.Context, targets []Target, options Options) (Report, error)
 			}
 		}
 		report.Repositories = append(report.Repositories, result)
+	}
+
+	for _, result := range report.Repositories {
 		report.Summary[result.Status]++
 	}
 
@@ -178,16 +181,19 @@ func mutationFailureResult(ctx context.Context, target Target, initial repositor
 
 func collectRepositoryTargets(ctx context.Context, targets []Target) []repositoryTarget {
 	repositories := make([]repositoryTarget, 0, len(targets))
-	seenRoots := make(map[string]struct{})
+	seenRoots := make(map[string]int)
 	seenNonRepositories := make(map[string]struct{})
 
 	for _, target := range targets {
 		root, err := canonicalGitRoot(ctx, target.Path)
 		if err == nil {
-			if _, exists := seenRoots[root]; exists {
+			if index, exists := seenRoots[root]; exists {
+				if target.Path < repositories[index].target.Path {
+					repositories[index].target = target
+				}
 				continue
 			}
-			seenRoots[root] = struct{}{}
+			seenRoots[root] = len(repositories)
 			repositories = append(repositories, repositoryTarget{target: target, root: root, sortKey: root})
 			continue
 		}

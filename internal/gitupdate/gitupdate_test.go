@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -202,6 +203,118 @@ func onlyResult(t *testing.T, report Report) RepositoryResult {
 		t.Fatalf("len(Repositories) = %d, want 1", len(report.Repositories))
 	}
 	return report.Repositories[0]
+}
+
+func TestRunDeduplicatesCanonicalGitRoots(t *testing.T) {
+	fixture := newGitFixture(t)
+	firstNestedPath := filepath.Join(fixture.work, "projects", "alpha")
+	secondNestedPath := filepath.Join(fixture.work, "projects", "zeta")
+	for _, path := range []string{firstNestedPath, secondNestedPath} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatalf("create nested project %s: %v", path, err)
+		}
+	}
+
+	report := preview(t,
+		Target{Path: secondNestedPath},
+		Target{Path: firstNestedPath},
+		Target{Path: fixture.work},
+	)
+
+	result := onlyResult(t, report)
+	if result.Path != fixture.work {
+		t.Fatalf("Path = %q, want lexicographically first requested path %q", result.Path, fixture.work)
+	}
+	if result.Status != StatusUpToDate {
+		t.Fatalf("Status = %q, want %q", result.Status, StatusUpToDate)
+	}
+	if report.Summary[StatusUpToDate] != 1 || len(report.Summary) != 1 {
+		t.Fatalf("Summary = %#v, want one up_to_date repository", report.Summary)
+	}
+}
+
+func TestRunProcessesSafeRepositoriesAfterBlocker(t *testing.T) {
+	dirtyFixture := newGitFixture(t)
+	updatedFixture := newGitFixture(t)
+	writeFile(t, filepath.Join(dirtyFixture.work, "untracked.txt"), "dirty\n")
+	dirtyHead := revParse(t, dirtyFixture.work, "HEAD")
+	targetCommit := updatedFixture.commitAndPushFromPeer(t, "peer update\n")
+	workspaceRoot := t.TempDir()
+
+	report, err := Run(context.Background(), []Target{
+		{Path: dirtyFixture.work},
+		{Path: updatedFixture.work},
+	}, Options{Execute: true, WorkspaceRoot: workspaceRoot})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if report.WorkspaceRoot != workspaceRoot {
+		t.Fatalf("WorkspaceRoot = %q, want %q", report.WorkspaceRoot, workspaceRoot)
+	}
+	if len(report.Repositories) != 2 {
+		t.Fatalf("len(Repositories) = %d, want 2", len(report.Repositories))
+	}
+
+	resultsByPath := make(map[string]RepositoryResult, len(report.Repositories))
+	for _, result := range report.Repositories {
+		resultsByPath[result.Path] = result
+	}
+	dirtyResult := resultsByPath[dirtyFixture.work]
+	if dirtyResult.Status != StatusDirty || dirtyResult.Executed {
+		t.Fatalf("dirty result = %#v, want non-executed dirty blocker", dirtyResult)
+	}
+	updatedResult := resultsByPath[updatedFixture.work]
+	if updatedResult.Status != StatusUpdated || !updatedResult.Executed {
+		t.Fatalf("safe result = %#v, want executed update", updatedResult)
+	}
+	if report.Summary[StatusDirty] != 1 || report.Summary[StatusUpdated] != 1 {
+		t.Fatalf("Summary = %#v, want one dirty and one updated", report.Summary)
+	}
+	if report.ExitCode() != 1 {
+		t.Fatalf("ExitCode() = %d, want 1 for partial success", report.ExitCode())
+	}
+	if head := revParse(t, dirtyFixture.work, "HEAD"); head != dirtyHead {
+		t.Fatalf("dirty repository HEAD = %s, want unchanged %s", head, dirtyHead)
+	}
+	if head := revParse(t, updatedFixture.work, "HEAD"); head != targetCommit {
+		t.Fatalf("safe repository HEAD = %s, want updated %s", head, targetCommit)
+	}
+}
+
+func TestRunSortsRepositoryResultsByCanonicalRoot(t *testing.T) {
+	firstFixture := newGitFixture(t)
+	secondFixture := newGitFixture(t)
+	expectedRoots := []string{
+		canonicalTestPath(t, firstFixture.work),
+		canonicalTestPath(t, secondFixture.work),
+	}
+	sort.Strings(expectedRoots)
+
+	report := preview(t,
+		Target{Path: secondFixture.work},
+		Target{Path: firstFixture.work},
+	)
+	if len(report.Repositories) != len(expectedRoots) {
+		t.Fatalf("len(Repositories) = %d, want %d", len(report.Repositories), len(expectedRoots))
+	}
+	for index, expectedRoot := range expectedRoots {
+		if actualRoot := report.Repositories[index].GitRoot; actualRoot != expectedRoot {
+			t.Fatalf("Repositories[%d].GitRoot = %q, want %q", index, actualRoot, expectedRoot)
+		}
+	}
+}
+
+func canonicalTestPath(t *testing.T, path string) string {
+	t.Helper()
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("make %s absolute: %v", path, err)
+	}
+	canonical, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		t.Fatalf("canonicalize %s: %v", path, err)
+	}
+	return filepath.Clean(canonical)
 }
 
 func TestRunPreviewReportsWouldUpdateWithoutChangingRepository(t *testing.T) {
