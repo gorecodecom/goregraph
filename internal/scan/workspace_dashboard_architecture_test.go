@@ -108,3 +108,36 @@ func TestArchitectureModelDerivesDynamicDomainsAndStablePositions(t *testing.T) 
 		t.Fatal("architecture model ordering must not depend on localeCompare")
 	}
 }
+
+func TestArchitectureFocusModelKeepsDomainNeighborsAndAllServiceRelations(t *testing.T) {
+	var result struct {
+		DomainNodes  []string
+		DomainEdges  []string
+		ServiceNodes []string
+		ServiceEdges []string
+	}
+	runArchitectureModel(t, `(()=>{
+		const nodes=[{id:"web",domain:"experience"},{id:"orders",domain:"commerce"},{id:"billing",domain:"commerce"},{id:"audit",domain:"observability"}];
+		const edges=[{id:"web-orders",from:"web",to:"orders"},{id:"orders-billing",from:"orders",to:"billing"},{id:"orders-audit",from:"orders",to:"audit"},{id:"audit-billing",from:"audit",to:"billing"}];
+		const domain=architectureFocusModel(nodes,edges,{domain:"commerce",direction:"outgoing",riskOnly:false});
+		const service=architectureFocusModel(nodes,edges,{selected:"orders",direction:"both",riskOnly:false});
+		return {DomainNodes:Array.from(domain.nodeIDs).sort(),DomainEdges:Array.from(domain.edgeIDs).sort(),ServiceNodes:Array.from(service.nodeIDs).sort(),ServiceEdges:Array.from(service.edgeIDs).sort()};
+	})()`, &result)
+	if strings.Join(result.DomainNodes, ",") != "audit,billing,orders" || strings.Join(result.DomainEdges, ",") != "orders-audit" {
+		t.Fatalf("domain focus = %#v", result)
+	}
+	if strings.Join(result.ServiceEdges, ",") != "orders-audit,orders-billing,web-orders" || strings.Join(result.ServiceNodes, ",") != "audit,billing,orders,web" {
+		t.Fatalf("service focus = %#v", result)
+	}
+}
+
+func TestArchitectureRiskFocusChangesEmphasisNotLayout(t *testing.T) {
+	var result struct {
+		PositionCount int
+		FocusedEdges  []string
+	}
+	runArchitectureModel(t, `(()=>{const nodes=[{id:"web",domain:"experience"},{id:"orders",domain:"commerce"},{id:"audit",domain:"observability"}],edges=[{id:"web-orders",from:"web",to:"orders",resolved:4},{id:"orders-audit",from:"orders",to:"audit",unresolved:1,risk:"has_unresolved"}],layout=architectureLayout(nodes,1440),focus=architectureFocusModel(nodes,edges,{selected:"orders",direction:"both",riskOnly:true});return {PositionCount:layout.positions.size,FocusedEdges:Array.from(focus.edgeIDs).sort()};})()`, &result)
+	if result.PositionCount != 3 || strings.Join(result.FocusedEdges, ",") != "orders-audit" {
+		t.Fatalf("risk focus = %#v", result)
+	}
+}

@@ -21,4 +21,20 @@ function architectureLayout(nodes,width){
   domains.forEach(function(domain,lane){maxLength=Math.max(maxLength,domain.nodes.length);domain.nodes.forEach(function(node,index){positions.set(node.id,{x:margin+lane*step,y:190+index*90,lane:lane,w:cardWidth,h:cardHeight,domain:domain.id});});});
   return {positions:positions,width:layoutWidth,height:Math.max(760,290+maxLength*90),domains:domains,step:step,cardWidth:cardWidth,cardHeight:cardHeight,margin:margin};
 }
+function architectureEdgeRisk(edge){return !!(edge&&(edge.mismatched||edge.unresolved||String(edge.risk||"").match(/risk|mismatch|unresolved|missing/i)));}
+function architectureDirectionMatches(edge,selected,domain,direction,nodeByID){
+  if(selected){if(direction==="incoming")return edge.to===selected;if(direction==="outgoing")return edge.from===selected;return edge.from===selected||edge.to===selected;}
+  if(!domain)return true;
+  const from=nodeByID.get(edge.from),to=nodeByID.get(edge.to),fromDomain=from&&architectureDomainKey(from),toDomain=to&&architectureDomainKey(to);
+  if(direction==="incoming")return toDomain===domain&&fromDomain!==domain;
+  if(direction==="both")return (fromDomain===domain)!==(toDomain===domain);
+  return fromDomain===domain&&toDomain!==domain;
+}
+function architectureFocusModel(nodes,edges,options){
+  options=options||{};const nodeByID=new Map((nodes||[]).map(function(node){return [node.id,node];})),nodeIDs=new Set(),edgeIDs=new Set();
+  if(options.selected)nodeIDs.add(options.selected);
+  if(options.domain)(nodes||[]).forEach(function(node){if(architectureDomainKey(node)===options.domain)nodeIDs.add(node.id);});
+  (edges||[]).forEach(function(edge){if(!architectureDirectionMatches(edge,options.selected,options.domain,options.direction||"both",nodeByID))return;if(options.riskOnly&&!architectureEdgeRisk(edge))return;edgeIDs.add(edge.id);nodeIDs.add(edge.from);nodeIDs.add(edge.to);});
+  return {nodeIDs:nodeIDs,edgeIDs:edgeIDs};
+}
 `

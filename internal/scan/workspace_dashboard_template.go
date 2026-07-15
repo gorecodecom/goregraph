@@ -70,6 +70,16 @@ const workspaceDashboardShell = `<div class="shell">
 <span title="A relationship requiring attention"><i class="architecture-legend-line risk"></i>Risk</span>
 <span title="The currently selected service"><i class="architecture-legend-selection"></i>Selected</span>
 </aside>
+<section id="architecture-focus-panel" class="architecture-focus-panel" aria-label="Architecture focus" aria-live="polite">
+<div class="architecture-domain-controls"><strong>Domains</strong><div id="architecture-domain-chips" class="architecture-domain-chips"></div></div>
+<div class="architecture-direction-controls" role="group" aria-label="Relationship direction">
+<button type="button" data-architecture-direction="outgoing" aria-pressed="false">Outgoing</button>
+<button type="button" data-architecture-direction="incoming" aria-pressed="false">Incoming</button>
+<button type="button" data-architecture-direction="both" aria-pressed="true">Both</button>
+</div>
+<button type="button" id="architecture-risk-toggle" aria-pressed="false">Risk</button>
+<button type="button" id="reset-architecture-focus">Reset focus</button>
+</section>
 <svg id="workspace-graph" role="group" aria-label="Directed workspace relationship map"><defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8fa2ae"></path></marker><marker id="arrow-focus" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#0b6b79"></path></marker><marker id="arrow-outgoing" markerWidth="13" markerHeight="11" refX="11" refY="5.5" orient="auto"><path d="M0,0 L13,5.5 L0,11 z" fill="#0b6b79"></path></marker><marker id="arrow-incoming" markerWidth="13" markerHeight="11" refX="11" refY="5.5" orient="auto"><path d="M0,0 L13,5.5 L0,11 z" fill="#a56a00"></path></marker></defs><g id="graph-layer"></g></svg>
 <section id="workspace-workbench" class="workspace-workbench" hidden aria-label="Workspace data workbench"></section>
 </main>

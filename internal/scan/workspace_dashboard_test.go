@@ -102,28 +102,24 @@ func TestDashboardArchitectureSelectionKeepsCanonicalLayoutAcrossFocusStates(t *
 		nil,
 	)
 	for _, want := range []string{
-		`isolation:false`,
-		"function setArchitectureIsolation(enabled)",
-		"focused&&!focused.has(node.id)",
-		"canonicalNodes=serviceNodes",
-		"layout=architectureLayout(canonicalNodes,width)",
-		"canonicalNodeIds=new Set(canonicalNodes.map",
-		"focusScope=(state.isolation||state.architectureFocused)&&focused?focused:null",
-		"architectureNodeDimmed(node,emphasizedNodeIds,focusScope)",
-		"architectureEdgeDimmed(edge,emphasizedEdgeIds,focusScope)",
+		"architectureFocusModel",
+		`architectureDirection:"both"`,
+		`architectureRiskOnly:false`,
+		"allNodes=serviceNodes.slice()",
+		"layout=architectureLayout(allNodes,width)",
+		"allEdges=filteredServiceEdges().filter",
+		"focus=architectureFocusModel(allNodes,allEdges",
+		"focused=!!(state.selected||state.architectureDomain||state.architectureRiskOnly)",
+		"state.positions=layout.positions",
+		"!focus.nodeIDs.has(node.id)",
+		"!focus.edgeIDs.has(edge.id)",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing stable focus behavior %q", want)
 		}
 	}
-	for _, unstable := range []string{
-		"nodes=focusedMode?allNodes.filter",
-		"layout=architectureLayout(nodes,width)",
-		"layout=architectureLayout(allNodes,width)",
-	} {
-		if strings.Contains(html, unstable) {
-			t.Fatalf("architecture layout still depends on a changing subset %q", unstable)
-		}
+	if strings.Contains(html, `nodes=focusedMode?allNodes.filter`) {
+		t.Fatal("architecture focus must dim instead of filtering nodes")
 	}
 }
 
@@ -137,10 +133,11 @@ func TestDashboardArchitectureKeepsCanonicalEdgeAndBundleMembership(t *testing.T
 	)
 	for _, want := range []string{
 		"canonicalEdges=serviceEdges.filter",
-		"emphasizedEdgeIds=new Set(filteredServiceEdges().map",
+		"allEdges=filteredServiceEdges().filter",
+		"emphasizedEdgeIds=new Set(allEdges.map",
 		"bundleModels=architectureBundles(canonicalEdges)",
 		"focusedEdges=canonicalEdges.filter",
-		"function architectureEdgeDimmed(edge,emphasizedEdgeIds,focusScope)",
+		"function architectureEdgeDimmed(edge,emphasizedEdgeIds,focus,focused)",
 		`(dim?' dim':'')`,
 		`.edge.architecture-bundle.dim{`,
 		`.bundle-count.dim,.architecture-call-pill.dim{`,
@@ -169,18 +166,22 @@ func TestDashboardArchitectureDomainLanesSupportPointerAndKeyboardFocus(t *testi
 	)
 	for _, want := range []string{
 		`architectureDomain:null`,
-		"function restoreArchitectureDomainFocus(domain)",
-		"function focusArchitectureDomain(domain,restoreFocus)",
-		"if(restoreFocus)restoreArchitectureDomainFocus(domain)",
-		"function wireArchitectureLanes()",
-		`lane.addEventListener("pointerdown"`,
-		`lane.addEventListener("click"`,
+		`architectureDirection:"both"`,
+		`architectureRiskOnly:false`,
+		`savedArchitectureDomainViewport:null`,
+		`savedArchitectureServiceViewport:null`,
+		"function setArchitectureDomain(domain)",
+		"function setArchitectureDirection(direction)",
+		"function resetArchitectureFocus()",
+		"function renderArchitectureDomainControls(domains)",
+		"function wireArchitectureDomainControls()",
+		`document.querySelectorAll("[data-architecture-domain]")`,
+		`element.addEventListener("pointerdown"`,
+		`element.addEventListener("click"`,
 		`event.key==="Enter"||event.key===" "`,
 		"event.preventDefault()",
-		"lane.focus()",
-		"activate(false)",
-		"activate(true)",
-		"wireArchitectureLanes();",
+		"setArchitectureDomain(element.dataset.architectureDomain)",
+		"wireArchitectureDomainControls();",
 		"state.architectureDomain===domain.id",
 		"architectureStringCompare",
 	} {
@@ -245,6 +246,12 @@ func TestDashboardViewportControlsPreserveUserContext(t *testing.T) {
 		"function saveViewport(mode)",
 		"function restoreViewport(mode)",
 		"function fitVisibleContent()",
+		"function fitArchitectureNeighborhoodIfNeeded(nodeIDs)",
+		"function restoreArchitectureServiceViewport()",
+		`savedArchitectureDomainViewport:null`,
+		`savedArchitectureServiceViewport:null`,
+		"applyViewport(saved)",
+		"if(savedDomain)applyViewport(savedDomain)",
 		"getBBox()",
 		"function zoomAtPoint(factor,x,y)",
 	} {
@@ -953,6 +960,12 @@ func TestDashboardControlStateUsesARIA(t *testing.T) {
 		`id="toggle-labels" title="Toggle labels" aria-label="Toggle relationship labels" aria-pressed="false"`,
 		`id="zoom-readout" class="readout" aria-live="polite"`,
 		`id="result-note" class="result-note" aria-live="polite"`,
+		`id="architecture-focus-panel" class="architecture-focus-panel" aria-label="Architecture focus" aria-live="polite"`,
+		`data-architecture-direction="outgoing" aria-pressed="false"`,
+		`data-architecture-direction="incoming" aria-pressed="false"`,
+		`data-architecture-direction="both" aria-pressed="true"`,
+		`id="architecture-risk-toggle" aria-pressed="false"`,
+		`id="reset-architecture-focus"`,
 		`btn.setAttribute("aria-pressed",String(btn.dataset.viewMode===mode))`,
 		`b.setAttribute("aria-pressed",String(b===btn))`,
 		`this.setAttribute("aria-pressed",String(state.labels))`,
