@@ -10,9 +10,12 @@ import (
 )
 
 func runGit(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	gitArgs := make([]string, 0, len(args)+2)
+	gitArgs = append(gitArgs, "-c", "core.fsmonitor=false")
+	gitArgs = append(gitArgs, args...)
+	cmd := exec.CommandContext(ctx, "git", gitArgs...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_NO_LAZY_FETCH=1")
 
 	stdout, err := cmd.Output()
 	if err == nil {

@@ -10,6 +10,19 @@ import (
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	for _, environment := range []string{
+		"GOREGRAPH_TEST_FSMONITOR_MARKER",
+		"GOREGRAPH_TEST_LAZY_FETCH_MARKER",
+	} {
+		if marker := os.Getenv(environment); marker != "" {
+			_ = os.WriteFile(marker, []byte("invoked\n"), 0o600)
+			os.Exit(97)
+		}
+	}
+	os.Exit(m.Run())
+}
+
 func TestReportExitCode(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -346,5 +359,66 @@ func TestRunPreviewBlocksTargetBranchInAnotherWorktree(t *testing.T) {
 	}
 	if result.BranchAfter != "main" {
 		t.Fatalf("BranchAfter = %q, want main", result.BranchAfter)
+	}
+}
+
+func TestRunPreviewDisablesRepositoryFSMonitor(t *testing.T) {
+	fixture := newGitFixture(t)
+	marker := filepath.Join(t.TempDir(), "fsmonitor-invoked")
+	t.Setenv("GOREGRAPH_TEST_FSMONITOR_MARKER", marker)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+	git(t, fixture.work, "config", "core.fsmonitor", executable)
+
+	result := onlyResult(t, preview(t, Target{Path: fixture.work}))
+	if result.Status != StatusUpToDate {
+		t.Fatalf("Status = %q, want %q", result.Status, StatusUpToDate)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("repository fsmonitor executed during preview: %v", err)
+	}
+}
+
+func TestRunPreviewDisablesLazyPromisorFetch(t *testing.T) {
+	fixture := newGitFixture(t)
+	marker := filepath.Join(t.TempDir(), "lazy-fetch-invoked")
+	t.Setenv("GOREGRAPH_TEST_LAZY_FETCH_MARKER", marker)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
+
+	tree := revParse(t, fixture.work, "HEAD^{tree}")
+	missingCommit := git(t, fixture.work, "commit-tree", tree, "-p", "HEAD", "-m", "promisor update")
+	git(t, fixture.work, "update-ref", "refs/remotes/origin/main", missingCommit)
+	git(t, fixture.work, "config", "remote.origin.promisor", "true")
+	git(t, fixture.work, "config", "remote.origin.partialclonefilter", "blob:none")
+	git(t, fixture.work, "config", "remote.origin.uploadpack", executable)
+
+	gitDir := git(t, fixture.work, "rev-parse", "--absolute-git-dir")
+	missingObject := filepath.Join(gitDir, "objects", missingCommit[:2], missingCommit[2:])
+	if err := os.Remove(missingObject); err != nil {
+		t.Fatalf("remove promised commit %s: %v", missingCommit, err)
+	}
+	headBefore := revParse(t, fixture.work, "HEAD")
+	remoteBefore := revParse(t, fixture.work, "refs/remotes/origin/main")
+
+	result := onlyResult(t, preview(t, Target{Path: fixture.work}))
+	if result.Status != StatusDefaultUnknown {
+		t.Fatalf("Status = %q, want %q", result.Status, StatusDefaultUnknown)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("promisor remote contacted during preview: %v", err)
+	}
+	if _, err := os.Stat(missingObject); !os.IsNotExist(err) {
+		t.Fatalf("missing promisor object was fetched: %v", err)
+	}
+	if headAfter := revParse(t, fixture.work, "HEAD"); headAfter != headBefore {
+		t.Fatalf("HEAD changed: got %s, want %s", headAfter, headBefore)
+	}
+	if remoteAfter := revParse(t, fixture.work, "refs/remotes/origin/main"); remoteAfter != remoteBefore {
+		t.Fatalf("origin/main changed: got %s, want %s", remoteAfter, remoteBefore)
 	}
 }
