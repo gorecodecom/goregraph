@@ -316,6 +316,142 @@ public class UserService {}
 	}
 }
 
+func TestGradleParsesBalancedMultilineLiteralIncludes(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		body string
+	}{
+		{
+			name: "groovy",
+			path: "settings.gradle",
+			body: `include(
+    ':users-api',
+    ':services:orders-api',
+)`,
+		},
+		{
+			name: "kotlin",
+			path: "settings.gradle.kts",
+			body: `include(
+    ":users-api",
+    ":services:orders-api",
+)`,
+		},
+	}
+	want := []gradleIncludedProject{
+		{directory: "services/orders-api", artifact: "orders-api"},
+		{directory: "users-api", artifact: "users-api"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			record, ok := extractGradlePackage(test.path, test.body)
+			if !ok || !reflect.DeepEqual(record.included, want) {
+				t.Fatalf("multiline Gradle includes = %#v, %v, want %#v, true", record.included, ok, want)
+			}
+			if limitations := gradleExtractionLimitations(test.path, test.body); len(limitations) != 0 {
+				t.Fatalf("literal multiline Gradle include limitations = %#v, want none", limitations)
+			}
+		})
+	}
+}
+
+func TestGradleUnsupportedMultilineIncludeKeepsRootProvenancePartial(t *testing.T) {
+	var workspace WorkspaceIndex
+	mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+		FileRecord{Path: "build.gradle"},
+		`group = "com.weka"`,
+	))
+	mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+		FileRecord{Path: "settings.gradle.kts"},
+		`rootProject.name = "platform"
+include(
+    ":users-api",
+    provider("orders-api"),
+)`,
+	))
+	if len(workspace.gradleLimitations) == 0 {
+		t.Fatal("unsupported multiline Gradle include produced no limitation")
+	}
+
+	body := `package org.acme.orders;
+
+public class OrderService {}
+`
+	source := extractJavaSource(FileRecord{
+		Path:     "orders-api/src/main/java/org/acme/orders/OrderService.java",
+		Language: "java",
+	}, body)
+	facts := ExtractJavaSymbolFacts(source, body, workspace)
+	if len(facts.Declarations) != 1 {
+		t.Fatalf("Gradle source declarations = %#v, want one", facts.Declarations)
+	}
+	declaration := facts.Declarations[0]
+	if declaration.Coverage != CoveragePartial || len(declaration.Limitations) == 0 {
+		t.Fatalf("unsupported include inherited complete root provenance: %#v", declaration)
+	}
+}
+
+func TestFinalizePreservesExactGradleArtifactDependencyEvidence(t *testing.T) {
+	var workspace WorkspaceIndex
+	mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+		FileRecord{Path: "settings.gradle"},
+		`rootProject.name = "platform"
+include("users-api", "orders-api")`,
+	))
+	mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+		FileRecord{Path: "users-api/build.gradle"},
+		`group = "com.weka"`,
+	))
+	mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+		FileRecord{Path: "orders-api/build.gradle"},
+		`group = "com.weka"
+dependencies {
+    implementation("com.weka:users-api:1.0")
+}`,
+	))
+
+	providerBody := `package org.acme.user;
+
+public class UserService {}
+`
+	consumerBody := `package org.acme.orders;
+
+import org.acme.user.UserService;
+
+class OrderService {
+    UserService users;
+}
+`
+	sources := []JavaSourceRecord{
+		extractJavaSource(FileRecord{
+			Path:     "users-api/src/main/java/org/acme/user/UserService.java",
+			Language: "java",
+		}, providerBody),
+		extractJavaSource(FileRecord{
+			Path:     "orders-api/src/main/java/org/acme/orders/OrderService.java",
+			Language: "java",
+		}, consumerBody),
+	}
+	facts := ExtractJavaProjectSymbolFacts(sources, map[string]string{
+		sources[0].File: providerBody,
+		sources[1].File: consumerBody,
+	}, workspace)
+	reference := assertJavaReference(t, facts.References, "imports_type", "org.acme.user.UserService", 3)
+	wantEvidence := []string{"gradle:com.weka:orders-api -> com.weka:users-api"}
+	if reference.Resolution != SymbolResolutionExact || !reflect.DeepEqual(reference.DependencyEvidence, wantEvidence) {
+		t.Fatalf("validated Gradle reference = %#v, want exact with %#v", reference, wantEvidence)
+	}
+
+	finalized := FinalizeProjectSymbolFacts(nil, workspace, facts)
+	finalReference := assertJavaReference(t, finalized.References, "imports_type", "org.acme.user.UserService", 3)
+	if finalReference.Resolution != SymbolResolutionExact ||
+		finalReference.ToSymbolID == "" ||
+		!reflect.DeepEqual(finalReference.DependencyEvidence, wantEvidence) {
+		t.Fatalf("finalized Gradle reference = %#v, want exact with %#v", finalReference, wantEvidence)
+	}
+}
+
 func TestGradleComputedIncludeArgumentsStayUnresolved(t *testing.T) {
 	body := `include(projectName)
 include(provider("users-api"))

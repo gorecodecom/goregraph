@@ -11,7 +11,6 @@ var (
 	gradleGroupAssignmentRE      = regexp.MustCompile(`(?m)^\s*group\s*=\s*(.+?)\s*$`)
 	gradleArtifactAssignmentRE   = regexp.MustCompile(`(?m)^\s*rootProject\.name\s*=\s*(.+?)\s*$`)
 	gradleDependencyStatementRE  = regexp.MustCompile(`(?m)^\s*(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)\s*(.*?)\s*$`)
-	gradleIncludeStatementRE     = regexp.MustCompile(`(?m)^\s*include(?:\s*\((.*)\)|\s+(.+?))\s*$`)
 	gradleParenthesizedLiteralRE = regexp.MustCompile(`^\(\s*["']([^"']*)["']\s*\)$`)
 	gradleBareLiteralRE          = regexp.MustCompile(`^["']([^"']*)["']$`)
 )
@@ -83,12 +82,24 @@ func extractGradleIncludedProjects(filePath, body string, limitations []string) 
 		return nil, limitations
 	}
 	byDirectory := map[string]gradleIncludedProject{}
-	for _, statement := range gradleIncludeStatementRE.FindAllStringSubmatch(body, -1) {
-		arguments := statement[1]
-		if arguments == "" {
-			arguments = statement[2]
+	statements, unsupportedCount := gradleIncludeArguments(body)
+	for range unsupportedCount {
+		limitations = append(limitations, filePath+": computed Gradle included projects are not statically resolved")
+	}
+	for _, arguments := range statements {
+		argumentList, ok := splitGradleArguments(arguments)
+		if !ok {
+			limitations = append(limitations, filePath+": computed Gradle included projects are not statically resolved")
+			continue
 		}
-		for _, argument := range strings.Split(arguments, ",") {
+		for index, argument := range argumentList {
+			if strings.TrimSpace(argument) == "" {
+				if index == len(argumentList)-1 {
+					continue
+				}
+				limitations = append(limitations, filePath+": invalid Gradle included project path is not statically resolved")
+				continue
+			}
 			literal, ok := literalGradleValue(argument)
 			if !ok {
 				limitations = append(limitations, filePath+": computed Gradle included projects are not statically resolved")
@@ -112,6 +123,136 @@ func extractGradleIncludedProjects(filePath, body string, limitations []string) 
 		projects = append(projects, byDirectory[directory])
 	}
 	return projects, limitations
+}
+
+func gradleIncludeArguments(body string) ([]string, int) {
+	var statements []string
+	unsupportedCount := 0
+	for lineStart := 0; lineStart < len(body); {
+		lineEnd := strings.IndexByte(body[lineStart:], '\n')
+		if lineEnd < 0 {
+			lineEnd = len(body)
+		} else {
+			lineEnd += lineStart
+		}
+		cursor := lineStart
+		for cursor < lineEnd && (body[cursor] == ' ' || body[cursor] == '\t') {
+			cursor++
+		}
+		if !strings.HasPrefix(body[cursor:lineEnd], "include") {
+			lineStart = nextGradleLineStart(lineEnd, len(body))
+			continue
+		}
+		cursor += len("include")
+		if cursor < lineEnd && body[cursor] != '(' && body[cursor] != ' ' && body[cursor] != '\t' {
+			lineStart = nextGradleLineStart(lineEnd, len(body))
+			continue
+		}
+		for cursor < lineEnd && (body[cursor] == ' ' || body[cursor] == '\t') {
+			cursor++
+		}
+		if cursor >= lineEnd || body[cursor] != '(' {
+			statements = append(statements, body[cursor:lineEnd])
+			lineStart = nextGradleLineStart(lineEnd, len(body))
+			continue
+		}
+		closeIndex, ok := balancedGradleClosingParenthesis(body, cursor)
+		if !ok {
+			unsupportedCount++
+			break
+		}
+		statements = append(statements, body[cursor+1:closeIndex])
+		closeLineEnd := strings.IndexByte(body[closeIndex:], '\n')
+		if closeLineEnd < 0 {
+			closeLineEnd = len(body)
+		} else {
+			closeLineEnd += closeIndex
+		}
+		remainder := strings.TrimSpace(body[closeIndex+1 : closeLineEnd])
+		if strings.TrimSpace(strings.TrimSuffix(remainder, ";")) != "" {
+			unsupportedCount++
+		}
+		lineStart = nextGradleLineStart(closeLineEnd, len(body))
+	}
+	return statements, unsupportedCount
+}
+
+func nextGradleLineStart(lineEnd, length int) int {
+	if lineEnd >= length {
+		return length
+	}
+	return lineEnd + 1
+}
+
+func balancedGradleClosingParenthesis(body string, openIndex int) (int, bool) {
+	depth := 0
+	quote := byte(0)
+	for index := openIndex; index < len(body); index++ {
+		current := body[index]
+		if quote != 0 {
+			if current == '\\' && index+1 < len(body) {
+				index++
+				continue
+			}
+			if current == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch current {
+		case '\'', '"':
+			quote = current
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return index, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func splitGradleArguments(arguments string) ([]string, bool) {
+	var result []string
+	start := 0
+	depth := 0
+	quote := byte(0)
+	for index := 0; index < len(arguments); index++ {
+		current := arguments[index]
+		if quote != 0 {
+			if current == '\\' && index+1 < len(arguments) {
+				index++
+				continue
+			}
+			if current == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch current {
+		case '\'', '"':
+			quote = current
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+			if depth < 0 {
+				return nil, false
+			}
+		case ',':
+			if depth == 0 {
+				result = append(result, arguments[start:index])
+				start = index + 1
+			}
+		}
+	}
+	if quote != 0 || depth != 0 {
+		return nil, false
+	}
+	result = append(result, arguments[start:])
+	return result, true
 }
 
 func literalGradleIncludedProject(value string) (gradleIncludedProject, bool) {

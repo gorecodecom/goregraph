@@ -86,7 +86,34 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 		}
 		if reference.Language == "java" {
 			provenance := javaSourceProvenance(reference.From, workspace)
-			reference.DependencyEvidence = javaGradleDependencyEvidence(provenance.artifact, reference.TargetQualifiedName, provenance.gradleDeps)
+			target := declarationByID[reference.ToSymbolID]
+			if provenance.gradle &&
+				reference.Resolution == SymbolResolutionExact &&
+				target.Artifact != "" &&
+				provenance.artifact != "" &&
+				target.Artifact != provenance.artifact {
+				reference.DependencyEvidence = javaGradleArtifactDependencyEvidence(
+					provenance.artifact,
+					target.Artifact,
+					provenance.gradleDeps,
+				)
+				if len(reference.DependencyEvidence) == 0 {
+					reference.CandidateSymbolIDs = []string{reference.ToSymbolID}
+					reference.ToSymbolID = ""
+					reference.Resolution = SymbolResolutionUnresolved
+					reference.Confidence = string(ConfidenceNormalized)
+					reference.ConfidenceScore = javaFactConfidenceScore(ConfidenceNormalized)
+					reference.Internal = false
+					reference.preventExact = true
+					reference.NonPromotable = true
+				}
+			} else {
+				reference.DependencyEvidence = javaGradleDependencyEvidence(
+					provenance.artifact,
+					reference.TargetQualifiedName,
+					provenance.gradleDeps,
+				)
+			}
 		}
 		category := SymbolUsageDirectReference
 		targetIdentity := reference.ToSymbolID
