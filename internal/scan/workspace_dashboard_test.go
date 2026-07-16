@@ -54,6 +54,283 @@ func TestRenderWorkspaceDashboardHTMLKeepsPayloadOfflineAfterDecomposition(t *te
 	}
 }
 
+func TestWorkspaceDashboardEmbedsCanonicalSymbolProjection(t *testing.T) {
+	symbols := WorkspaceSymbolIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Symbols: []CanonicalSymbolRecord{{
+			ID:              "symbol:user-service",
+			Project:         "services/users",
+			Language:        "java",
+			Kind:            "class",
+			Name:            "UserService",
+			QualifiedName:   "com.example.users.UserService",
+			DeclarationFile: "src/main/java/com/example/users/UserService.java",
+			DeclarationLine: 27,
+			Analyzer:        "java",
+			Confidence:      ConfidenceExact,
+			Coverage:        CoverageComplete,
+		}},
+	}
+	usages := WorkspaceSymbolUsageIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Usages: []CanonicalSymbolUsageRecord{{
+			ID:                  "usage:user-controller",
+			ProviderSymbolID:    "symbol:user-service",
+			ConsumerProject:     "services/users",
+			Category:            SymbolUsageDirectReference,
+			Language:            "java",
+			RelationKind:        "calls",
+			TargetQualifiedName: "com.example.users.UserService",
+			SourceFile:          "src/main/java/com/example/users/UserController.java",
+			SourceLine:          41,
+			Confidence:          ConfidenceExact,
+			Resolution:          SymbolResolutionExact,
+			Reason:              "resolved import and member call",
+			Analyzer:            "java",
+		}},
+	}
+
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		symbols,
+		usages,
+	)
+
+	for _, want := range []string{
+		`"symbol_index"`,
+		`"symbol_usages"`,
+		`"symbol:user-service"`,
+		`"usage:user-controller"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing canonical symbol projection %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardOffersCodeExplorerForSelectedService(t *testing.T) {
+	serviceMap := WorkspaceServiceMapRecord{
+		SchemaVersion: SchemaVersion,
+		Nodes: []WorkspaceServiceNodeRecord{
+			{ID: "service:users", Label: "Users", Project: "services/users", Indexed: true},
+			{ID: "service:docs", Label: "Docs", Project: "services/docs", Indexed: true},
+		},
+	}
+	symbols := WorkspaceSymbolIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Symbols: []CanonicalSymbolRecord{{
+			ID:              "symbol:user-service",
+			Project:         "services/users",
+			Language:        "java",
+			Kind:            "class",
+			Name:            "UserService",
+			QualifiedName:   "com.example.users.UserService",
+			DeclarationFile: "src/main/java/com/example/users/UserService.java",
+			DeclarationLine: 27,
+			Analyzer:        "java",
+			Confidence:      ConfidenceExact,
+			Coverage:        CoverageComplete,
+		}},
+		Coverage: []SymbolCoverageRecord{{
+			Project:    "services/docs",
+			Language:   "markdown",
+			Capability: "declarations",
+			Coverage:   CoverageUnavailable,
+			Reason:     "language has no supported symbol analyzer",
+		}},
+	}
+
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		serviceMap,
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		symbols,
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+
+	for _, want := range []string{
+		"Explore classes &amp; symbols",
+		`data-open-code-explorer`,
+		`function codeExplorerAvailability(project)`,
+		"No supported symbol inventory is available for this project.",
+		"language has no supported symbol analyzer",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing selected-service Code Explorer contract %q", want)
+		}
+	}
+	if strings.Contains(html, `data-view-mode="code-explorer"`) {
+		t.Fatal("Code Explorer must only be entered from a selected service, not as a global empty view")
+	}
+}
+
+func TestWorkspaceDashboardCodeExplorerRendersSemanticInventorySearchAndCounts(t *testing.T) {
+	symbols := WorkspaceSymbolIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Symbols: []CanonicalSymbolRecord{
+			{
+				ID:               "symbol:user-service",
+				Project:          "services/users",
+				Module:           "users-core",
+				Package:          "com.example.users",
+				WorkspacePackage: "workspace/users",
+				Language:         "java",
+				Kind:             "class",
+				Name:             "UserService",
+				QualifiedName:    "com.example.users.UserService",
+				DeclarationFile:  "src/main/java/com/example/users/UserService.java",
+				DeclarationLine:  27,
+				Analyzer:         "java",
+				Confidence:       ConfidenceExact,
+				Coverage:         CoverageComplete,
+			},
+			{ID: "symbol:other-1", Project: "services/orders", Language: "java", Kind: "class", Name: "UserService", QualifiedName: "orders.UserService", DeclarationFile: "orders/UserService.java", Analyzer: "java", Confidence: ConfidenceExact, Coverage: CoverageComplete},
+			{ID: "symbol:other-2", Project: "services/admin", Language: "java", Kind: "class", Name: "UserService", QualifiedName: "admin.UserService", DeclarationFile: "admin/UserService.java", Analyzer: "java", Confidence: ConfidenceExact, Coverage: CoverageComplete},
+			{ID: "symbol:other-3", Project: "frontend/app", Language: "typescript", Kind: "class", Name: "UserService", QualifiedName: "app.UserService", DeclarationFile: "src/UserService.ts", Analyzer: "typescript", Confidence: ConfidenceExact, Coverage: CoverageComplete},
+		},
+		Coverage: []SymbolCoverageRecord{{
+			Project:    "services/users",
+			Language:   "java",
+			Capability: "declarations",
+			Coverage:   CoverageComplete,
+			Reason:     "canonical declarations indexed",
+		}},
+	}
+	usages := WorkspaceSymbolUsageIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Usages: []CanonicalSymbolUsageRecord{
+			{ID: "usage:direct", ProviderSymbolID: "symbol:user-service", ConsumerProject: "services/users", Category: SymbolUsageDirectReference, Language: "java", RelationKind: "calls", SourceFile: "src/UserController.java", Confidence: ConfidenceExact, Resolution: SymbolResolutionExact, Reason: "direct call", Analyzer: "java"},
+			{ID: "usage:api", ProviderSymbolID: "symbol:user-service", ConsumerProject: "frontend/app", Category: SymbolUsageReachedThroughAPI, Language: "typescript", RelationKind: "http_call", SourceFile: "src/api/users.ts", Confidence: ConfidenceResolved, Resolution: SymbolResolutionExact, Reason: "API path", Analyzer: "typescript"},
+		},
+	}
+
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, Nodes: []WorkspaceServiceNodeRecord{{ID: "service:users", Label: "Users", Project: "services/users", Indexed: true}}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		symbols,
+		usages,
+	)
+
+	for _, want := range []string{
+		`<section class="code-explorer"`,
+		`<aside class="code-inventory"`,
+		`<h2 class="code-symbol-group-title"`,
+		`data-code-symbol`,
+		`aria-selected="`,
+		`id="code-search"`,
+		`symbol.name,symbol.qualified_name,symbol.export_name,symbol.package,symbol.module,symbol.workspace_package,symbol.declaration_file`,
+		`symbol.language`,
+		`symbol.kind`,
+		`symbol.qualified_name||symbol.export_name`,
+		`sourceActions(symbol.project,symbol.declaration_file,symbol.declaration_line)`,
+		`directCount`,
+		`apiCount`,
+		`symbol.confidence`,
+		`symbol.coverage`,
+		`unrelated symbols share the name`,
+		`and were excluded.`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing Code Explorer inventory contract %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardCodeExplorerSeparatesUsageTabsFiltersAndEvidence(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+
+	for _, want := range []string{
+		"Direct references",
+		"Reached through API",
+		">All<",
+		"Ambiguous / unresolved",
+		`data-code-tab="direct"`,
+		`data-code-tab="api"`,
+		`data-code-tab="all"`,
+		`data-code-tab="uncertainty"`,
+		`id="code-filter-consumer"`,
+		`id="code-filter-category"`,
+		`id="code-filter-relation-kind"`,
+		`id="code-filter-language"`,
+		`id="code-filter-confidence"`,
+		`usage.category==="direct_reference"`,
+		`usage.category==="reached_through_api"`,
+		`["ambiguous","unresolved"].includes(usage.category)`,
+		"Canonical provider",
+		"Canonical consumer",
+		"Reason",
+		"Evidence",
+		"Dependency / artifact evidence",
+		"Ordered API steps",
+		"Limitations",
+		`sourceActions(usage.consumer_project,usage.source_file,usage.source_line)`,
+		"No verified usages in indexed coverage; this is not proof that the symbol is unused.",
+		`symbolUsages.coverage`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing Code Explorer usage contract %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardCodeExplorerIsAccessibleResponsiveAndRestoresArchitecture(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+
+	for _, want := range []string{
+		`state.architectureReturn = {
+    selected: state.selected,
+    domain: state.domainFocus,
+    direction: state.directionFocus,
+    risk: state.riskFocus,
+    zoom: state.zoom,
+    panX: state.panX,
+    panY: state.panY
+  };`,
+		`state.selected=saved.selected`,
+		`state.architectureDomain=saved.domain`,
+		`state.architectureDirection=saved.direction`,
+		`state.architectureRiskOnly=saved.risk`,
+		`state.zoom=saved.zoom`,
+		`state.panX=saved.panX`,
+		`state.panY=saved.panY`,
+		`focusReturnedArchitectureService`,
+		`event.key==="Enter"||event.key===" "`,
+		`role="tablist"`,
+		`role="tab"`,
+		`aria-selected="`,
+		`aria-pressed="`,
+		`aria-describedby="code-explorer-help"`,
+		`.code-explorer button:focus-visible`,
+		`@media (min-width:1241px) and (max-width:1439px)`,
+		`@media (min-width:1440px) and (max-width:1679px)`,
+		`@media (min-width:1680px)`,
+		`@media (max-width:1100px)`,
+		`grid-template-columns:minmax(320px,.8fr) minmax(520px,1.4fr)`,
+		`overflow-y:auto`,
+		`min-height:44px`,
+		`@media (prefers-reduced-motion:reduce)`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing Code Explorer accessibility contract %q", want)
+		}
+	}
+}
+
 func TestWorkspaceDashboardShowsCanonicalContractSummary(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},

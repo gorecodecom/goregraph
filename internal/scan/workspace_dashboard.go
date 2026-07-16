@@ -14,12 +14,32 @@ func RenderWorkspaceDashboardHTML(graph WorkspaceGraphRecord, matches []Workspac
 }
 
 func RenderWorkspaceDashboardHTMLWithModels(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, matches []WorkspaceContractMatchRecord, dossiers []FeatureDossierRecord) string {
+	return RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		graph,
+		serviceMap,
+		endpointTraces,
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+}
+
+// RenderWorkspaceDashboardHTMLWithCodeExplorer renders the offline workspace dashboard with canonical symbol projections.
+func RenderWorkspaceDashboardHTMLWithCodeExplorer(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord) string {
 	payloadValue := struct {
 		Graph          WorkspaceGraphRecord              `json:"graph"`
 		ServiceMap     WorkspaceServiceMapRecord         `json:"service_map"`
 		EndpointTraces WorkspaceEndpointTraceIndexRecord `json:"endpoint_traces"`
+		SymbolIndex    WorkspaceSymbolIndexRecord        `json:"symbol_index"`
+		SymbolUsages   WorkspaceSymbolUsageIndexRecord   `json:"symbol_usages"`
 		SourceIndex    []dashboardSourceRecord           `json:"source_index,omitempty"`
-	}{Graph: graph, ServiceMap: serviceMap, EndpointTraces: endpointTraces, SourceIndex: buildDashboardSourceIndex(endpointTraces)}
+	}{
+		Graph:          graph,
+		ServiceMap:     serviceMap,
+		EndpointTraces: endpointTraces,
+		SymbolIndex:    symbolIndex,
+		SymbolUsages:   symbolUsages,
+		SourceIndex:    buildDashboardSourceIndex(endpointTraces),
+	}
 	payload := marshalDashboardPayload(payloadValue)
 	title := "GoreGraph Workspace Map"
 	if graph.Root != "" {

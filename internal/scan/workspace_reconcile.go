@@ -148,7 +148,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	if err := writeJSON(filepath.Join(workspaceOut, "freshness.json"), workspaceFreshness); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-map.html"), []byte(RenderWorkspaceDashboardHTMLWithModels(workspaceGraph, serviceMap, endpointTraces, matches, featureDossiers)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-map.html"), []byte(RenderWorkspaceDashboardHTMLWithCodeExplorer(workspaceGraph, serviceMap, endpointTraces, symbolIndex, symbolUsageIndex)), 0o644); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-context.md"), []byte(renderWorkspaceContextReport(context)), 0o644); err != nil {
