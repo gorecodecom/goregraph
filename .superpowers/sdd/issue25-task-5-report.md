@@ -61,6 +61,11 @@ When more than one distinct flow survives:
 - identical-origin flow candidates remain `ambiguous` and are never promoted
   to Exact.
 
+Every non-exact API usage carries the complete surviving
+`candidate_path_ids` set even when exactly one flow survives. The
+`feature_flow_join_ambiguous` limitation and multiple-flow reason are added
+only when at least two distinct paths survive.
+
 ### Frontend origin
 
 A JS/TS origin is selected only by:
@@ -126,6 +131,11 @@ Project languages are derived from canonical symbols, raw symbol/relation
 facts, symbol capabilities, frontend route/flow facts, and Java project/Spring
 facts. Coverage failures therefore remain visible when canonical symbols are
 empty or malformed.
+
+Unresolved usage languages use the same evidence-first approach: selected
+consumer and helper symbols, frontend steps, API-file declarations, projected
+project capability coverage, and finally the API file extension. JavaScript
+facts remain `javascript`; there is no TypeScript default.
 
 Coverage meanings:
 
@@ -312,6 +322,45 @@ GREEN:
 ```text
 go test ./internal/scan \
   -run 'TestWorkspaceSymbolAPIUsageCoverageDerivesLanguagesWithoutCanonicalSymbols' \
+  -count=1
+ok github.com/gorecodecom/goregraph/internal/scan
+```
+
+### Final signoff: single surviving path on non-exact providers
+
+RED:
+
+```text
+single-path unresolved Java provider usage had candidate_path_ids: nil
+single-path ambiguous Java provider usages had candidate_path_ids: nil
+```
+
+GREEN:
+
+```text
+go test ./internal/scan \
+  -run 'TestWorkspaceSymbolAPIUsagePreservesSingleCandidatePathForNonExactProviders' \
+  -count=1
+ok github.com/gorecodecom/goregraph/internal/scan
+```
+
+The fixture also verifies that one surviving path does not add
+`feature_flow_join_ambiguous` or a multiple-flow reason.
+
+### Final signoff: unresolved JavaScript language
+
+RED:
+
+```text
+missing-origin helper/API facts produced language "typescript"
+project JavaScript capability produced language "typescript"
+```
+
+GREEN:
+
+```text
+go test ./internal/scan \
+  -run 'TestWorkspaceSymbolAPIUsagePreservesJavaScriptLanguageWhenUnresolved' \
   -count=1
 ok github.com/gorecodecom/goregraph/internal/scan
 ```

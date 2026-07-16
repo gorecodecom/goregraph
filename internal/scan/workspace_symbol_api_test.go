@@ -620,6 +620,96 @@ func TestWorkspaceSymbolAPIUsagePreservesAllCandidatePathsWhenBackendStepsMissin
 	}
 }
 
+func TestWorkspaceSymbolAPIUsagePreservesSingleCandidatePathForNonExactProviders(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	flows[0].ID = "flow:only"
+	wantPaths := []string{"flow:only"}
+
+	withoutProvider := symbols
+	withoutProvider.Symbols = withoutProvider.Symbols[:len(withoutProvider.Symbols)-1]
+	unresolved := BuildWorkspaceSymbolAPIUsages(
+		withoutProvider,
+		matches,
+		flows,
+		BuildWorkspaceEndpointTraces(matches, flows, nil),
+	)
+	if len(unresolved) != 1 ||
+		unresolved[0].Category != SymbolUsageUnresolved ||
+		!reflect.DeepEqual(unresolved[0].CandidatePathIDs, wantPaths) ||
+		workspaceSymbolUsageHasLimitation(unresolved[0], "feature_flow_join_ambiguous") ||
+		strings.Contains(unresolved[0].Reason, "multiple feature flows") {
+		t.Fatalf("single-path unresolved provider usage = %#v", unresolved)
+	}
+
+	ambiguousSymbols := symbols
+	duplicate := ambiguousSymbols.Symbols[len(ambiguousSymbols.Symbols)-1]
+	duplicate.ID = "symbol:user-service-duplicate"
+	ambiguousSymbols.Symbols = append(ambiguousSymbols.Symbols, duplicate)
+	ambiguous := BuildWorkspaceSymbolAPIUsages(
+		ambiguousSymbols,
+		matches,
+		flows,
+		BuildWorkspaceEndpointTraces(matches, flows, nil),
+	)
+	if len(ambiguous) != 2 {
+		t.Fatalf("single-path ambiguous provider usages = %#v", ambiguous)
+	}
+	for _, usage := range ambiguous {
+		if usage.Category != SymbolUsageAmbiguous ||
+			!reflect.DeepEqual(usage.CandidatePathIDs, wantPaths) ||
+			workspaceSymbolUsageHasLimitation(usage, "feature_flow_join_ambiguous") ||
+			strings.Contains(usage.Reason, "multiple feature flows") {
+			t.Fatalf("single-path ambiguous provider usage = %#v", usage)
+		}
+	}
+}
+
+func TestWorkspaceSymbolAPIUsagePreservesJavaScriptLanguageWhenUnresolved(t *testing.T) {
+	t.Run("helper and API facts", func(t *testing.T) {
+		symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+		symbols.Symbols = symbols.Symbols[1:]
+		symbols.Symbols[0].Language = "javascript"
+		for index := range flows[0].FrontendSteps {
+			flows[0].FrontendSteps[index].Language = "javascript"
+		}
+
+		usages := BuildWorkspaceSymbolAPIUsages(
+			symbols,
+			matches,
+			flows,
+			BuildWorkspaceEndpointTraces(matches, flows, nil),
+		)
+
+		if len(usages) != 1 ||
+			usages[0].Category != SymbolUsageUnresolved ||
+			usages[0].Language != "javascript" ||
+			!reflect.DeepEqual(usages[0].Limitations, []string{"frontend_origin_unresolved"}) {
+			t.Fatalf("JavaScript missing-origin usage = %#v", usages)
+		}
+	})
+
+	t.Run("project capability", func(t *testing.T) {
+		_, matches, _ := workspaceSymbolAPIMinimalFixture()
+		symbols := WorkspaceSymbolIndexRecord{
+			Coverage: []SymbolCoverageRecord{{
+				Project:    "frontend/app",
+				Language:   "javascript",
+				Capability: "declarations",
+				Coverage:   CoveragePartial,
+			}},
+		}
+
+		usages := BuildWorkspaceSymbolAPIUsages(symbols, matches, nil, WorkspaceEndpointTraceIndexRecord{})
+
+		if len(usages) != 1 ||
+			usages[0].Category != SymbolUsageUnresolved ||
+			usages[0].Language != "javascript" ||
+			!reflect.DeepEqual(usages[0].Limitations, []string{"workspace_feature_flow_missing"}) {
+			t.Fatalf("JavaScript capability-derived usage = %#v", usages)
+		}
+	})
+}
+
 func TestWorkspaceSymbolAPIUsageCoverageReportsCompletePartialAndFailedEvidence(t *testing.T) {
 	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
 	frontend := workspaceIndexProject{

@@ -35,6 +35,7 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 		candidateFlows := workspaceSymbolAPIFlows(match, flows)
 		if len(candidateFlows) == 0 {
 			usages = append(usages, unresolvedWorkspaceSymbolAPIUsage(
+				symbols,
 				match,
 				WorkspaceFeatureFlowRecord{},
 				traceByContract[match.ID],
@@ -51,14 +52,16 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 		flowCandidateIDs := workspaceSymbolAPIFlowCandidateIDs(candidateFlows)
 		origins := workspaceSymbolAPIOrigins(symbols.Symbols, match, candidateFlows)
 		if len(origins) == 0 {
+			helper, helperStep := workspaceSymbolAPIHelper(symbols.Symbols, candidateFlows[0], match)
 			usages = append(usages, unresolvedWorkspaceSymbolAPIUsage(
+				symbols,
 				match,
 				candidateFlows[0],
 				traceByContract[match.ID],
 				CanonicalSymbolRecord{},
 				CodeFlowStep{},
-				CanonicalSymbolRecord{},
-				CodeFlowStep{},
+				helper,
+				helperStep,
 				"resolved HTTP contract has feature-flow evidence but no uniquely selectable frontend origin",
 				"frontend_origin_unresolved",
 				flowCandidateIDs,
@@ -70,6 +73,7 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 		for _, origin := range origins {
 			if len(origin.flow.BackendSteps) == 0 {
 				usages = append(usages, unresolvedWorkspaceSymbolAPIUsage(
+					symbols,
 					match,
 					origin.flow,
 					traceByContract[match.ID],
@@ -96,17 +100,15 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 					implementation,
 					candidates,
 				)
-				if len(flowCandidateIDs) > 1 {
-					built = markWorkspaceSymbolAPIFlowCandidates(
-						built,
-						match,
-						origin.flow,
-						implementation,
-						originCandidateIDs,
-						flowCandidateIDs,
-						ambiguousOrigin,
-					)
-				}
+				built = markWorkspaceSymbolAPIFlowCandidates(
+					built,
+					match,
+					origin.flow,
+					implementation,
+					originCandidateIDs,
+					flowCandidateIDs,
+					ambiguousOrigin,
+				)
 				usages = append(usages, built...)
 			}
 		}
@@ -404,6 +406,7 @@ func buildWorkspaceSymbolAPIUsage(
 }
 
 func unresolvedWorkspaceSymbolAPIUsage(
+	symbols WorkspaceSymbolIndexRecord,
 	match WorkspaceContractMatchRecord,
 	flow WorkspaceFeatureFlowRecord,
 	trace WorkspaceEndpointTraceRecord,
@@ -432,7 +435,15 @@ func unresolvedWorkspaceSymbolAPIUsage(
 		ConsumerProject:  match.APIProject,
 		ConsumerSymbolID: consumer.ID,
 		Category:         SymbolUsageUnresolved,
-		Language:         firstNonEmpty(consumer.Language, "typescript"),
+		Language: workspaceSymbolAPIUsageLanguage(
+			symbols,
+			match,
+			flow,
+			consumer,
+			originStep,
+			helper,
+			helperStep,
+		),
 		RelationKind:     symbolAPIRelationKind,
 		SourceFile:       sourceFile,
 		SourceLine:       sourceLine,
@@ -478,7 +489,12 @@ func markWorkspaceSymbolAPIFlowCandidates(
 	ambiguousOrigin bool,
 ) []CanonicalSymbolUsageRecord {
 	for index := range usages {
-		usages[index].CandidatePathIDs = append([]string(nil), flowCandidateIDs...)
+		if usages[index].Resolution != SymbolResolutionExact || len(flowCandidateIDs) > 1 {
+			usages[index].CandidatePathIDs = append([]string(nil), flowCandidateIDs...)
+		}
+		if len(flowCandidateIDs) < 2 {
+			continue
+		}
 		usages[index].Limitations = sortedUniqueStrings(append(usages[index].Limitations, "feature_flow_join_ambiguous"))
 		if usages[index].Category == SymbolUsageReachedThroughAPI && ambiguousOrigin {
 			usages[index].Category = SymbolUsageAmbiguous
@@ -492,6 +508,48 @@ func markWorkspaceSymbolAPIFlowCandidates(
 		usages[index].ID = workspaceSymbolAPIUsageID(usages[index], match.ID+"\x00"+flow.ID, implementation)
 	}
 	return usages
+}
+
+func workspaceSymbolAPIUsageLanguage(
+	symbols WorkspaceSymbolIndexRecord,
+	match WorkspaceContractMatchRecord,
+	flow WorkspaceFeatureFlowRecord,
+	consumer CanonicalSymbolRecord,
+	originStep CodeFlowStep,
+	helper CanonicalSymbolRecord,
+	helperStep CodeFlowStep,
+) string {
+	for _, language := range []string{
+		consumer.Language,
+		originStep.Language,
+		helper.Language,
+		helperStep.Language,
+	} {
+		if isScriptLanguage(language) {
+			return language
+		}
+	}
+	for _, step := range flow.FrontendSteps {
+		if isScriptLanguage(step.Language) {
+			return step.Language
+		}
+	}
+	for _, symbol := range symbols.Symbols {
+		if symbol.Project == match.APIProject &&
+			symbol.DeclarationFile == match.APIFile &&
+			isScriptLanguage(symbol.Language) {
+			return symbol.Language
+		}
+	}
+	for _, coverage := range symbols.Coverage {
+		if coverage.Project == match.APIProject && isScriptLanguage(coverage.Language) {
+			return coverage.Language
+		}
+	}
+	if language := detectLanguage(match.APIFile); isScriptLanguage(language) {
+		return language
+	}
+	return "unknown"
 }
 
 func workspaceSymbolAPIPartialFrontendContext(confidence string) bool {
