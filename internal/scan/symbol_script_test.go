@@ -146,6 +146,39 @@ export { foo as a, foo as b };
 	assertAliases("finalized", finalized.References, "exports_local", "src/api", "foo", false)
 }
 
+func TestScriptTopLevelSameLineAliasedUsagesRemainDistinct(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { foo as a, foo as b } from "./api";
+a(); b();
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function foo() {}`))
+
+	extracted := scriptReferences(t, facts.References, "calls_export", "./api", "foo")
+	if len(extracted) != 2 {
+		t.Fatalf("top-level extracted alias usages = %#v, want two references", extracted)
+	}
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	references := scriptReferences(t, resolved.References, "calls_export", "./api", "foo")
+	if len(references) != 2 {
+		t.Fatalf("top-level resolved alias usages = %#v, want two references", references)
+	}
+	aliases := map[string]bool{}
+	for _, reference := range references {
+		if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" || reference.FromSymbolID != "" {
+			t.Fatalf("top-level alias usage did not resolve exactly without an owner: %#v", reference)
+		}
+		aliases[reference.scriptLocalName] = true
+	}
+	if !aliases["a"] || !aliases["b"] || len(aliases) != 2 {
+		t.Fatalf("top-level alias usage identities = %#v, want a and b", references)
+	}
+}
+
 func TestExtractScriptIgnoresCommentsStringsAndTemplates(t *testing.T) {
 	body := `
 // export class CommentFake {}

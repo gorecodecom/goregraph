@@ -492,6 +492,7 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 	add := func(kind, name string, offset int, binding RichRelationRecord, reason string) {
 		reference := newScriptReference(file, kind, binding.TargetModule, binding.TargetExport, scriptLineAt(masked, offset), reason, false)
 		reference.scriptLocalName = name
+		refreshScriptReferenceID(&reference)
 		if owner := innermostScriptOwner(spans, offset); owner.ID != "" {
 			bindScriptReferenceOwner(&reference, owner.ID)
 		}
