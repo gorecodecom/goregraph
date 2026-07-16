@@ -829,3 +829,55 @@ class Generic<T> {
 		}
 	}
 }
+
+func TestJavaProjectFieldCanonicalizationRespectsOwnerTypeParameters(t *testing.T) {
+	body := `package com.weka.users;
+
+class T { void run() {} }
+class Generic<T> {
+    T value;
+    T[] values;
+    void call(T... parameters) {
+        value.run();
+        values.clone();
+        parameters.clone();
+    }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Generic.java", Language: "java"}, body)
+	facts := ExtractJavaProjectSymbolFacts([]JavaSourceRecord{source}, map[string]string{source.File: body}, WorkspaceIndex{})
+	for _, reference := range facts.References {
+		if reference.Type == "calls_method_owner" && reference.Line >= 8 && reference.Line <= 10 {
+			t.Fatalf("owner-scoped T receiver resolved as project class T: %#v", reference)
+		}
+	}
+}
+
+func TestJavaProjectAnnotationFollowingDeclarationStaysInSourceFile(t *testing.T) {
+	targetBody := `package com.target;
+
+class Before {}
+@com.marker.Type
+
+class Target {}
+`
+	foreignBody := `package com.foreign;
+
+
+
+class Foreign {}
+`
+	targetSource := extractJavaSource(FileRecord{Path: "src/main/java/com/target/Target.java", Language: "java"}, targetBody)
+	foreignSource := extractJavaSource(FileRecord{Path: "src/main/java/com/foreign/Foreign.java", Language: "java"}, foreignBody)
+	facts := ExtractJavaProjectSymbolFacts(
+		[]JavaSourceRecord{targetSource, foreignSource},
+		map[string]string{targetSource.File: targetBody, foreignSource.File: foreignBody},
+		WorkspaceIndex{},
+	)
+	target := assertRichDeclaration(t, facts.Declarations, "class", "com.target.Target", "")
+	foreign := assertRichDeclaration(t, facts.Declarations, "class", "com.foreign.Foreign", "")
+	annotation := assertJavaReference(t, facts.References, "annotation_type", "com.marker.Type", 4)
+	if annotation.FromSymbolID != target.ID || annotation.FromSymbolID == foreign.ID {
+		t.Fatalf("cross-file annotation owner = %#v, want target %s and never foreign %s", annotation, target.ID, foreign.ID)
+	}
+}

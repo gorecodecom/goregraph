@@ -234,7 +234,7 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 		line := index + 1
 		owner := declarationForJavaSourceLine(source, declarations, line)
 		if strings.HasPrefix(strings.TrimSpace(rawLine), "@") && javaAnnotationDecoratesType(lines, index) {
-			owner = declarationFollowingJavaLine(declarations, line, owner)
+			owner = declarationFollowingJavaLine(declarations, source.File, line, owner)
 		}
 		for _, match := range javaFactAnnotationRE.FindAllStringSubmatch(rawLine, -1) {
 			if len(match) == 2 && strings.Contains(match[1], ".") {
@@ -427,7 +427,8 @@ func javaProjectFieldTypes(sources []JavaSourceRecord, declarations []RichSymbol
 				continue
 			}
 			fieldType := field.Type
-			if reference := primaryJavaTypeReference(field.Type); reference != "" {
+			typeVariables := javaTypeVariablesForDeclaration(source, owner)
+			if reference := primaryJavaTypeReference(field.Type); reference != "" && !javaTypeReferenceIsScoped(field.Type, typeVariables) {
 				resolved := resolver.resolve(reference)
 				if resolved.resolution == SymbolResolutionExact {
 					fieldType = strings.Replace(field.Type, reference, resolved.qualifiedName, 1)
@@ -684,10 +685,10 @@ func declarationForJavaSourceLine(source JavaSourceRecord, declarations []RichSy
 	return declarationForJavaLine(declarations, line)
 }
 
-func declarationFollowingJavaLine(declarations []RichSymbolRecord, line int, fallback RichSymbolRecord) RichSymbolRecord {
+func declarationFollowingJavaLine(declarations []RichSymbolRecord, file string, line int, fallback RichSymbolRecord) RichSymbolRecord {
 	var next RichSymbolRecord
 	for _, declaration := range declarations {
-		if declaration.Line <= line {
+		if declaration.File != file || declaration.Line <= line {
 			continue
 		}
 		if next.ID == "" || declaration.Line < next.Line {
