@@ -70,7 +70,7 @@ const workspaceDashboardShell = `<div class="shell">
 <span title="A relationship requiring attention"><i class="architecture-legend-line risk"></i>Risk</span>
 <span title="The currently selected service"><i class="architecture-legend-selection"></i>Selected</span>
 </aside>
-<section id="architecture-focus-panel" class="architecture-focus-panel" aria-label="Architecture focus" aria-live="polite">
+<section id="architecture-focus-panel" class="architecture-focus-panel" aria-label="Architecture focus">
 <div class="architecture-domain-controls"><strong>Domains</strong><div id="architecture-domain-chips" class="architecture-domain-chips"></div></div>
 <div class="architecture-direction-controls" role="group" aria-label="Relationship direction">
 <button type="button" data-architecture-direction="outgoing" aria-pressed="false">Outgoing</button>

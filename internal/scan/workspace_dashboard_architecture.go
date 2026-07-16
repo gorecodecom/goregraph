@@ -46,6 +46,10 @@ function architectureRelationshipSummary(selected,edges){
   const incoming=(edges||[]).filter(function(edge){return edge.to===selected;}),outgoing=(edges||[]).filter(function(edge){return edge.from===selected;}),all=incoming.concat(outgoing),sum=function(records,key){return records.reduce(function(total,edge){return total+(edge[key]||0);},0);};
   return {incomingRelationships:sum(incoming,"total"),incomingServices:new Set(incoming.map(function(edge){return edge.from;})).size,outgoingRelationships:sum(outgoing,"total"),outgoingServices:new Set(outgoing.map(function(edge){return edge.to;})).size,resolved:sum(all,"resolved"),unresolved:sum(all,"unresolved"),mismatched:sum(all,"mismatched")};
 }
+function architectureTooltipPosition(anchor,tooltipSize,viewportSize){
+  const padding=8,gap=8,viewportWidth=Math.max(0,viewportSize.width||0),viewportHeight=Math.max(0,viewportSize.height||0),tooltipWidth=Math.min(tooltipSize.width||0,Math.max(0,viewportWidth-padding*2)),tooltipHeight=tooltipSize.height||0,halfWidth=tooltipWidth/2,center=(anchor.left||0)+(anchor.width||0)/2,minLeft=padding+halfWidth,maxLeft=Math.max(minLeft,viewportWidth-padding-halfWidth),left=Math.max(minLeft,Math.min(maxLeft,center)),below=(anchor.bottom||0)+gap,above=(anchor.top||0)-gap-tooltipHeight,fitsBelow=below+tooltipHeight<=viewportHeight-padding;
+  return {left:Math.round(left),top:Math.round(fitsBelow?below:Math.max(padding,above)),placement:fitsBelow?"below":"above"};
+}
 function architectureBundleRisk(edge){return edge.mismatched?"mismatch":edge.unresolved?"unresolved":"resolved";}
 function architectureBundles(edges,nodeByID){
   const bundles=new Map();

@@ -577,6 +577,78 @@ func TestWorkspaceDashboardExposesPersistentSummaryAndInspectableStaticCallBadge
 	}
 }
 
+func TestWorkspaceDashboardRestoresDimCallBadgeOpacityOnKeyboardFocus(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	const opacityRule = `.architecture-presentation .bundle-count.dim:focus-visible,.architecture-presentation .architecture-call-pill.dim:focus-visible{opacity:1}`
+	const strokeRule = `.architecture-call-pill[role="button"]:focus-visible rect,.bundle-count[role="button"]:focus-visible rect{stroke:var(--color-focus);stroke-width:3}`
+	for _, want := range []string{opacityRule, strokeRule} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing visible dim-badge focus contract %q", want)
+		}
+	}
+	dimRule := strings.Index(html, `.architecture-presentation.isolated .bundle-count.dim`)
+	focusRule := strings.Index(html, opacityRule)
+	if dimRule < 0 || focusRule <= dimRule {
+		t.Fatalf("focus opacity override must follow dimming rules: dim=%d focus=%d", dimRule, focusRule)
+	}
+}
+
+func TestWorkspaceDashboardUsesOnlySummaryAsArchitectureLiveRegion(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	start := strings.Index(html, `<section id="architecture-focus-panel"`)
+	if start < 0 {
+		t.Fatal("dashboard missing Architecture focus panel")
+	}
+	end := strings.Index(html[start:], `</section>`)
+	if end < 0 {
+		t.Fatal("dashboard missing Architecture focus panel boundary")
+	}
+	panel := html[start : start+end]
+	if count := strings.Count(panel, `aria-live="polite"`); count != 1 {
+		t.Fatalf("Architecture focus panel live-region count = %d, want 1", count)
+	}
+	if !strings.Contains(panel, `id="architecture-relationship-summary" class="architecture-relationship-summary" aria-live="polite"`) {
+		t.Fatal("Architecture relationship summary must be the polite live region")
+	}
+	if strings.Contains(panel, `id="architecture-focus-panel" class="architecture-focus-panel" aria-label="Architecture focus" aria-live=`) {
+		t.Fatal("Architecture focus panel must not nest a second live region")
+	}
+}
+
+func TestWorkspaceDashboardUsesViewportSafeArchitectureTooltipPosition(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`function architectureTooltipPosition`,
+		`tooltipRect=tooltip.getBoundingClientRect()`,
+		`width:window.innerWidth,height:window.innerHeight`,
+		`tooltip.dataset.placement=position.placement`,
+		`not runtime request frequency`,
+		`pointer-events:none`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing viewport-safe tooltip contract %q", want)
+		}
+	}
+}
+
 func TestDashboardViewportControlsPreserveUserContext(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
@@ -1303,7 +1375,7 @@ func TestDashboardControlStateUsesARIA(t *testing.T) {
 		`id="toggle-labels" title="Toggle labels" aria-label="Toggle relationship labels" aria-pressed="false"`,
 		`id="zoom-readout" class="readout" aria-live="polite"`,
 		`id="result-note" class="result-note" aria-live="polite"`,
-		`id="architecture-focus-panel" class="architecture-focus-panel" aria-label="Architecture focus" aria-live="polite"`,
+		`id="architecture-focus-panel" class="architecture-focus-panel" aria-label="Architecture focus"`,
 		`data-architecture-direction="outgoing" aria-pressed="false"`,
 		`data-architecture-direction="incoming" aria-pressed="false"`,
 		`data-architecture-direction="both" aria-pressed="true"`,

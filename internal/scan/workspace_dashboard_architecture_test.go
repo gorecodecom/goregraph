@@ -70,6 +70,45 @@ func TestArchitectureRelationshipSummaryCountsRelationsServicesAndRiskBuckets(t 
 	}
 }
 
+func TestArchitectureTooltipPositionClampsAndFlipsWithinViewport(t *testing.T) {
+	var result struct {
+		Centered struct {
+			Left      int
+			Top       int
+			Placement string
+		}
+		LeftEdge struct {
+			Left int
+		}
+		RightEdge struct {
+			Left int
+		}
+		BottomEdge struct {
+			Left      int
+			Top       int
+			Placement string
+		}
+	}
+	runArchitectureModel(t, `(()=>{
+		const tooltip={width:240,height:60},viewport={width:800,height:600};
+		return {
+			Centered:architectureTooltipPosition({left:300,width:40,top:100,bottom:120},tooltip,viewport),
+			LeftEdge:architectureTooltipPosition({left:-20,width:20,top:100,bottom:120},tooltip,viewport),
+			RightEdge:architectureTooltipPosition({left:790,width:20,top:100,bottom:120},tooltip,viewport),
+			BottomEdge:architectureTooltipPosition({left:300,width:40,top:550,bottom:580},tooltip,viewport)
+		};
+	})()`, &result)
+	if result.Centered.Left != 320 || result.Centered.Top != 128 || result.Centered.Placement != "below" {
+		t.Fatalf("centered tooltip = %#v", result.Centered)
+	}
+	if result.LeftEdge.Left != 128 || result.RightEdge.Left != 672 {
+		t.Fatalf("horizontal clamps = left %#v, right %#v", result.LeftEdge, result.RightEdge)
+	}
+	if result.BottomEdge.Left != 320 || result.BottomEdge.Top != 482 || result.BottomEdge.Placement != "above" {
+		t.Fatalf("bottom tooltip = %#v", result.BottomEdge)
+	}
+}
+
 func TestArchitectureModelDerivesDynamicDomainsAndStablePositions(t *testing.T) {
 	nodes, err := json.Marshal(denseArchitectureFixture().Nodes)
 	if err != nil {
