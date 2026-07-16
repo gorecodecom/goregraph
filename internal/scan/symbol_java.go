@@ -430,7 +430,8 @@ func javaProjectFieldTypes(sources []JavaSourceRecord, declarations []RichSymbol
 			typeVariables := javaTypeVariablesForDeclaration(source, owner)
 			if reference := primaryJavaTypeReference(field.Type); reference != "" && !javaTypeReferenceIsScoped(reference, typeVariables) {
 				resolved := resolver.resolve(reference)
-				if resolved.confidence == ConfidenceExact {
+				declaringPackageType := source.Package != "" && resolved.qualifiedName == qualifiedJavaTypeName(source.Package, "", reference)
+				if resolved.confidence == ConfidenceExact || declaringPackageType {
 					fieldType = strings.Replace(field.Type, reference, resolved.qualifiedName, 1)
 				}
 			}

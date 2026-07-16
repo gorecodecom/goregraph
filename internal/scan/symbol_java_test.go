@@ -952,3 +952,38 @@ class Consumer {
 		}
 	}
 }
+
+func TestJavaProjectFieldCanonicalizationPreservesDeclaringPackageForUnresolvedType(t *testing.T) {
+	providerBody := `package com.provider;
+
+public class Provider {
+    public Service service;
+}
+`
+	consumerBody := `package com.consumer;
+
+import com.provider.Provider;
+
+class Service { void run() {} }
+class Consumer {
+    Provider provider;
+    void call() { provider.service.run(); }
+}
+`
+	providerSource := extractJavaSource(FileRecord{Path: "src/main/java/com/provider/Provider.java", Language: "java"}, providerBody)
+	consumerSource := extractJavaSource(FileRecord{Path: "src/main/java/com/consumer/Consumer.java", Language: "java"}, consumerBody)
+	facts := ExtractJavaProjectSymbolFacts(
+		[]JavaSourceRecord{providerSource, consumerSource},
+		map[string]string{providerSource.File: providerBody, consumerSource.File: consumerBody},
+		WorkspaceIndex{},
+	)
+	call := assertJavaReference(t, facts.References, "calls_method_owner", "com.provider.Service", 8)
+	if call.Resolution != SymbolResolutionUnresolved || call.ToSymbolID != "" {
+		t.Fatalf("same-package unresolved call owner = %#v, want unresolved provider type", call)
+	}
+	for _, reference := range facts.References {
+		if reference.Type == "calls_method_owner" && reference.Line == 8 && reference.TargetQualifiedName == "com.consumer.Service" {
+			t.Fatalf("provider field type was reinterpreted in consumer package: %#v", reference)
+		}
+	}
+}
