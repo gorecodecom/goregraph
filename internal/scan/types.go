@@ -627,33 +627,35 @@ type JavaImportRecord struct {
 }
 
 type JavaTypeRecord struct {
-	Name          string                 `json:"name"`
-	Kind          string                 `json:"kind"`
-	Package       string                 `json:"package,omitempty"`
-	File          string                 `json:"file"`
-	Line          int                    `json:"line"`
-	Owner         string                 `json:"owner,omitempty"`
-	QualifiedName string                 `json:"qualified_name,omitempty"`
-	EndLine       int                    `json:"end_line,omitempty"`
-	Extends       string                 `json:"extends,omitempty"`
-	Implements    []string               `json:"implements,omitempty"`
-	Annotations   []JavaAnnotationRecord `json:"annotations,omitempty"`
+	Name           string                 `json:"name"`
+	Kind           string                 `json:"kind"`
+	Package        string                 `json:"package,omitempty"`
+	File           string                 `json:"file"`
+	Line           int                    `json:"line"`
+	Owner          string                 `json:"owner,omitempty"`
+	QualifiedName  string                 `json:"qualified_name,omitempty"`
+	EndLine        int                    `json:"end_line,omitempty"`
+	TypeParameters []string               `json:"-"`
+	Extends        string                 `json:"extends,omitempty"`
+	Implements     []string               `json:"implements,omitempty"`
+	Annotations    []JavaAnnotationRecord `json:"annotations,omitempty"`
 }
 
 type JavaMethodRecord struct {
-	Name         string                 `json:"name"`
-	File         string                 `json:"file"`
-	Line         int                    `json:"line"`
-	Owner        string                 `json:"owner,omitempty"`
-	Visibility   string                 `json:"visibility,omitempty"`
-	ReturnType   string                 `json:"return_type,omitempty"`
-	Parameters   []JavaParameterRecord  `json:"parameters,omitempty"`
-	Annotations  []JavaAnnotationRecord `json:"annotations,omitempty"`
-	Calls        []JavaCallRecord       `json:"calls,omitempty"`
-	HTTPRequests []JavaHTTPCallRecord   `json:"http_requests,omitempty"`
-	Auth         []AuthRecord           `json:"auth,omitempty"`
-	StringVars   map[string]string      `json:"-"`
-	PendingHTTP  string                 `json:"-"`
+	Name           string                 `json:"name"`
+	File           string                 `json:"file"`
+	Line           int                    `json:"line"`
+	Owner          string                 `json:"owner,omitempty"`
+	Visibility     string                 `json:"visibility,omitempty"`
+	ReturnType     string                 `json:"return_type,omitempty"`
+	Parameters     []JavaParameterRecord  `json:"parameters,omitempty"`
+	Annotations    []JavaAnnotationRecord `json:"annotations,omitempty"`
+	Calls          []JavaCallRecord       `json:"calls,omitempty"`
+	HTTPRequests   []JavaHTTPCallRecord   `json:"http_requests,omitempty"`
+	Auth           []AuthRecord           `json:"auth,omitempty"`
+	StringVars     map[string]string      `json:"-"`
+	PendingHTTP    string                 `json:"-"`
+	TypeParameters []string               `json:"-"`
 }
 
 type JavaFieldRecord struct {
@@ -1039,6 +1041,7 @@ type WorkspaceIndex struct {
 	GradlePackages    []GradlePackageRecord `json:"gradle_packages,omitempty"`
 	NodePackages      []NodePackageRecord   `json:"node_packages,omitempty"`
 	gradleLimitations []string
+	mavenLimitations  []string
 }
 
 type GradlePackageRecord struct {

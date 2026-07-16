@@ -11,7 +11,7 @@ import (
 
 var (
 	javaFactAnnotationRE = regexp.MustCompile(`@([A-Za-z_][A-Za-z0-9_.$]*)`)
-	javaFactNewRE        = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_.$]*(?:\s*<[^;(){}]+>)?)\s*\(`)
+	javaFactNewRE        = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_.$]*(?:\s*<[^;(){}]*>)?)\s*\(`)
 	javaFactTypeTokenRE  = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.$]*`)
 )
 
@@ -66,13 +66,21 @@ func ExtractJavaSymbolFacts(source JavaSourceRecord, body string, workspace Work
 func extractJavaReferenceFacts(source JavaSourceRecord, body string, declarations []RichSymbolRecord, provenance javaBuildProvenance) []RichRelationRecord {
 	resolver := newJavaFactResolver(source, declarations)
 	primary := primaryJavaDeclaration(source.File, declarations)
-	qualifiedAnnotationLines := qualifiedJavaAnnotationLines(body)
+	lexicalBody := sanitizeJavaLexical(body)
+	qualifiedAnnotationLines := qualifiedJavaAnnotationLines(lexicalBody)
 	var records []RichRelationRecord
-	add := func(kind, rawTarget string, line int, owner RichSymbolRecord) {
+	addScoped := func(kind, rawTarget string, line int, owner RichSymbolRecord, typeVariables map[string]bool) {
 		if owner.ID == "" {
 			owner = primary
 		}
 		for _, target := range normalizeJavaTypeReferences(rawTarget) {
+			first := target
+			if index := strings.Index(first, "."); index >= 0 {
+				first = first[:index]
+			}
+			if typeVariables[first] {
+				continue
+			}
 			resolved := resolver.resolve(target)
 			if resolved.qualifiedName == "" {
 				continue
@@ -107,6 +115,9 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 			})
 		}
 	}
+	add := func(kind, rawTarget string, line int, owner RichSymbolRecord) {
+		addScoped(kind, rawTarget, line, owner, nil)
+	}
 
 	for _, imported := range source.Imports {
 		if imported.Static {
@@ -121,6 +132,7 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 	}
 	for _, typ := range source.Types {
 		owner := declarationByQualifiedName(declarations, typ.QualifiedName)
+		typeVariables := javaTypeVariableSet(typ.TypeParameters)
 		for _, annotation := range typ.Annotations {
 			if qualifiedAnnotationLines[annotation.Line] {
 				continue
@@ -128,24 +140,29 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 			add("annotation_type", annotation.Name, annotation.Line, owner)
 		}
 		if typ.Extends != "" {
-			add("extends_type", typ.Extends, typ.Line, owner)
+			addScoped("extends_type", typ.Extends, typ.Line, owner, typeVariables)
 		}
 		for _, implemented := range typ.Implements {
-			add("implements_type", implemented, typ.Line, owner)
+			addScoped("implements_type", implemented, typ.Line, owner, typeVariables)
 		}
 	}
 	for _, field := range source.Fields {
-		owner := declarationForJavaOwner(declarations, field.Owner, field.Line)
+		owner := declarationForJavaSourceOwner(source, declarations, field.Owner, field.Line)
+		typeVariables := javaTypeVariablesForDeclaration(source, owner)
 		for _, annotation := range field.Annotations {
 			if qualifiedAnnotationLines[annotation.Line] {
 				continue
 			}
 			add("annotation_type", annotation.Name, annotation.Line, owner)
 		}
-		add("field_type", field.Type, field.Line, owner)
+		addScoped("field_type", field.Type, field.Line, owner, typeVariables)
 	}
 	for _, method := range source.Methods {
-		owner := declarationForJavaOwner(declarations, method.Owner, method.Line)
+		owner := declarationForJavaSourceOwner(source, declarations, method.Owner, method.Line)
+		typeVariables := javaTypeVariablesForDeclaration(source, owner)
+		for name := range javaTypeVariableSet(method.TypeParameters) {
+			typeVariables[name] = true
+		}
 		for _, annotation := range method.Annotations {
 			if qualifiedAnnotationLines[annotation.Line] {
 				continue
@@ -153,21 +170,21 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 			add("annotation_type", annotation.Name, annotation.Line, owner)
 		}
 		if method.ReturnType != "" {
-			add("return_type", method.ReturnType, method.Line, owner)
+			addScoped("return_type", method.ReturnType, method.Line, owner, typeVariables)
 		}
 		for _, parameter := range method.Parameters {
-			add("parameter_type", parameter.Type, method.Line, owner)
+			addScoped("parameter_type", parameter.Type, method.Line, owner, typeVariables)
 			for _, annotation := range parameter.Annotations {
 				add("annotation_type", annotation.Name, method.Line, owner)
 			}
 		}
 	}
 
-	lines := strings.Split(body, "\n")
+	lines := strings.Split(lexicalBody, "\n")
 	for index, rawLine := range lines {
 		line := index + 1
 		owner := declarationForJavaSourceLine(source, declarations, line)
-		if strings.HasPrefix(strings.TrimSpace(rawLine), "@") {
+		if strings.HasPrefix(strings.TrimSpace(rawLine), "@") && javaAnnotationDecoratesType(lines, index) {
 			owner = declarationFollowingJavaLine(declarations, line, owner)
 		}
 		for _, match := range javaFactAnnotationRE.FindAllStringSubmatch(rawLine, -1) {
@@ -184,15 +201,20 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 
 	fieldTypes := map[string]map[string]string{}
 	for _, field := range source.Fields {
-		if fieldTypes[field.Owner] == nil {
-			fieldTypes[field.Owner] = map[string]string{}
+		owner := declarationForJavaSourceOwner(source, declarations, field.Owner, field.Line)
+		if fieldTypes[owner.ID] == nil {
+			fieldTypes[owner.ID] = map[string]string{}
 		}
-		fieldTypes[field.Owner][field.Name] = field.Type
+		fieldTypes[owner.ID][field.Name] = field.Type
 	}
 	for _, method := range source.Methods {
-		owner := declarationForJavaOwner(declarations, method.Owner, method.Line)
+		owner := declarationForJavaSourceOwner(source, declarations, method.Owner, method.Line)
+		typeVariables := javaTypeVariablesForDeclaration(source, owner)
+		for name := range javaTypeVariableSet(method.TypeParameters) {
+			typeVariables[name] = true
+		}
 		receivers := map[string]string{}
-		for name, fieldType := range fieldTypes[method.Owner] {
+		for name, fieldType := range fieldTypes[owner.ID] {
 			receivers[name] = fieldType
 		}
 		for _, parameter := range method.Parameters {
@@ -207,7 +229,7 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 				targetType = call.Receiver
 			}
 			if targetType != "" {
-				add("calls_method_owner", targetType, call.Line, owner)
+				addScoped("calls_method_owner", targetType, call.Line, owner, typeVariables)
 			}
 		}
 	}
@@ -221,6 +243,46 @@ func qualifiedJavaAnnotationLines(body string) map[int]bool {
 		for _, match := range javaFactAnnotationRE.FindAllStringSubmatch(line, -1) {
 			if len(match) == 2 && strings.Contains(match[1], ".") {
 				result[index+1] = true
+			}
+		}
+	}
+	return result
+}
+
+func javaAnnotationDecoratesType(lines []string, annotationIndex int) bool {
+	parenDepth := javaParenDelta(lines[annotationIndex])
+	for index := annotationIndex + 1; index < len(lines); index++ {
+		line := strings.TrimSpace(lines[index])
+		if parenDepth > 0 {
+			parenDepth += javaParenDelta(line)
+			continue
+		}
+		if line == "" || strings.HasPrefix(line, "@") {
+			continue
+		}
+		return javaTypeLineRE.MatchString(line)
+	}
+	return false
+}
+
+func javaParenDelta(line string) int {
+	return strings.Count(line, "(") - strings.Count(line, ")")
+}
+
+func javaTypeVariableSet(names []string) map[string]bool {
+	result := map[string]bool{}
+	for _, name := range names {
+		result[name] = true
+	}
+	return result
+}
+
+func javaTypeVariablesForDeclaration(source JavaSourceRecord, declaration RichSymbolRecord) map[string]bool {
+	result := map[string]bool{}
+	for _, typ := range source.Types {
+		if typ.QualifiedName == declaration.QualifiedName || strings.HasPrefix(declaration.QualifiedName, typ.QualifiedName+".") {
+			for name := range javaTypeVariableSet(typ.TypeParameters) {
+				result[name] = true
 			}
 		}
 	}
@@ -370,6 +432,22 @@ func declarationForJavaOwner(declarations []RichSymbolRecord, owner string, line
 	return declarationForJavaLine(declarations, line)
 }
 
+func declarationForJavaSourceOwner(source JavaSourceRecord, declarations []RichSymbolRecord, owner string, line int) RichSymbolRecord {
+	var best JavaTypeRecord
+	for _, typ := range source.Types {
+		if typ.Name != owner || typ.Line > line || (typ.EndLine > 0 && typ.EndLine < line) {
+			continue
+		}
+		if typ.Line >= best.Line {
+			best = typ
+		}
+	}
+	if best.QualifiedName != "" {
+		return declarationByQualifiedName(declarations, best.QualifiedName)
+	}
+	return declarationForJavaOwner(declarations, owner, line)
+}
+
 func declarationForJavaLine(declarations []RichSymbolRecord, line int) RichSymbolRecord {
 	var best RichSymbolRecord
 	for _, declaration := range declarations {
@@ -431,21 +509,46 @@ func javaSourceArtifact(file string, workspace WorkspaceIndex) string {
 
 func javaSourceProvenance(file string, workspace WorkspaceIndex) javaBuildProvenance {
 	bestMavenDepth := -1
-	mavenArtifact := ""
 	for _, pkg := range workspace.MavenPackages {
 		root := buildFileRoot(pkg.Path)
-		if !pathContainsFile(root, file) {
-			continue
+		if pathContainsFile(root, file) && pathDepth(root) > bestMavenDepth {
+			bestMavenDepth = pathDepth(root)
 		}
-		depth := pathDepth(root)
-		if depth <= bestMavenDepth {
-			continue
+	}
+	for _, limitation := range workspace.mavenLimitations {
+		limitPath := strings.SplitN(limitation, ":", 2)[0]
+		root := buildFileRoot(limitPath)
+		if pathContainsFile(root, file) && pathDepth(root) > bestMavenDepth {
+			bestMavenDepth = pathDepth(root)
 		}
-		bestMavenDepth = depth
-		mavenArtifact = strings.Trim(strings.TrimSpace(pkg.GroupID)+":"+strings.TrimSpace(pkg.ArtifactID), ":")
 	}
 	if bestMavenDepth >= 0 {
-		return javaBuildProvenance{artifact: mavenArtifact, coverage: CoverageComplete}
+		group := ""
+		artifact := ""
+		for _, pkg := range workspace.MavenPackages {
+			root := buildFileRoot(pkg.Path)
+			if pathDepth(root) == bestMavenDepth && pathContainsFile(root, file) {
+				group = pkg.GroupID
+				artifact = pkg.ArtifactID
+			}
+		}
+		var limitations []string
+		for _, limitation := range workspace.mavenLimitations {
+			limitPath := strings.SplitN(limitation, ":", 2)[0]
+			root := buildFileRoot(limitPath)
+			if pathDepth(root) == bestMavenDepth && pathContainsFile(root, file) {
+				limitations = append(limitations, limitation)
+			}
+		}
+		coverage := CoverageComplete
+		if len(limitations) > 0 {
+			coverage = CoveragePartial
+		}
+		return javaBuildProvenance{
+			artifact:    strings.Trim(strings.TrimSpace(group)+":"+strings.TrimSpace(artifact), ":"),
+			coverage:    coverage,
+			limitations: limitations,
+		}
 	}
 
 	bestGradleDepth := -1

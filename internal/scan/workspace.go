@@ -45,9 +45,11 @@ type packageJSON struct {
 func extractWorkspaceRecord(file FileRecord, body string) WorkspaceIndex {
 	switch fileBase(file.Path) {
 	case "pom.xml":
-		if record, ok := extractMavenPackage(file.Path, body); ok {
-			return WorkspaceIndex{MavenPackages: []MavenPackageRecord{record}}
+		result := WorkspaceIndex{mavenLimitations: mavenExtractionLimitations(file.Path, body)}
+		if record, ok := extractMavenPackage(file.Path, body); ok || record.GroupID != "" || record.ArtifactID != "" {
+			result.MavenPackages = []MavenPackageRecord{record}
 		}
+		return result
 	case "package.json":
 		if record, ok := extractNodePackage(file.Path, body); ok {
 			return WorkspaceIndex{NodePackages: []NodePackageRecord{record}}
@@ -67,10 +69,12 @@ func mergeWorkspaceIndex(index *WorkspaceIndex, add WorkspaceIndex) {
 	index.GradlePackages = append(index.GradlePackages, add.GradlePackages...)
 	index.NodePackages = append(index.NodePackages, add.NodePackages...)
 	index.gradleLimitations = append(index.gradleLimitations, add.gradleLimitations...)
+	index.mavenLimitations = append(index.mavenLimitations, add.mavenLimitations...)
 	sort.Slice(index.MavenPackages, func(i, j int) bool { return index.MavenPackages[i].Path < index.MavenPackages[j].Path })
 	sort.Slice(index.GradlePackages, func(i, j int) bool { return index.GradlePackages[i].Path < index.GradlePackages[j].Path })
 	sort.Slice(index.NodePackages, func(i, j int) bool { return index.NodePackages[i].Path < index.NodePackages[j].Path })
 	sort.Strings(index.gradleLimitations)
+	sort.Strings(index.mavenLimitations)
 }
 
 func extractMavenPackage(path, body string) (MavenPackageRecord, bool) {
@@ -78,26 +82,30 @@ func extractMavenPackage(path, body string) (MavenPackageRecord, bool) {
 	if err := xml.Unmarshal([]byte(body), &project); err != nil {
 		return MavenPackageRecord{}, false
 	}
+	groupID := strings.TrimSpace(project.GroupID)
+	if groupID == "" {
+		groupID = strings.TrimSpace(project.Parent.GroupID)
+	}
 	record := MavenPackageRecord{
 		Path:       path,
-		GroupID:    strings.TrimSpace(project.GroupID),
-		ArtifactID: strings.TrimSpace(project.ArtifactID),
-		Version:    strings.TrimSpace(project.Version),
-	}
-	if record.GroupID == "" {
-		record.GroupID = strings.TrimSpace(project.Parent.GroupID)
+		GroupID:    literalMavenCoordinate(groupID),
+		ArtifactID: literalMavenCoordinate(project.ArtifactID),
+		Version:    literalMavenCoordinate(project.Version),
 	}
 	if record.Version == "" {
-		record.Version = strings.TrimSpace(project.Parent.Version)
+		record.Version = literalMavenCoordinate(project.Parent.Version)
 	}
-	if project.Parent.ArtifactID != "" {
-		record.Parent = strings.TrimSpace(project.Parent.GroupID + ":" + project.Parent.ArtifactID + ":" + project.Parent.Version)
+	parentGroup := literalMavenCoordinate(project.Parent.GroupID)
+	parentArtifact := literalMavenCoordinate(project.Parent.ArtifactID)
+	parentVersion := literalMavenCoordinate(project.Parent.Version)
+	if parentGroup != "" && parentArtifact != "" {
+		record.Parent = strings.Trim(parentGroup+":"+parentArtifact+":"+parentVersion, ":")
 	}
 	for _, dependency := range project.Dependencies {
 		dep := MavenDependencyRecord{
-			GroupID:    strings.TrimSpace(dependency.GroupID),
-			ArtifactID: strings.TrimSpace(dependency.ArtifactID),
-			Version:    strings.TrimSpace(dependency.Version),
+			GroupID:    literalMavenCoordinate(dependency.GroupID),
+			ArtifactID: literalMavenCoordinate(dependency.ArtifactID),
+			Version:    literalMavenCoordinate(dependency.Version),
 			Scope:      strings.TrimSpace(dependency.Scope),
 		}
 		if dep.GroupID != "" && dep.ArtifactID != "" {
@@ -111,6 +119,34 @@ func extractMavenPackage(path, body string) (MavenPackageRecord, bool) {
 		return record.Dependencies[i].ArtifactID < record.Dependencies[j].ArtifactID
 	})
 	return record, record.ArtifactID != ""
+}
+
+func mavenExtractionLimitations(path, body string) []string {
+	var project pomProject
+	if err := xml.Unmarshal([]byte(body), &project); err != nil {
+		return nil
+	}
+	groupID := strings.TrimSpace(project.GroupID)
+	if groupID == "" {
+		groupID = strings.TrimSpace(project.Parent.GroupID)
+	}
+	var limitations []string
+	if groupID != "" && literalMavenCoordinate(groupID) == "" {
+		limitations = append(limitations, path+": computed Maven group is not statically resolved")
+	}
+	artifactID := strings.TrimSpace(project.ArtifactID)
+	if artifactID != "" && literalMavenCoordinate(artifactID) == "" {
+		limitations = append(limitations, path+": computed Maven artifact is not statically resolved")
+	}
+	return limitations
+}
+
+func literalMavenCoordinate(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.Contains(value, "$") {
+		return ""
+	}
+	return value
 }
 
 func extractNodePackage(path, body string) (NodePackageRecord, bool) {

@@ -3,6 +3,7 @@ package scan
 import (
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type ProjectSymbolFacts struct {
@@ -65,12 +66,15 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 		provenance := javaSourceProvenance(reference.From, workspace)
 		reference.DependencyEvidence = javaGradleDependencyEvidence(provenance.artifact, reference.TargetQualifiedName, provenance.gradleDeps)
 		category := SymbolUsageDirectReference
+		targetIdentity := reference.ToSymbolID
 		if reference.Resolution == SymbolResolutionUnresolved {
 			category = SymbolUsageUnresolved
+			targetIdentity = reference.TargetQualifiedName
 		} else if reference.Resolution == SymbolResolutionAmbiguous {
 			category = SymbolUsageAmbiguous
+			targetIdentity = strings.Join(reference.CandidateSymbolIDs, ",")
 		}
-		reference.ID = StableWorkspaceUsageID(reference.ToSymbolID, "", reference.FromSymbolID, category, reference.Type, reference.TargetQualifiedName, reference.From, reference.Line)
+		reference.ID = StableWorkspaceUsageID(reference.ToSymbolID, "", reference.FromSymbolID, category, reference.Type, targetIdentity, reference.From, reference.Line)
 	}
 	facts.Declarations = dedupeRichSymbolFacts(facts.Declarations)
 	facts.References = dedupeRichRelationFacts(facts.References)

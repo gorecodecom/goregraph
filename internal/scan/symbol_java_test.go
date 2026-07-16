@@ -286,3 +286,176 @@ class Consumer {
 		}
 	}
 }
+
+func TestJavaLexicalSanitizationPreventsFalseFacts(t *testing.T) {
+	body := `package com.weka.users;
+
+class Real {
+    String inline = "@com.fake.Inline new InlineFake() { }";
+    String block = """
+        @com.fake.TextBlock
+        class TextBlockFake {
+            Object value = new TextBlockFake();
+        }
+        """;
+    // @com.fake.Comment new CommentFake() class CommentFake { }
+    /*
+     * @com.fake.BlockComment
+     * class BlockFake { Object value = new BlockFake(); }
+     */
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Real.java", Language: "java"}, body)
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	if len(facts.Declarations) != 1 || facts.Declarations[0].QualifiedName != "com.weka.users.Real" {
+		t.Fatalf("lexical noise created declarations: %#v", facts.Declarations)
+	}
+	for _, reference := range facts.References {
+		if reference.Type == "annotation_type" || reference.Type == "instantiates" {
+			t.Fatalf("lexical noise created reference: %#v", reference)
+		}
+	}
+	if facts.Declarations[0].Coverage != CoverageComplete || facts.Declarations[0].Confidence != ConfidenceExact {
+		t.Fatalf("real declaration lost exact provenance: %#v", facts.Declarations[0])
+	}
+}
+
+func TestJavaNextLineBracesPreserveNestedOwnersAndEndLines(t *testing.T) {
+	body := `package com.weka.users;
+
+class Outer
+{
+    class Inner
+    {
+    }
+}
+
+class After
+{
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Outer.java", Language: "java"}, body)
+	byName := map[string]JavaTypeRecord{}
+	for _, typ := range source.Types {
+		byName[typ.QualifiedName] = typ
+	}
+	if got := byName["com.weka.users.Outer.Inner"].Owner; got != "com.weka.users.Outer" {
+		t.Fatalf("next-line nested owner = %q, want com.weka.users.Outer", got)
+	}
+	if got := byName["com.weka.users.Outer.Inner"].EndLine; got != 7 {
+		t.Fatalf("next-line nested end = %d, want 7", got)
+	}
+	if got := byName["com.weka.users.Outer"].EndLine; got != 8 {
+		t.Fatalf("next-line outer end = %d, want 8", got)
+	}
+	if got := byName["com.weka.users.After"].Owner; got != "" {
+		t.Fatalf("next-line top-level owner = %q, want empty", got)
+	}
+}
+
+func TestJavaTypeParametersAreNotResolvedAsProjectTypes(t *testing.T) {
+	body := `package com.weka.users;
+
+class Base<T> {}
+class Box<T> extends Base<T> {
+    T value;
+    T service;
+
+    <R> R convert(R input) {
+        return input;
+    }
+
+    void invoke() { service.find(); }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Box.java", Language: "java"}, body)
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	assertJavaReference(t, facts.References, "extends_type", "com.weka.users.Base", 4)
+	for _, reference := range facts.References {
+		if strings.HasSuffix(reference.TargetQualifiedName, ".T") || strings.HasSuffix(reference.TargetQualifiedName, ".R") {
+			t.Fatalf("type variable became a project reference: %#v", reference)
+		}
+	}
+}
+
+func TestJavaAnnotationOwnershipDistinguishesMembersAndTypes(t *testing.T) {
+	body := `package com.weka.users;
+
+class Owner {
+    @com.weka.MemberMarker
+    String value;
+
+    @com.weka.TypeMarker(
+        value = "nested"
+    )
+    class Nested {}
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Owner.java", Language: "java"}, body)
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	owner := assertRichDeclaration(t, facts.Declarations, "class", "com.weka.users.Owner", "")
+	nested := assertRichDeclaration(t, facts.Declarations, "class", "com.weka.users.Owner.Nested", "")
+	memberAnnotation := assertJavaReference(t, facts.References, "annotation_type", "com.weka.MemberMarker", 4)
+	typeAnnotation := assertJavaReference(t, facts.References, "annotation_type", "com.weka.TypeMarker", 7)
+	if memberAnnotation.FromSymbolID != owner.ID {
+		t.Fatalf("member annotation owner = %#v, want %s", memberAnnotation, owner.ID)
+	}
+	if typeAnnotation.FromSymbolID != nested.ID {
+		t.Fatalf("type annotation owner = %#v, want %s", typeAnnotation, nested.ID)
+	}
+}
+
+func TestJavaReceiverTypesUseCanonicalOwnerScopes(t *testing.T) {
+	body := `package com.weka.users;
+
+class ServiceA { void find() {} }
+class ServiceB { void find() {} }
+class First {
+    class Same {
+        ServiceA service;
+        void run() { service.find(); }
+    }
+}
+class Second {
+    class Same {
+        ServiceB service;
+        void run() { service.find(); }
+    }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Owners.java", Language: "java"}, body)
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	first := assertRichDeclaration(t, facts.Declarations, "class", "com.weka.users.First.Same", "")
+	second := assertRichDeclaration(t, facts.Declarations, "class", "com.weka.users.Second.Same", "")
+	firstCall := assertJavaReference(t, facts.References, "calls_method_owner", "com.weka.users.ServiceA", 8)
+	secondCall := assertJavaReference(t, facts.References, "calls_method_owner", "com.weka.users.ServiceB", 14)
+	if firstCall.FromSymbolID != first.ID || secondCall.FromSymbolID != second.ID {
+		t.Fatalf("receiver owners collided: first=%#v second=%#v", firstCall, secondCall)
+	}
+}
+
+func TestJavaDiamondInstantiationAndDeclaratorArrays(t *testing.T) {
+	body := `package com.weka.users;
+
+class Box<T> {}
+class UserService {}
+class Consumer {
+    UserService services[];
+
+    Consumer(UserService inputs []) {
+        Box<UserService> box = new Box<>();
+    }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Consumer.java", Language: "java"}, body)
+	if len(source.Fields) != 1 || source.Fields[0].Name != "services" || source.Fields[0].Type != "UserService[]" {
+		t.Fatalf("declarator-side field array = %#v, want services UserService[]", source.Fields)
+	}
+	if len(source.Methods) != 1 || len(source.Methods[0].Parameters) != 1 || source.Methods[0].Parameters[0].Name != "inputs" || source.Methods[0].Parameters[0].Type != "UserService[]" {
+		t.Fatalf("declarator-side parameter array = %#v, want inputs UserService[]", source.Methods)
+	}
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	assertJavaReference(t, facts.References, "field_type", "com.weka.users.UserService", 6)
+	assertJavaReference(t, facts.References, "parameter_type", "com.weka.users.UserService", 8)
+	assertJavaReference(t, facts.References, "instantiates", "com.weka.users.Box", 9)
+}
