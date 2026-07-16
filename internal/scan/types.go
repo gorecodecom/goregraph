@@ -960,6 +960,8 @@ type WorkspaceEndpointTraceStepRecord struct {
 	Kind       string `json:"kind"`
 	Label      string `json:"label"`
 	Project    string `json:"project,omitempty"`
+	HTTPMethod string `json:"http_method,omitempty"`
+	Path       string `json:"path,omitempty"`
 	File       string `json:"file,omitempty"`
 	Line       int    `json:"line,omitempty"`
 	Symbol     string `json:"symbol,omitempty"`

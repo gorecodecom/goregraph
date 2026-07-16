@@ -752,6 +752,7 @@ func BuildWorkspaceAgentContextIndex(
 	for _, index := range projectIndexes {
 		builder.mergeProjectIndex(index)
 	}
+	builder.indexTraceHandlerLocations(traces)
 	builder.addContractEdges(matches)
 	builder.addDossierFacts(dossiers)
 	builder.addTraceTransitions(traces)
@@ -759,12 +760,19 @@ func BuildWorkspaceAgentContextIndex(
 }
 
 type workspaceAgentContextBuilder struct {
-	registry       WorkspaceRegistryRecord
-	projects       map[string]bool
-	factsByID      map[string]AgentContextFactRecord
-	edgesByID      map[string]AgentContextEdgeRecord
-	coverageByKey  map[string]AgentContextCoverageRecord
-	projectFactIDs map[string]map[string]string
+	registry         WorkspaceRegistryRecord
+	projects         map[string]bool
+	factsByID        map[string]AgentContextFactRecord
+	edgesByID        map[string]AgentContextEdgeRecord
+	coverageByKey    map[string]AgentContextCoverageRecord
+	projectFactIDs   map[string]map[string]string
+	handlerLocations map[string][]workspaceAgentHandlerLocation
+	handlerFactIDs   map[string]string
+}
+
+type workspaceAgentHandlerLocation struct {
+	file string
+	line int
 }
 
 func newWorkspaceAgentContextBuilder(registry WorkspaceRegistryRecord) *workspaceAgentContextBuilder {
@@ -775,12 +783,14 @@ func newWorkspaceAgentContextBuilder(registry WorkspaceRegistryRecord) *workspac
 		}
 	}
 	return &workspaceAgentContextBuilder{
-		registry:       registry,
-		projects:       projects,
-		factsByID:      map[string]AgentContextFactRecord{},
-		edgesByID:      map[string]AgentContextEdgeRecord{},
-		coverageByKey:  map[string]AgentContextCoverageRecord{},
-		projectFactIDs: map[string]map[string]string{},
+		registry:         registry,
+		projects:         projects,
+		factsByID:        map[string]AgentContextFactRecord{},
+		edgesByID:        map[string]AgentContextEdgeRecord{},
+		coverageByKey:    map[string]AgentContextCoverageRecord{},
+		projectFactIDs:   map[string]map[string]string{},
+		handlerLocations: map[string][]workspaceAgentHandlerLocation{},
+		handlerFactIDs:   map[string]string{},
 	}
 }
 
@@ -849,7 +859,7 @@ func (builder *workspaceAgentContextBuilder) addContractEdges(matches []Workspac
 			match.APILine,
 			match.APICaller,
 		)
-		toID := builder.findFact(
+		toID := builder.findCompatibleFact(
 			match.BackendProject,
 			"route",
 			firstNonEmpty(match.BackendHTTPMethod, match.APIHTTPMethod),
@@ -875,21 +885,47 @@ func (builder *workspaceAgentContextBuilder) addContractEdges(matches []Workspac
 	}
 }
 
+func (builder *workspaceAgentContextBuilder) indexTraceHandlerLocations(traces WorkspaceEndpointTraceIndexRecord) {
+	for _, trace := range traces.Traces {
+		for _, step := range trace.Steps {
+			if step.Kind != "backend_handler" || step.Project == "" {
+				continue
+			}
+			handler := firstNonEmpty(step.Symbol, step.Label)
+			key := workspaceAgentHandlerKey(step.Project, handler)
+			if key == "" {
+				continue
+			}
+			location := workspaceAgentHandlerLocation{
+				file: workspaceAgentFile(step.Project, step.File),
+				line: step.Line,
+			}
+			duplicate := false
+			for _, existing := range builder.handlerLocations[key] {
+				if existing == location {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				builder.handlerLocations[key] = append(builder.handlerLocations[key], location)
+			}
+		}
+	}
+}
+
 func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureDossierRecord) {
 	for _, dossier := range dossiers {
 		handlerID := ""
 		if dossier.BackendHandler != "" && builder.projects[dossier.BackendProject] {
-			handlerID = builder.findFact(dossier.BackendProject, "", "", "", "", 0, dossier.BackendHandler)
-			if handlerID == "" {
-				handlerID = builder.addFact(AgentContextFactRecord{
-					Project:    dossier.BackendProject,
-					Kind:       "backend_handler",
-					Name:       contextSimpleName(dossier.BackendHandler),
-					Qualified:  dossier.BackendHandler,
-					Confidence: dossier.Confidence,
-					Search:     compactContextSearch(dossier.Route, dossier.BackendHandler),
-				})
-			}
+			handlerID = builder.resolveHandler(
+				dossier.BackendProject,
+				dossier.BackendHandler,
+				"",
+				0,
+				dossier.Route,
+				dossier.Confidence,
+			)
 		}
 		for _, auth := range dossier.Auth {
 			project := firstNonEmpty(dossier.BackendProject, dossier.FrontendProject)
@@ -913,17 +949,30 @@ func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureD
 				continue
 			}
 			name := strings.Trim(strings.TrimSpace(persistence.Repository)+"."+strings.TrimSpace(persistence.Method), ".")
-			persistenceID := builder.findFact(
-				dossier.BackendProject,
-				"persistence",
-				"",
-				"",
-				persistence.File,
-				persistence.Line,
-				name,
-			)
+			persistenceID := ""
+			if persistence.Entity == "" && persistence.Table == "" {
+				persistenceID = builder.findFact(
+					dossier.BackendProject,
+					"persistence",
+					"",
+					"",
+					persistence.File,
+					persistence.Line,
+					name,
+				)
+			}
 			if persistenceID == "" {
 				persistenceID = builder.addFact(AgentContextFactRecord{
+					ID: StableWorkspaceID(
+						"agent-context-fact",
+						dossier.BackendProject,
+						"persistence",
+						name,
+						persistence.Entity,
+						persistence.Table,
+						persistence.File,
+						fmt.Sprint(persistence.Line),
+					),
 					Project:    dossier.BackendProject,
 					Kind:       "persistence",
 					Name:       firstNonEmpty(name, persistence.Entity, persistence.Table),
@@ -998,19 +1047,47 @@ func (builder *workspaceAgentContextBuilder) addTraceTransitions(traces Workspac
 				continue
 			}
 			kind := workspaceTraceFactKind(step.Kind)
-			findKind := kind
-			if step.Kind == "backend_handler" {
-				findKind = ""
+			factID := ""
+			switch step.Kind {
+			case "api_contract", "backend_route":
+				method, routePath := workspaceTraceEndpointIdentity(trace, step)
+				if method != "" && routePath != "" {
+					factID = builder.findFact(
+						step.Project,
+						kind,
+						method,
+						routePath,
+						step.File,
+						step.Line,
+						firstNonEmpty(step.Symbol, step.Label),
+					)
+				}
+			case "backend_handler":
+				factID = builder.resolveHandler(
+					step.Project,
+					firstNonEmpty(step.Symbol, step.Label),
+					step.File,
+					step.Line,
+					trace.Route,
+					step.Confidence,
+				)
+			default:
+				factID = builder.findFact(
+					step.Project,
+					kind,
+					"",
+					"",
+					step.File,
+					step.Line,
+					firstNonEmpty(step.Symbol, step.Label),
+				)
 			}
-			factID := builder.findFact(step.Project, findKind, trace.Method, trace.Path, step.File, step.Line, firstNonEmpty(step.Symbol, step.Label))
-			if factID == "" {
+			if factID == "" && step.Kind != "api_contract" && step.Kind != "backend_route" {
 				factID = builder.addFact(AgentContextFactRecord{
 					Project:    step.Project,
 					Kind:       kind,
 					Name:       step.Label,
 					Qualified:  step.Symbol,
-					HTTPMethod: trace.Method,
-					Path:       trace.Path,
 					File:       workspaceAgentFile(step.Project, step.File),
 					Line:       step.Line,
 					Confidence: step.Confidence,
@@ -1039,6 +1116,125 @@ func (builder *workspaceAgentContextBuilder) addTraceTransitions(traces Workspac
 	}
 }
 
+func workspaceTraceEndpointIdentity(trace WorkspaceEndpointTraceRecord, step WorkspaceEndpointTraceStepRecord) (string, string) {
+	method := strings.ToUpper(strings.TrimSpace(step.HTTPMethod))
+	routePath := normalizeOptionalContextPath(step.Path)
+	if step.Kind == "api_contract" {
+		method = firstNonEmpty(method, strings.ToUpper(strings.TrimSpace(trace.Method)))
+		routePath = firstNonEmpty(routePath, normalizeOptionalContextPath(trace.Path))
+		return method, routePath
+	}
+	if method != "" && routePath != "" {
+		return method, routePath
+	}
+	parts := strings.Fields(strings.TrimSpace(step.Label))
+	if len(parts) < 2 {
+		return method, routePath
+	}
+	if method == "" {
+		method = strings.ToUpper(parts[0])
+	}
+	if routePath == "" {
+		routePath = normalizeOptionalContextPath(parts[1])
+	}
+	return method, routePath
+}
+
+func (builder *workspaceAgentContextBuilder) resolveHandler(
+	project string,
+	handler string,
+	file string,
+	line int,
+	route string,
+	confidence string,
+) string {
+	key := workspaceAgentHandlerKey(project, handler)
+	if key == "" {
+		return ""
+	}
+	if id := builder.handlerFactIDs[key]; id != "" {
+		return id
+	}
+	file = workspaceAgentFile(project, file)
+	if file == "" && line == 0 {
+		if locations := builder.handlerLocations[key]; len(locations) == 1 {
+			file = locations[0].file
+			line = locations[0].line
+		}
+	}
+	if candidates := builder.exactHandlerFacts(project, "symbol", handler, file, line); len(candidates) == 1 {
+		builder.handlerFactIDs[key] = candidates[0]
+		return candidates[0]
+	} else if len(candidates) > 1 {
+		return ""
+	}
+	if candidates := builder.exactHandlerFacts(project, "route", handler, file, line); len(candidates) == 1 {
+		builder.handlerFactIDs[key] = candidates[0]
+		return candidates[0]
+	} else if len(candidates) > 1 {
+		return ""
+	}
+	id := builder.addFact(AgentContextFactRecord{
+		Project:    project,
+		Kind:       "backend_handler",
+		Name:       contextSimpleName(handler),
+		Qualified:  handler,
+		File:       file,
+		Line:       line,
+		Summary:    route,
+		Confidence: confidence,
+		Search:     compactContextSearch(route, handler),
+	})
+	builder.handlerFactIDs[key] = id
+	return id
+}
+
+func (builder *workspaceAgentContextBuilder) exactHandlerFacts(project, kind, handler, file string, line int) []string {
+	var candidates []string
+	for id, fact := range builder.factsByID {
+		if fact.Project != contextPathKey(project) || fact.Kind != kind ||
+			!workspaceAgentExactIdentity(fact, handler) {
+			continue
+		}
+		if file != "" && fact.File != file {
+			continue
+		}
+		if line > 0 && fact.Line != line {
+			continue
+		}
+		candidates = append(candidates, id)
+	}
+	sort.Strings(candidates)
+	return candidates
+}
+
+func workspaceAgentHandlerKey(project, handler string) string {
+	project = contextPathKey(project)
+	handler = contextLabelKey(handler)
+	if project == "" || handler == "" {
+		return ""
+	}
+	return project + "\x00" + handler
+}
+
+func workspaceAgentExactIdentity(fact AgentContextFactRecord, identity string) bool {
+	identity = contextLabelKey(identity)
+	if identity == "" {
+		return true
+	}
+	for _, candidate := range []string{
+		fact.Name,
+		fact.Qualified,
+		contextSimpleName(fact.Name),
+		contextSimpleName(fact.Qualified),
+	} {
+		if contextLabelKey(candidate) == identity {
+			return true
+		}
+	}
+	return false
+}
+
 func workspaceTraceFactKind(kind string) string {
 	switch kind {
 	case "backend_route":
@@ -1051,6 +1247,23 @@ func workspaceTraceFactKind(kind string) string {
 }
 
 func (builder *workspaceAgentContextBuilder) findFact(project, kind, method, routePath, file string, line int, label string) string {
+	return builder.findFactWithPathMode(project, kind, method, routePath, file, line, label, false)
+}
+
+func (builder *workspaceAgentContextBuilder) findCompatibleFact(project, kind, method, routePath, file string, line int, label string) string {
+	return builder.findFactWithPathMode(project, kind, method, routePath, file, line, label, true)
+}
+
+func (builder *workspaceAgentContextBuilder) findFactWithPathMode(
+	project,
+	kind,
+	method,
+	routePath,
+	file string,
+	line int,
+	label string,
+	compatiblePath bool,
+) string {
 	project = contextPathKey(project)
 	file = workspaceAgentFile(project, file)
 	method = strings.ToUpper(strings.TrimSpace(method))
@@ -1061,11 +1274,21 @@ func (builder *workspaceAgentContextBuilder) findFact(project, kind, method, rou
 		if fact.Project != project || kind != "" && fact.Kind != kind {
 			continue
 		}
-		if method != "" && fact.HTTPMethod != "" && !strings.EqualFold(fact.HTTPMethod, method) {
+		if method != "" && !strings.EqualFold(fact.HTTPMethod, method) {
 			continue
 		}
-		if routePath != "" && fact.Path != "" && !pathsCompatibleWithKnownBasePrefixes(routePath, fact.Path) {
-			continue
+		if routePath != "" {
+			factPath := normalizeOptionalContextPath(fact.Path)
+			if factPath == "" {
+				continue
+			}
+			if compatiblePath {
+				if !pathsCompatibleWithKnownBasePrefixes(routePath, factPath) {
+					continue
+				}
+			} else if factPath != routePath {
+				continue
+			}
 		}
 		if file != "" && fact.File != file {
 			continue
@@ -1073,10 +1296,7 @@ func (builder *workspaceAgentContextBuilder) findFact(project, kind, method, rou
 		if line > 0 && fact.Line > 0 && fact.Line != line {
 			continue
 		}
-		if labelKey != "" &&
-			contextLabelKey(fact.Name) != labelKey &&
-			contextLabelKey(fact.Qualified) != labelKey &&
-			!strings.Contains(contextLabelKey(fact.Qualified), labelKey) {
+		if labelKey != "" && !workspaceAgentExactIdentity(fact, labelKey) {
 			continue
 		}
 		candidates = append(candidates, id)

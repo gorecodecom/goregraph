@@ -96,6 +96,63 @@ func TestBuildWorkspaceAgentContextIndexReusesDossierPersistenceAndTestFacts(t *
 	}
 }
 
+func TestBuildWorkspaceAgentContextIndexReusesCopiedHandlerSymbolAcrossDossierAndTrace(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/users", Indexed: true,
+	}}}
+	projectIndex := AgentContextIndexRecord{
+		Root: "services/users",
+		Facts: []AgentContextFactRecord{
+			{
+				ID: "route", Kind: "route", Name: "DELETE /users/{id}",
+				Qualified: "UserController.deleteUser", HTTPMethod: "DELETE", Path: "/users/{id}",
+				File: "UserController.java", Line: 20,
+			},
+			{
+				ID: "handler", Kind: "symbol", Name: "deleteUser",
+				Qualified: "UserController.deleteUser", File: "UserController.java", Line: 20,
+			},
+		},
+	}
+	dossiers := []FeatureDossierRecord{{
+		Route:          "DELETE /users/{id}",
+		BackendProject: "services/users",
+		BackendHandler: "UserController.deleteUser",
+	}}
+	traces := WorkspaceEndpointTraceIndexRecord{Traces: []WorkspaceEndpointTraceRecord{{
+		Method: "DELETE", Path: "/users/{id}",
+		Steps: []WorkspaceEndpointTraceStepRecord{
+			{
+				ID: "route-step", Kind: "backend_route", Label: "DELETE /users/{id}",
+				Project: "services/users", File: "UserController.java", Line: 20,
+				Symbol: "UserController.deleteUser",
+			},
+			{
+				ID: "handler-step", Kind: "backend_handler", Label: "UserController.deleteUser",
+				Project: "services/users", File: "UserController.java", Line: 20,
+				Symbol: "UserController.deleteUser",
+			},
+		},
+		Edges: []WorkspaceEndpointTraceEdgeRecord{{
+			From: "route-step", To: "handler-step", Kind: "backend_route_to_backend_handler",
+		}},
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, traces, "generated")
+
+	if got := countContextFacts(index.Facts, "backend_handler"); got != 0 {
+		t.Fatalf("synthetic handler facts = %d, want copied symbol reuse: %#v", got, index.Facts)
+	}
+	if !hasContextEdge(
+		index.Edges,
+		"services/users#route",
+		"services/users#handler",
+		"backend_route_to_backend_handler",
+	) {
+		t.Fatalf("route-to-handler transition did not target copied symbol: %#v", index.Edges)
+	}
+}
+
 func TestBuildWorkspaceAgentContextIndexRequiresContractDiscriminators(t *testing.T) {
 	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
 		{Path: "frontend/app", Indexed: true},
@@ -134,6 +191,238 @@ func TestBuildWorkspaceAgentContextIndexRequiresContractDiscriminators(t *testin
 			t.Fatalf("contract edge ignored caller discriminator: %#v", edge)
 		}
 	}
+}
+
+func TestBuildWorkspaceAgentContextIndexRejectsContractIdentityPrefixCollisions(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "frontend/app", Indexed: true},
+		{Path: "services/users", Indexed: true},
+	}}
+	for _, test := range []struct {
+		name        string
+		apiCaller   string
+		apiFact     string
+		handler     string
+		handlerFact string
+	}{
+		{
+			name:        "caller",
+			apiCaller:   "deleteUser",
+			apiFact:     "deleteUserPermanently",
+			handler:     "UserController.deleteUser",
+			handlerFact: "UserController.deleteUser",
+		},
+		{
+			name:        "handler",
+			apiCaller:   "deleteUser",
+			apiFact:     "deleteUser",
+			handler:     "UserController.deleteUser",
+			handlerFact: "UserController.deleteUserPermanently",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			projectIndexes := []AgentContextIndexRecord{
+				{
+					Root: "frontend/app",
+					Facts: []AgentContextFactRecord{{
+						ID: "api", Kind: "api_contract", Name: "DELETE /users/{id}",
+						Qualified: test.apiFact, HTTPMethod: "DELETE", Path: "/users/{id}",
+						File: "src/api/users.ts", Line: 8,
+					}},
+				},
+				{
+					Root: "services/users",
+					Facts: []AgentContextFactRecord{{
+						ID: "route", Kind: "route", Name: "DELETE /users/{id}",
+						Qualified: test.handlerFact, HTTPMethod: "DELETE", Path: "/users/{id}",
+						File: "UserController.java", Line: 20,
+					}},
+				},
+			}
+			matches := []WorkspaceContractMatchRecord{{
+				APIProject: "frontend/app", APIHTTPMethod: "DELETE", APIPath: "/users/{id}",
+				APIFile: "src/api/users.ts", APILine: 8, APICaller: test.apiCaller,
+				BackendProject: "services/users", BackendHTTPMethod: "DELETE", BackendPath: "/users/{id}",
+				BackendFile: "UserController.java", BackendLine: 20, BackendHandler: test.handler,
+				Issue: contractIssueMatched, Confidence: "RESOLVED",
+			}}
+
+			index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, matches, nil, WorkspaceEndpointTraceIndexRecord{}, "generated")
+
+			for _, edge := range index.Edges {
+				if edge.Kind == "http_contract" {
+					t.Fatalf("%s prefix collision produced contract edge: %#v", test.name, edge)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexUsesTraceStepEndpointIdentities(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "frontend/app", Indexed: true},
+		{Path: "services/users", Indexed: true},
+	}}
+	t.Run("method mismatch uses copied backend route", func(t *testing.T) {
+		projectIndexes := []AgentContextIndexRecord{
+			{
+				Root: "frontend/app",
+				Facts: []AgentContextFactRecord{{
+					ID: "api", Kind: "api_contract", Name: "DELETE /users/{id}",
+					Qualified: "deleteUser", HTTPMethod: "DELETE", Path: "/users/{id}",
+					File: "src/api/users.ts", Line: 8,
+				}},
+			},
+			{
+				Root: "services/users",
+				Facts: []AgentContextFactRecord{{
+					ID: "route", Kind: "route", Name: "GET /users/{id}",
+					Qualified: "UserController.getUser", HTTPMethod: "GET", Path: "/users/{id}",
+					File: "UserController.java", Line: 20,
+				}},
+			},
+		}
+		traces := WorkspaceEndpointTraceIndexRecord{Traces: []WorkspaceEndpointTraceRecord{{
+			Method: "DELETE", Path: "/users/{id}",
+			Steps: []WorkspaceEndpointTraceStepRecord{
+				{
+					ID: "api-step", Kind: "api_contract", Label: "deleteUser",
+					Project: "frontend/app", File: "src/api/users.ts", Line: 8, Symbol: "deleteUser",
+				},
+				{
+					ID: "route-step", Kind: "backend_route", Label: "GET /users/{id}",
+					Project: "services/users", File: "UserController.java", Line: 20,
+					Symbol: "UserController.getUser",
+				},
+			},
+			Edges: []WorkspaceEndpointTraceEdgeRecord{{
+				From: "api-step", To: "route-step", Kind: "api_contract_to_backend_route",
+			}},
+		}}}
+
+		index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, nil, nil, traces, "generated")
+
+		if !hasContextEdge(index.Edges, "frontend/app#api", "services/users#route", "api_contract_to_backend_route") {
+			t.Fatalf("method-mismatch trace did not use copied GET route: %#v", index.Edges)
+		}
+		for _, fact := range index.Facts {
+			if fact.Kind == "route" && fact.HTTPMethod == "DELETE" {
+				t.Fatalf("method-mismatch trace synthesized false DELETE route: %#v", fact)
+			}
+		}
+	})
+
+	t.Run("gateway prefix omits missing backend route", func(t *testing.T) {
+		projectIndexes := []AgentContextIndexRecord{{
+			Root: "frontend/app",
+			Facts: []AgentContextFactRecord{{
+				ID: "api", Kind: "api_contract", Name: "DELETE /gateway/users/{id}",
+				Qualified: "deleteUser", HTTPMethod: "DELETE", Path: "/gateway/users/{id}",
+				File: "src/api/users.ts", Line: 8,
+			}},
+		}}
+		traces := WorkspaceEndpointTraceIndexRecord{Traces: []WorkspaceEndpointTraceRecord{{
+			Method: "DELETE", Path: "/gateway/users/{id}",
+			Steps: []WorkspaceEndpointTraceStepRecord{
+				{
+					ID: "api-step", Kind: "api_contract", Label: "deleteUser",
+					Project: "frontend/app", File: "src/api/users.ts", Line: 8, Symbol: "deleteUser",
+				},
+				{
+					ID: "route-step", Kind: "backend_route", Label: "DELETE /users/{id}",
+					Project: "services/users", File: "UserController.java", Line: 20,
+					Symbol: "UserController.deleteUser",
+				},
+			},
+			Edges: []WorkspaceEndpointTraceEdgeRecord{{
+				From: "api-step", To: "route-step", Kind: "api_contract_to_backend_route",
+			}},
+		}}}
+
+		index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, nil, nil, traces, "generated")
+
+		if got := countContextFacts(index.Facts, "route"); got != 0 {
+			t.Fatalf("gateway trace synthesized %d backend routes: %#v", got, index.Facts)
+		}
+		if hasContextEdgeKind(index.Edges, "api_contract_to_backend_route") {
+			t.Fatalf("gateway trace retained transition to missing route: %#v", index.Edges)
+		}
+	})
+
+	t.Run("missing API fact omits API transition", func(t *testing.T) {
+		projectIndexes := []AgentContextIndexRecord{{
+			Root: "services/users",
+			Facts: []AgentContextFactRecord{{
+				ID: "route", Kind: "route", Name: "DELETE /users/{id}",
+				Qualified: "UserController.deleteUser", HTTPMethod: "DELETE", Path: "/users/{id}",
+				File: "UserController.java", Line: 20,
+			}},
+		}}
+		traces := WorkspaceEndpointTraceIndexRecord{Traces: []WorkspaceEndpointTraceRecord{{
+			Method: "DELETE", Path: "/users/{id}",
+			Steps: []WorkspaceEndpointTraceStepRecord{
+				{
+					ID: "api-step", Kind: "api_contract", Label: "deleteUser",
+					Project: "frontend/app", File: "src/api/users.ts", Line: 8, Symbol: "deleteUser",
+				},
+				{
+					ID: "route-step", Kind: "backend_route", Label: "DELETE /users/{id}",
+					Project: "services/users", File: "UserController.java", Line: 20,
+					Symbol: "UserController.deleteUser",
+				},
+			},
+			Edges: []WorkspaceEndpointTraceEdgeRecord{{
+				From: "api-step", To: "route-step", Kind: "api_contract_to_backend_route",
+			}},
+		}}}
+
+		index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, nil, nil, traces, "generated")
+
+		if got := countContextFacts(index.Facts, "api_contract"); got != 0 {
+			t.Fatalf("trace synthesized %d API facts: %#v", got, index.Facts)
+		}
+		if hasContextEdgeKind(index.Edges, "api_contract_to_backend_route") {
+			t.Fatalf("trace retained transition from missing API fact: %#v", index.Edges)
+		}
+	})
+}
+
+func TestBuildWorkspaceAgentContextIndexKeepsDistinctPersistenceTargets(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/users", Indexed: true,
+	}}}
+	dossiers := []FeatureDossierRecord{{
+		Route:          "DELETE /users/{id}",
+		BackendProject: "services/users",
+		PersistencePath: []PersistenceStepRecord{
+			{
+				Repository: "UserRepository", Method: "delete",
+				Entity: "User", Table: "users", File: "UserRepository.java", Line: 12,
+			},
+			{
+				Repository: "UserRepository", Method: "delete",
+				Entity: "UserAudit", Table: "user_audit", File: "UserRepository.java", Line: 12,
+			},
+		},
+	}}
+
+	index := BuildWorkspaceAgentContextIndex(registry, nil, nil, dossiers, WorkspaceEndpointTraceIndexRecord{}, "generated")
+
+	if got := countContextFacts(index.Facts, "persistence"); got != 2 {
+		t.Fatalf("persistence facts = %d, want distinct entity/table targets: %#v", got, index.Facts)
+	}
+	if index.Facts[0].ID == index.Facts[1].ID {
+		t.Fatalf("persistence targets share ID %q: %#v", index.Facts[0].ID, index.Facts)
+	}
+}
+
+func hasContextEdgeKind(edges []AgentContextEdgeRecord, kind string) bool {
+	for _, edge := range edges {
+		if edge.Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildWorkspaceAgentContextIndexOmitsNonPortableFiles(t *testing.T) {
