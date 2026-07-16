@@ -881,3 +881,74 @@ class Foreign {}
 		t.Fatalf("cross-file annotation owner = %#v, want target %s and never foreign %s", annotation, target.ID, foreign.ID)
 	}
 }
+
+func TestJavaProjectFieldCanonicalizationPreservesImportedExternalPrimaryTypes(t *testing.T) {
+	providerBody := `package com.provider;
+
+import vendor.Box;
+import vendor.Client;
+
+public class Provider<T> {
+    public Box<T> box;
+    public Client client;
+}
+`
+	consumerBody := `package com.consumer;
+
+import com.provider.Provider;
+
+class Box { void size() {} }
+class Client { void run() {} }
+class Consumer {
+    Provider<String> provider;
+    void call() {
+        provider.box.size();
+        provider.client.run();
+    }
+}
+`
+	providerSource := extractJavaSource(FileRecord{Path: "src/main/java/com/provider/Provider.java", Language: "java"}, providerBody)
+	consumerSource := extractJavaSource(FileRecord{Path: "src/main/java/com/consumer/Consumer.java", Language: "java"}, consumerBody)
+	facts := ExtractJavaProjectSymbolFacts(
+		[]JavaSourceRecord{providerSource, consumerSource},
+		map[string]string{providerSource.File: providerBody, consumerSource.File: consumerBody},
+		WorkspaceIndex{},
+	)
+	boxCall := assertJavaReference(t, facts.References, "calls_method_owner", "vendor.Box", 10)
+	clientCall := assertJavaReference(t, facts.References, "calls_method_owner", "vendor.Client", 11)
+	if boxCall.Resolution != SymbolResolutionUnresolved || boxCall.ToSymbolID != "" {
+		t.Fatalf("external Box call owner = %#v, want canonical unresolved import", boxCall)
+	}
+	if clientCall.Resolution != SymbolResolutionUnresolved || clientCall.ToSymbolID != "" {
+		t.Fatalf("external Client call owner = %#v, want canonical unresolved import", clientCall)
+	}
+	for _, reference := range facts.References {
+		if reference.Type == "calls_method_owner" && (reference.TargetQualifiedName == "com.consumer.Box" || reference.TargetQualifiedName == "com.consumer.Client") {
+			t.Fatalf("external field type was reinterpreted in consumer package: %#v", reference)
+		}
+	}
+}
+
+func TestJavaCallOwnerUsesOnlyPrimaryGenericReceiverType(t *testing.T) {
+	body := `package com.consumer;
+
+import java.util.List;
+
+class Service { void run() {} }
+class Consumer {
+    List<Service> services;
+    void call() { services.size(); }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/consumer/Consumer.java", Language: "java"}, body)
+	facts := ExtractJavaProjectSymbolFacts([]JavaSourceRecord{source}, map[string]string{source.File: body}, WorkspaceIndex{})
+	call := assertJavaReference(t, facts.References, "calls_method_owner", "java.util.List", 8)
+	if call.Resolution != SymbolResolutionUnresolved || call.ToSymbolID != "" {
+		t.Fatalf("external generic call owner = %#v, want canonical unresolved raw type", call)
+	}
+	for _, reference := range facts.References {
+		if reference.Type == "calls_method_owner" && reference.Line == 8 && reference.TargetQualifiedName == "com.consumer.Service" {
+			t.Fatalf("generic argument emitted as call owner: %#v", reference)
+		}
+	}
+}

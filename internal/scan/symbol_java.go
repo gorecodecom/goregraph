@@ -289,7 +289,7 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 						addUnresolved("calls_method_owner", targetType, call.Line, owner, false)
 					}
 				} else {
-					addScoped("calls_method_owner", targetType, call.Line, owner, typeVariables)
+					addScoped("calls_method_owner", primaryJavaTypeReference(targetType), call.Line, owner, typeVariables)
 				}
 			}
 		}
@@ -428,9 +428,9 @@ func javaProjectFieldTypes(sources []JavaSourceRecord, declarations []RichSymbol
 			}
 			fieldType := field.Type
 			typeVariables := javaTypeVariablesForDeclaration(source, owner)
-			if reference := primaryJavaTypeReference(field.Type); reference != "" && !javaTypeReferenceIsScoped(field.Type, typeVariables) {
+			if reference := primaryJavaTypeReference(field.Type); reference != "" && !javaTypeReferenceIsScoped(reference, typeVariables) {
 				resolved := resolver.resolve(reference)
-				if resolved.resolution == SymbolResolutionExact {
+				if resolved.confidence == ConfidenceExact {
 					fieldType = strings.Replace(field.Type, reference, resolved.qualifiedName, 1)
 				}
 			}
