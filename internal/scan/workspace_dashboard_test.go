@@ -400,7 +400,7 @@ func TestDashboardArchitectureAutoFitRunsOnceForNewServiceSelection(t *testing.T
 		`if(changed)state.pendingArchitectureServiceFit=id`,
 		`state.pendingArchitectureServiceFit=null`,
 		`if(state.pendingArchitectureServiceFit===state.selected){state.pendingArchitectureServiceFit=null;fitArchitectureNeighborhoodIfNeeded(neighborhoodNodeIDs);}`,
-		`if(!state.savedArchitectureServiceViewport)state.savedArchitectureServiceViewport=`,
+		`if(!state.architectureFocused&&!state.savedArchitectureServiceViewport)state.savedArchitectureServiceViewport=`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing one-shot Architecture auto-fit lifecycle %q", want)

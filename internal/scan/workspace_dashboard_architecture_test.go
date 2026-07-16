@@ -161,3 +161,106 @@ func TestArchitectureDirectNeighborhoodIgnoresDirectionAndRiskEmphasis(t *testin
 		t.Fatalf("direct neighborhood = %v", result.Neighborhood)
 	}
 }
+
+func TestArchitectureDeferredAutoFitRestoresOriginalMatrixViewport(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for embedded dashboard state-sequence tests")
+	}
+	function := func(start, end string) string {
+		t.Helper()
+		from := strings.Index(workspaceDashboardScript, start)
+		if from < 0 {
+			t.Fatalf("dashboard script missing function start %q", start)
+		}
+		to := strings.Index(workspaceDashboardScript[from:], end)
+		if to < 0 {
+			t.Fatalf("dashboard script missing function end %q", end)
+		}
+		return workspaceDashboardScript[from : from+to]
+	}
+	source := strings.Join([]string{
+		`const original={zoom:2.25,panX:137,panY:-59};`,
+		`const controls=new Map();`,
+		`const graph={viewBox:{baseVal:{x:0,y:0,width:1000,height:700}}};`,
+		`const document={getElementById:function(id){if(id==="workspace-graph")return graph;if(!controls.has(id))controls.set(id,{hidden:false});return controls.get(id);}};`,
+		`let state;let fitCount=0;`,
+		`function applyTransform(){}`,
+		`function renderList(){}`,
+		`function renderCanvas(){if(state.selected&&state.pendingArchitectureServiceFit===state.selected){state.pendingArchitectureServiceFit=null;fitCount++;fitArchitectureNeighborhoodIfNeeded(new Set([state.selected]));}}`,
+		function("function applyViewport(viewport)", "function fitArchitectureNeighborhoodIfNeeded(nodeIDs)"),
+		function("function fitArchitectureNeighborhoodIfNeeded(nodeIDs)", "function visibleContentBounds(layer)"),
+		function("function restoreArchitectureServiceViewport()", "function clearArchitectureServiceState()"),
+		function("function clearArchitectureServiceState()", "function resetArchitectureFocus()"),
+		function("function setArchitectureServiceSelection(id)", "function restoreArchitectureDomainFocus(domain,elementName)"),
+		function("function enterArchitectureFocus()", "function leaveArchitectureFocus()"),
+		function("function leaveArchitectureFocus()", "function hideArchitectureSelectionActions()"),
+		function("function hideArchitectureSelectionActions()", "function clearSelectedItemState()"),
+		`function freshState(){return {mode:"architecture",architectureView:"matrix",architectureDirection:"both",savedArchitectureServiceViewport:null,pendingArchitectureServiceFit:null,selectedArchitectureEdge:null,selected:null,selections:{architecture:null},focusStep:null,isolation:false,architectureFocused:false,savedFullArchitectureViewport:null,zoom:original.zoom,panX:original.panX,panY:original.panY,positions:new Map([["service:orders",{x:1600,y:900,w:224,h:74}]])};}`,
+		`function viewport(){return {zoom:state.zoom,panX:state.panX,panY:state.panY};}`,
+		`function enterFromMatrix(){state=freshState();const before=fitCount;setArchitectureServiceSelection("service:orders");enterArchitectureFocus();return {fitCount:fitCount-before,afterFit:viewport(),savedService:state.savedArchitectureServiceViewport,pending:state.pendingArchitectureServiceFit};}`,
+		`const cleared=enterFromMatrix();clearArchitectureServiceState();cleared.afterExit=viewport();cleared.savedServiceAfterExit=state.savedArchitectureServiceViewport;`,
+		`const left=enterFromMatrix();leaveArchitectureFocus();left.afterExit=viewport();left.savedServiceAfterExit=state.savedArchitectureServiceViewport;clearArchitectureServiceState();left.afterClear=viewport();`,
+		`state=freshState();state.architectureView="flow";const beforeFlowFit=fitCount;setArchitectureServiceSelection("service:orders");renderCanvas();const flow={fitCount:fitCount-beforeFlowFit,afterFit:viewport(),savedService:state.savedArchitectureServiceViewport,pending:state.pendingArchitectureServiceFit};clearArchitectureServiceState();flow.afterExit=viewport();`,
+		`process.stdout.write(JSON.stringify({original:original,cleared:cleared,left:left,flow:flow}));`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("dashboard state sequence failed: %v\n%s", err, output)
+	}
+	type viewport struct {
+		Zoom float64 `json:"zoom"`
+		PanX float64 `json:"panX"`
+		PanY float64 `json:"panY"`
+	}
+	type sequence struct {
+		FitCount              int       `json:"fitCount"`
+		AfterFit              viewport  `json:"afterFit"`
+		AfterExit             viewport  `json:"afterExit"`
+		AfterClear            viewport  `json:"afterClear"`
+		SavedService          *viewport `json:"savedService"`
+		SavedServiceAfterExit *viewport `json:"savedServiceAfterExit"`
+		Pending               *string   `json:"pending"`
+	}
+	var result struct {
+		Original viewport `json:"original"`
+		Cleared  sequence `json:"cleared"`
+		Left     sequence `json:"left"`
+		Flow     sequence `json:"flow"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("decode dashboard state sequence: %v\n%s", err, output)
+	}
+	for name, sequence := range map[string]sequence{"clear": result.Cleared, "leave": result.Left} {
+		if sequence.FitCount != 1 {
+			t.Fatalf("%s sequence fit count = %d, want one deferred fit", name, sequence.FitCount)
+		}
+		if reflect.DeepEqual(sequence.AfterFit, result.Original) {
+			t.Fatalf("%s sequence did not perform an actual viewport fit", name)
+		}
+		if sequence.SavedService != nil {
+			t.Fatalf("%s sequence captured reset Selected viewport as service viewport: %#v", name, sequence.SavedService)
+		}
+		if sequence.Pending != nil {
+			t.Fatalf("%s sequence did not consume pending auto-fit: %q", name, *sequence.Pending)
+		}
+		if !reflect.DeepEqual(sequence.AfterExit, result.Original) {
+			t.Fatalf("%s viewport after exit = %#v, want original %#v", name, sequence.AfterExit, result.Original)
+		}
+	}
+	if result.Left.SavedServiceAfterExit != nil {
+		t.Fatalf("leave sequence retained stale service viewport: %#v", result.Left.SavedServiceAfterExit)
+	}
+	if !reflect.DeepEqual(result.Left.AfterClear, result.Original) {
+		t.Fatalf("viewport after leave then clear = %#v, want original %#v", result.Left.AfterClear, result.Original)
+	}
+	if result.Flow.FitCount != 1 || reflect.DeepEqual(result.Flow.AfterFit, result.Original) {
+		t.Fatalf("flow selection did not perform one actual fit: %#v", result.Flow)
+	}
+	if result.Flow.SavedService == nil || !reflect.DeepEqual(*result.Flow.SavedService, result.Original) {
+		t.Fatalf("flow selection service viewport = %#v, want original %#v", result.Flow.SavedService, result.Original)
+	}
+	if !reflect.DeepEqual(result.Flow.AfterExit, result.Original) {
+		t.Fatalf("flow viewport after clear = %#v, want original %#v", result.Flow.AfterExit, result.Original)
+	}
+}
