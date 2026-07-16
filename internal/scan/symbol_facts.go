@@ -39,8 +39,10 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 		replacedIDs[oldID] = declaration.ID
 	}
 	byQualified := map[string][]RichSymbolRecord{}
+	declarationByID := map[string]RichSymbolRecord{}
 	for _, declaration := range facts.Declarations {
 		byQualified[declaration.QualifiedName] = append(byQualified[declaration.QualifiedName], declaration)
+		declarationByID[declaration.ID] = declaration
 	}
 	for index := range facts.References {
 		reference := &facts.References[index]
@@ -50,24 +52,30 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 		if replacement := replacedIDs[reference.ToSymbolID]; replacement != "" {
 			reference.ToSymbolID = replacement
 		}
-		candidates := byQualified[reference.TargetQualifiedName]
-		if len(candidates) == 1 && !reference.preventExact {
-			reference.ToSymbolID = candidates[0].ID
-			reference.Resolution = SymbolResolutionExact
-			reference.Confidence = string(ConfidenceExact)
-			reference.ConfidenceScore = 1
-			reference.Internal = true
-			reference.CandidateSymbolIDs = nil
-		} else if len(candidates) > 1 && !reference.preventExact {
-			reference.ToSymbolID = ""
-			reference.Resolution = SymbolResolutionAmbiguous
-			reference.Confidence = string(ConfidenceNormalized)
-			reference.ConfidenceScore = javaFactConfidenceScore(ConfidenceNormalized)
-			reference.CandidateSymbolIDs = reference.CandidateSymbolIDs[:0]
-			for _, candidate := range candidates {
-				reference.CandidateSymbolIDs = append(reference.CandidateSymbolIDs, candidate.ID)
+		preserveExactScriptProvider := (reference.Language == "javascript" || reference.Language == "typescript") &&
+			reference.Resolution == SymbolResolutionExact &&
+			reference.ToSymbolID != "" &&
+			declarationByID[reference.ToSymbolID].ID != ""
+		if !preserveExactScriptProvider {
+			candidates := byQualified[reference.TargetQualifiedName]
+			if len(candidates) == 1 && !reference.preventExact {
+				reference.ToSymbolID = candidates[0].ID
+				reference.Resolution = SymbolResolutionExact
+				reference.Confidence = string(ConfidenceExact)
+				reference.ConfidenceScore = 1
+				reference.Internal = true
+				reference.CandidateSymbolIDs = nil
+			} else if len(candidates) > 1 && !reference.preventExact {
+				reference.ToSymbolID = ""
+				reference.Resolution = SymbolResolutionAmbiguous
+				reference.Confidence = string(ConfidenceNormalized)
+				reference.ConfidenceScore = javaFactConfidenceScore(ConfidenceNormalized)
+				reference.CandidateSymbolIDs = reference.CandidateSymbolIDs[:0]
+				for _, candidate := range candidates {
+					reference.CandidateSymbolIDs = append(reference.CandidateSymbolIDs, candidate.ID)
+				}
+				sort.Strings(reference.CandidateSymbolIDs)
 			}
-			sort.Strings(reference.CandidateSymbolIDs)
 		}
 		if reference.Language == "java" {
 			provenance := javaSourceProvenance(reference.From, workspace)

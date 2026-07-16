@@ -63,3 +63,39 @@ func TestFinalizeProjectSymbolFactsUsesResolutionSpecificTargetIdentity(t *testi
 		t.Fatalf("unresolved usage ID = %q, want canonical target identity %q", unresolved.ID, wantUnresolved)
 	}
 }
+
+func TestFinalizeProjectSymbolFactsPreservesExactScriptCapabilityProvider(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/provider.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { Dual } from "./provider";
+export function App() {
+  const value: Dual = input;
+  Dual();
+}
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `
+export interface Dual {}
+export function Dual() {}
+`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	resolvedType := assertScriptReference(t, resolved.References, "type_reference", "./provider", "Dual")
+	resolvedValue := assertScriptReference(t, resolved.References, "calls_export", "./provider", "Dual")
+	if resolvedType.Resolution != SymbolResolutionExact || resolvedValue.Resolution != SymbolResolutionExact ||
+		resolvedType.ToSymbolID == "" || resolvedValue.ToSymbolID == "" || resolvedType.ToSymbolID == resolvedValue.ToSymbolID {
+		t.Fatalf("capability resolver did not select distinct exact providers: type=%#v value=%#v", resolvedType, resolvedValue)
+	}
+
+	finalized := FinalizeProjectSymbolFacts(files, WorkspaceIndex{}, resolved)
+	finalType := assertScriptReference(t, finalized.References, "type_reference", "./provider", "Dual")
+	finalValue := assertScriptReference(t, finalized.References, "calls_export", "./provider", "Dual")
+	if finalType.Resolution != SymbolResolutionExact || finalType.ToSymbolID != resolvedType.ToSymbolID ||
+		finalValue.Resolution != SymbolResolutionExact || finalValue.ToSymbolID != resolvedValue.ToSymbolID {
+		t.Fatalf("finalization changed exact capability providers: before type=%#v value=%#v; after type=%#v value=%#v",
+			resolvedType, resolvedValue, finalType, finalValue)
+	}
+}
