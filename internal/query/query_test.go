@@ -381,6 +381,35 @@ func TestRunTaskUsesCanonicalSymbolUsageCategories(t *testing.T) {
 	}
 }
 
+func TestRunTaskTextFormatsIncludeStableSymbolItemIDs(t *testing.T) {
+	workspace, symbolID, directID, apiID := writeQuerySymbolProjectionFixture(t)
+	tests := []struct {
+		task  string
+		query string
+		id    string
+	}{
+		{task: "symbol-inventory", query: "microservices/ms-user", id: symbolID},
+		{task: "symbol-resolve", query: "com.weka.UserService", id: symbolID},
+		{task: "symbol-usages", query: symbolID, id: directID},
+		{task: "symbol-api-consumers", query: symbolID, id: apiID},
+		{task: "symbol-explain", query: directID, id: directID},
+	}
+	for _, format := range []string{"markdown", "text"} {
+		for _, test := range tests {
+			result, err := RunTask(TaskOptions{
+				Root: workspace, Task: test.task, Query: test.query,
+				Format: format, Detail: "full", Limit: 20,
+			})
+			if err != nil {
+				t.Fatalf("%s %s: %v", format, test.task, err)
+			}
+			if !strings.Contains(result, "`"+test.id+"`") {
+				t.Fatalf("%s %s output missing stable ID %q:\n%s", format, test.task, test.id, result)
+			}
+		}
+	}
+}
+
 func TestExplainStableSymbolAndUsageIDsUsesCanonicalProjection(t *testing.T) {
 	workspace, symbolID, directID, _ := writeQuerySymbolProjectionFixture(t)
 

@@ -323,6 +323,52 @@ func TestServiceResolvesSymbolCandidatesWithoutGuessing(t *testing.T) {
 	}
 }
 
+func TestServiceReportsUsageCoverageGapsWithoutMatchingRecords(t *testing.T) {
+	workspace, _, symbols, _ := writeSymbolProjectionFixture(t)
+
+	matched, err := (Service{}).Run(Request{
+		Root: workspace, Task: "symbol-usages", Query: symbols.Symbols[0].ID, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matched.Count != 1 {
+		t.Fatalf("matched direct usage result = %#v", matched)
+	}
+	if len(matched.CoverageWarnings) != 1 ||
+		!strings.Contains(matched.CoverageWarnings[0], "frontend/app / typescript / direct_usages") {
+		t.Fatalf("matched direct usage coverage warnings = %#v", matched.CoverageWarnings)
+	}
+
+	direct, err := (Service{}).Run(Request{
+		Root: workspace, Task: "symbol-usages", Query: symbols.Symbols[1].ID, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if direct.Count != 0 {
+		t.Fatalf("direct usage result = %#v", direct)
+	}
+	if len(direct.CoverageWarnings) != 1 ||
+		!strings.Contains(direct.CoverageWarnings[0], "frontend/app / typescript / direct_usages") {
+		t.Fatalf("direct usage coverage warnings = %#v", direct.CoverageWarnings)
+	}
+
+	api, err := (Service{}).Run(Request{
+		Root: workspace, Task: "symbol-api-consumers", Query: symbols.Symbols[1].ID, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if api.Count != 0 {
+		t.Fatalf("API usage result = %#v", api)
+	}
+	if len(api.CoverageWarnings) != 1 ||
+		!strings.Contains(api.CoverageWarnings[0], "frontend/legacy / javascript / http_reachability") {
+		t.Fatalf("API usage coverage warnings = %#v", api.CoverageWarnings)
+	}
+}
+
 func writeSymbolProjectionFixture(t *testing.T) (string, string, scan.WorkspaceSymbolIndexRecord, scan.WorkspaceSymbolUsageIndexRecord) {
 	t.Helper()
 	workspace := filepath.Join(t.TempDir(), "weka")
@@ -373,7 +419,23 @@ func writeSymbolProjectionFixture(t *testing.T) (string, string, scan.WorkspaceS
 			Resolution: scan.SymbolResolutionExact, Reason: "qualified Java reference",
 			Analyzer: "workspace-symbols", EvidenceIDs: []string{"microservices/ms-order#evidence:1"},
 		}},
-		Coverage: symbols.Coverage,
+		Coverage: []scan.SymbolCoverageRecord{
+			{
+				Project: "microservices/ms-user", Language: "java", Capability: "declarations",
+				Coverage: scan.CoveragePartial, Reason: "reflection is not statically resolved",
+				Limitations: []string{"reflection"},
+			},
+			{
+				Project: "frontend/app", Language: "typescript", Capability: "direct_usages",
+				Coverage: scan.CoveragePartial, Reason: "dynamic imports are not statically resolved",
+				Limitations: []string{"dynamic_import"},
+			},
+			{
+				Project: "frontend/legacy", Language: "javascript", Capability: "http_reachability",
+				Coverage: scan.CoverageFailed, Reason: "flows.json could not be read",
+				Limitations: []string{"flows_unreadable"},
+			},
+		},
 	}
 	writeWorkspaceProjectionJSON(t, workspace, "symbol-index.json", symbols)
 	writeWorkspaceProjectionJSON(t, workspace, "symbol-usages.json", usages)

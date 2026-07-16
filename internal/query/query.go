@@ -45,6 +45,9 @@ func renderTaskText(result agent.Result, markdown bool) string {
 	}
 	for _, item := range result.Items {
 		prefix := "- "
+		if strings.HasPrefix(result.Task, "symbol-") {
+			prefix += "`" + item.ID + "` "
+		}
 		lines = append(lines, prefix+item.Title+" — "+item.Summary)
 		if result.Task == "symbol-explain" {
 			lines = append(lines, renderSymbolExplanation(item)...)

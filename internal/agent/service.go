@@ -345,16 +345,14 @@ func loadSymbolUsages(request Request, category scan.SymbolUsageCategory) ([]Ite
 		return nil, nil, err
 	}
 	items := []Item{}
-	projects := []string{}
 	for _, usage := range index.Usages {
 		if usage.ProviderSymbolID != symbolID || usage.Category != category {
 			continue
 		}
 		items = append(items, symbolUsageItem(usage, "symbol_usage"))
-		projects = append(projects, usage.ConsumerProject)
 	}
 	sortItems(items)
-	return items, symbolCoverageWarnings(index.Coverage, projects), nil
+	return items, symbolCoverageWarnings(index.Coverage, nil, categoryCapability(category)), nil
 }
 
 func loadSymbolExplain(request Request) ([]Item, []string, error) {
@@ -426,15 +424,27 @@ func symbolResolveMatches(query string, symbol scan.CanonicalSymbolRecord) bool 
 	return false
 }
 
-func symbolCoverageWarnings(coverage []scan.SymbolCoverageRecord, projects []string) []string {
+func categoryCapability(category scan.SymbolUsageCategory) string {
+	if category == scan.SymbolUsageReachedThroughAPI {
+		return "http_reachability"
+	}
+	return "direct_usages"
+}
+
+func symbolCoverageWarnings(coverage []scan.SymbolCoverageRecord, projects []string, capabilities ...string) []string {
 	projectSet := make(map[string]bool, len(projects))
 	for _, project := range projects {
 		projectSet[project] = true
 	}
+	capabilitySet := make(map[string]bool, len(capabilities))
+	for _, capability := range capabilities {
+		capabilitySet[capability] = true
+	}
 	warnings := []string{}
 	for _, record := range coverage {
 		if record.Coverage == scan.CoverageComplete ||
-			len(projectSet) > 0 && !projectSet[record.Project] {
+			len(projectSet) > 0 && !projectSet[record.Project] ||
+			len(capabilitySet) > 0 && !capabilitySet[record.Capability] {
 			continue
 		}
 		warning := record.Project + " / " + record.Language + " / " + record.Capability +
