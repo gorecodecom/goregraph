@@ -894,6 +894,27 @@ other specialist queries remain available for manual compatibility. They are not
 part of the normal AI workflow. Workspace-root Context Packs remain neutral and
 derive requested scope only from the actual invocation.
 
+## Agent context benchmark and release gate
+
+The 1.3.0 Context integration uses a matched-prompt three-by-three benchmark:
+three independent baseline and assisted Codex runs alternate against the same
+immutable workspace, neutral base prompt, model, reasoning setting, sandbox,
+approval mode, and other execution arguments. Every raw transcript is retained
+outside the repository.
+
+Release requires the assisted median to be at most 80% of the matched baseline
+median and at most 116,560 tokens when compared directly with the recorded
+145,700-token baseline. A manually completed, externally retained and signed
+12-point evidence rubric must also score assisted quality at least as high as
+baseline quality. Context Pack `estimated_tokens` values are approximate pack
+size estimates; final Codex `tokens used` totals from raw transcripts are the
+authoritative benchmark values.
+
+The exact one-line baseline instruction, four-line assisted instruction,
+execution protocol, rubric, and dashboard-only decision when a gate fails are
+defined in [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md). A failed gate blocks
+the 1.3.0 release.
+
 ## Security Model
 
 GoreGraph is local and explicit.

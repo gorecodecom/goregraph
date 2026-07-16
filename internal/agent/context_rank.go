@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -646,7 +647,11 @@ func maximizeContextEvidencePrefix(
 		if err != nil {
 			return ContextPack{}, err
 		}
-		if candidate.EstimatedTokens <= budget {
+		fits, err := contextPackFitsBudget(candidate, budget)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		if fits {
 			best = candidate
 			low = count + 1
 			continue
@@ -733,10 +738,25 @@ func tryContextPack(
 	if err != nil {
 		return ContextPack{}, false, err
 	}
-	if candidate.EstimatedTokens > budget {
+	fits, err := contextPackFitsBudget(candidate, budget)
+	if err != nil {
+		return ContextPack{}, false, err
+	}
+	if !fits {
 		return pack, false, nil
 	}
 	return candidate, true, nil
+}
+
+func contextPackFitsBudget(pack ContextPack, budget int) (bool, error) {
+	if pack.EstimatedTokens > budget {
+		return false, nil
+	}
+	body, err := json.Marshal(pack)
+	if err != nil {
+		return false, err
+	}
+	return len(body) <= budget*4, nil
 }
 
 func cloneContextPack(pack ContextPack) ContextPack {

@@ -63,7 +63,35 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
   HTTP consumer plus provider reachability;
 - a project Markdown dashboard under `goregraph-out/dashboard/` and the
   interactive seven-view workspace dashboard under
-  `.goregraph-workspace/dashboard/`.
+  `.goregraph-workspace/dashboard/`;
+- a matched-prompt Context benchmark with three independent baseline and three
+  independent assisted runs in alternating order, identical neutral prompt,
+  workspace snapshot, model, reasoning, sandbox, approval, and execution
+  arguments, plus retained raw transcripts;
+- an assisted median no greater than 80% of the matched baseline median and no
+  greater than 116,560 tokens against the recorded 145,700-token baseline;
+- a manually completed and signed external 12-point evidence rubric whose
+  assisted quality score is greater than or equal to the baseline score.
+
+### 1.3.0 agent-context release gate
+
+The exact matched-prompt protocol and treatment instructions are defined in
+[`BENCHMARKING.md`](BENCHMARKING.md). The baseline may append only the specified
+one-line prohibition; the assisted variant may append only the specified
+four-line bounded Context instruction. All other prompt and execution inputs
+must be identical. Retain every raw transcript, `summary.tsv`, and the signed
+manual rubric outside the repository.
+
+Final Codex `tokens used` totals are authoritative for the release gate. Context
+Pack `estimated_tokens` values are approximate pack-size estimates and do not
+replace the three-run median totals. Assisted runs may use at most two Context
+Pack calls and may not fall back to specialist GoreGraph queries.
+
+If either token threshold fails, assisted quality is below baseline, the run
+protocol is violated, or the required external evidence is missing, do not
+release 1.3.0. Keep the dashboard, remove the standard MCP integration from
+release documentation, and decide explicitly whether to ship dashboard-only or
+continue Context-ranking work in a later version.
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.
 
