@@ -9,6 +9,8 @@ type Request struct {
 	Detail       string `json:"detail,omitempty"`
 	Limit        int    `json:"limit,omitempty"`
 	Continuation string `json:"continuation,omitempty"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	MaxFiles     int    `json:"max_files,omitempty"`
 }
 
 type Item struct {
@@ -23,19 +25,6 @@ type Item struct {
 	Resolution  string         `json:"resolution,omitempty"`
 	EvidenceIDs []string       `json:"evidence_ids,omitempty"`
 	Data        map[string]any `json:"data,omitempty"`
-}
-
-type TaskContextRecord struct {
-	Target           string   `json:"target"`
-	Services         []string `json:"services,omitempty"`
-	Endpoints        []Item   `json:"endpoints,omitempty"`
-	Files            []string `json:"files,omitempty"`
-	Tests            []Item   `json:"tests,omitempty"`
-	Risks            []Item   `json:"risks,omitempty"`
-	EvidenceIDs      []string `json:"evidence_ids,omitempty"`
-	Freshness        string   `json:"freshness"`
-	CoverageWarnings []string `json:"coverage_warnings,omitempty"`
-	SuggestedNext    string   `json:"suggested_next,omitempty"`
 }
 
 type Result struct {

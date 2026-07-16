@@ -42,6 +42,23 @@ func (Service) Run(request Request) (Result, error) {
 	if request.Format != "json" && request.Format != "text" && request.Format != "markdown" {
 		return Result{}, fmt.Errorf("format must be json, text, or markdown")
 	}
+	if request.Task == "task-context" {
+		items, _, err := loadTask(request)
+		if err != nil {
+			return Result{}, err
+		}
+		pack, ok := taskContextPack(items)
+		if !ok {
+			return Result{}, fmt.Errorf("task-context compiler returned an invalid result")
+		}
+		return Result{
+			Schema:    scan.SchemaVersion,
+			Task:      request.Task,
+			Freshness: pack.Freshness,
+			Items:     items,
+			Count:     len(items),
+		}, nil
+	}
 	offset, err := decodeContinuation(request.Continuation, request.Task)
 	if err != nil {
 		return Result{}, err
@@ -62,11 +79,6 @@ func (Service) Run(request Request) (Result, error) {
 		warnings = compactWarnings(warnings, 12)
 	}
 	freshness := "generated output loaded"
-	if request.Task == "task-context" && len(page) > 0 {
-		if value, ok := page[0].Data["freshness"].(string); ok && value != "" {
-			freshness = value
-		}
-	}
 	result := Result{Schema: scan.SchemaVersion, Task: request.Task, Freshness: freshness, CoverageWarnings: warnings, Items: page, Count: len(page), SuggestedNext: suggestedNext(request.Task)}
 	if end < len(items) {
 		result.Truncated = true
@@ -231,7 +243,7 @@ func loadTask(request Request) ([]Item, []string, error) {
 		}
 		return []Item{{ID: "change-context", Kind: "change_context", Title: "Generated change context", Summary: body}}, nil, nil
 	case "task-context":
-		return loadTaskContext(request)
+		return loadCompiledTaskContext(request)
 	case "workspace-delta":
 		if strings.TrimSpace(request.Query) == "" {
 			return nil, nil, fmt.Errorf("workspace-delta query must be the before snapshot directory")
@@ -464,138 +476,48 @@ func symbolCoverageWarnings(coverage []scan.SymbolCoverageRecord, projects []str
 	return warnings
 }
 
-func loadTaskContext(request Request) ([]Item, []string, error) {
-	var routes []scan.CodeRouteRecord
-	if err := readOutput(request.Root, "routes.json", &routes); err != nil {
+func loadCompiledTaskContext(request Request) ([]Item, []string, error) {
+	pack, err := BuildContext(ContextRequest{
+		Root:         request.Root,
+		Query:        request.Query,
+		BudgetTokens: request.BudgetTokens,
+		MaxFiles:     request.MaxFiles,
+	})
+	if err != nil {
 		return nil, nil, err
 	}
-	var mappings []scan.TestMapRecord
-	if err := readOutput(request.Root, "test-map.json", &mappings); err != nil {
-		return nil, nil, err
-	}
-	var diagnostics []scan.CanonicalDiagnosticRecord
-	if err := readOutput(request.Root, "diagnostics-canonical.json", &diagnostics); err != nil {
-		return nil, nil, err
-	}
-	var capabilities []scan.CapabilityRecord
-	if err := readOutput(request.Root, "capabilities.json", &capabilities); err != nil {
-		return nil, nil, err
-	}
-	var featureFlows []scan.WorkspaceFeatureFlowRecord
-	_ = readOutput(request.Root, "workspace-feature-flows.json", &featureFlows)
-	testLinks := []scan.TestLinkRecord{}
-	verificationCommands := []scan.VerificationCommandRecord{}
-
-	context := TaskContextRecord{Target: request.Query, Freshness: "generated output loaded", SuggestedNext: "goregraph query <path> evidence --limit 20"}
-	var freshness scan.ArtifactFreshnessIndex
-	if err := readOutput(request.Root, "freshness.json", &freshness); err != nil {
-		context.Freshness = "unknown: freshness metadata is missing; rescan before relying on absence"
-		context.CoverageWarnings = append(context.CoverageWarnings, context.Freshness)
-	} else {
-		context.Freshness = fmt.Sprintf("goregraph %s / schema %d / source fingerprint %s", freshness.GoreGraphVersion, freshness.Schema, freshness.SourceFingerprint)
-	}
-	for _, route := range routes {
-		if !matchesQuery(request.Query, route.RouteID, route.HTTPMethod, route.Path, route.Handler, route.File) {
-			continue
-		}
-		context.Endpoints = append(context.Endpoints, Item{
-			ID: firstText(route.RouteID, "route:"+route.File+":"+strconv.Itoa(route.Line)), Kind: "route",
-			Title: route.HTTPMethod + " " + route.Path, Summary: route.Framework + " / " + route.Handler,
-			File: route.File, Line: route.Line, Confidence: route.Confidence, EvidenceIDs: route.EvidenceIDs,
-		})
-		context.Files = append(context.Files, route.File)
-		context.EvidenceIDs = append(context.EvidenceIDs, route.EvidenceIDs...)
-		if route.App != "" {
-			context.Services = append(context.Services, route.App)
-		} else if route.Package != "" {
-			context.Services = append(context.Services, route.Package)
-		}
-	}
-	for _, mapping := range mappings {
-		if !matchesQuery(request.Query, mapping.TestFile, mapping.TestMethod, mapping.TargetFile, mapping.TargetMethod, mapping.HTTPMethod, mapping.Path) {
-			continue
-		}
-		context.Tests = append(context.Tests, Item{
-			ID: "test:" + mapping.TestFile + ":" + strconv.Itoa(mapping.Line), Kind: "test",
-			Title: firstText(mapping.TestMethod, mapping.TestFile), Summary: firstText(mapping.TargetMethod, mapping.Path, mapping.Type),
-			File: mapping.TestFile, Line: mapping.Line, Confidence: mapping.Confidence,
-		})
-		context.Files = append(context.Files, mapping.TestFile, mapping.TargetFile)
-	}
-	for _, diagnostic := range diagnostics {
-		if !matchesQuery(request.Query, diagnostic.ID, diagnostic.Code, diagnostic.Title, diagnostic.Explanation, strings.Join(diagnostic.AffectedArtifacts, " ")) {
-			continue
-		}
-		context.Risks = append(context.Risks, Item{
-			ID: diagnostic.ID, Kind: "diagnostic", Title: diagnostic.Title, Summary: diagnostic.Explanation,
-			Confidence: string(diagnostic.Confidence), Resolution: string(diagnostic.Resolution),
-			EvidenceIDs: diagnostic.EvidenceIDs, Data: map[string]any{"code": diagnostic.Code, "severity": diagnostic.Severity, "next_checks": diagnostic.NextChecks},
-		})
-		context.EvidenceIDs = append(context.EvidenceIDs, diagnostic.EvidenceIDs...)
-	}
-	for _, capability := range capabilities {
-		if capability.Coverage == scan.CoverageUnavailable || capability.Coverage == scan.CoverageFailed {
-			context.CoverageWarnings = append(context.CoverageWarnings, capability.Language+" / "+string(capability.ID)+": "+string(capability.Coverage))
-		}
-	}
-	for _, flow := range featureFlows {
-		if !matchesQuery(request.Query, flow.ID, flow.HTTPMethod, flow.Path, flow.FrontendProject, flow.BackendProject) {
-			continue
-		}
-		testLinks = append(testLinks, flow.TestLinks...)
-		verificationCommands = append(verificationCommands, flow.VerificationCommands...)
-	}
-	context.Services = sortedUnique(context.Services)
-	context.Files = sortedUnique(context.Files)
-	context.EvidenceIDs = sortedUnique(context.EvidenceIDs)
-	context.CoverageWarnings = compactWarnings(sortedUnique(context.CoverageWarnings), 12)
-	sortItems(context.Endpoints)
-	sortItems(context.Tests)
-	sortItems(context.Risks)
-	context.Endpoints = boundedItems(context.Endpoints, request.Limit)
-	context.Tests = boundedItems(context.Tests, request.Limit)
-	context.Risks = boundedItems(context.Risks, request.Limit)
-
 	item := Item{
-		ID: "task-context:" + firstText(request.Query, "workspace"), Kind: "task_context",
-		Title:       firstText(request.Query, "Workspace task context"),
-		Summary:     fmt.Sprintf("%d endpoints, %d tests, %d risks", len(context.Endpoints), len(context.Tests), len(context.Risks)),
-		EvidenceIDs: context.EvidenceIDs,
-		Data: map[string]any{
-			"target": context.Target, "services": context.Services, "endpoints": context.Endpoints,
-			"files": context.Files, "tests": context.Tests, "risks": context.Risks,
-			"test_links": testLinks, "verification_commands": verificationCommands,
-			"freshness": context.Freshness, "coverage_warnings": context.CoverageWarnings,
-			"suggested_next": context.SuggestedNext,
-		},
+		ID:      "task-context:" + firstText(pack.Query, "workspace"),
+		Kind:    "task_context",
+		Title:   firstText(pack.Query, "Workspace task context"),
+		Summary: compactContextPackSummary(pack),
+		Data:    map[string]any{"context": pack},
 	}
-	return []Item{item}, context.CoverageWarnings, nil
+	return []Item{item}, nil, nil
 }
 
-func boundedItems(items []Item, limit int) []Item {
-	if len(items) <= limit {
-		return items
+func compactContextPackSummary(pack ContextPack) string {
+	if pack.FallbackRequired {
+		return "fallback required: " + pack.FallbackReason
 	}
-	return append([]Item(nil), items[:limit]...)
+	return fmt.Sprintf(
+		"%d entrypoints, %d relationships, %d files",
+		len(pack.Entrypoints),
+		len(pack.CallChain),
+		len(pack.Files),
+	)
+}
+
+func taskContextPack(items []Item) (ContextPack, bool) {
+	if len(items) != 1 {
+		return ContextPack{}, false
+	}
+	pack, ok := items[0].Data["context"].(ContextPack)
+	return pack, ok
 }
 
 func sortItems(items []Item) {
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-}
-
-func sortedUnique(values []string) []string {
-	set := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			set[value] = struct{}{}
-		}
-	}
-	result := make([]string, 0, len(set))
-	for value := range set {
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
 }
 
 func capabilityEvidence(record scan.CapabilityRecord, detail string) []string {

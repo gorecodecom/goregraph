@@ -48,7 +48,7 @@ func TestRunTaskReturnsBoundedJSONEnvelope(t *testing.T) {
 	}
 }
 
-func TestRunTaskMarkdownShowsArtifactFreshness(t *testing.T) {
+func TestRunTaskMarkdownShowsContextIndexFreshness(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc StartServer() {}\n")
 	if _, err := scan.Run(root, config.Defaults()); err != nil {
@@ -58,8 +58,8 @@ func TestRunTaskMarkdownShowsArtifactFreshness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "Freshness: goregraph") || !strings.Contains(result, "source fingerprint") {
-		t.Fatalf("task markdown missing freshness provenance:\n%s", result)
+	if !strings.Contains(result, "Freshness: ") || strings.Contains(result, "source fingerprint") {
+		t.Fatalf("task markdown did not use context-index freshness:\n%s", result)
 	}
 }
 

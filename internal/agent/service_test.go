@@ -165,67 +165,100 @@ func TestCoverageBoundsEvidenceByDetail(t *testing.T) {
 
 func TestServiceBuildsBoundedTaskContext(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := scan.Run(root, config.Defaults()); err != nil {
-		t.Fatal(err)
-	}
-	writeTaskContextJSON(t, root, "routes.json", []scan.CodeRouteRecord{{
-		RouteID: "route:users", App: "accounts", HTTPMethod: "GET", Path: "/users",
-		Handler: "ListUsers", File: "internal/users.go", Line: 12,
-		Confidence: "EXACT", EvidenceIDs: []string{"evidence:route"},
-	}})
-	writeTaskContextJSON(t, root, "test-map.json", []scan.TestMapRecord{{
-		TestFile: "internal/users_test.go", TestMethod: "TestListUsers",
-		TargetFile: "internal/users.go", HTTPMethod: "GET", Path: "/users",
-		Type: "endpoint", Line: 8, Confidence: "EXACT",
-	}})
-	writeTaskContextJSON(t, root, "diagnostics-canonical.json", []scan.CanonicalDiagnosticRecord{{
-		ID: "diagnostic:users", Code: "method_mismatch", Title: "Method mismatch",
-		Explanation:       "GET route conflicts with a backend POST route.",
-		AffectedArtifacts: []string{"GET /users", "internal/users.go"},
-		EvidenceIDs:       []string{"evidence:route", "evidence:diagnostic"},
-	}})
+	writeContextIndexAt(t, filepath.Join(root, "goregraph-out", "agent", "context-index.json"), scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-16T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Kind: "route", Name: "GET /users", HTTPMethod: "GET", Path: "/users", File: "internal/users.go", Line: 12, Confidence: "EXACT"},
+			{ID: "test", Kind: "test", Name: "TestListUsers", File: "internal/users_test.go", Line: 8, Confidence: "EXACT"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "test-target", FromFactID: "test", ToFactID: "route",
+			FromLabel: "TestListUsers", ToLabel: "GET /users", Kind: "test_target",
+		}},
+	})
 
-	result, err := (Service{}).Run(Request{Root: root, Task: "task-context", Query: "GET /users", Limit: 1})
+	result, err := (Service{}).Run(Request{Root: root, Task: "task-context", Query: "GET /users"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Count != 1 || result.Items[0].Kind != "task_context" {
+	if result.Count != 1 || result.Items[0].Kind != "task_context" ||
+		result.Truncated || result.Continuation != "" {
 		t.Fatalf("unexpected task context: %#v", result)
 	}
-	context := result.Items[0].Data
-	if context["target"] != "GET /users" || len(context["endpoints"].([]Item)) != 1 ||
-		len(context["tests"].([]Item)) != 1 || len(context["risks"].([]Item)) != 1 {
-		t.Fatalf("incomplete task context: %#v", context)
+	pack, ok := result.Items[0].Data["context"].(ContextPack)
+	if !ok || len(pack.Entrypoints) != 1 || len(pack.Tests) != 1 ||
+		len(pack.CallChain) != 1 {
+		t.Fatalf("incomplete task context: %#v", result.Items[0].Data)
 	}
-	if freshness, ok := context["freshness"].(string); !ok || !strings.Contains(freshness, "source fingerprint") {
-		t.Fatalf("task context freshness = %#v", context["freshness"])
+	if pack.BudgetTokens != DefaultContextBudgetTokens ||
+		len(pack.Files) > DefaultContextMaxFiles ||
+		pack.EstimatedTokens > pack.BudgetTokens {
+		t.Fatalf("task context bounds = %#v", pack)
 	}
-	if got := result.Items[0].EvidenceIDs; len(got) != 2 ||
-		got[0] != "evidence:diagnostic" || got[1] != "evidence:route" {
-		t.Fatalf("evidence IDs = %#v", got)
+	if result.Freshness != pack.Freshness || len(result.CoverageWarnings) != 0 ||
+		result.SuggestedNext != "" {
+		t.Fatalf("task context envelope = %#v", result)
+	}
+	for _, legacy := range []string{
+		"target", "services", "endpoints", "risks", "test_links",
+		"verification_commands", "coverage_warnings", "suggested_next",
+	} {
+		if _, exists := result.Items[0].Data[legacy]; exists {
+			t.Fatalf("legacy task-context key %q remains: %#v", legacy, result.Items[0].Data)
+		}
 	}
 }
 
-func TestTaskContextExposesCanonicalTestLinksAndVerification(t *testing.T) {
+func TestTaskContextUsesExplicitCompilerBoundsAndIgnoresPagination(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "goregraph-out"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeTaskContextJSON(t, root, "routes.json", []scan.CodeRouteRecord{})
-	writeTaskContextJSON(t, root, "test-map.json", []scan.TestMapRecord{})
-	writeTaskContextJSON(t, root, "diagnostics-canonical.json", []scan.CanonicalDiagnosticRecord{})
-	writeTaskContextJSON(t, root, "capabilities.json", []scan.CapabilityRecord{})
-	writeTaskContextJSON(t, root, "workspace-feature-flows.json", []scan.WorkspaceFeatureFlowRecord{{ID: "flow", HTTPMethod: "GET", Path: "/users", TestLinks: []scan.TestLinkRecord{{ID: "link", Relation: "direct", TestFile: "UserTest.java", Confidence: "EXACT", Reason: "calls endpoint"}}, VerificationCommands: []scan.VerificationCommandRecord{{Tool: "maven", Display: "mvn test", Confidence: "EXACT", Reason: "detected Maven"}}}})
-	result, err := (Service{}).Run(Request{Root: root, Task: "task-context", Query: "GET /users", Limit: 5})
+	writeContextIndexAt(t, filepath.Join(root, "goregraph-out", "agent", "context-index.json"), contextIndexWithFact("route", "GET users details"))
+
+	result, err := (Service{}).Run(Request{
+		Root: root, Task: "task-context", Query: "GET users details",
+		Limit: 1, Continuation: encodeContinuation("task-context", 1),
+		BudgetTokens: 700, MaxFiles: 3,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := result.Items[0].Data
-	if len(data["test_links"].([]scan.TestLinkRecord)) != 1 || len(data["verification_commands"].([]scan.VerificationCommandRecord)) != 1 {
-		t.Fatalf("task context data=%#v", data)
+	pack := result.Items[0].Data["context"].(ContextPack)
+	if pack.BudgetTokens != 700 || len(pack.Files) > 3 ||
+		result.Truncated || result.Continuation != "" {
+		t.Fatalf("explicit context bounds or pagination = %#v / %#v", pack, result)
+	}
+}
+
+func TestTaskContextDoesNotUseGenericLimitAsDefaultMaxFiles(t *testing.T) {
+	root := t.TempDir()
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "route", Kind: "route", Name: "GET /users",
+			HTTPMethod: "GET", Path: "/users", File: "route.go", Confidence: "EXACT",
+		}},
+	}
+	for number := 0; number < 14; number++ {
+		id := fmt.Sprintf("neighbor-%02d", number)
+		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+			ID: id, Kind: "symbol", Name: id, File: id + ".go",
+		})
+		index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+			ID: "edge-" + id, FromFactID: "route", ToFactID: id,
+			FromLabel: "route", ToLabel: id, Kind: "call",
+		})
+	}
+	writeContextIndexAt(t, filepath.Join(root, "goregraph-out", "agent", "context-index.json"), index)
+
+	result, err := (Service{}).Run(Request{
+		Root: root, Task: "task-context", Query: "GET /users", Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack := result.Items[0].Data["context"].(ContextPack)
+	if len(pack.Files) != DefaultContextMaxFiles {
+		t.Fatalf("default context files = %d, want %d: %#v", len(pack.Files), DefaultContextMaxFiles, pack.Files)
 	}
 }
 
