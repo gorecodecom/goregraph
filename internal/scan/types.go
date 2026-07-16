@@ -602,11 +602,13 @@ type PackageGraphRecord struct {
 }
 
 type PackageNodeRecord struct {
-	Name           string   `json:"name"`
-	Path           string   `json:"path"`
-	Kind           string   `json:"kind"`
-	PackageManager string   `json:"package_manager,omitempty"`
-	Scripts        []string `json:"scripts,omitempty"`
+	Name           string              `json:"name"`
+	Path           string              `json:"path"`
+	Kind           string              `json:"kind"`
+	PackageManager string              `json:"package_manager,omitempty"`
+	Scripts        []string            `json:"scripts,omitempty"`
+	Exports        map[string][]string `json:"exports,omitempty"`
+	Types          string              `json:"types,omitempty"`
 }
 
 type PackageEdgeRecord struct {

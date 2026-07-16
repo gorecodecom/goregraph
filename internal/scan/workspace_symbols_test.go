@@ -490,6 +490,153 @@ func TestWorkspaceSymbolsResolveJavaScriptWorkspacePackageDependency(t *testing.
 	}
 }
 
+func TestWorkspaceSymbolsRespectNodePackageEntrypoints(t *testing.T) {
+	providerRecord := WorkspaceProjectRecord{
+		Path: "frontend/packages/users", Kind: "frontend", BuildSystem: "node", Indexed: true,
+	}
+	provider := workspaceIndexProject{
+		record: providerRecord,
+		symbols: []RichSymbolRecord{
+			{
+				ID: "root", Name: "RootService", ExportName: "RootService",
+				Kind: "class", Language: "typescript", File: "src/index.ts",
+				QualifiedName: "src/index#RootService", Module: "src/index",
+				WorkspacePackage: "@weka/users", Analyzer: "typescript-source",
+				Confidence: ConfidenceExact, Coverage: CoverageComplete,
+			},
+			{
+				ID: "user", Name: "UserService", ExportName: "UserService",
+				Kind: "class", Language: "typescript", File: "src/user.ts",
+				QualifiedName: "src/user#UserService", Module: "src/user",
+				WorkspacePackage: "@weka/users", Analyzer: "typescript-source",
+				Confidence: ConfidenceExact, Coverage: CoverageComplete,
+			},
+			{
+				ID: "internal", Name: "InternalService", ExportName: "InternalService",
+				Kind: "class", Language: "typescript", File: "src/internal.ts",
+				QualifiedName: "src/internal#InternalService", Module: "src/internal",
+				WorkspacePackage: "@weka/users", Analyzer: "typescript-source",
+				Confidence: ConfidenceExact, Coverage: CoverageComplete,
+			},
+		},
+	}
+	if err := json.Unmarshal([]byte(`{
+		"nodes": [{
+			"name": "@weka/users",
+			"path": "package.json",
+			"kind": "package",
+			"types": "./src/index.ts",
+			"exports": {
+				".": ["./src/index.ts"],
+				"./user": ["./src/user.ts"]
+			}
+		}],
+		"edges": []
+	}`), &provider.packages); err != nil {
+		t.Fatal(err)
+	}
+
+	consumerRecord := WorkspaceProjectRecord{
+		Path: "frontend/apps/admin", Kind: "frontend", BuildSystem: "node", Indexed: true,
+	}
+	consumerSymbol := RichSymbolRecord{
+		ID: "app", Name: "App", ExportName: "App", Kind: "function", Language: "typescript",
+		File: "src/App.ts", QualifiedName: "src/App#App", Module: "src/App",
+		WorkspacePackage: "@weka/admin", Analyzer: "typescript-source",
+		Confidence: ConfidenceExact, Coverage: CoverageComplete,
+	}
+	consumer := workspaceIndexProject{
+		record:  consumerRecord,
+		symbols: []RichSymbolRecord{consumerSymbol},
+		relations: []RichRelationRecord{
+			{
+				ID: "root-exact", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "typescript-source", Line: 3,
+				TargetModule: "@weka/users", TargetExport: "RootService",
+				Resolution: SymbolResolutionUnresolved,
+			},
+			{
+				ID: "subpath-exact", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "typescript-source", Line: 4,
+				TargetModule: "@weka/users/user", TargetExport: "UserService",
+				Resolution: SymbolResolutionUnresolved,
+			},
+			{
+				ID: "subpath-not-root", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "typescript-source", Line: 5,
+				TargetModule: "@weka/users", TargetExport: "UserService",
+				Resolution: SymbolResolutionUnresolved,
+			},
+			{
+				ID: "internal-not-root", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "typescript-source", Line: 6,
+				TargetModule: "@weka/users", TargetExport: "InternalService",
+				Resolution: SymbolResolutionUnresolved,
+			},
+		},
+		packages: PackageGraphRecord{Edges: []PackageEdgeRecord{{
+			From: "@weka/admin", To: "@weka/users", Type: "depends_on",
+		}}},
+	}
+	registry := workspaceSymbolRegistry(provider.record, consumer.record)
+
+	symbols, usages, err := BuildWorkspaceSymbolProjection(
+		registry,
+		[]workspaceIndexProject{consumer, provider},
+		registry.Generated,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	symbolIDByName := map[string]string{}
+	for _, symbol := range symbols.Symbols {
+		symbolIDByName[symbol.Name] = symbol.ID
+	}
+	usageByLine := map[int]CanonicalSymbolUsageRecord{}
+	for _, usage := range usages.Usages {
+		usageByLine[usage.SourceLine] = usage
+	}
+	for line, wantProvider := range map[int]string{
+		3: symbolIDByName["RootService"],
+		4: symbolIDByName["UserService"],
+	} {
+		if usageByLine[line].Resolution != SymbolResolutionExact ||
+			usageByLine[line].ProviderSymbolID != wantProvider {
+			t.Fatalf("line %d usage = %#v, want exact provider %q", line, usageByLine[line], wantProvider)
+		}
+	}
+	for _, line := range []int{5, 6} {
+		if usageByLine[line].Resolution != SymbolResolutionUnresolved ||
+			usageByLine[line].ProviderSymbolID != "" {
+			t.Fatalf("line %d usage = %#v, want unresolved unexposed module", line, usageByLine[line])
+		}
+	}
+}
+
+func TestPackageGraphPreservesNodeEntrypoints(t *testing.T) {
+	graph := buildPackageGraph(WorkspaceIndex{NodePackages: []NodePackageRecord{{
+		Path:  "packages/users/package.json",
+		Name:  "@weka/users",
+		Types: "./src/index.ts",
+		Exports: map[string][]string{
+			".":      {"./src/index.ts"},
+			"./user": {"./src/user.d.ts", "./src/user.ts"},
+		},
+	}}})
+	body, err := json.Marshal(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"types":"./src/index.ts"`,
+		`"exports":{".":["./src/index.ts"],"./user":["./src/user.d.ts","./src/user.ts"]}`,
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("package graph = %s, missing %s", body, want)
+		}
+	}
+}
+
 func TestWorkspaceSymbolsUseOnlyEvidencedScriptExportsAndPreserveAliases(t *testing.T) {
 	files := []FileRecord{
 		{Path: "src/index.ts", Language: "typescript"},
@@ -519,6 +666,7 @@ export class CoreService {}
 		relations: jsonRoundTrip[[]RichRelationRecord](t, facts.References),
 		packages: PackageGraphRecord{Nodes: []PackageNodeRecord{{
 			Name: "@weka/users", Path: "package.json", Kind: "package",
+			Exports: map[string][]string{".": {"./src/index.ts"}},
 		}}},
 	}
 	consumerRecord := WorkspaceProjectRecord{
@@ -1058,6 +1206,118 @@ func TestWorkspaceSymbolCoverageScopesDependencyAndCallGraphReadIssues(t *testin
 	}
 }
 
+func TestWorkspaceDeclarationCoverageAggregatesCapabilityAndSymbolCoverage(t *testing.T) {
+	tests := []struct {
+		name               string
+		capabilityCoverage Coverage
+		symbolCoverage     Coverage
+		want               Coverage
+	}{
+		{
+			name:               "partial symbol",
+			capabilityCoverage: CoverageComplete,
+			symbolCoverage:     CoveragePartial,
+			want:               CoveragePartial,
+		},
+		{
+			name:               "partial capability",
+			capabilityCoverage: CoveragePartial,
+			symbolCoverage:     CoverageComplete,
+			want:               CoveragePartial,
+		},
+		{
+			name:               "failed capability",
+			capabilityCoverage: CoverageFailed,
+			symbolCoverage:     CoverageComplete,
+			want:               CoverageFailed,
+		},
+		{
+			name:               "failed symbol",
+			capabilityCoverage: CoverageComplete,
+			symbolCoverage:     CoverageFailed,
+			want:               CoverageFailed,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			project := workspaceJavaProject(
+				"microservices/ms-users",
+				"com.weka:users",
+				RichSymbolRecord{
+					ID: "users", Name: "UserService", Kind: "class", Language: "java",
+					File: "src/UserService.java", QualifiedName: "com.weka.UserService",
+					Artifact: "com.weka:users", Analyzer: "java-source",
+					Confidence: ConfidenceExact, Coverage: test.symbolCoverage,
+				},
+			)
+			project.capabilities = []CapabilityRecord{{
+				ID: CapabilitySymbols, Language: "java", Coverage: test.capabilityCoverage,
+				Reason: "fixture symbol capability", StatusReason: "fixture symbol capability",
+			}}
+			registry := workspaceSymbolRegistry(project.record)
+			symbols, _, err := BuildWorkspaceSymbolProjection(
+				registry,
+				[]workspaceIndexProject{project},
+				registry.Generated,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			declarations := findSymbolCoverage(symbols.Coverage, project.record.Path, "java", "declarations")
+			if declarations.Coverage != test.want {
+				t.Fatalf("declaration coverage = %#v, want %s", declarations, test.want)
+			}
+		})
+	}
+}
+
+func TestWorkspaceDeclarationCoverageOverlaysCapabilitiesInputStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		malformed bool
+		want      Coverage
+	}{
+		{name: "missing", want: CoveragePartial},
+		{name: "malformed", malformed: true, want: CoverageFailed},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			project := workspaceProjectOnDisk(root, "microservices/ms-users")
+			symbol := RichSymbolRecord{
+				ID: "users", Name: "UserService", Kind: "class", Language: "java",
+				File: "src/UserService.java", QualifiedName: "com.weka.UserService",
+				Artifact: "com.weka:users", Analyzer: "java-source",
+				Confidence: ConfidenceExact, Coverage: CoverageComplete,
+			}
+			writeWorkspaceProjectFacts(t, project, []RichSymbolRecord{symbol}, nil)
+			capabilitiesPath := filepath.Join(project.AbsPath, project.OutputDir, "capabilities.json")
+			if test.malformed {
+				if err := os.WriteFile(capabilitiesPath, []byte("{"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Remove(capabilitiesPath); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+
+			loaded, err := loadWorkspaceIndexes([]WorkspaceProjectRecord{project})
+			if err != nil {
+				t.Fatal(err)
+			}
+			registry := workspaceSymbolRegistry(project)
+			symbols, _, err := BuildWorkspaceSymbolProjection(registry, loaded, registry.Generated)
+			if err != nil {
+				t.Fatal(err)
+			}
+			declarations := findSymbolCoverage(symbols.Coverage, project.Path, "java", "declarations")
+			if declarations.Coverage != test.want ||
+				!strings.Contains(declarations.Reason, "capabilities.json") {
+				t.Fatalf("declaration coverage = %#v, want %s capabilities overlay", declarations, test.want)
+			}
+		})
+	}
+}
+
 func TestWorkspaceSymbolProjectionPairRejectsInvalidUsage(t *testing.T) {
 	out := t.TempDir()
 	symbols := WorkspaceSymbolIndexRecord{
@@ -1235,7 +1495,7 @@ func workspaceScriptProject(path, packageName string, symbol RichSymbolRecord) w
 		record:  WorkspaceProjectRecord{Path: path, Kind: "frontend", BuildSystem: "node", Indexed: true},
 		symbols: []RichSymbolRecord{symbol},
 		packages: PackageGraphRecord{Nodes: []PackageNodeRecord{{
-			Name: packageName, Kind: "package",
+			Name: packageName, Path: "package.json", Kind: "package", Types: "src/index.ts",
 		}}},
 	}
 }
@@ -1264,6 +1524,19 @@ func writeWorkspaceProjectFacts(t *testing.T, project WorkspaceProjectRecord, sy
 	t.Helper()
 	out := filepath.Join(project.AbsPath, project.OutputDir)
 	writeFile(t, project.AbsPath, filepath.Join(project.OutputDir, "manifest.json"), `{"tool":"goregraph","schema":2}`)
+	languages := map[string]bool{}
+	for _, symbol := range symbols {
+		if symbol.Language != "" {
+			languages[symbol.Language] = true
+		}
+	}
+	capabilities := make([]CapabilityRecord, 0, len(languages))
+	for language := range languages {
+		capabilities = append(capabilities, CapabilityRecord{
+			ID: CapabilitySymbols, Language: language, Coverage: CoverageComplete,
+			Reason: "fixture symbols capability", StatusReason: "fixture symbols capability",
+		})
+	}
 	values := map[string]any{
 		"symbols-full.json":   symbols,
 		"relations-full.json": relations,
@@ -1271,6 +1544,7 @@ func writeWorkspaceProjectFacts(t *testing.T, project WorkspaceProjectRecord, sy
 		"maven-graph.json":    MavenGraphRecord{},
 		"package-graph.json":  PackageGraphRecord{},
 		"evidence.json":       []EvidenceRecord{},
+		"capabilities.json":   capabilities,
 	}
 	for name, value := range values {
 		if err := writeJSON(filepath.Join(out, name), value); err != nil {

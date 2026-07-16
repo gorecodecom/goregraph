@@ -3,6 +3,7 @@ package scan
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -70,8 +71,14 @@ func BuildWorkspaceSymbolProjection(registry WorkspaceRegistryRecord, projects [
 					lookup.scriptByProjectModule[key] = append(lookup.scriptByProjectModule[key], canonical)
 				}
 				if declaration.WorkspacePackage != "" && declaration.ExportName != "" {
-					key := scriptWorkspacePackageKey(declaration.WorkspacePackage, declaration.ExportName)
-					lookup.scriptByWorkspacePackage[key] = append(lookup.scriptByWorkspacePackage[key], canonical)
+					indexWorkspaceScriptPackageExport(
+						project,
+						declaration.WorkspacePackage,
+						declaration.File,
+						declaration.ExportName,
+						canonical,
+						lookup,
+					)
 				}
 			}
 		}
@@ -411,8 +418,7 @@ func buildWorkspaceSymbolCoverageRecord(project workspaceIndexProject, language,
 	}
 	switch capability {
 	case "declarations":
-		record.Coverage = CoverageComplete
-		record.Reason = "indexed declarations are projected with canonical workspace identities"
+		record.Coverage, record.Reason, record.Limitations = workspaceDeclarationCoverage(project, language)
 	case "direct_usages":
 		record.Coverage = CoveragePartial
 		record.Reason = "static direct-usage resolution cannot observe every runtime or generated binding"
@@ -432,6 +438,53 @@ func buildWorkspaceSymbolCoverageRecord(project workspaceIndexProject, language,
 	return record
 }
 
+func workspaceDeclarationCoverage(project workspaceIndexProject, language string) (Coverage, string, []string) {
+	coverage := CoverageComplete
+	var sources []string
+	var limitations []string
+	for _, capability := range project.capabilities {
+		if capability.ID != CapabilitySymbols || capability.Language != language {
+			continue
+		}
+		coverage = lowerWorkspaceCoverage(coverage, capability.Coverage)
+		if capability.Coverage != CoverageComplete {
+			reason := capability.Reason
+			if reason == "" {
+				reason = capability.StatusReason
+			}
+			source := fmt.Sprintf("symbols capability is %s", capability.Coverage)
+			if reason != "" {
+				source += ": " + reason
+			}
+			sources = append(sources, source)
+		}
+	}
+	for _, symbol := range project.symbols {
+		if symbol.Language != language || symbol.Coverage == "" {
+			continue
+		}
+		coverage = lowerWorkspaceCoverage(coverage, symbol.Coverage)
+		if symbol.Coverage != CoverageComplete {
+			sources = append(
+				sources,
+				fmt.Sprintf("symbol %q coverage is %s", symbol.QualifiedName, symbol.Coverage),
+			)
+			limitations = append(limitations, symbol.Limitations...)
+		}
+	}
+	if len(sources) == 0 {
+		return coverage, "indexed declarations are projected with canonical workspace identities", nil
+	}
+	return coverage, "declaration coverage reflects project symbol facts: " + strings.Join(sources, "; "), sortedUniqueStrings(limitations)
+}
+
+func lowerWorkspaceCoverage(current, candidate Coverage) Coverage {
+	if candidate == "" || coverageRank(candidate) >= coverageRank(current) {
+		return current
+	}
+	return candidate
+}
+
 func workspaceSymbolCapabilityHasIssues(project workspaceIndexProject, language, capability string) bool {
 	relevant := workspaceSymbolCapabilityFiles(language, capability)
 	return len(workspaceSymbolFactFailures(project.loadFailures, relevant)) > 0 ||
@@ -440,7 +493,7 @@ func workspaceSymbolCapabilityHasIssues(project workspaceIndexProject, language,
 
 func workspaceSymbolCapabilityFiles(language, capability string) []string {
 	if capability == "declarations" {
-		return []string{"symbols-full.json"}
+		return []string{"capabilities.json", "symbols-full.json"}
 	}
 	files := []string{"callgraph.json", "evidence.json", "relations-full.json", "symbols-full.json"}
 	switch language {
@@ -939,10 +992,108 @@ func indexWorkspaceScriptExportRelations(project workspaceIndexProject, lookup w
 			lookup.scriptByProjectModule[key] = append(lookup.scriptByProjectModule[key], target)
 		}
 		if target.WorkspacePackage != "" {
-			key := scriptWorkspacePackageKey(target.WorkspacePackage, publicExport)
-			lookup.scriptByWorkspacePackage[key] = append(lookup.scriptByWorkspacePackage[key], target)
+			indexWorkspaceScriptPackageExport(
+				project,
+				target.WorkspacePackage,
+				reference.From,
+				publicExport,
+				target,
+				lookup,
+			)
 		}
 	}
+}
+
+func indexWorkspaceScriptPackageExport(
+	project workspaceIndexProject,
+	workspacePackage string,
+	moduleFile string,
+	exportName string,
+	target CanonicalSymbolRecord,
+	lookup workspaceSymbolLookup,
+) {
+	for _, specifier := range workspaceScriptPackageSpecifiers(project.packages, workspacePackage, moduleFile) {
+		key := scriptWorkspacePackageKey(specifier, exportName)
+		lookup.scriptByWorkspacePackage[key] = append(lookup.scriptByWorkspacePackage[key], target)
+	}
+}
+
+func workspaceScriptPackageSpecifiers(graph PackageGraphRecord, workspacePackage, moduleFile string) []string {
+	module := workspaceScriptPhysicalModule(moduleFile)
+	if workspacePackage == "" || module == "" {
+		return nil
+	}
+	var specifiers []string
+	for _, node := range graph.Nodes {
+		if node.Name != workspacePackage {
+			continue
+		}
+		root := workspaceDescriptorDir(node.Path)
+		if root != "" && !workspacePathContains(root, moduleFile) {
+			continue
+		}
+		exportKeys := make([]string, 0, len(node.Exports))
+		for exportKey := range node.Exports {
+			exportKeys = append(exportKeys, exportKey)
+		}
+		sort.Strings(exportKeys)
+		for _, exportKey := range exportKeys {
+			if exportKey != "." && !strings.HasPrefix(exportKey, "./") {
+				continue
+			}
+			if workspaceScriptPackageTargetsModule(root, node.Exports[exportKey], module) {
+				specifiers = append(specifiers, workspaceScriptPackageSpecifier(node.Name, exportKey))
+			}
+		}
+		if len(node.Exports["."]) == 0 &&
+			node.Types != "" &&
+			workspaceScriptPackageTargetsModule(root, []string{node.Types}, module) {
+			specifiers = append(specifiers, node.Name)
+		}
+	}
+	return sortedUniqueStrings(specifiers)
+}
+
+func workspaceScriptPackageTargetsModule(root string, targets []string, module string) bool {
+	for _, target := range targets {
+		if target == "" || strings.Contains(target, "*") {
+			continue
+		}
+		physical := path.Join(root, strings.TrimPrefix(strings.ReplaceAll(target, `\`, "/"), "./"))
+		if workspaceScriptPhysicalModule(physical) == module {
+			return true
+		}
+	}
+	return false
+}
+
+func workspaceScriptPackageSpecifier(packageName, exportKey string) string {
+	if exportKey == "." {
+		return packageName
+	}
+	return packageName + "/" + strings.TrimPrefix(exportKey, "./")
+}
+
+func workspaceScriptPhysicalModule(file string) string {
+	file = path.Clean(strings.ReplaceAll(file, `\`, "/"))
+	for _, suffix := range []string{
+		".d.mts",
+		".d.cts",
+		".d.ts",
+		".tsx",
+		".jsx",
+		".mjs",
+		".cjs",
+		".mts",
+		".cts",
+		".ts",
+		".js",
+	} {
+		if strings.HasSuffix(file, suffix) {
+			return strings.TrimSuffix(file, suffix)
+		}
+	}
+	return file
 }
 
 func exactWorkspaceScriptLocalDeclaration(project workspaceIndexProject, reference RichRelationRecord, lookup workspaceSymbolLookup) CanonicalSymbolRecord {

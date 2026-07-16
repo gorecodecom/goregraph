@@ -26,6 +26,8 @@ func buildPackageGraph(workspace WorkspaceIndex) PackageGraphRecord {
 			Kind:           kind,
 			PackageManager: pkg.PackageManager,
 			Scripts:        pkg.Scripts,
+			Exports:        clonePackageExports(pkg.Exports),
+			Types:          pkg.Types,
 		})
 	}
 
@@ -66,6 +68,17 @@ func buildPackageGraph(workspace WorkspaceIndex) PackageGraphRecord {
 		return edges[i].To < edges[j].To
 	})
 	return PackageGraphRecord{Nodes: nodes, Edges: edges}
+}
+
+func clonePackageExports(exports map[string][]string) map[string][]string {
+	if len(exports) == 0 {
+		return nil
+	}
+	result := make(map[string][]string, len(exports))
+	for specifier, targets := range exports {
+		result[specifier] = append([]string(nil), targets...)
+	}
+	return result
 }
 
 func renderPackageGraphReport(graph PackageGraphRecord) string {
