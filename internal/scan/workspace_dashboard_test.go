@@ -386,6 +386,70 @@ func TestDashboardArchitectureAutoFitUsesCanonicalDirectNeighborhood(t *testing.
 	}
 }
 
+func TestDashboardArchitectureAutoFitRunsOnceForNewServiceSelection(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`pendingArchitectureServiceFit:null`,
+		`const changed=state.selected!==id`,
+		`if(changed)state.pendingArchitectureServiceFit=id`,
+		`state.pendingArchitectureServiceFit=null`,
+		`if(state.pendingArchitectureServiceFit===state.selected){state.pendingArchitectureServiceFit=null;fitArchitectureNeighborhoodIfNeeded(neighborhoodNodeIDs);}`,
+		`if(!state.savedArchitectureServiceViewport)state.savedArchitectureServiceViewport=`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing one-shot Architecture auto-fit lifecycle %q", want)
+		}
+	}
+	functionBody := func(start, end string) string {
+		t.Helper()
+		from := strings.Index(html, start)
+		if from < 0 {
+			t.Fatalf("dashboard missing function start %q", start)
+		}
+		to := strings.Index(html[from:], end)
+		if to < 0 {
+			t.Fatalf("dashboard missing function end %q", end)
+		}
+		return html[from : from+to]
+	}
+	selection := functionBody("function setArchitectureServiceSelection(id)", "function restoreArchitectureDomainFocus(domain,elementName)")
+	if strings.Contains(selection, `state.pendingArchitectureServiceFit=id;state.selected=id`) {
+		t.Fatal("Architecture auto-fit must not be armed before confirming the service selection changed")
+	}
+	cleanup := functionBody("function clearArchitectureServiceState()", "function resetArchitectureFocus()")
+	if !strings.Contains(cleanup, `state.pendingArchitectureServiceFit=null`) {
+		t.Fatal("Architecture service cleanup must clear pending auto-fit state")
+	}
+	render := functionBody("function renderArchitectureMap()", "function architectureEdgeID(edge)")
+	if strings.Contains(render, `if(state.selected){showServiceDetails(state.selected,false);fitArchitectureNeighborhoodIfNeeded(neighborhoodNodeIDs);}`) {
+		t.Fatal("Architecture render must not auto-fit every time a service remains selected")
+	}
+	for _, rerender := range []string{
+		`function setArchitectureDirection(direction){`,
+		`document.getElementById("architecture-risk-toggle").addEventListener`,
+		`document.getElementById("toggle-labels").addEventListener`,
+		`window.addEventListener("resize",renderCanvas)`,
+	} {
+		start := strings.Index(html, rerender)
+		if start < 0 {
+			t.Fatalf("dashboard missing rerender path %q", rerender)
+		}
+		lineEnd := strings.Index(html[start:], "\n")
+		if lineEnd < 0 {
+			lineEnd = len(html) - start
+		}
+		if strings.Contains(html[start:start+lineEnd], "pendingArchitectureServiceFit") {
+			t.Fatalf("rerender path %q must not arm Architecture auto-fit", rerender)
+		}
+	}
+}
+
 func TestDashboardArchitectureShowsDirectionalArrowsAndExplicitCardPorts(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
