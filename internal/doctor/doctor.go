@@ -24,32 +24,47 @@ func Run(root string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	out := filepath.Join(root, cfg.OutputDir)
 	result := Result{Lines: []string{"GoreGraph Doctor", ""}}
+	if workspaceDirectoryExists(root) {
+		checkWorkspaceSymbolProjection(root, &result)
+		return result, nil
+	}
 
+	checkProject(root, cfg, &result)
+	workspaceRoot, ok, err := scan.WorkspaceRoot(root, cfg)
+	if err != nil {
+		return Result{}, err
+	}
+	if ok && explicitWorkspaceState(workspaceRoot, cfg) {
+		checkWorkspaceSymbolProjection(workspaceRoot, &result)
+	}
+	return result, nil
+}
+
+func checkProject(root string, cfg config.Config, result *Result) {
+	out := filepath.Join(root, cfg.OutputDir)
 	if info, err := os.Stat(out); err != nil || !info.IsDir() {
 		result.fail("output", fmt.Sprintf("%s is missing", cfg.OutputDir))
 		result.fix("goregraph scan " + root)
-		return result, nil
+		return
 	}
 	result.ok("output", cfg.OutputDir+" exists")
 
-	manifest, ok := checkManifest(out, &result)
+	manifest, ok := checkManifest(out, result)
 	if !ok {
 		result.fix("goregraph scan " + root)
-		return result, nil
+		return
 	}
 
-	checkGeneratedFiles(out, manifest, &result)
-	checkJSONFiles(out, &result)
-	checkFreshnessIntegrity(out, &result)
-	checkEvidenceIntegrity(out, &result)
-	checkCanonicalFeatureFlows(out, &result)
-	checkStaleFiles(root, manifest, &result)
+	checkGeneratedFiles(out, manifest, result)
+	checkJSONFiles(out, result)
+	checkFreshnessIntegrity(out, result)
+	checkEvidenceIntegrity(out, result)
+	checkCanonicalFeatureFlows(out, result)
+	checkStaleFiles(root, manifest, result)
 	if result.Failures > 0 || result.Warnings > 0 {
 		result.fix("goregraph scan " + root)
 	}
-	return result, nil
 }
 
 func checkCanonicalFeatureFlows(out string, result *Result) {
