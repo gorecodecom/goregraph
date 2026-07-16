@@ -8,7 +8,9 @@ Current unreleased source target:
 v1.3.0
 ```
 
-`1.3.0` is the current unreleased source target for preview-first safe Git updates. It preserves Schema 2 and adds:
+The unreleased 1.3.0 source target includes preview-first safe Git updates and
+the exact cross-project Code Explorer from Issue #25. It preserves Schema 2 and
+adds:
 
 - preview-first project Git updates through `goregraph git update [path]`;
 - preview-first updates for each unique workspace repository through `goregraph workspace git update [path]`;
@@ -19,6 +21,19 @@ v1.3.0
 - deterministic background relationship trunks and direct card-port fan-out;
 - a persistent relationship summary with domain, direction, risk, and reset controls;
 - keyboard-accessible static-call badges whose details remain separate from runtime traffic claims;
+- canonical Java / Spring and JavaScript / TypeScript / Node.js / React
+  declarations in `.goregraph-workspace/symbol-index.json`;
+- exact direct, ambiguous, unresolved, and HTTP-reachable symbol usages in
+  `.goregraph-workspace/symbol-usages.json`;
+- selected-service **Explore classes & symbols** navigation with separate
+  **Direct references** and **Reached through API** evidence;
+- Query operations `symbol-inventory`, `symbol-resolve`, `symbol-usages`,
+  `symbol-api-consumers`, and `symbol-explain`, with matching MCP tools;
+- canonical symbol and usage IDs, project-namespaced evidence, ordered API path
+  steps, pagination, coverage warnings, and Doctor validation/remediation;
+- full exact-symbol and direct-usage depth for Java and JavaScript/TypeScript,
+  Java/Spring HTTP provider reachability, and JavaScript/TypeScript/Node.js/React
+  HTTP consumer plus provider reachability;
 - unchanged Schema 2 compatibility.
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.

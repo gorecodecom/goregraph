@@ -12,7 +12,69 @@ GoreGraph outputs are additive. Existing field meanings must remain stable; new 
 - `.goregraph-workspace/workspace-graph.json`: normalized workspace graph with stable node and edge IDs for projects, contracts, routes, flows, features, files, symbols, and candidate routes.
 - `.goregraph-workspace/workspace-service-map.json`: directed service/project relationship map with incoming/outgoing API counts, backend service-client dependencies, confidence buckets, endpoint examples, evidence files, generic service roles, architecture domains, and a canonical `contract_summary`. The summary total always equals `resolved + missing_route + method_mismatch + dynamic_unresolved + out_of_scope + other`; Workspace Markdown, dashboard, Query, and MCP use the same counts.
 - `.goregraph-workspace/workspace-endpoint-traces.json`: readable endpoint traces from frontend consumer/API contract to backend route, handler, backend steps, tests, and risks.
+- `.goregraph-workspace/symbol-index.json`: canonical Java / Spring and JavaScript / TypeScript / Node.js / React declaration inventory. Each record has a stable `symbol:` ID, project/module/package/artifact or workspace-package provenance, qualified or export identity, declaration source, evidence, analyzer, confidence, coverage, and limitations.
+- `.goregraph-workspace/symbol-usages.json`: canonical exact, ambiguous, and unresolved usage inventory. Each record has a stable `usage:` ID, provider and consumer identities when known, category, resolution, relation kind, source, evidence, dependency or artifact evidence, transport, ordered API path steps, coverage, and limitations.
 - `.goregraph-workspace/workspace-map.html`: Schema 2 standalone offline dashboard with six top-level views. Architecture derives dynamic domain lanes from `workspace-service-map.json`, keeps stable card coordinates during service/domain/direction/risk focus, groups background relationships through shared trunks, fans selected direct relationships to card ports, and keeps a persistent count/filter summary outside the SVG transform. Call badges describe statically detected relationships and are not runtime traffic metrics. Endpoints shows caller, provider, class, symbol, file, and line plus safe source actions. Feature Flow presents the route-to-component-to-API-to-backend-to-persistence-to-test chain. Data Flow shows field-level movement and explicit evidence gaps. Diagnostics uses normal vertical HTML scrolling at 100% scale and shares canonical explanations with Query and MCP. Coverage separates workspace completeness and prioritized next scans from analyzer capability support. Every inventory-like view uses semantic HTML, and desktop or narrow layouts preserve readable controls, keyboard focus, evidence, selection ownership, and source context.
+
+## Exact Symbol and Usage Semantics
+
+The selected-service dashboard action **Explore classes & symbols** reads only
+the canonical offline projections above. Its tabs keep **Direct references** and
+**Reached through API** separate.
+
+- `direct_reference` with `EXACT` is a statically proven source or compile
+  relationship to one canonical symbol. It is not a runtime invocation count.
+- `reached_through_api` with `EXACT` is HTTP reachability proven through ordered
+  API path steps from a consumer origin to a route, backend implementation, and
+  selected provider. It is not a direct import and not a runtime request count.
+- `ambiguous` with `AMBIGUOUS` preserves every candidate symbol or candidate
+  path instead of selecting one by name.
+- `unresolved` with `UNRESOLVED` preserves the attempted qualified/module/export
+  target and reason when no safe provider can be selected.
+
+A canonical symbol ID includes symbol kind, project, module/artifact/package
+scope, language, qualified or export name, and declaration file. File or
+identifier name alone is insufficient. A canonical usage ID also includes the
+consumer, category, relation kind, target identity, source file, and source line.
+
+Evidence namespacing uses `<project>#<local-evidence-id>`. API path steps retain
+their position, kind, project, optional symbol, label, source file/line, and
+evidence IDs. The `transport` field is `http` for 1.3.0 reachability records and
+remains explicit for future transports.
+
+Coverage records are keyed by project, language, and capability. `COMPLETE`,
+`PARTIAL`, `UNAVAILABLE`, and `FAILED` describe what the static analyzer could
+index; missing projection files or records are reported separately. Coverage
+warnings and limitations remain part of Query, MCP, Doctor, and the dashboard.
+An empty usage list is therefore not proof that a symbol is unused.
+
+CLI operations:
+
+```bash
+goregraph query . symbol-inventory --query microservices/ms-user --format markdown --limit 20
+goregraph query . symbol-resolve --query com.weka.UserService --format json --limit 20
+goregraph query . symbol-usages --query symbol:<stable-id> --format markdown --limit 20
+goregraph query . symbol-api-consumers --query symbol:<stable-id> --format json --limit 20
+goregraph query . symbol-explain --query usage:<stable-id> --detail full --format markdown --limit 20
+```
+
+MCP equivalents are `symbol_inventory`, `symbol_resolve`, `symbol_usages`,
+`symbol_api_consumers`, and `symbol_explain`. Task pagination uses `limit` plus
+`continuation`; CLI uses `--limit` plus `--continue`. Resolve human text before
+passing a stable ID to usage or explanation operations.
+
+Doctor validates projection Schema 2, stable references, evidence namespacing,
+project-relative sources, categories, resolutions, candidate sets, and API path
+steps. Its remediation for missing or invalid projections is a clean workspace
+rebuild:
+
+```bash
+goregraph workspace clean . --execute
+goregraph workspace scan-all .
+```
+
+These records and rich fields are additive. Existing Schema 2 readers may ignore
+them without changing the meaning of earlier fields or outputs.
 
 ## Full Adapter Evidence
 

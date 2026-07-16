@@ -87,3 +87,46 @@ func TestDashboardDocumentationCoversSixDistinctViews(t *testing.T) {
 		}
 	}
 }
+
+func TestDocumentationCoversExactCodeExplorer(t *testing.T) {
+	files := []string{"README.md", "COMMANDS.md", "docs/OUTPUTS.md", "docs/RELEASE.md"}
+	var combined strings.Builder
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		combined.Write(content)
+		combined.WriteByte('\n')
+	}
+	text := combined.String()
+	for _, want := range []string{
+		"Explore classes & symbols",
+		"Direct references",
+		"Reached through API",
+		"symbol-index.json",
+		"symbol-usages.json",
+		"symbol-inventory",
+		"symbol-resolve",
+		"symbol-usages",
+		"symbol-api-consumers",
+		"symbol-explain",
+		"Java / Spring",
+		"JavaScript / TypeScript / Node.js / React",
+		"Exact symbols",
+		"Direct usages",
+		"HTTP reachability",
+		"canonical symbol ID",
+		"direct_reference",
+		"reached_through_api",
+		"AMBIGUOUS",
+		"UNRESOLVED",
+		"coverage warnings",
+		"API path steps",
+		"unreleased 1.3.0",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("exact Code Explorer documentation missing %q", want)
+		}
+	}
+}

@@ -78,3 +78,37 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseFilesKeep130Unreleased(t *testing.T) {
+	files := []string{"README.md", "docs/RELEASE.md"}
+	var combined strings.Builder
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("%s is missing: %v", file, err)
+		}
+		combined.Write(body)
+		combined.WriteByte('\n')
+	}
+	text := combined.String()
+	for _, want := range []string{
+		"unreleased 1.3.0",
+		"Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("release documentation missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"`v1.3.0` is published",
+		"`v1.3.0` has been released",
+		"`v1.3.0` tag was created",
+		"Homebrew was updated to `v1.3.0`",
+		"Scoop was updated to `v1.3.0`",
+		"Winget was updated to `v1.3.0`",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("release documentation must not claim publication: %q", forbidden)
+		}
+	}
+}

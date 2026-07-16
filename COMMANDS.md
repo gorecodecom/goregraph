@@ -33,6 +33,34 @@ consumers, dependent tests, affected packages, public API surface, confidence,
 reasons, and coverage uncertainty separate. Traversal depth is bounded by the
 requested detail level and result pagination uses the normal continuation token.
 
+## Exact symbol operations
+
+The exact Code Explorer operations read the canonical workspace projections
+created by `goregraph workspace scan-all`:
+
+```bash
+goregraph query . symbol-inventory --query microservices/ms-user --format markdown --limit 20
+goregraph query . symbol-resolve --query com.weka.UserService --format json --limit 20
+goregraph query . symbol-usages --query symbol:<stable-id> --format markdown --limit 20
+goregraph query . symbol-api-consumers --query symbol:<stable-id> --format json --limit 20
+goregraph query . symbol-explain --query usage:<stable-id> --detail full --format markdown --limit 20
+```
+
+The equivalent MCP tools replace hyphens with underscores:
+`symbol_inventory`, `symbol_resolve`, `symbol_usages`,
+`symbol_api_consumers`, and `symbol_explain`.
+
+Use `symbol-resolve` for human text before calling an operation that requires a
+canonical symbol ID. Resolution returns every exact candidate rather than
+silently choosing a same-name class or export. `symbol-usages` returns
+`direct_reference` records; `symbol-api-consumers` returns
+`reached_through_api` records. `symbol-explain` accepts a stable `symbol:` or
+`usage:` ID.
+
+All task operations accept `--limit <1-100>` and return a continuation token
+when more records are available. Pass it back with `--continue <token>`. MCP
+uses the equivalent `limit` and `continuation` fields.
+
 ## Dashboard questions
 
 The offline workspace dashboard exposes six distinct views: Architecture for
@@ -657,6 +685,8 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `analyzers-json` -> `analyzers.json`
 - `affected` -> `affected.md`
 - `audit` -> `audit.json`
+- `symbol-index` -> `.goregraph-workspace/symbol-index.json`
+- `symbol-usages-json` -> `.goregraph-workspace/symbol-usages.json`
 
 Matches can include:
 
@@ -678,6 +708,25 @@ Important behavior:
 - does not rescan the project
 - does not call AI
 - returns an actionable error if the index is missing
+
+Canonical symbol operations read `.goregraph-workspace/symbol-index.json` and
+`.goregraph-workspace/symbol-usages.json`. Their records preserve canonical
+symbol IDs, canonical usage IDs, analyzer, confidence, source file and line,
+evidence IDs, dependency or artifact evidence, and coverage warnings.
+
+Categories and resolutions are intentionally separate:
+
+- `direct_reference` / `EXACT`: one statically proven source or compile
+  relationship;
+- `reached_through_api` / `EXACT`: one proven HTTP chain with ordered API path
+  steps ending at the selected provider;
+- `ambiguous` / `AMBIGUOUS`: multiple disclosed candidates;
+- `unresolved` / `UNRESOLVED`: no safe provider was selected.
+
+Evidence IDs are namespaced as `<project>#<local-evidence-id>`. Rich fields are
+additive Schema 2 fields; existing output aliases and legacy fields retain their
+meaning. A missing result is not proof that no usage exists: read coverage
+warnings and limitations for partial, unavailable, or failed analyzer coverage.
 
 Use `query` when you know roughly what you are looking for. Use `explain` when you want context for one specific file or symbol.
 
@@ -760,6 +809,9 @@ Checks:
 - schema version is supported
 - JSON index files are valid
 - indexed source hashes still match current files
+- workspace `symbol-index.json` and `symbol-usages.json` exist, use Schema 2,
+  reference valid projects/evidence/source paths, and contain consistent exact,
+  ambiguous, unresolved, and HTTP API path records
 
 Exit behavior:
 
@@ -793,6 +845,14 @@ Typical fix:
 
 ```bash
 goregraph scan .
+```
+
+For a missing or invalid workspace symbol projection, Doctor prints the
+workspace-specific remediation:
+
+```bash
+goregraph workspace clean . --execute
+goregraph workspace scan-all .
 ```
 
 ## `goregraph workspace status [path]`
@@ -1016,6 +1076,19 @@ The 1.3.0 dashboard is organized around six views:
 - **Data Flow** uses a sidebar master list and renders one selected request/field/persistence/response chain at normal scale, with unknown mappings displayed in place as explicit gaps.
 - **Diagnostics** explains relationships GoreGraph could not safely confirm, including the classification, reason, possible impact, evidence, and suggested next check. Expected frontend-internal behavior is distinguished from likely defects or incomplete scan coverage.
 - **Coverage** uses a dedicated normal-scale workbench grouped by project and language. It summarizes analyzed groups and gaps, then shows each capability as `COMPLETE`, `PARTIAL`, `UNAVAILABLE`, or `FAILED`. It describes analysis coverage, not whether source behavior exists.
+
+Select a service in **Architecture** and choose **Explore classes & symbols** to
+open the offline Code Explorer. It keeps exact symbol inventory separate from
+usage evidence, with **Direct references**, **Reached through API**, **All**, and
+an ambiguity/unresolved view when uncertainty exists. Filters cover consumer,
+category, relation kind, language, and confidence. Source locations expose
+**Copy path** and **Open source** actions.
+
+Direct references are static source or compile relationships, not runtime call
+counts. HTTP reachability is a static consumer-to-route-to-implementation chain,
+not a direct import and not a runtime request count. Empty results retain
+coverage warnings because missing indexed evidence is not proof that a symbol
+is unused.
 
 Important behavior:
 
