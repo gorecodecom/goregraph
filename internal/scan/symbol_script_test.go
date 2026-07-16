@@ -179,6 +179,251 @@ a(); b();
 	}
 }
 
+func TestScriptVarShadowsAcrossBlocksButLetAndConstDoNot(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { foo, bar, baz, qux } from "./api";
+export function App(ready) {
+  if (ready) {
+    var foo = localFoo;
+    let bar = localBar;
+    const baz = localBaz;
+  }
+  foo();
+  bar();
+  baz();
+}
+if (ready) {
+  var qux = localQux;
+}
+qux();
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `
+export function foo() {}
+export function bar() {}
+export function baz() {}
+export function qux() {}
+`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	foo := scriptReferenceAtLine(t, resolved.References, "calls_export", 9)
+	if foo.Resolution == SymbolResolutionExact || foo.ToSymbolID != "" || !strings.Contains(foo.Reason, "shadow") {
+		t.Fatalf("function-scoped var did not shadow imported call: %#v", foo)
+	}
+	qux := scriptReferenceAtLine(t, resolved.References, "calls_export", 16)
+	if qux.Resolution == SymbolResolutionExact || qux.ToSymbolID != "" || !strings.Contains(qux.Reason, "shadow") {
+		t.Fatalf("module-scoped var did not shadow imported call: %#v", qux)
+	}
+	for _, name := range []string{"bar", "baz"} {
+		reference := assertScriptReference(t, resolved.References, "calls_export", "./api", name)
+		if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
+			t.Fatalf("block-scoped %s leaked outside its block: %#v", name, reference)
+		}
+	}
+}
+
+func TestScriptStarReexportDoesNotForwardDefault(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/barrel.ts", Language: "typescript"},
+		{Path: "src/service.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import DefaultService, { named } from "./barrel";
+export function App() { new DefaultService(); named(); }
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export * from "./service";`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[2], `
+export default class Service {}
+export function named() {}
+`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	defaultImport := assertScriptReference(t, resolved.References, "imports_value", "./barrel", "default")
+	if defaultImport.Resolution == SymbolResolutionExact || defaultImport.ToSymbolID != "" {
+		t.Fatalf("star-only barrel forwarded default export: %#v", defaultImport)
+	}
+	named := assertScriptReference(t, resolved.References, "imports_value", "./barrel", "named")
+	if named.Resolution != SymbolResolutionExact || named.ToSymbolID == "" {
+		t.Fatalf("star barrel did not forward named export: %#v", named)
+	}
+}
+
+func TestScriptTypeAndValueCapabilitiesSurviveReexportsAndUsages(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.tsx", Language: "typescript"},
+		{Path: "src/barrel.ts", Language: "typescript"},
+		{Path: "src/types.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import type { Shape, FactoryType, Box as TypeBox } from "./barrel";
+import { ShapeValue, Box, Role, Factory, Dual } from "./barrel";
+export function App() {
+  const shape: Shape = value;
+  const shapeValue: ShapeValue = value;
+  const box: Box = new Box();
+  const role: Role = value;
+  const dual: Dual = value;
+  const invalidFactoryType: FactoryType = value;
+  Factory();
+  Dual();
+  FactoryType();
+  new TypeBox();
+  new ShapeValue();
+  return <ShapeValue />;
+}
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `
+export type { Shape, Factory as FactoryType } from "./types";
+export { Shape as ShapeValue, Box, Role, Factory, Dual } from "./types";
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[2], `
+export interface Shape {}
+export class Box {}
+export enum Role { Admin }
+export function Factory() {}
+export interface Dual {}
+export function Dual() {}
+`))
+
+	for qualified, capability := range map[string]scriptSymbolCapability{
+		"src/types#Shape":   scriptTypeCapability,
+		"src/types#Box":     scriptTypeCapability | scriptValueCapability,
+		"src/types#Role":    scriptTypeCapability | scriptValueCapability,
+		"src/types#Factory": scriptValueCapability,
+	} {
+		declaration := scriptDeclarationByQualified(t, facts.Declarations, qualified)
+		if declaration.scriptCapability != capability {
+			t.Fatalf("%s capability = %d, want %d", qualified, declaration.scriptCapability, capability)
+		}
+	}
+	typeImport := assertScriptReference(t, facts.References, "imports_type", "./barrel", "Box")
+	if !typeImport.scriptTypeOnly || typeImport.scriptLocalName != "TypeBox" {
+		t.Fatalf("type-only import metadata = %#v", typeImport)
+	}
+	typeReexport := assertScriptReference(t, facts.References, "reexports_type", "./types", "Factory")
+	if !typeReexport.scriptTypeOnly || typeReexport.scriptExportAlias != "FactoryType" {
+		t.Fatalf("type-only re-export metadata = %#v", typeReexport)
+	}
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	for _, want := range []struct {
+		kind, module, exportName string
+		exact                    bool
+	}{
+		{kind: "imports_type", module: "./barrel", exportName: "Shape", exact: true},
+		{kind: "imports_type", module: "./barrel", exportName: "Box", exact: true},
+		{kind: "imports_type", module: "./barrel", exportName: "FactoryType"},
+		{kind: "reexports_type", module: "./types", exportName: "Shape", exact: true},
+		{kind: "reexports_type", module: "./types", exportName: "Factory"},
+	} {
+		reference := assertScriptReference(t, resolved.References, want.kind, want.module, want.exportName)
+		if want.exact && (reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "") {
+			t.Fatalf("%s %s capability binding did not resolve: %#v", want.kind, want.exportName, reference)
+		}
+		if !want.exact && (reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "") {
+			t.Fatalf("%s %s capability binding resolved incorrectly: %#v", want.kind, want.exportName, reference)
+		}
+	}
+	assertExact := func(kind, exportName string) {
+		t.Helper()
+		reference := assertScriptReference(t, resolved.References, kind, "./barrel", exportName)
+		if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
+			t.Fatalf("%s %s capability did not resolve: %#v", kind, exportName, reference)
+		}
+	}
+	assertUnresolved := func(kind, exportName string) {
+		t.Helper()
+		reference := assertScriptReference(t, resolved.References, kind, "./barrel", exportName)
+		if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" {
+			t.Fatalf("%s %s crossed type/value capability: %#v", kind, exportName, reference)
+		}
+	}
+
+	assertExact("type_reference", "Shape")
+	assertExact("type_reference", "ShapeValue")
+	assertExact("type_reference", "Box")
+	assertExact("type_reference", "Role")
+	assertExact("type_reference", "Dual")
+	assertExact("calls_export", "Factory")
+	assertExact("calls_export", "Dual")
+	assertUnresolved("type_reference", "FactoryType")
+	assertUnresolved("calls_export", "FactoryType")
+	assertUnresolved("instantiates", "ShapeValue")
+	assertUnresolved("renders_component", "ShapeValue")
+
+	boxInstances := scriptReferences(t, resolved.References, "instantiates", "./barrel", "Box")
+	if len(boxInstances) != 2 {
+		t.Fatalf("Box value/type-only instances = %#v, want two references", boxInstances)
+	}
+	for _, reference := range boxInstances {
+		switch reference.scriptLocalName {
+		case "Box":
+			if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
+				t.Fatalf("value-capable Box did not instantiate: %#v", reference)
+			}
+		case "TypeBox":
+			if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" {
+				t.Fatalf("type-only Box instantiated as a value: %#v", reference)
+			}
+		default:
+			t.Fatalf("unexpected Box binding: %#v", reference)
+		}
+	}
+
+	dualType := assertScriptReference(t, resolved.References, "type_reference", "./barrel", "Dual")
+	dualValue := assertScriptReference(t, resolved.References, "calls_export", "./barrel", "Dual")
+	if dualType.ToSymbolID == dualValue.ToSymbolID {
+		t.Fatalf("dual namespace usages selected the same declaration: type=%#v value=%#v", dualType, dualValue)
+	}
+	for _, kind := range []string{"imports_value", "reexports_value"} {
+		module := "./barrel"
+		if kind == "reexports_value" {
+			module = "./types"
+		}
+		reference := assertScriptReference(t, resolved.References, kind, module, "Dual")
+		if reference.Resolution != SymbolResolutionAmbiguous || len(reference.CandidateSymbolIDs) != 2 {
+			t.Fatalf("%s Dual binding did not preserve both namespaces: %#v", kind, reference)
+		}
+	}
+}
+
+func TestScriptNamespaceUsageIdentityUsesReceiverAlias(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import * as a from "./api";
+import * as b from "./api";
+a.foo(); b.foo();
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function foo() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	references := scriptReferences(t, resolved.References, "calls_export", "./api", "foo")
+	if len(references) != 2 {
+		t.Fatalf("namespace receiver usages = %#v, want two references", references)
+	}
+	aliases := map[string]bool{}
+	for _, reference := range references {
+		if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
+			t.Fatalf("namespace receiver did not resolve exactly: %#v", reference)
+		}
+		aliases[reference.scriptLocalName] = true
+	}
+	if !aliases["a"] || !aliases["b"] || len(aliases) != 2 {
+		t.Fatalf("namespace usage identities = %#v, want receiver aliases a and b", references)
+	}
+}
+
 func TestExtractScriptIgnoresCommentsStringsAndTemplates(t *testing.T) {
 	body := `
 // export class CommentFake {}

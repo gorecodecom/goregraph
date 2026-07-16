@@ -14,6 +14,13 @@ type ScriptResolutionConfig struct {
 	Paths   map[string][]string `json:"paths,omitempty"`
 }
 
+type scriptSymbolCapability uint8
+
+const (
+	scriptTypeCapability scriptSymbolCapability = 1 << iota
+	scriptValueCapability
+)
+
 var (
 	scriptTypeDeclarationRE = regexp.MustCompile(`(?m)(?:^|;)[ \t]*(export\s+)?(default\s+)?(class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)\b`)
 	scriptFunctionRE        = regexp.MustCompile(`(?m)(?:^|;)[ \t]*(export\s+)?(default\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
@@ -59,21 +66,22 @@ func extractScriptDeclarations(file FileRecord, masked string) []RichSymbolRecor
 		line := scriptLineAt(masked, offset)
 		id := StableWorkspaceSymbolID(kind, "", module, file.Language, qualifiedName, file.Path)
 		declarations = append(declarations, RichSymbolRecord{
-			ID:             id,
-			Name:           name,
-			Kind:           kind,
-			Language:       file.Language,
-			File:           file.Path,
-			Line:           line,
-			SourceLocation: sourceLocation(line),
-			QualifiedName:  qualifiedName,
-			Module:         module,
-			ExportName:     exportName,
-			DeclarationID:  id,
-			Analyzer:       "script-source",
-			Confidence:     ConfidenceExact,
-			Coverage:       CoverageComplete,
-			scriptOffset:   offset,
+			ID:               id,
+			Name:             name,
+			Kind:             kind,
+			Language:         file.Language,
+			File:             file.Path,
+			Line:             line,
+			SourceLocation:   sourceLocation(line),
+			QualifiedName:    qualifiedName,
+			Module:           module,
+			ExportName:       exportName,
+			DeclarationID:    id,
+			Analyzer:         "script-source",
+			Confidence:       ConfidenceExact,
+			Coverage:         CoverageComplete,
+			scriptOffset:     offset,
+			scriptCapability: scriptDeclarationCapability(kind),
 		})
 	}
 	for _, match := range scriptTypeDeclarationRE.FindAllStringSubmatchIndex(masked, -1) {
@@ -127,6 +135,17 @@ func extractScriptDeclarations(file FileRecord, masked string) []RichSymbolRecor
 	return declarations
 }
 
+func scriptDeclarationCapability(kind string) scriptSymbolCapability {
+	switch kind {
+	case "class", "enum":
+		return scriptTypeCapability | scriptValueCapability
+	case "interface", "type":
+		return scriptTypeCapability
+	default:
+		return scriptValueCapability
+	}
+}
+
 func extractScriptModuleReferences(file FileRecord, body, masked string) []RichRelationRecord {
 	var references []RichRelationRecord
 	for _, location := range scriptImportKeywordRE.FindAllStringIndex(masked, -1) {
@@ -160,16 +179,17 @@ func extractScriptModuleReferences(file FileRecord, body, masked string) []RichR
 		if strings.HasPrefix(trimmed, "type ") {
 			typeClause := strings.TrimSpace(strings.TrimPrefix(trimmed, "type "))
 			if strings.HasPrefix(typeClause, "{") {
-				appendScriptNamedReferences(&references, file, "imports_type", module, typeClause, line, false)
+				appendScriptNamedReferences(&references, file, "imports_type", module, typeClause, line, false, true)
 			} else if fields := strings.Fields(typeClause); len(fields) > 0 {
 				reference := newScriptReference(file, "imports_type", module, "default", line, "default type-only import", false)
 				reference.scriptLocalName = strings.TrimSuffix(fields[0], ",")
+				reference.scriptTypeOnly = true
 				references = append(references, reference)
 			}
 			continue
 		}
 		if strings.HasPrefix(trimmed, "{") {
-			appendScriptNamedReferences(&references, file, "imports_value", module, trimmed, line, false)
+			appendScriptNamedReferences(&references, file, "imports_value", module, trimmed, line, false, false)
 			continue
 		}
 		if strings.HasPrefix(trimmed, "*") {
@@ -192,7 +212,7 @@ func extractScriptModuleReferences(file FileRecord, body, masked string) []RichR
 		if comma := strings.Index(trimmed, ","); comma >= 0 {
 			rest := strings.TrimSpace(trimmed[comma+1:])
 			if strings.HasPrefix(rest, "{") {
-				appendScriptNamedReferences(&references, file, "imports_value", module, rest, line, false)
+				appendScriptNamedReferences(&references, file, "imports_value", module, rest, line, false, false)
 			} else if strings.HasPrefix(rest, "*") {
 				reference := newScriptReference(file, "imports_namespace", module, "*", line, "namespace import", false)
 				if fields := strings.Fields(rest); len(fields) >= 3 && fields[1] == "as" {
@@ -210,9 +230,9 @@ func extractScriptModuleReferences(file FileRecord, body, masked string) []RichR
 			module := scriptModuleIdentity(file.Path)
 			switch {
 			case strings.HasPrefix(trimmed, "type {"):
-				appendScriptNamedReferences(&references, file, "exports_local", module, strings.TrimPrefix(trimmed, "type "), line, true)
+				appendScriptNamedReferences(&references, file, "exports_local", module, strings.TrimPrefix(trimmed, "type "), line, true, true)
 			case strings.HasPrefix(trimmed, "{"):
-				appendScriptNamedReferences(&references, file, "exports_local", module, trimmed, line, true)
+				appendScriptNamedReferences(&references, file, "exports_local", module, trimmed, line, true, false)
 			case strings.HasPrefix(trimmed, "default "):
 				fields := strings.Fields(strings.TrimPrefix(trimmed, "default "))
 				if len(fields) > 0 {
@@ -232,9 +252,9 @@ func extractScriptModuleReferences(file FileRecord, body, masked string) []RichR
 		}
 		switch {
 		case strings.HasPrefix(trimmed, "type {"):
-			appendScriptNamedReferences(&references, file, "reexports_type", module, strings.TrimPrefix(trimmed, "type "), line, true)
+			appendScriptNamedReferences(&references, file, "reexports_type", module, strings.TrimPrefix(trimmed, "type "), line, true, true)
 		case strings.HasPrefix(trimmed, "{"):
-			appendScriptNamedReferences(&references, file, "reexports_value", module, trimmed, line, true)
+			appendScriptNamedReferences(&references, file, "reexports_value", module, trimmed, line, true, false)
 		case strings.HasPrefix(trimmed, "*"):
 			references = append(references, newScriptReference(file, "reexports_all", module, "*", line, "star re-export", false))
 		}
@@ -265,7 +285,7 @@ func isStandaloneScriptImport(masked string, offset int) bool {
 	return next >= len(masked) || masked[next] != '{'
 }
 
-func appendScriptNamedReferences(target *[]RichRelationRecord, file FileRecord, kind, module, clause string, line int, reexport bool) {
+func appendScriptNamedReferences(target *[]RichRelationRecord, file FileRecord, kind, module, clause string, line int, reexport, typeOnly bool) {
 	match := scriptNamedBindingRE.FindStringSubmatch(clause)
 	if len(match) != 2 {
 		return
@@ -276,14 +296,17 @@ func appendScriptNamedReferences(target *[]RichRelationRecord, file FileRecord, 
 			continue
 		}
 		itemKind := kind
+		itemTypeOnly := typeOnly
 		if fields[0] == "type" {
 			itemKind = strings.Replace(kind, "value", "type", 1)
 			fields = fields[1:]
+			itemTypeOnly = true
 		}
 		if len(fields) == 0 {
 			continue
 		}
 		reference := newScriptReference(file, itemKind, module, fields[0], line, "named module binding", false)
+		reference.scriptTypeOnly = itemTypeOnly
 		alias := fields[0]
 		if len(fields) >= 3 && fields[1] == "as" {
 			alias = fields[2]
@@ -492,6 +515,10 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 	add := func(kind, name string, offset int, binding RichRelationRecord, reason string) {
 		reference := newScriptReference(file, kind, binding.TargetModule, binding.TargetExport, scriptLineAt(masked, offset), reason, false)
 		reference.scriptLocalName = name
+		if binding.Type == "imports_namespace" && binding.scriptLocalName != "" {
+			reference.scriptLocalName = binding.scriptLocalName
+		}
+		reference.scriptTypeOnly = binding.scriptTypeOnly
 		refreshScriptReferenceID(&reference)
 		if owner := innermostScriptOwner(spans, offset); owner.ID != "" {
 			bindScriptReferenceOwner(&reference, owner.ID)
@@ -856,11 +883,89 @@ func scriptVariableScopeShadows(masked, name string, usageOffset int) bool {
 			continue
 		}
 		start, end := scriptContainingScope(masked, location[0])
+		if masked[location[0]:location[1]] == "var" {
+			start, end = scriptContainingFunctionOrModuleScope(masked, location[0])
+		}
 		if usageOffset > start && usageOffset < end {
 			return true
 		}
 	}
 	return false
+}
+
+func scriptContainingFunctionOrModuleScope(masked string, offset int) (int, int) {
+	bestStart, bestEnd := -1, len(masked)
+	for open := strings.IndexByte(masked, '('); open >= 0 && open < offset; {
+		close := matchingScriptDelimiter(masked, open, '(', ')')
+		if close < 0 {
+			break
+		}
+		bodyStart := scriptParameterBlockBodyStart(masked, close)
+		if bodyStart >= 0 && bodyStart < offset && isScriptFunctionParameterScopePrefix(masked, open, close, bodyStart) {
+			bodyEnd := matchingScriptBrace(masked, bodyStart)
+			if bodyEnd < 0 {
+				bodyEnd = len(masked)
+			}
+			if offset < bodyEnd && bodyStart > bestStart {
+				bestStart, bestEnd = bodyStart, bodyEnd
+			}
+		}
+		relative := strings.IndexByte(masked[close+1:], '(')
+		if relative < 0 {
+			break
+		}
+		open = close + 1 + relative
+	}
+	for search := 0; search < offset; {
+		relative := strings.Index(masked[search:], "=>")
+		if relative < 0 {
+			break
+		}
+		arrow := search + relative
+		bodyStart := nextScriptNonSpace(masked, arrow+2)
+		if bodyStart < offset && bodyStart < len(masked) && masked[bodyStart] == '{' {
+			bodyEnd := matchingScriptBrace(masked, bodyStart)
+			if bodyEnd < 0 {
+				bodyEnd = len(masked)
+			}
+			if offset < bodyEnd && bodyStart > bestStart {
+				bestStart, bestEnd = bodyStart, bodyEnd
+			}
+		}
+		search = arrow + 2
+	}
+	if bestStart < 0 {
+		return 0, len(masked)
+	}
+	return bestStart, bestEnd
+}
+
+func isScriptFunctionParameterScopePrefix(masked string, open, close, bodyStart int) bool {
+	statementStart := scriptStatementStart([]byte(masked), open)
+	if hasScriptIdentifierWord(masked[statementStart:open], "function") {
+		return true
+	}
+	if hasScriptLineBreak([]byte(masked), close+1, bodyStart) {
+		return false
+	}
+	switch scriptIdentifierBefore(masked, open) {
+	case "catch", "for", "if", "switch", "while", "with":
+		return false
+	default:
+		return isScriptParameterScopePrefix(masked, open)
+	}
+}
+
+func scriptIdentifierBefore(masked string, before int) string {
+	index := before - 1
+	for index >= 0 && isScriptWhitespace(masked[index]) {
+		index--
+	}
+	end := index + 1
+	for index >= 0 && isScriptIdentifierByte(masked[index]) {
+		index--
+	}
+	return masked[index+1 : end]
 }
 
 func scriptVariableStatementEnd(masked string, start int) int {
@@ -1802,8 +1907,15 @@ type scriptExportResolution struct {
 }
 
 func (resolver scriptFactResolver) resolveReference(reference RichRelationRecord) scriptReferenceResolution {
+	requiredCapability := scriptReferenceCapability(reference)
+	if requiredCapability == scriptValueCapability && reference.scriptTypeOnly {
+		return scriptReferenceResolution{reason: "type-only binding cannot be used as a value"}
+	}
 	if reference.Type == "calls_local" && reference.TargetModule == scriptModuleIdentity(reference.From) {
-		candidates := dedupeScriptDeclarations(resolver.locals[reference.From][reference.TargetExport])
+		candidates := filterScriptDeclarationsByCapability(
+			dedupeScriptDeclarations(resolver.locals[reference.From][reference.TargetExport]),
+			requiredCapability,
+		)
 		if len(candidates) == 1 {
 			return scriptReferenceResolution{modules: []scriptResolvedModule{{identity: reference.TargetModule, file: reference.From}}, candidates: candidates, reason: "same-module lexical declaration"}
 		}
@@ -1820,7 +1932,7 @@ func (resolver scriptFactResolver) resolveReference(reference RichRelationRecord
 	cyclic := false
 	ambiguous := moduleResolution.ambiguous
 	for _, module := range moduleResolution.modules {
-		resolved := resolver.resolveExport(module, reference.TargetExport, map[string]bool{})
+		resolved := resolver.resolveExport(module, reference.TargetExport, requiredCapability, map[string]bool{})
 		candidates = append(candidates, resolved.candidates...)
 		cyclic = cyclic || resolved.cyclic
 		ambiguous = ambiguous || resolved.ambiguous
@@ -1838,14 +1950,38 @@ func (resolver scriptFactResolver) resolveReference(reference RichRelationRecord
 	return scriptReferenceResolution{modules: moduleResolution.modules, reason: "module resolved but export was not found"}
 }
 
-func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, exportName string, visited map[string]bool) scriptExportResolution {
-	key := module.file + "\x00" + exportName
+func scriptReferenceCapability(reference RichRelationRecord) scriptSymbolCapability {
+	switch reference.Type {
+	case "type_reference", "imports_type", "reexports_type":
+		return scriptTypeCapability
+	case "calls_export", "calls_local", "instantiates", "renders_component":
+		return scriptValueCapability
+	default:
+		return 0
+	}
+}
+
+func filterScriptDeclarationsByCapability(declarations []RichSymbolRecord, required scriptSymbolCapability) []RichSymbolRecord {
+	if required == 0 {
+		return declarations
+	}
+	result := make([]RichSymbolRecord, 0, len(declarations))
+	for _, declaration := range declarations {
+		if declaration.scriptCapability&required != 0 {
+			result = append(result, declaration)
+		}
+	}
+	return result
+}
+
+func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, exportName string, required scriptSymbolCapability, visited map[string]bool) scriptExportResolution {
+	key := module.file + "\x00" + exportName + "\x00" + string(rune(required))
 	if visited[key] {
 		return scriptExportResolution{cyclic: true}
 	}
 	visited[key] = true
 	defer delete(visited, key)
-	if direct := resolver.declarations[module.file][exportName]; len(direct) > 0 {
+	if direct := filterScriptDeclarationsByCapability(resolver.declarations[module.file][exportName], required); len(direct) > 0 {
 		return scriptExportResolution{candidates: append([]RichSymbolRecord(nil), direct...)}
 	}
 	var result []RichSymbolRecord
@@ -1863,7 +1999,10 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 		if publicExport != exportName {
 			continue
 		}
-		localCandidates := resolver.locals[moduleFile][reference.TargetExport]
+		if required == scriptValueCapability && reference.scriptTypeOnly {
+			continue
+		}
+		localCandidates := filterScriptDeclarationsByCapability(resolver.locals[moduleFile][reference.TargetExport], required)
 		result = append(result, localCandidates...)
 		if len(localCandidates) > 0 {
 			continue
@@ -1876,10 +2015,13 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 				imported.TargetExport == "" {
 				continue
 			}
+			if required == scriptValueCapability && imported.scriptTypeOnly {
+				continue
+			}
 			targetModules := resolver.resolveModule(imported.From, imported.TargetModule)
 			ambiguous = ambiguous || targetModules.ambiguous
 			for _, targetModule := range targetModules.modules {
-				resolved := resolver.resolveExport(targetModule, imported.TargetExport, visited)
+				resolved := resolver.resolveExport(targetModule, imported.TargetExport, required, visited)
 				result = append(result, resolved.candidates...)
 				cyclic = cyclic || resolved.cyclic
 				ambiguous = ambiguous || resolved.ambiguous
@@ -1896,6 +2038,9 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 		sourceExport := reference.TargetExport
 		publicExport := reference.scriptExportAlias
 		if reference.Type == "reexports_all" {
+			if exportName == "default" {
+				continue
+			}
 			sourceExport = exportName
 			publicExport = exportName
 		}
@@ -1905,10 +2050,13 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 		if publicExport != exportName {
 			continue
 		}
+		if required == scriptValueCapability && reference.scriptTypeOnly {
+			continue
+		}
 		targetModules := resolver.resolveModule(reference.From, reference.TargetModule)
 		ambiguous = ambiguous || targetModules.ambiguous
 		for _, targetModule := range targetModules.modules {
-			resolved := resolver.resolveExport(targetModule, sourceExport, visited)
+			resolved := resolver.resolveExport(targetModule, sourceExport, required, visited)
 			result = append(result, resolved.candidates...)
 			cyclic = cyclic || resolved.cyclic
 			ambiguous = ambiguous || resolved.ambiguous

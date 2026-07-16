@@ -127,6 +127,7 @@ type RichSymbolRecord struct {
 	Coverage         Coverage   `json:"coverage,omitempty"`
 	Limitations      []string   `json:"limitations,omitempty"`
 	scriptOffset     int
+	scriptCapability scriptSymbolCapability
 }
 
 type RichRelationRecord struct {
@@ -155,6 +156,7 @@ type RichRelationRecord struct {
 	scriptLocalName     string
 	scriptExportAlias   string
 	scriptOffset        int
+	scriptTypeOnly      bool
 }
 
 type RichGraph struct {
