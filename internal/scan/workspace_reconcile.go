@@ -17,7 +17,15 @@ var workspaceGroupDirs = []string{"frontend", "frontends", "microservices", "ser
 type workspaceIndexProject struct {
 	record             WorkspaceProjectRecord
 	routes             []CodeRouteRecord
-	relations          []RelationRecord
+	legacyRelations    []RelationRecord
+	symbols            []RichSymbolRecord
+	relations          []RichRelationRecord
+	callGraph          CallGraphRecord
+	maven              MavenGraphRecord
+	packages           PackageGraphRecord
+	evidence           []EvidenceRecord
+	loadFailures       []string
+	missingFacts       []string
 	contracts          []APIContractRecord
 	codeFlows          []CodeFlowRecord
 	spring             SpringIndex
@@ -73,6 +81,10 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	context := buildWorkspaceContext(registry, indexed)
 	matches := buildWorkspaceContractMatches(indexed)
 	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
+	symbolIndex, symbolUsageIndex, err := BuildWorkspaceSymbolProjection(registry, indexed, registry.Generated)
+	if err != nil {
+		return nil, err
+	}
 	dataFlows := BuildDataFlows(featureFlows)
 	featureDossiers := buildFeatureDossiers(featureFlows, matches)
 	workspaceGraph := BuildWorkspaceGraph(registry, matches, featureFlows, featureDossiers)
@@ -94,6 +106,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
 	if err := os.MkdirAll(workspaceOut, 0o755); err != nil {
+		return nil, err
+	}
+	if err := writeWorkspaceSymbolProjectionPair(workspaceOut, symbolIndex, symbolUsageIndex); err != nil {
 		return nil, err
 	}
 	if err := writeJSON(filepath.Join(workspaceOut, "registry.json"), registry); err != nil {
@@ -458,10 +473,40 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 			continue
 		}
 		loaded := workspaceIndexProject{record: project}
+		loadSymbolFact := func(name string, dest any, reset func()) {
+			err := readWorkspaceJSON(filepath.Join(out, name), dest)
+			if err == nil {
+				return
+			}
+			if os.IsNotExist(err) {
+				loaded.missingFacts = append(loaded.missingFacts, name)
+				return
+			}
+			reset()
+			loaded.loadFailures = append(loaded.loadFailures, project.Path+"/"+name+": "+err.Error())
+		}
+		loadSymbolFact("symbols-full.json", &loaded.symbols, func() {
+			loaded.symbols = nil
+		})
+		loadSymbolFact("relations-full.json", &loaded.relations, func() {
+			loaded.relations = nil
+		})
+		loadSymbolFact("callgraph.json", &loaded.callGraph, func() {
+			loaded.callGraph = CallGraphRecord{}
+		})
+		loadSymbolFact("maven-graph.json", &loaded.maven, func() {
+			loaded.maven = MavenGraphRecord{}
+		})
+		loadSymbolFact("package-graph.json", &loaded.packages, func() {
+			loaded.packages = PackageGraphRecord{}
+		})
+		loadSymbolFact("evidence.json", &loaded.evidence, func() {
+			loaded.evidence = nil
+		})
 		if err := readWorkspaceJSON(filepath.Join(out, "routes.json"), &loaded.routes); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		if err := readWorkspaceJSON(filepath.Join(out, "relations.json"), &loaded.relations); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(filepath.Join(out, "relations.json"), &loaded.legacyRelations); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		if err := readWorkspaceJSON(filepath.Join(out, "api-contracts.json"), &loaded.contracts); err != nil && !os.IsNotExist(err) {
@@ -490,9 +535,9 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		if err := readWorkspaceJSON(filepath.Join(out, "test-map.json"), &loaded.testMap); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		if err := readWorkspaceJSON(filepath.Join(out, "capabilities.json"), &loaded.capabilities); err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
+		loadSymbolFact("capabilities.json", &loaded.capabilities, func() {
+			loaded.capabilities = nil
+		})
 		for i := range loaded.capabilities {
 			loaded.capabilities[i].Project = project.Path
 		}
@@ -1094,7 +1139,7 @@ func resolveWorkspaceFrontendContext(project workspaceIndexProject, match Worksp
 		}
 	}
 	if best.score <= 0.35 {
-		if relation, ok := frontendRelationToAPIFile(project.relations, match.APIFile, apiApp); ok {
+		if relation, ok := frontendRelationToAPIFile(project.legacyRelations, match.APIFile, apiApp); ok {
 			return workspaceFrontendContext{
 				routeID:    best.routeID,
 				routePath:  best.routePath,
@@ -1713,10 +1758,15 @@ func WorkspaceCleanPlan(root string, cfg config.Config) (WorkspaceCleanPlanRecor
 		})
 	}
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
+	includes := make([]string, 0, len(workspaceSymbolGeneratedFiles))
+	for _, name := range workspaceSymbolGeneratedFiles {
+		includes = append(includes, filepath.ToSlash(filepath.Join(workspaceOut, name)))
+	}
 	items = append(items, WorkspaceCleanItemRecord{
-		Path:   filepath.ToSlash(workspaceOut),
-		Reason: "workspace overlay output",
-		Exists: workspaceFileExists(workspaceOut),
+		Path:     filepath.ToSlash(workspaceOut),
+		Reason:   "workspace overlay output",
+		Exists:   workspaceFileExists(workspaceOut),
+		Includes: includes,
 	})
 	return WorkspaceCleanPlanRecord{
 		WorkspaceRoot: filepath.ToSlash(workspaceRoot),

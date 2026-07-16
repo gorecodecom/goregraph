@@ -92,6 +92,11 @@ var GeneratedFiles = []string{
 	"test-map.md",
 }
 
+var workspaceSymbolGeneratedFiles = []string{
+	"symbol-index.json",
+	"symbol-usages.json",
+}
+
 func Run(root string, cfg config.Config) (Result, error) {
 	started := time.Now().UTC()
 	resolved, err := filepath.Abs(root)

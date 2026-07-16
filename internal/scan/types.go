@@ -513,9 +513,10 @@ type WorkspaceCleanPlanRecord struct {
 }
 
 type WorkspaceCleanItemRecord struct {
-	Path   string `json:"path"`
-	Reason string `json:"reason"`
-	Exists bool   `json:"exists"`
+	Path     string   `json:"path"`
+	Reason   string   `json:"reason"`
+	Exists   bool     `json:"exists"`
+	Includes []string `json:"includes,omitempty"`
 }
 
 type WorkspaceContractMatchRecord struct {

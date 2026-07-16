@@ -1741,7 +1741,7 @@ func TestWorkspaceFeatureFlowsResolveFrontendRelationToAPICaller(t *testing.T) {
 			codeFlows: []CodeFlowRecord{
 				{Kind: "frontend", App: "portal", RouteID: "portal:/tasks", Path: "/tasks", File: "apps/portal/src/routes.tsx", Line: 8, Handler: "TasksPage"},
 			},
-			relations: []RelationRecord{
+			legacyRelations: []RelationRecord{
 				{From: "apps/portal/src/components/modals/vd/taskModal/vdTaskModal.tsx", To: "apps/portal/src/api/vd/userService.ts", Type: "calls", Line: 50},
 			},
 		},
