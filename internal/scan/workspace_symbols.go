@@ -17,6 +17,7 @@ type workspaceSymbolLookup struct {
 	javaByQualifiedName      map[string][]CanonicalSymbolRecord
 	scriptByProjectModule    map[string][]CanonicalSymbolRecord
 	scriptByWorkspacePackage map[string][]CanonicalSymbolRecord
+	scriptPackageConditions  map[string]map[string]bool
 }
 
 // BuildWorkspaceSymbolProjection reconciles project-local declarations and
@@ -43,9 +44,11 @@ func BuildWorkspaceSymbolProjection(registry WorkspaceRegistryRecord, projects [
 		javaByQualifiedName:      map[string][]CanonicalSymbolRecord{},
 		scriptByProjectModule:    map[string][]CanonicalSymbolRecord{},
 		scriptByWorkspacePackage: map[string][]CanonicalSymbolRecord{},
+		scriptPackageConditions:  map[string]map[string]bool{},
 	}
 	canonicalIDs := map[string]bool{}
 	for _, project := range projects {
+		indexWorkspaceScriptPackageConditions(project.packages, lookup)
 		for _, declaration := range project.symbols {
 			if !isWorkspaceCanonicalDeclaration(declaration) {
 				continue
@@ -1101,15 +1104,40 @@ func workspaceScriptPackageCandidates(
 		lookup.scriptByWorkspacePackage[scriptWorkspacePackageKey(specifier, exportName, "")]...,
 	)
 	condition := scriptReferencePackageCondition(referenceType)
-	for _, branch := range scriptPackageConditionBranches(condition) {
-		branchCandidates := lookup.scriptByWorkspacePackage[scriptWorkspacePackageKey(specifier, exportName, branch)]
-		if len(branchCandidates) == 0 {
-			continue
-		}
-		candidates = append(candidates, branchCandidates...)
-		break
+	if branch := activeWorkspaceScriptPackageCondition(lookup, specifier, condition); branch != "" {
+		candidates = append(
+			candidates,
+			lookup.scriptByWorkspacePackage[scriptWorkspacePackageKey(specifier, exportName, branch)]...,
+		)
 	}
 	return dedupeCanonicalWorkspaceSymbols(candidates)
+}
+
+func indexWorkspaceScriptPackageConditions(graph PackageGraphRecord, lookup workspaceSymbolLookup) {
+	for _, node := range graph.Nodes {
+		for exportKey, branches := range node.ExportConditions {
+			if exportKey != "." && !strings.HasPrefix(exportKey, "./") {
+				continue
+			}
+			specifier := workspaceScriptPackageSpecifier(node.Name, exportKey)
+			if lookup.scriptPackageConditions[specifier] == nil {
+				lookup.scriptPackageConditions[specifier] = map[string]bool{}
+			}
+			for condition := range branches {
+				lookup.scriptPackageConditions[specifier][condition] = true
+			}
+		}
+	}
+}
+
+func activeWorkspaceScriptPackageCondition(lookup workspaceSymbolLookup, specifier, condition string) string {
+	available := lookup.scriptPackageConditions[specifier]
+	for _, branch := range scriptPackageConditionBranches(condition) {
+		if available[branch] {
+			return branch
+		}
+	}
+	return ""
 }
 
 func dedupeCanonicalWorkspaceSymbols(symbols []CanonicalSymbolRecord) []CanonicalSymbolRecord {

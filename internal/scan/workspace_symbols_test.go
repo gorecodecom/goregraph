@@ -643,7 +643,8 @@ func TestWorkspaceSymbolsSelectStaticImportCondition(t *testing.T) {
 		"exports": {
 			".": {
 				"import": "./src/esm.ts",
-				"require": "./src/cjs.ts"
+				"require": "./src/cjs.ts",
+				"default": "./src/default.ts"
 			}
 		}
 	}`)
@@ -667,6 +668,13 @@ func TestWorkspaceSymbolsSelectStaticImportCondition(t *testing.T) {
 				ID: "cjs", Name: "CjsOnly", ExportName: "CjsOnly",
 				Kind: "class", Language: "typescript", File: "src/cjs.ts",
 				QualifiedName: "src/cjs#CjsOnly", Module: "src/cjs",
+				WorkspacePackage: "@weka/users", Analyzer: "typescript-source",
+				Confidence: ConfidenceExact, Coverage: CoverageComplete,
+			},
+			{
+				ID: "default", Name: "DefaultOnly", ExportName: "DefaultOnly",
+				Kind: "class", Language: "typescript", File: "src/default.ts",
+				QualifiedName: "src/default#DefaultOnly", Module: "src/default",
 				WorkspacePackage: "@weka/users", Analyzer: "typescript-source",
 				Confidence: ConfidenceExact, Coverage: CoverageComplete,
 			},
@@ -707,6 +715,12 @@ func TestWorkspaceSymbolsSelectStaticImportCondition(t *testing.T) {
 				TargetModule: "@weka/users", TargetExport: "CjsOnly",
 				Resolution: SymbolResolutionUnresolved,
 			},
+			{
+				ID: "default-must-not-fill-import-gap", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "typescript-source", Line: 6,
+				TargetModule: "@weka/users", TargetExport: "DefaultOnly",
+				Resolution: SymbolResolutionUnresolved,
+			},
 		},
 		packages: PackageGraphRecord{Edges: []PackageEdgeRecord{{
 			From: "@weka/admin", To: "@weka/users", Type: "depends_on",
@@ -734,7 +748,7 @@ func TestWorkspaceSymbolsSelectStaticImportCondition(t *testing.T) {
 		usageByLine[3].ProviderSymbolID != symbolIDByName["EsmOnly"] {
 		t.Fatalf("ESM workspace import = %#v", usageByLine[3])
 	}
-	for _, line := range []int{4, 5} {
+	for _, line := range []int{4, 5, 6} {
 		if usageByLine[line].Resolution == SymbolResolutionExact ||
 			usageByLine[line].ProviderSymbolID != "" {
 			t.Fatalf("line %d selected an unproven conditional export: %#v", line, usageByLine[line])
