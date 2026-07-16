@@ -113,6 +113,102 @@ func TestWorkspaceDashboardEmbeddedJavaScriptParses(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDashboardArchitectureMatrixKeepsEveryDiscoveredService(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for embedded dashboard completeness tests")
+	}
+
+	nodes := make([]WorkspaceServiceNodeRecord, 0, 261)
+	edges := make([]WorkspaceServiceEdgeRecord, 0, 260)
+	for index := range 260 {
+		id := "service:consumer-" + formatDashboardFixtureIndex(index)
+		nodes = append(nodes, WorkspaceServiceNodeRecord{ID: id, Label: id, Project: id, Domain: "test"})
+		edges = append(edges, WorkspaceServiceEdgeRecord{
+			ID:    "edge:" + id,
+			From:  id,
+			To:    "service:provider",
+			Total: 1,
+		})
+	}
+	nodes = append(nodes, WorkspaceServiceNodeRecord{ID: "service:provider", Label: "Provider", Project: "service:provider", Domain: "test"})
+
+	encodedNodes, err := json.Marshal(nodes)
+	if err != nil {
+		t.Fatalf("encode service nodes: %v", err)
+	}
+	encodedEdges, err := json.Marshal(edges)
+	if err != nil {
+		t.Fatalf("encode service edges: %v", err)
+	}
+	function := func(start, end string) string {
+		t.Helper()
+		from := strings.Index(workspaceDashboardScript, start)
+		if from < 0 {
+			t.Fatalf("dashboard script missing function start %q", start)
+		}
+		to := strings.Index(workspaceDashboardScript[from:], end)
+		if to < 0 {
+			t.Fatalf("dashboard script missing function end %q", end)
+		}
+		return workspaceDashboardScript[from : from+to]
+	}
+	source := strings.Join([]string{
+		`const serviceNodes=` + string(encodedNodes) + `;`,
+		`const serviceEdges=` + string(encodedEdges) + `;`,
+		`const serviceById=new Map(serviceNodes.map(function(node){return [node.id,node];}));`,
+		`const state={filter:"all",mode:"architecture",query:"",selected:null,selectedArchitectureEdge:null};`,
+		`function filteredServiceEdges(){return serviceEdges;}`,
+		`function serviceRole(node){return node.role||"";}`,
+		`function includesText(){return true;}`,
+		`function architectureProviderOrder(a,b){return a.id<b.id?-1:a.id>b.id?1:0;}`,
+		`function architectureEdgeID(edge){return edge.from+"|"+edge.to;}`,
+		`function architectureDomains(){return [{id:"test",label:"Test"}];}`,
+		`function architectureDomainLabel(){return "Test";}`,
+		`function serviceDomain(){return "test";}`,
+		`function routeStatusClass(){return "ok";}`,
+		`function escapeAttr(value){return String(value);}`,
+		`function escapeHtml(value){return String(value);}`,
+		`function architectureMatrixDetail(){return "";}`,
+		`function selectItem(){}`,
+		`function setArchitectureServiceSelection(){}`,
+		`function showServiceDetails(){}`,
+		`function renderList(){}`,
+		`function syncArchitectureViewControls(){}`,
+		`const workbench={innerHTML:"",querySelectorAll:function(){return [];}};`,
+		`const document={getElementById:function(){return workbench;}};`,
+		function("function visibleServices()", "function visibleTraces()"),
+		function("function renderArchitectureMatrix()", "function serviceFocus(id)"),
+		`const visible=visibleServices();`,
+		`renderArchitectureMatrix();`,
+		`const cards=(workbench.innerHTML.match(/data-select-id=/g)||[]).length;`,
+		`const providers=(workbench.innerHTML.match(/data-matrix-provider=/g)||[]).length;`,
+		`process.stdout.write(JSON.stringify({visible:visible.length,cards:cards,providers:providers,hasLastConsumer:workbench.innerHTML.includes("service:consumer-259"),hasProvider:workbench.innerHTML.includes("service:provider")}));`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("dashboard completeness model failed: %v\n%s", err, output)
+	}
+	var result struct {
+		Visible         int  `json:"visible"`
+		Cards           int  `json:"cards"`
+		Providers       int  `json:"providers"`
+		HasLastConsumer bool `json:"hasLastConsumer"`
+		HasProvider     bool `json:"hasProvider"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("decode dashboard completeness result: %v\n%s", err, output)
+	}
+	if result.Visible != 261 || result.Cards != 260 || result.Providers != 1 || !result.HasLastConsumer || !result.HasProvider {
+		t.Fatalf("dashboard omitted discovered services: %#v", result)
+	}
+}
+
+func formatDashboardFixtureIndex(index int) string {
+	const digits = "0123456789"
+	return string([]byte{digits[index/100], digits[index/10%10], digits[index%10]})
+}
+
 func runArchitectureModel(t *testing.T, expression string, target any) {
 	t.Helper()
 	node, err := exec.LookPath("node")
