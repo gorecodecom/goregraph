@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gorecodecom/goregraph/internal/agent"
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/doctor"
 	"github.com/gorecodecom/goregraph/internal/gitignore"
@@ -37,6 +38,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runReport(args[1:], stdout, stderr)
 	case "dashboard":
 		return runDashboard(args[1:], stdout, stderr)
+	case "context":
+		return runContext(args[1:], stdout, stderr)
 	case "query":
 		return runQuery(args[1:], stdout, stderr)
 	case "explain":
@@ -920,6 +923,66 @@ func emptyCLI(value string) string {
 	return value
 }
 
+func runContext(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph context <path> --query <task> [--budget-tokens 1800] [--max-files 12] [--format markdown|json]\n\nBuilds one deterministic, budgeted Context Pack from existing generated output.\nBudget tokens: 256-4000. Max files: 1-20.\n")
+		return 0
+	}
+	if len(args) == 0 {
+		fmt.Fprint(stderr, "error: usage: goregraph context <path> --query <task> [options]\n")
+		return 2
+	}
+	options := query.ContextOptions{Root: args[0]}
+	for i := 1; i < len(args); i++ {
+		option := args[i]
+		if i+1 >= len(args) {
+			fmt.Fprintf(stderr, "error: context option %s requires a value\n", option)
+			return 2
+		}
+		value := args[i+1]
+		i++
+		switch option {
+		case "--query":
+			options.Query = value
+		case "--budget-tokens":
+			parsed, err := parseBoundedCLIInteger(
+				"--budget-tokens", value,
+				agent.MinContextBudgetTokens, agent.MaxContextBudgetTokens,
+			)
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 2
+			}
+			options.BudgetTokens = parsed
+		case "--max-files":
+			parsed, err := parseBoundedCLIInteger(
+				"--max-files", value, 1, agent.MaxContextMaxFiles,
+			)
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 2
+			}
+			options.MaxFiles = parsed
+		case "--format":
+			options.Format = value
+		default:
+			fmt.Fprintf(stderr, "error: unknown context option %s\n", option)
+			return 2
+		}
+	}
+	if strings.TrimSpace(options.Query) == "" {
+		fmt.Fprintln(stderr, "error: context requires --query")
+		return 2
+	}
+	result, err := query.RunContext(options)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: context failed: %v\n", err)
+		return 1
+	}
+	_, _ = stdout.Write([]byte(result))
+	return 0
+}
+
 func runQuery(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
 		fmt.Fprint(stdout, `Usage: goregraph query <path> <term-or-output>
@@ -932,6 +995,7 @@ Searches existing generated output. Canonical symbol operations are:
   symbol-explain         Explain a stable symbol or usage ID
 
 Task options: --query <value> --format <json|text|markdown> --detail <summary|standard|full> --limit <1-100> --continue <token>
+task-context options: --budget-tokens <256-4000> --max-files <1-20>. Explicit --max-files wins; otherwise --limit maps to max files capped at 20.
 Known output aliases such as graph-full, symbol-index, symbol-usages-json, workspace-context, and audit print that generated file directly.
 `)
 		return 0
@@ -957,12 +1021,31 @@ Known output aliases such as graph-full, symbol-index, symbol-usages-json, works
 			case "--detail":
 				options.Detail = value
 			case "--limit":
-				parsed, err := strconv.Atoi(value)
+				parsed, err := parseBoundedCLIInteger("--limit", value, 1, 100)
 				if err != nil {
-					fmt.Fprintln(stderr, "error: --limit must be an integer")
+					fmt.Fprintf(stderr, "error: %v\n", err)
 					return 2
 				}
 				options.Limit = parsed
+			case "--budget-tokens":
+				parsed, err := parseBoundedCLIInteger(
+					"--budget-tokens", value,
+					agent.MinContextBudgetTokens, agent.MaxContextBudgetTokens,
+				)
+				if err != nil {
+					fmt.Fprintf(stderr, "error: %v\n", err)
+					return 2
+				}
+				options.BudgetTokens = parsed
+			case "--max-files":
+				parsed, err := parseBoundedCLIInteger(
+					"--max-files", value, 1, agent.MaxContextMaxFiles,
+				)
+				if err != nil {
+					fmt.Fprintf(stderr, "error: %v\n", err)
+					return 2
+				}
+				options.MaxFiles = parsed
 			case "--continue":
 				options.Continuation = value
 			default:
@@ -970,7 +1053,7 @@ Known output aliases such as graph-full, symbol-index, symbol-usages-json, works
 				return 2
 			}
 		}
-		if symbolTaskRequiresQuery(options.Task) && strings.TrimSpace(options.Query) == "" {
+		if agentTaskRequiresQuery(options.Task) && strings.TrimSpace(options.Query) == "" {
 			fmt.Fprintf(stderr, "error: %s requires --query\n", options.Task)
 			return 2
 		}
@@ -991,13 +1074,24 @@ Known output aliases such as graph-full, symbol-index, symbol-usages-json, works
 	return 0
 }
 
-func symbolTaskRequiresQuery(task string) bool {
+func agentTaskRequiresQuery(task string) bool {
 	switch task {
-	case "symbol-resolve", "symbol-usages", "symbol-api-consumers", "symbol-explain":
+	case "task-context", "symbol-resolve", "symbol-usages", "symbol-api-consumers", "symbol-explain":
 		return true
 	default:
 		return false
 	}
+}
+
+func parseBoundedCLIInteger(option, value string, minimum, maximum int) (int, error) {
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer", option)
+	}
+	if parsed < minimum || parsed > maximum {
+		return 0, fmt.Errorf("%s must be between %d and %d", option, minimum, maximum)
+	}
+	return parsed, nil
 }
 
 func isAgentQueryTask(value string) bool {
@@ -1197,6 +1291,7 @@ Commands:
   scan <path>       Compatibility alias for build all
   update            Refresh the current project's selected projections
   report <path>     Print the generated Markdown report
+  context <path>    Build one deterministic, budgeted Context Pack
   query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
   doctor <path>     Check generated output health
@@ -1211,6 +1306,7 @@ Examples:
   goregraph scan . --no-update-gitignore
   goregraph update
   goregraph report .
+  goregraph context . --query "DELETE /users/{id}"
   goregraph query . StartServer
   goregraph query . graph-full
   goregraph query . api-contracts

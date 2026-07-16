@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gorecodecom/goregraph/internal/agent"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
@@ -1126,6 +1127,187 @@ func TestRunQueryDispatchesTaskContext(t *testing.T) {
 	}
 }
 
+func TestContextCLIHelpAndGlobalOrdering(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"context", "--help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("context help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Usage: goregraph context <path>",
+		"--query <task>",
+		"--budget-tokens 1800",
+		"--max-files 12",
+		"--format markdown|json",
+		"256-4000",
+		"1-20",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("context help missing %q:\n%s", want, stdout.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("global help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	contextIndex := strings.Index(stdout.String(), "context <path>")
+	queryIndex := strings.Index(stdout.String(), "query <path>")
+	if contextIndex < 0 || queryIndex < 0 || contextIndex >= queryIndex {
+		t.Fatalf("global help does not list context before query:\n%s", stdout.String())
+	}
+}
+
+func TestContextCLIAcceptsBudgetAndMaxFiles(t *testing.T) {
+	root := writeCLIContextFixture(t, 1)
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{
+		"context", root,
+		"--query", "DELETE /users/{id}",
+		"--budget-tokens", "900",
+		"--max-files", "6",
+		"--format", "json",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, stderr.String())
+	}
+	var pack agent.ContextPack
+	if err := json.Unmarshal(stdout.Bytes(), &pack); err != nil {
+		t.Fatalf("direct context output is not a ContextPack: %v\n%s", err, stdout.String())
+	}
+	if pack.BudgetTokens != 900 || pack.FallbackRequired || len(pack.Files) > 6 {
+		t.Fatalf("unexpected direct context pack: %#v", pack)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := envelope["task"]; ok {
+		t.Fatalf("direct context JSON returned legacy envelope:\n%s", stdout.String())
+	}
+	if !strings.HasSuffix(stdout.String(), "\n") || strings.HasSuffix(stdout.String(), "\n\n") {
+		t.Fatalf("direct JSON must end in exactly one newline: %q", stdout.String())
+	}
+}
+
+func TestContextCLIRejectsUsageErrors(t *testing.T) {
+	root := t.TempDir()
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing path", args: []string{"context"}, want: "usage"},
+		{name: "missing query", args: []string{"context", root}, want: "requires --query"},
+		{name: "missing value", args: []string{"context", root, "--query"}, want: "requires a value"},
+		{name: "unknown option", args: []string{"context", root, "--unknown", "value"}, want: "unknown context option"},
+		{name: "noninteger budget", args: []string{"context", root, "--query", "route", "--budget-tokens", "many"}, want: "must be an integer"},
+		{name: "noninteger max files", args: []string{"context", root, "--query", "route", "--max-files", "many"}, want: "must be an integer"},
+		{name: "explicit zero budget", args: []string{"context", root, "--query", "route", "--budget-tokens", "0"}, want: "between 256 and 4000"},
+		{name: "explicit zero max files", args: []string{"context", root, "--query", "route", "--max-files", "0"}, want: "between 1 and 20"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if code := Run(test.args, &stdout, &stderr); code != 2 {
+				t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			if stdout.Len() != 0 || !strings.Contains(stderr.String(), test.want) {
+				t.Fatalf("unexpected streams: stdout=%q stderr=%q", stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunQueryRejectsExplicitZeroValuesAsUsage(t *testing.T) {
+	root := t.TempDir()
+	for _, test := range []struct {
+		option string
+		want   string
+	}{
+		{option: "--budget-tokens", want: "between 256 and 4000"},
+		{option: "--max-files", want: "between 1 and 20"},
+		{option: "--limit", want: "between 1 and 100"},
+	} {
+		t.Run(test.option, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run([]string{
+				"query", root, "task-context", "--query", "GET /users",
+				test.option, "0",
+			}, &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			if stdout.Len() != 0 || !strings.Contains(stderr.String(), test.want) {
+				t.Fatalf("unexpected streams: stdout=%q stderr=%q", stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunQueryTaskContextMapsLimitAndMaxFilesBeforeServiceDefaults(t *testing.T) {
+	root := writeCLIContextFixture(t, 19)
+	tests := []struct {
+		name       string
+		options    []string
+		wantFiles  int
+		wantBudget int
+	}{
+		{name: "default remains twelve", wantFiles: 12, wantBudget: 1800},
+		{name: "explicit limit", options: []string{"--limit", "5"}, wantFiles: 5, wantBudget: 1800},
+		{name: "limit is capped", options: []string{"--limit", "25"}, wantFiles: 20, wantBudget: 1800},
+		{name: "max files wins after limit", options: []string{"--limit", "20", "--max-files", "6", "--budget-tokens", "900"}, wantFiles: 6, wantBudget: 900},
+		{name: "max files wins before limit", options: []string{"--max-files", "6", "--limit", "20", "--budget-tokens", "900"}, wantFiles: 6, wantBudget: 900},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			args := []string{"query", root, "task-context", "--query", "GET /users", "--format", "json"}
+			args = append(args, test.options...)
+			var stdout, stderr bytes.Buffer
+			if code := Run(args, &stdout, &stderr); code != 0 {
+				t.Fatalf("exit code = %d, stderr=%s", code, stderr.String())
+			}
+			pack := decodeCLIContextPack(t, stdout.Bytes())
+			if len(pack.Files) != test.wantFiles || pack.BudgetTokens != test.wantBudget {
+				t.Fatalf("files/budget = %d/%d, want %d/%d: %#v", len(pack.Files), pack.BudgetTokens, test.wantFiles, test.wantBudget, pack)
+			}
+			var envelope map[string]json.RawMessage
+			if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := envelope["task"]; !ok {
+				t.Fatalf("legacy query JSON lost agent.Result envelope:\n%s", stdout.String())
+			}
+		})
+	}
+}
+
+func TestRunQueryTaskContextRequiresQueryAsUsage(t *testing.T) {
+	root := writeCLIContextFixture(t, 1)
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"query", root, "task-context", "--max-files", "6"}, &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "task-context requires --query") {
+		t.Fatalf("unexpected streams: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestQueryHelpExplainsTaskContextBudgets(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"query", "--help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{"--budget-tokens", "--max-files", "task-context", "capped at 20"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("query help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunQueryRecognizesImpactSummaryTask(t *testing.T) {
 	if !isAgentQueryTask("impact-summary") {
 		t.Fatal("impact-summary must be dispatched through the agent query path")
@@ -1295,6 +1477,55 @@ func writeCLISymbolProjectionFixture(t *testing.T) string {
   "coverage": []
 }`)
 	return workspace
+}
+
+func writeCLIContextFixture(t *testing.T, neighbors int) string {
+	t.Helper()
+	root := t.TempDir()
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "generated",
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "route", Project: "api", Kind: "route", Name: "users route",
+			HTTPMethod: "DELETE", Path: "/users/{id}", File: "UserController.java",
+			Line: 20, EndLine: 28, Confidence: "EXACT", Search: "GET /users DELETE /users/{id}",
+		}},
+	}
+	for number := 0; number < neighbors; number++ {
+		id := "neighbor-" + string(rune('a'+number))
+		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+			ID: id, Project: "api", Kind: "symbol", Name: id,
+			File: id + ".go", Confidence: "EXACT",
+		})
+		index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+			ID: "edge-" + id, FromFactID: "route", ToFactID: id,
+			FromLabel: "route", ToLabel: id, Kind: "call", Confidence: "EXACT",
+		})
+	}
+	body, err := json.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "goregraph-out/agent/context-index.json", string(body))
+	return root
+}
+
+func decodeCLIContextPack(t *testing.T, body []byte) agent.ContextPack {
+	t.Helper()
+	var result struct {
+		Items []struct {
+			Data struct {
+				Context agent.ContextPack `json:"context"`
+			} `json:"data"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("decode legacy query result: %v\n%s", err, body)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("legacy query item count = %d, want 1", len(result.Items))
+	}
+	return result.Items[0].Data.Context
 }
 
 func writeFile(t *testing.T, root, rel, body string) {

@@ -15,11 +15,28 @@ import (
 
 type TaskOptions struct {
 	Root, Task, Query, Format, Detail, Continuation string
-	Limit                                           int
+	Limit, BudgetTokens, MaxFiles                   int
 }
 
 func RunTask(options TaskOptions) (string, error) {
-	result, err := (agent.Service{}).Run(agent.Request{Root: options.Root, Task: options.Task, Query: options.Query, Format: options.Format, Detail: options.Detail, Limit: options.Limit, Continuation: options.Continuation})
+	maxFiles := options.MaxFiles
+	if options.Task == "task-context" && maxFiles == 0 && options.Limit > 0 {
+		maxFiles = options.Limit
+		if maxFiles > agent.MaxContextMaxFiles {
+			maxFiles = agent.MaxContextMaxFiles
+		}
+	}
+	result, err := (agent.Service{}).Run(agent.Request{
+		Root:         options.Root,
+		Task:         options.Task,
+		Query:        options.Query,
+		Format:       options.Format,
+		Detail:       options.Detail,
+		Limit:        options.Limit,
+		Continuation: options.Continuation,
+		BudgetTokens: options.BudgetTokens,
+		MaxFiles:     maxFiles,
+	})
 	if err != nil {
 		return "", err
 	}
