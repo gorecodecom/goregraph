@@ -1068,6 +1068,128 @@ func TestWorkspaceSymbolProjectionRejectsUnknownLocalReferenceIDs(t *testing.T) 
 	}
 }
 
+func TestWorkspaceSymbolProjectionRejectsProjectPathContainingEvidenceSeparator(t *testing.T) {
+	project := workspaceJavaProject(
+		"microservices/ms#users",
+		"com.weka:users",
+		RichSymbolRecord{
+			ID: "users", Name: "UserService", Kind: "class", Language: "java",
+			File: "src/UserService.java", QualifiedName: "com.weka.UserService",
+			Artifact: "com.weka:users", Analyzer: "java-source",
+			Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		},
+	)
+
+	_, _, err := BuildWorkspaceSymbolProjection(
+		workspaceSymbolRegistry(project.record),
+		[]workspaceIndexProject{project},
+		"generated",
+	)
+
+	if err == nil {
+		t.Fatal("project path containing # did not fail projection")
+	}
+	for _, want := range []string{project.record.Path, "#", "evidence"} {
+		assertContains(t, err.Error(), want)
+	}
+}
+
+func TestReconcileWorkspaceRejectsDanglingEvidenceBeforeReplacingProjection(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	project := workspaceProjectOnDisk(workspace, "microservices/ms-users")
+	project.Name = "ms-users"
+	writeFile(t, project.AbsPath, "pom.xml", "<project></project>")
+	writeWorkspaceProjectFacts(t, project, []RichSymbolRecord{{
+		ID: "users", Name: "UserService", Kind: "class", Language: "java",
+		File: "src/UserService.java", QualifiedName: "com.weka.UserService",
+		Artifact: "com.weka:users", Analyzer: "java-source",
+		Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		EvidenceIDs: []string{"evidence:missing"},
+	}}, nil)
+
+	workspaceOut := filepath.Join(workspace, ".goregraph-workspace")
+	oldSymbols := WorkspaceSymbolIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Generated:     "old",
+		Root:          filepath.ToSlash(workspace),
+		Symbols:       []CanonicalSymbolRecord{},
+		Coverage:      []SymbolCoverageRecord{},
+	}
+	oldUsages := WorkspaceSymbolUsageIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Generated:     "old",
+		Root:          filepath.ToSlash(workspace),
+		Usages:        []CanonicalSymbolUsageRecord{},
+		Coverage:      []SymbolCoverageRecord{},
+	}
+	if err := writeWorkspaceSymbolProjectionPair(workspaceOut, oldSymbols, oldUsages); err != nil {
+		t.Fatal(err)
+	}
+	beforeSymbols, err := os.ReadFile(filepath.Join(workspaceOut, "symbol-index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeUsages, err := os.ReadFile(filepath.Join(workspaceOut, "symbol-usages.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Defaults()
+	_, err = ReconcileWorkspace(project.AbsPath, cfg)
+
+	if err == nil {
+		t.Fatal("reconciliation published a dangling canonical evidence ID")
+	}
+	for _, want := range []string{project.Path + "#evidence:missing", "unknown evidence"} {
+		assertContains(t, err.Error(), want)
+	}
+	afterSymbols, readErr := os.ReadFile(filepath.Join(workspaceOut, "symbol-index.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	afterUsages, readErr := os.ReadFile(filepath.Join(workspaceOut, "symbol-usages.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !reflect.DeepEqual(afterSymbols, beforeSymbols) || !reflect.DeepEqual(afterUsages, beforeUsages) {
+		t.Fatal("invalid reconciliation replaced the live symbol projection")
+	}
+}
+
+func TestReconcileWorkspaceRejectsEvidenceOwnedByAnotherProject(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	project := workspaceProjectOnDisk(workspace, "microservices/ms-users")
+	project.Name = "ms-users"
+	writeFile(t, project.AbsPath, "pom.xml", "<project></project>")
+	symbol := RichSymbolRecord{
+		ID: "users", Name: "UserService", Kind: "class", Language: "java",
+		File: "src/UserService.java", Line: 4, QualifiedName: "com.weka.UserService",
+		Artifact: "com.weka:users", Analyzer: "java-source",
+		Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		EvidenceIDs: []string{"evidence:users"},
+	}
+	writeWorkspaceProjectFacts(t, project, []RichSymbolRecord{symbol}, nil)
+	if err := writeJSON(
+		filepath.Join(project.AbsPath, project.OutputDir, "evidence.json"),
+		[]EvidenceRecord{{
+			ID: "evidence:users", Project: "ms-orders", File: symbol.File,
+			Start: EvidenceLocation{Line: symbol.Line}, Analyzer: "java-source",
+			Method: "declaration", Reason: "java class declaration",
+		}},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ReconcileWorkspace(project.AbsPath, config.Defaults())
+
+	if err == nil {
+		t.Fatal("reconciliation accepted evidence owned by another project")
+	}
+	for _, want := range []string{"evidence:users", "ms-orders", "ms-users"} {
+		assertContains(t, err.Error(), want)
+	}
+}
+
 func TestReconcileWorkspaceRejectsUnknownLocalReferenceID(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "workspace")
 	project := filepath.Join(workspace, "microservices", "ms-users")
@@ -1210,9 +1332,12 @@ func TestLoadWorkspaceIndexesKeepsValidProjectsWhenSymbolFactsAreMalformed(t *te
 		t.Fatalf("loaded projects = %#v", loaded)
 	}
 	registry := workspaceSymbolRegistry(broken, valid)
-	symbols, _, err := BuildWorkspaceSymbolProjection(registry, loaded, registry.Generated)
+	symbols, usages, err := BuildWorkspaceSymbolProjection(registry, loaded, registry.Generated)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := validateWorkspaceSymbolProjectionEvidence(symbols, usages, loaded); err != nil {
+		t.Fatalf("unreadable project without canonical evidence references failed integrity validation: %v", err)
 	}
 	if len(symbols.Symbols) != 1 || symbols.Symbols[0].QualifiedName != validSymbol.QualifiedName {
 		t.Fatalf("valid project facts were discarded: %#v", symbols.Symbols)

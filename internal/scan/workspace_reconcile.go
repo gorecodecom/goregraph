@@ -105,6 +105,9 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	if err != nil {
 		return nil, err
 	}
+	if err := validateWorkspaceSymbolProjectionEvidence(symbolIndex, symbolUsageIndex, indexed); err != nil {
+		return nil, err
+	}
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 	workspaceFreshness := BuildWorkspaceFreshness(indexed, registry.Generated)
 

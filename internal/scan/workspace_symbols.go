@@ -23,6 +23,9 @@ type workspaceSymbolLookup struct {
 // BuildWorkspaceSymbolProjection reconciles project-local declarations and
 // references into canonical workspace symbol projections.
 func BuildWorkspaceSymbolProjection(registry WorkspaceRegistryRecord, projects []workspaceIndexProject, generated string) (WorkspaceSymbolIndexRecord, WorkspaceSymbolUsageIndexRecord, error) {
+	if err := validateWorkspaceSymbolProjectPaths(registry, projects); err != nil {
+		return WorkspaceSymbolIndexRecord{}, WorkspaceSymbolUsageIndexRecord{}, err
+	}
 	symbolIndex := WorkspaceSymbolIndexRecord{
 		SchemaVersion: SchemaVersion,
 		Generated:     generated,
@@ -122,6 +125,25 @@ func BuildWorkspaceSymbolProjection(registry WorkspaceRegistryRecord, projects [
 	return symbolIndex, usageIndex, nil
 }
 
+func validateWorkspaceSymbolProjectPaths(registry WorkspaceRegistryRecord, projects []workspaceIndexProject) error {
+	paths := make([]string, 0, len(registry.Projects)+len(projects))
+	for _, project := range registry.Projects {
+		paths = append(paths, project.Path)
+	}
+	for _, project := range projects {
+		paths = append(paths, project.record.Path)
+	}
+	for _, projectPath := range paths {
+		if strings.Contains(projectPath, "#") {
+			return fmt.Errorf(
+				"workspace project path %q contains evidence namespace separator #",
+				projectPath,
+			)
+		}
+	}
+	return nil
+}
+
 func validateWorkspaceProjectReferenceIDs(project workspaceIndexProject, references []RichRelationRecord, lookup workspaceSymbolLookup) error {
 	for _, reference := range references {
 		referenceID := reference.ID
@@ -148,6 +170,156 @@ func validateWorkspaceProjectReferenceIDs(project workspaceIndexProject, referen
 				)
 			}
 		}
+	}
+	return nil
+}
+
+func validateWorkspaceSymbolProjectionEvidence(
+	symbols WorkspaceSymbolIndexRecord,
+	usages WorkspaceSymbolUsageIndexRecord,
+	projects []workspaceIndexProject,
+) error {
+	knownProjects := map[string]bool{}
+	knownEvidence := map[string]string{}
+	for _, project := range projects {
+		projectPath := project.record.Path
+		knownProjects[projectPath] = true
+		expectedOwner := project.record.Name
+		if expectedOwner == "" {
+			expectedOwner = filepath.Base(filepath.FromSlash(projectPath))
+		}
+		localIDs := map[string]bool{}
+		for _, evidence := range project.evidence {
+			if evidence.ID == "" || strings.Contains(evidence.ID, "#") {
+				return fmt.Errorf(
+					"workspace project %q contains malformed evidence ID %q",
+					projectPath,
+					evidence.ID,
+				)
+			}
+			if localIDs[evidence.ID] {
+				return fmt.Errorf(
+					"workspace project %q contains duplicate evidence ID %q",
+					projectPath,
+					evidence.ID,
+				)
+			}
+			if evidence.Project == "" || evidence.Project != expectedOwner {
+				return fmt.Errorf(
+					"workspace evidence %q declares owner %q, want %q for project %q",
+					evidence.ID,
+					evidence.Project,
+					expectedOwner,
+					projectPath,
+				)
+			}
+			if strings.TrimSpace(evidence.File) == "" {
+				return fmt.Errorf(
+					"workspace project %q evidence %q has no source file",
+					projectPath,
+					evidence.ID,
+				)
+			}
+			localIDs[evidence.ID] = true
+			knownEvidence[WorkspaceEvidenceID(projectPath, evidence.ID)] = projectPath
+		}
+	}
+
+	for _, symbol := range symbols.Symbols {
+		if err := validateWorkspaceProjectionEvidenceIDs(
+			symbol.ID,
+			symbol.Project,
+			true,
+			symbol.EvidenceIDs,
+			knownProjects,
+			knownEvidence,
+		); err != nil {
+			return err
+		}
+	}
+	for _, usage := range usages.Usages {
+		apiUsage := usage.Transport == "http" ||
+			usage.Category == SymbolUsageReachedThroughAPI ||
+			len(usage.APIPath) > 0
+		if err := validateWorkspaceProjectionEvidenceIDs(
+			usage.ID,
+			usage.ConsumerProject,
+			!apiUsage,
+			usage.EvidenceIDs,
+			knownProjects,
+			knownEvidence,
+		); err != nil {
+			return err
+		}
+		for _, step := range usage.APIPath {
+			if err := validateWorkspaceProjectionEvidenceIDs(
+				usage.ID,
+				step.Project,
+				true,
+				step.EvidenceIDs,
+				knownProjects,
+				knownEvidence,
+			); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateWorkspaceProjectionEvidenceIDs(
+	offendingID string,
+	ownerProject string,
+	requireOwner bool,
+	ids []string,
+	knownProjects map[string]bool,
+	knownEvidence map[string]string,
+) error {
+	previous := ""
+	for _, id := range ids {
+		projectPath, localID, namespaced := strings.Cut(id, "#")
+		if !namespaced ||
+			projectPath == "" ||
+			localID == "" ||
+			strings.Contains(localID, "#") {
+			return fmt.Errorf(
+				"workspace projection record %q contains malformed evidence ID %q",
+				offendingID,
+				id,
+			)
+		}
+		if previous != "" && id <= previous {
+			return fmt.Errorf(
+				"workspace projection record %q contains duplicate or unsorted evidence ID %q",
+				offendingID,
+				id,
+			)
+		}
+		if !knownProjects[projectPath] {
+			return fmt.Errorf(
+				"workspace projection record %q evidence %q references unknown project %q",
+				offendingID,
+				id,
+				projectPath,
+			)
+		}
+		if requireOwner && projectPath != ownerProject {
+			return fmt.Errorf(
+				"workspace projection record %q evidence %q belongs to project %q, not %q",
+				offendingID,
+				id,
+				projectPath,
+				ownerProject,
+			)
+		}
+		if knownEvidence[id] != projectPath {
+			return fmt.Errorf(
+				"workspace projection record %q references unknown evidence %q",
+				offendingID,
+				id,
+			)
+		}
+		previous = id
 	}
 	return nil
 }
