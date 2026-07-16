@@ -187,6 +187,36 @@ const objectDivision = { finally: true } / loadUser() / divisor;
 	}
 }
 
+func TestExtractScriptMasksRegexAfterBareAndLabelledBlocks(t *testing.T) {
+	body := `
+import { loadUser } from "./api";
+{
+}
+/; export class BareRegexFake {} loadUser()/.test(value);
+retry:
+{
+}
+/; export class LabelRegexFake {} loadUser()/.test(value);
+const objectDivision = { retry: true } / loadUser() / divisor;
+const nestedObjectDivision = { retry: {} / loadUser() / divisor };
+`
+	facts := ExtractScriptSymbolFacts(FileRecord{Path: "src/real.ts", Language: "typescript"}, body)
+	for _, declaration := range facts.Declarations {
+		if declaration.Name == "BareRegexFake" || declaration.Name == "LabelRegexFake" {
+			t.Fatalf("bare/labelled block regex created declaration: %#v", declaration)
+		}
+	}
+	references := scriptReferences(t, facts.References, "calls_export", "./api", "loadUser")
+	if len(references) != 2 {
+		t.Fatalf("bare/labelled regex or object division extraction = %#v, want two division calls", references)
+	}
+	for _, reference := range references {
+		if reference.Line != 10 && reference.Line != 11 {
+			t.Fatalf("bare/labelled regex emitted call at line %d: %#v", reference.Line, references)
+		}
+	}
+}
+
 func TestScriptReturnTypesRequireFunctionLikeSignature(t *testing.T) {
 	file := FileRecord{Path: "src/types.ts", Language: "typescript"}
 	facts := ExtractScriptSymbolFacts(file, `
@@ -219,6 +249,29 @@ const misleading = condition ? makeValue() : User => User;
 
 	if references := scriptReferences(t, facts.References, "type_reference", "./User", "User"); len(references) != 0 {
 		t.Fatalf("ternary expression emitted arrow return type: %#v", references)
+	}
+}
+
+func TestScriptParameterTypesRequireProvenParameterSpan(t *testing.T) {
+	file := FileRecord{Path: "src/types.ts", Language: "typescript"}
+	facts := ExtractScriptSymbolFacts(file, `
+import type { User } from "./User";
+const value = { first: source, model: User };
+function consume(model: User) {}
+class Consumer {
+  consume(model: User) {}
+}
+const consume = (model: User) => model;
+`)
+
+	references := scriptReferences(t, facts.References, "type_reference", "./User", "User")
+	if len(references) != 3 {
+		t.Fatalf("parameter type references = %#v, want only function, method, and arrow parameters", references)
+	}
+	for _, reference := range references {
+		if reference.Line == 3 {
+			t.Fatalf("object literal value emitted parameter type relation: %#v", reference)
+		}
 	}
 }
 
@@ -1043,6 +1096,29 @@ export function Multiple(source) {
 	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 5)
 	if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
 		t.Fatalf("later destructured declarator did not shadow imported call: %#v", reference)
+	}
+}
+
+func TestScriptNewlineAfterDeclaratorCommaContinuesShadowBinding(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { loadUser } from "./api";
+export function Multiple(source) {
+  const first = build(),
+    { nested: [ignored, ...loadUser] = [] } = source;
+  loadUser();
+}
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function loadUser() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 6)
+	if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
+		t.Fatalf("newline-continued declarator did not shadow imported call: %#v", reference)
 	}
 }
 

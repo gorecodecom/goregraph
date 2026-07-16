@@ -465,15 +465,26 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		}
 		references = append(references, reference)
 	}
-	for _, usageRE := range []*regexp.Regexp{scriptVariableTypeRE, scriptParameterTypeRE} {
-		for _, match := range usageRE.FindAllStringSubmatchIndex(masked, -1) {
-			name := masked[match[2]:match[3]]
-			if binding, ok := bindings[name]; ok {
-				if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
-					addUnresolved("type_reference", name, match[0], reason)
-				} else {
-					add("type_reference", name, match[0], binding, "explicit TypeScript type binding")
-				}
+	for _, match := range scriptVariableTypeRE.FindAllStringSubmatchIndex(masked, -1) {
+		name := masked[match[2]:match[3]]
+		if binding, ok := bindings[name]; ok {
+			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+				addUnresolved("type_reference", name, match[0], reason)
+			} else {
+				add("type_reference", name, match[0], binding, "explicit TypeScript variable type binding")
+			}
+		}
+	}
+	for _, match := range scriptParameterTypeRE.FindAllStringSubmatchIndex(masked, -1) {
+		if !isProvenScriptParameterType(masked, match[2]) {
+			continue
+		}
+		name := masked[match[2]:match[3]]
+		if binding, ok := bindings[name]; ok {
+			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+				addUnresolved("type_reference", name, match[0], reason)
+			} else {
+				add("type_reference", name, match[0], binding, "explicit TypeScript parameter type binding")
 			}
 		}
 	}
@@ -836,6 +847,15 @@ func scriptVariableStatementEnd(masked string, start int) int {
 			}
 		case ';', '\n':
 			if round == 0 && square == 0 && curly == 0 {
+				if masked[index] == '\n' {
+					previous := index - 1
+					for previous >= start && isScriptWhitespace(masked[previous]) {
+						previous--
+					}
+					if previous >= start && masked[previous] == ',' {
+						continue
+					}
+				}
 				return index
 			}
 		}
@@ -1036,6 +1056,80 @@ func isProvenScriptReturnType(masked string, closeParen, typeEnd int) bool {
 		return ok && paramsStart == openParen+1 && paramsEnd == closeParen
 	}
 	return next < len(masked) && masked[next] == '{' && isScriptParameterScopePrefix(masked, openParen)
+}
+
+func isProvenScriptParameterType(masked string, offset int) bool {
+	for search := 0; search < len(masked); {
+		relative := strings.Index(masked[search:], "=>")
+		if relative < 0 {
+			break
+		}
+		arrow := search + relative
+		paramsStart, paramsEnd, ok := scriptArrowParameterRange(masked, arrow)
+		if ok && offset >= paramsStart && offset < paramsEnd {
+			return true
+		}
+		search = arrow + 2
+	}
+	for open := strings.IndexByte(masked, '('); open >= 0; {
+		close := matchingScriptDelimiter(masked, open, '(', ')')
+		if close < 0 {
+			return false
+		}
+		if offset > open && offset < close &&
+			isScriptParameterScopePrefix(masked, open) &&
+			scriptParameterBlockBodyStart(masked, close) >= 0 {
+			return true
+		}
+		relative := strings.IndexByte(masked[close+1:], '(')
+		if relative < 0 {
+			break
+		}
+		open = close + 1 + relative
+	}
+	return false
+}
+
+func scriptParameterBlockBodyStart(masked string, close int) int {
+	index := nextScriptNonSpace(masked, close+1)
+	if index < len(masked) && masked[index] == '{' {
+		return index
+	}
+	if index >= len(masked) || masked[index] != ':' {
+		return -1
+	}
+	round, square, angle := 0, 0, 0
+	for index++; index < len(masked); index++ {
+		switch masked[index] {
+		case '(':
+			round++
+		case ')':
+			if round > 0 {
+				round--
+			}
+		case '[':
+			square++
+		case ']':
+			if square > 0 {
+				square--
+			}
+		case '<':
+			angle++
+		case '>':
+			if angle > 0 {
+				angle--
+			}
+		case '{':
+			if round == 0 && square == 0 && angle == 0 {
+				return index
+			}
+		case ';', '\n':
+			if round == 0 && square == 0 && angle == 0 {
+				return -1
+			}
+		}
+	}
+	return -1
 }
 
 func matchingScriptDelimiterBackward(masked string, close int, opener, closer byte) int {
@@ -1280,6 +1374,10 @@ func isScriptStatementBlockClose(masked []byte, close int) bool {
 	if open < 0 {
 		return false
 	}
+	return isScriptStatementBlockOpen(masked, open)
+}
+
+func isScriptStatementBlockOpen(masked []byte, open int) bool {
 	previous := open - 1
 	for previous >= 0 && isScriptWhitespace(masked[previous]) {
 		previous--
@@ -1296,6 +1394,9 @@ func isScriptStatementBlockClose(masked []byte, close int) bool {
 		case "else", "finally":
 			return true
 		}
+	}
+	if masked[previous] == ':' {
+		return isScriptLabelledBlockOpen(masked, open, previous)
 	}
 	if masked[previous] == ')' {
 		paramsOpen := matchingScriptDelimiterBackward(string(masked), previous, '(', ')')
@@ -1321,6 +1422,49 @@ func isScriptStatementBlockClose(masked []byte, close int) bool {
 	statementStart := scriptStatementStart(masked, open)
 	prefix := strings.TrimSpace(string(masked[statementStart:open]))
 	return (strings.HasPrefix(prefix, "class ") || strings.HasPrefix(prefix, "export class ")) && !strings.Contains(prefix, "=")
+}
+
+func isScriptLabelledBlockOpen(masked []byte, open, colon int) bool {
+	labelEnd := colon
+	for labelEnd > 0 && isScriptWhitespace(masked[labelEnd-1]) {
+		labelEnd--
+	}
+	labelStart := labelEnd
+	for labelStart > 0 && isScriptIdentifierByte(masked[labelStart-1]) {
+		labelStart--
+	}
+	if labelStart == labelEnd {
+		return false
+	}
+	previous := labelStart - 1
+	for previous >= 0 && isScriptWhitespace(masked[previous]) {
+		previous--
+	}
+	if previous >= 0 && masked[previous] != ';' && masked[previous] != '{' && masked[previous] != '}' {
+		return false
+	}
+	if outer := containingScriptBraceOpen(masked, open); outer >= 0 && !isScriptStatementBlockOpen(masked, outer) {
+		return false
+	}
+	return true
+}
+
+func containingScriptBraceOpen(masked []byte, before int) int {
+	stack := []int{}
+	for index := 0; index < before; index++ {
+		switch masked[index] {
+		case '{':
+			stack = append(stack, index)
+		case '}':
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+	if len(stack) == 0 {
+		return -1
+	}
+	return stack[len(stack)-1]
 }
 
 func scriptStatementStart(masked []byte, before int) int {
