@@ -46,8 +46,8 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		"",
 		"Query: " + contextInline(pack.Query),
 	}
-	if pack.Freshness != "" {
-		lines = append(lines, "Freshness: "+contextInline(pack.Freshness))
+	if freshness := contextInline(pack.Freshness); freshness != "" {
+		lines = append(lines, "Freshness: "+freshness)
 	}
 	lines = append(lines,
 		"Confidence: "+contextInline(pack.Confidence),
@@ -118,11 +118,8 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 			lines = append(lines, entries...)
 		}
 	}
-	if pack.FallbackRequired || pack.FallbackReason != "" {
-		lines = append(lines, "", "## Fallback")
-		if reason := contextInline(pack.FallbackReason); reason != "" {
-			lines = append(lines, "- "+reason)
-		}
+	if reason := contextInline(pack.FallbackReason); reason != "" {
+		lines = append(lines, "", "## Fallback", "- "+reason)
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
@@ -143,10 +140,7 @@ func appendContextLocationSection(
 		if kind == "" && label == "" {
 			label = contextInline(location.ID)
 		}
-		if kind == "" && label == "" && file == "" &&
-			contextInline(location.Confidence) == "" &&
-			contextInline(location.Reason) == "" &&
-			len(contextEvidenceValues(location.EvidenceIDs)) == 0 {
+		if kind == "" && label == "" && file == "" {
 			continue
 		}
 		entry := "- "
@@ -202,11 +196,9 @@ func contextEvidenceValues(evidenceIDs []string) []string {
 }
 
 func contextRelationshipHasContent(relationship agent.ContextRelationship) bool {
-	return contextInline(relationship.From) != "" ||
-		contextInline(relationship.To) != "" ||
-		contextInline(relationship.Kind) != "" ||
-		contextInline(relationship.Reason) != "" ||
-		contextInline(relationship.Confidence) != ""
+	return contextInline(relationship.From) != "" &&
+		contextInline(relationship.To) != "" &&
+		contextInline(relationship.Kind) != ""
 }
 
 func contextCodeReference(project, path string, startLine, endLine int) string {

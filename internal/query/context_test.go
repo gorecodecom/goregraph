@@ -151,16 +151,29 @@ func TestRenderContextMarkdownNeutralizesControlsAndSkipsEmptyRecords(t *testing
 	}
 
 	emptyBody := RenderContextMarkdown(agent.ContextPack{
-		Entrypoints: []agent.ContextLocation{{}},
-		CallChain:   []agent.ContextRelationship{{}},
-		Files:       []agent.ContextFile{{}},
+		Freshness: "\x00\x1b",
+		Entrypoints: []agent.ContextLocation{
+			{},
+			{Reason: "metadata only", Confidence: "EXACT"},
+		},
+		CallChain: []agent.ContextRelationship{
+			{},
+			{
+				From: "\x00", To: "\x07", Kind: "\x1b",
+				Reason: "metadata only", Confidence: "EXACT",
+			},
+		},
+		Files: []agent.ContextFile{{}},
 		Uncertainties: []agent.ContextUncertainty{{
 			Scope: "", Reason: "",
 		}},
-		BudgetTokens: 1800,
+		FallbackRequired: true,
+		FallbackReason:   "\x00\x1b",
+		BudgetTokens:     1800,
 	})
 	for _, heading := range []string{
-		"## Entrypoints", "## Call chain", "## Files to inspect", "## Uncertainties",
+		"Freshness:", "## Entrypoints", "## Call chain", "## Files to inspect",
+		"## Uncertainties", "## Fallback",
 	} {
 		if strings.Contains(emptyBody, heading) {
 			t.Fatalf("empty record emitted %q:\n%s", heading, emptyBody)
