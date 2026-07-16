@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func newAuditRecord(root string, cfgOutputDir string, started time.Time, finished time.Time, filesRead int, skipped int) AuditRecord {
+func newAuditRecord(root string, cfgOutputDir string, started time.Time, finished time.Time, filesRead int, skipped int, generated []string) AuditRecord {
 	return AuditRecord{
 		Tool:             ToolName,
 		Version:          "dev",
@@ -18,7 +18,7 @@ func newAuditRecord(root string, cfgOutputDir string, started time.Time, finishe
 		FinishedAt:       finished.UTC().Format(time.RFC3339),
 		FilesRead:        filesRead,
 		FilesSkipped:     skipped,
-		Generated:        GeneratedFiles,
+		Generated:        append([]string(nil), generated...),
 		NetworkUsed:      false,
 		ExternalCommands: false,
 	}

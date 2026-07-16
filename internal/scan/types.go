@@ -70,18 +70,6 @@ type GraphEdge struct {
 	Type string `json:"type"`
 }
 
-type Manifest struct {
-	Tool        string       `json:"tool"`
-	Schema      int          `json:"schema"`
-	OutputDir   string       `json:"output_dir"`
-	Files       int          `json:"files"`
-	Skipped     int          `json:"skipped"`
-	Generated   []string     `json:"generated"`
-	ProjectRoot string       `json:"project_root,omitempty"`
-	GeneratedAt string       `json:"generated_at,omitempty"`
-	Git         *GitMetadata `json:"git,omitempty"`
-}
-
 type GitMetadata struct {
 	Commit string `json:"commit,omitempty"`
 	Branch string `json:"branch,omitempty"`

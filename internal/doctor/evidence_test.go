@@ -96,7 +96,7 @@ func scannedProject(t *testing.T) string {
 
 func readTestJSON(t *testing.T, path string, dest any) {
 	t.Helper()
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(doctorTestOutputPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,13 +106,32 @@ func readTestJSON(t *testing.T, path string, dest any) {
 }
 func writeTestJSON(t *testing.T, path string, value any) {
 	t.Helper()
+	path = doctorTestOutputPath(path)
 	body, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, append(body, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func doctorTestOutputPath(path string) string {
+	dir, name := filepath.Dir(path), filepath.Base(path)
+	if name == "manifest.json" {
+		return path
+	}
+	parent := filepath.Base(dir)
+	if parent != "goregraph-out" && parent != ".goregraph-workspace" {
+		return path
+	}
+	if strings.HasSuffix(name, ".json") {
+		return filepath.Join(dir, "index", name)
+	}
+	return filepath.Join(dir, "dashboard", name)
 }
 func containsLine(lines []string, want string) bool {
 	for _, line := range lines {

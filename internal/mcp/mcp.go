@@ -215,7 +215,7 @@ func readReport(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, "report.md"))
+	body, err := os.ReadFile(scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir)).Dashboard("report.md"))
 	if err != nil {
 		return "", err
 	}
@@ -264,7 +264,7 @@ func readIndexJSON(root, name string, dest any) error {
 	if err != nil {
 		return err
 	}
-	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, name))
+	body, err := os.ReadFile(scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir)).Index(name))
 	if err != nil {
 		return err
 	}

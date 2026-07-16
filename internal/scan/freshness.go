@@ -27,21 +27,21 @@ type ArtifactFreshnessIndex struct {
 	Artifacts         []ArtifactFreshnessRecord `json:"artifacts"`
 }
 
-func BuildArtifactFreshness(manifest Manifest, files []FileRecord, artifacts []string) ArtifactFreshnessIndex {
+func BuildArtifactFreshness(schema int, generatedAt string, files []FileRecord, artifacts []string) ArtifactFreshnessIndex {
 	fingerprint := sourceFingerprint(files)
 	names := append([]string(nil), artifacts...)
 	sort.Strings(names)
 	index := ArtifactFreshnessIndex{
-		Schema:            manifest.Schema,
-		GeneratedAt:       manifest.GeneratedAt,
+		Schema:            schema,
+		GeneratedAt:       generatedAt,
 		GoreGraphVersion:  version.Version,
 		SourceFingerprint: fingerprint,
 		Artifacts:         make([]ArtifactFreshnessRecord, 0, len(names)),
 	}
 	for _, artifact := range names {
 		index.Artifacts = append(index.Artifacts, ArtifactFreshnessRecord{
-			Artifact: artifact, GeneratedAt: manifest.GeneratedAt, GoreGraphVersion: version.Version,
-			Schema: manifest.Schema, SourceFingerprint: fingerprint, Stale: false,
+			Artifact: artifact, GeneratedAt: generatedAt, GoreGraphVersion: version.Version,
+			Schema: schema, SourceFingerprint: fingerprint, Stale: false,
 			Reason: "generated from the current source fingerprint",
 		})
 	}

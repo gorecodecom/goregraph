@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -24,12 +26,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	switch args[0] {
+	case "build":
+		return runBuild(args[1:], stdout, stderr)
 	case "scan":
 		return runScan(args[1:], stdout, stderr, false)
 	case "update":
 		return runScan(args[1:], stdout, stderr, true)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
+	case "dashboard":
+		return runDashboard(args[1:], stdout, stderr)
 	case "query":
 		return runQuery(args[1:], stdout, stderr)
 	case "explain":
@@ -111,6 +117,8 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	switch args[0] {
+	case "build":
+		return runWorkspaceBuild(args[1:], stdout, stderr)
 	case "status":
 		return runWorkspaceStatus(args[1:], stdout, stderr)
 	case "scan-missing":
@@ -139,13 +147,62 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
+func runBuild(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || isHelp(args[0]) {
+		if len(args) > 0 {
+			fmt.Fprint(stdout, "Usage: goregraph build <agent|dashboard|all> [path] [--no-update-gitignore] [--no-workspace]\n")
+			return 0
+		}
+		fmt.Fprint(stderr, "error: build target is required; accepted values: agent, dashboard, all\n")
+		return 2
+	}
+	target, err := scan.ParseBuildTarget(args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+	projectArgs := append([]string(nil), args[1:]...)
+	projectArgs = append(projectArgs, "--target", string(target))
+	return runScan(projectArgs, stdout, stderr, false)
+}
+
+func runWorkspaceBuild(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || isHelp(args[0]) {
+		if len(args) > 0 {
+			fmt.Fprint(stdout, "Usage: goregraph workspace build <agent|dashboard|all> [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]\n")
+			return 0
+		}
+		fmt.Fprint(stderr, "error: workspace build target is required; accepted values: agent, dashboard, all\n")
+		return 2
+	}
+	target, err := scan.ParseBuildTarget(args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+	return runWorkspaceScanAllTarget(args[1:], stdout, stderr, target)
+}
+
 func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
 	cfg := config.Defaults()
 	cfg.Workspace = true
 	root := "."
+	target := scan.BuildTargetAll
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
+		case "--target":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --target requires agent, dashboard, or all\n")
+				return 2
+			}
+			i++
+			parsed, err := scan.ParseBuildTarget(args[i])
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 2
+			}
+			target = parsed
 		case "--workspace":
 			if i+1 >= len(args) {
 				fmt.Fprint(stderr, "error: --workspace requires a path\n")
@@ -154,7 +211,7 @@ func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
 			i++
 			cfg.WorkspaceRoot = args[i]
 		case "--help", "help":
-			fmt.Fprint(stdout, "Usage: goregraph workspace refresh [path] [--workspace <path>]\n\nRefreshes workspace overlays from existing project GoreGraph outputs without scanning source files.\n")
+			fmt.Fprint(stdout, "Usage: goregraph workspace refresh [path] [--target agent|dashboard|all] [--workspace <path>]\n\nRefreshes workspace overlays from existing project GoreGraph outputs without scanning source files.\n")
 			return 0
 		default:
 			if strings.HasPrefix(arg, "-") {
@@ -164,7 +221,7 @@ func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
 			root = arg
 		}
 	}
-	registry, err := scan.ReconcileWorkspace(root, cfg)
+	registry, err := scan.ReconcileWorkspaceTarget(root, cfg, target)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: workspace refresh failed: %v\n", err)
 		return 1
@@ -174,18 +231,26 @@ func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "Refreshed workspace overlay: %s\n", filepath.Join(registry.Root, ".goregraph-workspace"))
-	fmt.Fprintf(stdout, "- workspace-map.html\n")
-	fmt.Fprintf(stdout, "- workspace-service-map.json\n")
-	fmt.Fprintf(stdout, "- workspace-endpoint-traces.json\n")
+	fmt.Fprintf(stdout, "- index/workspace-service-map.json\n")
+	fmt.Fprintf(stdout, "- index/workspace-endpoint-traces.json\n")
+	if target.IncludesAgent() {
+		fmt.Fprintf(stdout, "- agent/agent-guide.md\n")
+	}
+	if target.IncludesDashboard() {
+		fmt.Fprintf(stdout, "- dashboard/workspace-map.html\n")
+	}
 	return 0
 }
 
 func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
 	cfg := config.Defaults()
 	root := "."
+	action := "path"
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
+		case "path", "open":
+			action = arg
 		case "--workspace":
 			if i+1 >= len(args) {
 				fmt.Fprint(stderr, "error: --workspace requires a path\n")
@@ -209,14 +274,76 @@ func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: workspace root not found: %v\n", err)
 		return 1
 	}
-	path := filepath.Join(workspaceRoot, ".goregraph-workspace", "workspace-map.html")
+	path := scan.NewWorkspaceOutputLayout(filepath.Join(workspaceRoot, ".goregraph-workspace")).Dashboard("workspace-map.html")
 	if _, err := os.Stat(path); err != nil {
-		fmt.Fprintf(stderr, "error: dashboard not found; run goregraph workspace scan-all first: %v\n", err)
+		fmt.Fprintf(stderr, "error: dashboard not found; run goregraph workspace build dashboard first: %v\n", err)
 		return 1
+	}
+	abs, _ := filepath.Abs(path)
+	if action == "open" {
+		if err := openGeneratedPath(abs); err != nil {
+			fmt.Fprintf(stderr, "error: opening dashboard failed: %v\n", err)
+			return 1
+		}
+	}
+	fmt.Fprintf(stdout, "%s\n", abs)
+	return 0
+}
+
+func runDashboard(args []string, stdout, stderr io.Writer) int {
+	action := "path"
+	root := "."
+	if len(args) > 0 && (args[0] == "path" || args[0] == "open") {
+		action = args[0]
+		args = args[1:]
+	}
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph dashboard <path|open> [path]\n")
+		return 0
+	}
+	if len(args) > 0 {
+		root = args[0]
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	layout := scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir))
+	path := filepath.Join(layout.Root, "dashboard")
+	openPath := layout.Dashboard("report.md")
+	if action == "open" {
+		if err := openGeneratedPath(openPath); err != nil {
+			fmt.Fprintf(stderr, "error: opening dashboard failed: %v\n", err)
+			return 1
+		}
 	}
 	abs, _ := filepath.Abs(path)
 	fmt.Fprintf(stdout, "%s\n", abs)
 	return 0
+}
+
+func openGeneratedPath(path string) error {
+	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" && runtime.GOOS == "linux" {
+		return fmt.Errorf("no graphical session is available")
+	}
+	var command string
+	switch runtime.GOOS {
+	case "darwin":
+		command = "open"
+	case "windows":
+		command = "cmd"
+	default:
+		command = "xdg-open"
+	}
+	args := []string{path}
+	if runtime.GOOS == "windows" {
+		args = []string{"/c", "start", "", path}
+	}
+	if err := exec.Command(command, args...).Start(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func runWorkspaceExplain(args []string, stdout, stderr io.Writer) int {
@@ -546,6 +673,10 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
 }
 
 func runWorkspaceScanAll(args []string, stdout, stderr io.Writer) int {
+	return runWorkspaceScanAllTarget(args, stdout, stderr, scan.BuildTargetAll)
+}
+
+func runWorkspaceScanAllTarget(args []string, stdout, stderr io.Writer, target scan.BuildTarget) int {
 	root := "."
 	dryRun := false
 	overrides := config.Defaults()
@@ -612,7 +743,7 @@ Workspace detection:
 			return 1
 		}
 		projectCfg.UpdateGitignore = loaded.UpdateGitignore
-		projectCfg.Workspace = true
+		projectCfg.Workspace = false
 		projectCfg.WorkspaceRoot = plan.WorkspaceRoot
 		if projectCfg.UpdateGitignore {
 			changed, err := gitignore.EnsureOutputIgnored(item.AbsPath, projectCfg.OutputDir)
@@ -624,13 +755,19 @@ Workspace detection:
 				fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(item.AbsPath, ".gitignore"))
 			}
 		}
-		result, err := scan.Run(item.AbsPath, projectCfg)
+		result, err := scan.RunBuild(item.AbsPath, projectCfg, target)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: scanning %s failed: %v\n", item.Project, err)
 			return 1
 		}
 		scanned++
 		fmt.Fprintf(stdout, "- Scanned `%s` (%d files, skipped %d)\n", item.Project, result.ScannedFiles, result.SkippedFiles)
+	}
+	loaded.Workspace = true
+	loaded.WorkspaceRoot = plan.WorkspaceRoot
+	if _, err := scan.ReconcileWorkspaceTarget(plan.WorkspaceRoot, loaded, target); err != nil {
+		fmt.Fprintf(stderr, "error: reconciling workspace failed: %v\n", err)
+		return 1
 	}
 	if loaded.UpdateGitignore {
 		changed, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot)
@@ -896,7 +1033,7 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
-	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, "report.md"))
+	body, err := os.ReadFile(scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir)).Dashboard("report.md"))
 	if err != nil {
 		fmt.Fprintf(stderr, "error: reading report failed: %v\n", err)
 		return 1
@@ -913,9 +1050,22 @@ func runScan(args []string, stdout, stderr io.Writer, update bool) int {
 
 	root := "."
 	cfg := config.Defaults()
+	target := scan.BuildTargetAll
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
+		case "--target":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --target requires agent, dashboard, or all\n")
+				return 2
+			}
+			i++
+			parsed, err := scan.ParseBuildTarget(args[i])
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 2
+			}
+			target = parsed
 		case "--no-update-gitignore":
 			cfg.UpdateGitignore = false
 		case "--no-workspace":
@@ -960,7 +1110,7 @@ func runScan(args []string, stdout, stderr io.Writer, update bool) int {
 		}
 	}
 
-	result, err := scan.Run(root, loaded)
+	result, err := scan.RunBuild(root, loaded, target)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: scan failed: %v\n", err)
 		return 1
@@ -994,8 +1144,9 @@ func printHelp(w io.Writer) {
 Usage: goregraph <command> [options]
 
 Commands:
-  scan <path>       Create or rebuild goregraph-out for a project
-  update            Refresh the current project's goregraph-out
+  build <target>    Build agent, dashboard, or all project projections
+  scan <path>       Compatibility alias for build all
+  update            Refresh the current project's selected projections
   report <path>     Print the generated Markdown report
   query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
@@ -1047,7 +1198,8 @@ func printWorkspaceHelp(w io.Writer) {
 Commands:
   status [path]        Show workspace projects and loaded indexes without scanning
   scan-missing [path]  Show prioritized missing service scans; add --execute to scan
-  scan-all [path]      Scan every discovered project in the workspace
+  build <target>       Build agent, dashboard, or all workspace projections
+  scan-all [path]      Compatibility alias for workspace build all
   refresh [path]       Refresh workspace overlays without scanning source files
   clean [path]         Show generated workspace outputs; add --execute to remove
   dashboard [path]     Print generated workspace dashboard path
@@ -1080,7 +1232,7 @@ Workspace detection:
 func printScanHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage: goregraph scan <path> [options]
 
-Creates deterministic GoreGraph output for a project.
+Compatibility alias for goregraph build all <path>.
 
 Options:
   --no-update-gitignore   Do not add generated GoreGraph output to .gitignore files

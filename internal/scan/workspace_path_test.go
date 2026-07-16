@@ -23,7 +23,7 @@ func TestWorkspacePathFindsRouteBetweenFrontendAndBackend(t *testing.T) {
 			{ID: "edge:2", From: "contract:get-users", To: "route:ms-user:get:/users/{userid}", Kind: "resolved_by"},
 		},
 	}
-	if err := writeJSON(filepath.Join(out, "workspace-graph.json"), graph); err != nil {
+	if err := writeJSON(NewWorkspaceOutputLayout(out).Index("workspace-graph.json"), graph); err != nil {
 		t.Fatal(err)
 	}
 
@@ -55,7 +55,7 @@ func TestWorkspacePathPrefersExactFileNodeOverFlowContainingFile(t *testing.T) {
 			{ID: "edge:2", From: "flow:users", To: "route:users", Kind: "handled_by"},
 		},
 	}
-	if err := writeJSON(filepath.Join(out, "workspace-graph.json"), graph); err != nil {
+	if err := writeJSON(NewWorkspaceOutputLayout(out).Index("workspace-graph.json"), graph); err != nil {
 		t.Fatal(err)
 	}
 
@@ -79,7 +79,7 @@ func TestWorkspacePathPrefersHandlerNodeOverFeatureWithSameSymbol(t *testing.T) 
 			{ID: "symbol:users", Kind: "backend_handler", Label: "UserController.get", Symbol: "UserController.get"},
 		},
 	}
-	if err := writeJSON(filepath.Join(out, "workspace-graph.json"), graph); err != nil {
+	if err := writeJSON(NewWorkspaceOutputLayout(out).Index("workspace-graph.json"), graph); err != nil {
 		t.Fatal(err)
 	}
 

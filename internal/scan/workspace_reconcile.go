@@ -46,6 +46,13 @@ type workspaceBackendRoute struct {
 
 // ReconcileWorkspace refreshes workspace-level overlay files after a local scan.
 func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegistryRecord, error) {
+	return ReconcileWorkspaceTarget(currentRoot, cfg, BuildTargetAll)
+}
+
+func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target BuildTarget) (*WorkspaceRegistryRecord, error) {
+	if err := target.Validate(); err != nil {
+		return nil, err
+	}
 	if !cfg.Workspace {
 		return nil, nil
 	}
@@ -56,6 +63,10 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	workspaceRoot, ok, err := resolveWorkspaceRoot(currentAbs, cfg.WorkspaceRoot)
 	if err != nil || !ok {
 		return nil, err
+	}
+	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
+	if legacyGeneratedOutputExists(workspaceOut) {
+		return nil, fmt.Errorf("legacy pre-1.3.0 workspace output detected; run `goregraph workspace clean %s --execute` and `goregraph workspace build all %s`", currentRoot, currentRoot)
 	}
 
 	projects, err := discoverWorkspaceProjects(workspaceRoot, currentAbs, cfg.OutputDir)
@@ -81,10 +92,8 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	context := buildWorkspaceContext(registry, indexed)
 	matches := buildWorkspaceContractMatches(indexed)
 	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
-	symbolIndex, symbolUsageIndex, err := BuildWorkspaceSymbolProjection(registry, indexed, registry.Generated)
-	if err != nil {
-		return nil, err
-	}
+	var symbolIndex WorkspaceSymbolIndexRecord
+	var symbolUsageIndex WorkspaceSymbolUsageIndexRecord
 	dataFlows := BuildDataFlows(featureFlows)
 	featureDossiers := buildFeatureDossiers(featureFlows, matches)
 	workspaceGraph := BuildWorkspaceGraph(registry, matches, featureFlows, featureDossiers)
@@ -101,135 +110,178 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	directedTraces := BuildDirectedTraceIndex(endpointTraces)
 	endpointTraces.Directed = directedTraces.Traces
-	symbolUsageIndex, err = finalizeWorkspaceSymbolUsageProjection(symbolIndex, symbolUsageIndex, matches, featureFlows, endpointTraces, indexed)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateWorkspaceSymbolProjectionEvidence(symbolIndex, symbolUsageIndex, indexed); err != nil {
-		return nil, err
+	if target.IncludesDashboard() {
+		symbolIndex, symbolUsageIndex, err = BuildWorkspaceSymbolProjection(registry, indexed, registry.Generated)
+		if err != nil {
+			return nil, err
+		}
+		symbolUsageIndex, err = finalizeWorkspaceSymbolUsageProjection(symbolIndex, symbolUsageIndex, matches, featureFlows, endpointTraces, indexed)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateWorkspaceSymbolProjectionEvidence(symbolIndex, symbolUsageIndex, indexed); err != nil {
+			return nil, err
+		}
 	}
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 	workspaceFreshness := BuildWorkspaceFreshness(indexed, registry.Generated)
 
-	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
 	if err := os.MkdirAll(workspaceOut, 0o755); err != nil {
 		return nil, err
 	}
-	if err := writeWorkspaceSymbolProjectionPair(workspaceOut, symbolIndex, symbolUsageIndex); err != nil {
+	layout := NewWorkspaceOutputLayout(workspaceOut)
+	if err := os.MkdirAll(filepath.Join(workspaceOut, "index"), 0o755); err != nil {
 		return nil, err
 	}
-	if err := writeJSON(filepath.Join(workspaceOut, "registry.json"), registry); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "context.json"), context); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "contract-matches.json"), matches); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "feature-flows.json"), featureFlows); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "data-flows.json"), dataFlows); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "feature-dossiers.json"), featureDossiers); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "workspace-graph.json"), workspaceGraph); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "workspace-service-map.json"), serviceMap); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "workspace-endpoint-traces.json"), endpointTraces); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "directed-traces.json"), directedTraces); err != nil {
-		return nil, err
-	}
-	if err := writeJSON(filepath.Join(workspaceOut, "freshness.json"), workspaceFreshness); err != nil {
-		return nil, err
-	}
-	dashboardArtifacts := buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, symbolIndex, symbolUsageIndex)
-	dashboardAssetRoot := filepath.Join(workspaceOut, workspaceDashboardAssetDir)
-	if err := os.RemoveAll(dashboardAssetRoot); err != nil {
-		return nil, err
-	}
-	for assetPath, body := range dashboardArtifacts.Assets {
-		path := filepath.Join(workspaceOut, filepath.FromSlash(assetPath))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(path, body, 0o644); err != nil {
+	if target.IncludesDashboard() {
+		if err := writeWorkspaceSymbolProjectionPair(filepath.Join(workspaceOut, "index"), symbolIndex, symbolUsageIndex); err != nil {
 			return nil, err
 		}
 	}
-	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-map.html"), []byte(dashboardArtifacts.HTML), 0o644); err != nil {
+	if err := writeJSON(layout.Index("registry.json"), registry); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-context.md"), []byte(renderWorkspaceContextReport(context)), 0o644); err != nil {
+	if err := writeJSON(layout.Index("context.json"), context); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(workspaceOut, "contract-matches.md"), []byte(renderWorkspaceContractMatchesReport(matches)), 0o644); err != nil {
+	if err := writeJSON(layout.Index("contract-matches.json"), matches); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(workspaceOut, "feature-flows.md"), []byte(renderWorkspaceFeatureFlowsReport(featureFlows)), 0o644); err != nil {
+	if err := writeJSON(layout.Index("feature-flows.json"), featureFlows); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(workspaceOut, "feature-dossiers.md"), []byte(renderFeatureDossiersReport(featureDossiers)), 0o644); err != nil {
+	if err := writeJSON(layout.Index("data-flows.json"), dataFlows); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(workspaceOut, "next-actions.md"), []byte(nextActions), 0o644); err != nil {
+	if err := writeJSON(layout.Index("feature-dossiers.json"), featureDossiers); err != nil {
 		return nil, err
+	}
+	if err := writeJSON(layout.Index("workspace-graph.json"), workspaceGraph); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(layout.Index("workspace-service-map.json"), serviceMap); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(layout.Index("workspace-endpoint-traces.json"), endpointTraces); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(layout.Index("directed-traces.json"), directedTraces); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(layout.Index("freshness.json"), workspaceFreshness); err != nil {
+		return nil, err
+	}
+	if target.IncludesDashboard() {
+		dashboardArtifacts := buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, symbolIndex, symbolUsageIndex)
+		if err := os.RemoveAll(filepath.Join(workspaceOut, "dashboard")); err != nil {
+			return nil, err
+		}
+		if err := os.MkdirAll(filepath.Join(workspaceOut, "dashboard"), 0o755); err != nil {
+			return nil, err
+		}
+		for assetPath, body := range dashboardArtifacts.Assets {
+			path := layout.Dashboard(filepath.FromSlash(assetPath))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return nil, err
+			}
+			if err := os.WriteFile(path, body, 0o644); err != nil {
+				return nil, err
+			}
+		}
+		for name, body := range map[string]string{
+			"workspace-map.html":   dashboardArtifacts.HTML,
+			"workspace-context.md": renderWorkspaceContextReport(context),
+			"contract-matches.md":  renderWorkspaceContractMatchesReport(matches),
+			"feature-flows.md":     renderWorkspaceFeatureFlowsReport(featureFlows),
+			"feature-dossiers.md":  renderFeatureDossiersReport(featureDossiers),
+			"next-actions.md":      nextActions,
+		} {
+			if err := os.WriteFile(layout.Dashboard(name), []byte(body), 0o644); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if target.IncludesAgent() {
+		if err := os.RemoveAll(filepath.Join(workspaceOut, "agent")); err != nil {
+			return nil, err
+		}
+		if err := os.MkdirAll(filepath.Join(workspaceOut, "agent"), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(layout.Agent("agent-guide.md"), []byte("# GoreGraph Workspace Agent Guide\n"), 0o644); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, project := range indexed {
 		out := filepath.Join(project.record.AbsPath, project.record.OutputDir)
-		if err := os.WriteFile(filepath.Join(out, "workspace-context.md"), []byte(renderProjectWorkspaceContextReport(context, project.record.Path)), 0o644); err != nil {
-			return nil, err
-		}
+		projectLayout := NewProjectOutputLayout(out)
 		projectMatches := filterWorkspaceContractMatches(project.record.Path, matches)
-		if err := writeJSON(filepath.Join(out, "workspace-contract-matches.json"), projectMatches); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(filepath.Join(out, "workspace-contract-matches.md"), []byte(renderProjectWorkspaceMatchesReport(project.record.Path, matches)), 0o644); err != nil {
+		if err := writeJSON(projectLayout.Index("workspace-contract-matches.json"), projectMatches); err != nil {
 			return nil, err
 		}
 		projectFeatureFlows := filterWorkspaceFeatureFlows(project.record.Path, featureFlows)
-		if err := writeJSON(filepath.Join(out, "workspace-feature-flows.json"), projectFeatureFlows); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(filepath.Join(out, "workspace-feature-flows.md"), []byte(renderWorkspaceFeatureFlowsReport(projectFeatureFlows)), 0o644); err != nil {
+		if err := writeJSON(projectLayout.Index("workspace-feature-flows.json"), projectFeatureFlows); err != nil {
 			return nil, err
 		}
 		projectDossiers := filterFeatureDossiers(project.record.Path, featureDossiers)
-		if err := writeJSON(filepath.Join(out, "workspace-feature-dossiers.json"), projectDossiers); err != nil {
+		if err := writeJSON(projectLayout.Index("workspace-feature-dossiers.json"), projectDossiers); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(filepath.Join(out, "workspace-feature-dossiers.md"), []byte(renderFeatureDossiersReport(projectDossiers)), 0o644); err != nil {
+		if err := writeJSON(projectLayout.Index("workspace-graph.json"), filterWorkspaceGraph(project.record.Path, workspaceGraph)); err != nil {
 			return nil, err
 		}
-		if err := writeJSON(filepath.Join(out, "workspace-graph.json"), filterWorkspaceGraph(project.record.Path, workspaceGraph)); err != nil {
+		if err := updateWorkspaceProjectDiagnostics(projectLayout, project.record.Path, matches, target.IncludesDashboard()); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(filepath.Join(out, "workspace-map.md"), []byte(renderProjectWorkspaceMapPointer(workspaceRoot)), 0o644); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(filepath.Join(out, "workspace-next-actions.md"), []byte(nextActions), 0o644); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(filepath.Join(out, "frontend-consumers.md"), []byte(renderFrontendConsumersReport(project.record.Path, matches)), 0o644); err != nil {
-			return nil, err
-		}
-		if err := updateWorkspaceProjectDiagnostics(out, project.record.Path, matches); err != nil {
-			return nil, err
-		}
-		if err := updateWorkspaceEndpointConsumers(out, project.record.Path, matches); err != nil {
-			return nil, err
+		if target.IncludesDashboard() {
+			for name, body := range map[string]string{
+				"workspace-context.md":          renderProjectWorkspaceContextReport(context, project.record.Path),
+				"workspace-contract-matches.md": renderProjectWorkspaceMatchesReport(project.record.Path, matches),
+				"workspace-feature-flows.md":    renderWorkspaceFeatureFlowsReport(projectFeatureFlows),
+				"workspace-feature-dossiers.md": renderFeatureDossiersReport(projectDossiers),
+				"workspace-map.md":              renderProjectWorkspaceMapPointer(workspaceRoot),
+				"workspace-next-actions.md":     nextActions,
+				"frontend-consumers.md":         renderFrontendConsumersReport(project.record.Path, matches),
+			} {
+				if err := os.WriteFile(projectLayout.Dashboard(name), []byte(body), 0o644); err != nil {
+					return nil, err
+				}
+			}
+			if err := updateWorkspaceEndpointConsumers(projectLayout, project.record.Path, matches); err != nil {
+				return nil, err
+			}
 		}
 	}
-
+	previous := readCurrentOutputManifest(layout.Manifest)
+	previous.Agent = validProjectionStatus(layout.Root, previous.Agent)
+	previous.Dashboard = validProjectionStatus(layout.Root, previous.Dashboard)
+	indexFiles := workspaceIndexFiles(target)
+	if previous.Dashboard.Complete && !target.IncludesDashboard() {
+		indexFiles = mergeGeneratedPaths(indexFiles, workspaceIndexFiles(BuildTargetDashboard))
+	}
+	manifest := OutputManifest{
+		Tool:      ToolName,
+		Schema:    SchemaVersion,
+		Scope:     "workspace",
+		OutputDir: ".goregraph-workspace",
+		Index: ProjectionStatus{
+			GeneratedAt: registry.Generated,
+			Complete:    true,
+			Files:       indexFiles,
+		},
+		Agent:     previous.Agent,
+		Dashboard: previous.Dashboard,
+	}
+	if target.IncludesAgent() {
+		manifest.Agent = ProjectionStatus{GeneratedAt: registry.Generated, Complete: true, Files: prefixedGeneratedFiles("agent", AgentGeneratedFiles)}
+	}
+	if target.IncludesDashboard() {
+		manifest.Dashboard = ProjectionStatus{GeneratedAt: registry.Generated, Complete: true, Files: workspaceDashboardFiles()}
+	}
+	if err := writeOutputManifestAtomic(layout.Manifest, manifest); err != nil {
+		return nil, err
+	}
 	return &registry, nil
 }
 
@@ -278,7 +330,7 @@ func workspaceRootScore(dir string) int {
 	if workspaceFileExists(filepath.Join(dir, ".goregraph-workspace.yml")) {
 		score += 1000
 	}
-	if workspaceFileExists(filepath.Join(dir, ".goregraph-workspace", "registry.json")) {
+	if workspaceFileExists(NewWorkspaceOutputLayout(filepath.Join(dir, ".goregraph-workspace")).Index("registry.json")) {
 		score += 10
 	}
 	if info, err := os.Stat(filepath.Join(dir, ".goregraph-workspace")); err == nil && info.IsDir() {
@@ -353,7 +405,7 @@ func discoverWorkspaceProjects(workspaceRoot, currentAbs, defaultOutput string) 
 func addWorkspaceProject(projects map[string]WorkspaceProjectRecord, workspaceRoot, currentAbs, abs, group, defaultOutput string) {
 	rel := workspaceRel(workspaceRoot, abs)
 	outputDir := projectOutputDir(abs, defaultOutput)
-	indexed := workspaceFileExists(filepath.Join(abs, outputDir, "manifest.json"))
+	indexed := validProjectOutput(filepath.Join(abs, outputDir))
 	status := "not_indexed"
 	if indexed {
 		status = "indexed"
@@ -379,6 +431,11 @@ func addWorkspaceProject(projects map[string]WorkspaceProjectRecord, workspaceRo
 		Status:      status,
 		OutputDir:   outputDir,
 	}
+}
+
+func validProjectOutput(out string) bool {
+	manifest := readCurrentOutputManifest(NewProjectOutputLayout(out).Manifest)
+	return manifest.Scope == "project" && manifest.Index.Complete
 }
 
 func workspaceProjectBuildSystem(abs string) string {
@@ -493,9 +550,10 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		if !workspaceFileExists(filepath.Join(out, "manifest.json")) {
 			continue
 		}
+		layout := NewProjectOutputLayout(out)
 		loaded := workspaceIndexProject{record: project}
 		loadSymbolFact := func(name string, dest any, reset func()) {
-			err := readWorkspaceJSON(filepath.Join(out, name), dest)
+			err := readWorkspaceJSON(layout.Index(name), dest)
 			if err == nil {
 				return
 			}
@@ -524,16 +582,16 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		loadSymbolFact("evidence.json", &loaded.evidence, func() {
 			loaded.evidence = nil
 		})
-		if err := readWorkspaceJSON(filepath.Join(out, "routes.json"), &loaded.routes); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(layout.Index("routes.json"), &loaded.routes); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		if err := readWorkspaceJSON(filepath.Join(out, "relations.json"), &loaded.legacyRelations); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(layout.Index("relations.json"), &loaded.legacyRelations); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		if err := readWorkspaceJSON(filepath.Join(out, "api-contracts.json"), &loaded.contracts); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(layout.Index("api-contracts.json"), &loaded.contracts); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		if err := readWorkspaceJSON(filepath.Join(out, "service-dependencies.json"), &loaded.dependencies); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(layout.Index("service-dependencies.json"), &loaded.dependencies); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		for i := range loaded.dependencies {
@@ -545,7 +603,7 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 			loaded.codeFlows = nil
 		})
 		var spring SpringIndex
-		if err := readWorkspaceJSON(filepath.Join(out, "spring.json"), &spring); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(layout.Index("spring.json"), &spring); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		loaded.spring = spring
@@ -553,7 +611,7 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		loadSymbolFact("endpoint-flows.json", &loaded.endpointFlows, func() {
 			loaded.endpointFlows = nil
 		})
-		if err := readWorkspaceJSON(filepath.Join(out, "test-map.json"), &loaded.testMap); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(layout.Index("test-map.json"), &loaded.testMap); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		loadSymbolFact("capabilities.json", &loaded.capabilities, func() {
@@ -562,13 +620,13 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		for i := range loaded.capabilities {
 			loaded.capabilities[i].Project = project.Path
 		}
-		if err := readWorkspaceJSON(filepath.Join(out, "diagnostics-canonical.json"), &loaded.diagnostics); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(layout.Index("diagnostics-canonical.json"), &loaded.diagnostics); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		if err := readWorkspaceJSON(filepath.Join(out, "diagnostic-families.json"), &loaded.diagnosticFamilies); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(layout.Index("diagnostic-families.json"), &loaded.diagnosticFamilies); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
-		if err := readWorkspaceJSON(filepath.Join(out, "freshness.json"), &loaded.freshness); err != nil && !os.IsNotExist(err) {
+		if err := readWorkspaceJSON(layout.Index("freshness.json"), &loaded.freshness); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		result = append(result, loaded)
@@ -1447,7 +1505,7 @@ func filterWorkspaceGraph(projectPath string, graph WorkspaceGraphRecord) Worksp
 }
 
 func renderProjectWorkspaceMapPointer(workspaceRoot string) string {
-	return "# GoreGraph Workspace Map\n\nOpen the workspace dashboard at:\n\n`" + filepath.ToSlash(filepath.Join(workspaceRoot, ".goregraph-workspace", "workspace-map.html")) + "`\n"
+	return "# GoreGraph Workspace Map\n\nOpen the workspace dashboard at:\n\n`" + filepath.ToSlash(filepath.Join(workspaceRoot, ".goregraph-workspace", "dashboard", "workspace-map.html")) + "`\n"
 }
 
 func renderWorkspaceContextReport(record WorkspaceContextRecord) string {
@@ -1781,7 +1839,7 @@ func WorkspaceCleanPlan(root string, cfg config.Config) (WorkspaceCleanPlanRecor
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
 	includes := make([]string, 0, len(workspaceSymbolGeneratedFiles))
 	for _, name := range workspaceSymbolGeneratedFiles {
-		includes = append(includes, filepath.ToSlash(filepath.Join(workspaceOut, name)))
+		includes = append(includes, filepath.ToSlash(NewWorkspaceOutputLayout(workspaceOut).Index(name)))
 	}
 	items = append(items, WorkspaceCleanItemRecord{
 		Path:     filepath.ToSlash(workspaceOut),
@@ -2056,8 +2114,8 @@ func renderWorkspaceFeatureFlowsReport(records []WorkspaceFeatureFlowRecord) str
 	return b.String()
 }
 
-func updateWorkspaceProjectDiagnostics(out, projectPath string, matches []WorkspaceContractMatchRecord) error {
-	path := filepath.Join(out, "diagnostics.json")
+func updateWorkspaceProjectDiagnostics(layout OutputLayout, projectPath string, matches []WorkspaceContractMatchRecord, writeReport bool) error {
+	path := layout.Index("diagnostics.json")
 	var diagnostics DiagnosticsRecord
 	if err := readWorkspaceJSON(path, &diagnostics); err != nil {
 		if os.IsNotExist(err) {
@@ -2122,15 +2180,18 @@ func updateWorkspaceProjectDiagnostics(out, projectPath string, matches []Worksp
 	if err := writeJSON(path, diagnostics); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(out, "diagnostics.md"), []byte(renderDiagnosticsReport(diagnostics)), 0o644)
+	if !writeReport {
+		return nil
+	}
+	return os.WriteFile(layout.Dashboard("diagnostics.md"), []byte(renderDiagnosticsReport(diagnostics)), 0o644)
 }
 
 func workspaceContractDiagnosticKey(method, path, file string, line int) string {
 	return strings.ToUpper(method) + "\x00" + path + "\x00" + file + "\x00" + fmt.Sprint(line)
 }
 
-func updateWorkspaceEndpointConsumers(out, projectPath string, matches []WorkspaceContractMatchRecord) error {
-	path := filepath.Join(out, "endpoints.md")
+func updateWorkspaceEndpointConsumers(layout OutputLayout, projectPath string, matches []WorkspaceContractMatchRecord) error {
+	path := layout.Dashboard("endpoints.md")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -2140,6 +2201,38 @@ func updateWorkspaceEndpointConsumers(out, projectPath string, matches []Workspa
 	}
 	updated := stripMarkdownSection(string(body), "## Frontend Consumers") + renderEndpointFrontendConsumersSection(projectPath, matches)
 	return os.WriteFile(path, []byte(updated), 0o644)
+}
+
+func workspaceIndexFiles(target BuildTarget) []string {
+	names := []string{
+		"registry.json",
+		"context.json",
+		"contract-matches.json",
+		"feature-flows.json",
+		"data-flows.json",
+		"feature-dossiers.json",
+		"workspace-graph.json",
+		"workspace-service-map.json",
+		"workspace-endpoint-traces.json",
+		"directed-traces.json",
+		"freshness.json",
+	}
+	if target.IncludesDashboard() {
+		names = append(names, workspaceSymbolGeneratedFiles...)
+	}
+	return prefixedGeneratedFiles("index", names)
+}
+
+func workspaceDashboardFiles() []string {
+	return prefixedGeneratedFiles("dashboard", []string{
+		"workspace-map.html",
+		"workspace-map-assets",
+		"workspace-context.md",
+		"contract-matches.md",
+		"feature-flows.md",
+		"feature-dossiers.md",
+		"next-actions.md",
+	})
 }
 
 func renderEndpointFrontendConsumersSection(projectPath string, records []WorkspaceContractMatchRecord) string {

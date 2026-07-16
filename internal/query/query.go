@@ -226,20 +226,21 @@ func ReadOutput(root, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, name))
+	layout := scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir))
+	body, err := os.ReadFile(projectOutputPath(layout, name))
 	if err != nil {
 		if os.IsNotExist(err) {
 			if fallbackName, ok := workspaceOutputFallbacks[name]; ok {
-				if body, fallbackErr := os.ReadFile(filepath.Join(root, ".goregraph-workspace", fallbackName)); fallbackErr == nil {
+				if body, fallbackErr := os.ReadFile(workspaceOutputPath(scan.NewWorkspaceOutputLayout(filepath.Join(root, ".goregraph-workspace")), fallbackName)); fallbackErr == nil {
 					return string(body), nil
 				}
 				if workspaceRoot, found, workspaceErr := scan.WorkspaceRoot(root, cfg); workspaceErr == nil && found {
-					if body, fallbackErr := os.ReadFile(filepath.Join(workspaceRoot, ".goregraph-workspace", fallbackName)); fallbackErr == nil {
+					if body, fallbackErr := os.ReadFile(workspaceOutputPath(scan.NewWorkspaceOutputLayout(filepath.Join(workspaceRoot, ".goregraph-workspace")), fallbackName)); fallbackErr == nil {
 						return string(body), nil
 					}
 				}
 			}
-			return "", fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
+			return "", fmt.Errorf("output %s is missing; run `goregraph build all <path>` first", name)
 		}
 		return "", err
 	}
@@ -321,16 +322,17 @@ func loadIndex(root string) ([]scan.FileRecord, []scan.SymbolRecord, []scan.Rela
 		return nil, nil, nil, err
 	}
 	out := filepath.Join(root, cfg.OutputDir)
+	layout := scan.NewProjectOutputLayout(out)
 	var files []scan.FileRecord
 	var symbols []scan.SymbolRecord
 	var relations []scan.RelationRecord
-	if err := readJSON(filepath.Join(out, "files.json"), &files); err != nil {
+	if err := readJSON(layout.Index("files.json"), &files); err != nil {
 		return nil, nil, nil, err
 	}
-	if err := readJSON(filepath.Join(out, "symbols.json"), &symbols); err != nil {
+	if err := readJSON(layout.Index("symbols.json"), &symbols); err != nil {
 		return nil, nil, nil, err
 	}
-	if err := readJSON(filepath.Join(out, "relations.json"), &relations); err != nil {
+	if err := readJSON(layout.Index("relations.json"), &relations); err != nil {
 		return nil, nil, nil, err
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
@@ -352,11 +354,31 @@ func loadIndex(root string) ([]scan.FileRecord, []scan.SymbolRecord, []scan.Rela
 	return files, symbols, relations, nil
 }
 
+func projectOutputPath(layout scan.OutputLayout, name string) string {
+	if name == "manifest.json" {
+		return layout.Manifest
+	}
+	if strings.HasSuffix(name, ".json") {
+		return layout.Index(name)
+	}
+	return layout.Dashboard(name)
+}
+
+func workspaceOutputPath(layout scan.OutputLayout, name string) string {
+	if name == "manifest.json" {
+		return layout.Manifest
+	}
+	if strings.HasSuffix(name, ".json") {
+		return layout.Index(name)
+	}
+	return layout.Dashboard(name)
+}
+
 func readJSON(path string, dest any) error {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("index is missing; run `goregraph scan <path>` first")
+			return fmt.Errorf("index is missing; run `goregraph build all <path>` first")
 		}
 		return err
 	}

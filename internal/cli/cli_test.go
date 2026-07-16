@@ -21,6 +21,123 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestRunBuildCommandsWriteSelectedProjection(t *testing.T) {
+	for _, target := range []string{"agent", "dashboard", "all"} {
+		t.Run(target, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, root, "main.go", "package main\nfunc main() {}\n")
+			var stdout, stderr bytes.Buffer
+
+			code := Run([]string{"build", target, root, "--no-workspace", "--no-update-gitignore"}, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("exit code = %d, stderr=%s", code, stderr.String())
+			}
+			assertCLIPathExists(t, filepath.Join(root, "goregraph-out", "index", "routes.json"))
+			assertCLIProjection(t, root, "agent", target == "agent" || target == "all")
+			assertCLIProjection(t, root, "dashboard", target == "dashboard" || target == "all")
+		})
+	}
+}
+
+func TestRunBuildRejectsMissingOrUnknownTarget(t *testing.T) {
+	for _, args := range [][]string{
+		{"build"},
+		{"build", "context"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(args, &stdout, &stderr); code != 2 {
+			t.Fatalf("%v exit code = %d, want 2", args, code)
+		}
+		if !strings.Contains(stderr.String(), "agent, dashboard, all") {
+			t.Fatalf("%v error missing accepted targets:\n%s", args, stderr.String())
+		}
+	}
+}
+
+func TestRunWorkspaceBuildCommandsWriteSelectedProjection(t *testing.T) {
+	for _, target := range []string{"agent", "dashboard", "all"} {
+		t.Run(target, func(t *testing.T) {
+			workspace := t.TempDir()
+			writeFile(t, workspace, "frontend/web/package.json", `{"name":"web"}`)
+			writeFile(t, workspace, "services/api/go.mod", "module example.test/api\n")
+			var stdout, stderr bytes.Buffer
+
+			code := Run([]string{"workspace", "build", target, workspace, "--workspace", workspace, "--no-update-gitignore"}, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("exit code = %d, stderr=%s", code, stderr.String())
+			}
+			out := filepath.Join(workspace, ".goregraph-workspace")
+			assertCLIPathExists(t, filepath.Join(out, "index", "registry.json"))
+			assertCLIWorkspaceProjection(t, out, "agent", target == "agent" || target == "all")
+			assertCLIWorkspaceProjection(t, out, "dashboard", target == "dashboard" || target == "all")
+		})
+	}
+}
+
+func TestRunUpdateAcceptsBuildTargets(t *testing.T) {
+	for _, target := range []string{"agent", "dashboard", "all"} {
+		t.Run(target, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, root, "main.go", "package main\nfunc main() {}\n")
+			var stdout, stderr bytes.Buffer
+
+			code := Run([]string{"update", root, "--target", target, "--no-workspace", "--no-update-gitignore"}, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("exit code = %d, stderr=%s", code, stderr.String())
+			}
+			assertCLIPathExists(t, filepath.Join(root, "goregraph-out", "manifest.json"))
+		})
+	}
+}
+
+func TestRunWorkspaceRefreshAcceptsBuildTargets(t *testing.T) {
+	workspace := t.TempDir()
+	writeFile(t, workspace, "frontend/web/package.json", `{"name":"web"}`)
+	writeFile(t, workspace, "services/api/go.mod", "module example.test/api\n")
+	var buildOut, buildErr bytes.Buffer
+	if code := Run([]string{"workspace", "build", "all", workspace, "--workspace", workspace, "--no-update-gitignore"}, &buildOut, &buildErr); code != 0 {
+		t.Fatalf("workspace build exit code = %d, stderr=%s", code, buildErr.String())
+	}
+
+	for _, target := range []string{"agent", "dashboard", "all"} {
+		var stdout, stderr bytes.Buffer
+		code := Run([]string{"workspace", "refresh", workspace, "--target", target, "--workspace", workspace}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("target %s exit code = %d, stderr=%s", target, code, stderr.String())
+		}
+	}
+}
+
+func assertCLIProjection(t *testing.T, root, projection string, want bool) {
+	t.Helper()
+	path := filepath.Join(root, "goregraph-out", projection)
+	assertCLIPathState(t, path, want)
+}
+
+func assertCLIWorkspaceProjection(t *testing.T, out, projection string, want bool) {
+	t.Helper()
+	assertCLIPathState(t, filepath.Join(out, projection), want)
+}
+
+func assertCLIPathExists(t *testing.T, path string) {
+	t.Helper()
+	assertCLIPathState(t, path, true)
+}
+
+func assertCLIPathState(t *testing.T, path string, want bool) {
+	t.Helper()
+	_, err := os.Stat(path)
+	if want && err != nil {
+		t.Fatalf("%s missing: %v", path, err)
+	}
+	if !want && !os.IsNotExist(err) {
+		t.Fatalf("%s exists, err=%v", path, err)
+	}
+}
+
 func TestWorkspaceHelpExplainsFlatWorkspaceDetection(t *testing.T) {
 	for _, args := range [][]string{
 		{"help"},
@@ -265,7 +382,7 @@ class TaskController {
 	if _, err := os.Stat(filepath.Join(task, "goregraph-out", "manifest.json")); err != nil {
 		t.Fatalf("execute should scan ms-task: %v", err)
 	}
-	matches, err := os.ReadFile(filepath.Join(frontend, "goregraph-out", "workspace-contract-matches.md"))
+	matches, err := os.ReadFile(filepath.Join(frontend, "goregraph-out", "dashboard", "workspace-contract-matches.md"))
 	if err != nil {
 		t.Fatalf("reading frontend workspace matches: %v", err)
 	}
@@ -317,7 +434,7 @@ class CadasterController {
 		filepath.Join(frontend, "goregraph-out", "manifest.json"),
 		filepath.Join(cadaster, "goregraph-out", "manifest.json"),
 		filepath.Join(task, "goregraph-out", "manifest.json"),
-		filepath.Join(frontend, "goregraph-out", "workspace-contract-matches.json"),
+		filepath.Join(frontend, "goregraph-out", "index", "workspace-contract-matches.json"),
 	} {
 		if _, err := os.Stat(out); err != nil {
 			t.Fatalf("scan-all should create %s: %v", out, err)
@@ -469,10 +586,10 @@ func TestRunWorkspaceDiffComparesTwoWorkspaceOutputDirs(t *testing.T) {
 	root := t.TempDir()
 	before := filepath.Join(root, "before")
 	after := filepath.Join(root, "after")
-	writeFile(t, before, "contract-matches.json", `[{"id":"a","api_http_method":"GET","api_path":"/a","issue":"matched","confidence":"RESOLVED"}]`)
-	writeFile(t, before, "feature-flows.json", `[{"id":"flow-a","tests":[{"confidence":"MATCHED"}]}]`)
-	writeFile(t, after, "contract-matches.json", `[{"id":"a","api_http_method":"GET","api_path":"/a","issue":"indexed_backend_route_missing","confidence":"UNRESOLVED"},{"id":"b","api_http_method":"POST","api_path":"/b","issue":"matched","confidence":"RESOLVED"}]`)
-	writeFile(t, after, "feature-flows.json", `[{"id":"flow-a"}]`)
+	writeFile(t, before, "index/contract-matches.json", `[{"id":"a","api_http_method":"GET","api_path":"/a","issue":"matched","confidence":"RESOLVED"}]`)
+	writeFile(t, before, "index/feature-flows.json", `[{"id":"flow-a","tests":[{"confidence":"MATCHED"}]}]`)
+	writeFile(t, after, "index/contract-matches.json", `[{"id":"a","api_http_method":"GET","api_path":"/a","issue":"indexed_backend_route_missing","confidence":"UNRESOLVED"},{"id":"b","api_http_method":"POST","api_path":"/b","issue":"matched","confidence":"RESOLVED"}]`)
+	writeFile(t, after, "index/feature-flows.json", `[{"id":"flow-a"}]`)
 	var stdout, stderr bytes.Buffer
 
 	code := Run([]string{"workspace", "diff", "--before", before, "--after", after}, &stdout, &stderr)
@@ -575,7 +692,7 @@ func TestRunQuerySearchesGeneratedIndex(t *testing.T) {
 	}
 }
 
-func TestRunQueryMissingIndexTellsUserToScan(t *testing.T) {
+func TestRunQueryMissingIndexTellsUserToBuildAll(t *testing.T) {
 	root := t.TempDir()
 	var stdout, stderr bytes.Buffer
 
@@ -584,8 +701,8 @@ func TestRunQueryMissingIndexTellsUserToScan(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "goregraph scan") {
-		t.Fatalf("stderr missing scan guidance:\n%s", stderr.String())
+	if !strings.Contains(stderr.String(), "goregraph build all") {
+		t.Fatalf("stderr missing build guidance:\n%s", stderr.String())
 	}
 }
 
@@ -700,7 +817,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		"built:",
 		"go:",
 		"platform:",
-		"schema: 2",
+		"schema: 3",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("version output missing %q:\n%s", want, stdout.String())
@@ -714,7 +831,10 @@ func TestRunWorkspaceDashboardPrintsDashboardPath(t *testing.T) {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(out, "workspace-map.html"), []byte("<html></html>"), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(out, "dashboard"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "dashboard", "workspace-map.html"), []byte("<html></html>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
@@ -753,7 +873,7 @@ class UserController {
 	if code := Run([]string{"workspace", "scan-all", workspace, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
 		t.Fatalf("scan-all exit code = %d, stderr=%s", code, scanErr.String())
 	}
-	dashboard := filepath.Join(workspace, ".goregraph-workspace", "workspace-map.html")
+	dashboard := filepath.Join(workspace, ".goregraph-workspace", "dashboard", "workspace-map.html")
 	if err := os.Remove(dashboard); err != nil {
 		t.Fatal(err)
 	}
@@ -767,7 +887,7 @@ class UserController {
 	if _, err := os.Stat(dashboard); err != nil {
 		t.Fatalf("refresh should recreate dashboard: %v", err)
 	}
-	assets, err := filepath.Glob(filepath.Join(workspace, ".goregraph-workspace", "workspace-map-assets", "*.js"))
+	assets, err := filepath.Glob(filepath.Join(workspace, ".goregraph-workspace", "dashboard", "workspace-map-assets", "*.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,13 +907,16 @@ func TestRunWorkspaceExplainPathAndImpactUseGeneratedWorkspaceGraph(t *testing.T
 		t.Fatal(err)
 	}
 	graph := `{"nodes":[{"id":"project:frontend/app","kind":"project","label":"frontend/app"},{"id":"contract:get-users","kind":"contract","label":"GET /users/{userId}","file":"src/api/users.ts"},{"id":"route:ms-user:get:/users/{userid}","kind":"route","label":"UserController.get","symbol":"UserController.get"}],"edges":[{"id":"edge:1","from":"project:frontend/app","to":"contract:get-users","kind":"declares_contract"},{"id":"edge:2","from":"contract:get-users","to":"route:ms-user:get:/users/{userid}","kind":"resolved_by","confidence":"RESOLVED"}]}`
-	if err := os.WriteFile(filepath.Join(out, "workspace-graph.json"), []byte(graph), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(out, "index"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(out, "feature-dossiers.json"), []byte(`[{"id":"feature:get-users","route":"GET /users/{userId}","source_flow_id":"flow:get-users","frontend_project":"frontend/app","backend_project":"services/ms-user"}]`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(out, "index", "workspace-graph.json"), []byte(graph), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(out, "feature-flows.json"), []byte(`[{"id":"flow:get-users","frontend_project":"frontend/app","frontend_file":"src/api/users.ts","backend_project":"services/ms-user","backend_file":"UserController.java","http_method":"GET","path":"/users/{userId}"}]`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(out, "index", "feature-dossiers.json"), []byte(`[{"id":"feature:get-users","route":"GET /users/{userId}","source_flow_id":"flow:get-users","frontend_project":"frontend/app","backend_project":"services/ms-user"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "index", "feature-flows.json"), []byte(`[{"id":"flow:get-users","frontend_project":"frontend/app","frontend_file":"src/api/users.ts","backend_project":"services/ms-user","backend_file":"UserController.java","http_method":"GET","path":"/users/{userId}"}]`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -942,7 +1065,7 @@ func TestRunSymbolQuerySyntaxAndMissingProjectionExitCodes(t *testing.T) {
 	if code := Run([]string{"query", workspace, "symbol-inventory", "--limit", "20"}, &stdout, &stderr); code != 1 {
 		t.Fatalf("missing projection exit code = %d, want 1; stderr=%s", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "workspace scan-all") {
+	if !strings.Contains(stderr.String(), "workspace build all") {
 		t.Fatalf("missing projection remediation:\n%s", stderr.String())
 	}
 }
@@ -1029,11 +1152,29 @@ func writeCLISymbolProjectionFixture(t *testing.T) string {
 
 func writeFile(t *testing.T, root, rel, body string) {
 	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
+	path := cliTestOutputPath(filepath.Join(root, filepath.FromSlash(rel)))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func cliTestOutputPath(path string) string {
+	dir, name := filepath.Dir(path), filepath.Base(path)
+	if name == "manifest.json" {
+		return path
+	}
+	parent := filepath.Base(dir)
+	if parent != "goregraph-out" && parent != ".goregraph-workspace" {
+		return path
+	}
+	if name == "agent-guide.md" {
+		return filepath.Join(dir, "agent", name)
+	}
+	if strings.HasSuffix(name, ".json") {
+		return filepath.Join(dir, "index", name)
+	}
+	return filepath.Join(dir, "dashboard", name)
 }

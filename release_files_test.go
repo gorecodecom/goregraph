@@ -63,6 +63,21 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 			"brew install gorecodecom/tap/goregraph",
 			"winget install --id GoreCode.GoreGraph -e",
 		},
+		"internal/scan/scan.go": {
+			"SchemaVersion = 3",
+			"IndexGeneratedFiles",
+			"AgentGeneratedFiles",
+			"DashboardGeneratedFiles",
+		},
+		"internal/scan/output_layout.go": {
+			"BuildTargetAgent",
+			"BuildTargetDashboard",
+			"BuildTargetAll",
+			"manifest.json",
+			"index",
+			"agent",
+			"dashboard",
+		},
 	}
 
 	for path, required := range files {

@@ -31,10 +31,11 @@ func TestWorkspaceImpactMapsChangedFileToFeatureDossier(t *testing.T) {
 		Path:            "/users/{userId}",
 		FieldRisks:      []FieldRiskRecord{{Kind: "missing_field", Reason: "frontend field not returned"}},
 	}}
-	if err := writeJSON(filepath.Join(out, "feature-dossiers.json"), dossiers); err != nil {
+	layout := NewWorkspaceOutputLayout(out)
+	if err := writeJSON(layout.Index("feature-dossiers.json"), dossiers); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeJSON(filepath.Join(out, "feature-flows.json"), flows); err != nil {
+	if err := writeJSON(layout.Index("feature-flows.json"), flows); err != nil {
 		t.Fatal(err)
 	}
 

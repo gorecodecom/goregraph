@@ -203,17 +203,17 @@ class CadasterController {
 
 	var manifest Manifest
 	readJSON(t, filepath.Join(frontend, "goregraph-out", "manifest.json"), &manifest)
-	assertGeneratedFile(t, manifest.Generated, "workspace-context.md")
-	assertGeneratedFile(t, manifest.Generated, "workspace-contract-matches.md")
-	assertGeneratedFile(t, manifest.Generated, "workspace-contract-matches.json")
-	assertGeneratedFile(t, manifest.Generated, "frontend-consumers.md")
+	assertGeneratedFile(t, manifest.Dashboard.Files, "dashboard/workspace-context.md")
+	assertGeneratedFile(t, manifest.Dashboard.Files, "dashboard/workspace-contract-matches.md")
+	assertGeneratedFile(t, manifest.Index.Files, "index/workspace-contract-matches.json")
+	assertGeneratedFile(t, manifest.Dashboard.Files, "dashboard/frontend-consumers.md")
 
 	var audit AuditRecord
 	readJSON(t, filepath.Join(frontend, "goregraph-out", "audit.json"), &audit)
-	assertGeneratedFile(t, audit.Generated, "workspace-context.md")
-	assertGeneratedFile(t, audit.Generated, "workspace-contract-matches.md")
-	assertGeneratedFile(t, audit.Generated, "workspace-contract-matches.json")
-	assertGeneratedFile(t, audit.Generated, "frontend-consumers.md")
+	assertGeneratedFile(t, audit.Generated, "dashboard/workspace-context.md")
+	assertGeneratedFile(t, audit.Generated, "dashboard/workspace-contract-matches.md")
+	assertGeneratedFile(t, audit.Generated, "index/workspace-contract-matches.json")
+	assertGeneratedFile(t, audit.Generated, "dashboard/frontend-consumers.md")
 
 	consumers := readText(t, filepath.Join(cadaster, "goregraph-out", "frontend-consumers.md"))
 	if !strings.Contains(consumers, "frontend/frontend-monorepo") || !strings.Contains(consumers, "src/api/cadasterservice.js") {

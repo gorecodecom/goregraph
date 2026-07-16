@@ -400,7 +400,7 @@ func TestProjectBuildAgentDoesNotWriteDashboard(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertExists(t, filepath.Join(root, "goregraph-out", "index", "routes.json"))
-	assertExists(t, filepath.Join(root, "goregraph-out", "agent", "context-index.json"))
+	assertExists(t, filepath.Join(root, "goregraph-out", "agent", "agent-guide.md"))
 	assertNotExists(t, filepath.Join(root, "goregraph-out", "dashboard"))
 }
 
@@ -436,7 +436,7 @@ Use a narrow package-level extractor seam only for the counter test; do not rede
 
 Add workspace tests asserting:
 
-- `workspace build agent` creates project/workspace `index/` and `agent/`, but no `dashboard/`;
+- `workspace build agent` creates project/workspace `index/` and `agent/`, but no `dashboard/`; in Task 1 the agent projection contains `agent-guide.md`, while Tasks 2–3 add `context-index.json`;
 - `workspace build agent` does not create workspace `index/symbol-index.json` or `index/symbol-usages.json`;
 - `workspace build dashboard` creates project/workspace `index/` and `dashboard/`, but no `agent/`;
 - `workspace build all` scans each discovered project once and reconciles the workspace once after the project loop, rather than rebuilding the workspace after every project;

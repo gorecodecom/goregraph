@@ -3,10 +3,12 @@ package scan
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gorecodecom/goregraph/internal/config"
@@ -15,11 +17,10 @@ import (
 
 const (
 	ToolName      = "goregraph"
-	SchemaVersion = 2
+	SchemaVersion = 3
 )
 
-var GeneratedFiles = []string{
-	"manifest.json",
+var IndexGeneratedFiles = []string{
 	"freshness.json",
 	"files.json",
 	"symbols.json",
@@ -48,6 +49,22 @@ var GeneratedFiles = []string{
 	"capabilities.json",
 	"coverage.json",
 	"spring.json",
+	"audit.json",
+	"workspace-contract-matches.json",
+	"workspace-feature-flows.json",
+	"workspace-feature-dossiers.json",
+	"workspace-graph.json",
+	"workspace-service-map.json",
+	"workspace-endpoint-traces.json",
+	"directed-traces.json",
+	"data-flows.json",
+}
+
+var AgentGeneratedFiles = []string{
+	"agent-guide.md",
+}
+
+var DashboardGeneratedFiles = []string{
 	"workspace.md",
 	"endpoints.md",
 	"endpoint-flows.md",
@@ -61,17 +78,9 @@ var GeneratedFiles = []string{
 	"potentially-broken-contracts.md",
 	"diagnostics.md",
 	"workspace-context.md",
-	"workspace-contract-matches.json",
 	"workspace-contract-matches.md",
-	"workspace-feature-flows.json",
 	"workspace-feature-flows.md",
-	"workspace-feature-dossiers.json",
 	"workspace-feature-dossiers.md",
-	"workspace-graph.json",
-	"workspace-service-map.json",
-	"workspace-endpoint-traces.json",
-	"directed-traces.json",
-	"data-flows.json",
 	"data-flows.md",
 	"workspace-map.md",
 	"workspace-next-actions.md",
@@ -83,14 +92,14 @@ var GeneratedFiles = []string{
 	"coverage.md",
 	"workspace-summary.md",
 	"architecture.md",
-	"agent-guide.md",
 	"affected.md",
-	"audit.json",
 	"report.md",
 	"modules.md",
 	"entrypoints.md",
 	"test-map.md",
 }
+
+var GeneratedFiles = generatedFilesForTarget(BuildTargetAll)
 
 var workspaceSymbolGeneratedFiles = []string{
 	"symbol-index.json",
@@ -98,6 +107,25 @@ var workspaceSymbolGeneratedFiles = []string{
 }
 
 func Run(root string, cfg config.Config) (Result, error) {
+	return RunBuild(root, cfg, BuildTargetAll)
+}
+
+type projectExtractorFunc func(string, config.Config, gitignore.Matcher) (Index, int, error)
+
+var projectExtractor projectExtractorFunc = scanProject
+
+func replaceProjectExtractorForTest(replacement projectExtractorFunc) func() {
+	previous := projectExtractor
+	projectExtractor = replacement
+	return func() {
+		projectExtractor = previous
+	}
+}
+
+func RunBuild(root string, cfg config.Config, target BuildTarget) (Result, error) {
+	if err := target.Validate(); err != nil {
+		return Result{}, err
+	}
 	started := time.Now().UTC()
 	resolved, err := filepath.Abs(root)
 	if err != nil {
@@ -110,30 +138,48 @@ func Run(root string, cfg config.Config) (Result, error) {
 	if !info.IsDir() {
 		return Result{}, fmt.Errorf("scan root %q is not a directory", root)
 	}
+	out := filepath.Join(resolved, cfg.OutputDir)
+	if legacyGeneratedOutputExists(out) {
+		return Result{}, fmt.Errorf("legacy pre-1.3.0 output detected; run `goregraph clean %s --execute` and `goregraph build all %s`", root, root)
+	}
 
 	matcher := gitignore.Matcher{}
 	if cfg.UseGitignore {
 		matcher = gitignore.Load(resolved)
 	}
 
-	index, skipped, err := scanProject(resolved, cfg, matcher)
+	index, skipped, err := projectExtractor(resolved, cfg, matcher)
 	if err != nil {
 		return Result{}, err
 	}
 	sortIndex(&index)
 
-	out := filepath.Join(resolved, cfg.OutputDir)
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return Result{}, err
 	}
-	if err := writeOutputs(out, resolved, cfg, index, skipped, started); err != nil {
+	if err := writeOutputs(out, resolved, cfg, index, skipped, started, target); err != nil {
 		return Result{}, err
 	}
-	if _, err := ReconcileWorkspace(resolved, cfg); err != nil {
+	if _, err := ReconcileWorkspaceTarget(resolved, cfg, target); err != nil {
 		return Result{}, err
+	}
+	layout := NewProjectOutputLayout(out)
+	if manifest := readCurrentOutputManifest(layout.Manifest); manifest.Tool == ToolName {
+		if err := writeOutputManifestAtomic(layout.Manifest, manifest); err != nil {
+			return Result{}, err
+		}
 	}
 
 	return Result{ScannedFiles: len(index.Files), SkippedFiles: skipped, OutputDir: out}, nil
+}
+
+func legacyGeneratedOutputExists(out string) bool {
+	for _, name := range []string{"routes.json", "report.md", "workspace-map.html", "context-index.json"} {
+		if info, err := os.Stat(filepath.Join(out, name)); err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Index, int, error) {
@@ -292,7 +338,7 @@ func sortIndex(index *Index) {
 	})
 }
 
-func writeOutputs(out, root string, cfg config.Config, index Index, skipped int, started time.Time) error {
+func writeOutputs(out, root string, cfg config.Config, index Index, skipped int, started time.Time, target BuildTarget) error {
 	graph := buildGraph(index.Files, index.Symbols, index.Relations)
 	springIndex := buildSpringIndex(index.JavaSources)
 	callGraph := buildJavaCallGraph(index.JavaSources)
@@ -323,6 +369,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	packageGraph := buildPackageGraph(index.Workspace)
 	mavenGraph := buildMavenGraph(index.Workspace)
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
+	prefixAnalyzerOutputPaths(analyzers)
 	capabilities := BuildCapabilityInventory(index.Files, index.Workspace, index.ArchitectureCapabilities)
 	coverage := BuildCoverage(index.Files, capabilities)
 	richSymbols := dedupeRichSymbolFacts(append(buildRichSymbols(index.Files, index.Symbols), index.SymbolFacts.Declarations...))
@@ -332,24 +379,47 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
 	diagnosticFamilies := BuildDiagnosticFamilies(filepath.Base(root), canonicalDiagnostics)
 	finished := time.Now().UTC()
-	manifest := Manifest{
+	layout := NewProjectOutputLayout(out)
+	previous := readCurrentOutputManifest(layout.Manifest)
+	previous.Agent = validProjectionStatus(layout.Root, previous.Agent)
+	previous.Dashboard = validProjectionStatus(layout.Root, previous.Dashboard)
+	manifest := OutputManifest{
 		Tool:        ToolName,
 		Schema:      SchemaVersion,
+		Scope:       "project",
 		OutputDir:   cfg.OutputDir,
 		Files:       len(index.Files),
 		Skipped:     skipped,
-		Generated:   GeneratedFiles,
 		ProjectRoot: filepath.Base(root),
-		GeneratedAt: finished.Format(time.RFC3339),
 		Git:         readGitMetadata(root),
+		Index: ProjectionStatus{
+			GeneratedAt: finished.Format(time.RFC3339),
+			Complete:    true,
+			Files:       prefixedGeneratedFiles("index", IndexGeneratedFiles),
+		},
+		Agent:     previous.Agent,
+		Dashboard: previous.Dashboard,
 	}
-	freshness := BuildArtifactFreshness(manifest, index.Files, GeneratedFiles)
-	audit := newAuditRecord(root, cfg.OutputDir, started, finished, len(index.Files), skipped)
+	if target.IncludesAgent() {
+		manifest.Agent = ProjectionStatus{
+			GeneratedAt: finished.Format(time.RFC3339),
+			Complete:    true,
+			Files:       prefixedGeneratedFiles("agent", AgentGeneratedFiles),
+		}
+	}
+	if target.IncludesDashboard() {
+		manifest.Dashboard = ProjectionStatus{
+			GeneratedAt: finished.Format(time.RFC3339),
+			Complete:    true,
+			Files:       prefixedGeneratedFiles("dashboard", DashboardGeneratedFiles),
+		}
+	}
+	freshness := BuildArtifactFreshness(manifest.Schema, finished.Format(time.RFC3339), index.Files, prefixedGeneratedFiles("index", IndexGeneratedFiles))
+	audit := newAuditRecord(root, cfg.OutputDir, started, finished, len(index.Files), skipped, generatedFilesForTarget(target))
 	writes := []struct {
 		name  string
 		value any
 	}{
-		{"manifest.json", manifest},
 		{"freshness.json", freshness},
 		{"files.json", index.Files},
 		{"symbols.json", index.Symbols},
@@ -388,8 +458,14 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"spring.json", springIndex},
 		{"audit.json", audit},
 	}
+	if err := os.RemoveAll(filepath.Join(out, "index")); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(out, "index"), 0o755); err != nil {
+		return err
+	}
 	for _, write := range writes {
-		if err := writeJSON(filepath.Join(out, write.name), write.value); err != nil {
+		if err := writeJSON(layout.Index(write.name), write.value); err != nil {
 			return err
 		}
 	}
@@ -426,16 +502,128 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"coverage.md", RenderCoverageReport(coverage)},
 		{"workspace-summary.md", renderWorkspaceSummaryEntry(filepath.Base(root), len(index.Files), coverage)},
 		{"architecture.md", renderArchitectureEntry(routes, richRelations)},
-		{"agent-guide.md", renderAgentGuideEntry()},
 		{"data-flows.md", RenderDataFlowsReport(nil)},
 		{"affected.md", renderAffectedReport(richGraph)},
 		{"entrypoints.md", renderEntrypointsReport(index.Files, index.Symbols, springIndex)},
 		{"test-map.md", renderTestMapReport(index.Relations, testMap)},
 	}
-	for _, report := range reports {
-		if err := os.WriteFile(filepath.Join(out, report.name), []byte(report.body), 0o644); err != nil {
+	if target.IncludesDashboard() {
+		if err := os.RemoveAll(filepath.Join(out, "dashboard")); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Join(out, "dashboard"), 0o755); err != nil {
 			return err
 		}
 	}
-	return nil
+	for _, report := range reports {
+		if !target.IncludesDashboard() {
+			break
+		}
+		if err := os.WriteFile(layout.Dashboard(report.name), []byte(report.body), 0o644); err != nil {
+			return err
+		}
+	}
+	if target.IncludesAgent() {
+		if err := os.RemoveAll(filepath.Join(out, "agent")); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Join(out, "agent"), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(layout.Agent("agent-guide.md"), []byte(renderAgentGuideEntry()), 0o644); err != nil {
+			return err
+		}
+	}
+	return writeOutputManifestAtomic(layout.Manifest, manifest)
+}
+
+func generatedFilesForTarget(target BuildTarget) []string {
+	files := prefixedGeneratedFiles("index", IndexGeneratedFiles)
+	if target.IncludesAgent() {
+		files = append(files, prefixedGeneratedFiles("agent", AgentGeneratedFiles)...)
+	}
+	if target.IncludesDashboard() {
+		files = append(files, prefixedGeneratedFiles("dashboard", DashboardGeneratedFiles)...)
+	}
+	return append([]string{"manifest.json"}, files...)
+}
+
+func prefixedGeneratedFiles(dir string, names []string) []string {
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		result = append(result, filepath.ToSlash(filepath.Join(dir, name)))
+	}
+	return result
+}
+
+func readCurrentOutputManifest(path string) OutputManifest {
+	var manifest OutputManifest
+	body, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(body, &manifest) != nil ||
+		manifest.Tool != ToolName || manifest.Schema != SchemaVersion {
+		return OutputManifest{}
+	}
+	return manifest
+}
+
+func validProjectionStatus(root string, status ProjectionStatus) ProjectionStatus {
+	if !status.Complete {
+		return ProjectionStatus{}
+	}
+	for _, name := range status.Files {
+		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(name)))
+		if err != nil || info.IsDir() {
+			return ProjectionStatus{}
+		}
+	}
+	return status
+}
+
+func mergeGeneratedPaths(groups ...[]string) []string {
+	seen := map[string]bool{}
+	var result []string
+	for _, group := range groups {
+		for _, name := range group {
+			if !seen[name] {
+				seen[name] = true
+				result = append(result, name)
+			}
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func prefixAnalyzerOutputPaths(records []AnalyzerRecord) {
+	for recordIndex := range records {
+		for outputIndex, name := range records[recordIndex].Outputs {
+			if strings.HasSuffix(name, ".json") {
+				records[recordIndex].Outputs[outputIndex] = filepath.ToSlash(filepath.Join("index", name))
+			} else {
+				records[recordIndex].Outputs[outputIndex] = filepath.ToSlash(filepath.Join("dashboard", name))
+			}
+		}
+	}
+}
+
+func writeOutputManifestAtomic(path string, manifest OutputManifest) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".manifest-*.json")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	encoder := json.NewEncoder(temp)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(manifest); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tempPath, path)
 }

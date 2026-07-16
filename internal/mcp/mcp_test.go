@@ -203,8 +203,8 @@ func TestServeRejectsUnknownTool(t *testing.T) {
 func writeMCPSymbolProjectionFixture(t *testing.T) string {
 	t.Helper()
 	workspace := filepath.Join(t.TempDir(), "weka")
-	writeFile(t, workspace, ".goregraph-workspace/symbol-index.json", `{
-  "schema_version": 2,
+	writeFile(t, workspace, ".goregraph-workspace/index/symbol-index.json", `{
+  "schema_version": 3,
   "symbols": [{
     "id": "symbol:mcp-01",
     "project": "microservices/ms-user",
@@ -220,8 +220,8 @@ func writeMCPSymbolProjectionFixture(t *testing.T) string {
   }],
   "coverage": []
 }`)
-	writeFile(t, workspace, ".goregraph-workspace/symbol-usages.json", `{
-  "schema_version": 2,
+	writeFile(t, workspace, ".goregraph-workspace/index/symbol-usages.json", `{
+  "schema_version": 3,
   "usages": [{
     "id": "usage:mcp-01",
     "provider_symbol_id": "symbol:mcp-01",

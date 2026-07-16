@@ -15,6 +15,9 @@ func writeJSON(path string, value any) error {
 		return err
 	}
 	body = append(body, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
 	return os.WriteFile(path, body, 0o644)
 }
 

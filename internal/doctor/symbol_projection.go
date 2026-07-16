@@ -11,7 +11,7 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
-const symbolProjectionRemediation = "goregraph workspace clean . --execute && goregraph workspace scan-all ."
+const symbolProjectionRemediation = "goregraph workspace clean . --execute && goregraph workspace build all ."
 
 // ValidateSymbolProjection validates the canonical workspace symbol inventory
 // and every reference emitted by its usage projection.
@@ -462,10 +462,11 @@ func checkWorkspaceSymbolProjection(workspaceRoot string, result *Result) {
 		return
 	}
 	out := filepath.Join(workspaceRoot, ".goregraph-workspace")
+	layout := scan.NewWorkspaceOutputLayout(out)
 	remediation := workspaceSymbolRemediation(workspaceRoot)
 	var missing []string
 	for _, name := range []string{"symbol-index.json", "symbol-usages.json"} {
-		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
+		if _, err := os.Stat(layout.Index(name)); err != nil {
 			missing = append(missing, name)
 		}
 	}
@@ -476,19 +477,19 @@ func checkWorkspaceSymbolProjection(workspaceRoot string, result *Result) {
 	}
 
 	var registry scan.WorkspaceRegistryRecord
-	if err := readJSON(filepath.Join(out, "registry.json"), &registry); err != nil {
+	if err := readJSON(layout.Index("registry.json"), &registry); err != nil {
 		result.fail("workspace-symbols", "registry.json invalid: "+err.Error())
 		result.fix(remediation)
 		return
 	}
 	var index scan.WorkspaceSymbolIndexRecord
-	if err := readJSON(filepath.Join(out, "symbol-index.json"), &index); err != nil {
+	if err := readJSON(layout.Index("symbol-index.json"), &index); err != nil {
 		result.fail("workspace-symbols", "symbol-index.json missing or invalid: "+err.Error())
 		result.fix(remediation)
 		return
 	}
 	var usages scan.WorkspaceSymbolUsageIndexRecord
-	if err := readJSON(filepath.Join(out, "symbol-usages.json"), &usages); err != nil {
+	if err := readJSON(layout.Index("symbol-usages.json"), &usages); err != nil {
 		result.fail("workspace-symbols", "symbol-usages.json missing or invalid: "+err.Error())
 		result.fix(remediation)
 		return
@@ -598,6 +599,7 @@ func workspaceProjectEvidencePath(workspaceRoot, projectPath, outputDir string) 
 		workspaceRoot,
 		projectRelative,
 		outputRelative,
+		"index",
 		"evidence.json",
 	)
 	if err := requirePathWithinWorkspace(workspaceRoot, evidencePath); err != nil {
@@ -658,7 +660,7 @@ func canonicalDoctorPath(value string) (string, error) {
 
 func workspaceSymbolRemediation(workspaceRoot string) string {
 	return fmt.Sprintf(
-		"goregraph workspace clean %s --execute && goregraph workspace scan-all %s",
+		"goregraph workspace clean %s --execute && goregraph workspace build all %s",
 		workspaceRoot,
 		workspaceRoot,
 	)

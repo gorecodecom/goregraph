@@ -223,7 +223,7 @@ func loadTask(request Request) ([]Item, []string, error) {
 		if err := readOutput(request.Root, "manifest.json", &manifest); err != nil {
 			return nil, nil, err
 		}
-		return []Item{{ID: "workspace:" + manifest.ProjectRoot, Kind: "workspace", Title: manifest.ProjectRoot, Summary: fmt.Sprintf("%d indexed files; schema %d", manifest.Files, manifest.Schema), Data: map[string]any{"generated": manifest.Generated}}}, nil, nil
+		return []Item{{ID: "workspace:" + manifest.ProjectRoot, Kind: "workspace", Title: manifest.ProjectRoot, Summary: fmt.Sprintf("%d indexed files; schema %d", manifest.Files, manifest.Schema), Data: map[string]any{"generated": manifest.Index.GeneratedAt}}}, nil, nil
 	case "change-context":
 		body, err := readOutputText(request.Root, "affected.md")
 		if err != nil {
@@ -613,12 +613,17 @@ func readOutput(root, name string, dest any) error {
 	if err != nil {
 		return err
 	}
-	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, name))
+	projectLayout := scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir))
+	path := projectLayout.Index(name)
+	if name == "manifest.json" {
+		path = projectLayout.Manifest
+	}
+	body, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		body, err = os.ReadFile(filepath.Join(root, ".goregraph-workspace", name))
+		body, err = os.ReadFile(scan.NewWorkspaceOutputLayout(filepath.Join(root, ".goregraph-workspace")).Index(name))
 	}
 	if err != nil {
-		return fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
+		return fmt.Errorf("output %s is missing; run `goregraph build all <path>` first", name)
 	}
 	return json.Unmarshal(body, dest)
 }
@@ -628,7 +633,7 @@ func readWorkspaceOutput(root, name string, dest any) error {
 		return err
 	}
 	workspaceRoot := root
-	directPath := filepath.Join(root, ".goregraph-workspace", name)
+	directPath := scan.NewWorkspaceOutputLayout(filepath.Join(root, ".goregraph-workspace")).Index(name)
 	body, err := os.ReadFile(directPath)
 	if os.IsNotExist(err) {
 		resolved, ok, resolveErr := scan.WorkspaceRoot(root, cfg)
@@ -637,11 +642,11 @@ func readWorkspaceOutput(root, name string, dest any) error {
 		}
 		if ok {
 			workspaceRoot = resolved
-			body, err = os.ReadFile(filepath.Join(workspaceRoot, ".goregraph-workspace", name))
+			body, err = os.ReadFile(scan.NewWorkspaceOutputLayout(filepath.Join(workspaceRoot, ".goregraph-workspace")).Index(name))
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("workspace output %s is missing; run `goregraph workspace scan-all <path>` first", name)
+		return fmt.Errorf("workspace output %s is missing; run `goregraph workspace build all <path>` first", name)
 	}
 	if err := json.Unmarshal(body, dest); err != nil {
 		return fmt.Errorf("workspace output %s is invalid: %w", name, err)
@@ -653,9 +658,9 @@ func readOutputText(root, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	body, err := os.ReadFile(filepath.Join(root, cfg.OutputDir, name))
+	body, err := os.ReadFile(scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir)).Dashboard(name))
 	if err != nil {
-		return "", fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
+		return "", fmt.Errorf("output %s is missing; run `goregraph build all <path>` first", name)
 	}
 	return string(body), nil
 }

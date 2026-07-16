@@ -50,7 +50,7 @@ func TestWorkspaceWritesFreshnessIndex(t *testing.T) {
 	if _, err := Run(root, config.Defaults()); err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(workspace, ".goregraph-workspace", "freshness.json"))
+	body, err := os.ReadFile(NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace")).Index("freshness.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestWorkspaceWritesFreshnessIndex(t *testing.T) {
 
 func readFreshnessTestIndex(t *testing.T, root string) ArtifactFreshnessIndex {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(root, config.Defaults().OutputDir, "freshness.json"))
+	body, err := os.ReadFile(NewProjectOutputLayout(filepath.Join(root, config.Defaults().OutputDir)).Index("freshness.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

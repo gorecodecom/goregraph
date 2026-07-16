@@ -21,7 +21,7 @@ func TestExplainWorkspaceTargetFindsRouteAndConnections(t *testing.T) {
 			{ID: "edge:1", From: "contract:get-users", To: "route:ms-user:get:/users/{userid}", Kind: "resolved_by", Confidence: "RESOLVED"},
 		},
 	}
-	if err := writeJSON(filepath.Join(out, "workspace-graph.json"), graph); err != nil {
+	if err := writeJSON(NewWorkspaceOutputLayout(out).Index("workspace-graph.json"), graph); err != nil {
 		t.Fatal(err)
 	}
 

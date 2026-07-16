@@ -338,7 +338,7 @@ func riskFromDossier(dossier FeatureDossierRecord) string {
 }
 
 func workspaceGraphOut(workspaceOut string) string {
-	return filepath.Join(workspaceOut, "workspace-graph.json")
+	return NewWorkspaceOutputLayout(workspaceOut).Index("workspace-graph.json")
 }
 
 func graphLabel(node WorkspaceGraphNodeRecord) string {

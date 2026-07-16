@@ -744,7 +744,7 @@ class CadasterServiceTest {
 
 	out := filepath.Join(root, "goregraph-out")
 	for _, name := range []string{"spring.json", "endpoints.md", "dependencies.md", "workspace.md", "affected.md", "callgraph.json", "callgraph.md", "endpoint-flows.json", "endpoint-flows.md", "test-map.json", "analyzers.json", "analyzers.md"} {
-		if !fileExists(filepath.Join(out, name)) {
+		if !fileExists(migratedTestOutputPath(filepath.Join(out, name))) {
 			t.Fatalf("%s was not written", name)
 		}
 	}

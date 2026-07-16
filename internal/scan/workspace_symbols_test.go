@@ -1122,14 +1122,15 @@ func TestReconcileWorkspaceRejectsDanglingEvidenceBeforeReplacingProjection(t *t
 		Usages:        []CanonicalSymbolUsageRecord{},
 		Coverage:      []SymbolCoverageRecord{},
 	}
-	if err := writeWorkspaceSymbolProjectionPair(workspaceOut, oldSymbols, oldUsages); err != nil {
+	projectionOut := filepath.Join(workspaceOut, "index")
+	if err := writeWorkspaceSymbolProjectionPair(projectionOut, oldSymbols, oldUsages); err != nil {
 		t.Fatal(err)
 	}
-	beforeSymbols, err := os.ReadFile(filepath.Join(workspaceOut, "symbol-index.json"))
+	beforeSymbols, err := os.ReadFile(filepath.Join(projectionOut, "symbol-index.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	beforeUsages, err := os.ReadFile(filepath.Join(workspaceOut, "symbol-usages.json"))
+	beforeUsages, err := os.ReadFile(filepath.Join(projectionOut, "symbol-usages.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1143,11 +1144,11 @@ func TestReconcileWorkspaceRejectsDanglingEvidenceBeforeReplacingProjection(t *t
 	for _, want := range []string{project.Path + "#evidence:missing", "unknown evidence"} {
 		assertContains(t, err.Error(), want)
 	}
-	afterSymbols, readErr := os.ReadFile(filepath.Join(workspaceOut, "symbol-index.json"))
+	afterSymbols, readErr := os.ReadFile(filepath.Join(projectionOut, "symbol-index.json"))
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	afterUsages, readErr := os.ReadFile(filepath.Join(workspaceOut, "symbol-usages.json"))
+	afterUsages, readErr := os.ReadFile(filepath.Join(projectionOut, "symbol-usages.json"))
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
@@ -1170,7 +1171,7 @@ func TestReconcileWorkspaceRejectsEvidenceOwnedByAnotherProject(t *testing.T) {
 	}
 	writeWorkspaceProjectFacts(t, project, []RichSymbolRecord{symbol}, nil)
 	if err := writeJSON(
-		filepath.Join(project.AbsPath, project.OutputDir, "evidence.json"),
+		NewProjectOutputLayout(filepath.Join(project.AbsPath, project.OutputDir)).Index("evidence.json"),
 		[]EvidenceRecord{{
 			ID: "evidence:users", Project: "ms-orders", File: symbol.File,
 			Start: EvidenceLocation{Line: symbol.Line}, Analyzer: "java-source",
@@ -1218,7 +1219,7 @@ class Consumer {
 		t.Fatal("fixture did not produce rich relations")
 	}
 	relations[0].FromSymbolID = "missing-consumer"
-	if err := writeJSON(filepath.Join(out, "relations-full.json"), relations); err != nil {
+	if err := writeJSON(NewProjectOutputLayout(out).Index("relations-full.json"), relations); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1317,7 +1318,7 @@ func TestLoadWorkspaceIndexesKeepsValidProjectsWhenSymbolFactsAreMalformed(t *te
 	writeWorkspaceProjectFacts(t, valid, []RichSymbolRecord{validSymbol}, []RichRelationRecord{})
 	writeWorkspaceProjectFacts(t, broken, []RichSymbolRecord{}, []RichRelationRecord{})
 	if err := os.WriteFile(
-		filepath.Join(broken.AbsPath, broken.OutputDir, "symbols-full.json"),
+		NewProjectOutputLayout(filepath.Join(broken.AbsPath, broken.OutputDir)).Index("symbols-full.json"),
 		[]byte("{"),
 		0o644,
 	); err != nil {
@@ -1348,7 +1349,15 @@ func TestLoadWorkspaceIndexesKeepsValidProjectsWhenSymbolFactsAreMalformed(t *te
 func TestLoadWorkspaceIndexesReportsMissingOptionalSymbolFactsAsPartialCoverage(t *testing.T) {
 	root := t.TempDir()
 	project := workspaceProjectOnDisk(root, "microservices/ms-old-index")
-	writeFile(t, project.AbsPath, filepath.Join(project.OutputDir, "manifest.json"), `{"tool":"goregraph","schema":2}`)
+	if err := writeJSON(NewProjectOutputLayout(filepath.Join(project.AbsPath, project.OutputDir)).Manifest, OutputManifest{
+		Tool:      ToolName,
+		Schema:    SchemaVersion,
+		Scope:     "project",
+		OutputDir: project.OutputDir,
+		Index:     ProjectionStatus{Complete: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	loaded, err := loadWorkspaceIndexes([]WorkspaceProjectRecord{project})
 	if err != nil {
@@ -1406,9 +1415,10 @@ func TestWorkspaceSymbolCoverageScopesDependencyAndCallGraphReadIssues(t *testin
 				Confidence: ConfidenceExact, Coverage: CoverageComplete,
 			}
 			writeWorkspaceProjectFacts(t, project, []RichSymbolRecord{symbol}, []RichRelationRecord{})
+			layout := NewProjectOutputLayout(filepath.Join(project.AbsPath, project.OutputDir))
 			if test.malformedFile != "" {
 				if err := os.WriteFile(
-					filepath.Join(project.AbsPath, project.OutputDir, test.malformedFile),
+					layout.Index(test.malformedFile),
 					[]byte("{"),
 					0o644,
 				); err != nil {
@@ -1416,7 +1426,7 @@ func TestWorkspaceSymbolCoverageScopesDependencyAndCallGraphReadIssues(t *testin
 				}
 			}
 			if test.missingFile != "" {
-				if err := os.Remove(filepath.Join(project.AbsPath, project.OutputDir, test.missingFile)); err != nil {
+				if err := os.Remove(layout.Index(test.missingFile)); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -1535,7 +1545,7 @@ func TestWorkspaceDeclarationCoverageOverlaysCapabilitiesInputStatus(t *testing.
 				Confidence: ConfidenceExact, Coverage: CoverageComplete,
 			}
 			writeWorkspaceProjectFacts(t, project, []RichSymbolRecord{symbol}, nil)
-			capabilitiesPath := filepath.Join(project.AbsPath, project.OutputDir, "capabilities.json")
+			capabilitiesPath := NewProjectOutputLayout(filepath.Join(project.AbsPath, project.OutputDir)).Index("capabilities.json")
 			if test.malformed {
 				if err := os.WriteFile(capabilitiesPath, []byte("{"), 0o644); err != nil {
 					t.Fatal(err)
@@ -1577,10 +1587,10 @@ func TestLoadWorkspaceIndexesRecordsHTTPReachabilityFactFailures(t *testing.T) {
 		File: "src/UserService.java", QualifiedName: "com.example.UserService",
 		Analyzer: "java-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
 	}}, nil)
-	if err := os.WriteFile(filepath.Join(frontend.AbsPath, frontend.OutputDir, "flows.json"), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(NewProjectOutputLayout(filepath.Join(frontend.AbsPath, frontend.OutputDir)).Index("flows.json"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(backend.AbsPath, backend.OutputDir, "endpoint-flows.json"), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(NewProjectOutputLayout(filepath.Join(backend.AbsPath, backend.OutputDir)).Index("endpoint-flows.json"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1653,11 +1663,12 @@ class UserService {}
 		t.Fatalf("initial Run returned error: %v", err)
 	}
 	out := filepath.Join(workspace, ".goregraph-workspace")
-	oldSymbols, err := os.ReadFile(filepath.Join(out, "symbol-index.json"))
+	projectionOut := filepath.Join(out, "index")
+	oldSymbols, err := os.ReadFile(filepath.Join(projectionOut, "symbol-index.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldUsages, err := os.ReadFile(filepath.Join(out, "symbol-usages.json"))
+	oldUsages, err := os.ReadFile(filepath.Join(projectionOut, "symbol-usages.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1677,11 +1688,11 @@ class UserService {}
 	if _, err := ReconcileWorkspace(project, cfg); err == nil {
 		t.Fatal("ReconcileWorkspace succeeded despite injected root write failure")
 	}
-	gotSymbols, err := os.ReadFile(filepath.Join(out, "symbol-index.json"))
+	gotSymbols, err := os.ReadFile(filepath.Join(projectionOut, "symbol-index.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotUsages, err := os.ReadFile(filepath.Join(out, "symbol-usages.json"))
+	gotUsages, err := os.ReadFile(filepath.Join(projectionOut, "symbol-usages.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1690,7 +1701,7 @@ class UserService {}
 	}
 }
 
-func TestWorkspaceSymbolFilesAreRootOutputsAndExplicitCleanItems(t *testing.T) {
+func TestWorkspaceSymbolFilesAreIndexOutputsAndExplicitCleanItems(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "workspace")
 	project := filepath.Join(workspace, "microservices", "ms-users")
 	writeFile(t, project, "pom.xml", `<project>
@@ -1708,15 +1719,15 @@ class UserService {}
 	}
 	workspaceOut := filepath.Join(workspace, ".goregraph-workspace")
 	for _, name := range []string{"symbol-index.json", "symbol-usages.json"} {
-		if !workspaceFileExists(filepath.Join(workspaceOut, name)) {
-			t.Fatalf("missing workspace root output %s", name)
+		if !workspaceFileExists(NewWorkspaceOutputLayout(workspaceOut).Index(name)) {
+			t.Fatalf("missing workspace index output %s", name)
 		}
 	}
 	var manifest Manifest
 	readJSON(t, filepath.Join(project, cfg.OutputDir, "manifest.json"), &manifest)
-	for _, generated := range manifest.Generated {
-		if generated == "symbol-index.json" || generated == "symbol-usages.json" {
-			t.Fatalf("root workspace output leaked into per-project GeneratedFiles: %#v", manifest.Generated)
+	for _, generated := range append(append(manifest.Index.Files, manifest.Agent.Files...), manifest.Dashboard.Files...) {
+		if strings.Contains(generated, "symbol-index.json") || strings.Contains(generated, "symbol-usages.json") {
+			t.Fatalf("workspace output leaked into per-project manifest: %#v", manifest)
 		}
 	}
 	plan, err := WorkspaceCleanPlan(project, cfg)
@@ -1724,7 +1735,7 @@ class UserService {}
 		t.Fatal(err)
 	}
 	for _, name := range []string{"symbol-index.json", "symbol-usages.json"} {
-		want := filepath.ToSlash(filepath.Join(workspaceOut, name))
+		want := filepath.ToSlash(NewWorkspaceOutputLayout(workspaceOut).Index(name))
 		found := false
 		for _, item := range plan.Items {
 			if item.Reason != "workspace overlay output" {
@@ -1809,7 +1820,15 @@ func workspaceProjectOnDisk(root, path string) WorkspaceProjectRecord {
 func writeWorkspaceProjectFacts(t *testing.T, project WorkspaceProjectRecord, symbols []RichSymbolRecord, relations []RichRelationRecord) {
 	t.Helper()
 	out := filepath.Join(project.AbsPath, project.OutputDir)
-	writeFile(t, project.AbsPath, filepath.Join(project.OutputDir, "manifest.json"), `{"tool":"goregraph","schema":2}`)
+	if err := writeJSON(NewProjectOutputLayout(out).Manifest, OutputManifest{
+		Tool:      ToolName,
+		Schema:    SchemaVersion,
+		Scope:     "project",
+		OutputDir: project.OutputDir,
+		Index:     ProjectionStatus{Complete: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	languages := map[string]bool{}
 	for _, symbol := range symbols {
 		if symbol.Language != "" {
@@ -1833,7 +1852,7 @@ func writeWorkspaceProjectFacts(t *testing.T, project WorkspaceProjectRecord, sy
 		"capabilities.json":   capabilities,
 	}
 	for name, value := range values {
-		if err := writeJSON(filepath.Join(out, name), value); err != nil {
+		if err := writeJSON(NewProjectOutputLayout(out).Index(name), value); err != nil {
 			t.Fatal(err)
 		}
 	}

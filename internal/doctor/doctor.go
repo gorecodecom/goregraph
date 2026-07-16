@@ -26,7 +26,7 @@ func Run(root string) (Result, error) {
 	}
 	result := Result{Lines: []string{"GoreGraph Doctor", ""}}
 	if workspaceDirectoryExists(root) {
-		checkWorkspaceSymbolProjection(root, &result)
+		checkWorkspace(root, &result)
 		return result, nil
 	}
 
@@ -36,7 +36,7 @@ func Run(root string) (Result, error) {
 		return Result{}, err
 	}
 	if ok && explicitWorkspaceState(workspaceRoot, cfg) {
-		checkWorkspaceSymbolProjection(workspaceRoot, &result)
+		checkWorkspace(workspaceRoot, &result)
 	}
 	return result, nil
 }
@@ -49,6 +49,11 @@ func checkProject(root string, cfg config.Config, result *Result) {
 		return
 	}
 	result.ok("output", cfg.OutputDir+" exists")
+	if legacyLayoutExists(out) {
+		result.fail("layout", "pre-1.3.0 flat generated output detected")
+		result.fix("goregraph clean " + root + " --execute\n  goregraph build all " + root)
+		return
+	}
 
 	manifest, ok := checkManifest(out, result)
 	if !ok {
@@ -68,7 +73,7 @@ func checkProject(root string, cfg config.Config, result *Result) {
 }
 
 func checkCanonicalFeatureFlows(out string, result *Result) {
-	path := filepath.Join(out, "workspace-feature-flows.json")
+	path := scan.NewProjectOutputLayout(out).Index("workspace-feature-flows.json")
 	var flows []scan.WorkspaceFeatureFlowRecord
 	if err := readJSON(path, &flows); err != nil {
 		if !os.IsNotExist(err) {
@@ -98,17 +103,31 @@ func checkManifest(out string, result *Result) (scan.Manifest, bool) {
 	result.ok("manifest", "manifest.json valid")
 
 	if manifest.Schema != scan.SchemaVersion {
-		result.fail("schema", fmt.Sprintf("version %d unsupported, want %d; reinstall GoreGraph, clean generated output, and rescan", manifest.Schema, scan.SchemaVersion))
+		if manifest.Schema < scan.SchemaVersion {
+			result.fail("schema", fmt.Sprintf("legacy generated-output schema %d detected, want %d; clean generated output and rebuild all projections", manifest.Schema, scan.SchemaVersion))
+		} else {
+			result.fail("schema", fmt.Sprintf("version %d unsupported, want %d; reinstall GoreGraph", manifest.Schema, scan.SchemaVersion))
+		}
 		return manifest, false
 	}
 	result.ok("schema", fmt.Sprintf("version %d supported", manifest.Schema))
+	if manifest.Scope != "project" && manifest.Scope != "workspace" {
+		result.fail("manifest", fmt.Sprintf("scope is %q, want project or workspace", manifest.Scope))
+		return manifest, false
+	}
+	if !manifest.Index.Complete {
+		result.fail("manifest", "canonical index projection is incomplete")
+		return manifest, false
+	}
 	return manifest, true
 }
 
 func checkGeneratedFiles(out string, manifest scan.Manifest, result *Result) {
-	expected := scan.GeneratedFiles
-	if len(manifest.Generated) > 0 {
-		expected = manifest.Generated
+	var expected []string
+	for _, projection := range []scan.ProjectionStatus{manifest.Index, manifest.Agent, manifest.Dashboard} {
+		if projection.Complete {
+			expected = append(expected, projection.Files...)
+		}
 	}
 	for _, name := range expected {
 		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
@@ -120,6 +139,7 @@ func checkGeneratedFiles(out string, manifest scan.Manifest, result *Result) {
 }
 
 func checkJSONFiles(out string, result *Result) {
+	layout := scan.NewProjectOutputLayout(out)
 	checks := []struct {
 		name string
 		dest any
@@ -155,7 +175,7 @@ func checkJSONFiles(out string, result *Result) {
 		{"audit.json", &scan.AuditRecord{}},
 	}
 	for _, check := range checks {
-		if err := readJSON(filepath.Join(out, check.name), check.dest); err != nil {
+		if err := readJSON(layout.Index(check.name), check.dest); err != nil {
 			result.fail("json", check.name+" invalid: "+err.Error())
 			continue
 		}
@@ -165,7 +185,7 @@ func checkJSONFiles(out string, result *Result) {
 
 func checkFreshnessIntegrity(out string, result *Result) {
 	var index scan.ArtifactFreshnessIndex
-	if err := readJSON(filepath.Join(out, "freshness.json"), &index); err != nil {
+	if err := readJSON(scan.NewProjectOutputLayout(out).Index("freshness.json"), &index); err != nil {
 		return
 	}
 	if index.Schema != scan.SchemaVersion || index.GoreGraphVersion == "" || index.SourceFingerprint == "" || index.GeneratedAt == "" {
@@ -185,11 +205,12 @@ func checkFreshnessIntegrity(out string, result *Result) {
 }
 
 func checkEvidenceIntegrity(out string, result *Result) {
+	layout := scan.NewProjectOutputLayout(out)
 	var evidence []scan.EvidenceRecord
 	var architectureFacts []scan.ArchitectureCapabilityFact
 	var capabilities []scan.CapabilityRecord
 	var coverage scan.CoverageRecord
-	if readJSON(filepath.Join(out, "evidence.json"), &evidence) != nil || readJSON(filepath.Join(out, "architecture-capabilities.json"), &architectureFacts) != nil || readJSON(filepath.Join(out, "capabilities.json"), &capabilities) != nil || readJSON(filepath.Join(out, "coverage.json"), &coverage) != nil {
+	if readJSON(layout.Index("evidence.json"), &evidence) != nil || readJSON(layout.Index("architecture-capabilities.json"), &architectureFacts) != nil || readJSON(layout.Index("capabilities.json"), &capabilities) != nil || readJSON(layout.Index("coverage.json"), &coverage) != nil {
 		return
 	}
 	known := map[string]bool{}
@@ -226,7 +247,7 @@ func checkEvidenceIntegrity(out string, result *Result) {
 	var routes []scan.CodeRouteRecord
 	var calls scan.CallGraphRecord
 	var diagnostics []scan.CanonicalDiagnosticRecord
-	if readJSON(filepath.Join(out, "routes.json"), &routes) == nil {
+	if readJSON(layout.Index("routes.json"), &routes) == nil {
 		for _, route := range routes {
 			if danglingEvidence(route.EvidenceIDs, known) {
 				result.fail("evidence", "route contains a dangling evidence reference")
@@ -234,7 +255,7 @@ func checkEvidenceIntegrity(out string, result *Result) {
 			}
 		}
 	}
-	if readJSON(filepath.Join(out, "callgraph.json"), &calls) == nil {
+	if readJSON(layout.Index("callgraph.json"), &calls) == nil {
 		for _, edge := range calls.Edges {
 			if danglingEvidence(edge.EvidenceIDs, known) {
 				result.fail("evidence", "call edge contains a dangling evidence reference")
@@ -242,7 +263,7 @@ func checkEvidenceIntegrity(out string, result *Result) {
 			}
 		}
 	}
-	if readJSON(filepath.Join(out, "diagnostics-canonical.json"), &diagnostics) == nil {
+	if readJSON(layout.Index("diagnostics-canonical.json"), &diagnostics) == nil {
 		for _, diagnostic := range diagnostics {
 			if diagnostic.ID == "" || diagnostic.Severity.Validate() != nil || diagnostic.Confidence.Validate() != nil || diagnostic.Resolution.Validate() != nil || danglingEvidence(diagnostic.EvidenceIDs, known) {
 				result.fail("diagnostics", "canonical diagnostic is invalid or contains dangling evidence")
@@ -264,8 +285,9 @@ func danglingEvidence(ids []string, known map[string]bool) bool {
 
 func checkStaleFiles(root string, manifest scan.Manifest, result *Result) {
 	out := filepath.Join(root, manifest.OutputDir)
+	layout := scan.NewProjectOutputLayout(out)
 	var files []scan.FileRecord
-	if err := readJSON(filepath.Join(out, "files.json"), &files); err != nil {
+	if err := readJSON(layout.Index("files.json"), &files); err != nil {
 		return
 	}
 	stale := 0
@@ -285,6 +307,33 @@ func checkStaleFiles(root string, manifest scan.Manifest, result *Result) {
 		return
 	}
 	result.ok("stale", "indexed file hashes match")
+}
+
+func checkWorkspace(root string, result *Result) {
+	out := filepath.Join(root, ".goregraph-workspace")
+	if legacyLayoutExists(out) {
+		result.fail("layout", "pre-1.3.0 flat workspace output detected")
+		result.fix("goregraph workspace clean " + root + " --execute\n  goregraph workspace build all " + root)
+		return
+	}
+	manifest, ok := checkManifest(out, result)
+	if !ok {
+		result.fix("goregraph workspace build all " + root)
+		return
+	}
+	checkGeneratedFiles(out, manifest, result)
+	if manifest.Dashboard.Complete {
+		checkWorkspaceSymbolProjection(root, result)
+	}
+}
+
+func legacyLayoutExists(out string) bool {
+	for _, name := range []string{"routes.json", "report.md", "workspace-map.html", "context-index.json"} {
+		if _, err := os.Stat(filepath.Join(out, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func readJSON(path string, dest any) error {

@@ -526,8 +526,12 @@ func writeQuerySymbolProjectionFixture(t *testing.T) (string, string, string, st
 
 func writeQueryJSON(t *testing.T, path string, value any) {
 	t.Helper()
+	path = queryTestOutputPath(path)
 	body, err := json.Marshal(value)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, body, 0o644); err != nil {
@@ -537,11 +541,26 @@ func writeQueryJSON(t *testing.T, path string, value any) {
 
 func writeFile(t *testing.T, root, rel, body string) {
 	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
+	path := queryTestOutputPath(filepath.Join(root, filepath.FromSlash(rel)))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func queryTestOutputPath(path string) string {
+	dir, name := filepath.Dir(path), filepath.Base(path)
+	if name == "manifest.json" {
+		return path
+	}
+	parent := filepath.Base(dir)
+	if parent != "goregraph-out" && parent != ".goregraph-workspace" {
+		return path
+	}
+	if strings.HasSuffix(name, ".json") {
+		return filepath.Join(dir, "index", name)
+	}
+	return filepath.Join(dir, "dashboard", name)
 }

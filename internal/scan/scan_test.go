@@ -26,7 +26,7 @@ func TestRunWritesDeterministicFilesManifestAndReport(t *testing.T) {
 	}
 
 	for _, name := range []string{"manifest.json", "files.json", "symbols.json", "relations.json", "graph.json", "report.md", "modules.md", "entrypoints.md", "test-map.md"} {
-		if _, err := os.Stat(filepath.Join(root, "goregraph-out", name)); err != nil {
+		if _, err := os.Stat(migratedTestOutputPath(filepath.Join(root, "goregraph-out", name))); err != nil {
 			t.Fatalf("%s was not written: %v", name, err)
 		}
 	}
@@ -53,10 +53,14 @@ func TestRunWritesEvidenceCapabilitiesAndCoverageOutputs(t *testing.T) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 	for _, name := range []string{"evidence.json", "capabilities.json", "coverage.json", "coverage.md"} {
-		if _, err := os.Stat(filepath.Join(root, "goregraph-out", name)); err != nil {
+		if _, err := os.Stat(migratedTestOutputPath(filepath.Join(root, "goregraph-out", name))); err != nil {
 			t.Fatalf("%s was not written: %v", name, err)
 		}
-		if !containsString(GeneratedFiles, name) {
+		projection := "index"
+		if strings.HasSuffix(name, ".md") {
+			projection = "dashboard"
+		}
+		if !containsString(GeneratedFiles, filepath.ToSlash(filepath.Join(projection, name))) {
 			t.Fatalf("GeneratedFiles does not contain %s", name)
 		}
 	}
@@ -370,12 +374,14 @@ func TestRunProducesDeterministicManifestGoldenOutput(t *testing.T) {
 	if manifest.ProjectRoot != filepath.Base(root) {
 		t.Fatalf("ProjectRoot = %q, want %q", manifest.ProjectRoot, filepath.Base(root))
 	}
-	if manifest.GeneratedAt == "" {
-		t.Fatal("GeneratedAt is empty")
+	if manifest.Scope != "project" || manifest.Index.GeneratedAt == "" {
+		t.Fatalf("manifest scope/generated_at invalid: %#v", manifest)
 	}
-	for _, name := range GeneratedFiles {
-		if !containsString(manifest.Generated, name) {
-			t.Fatalf("Generated missing %q in %#v", name, manifest.Generated)
+	generated := append(append([]string{}, manifest.Index.Files...), manifest.Agent.Files...)
+	generated = append(generated, manifest.Dashboard.Files...)
+	for _, name := range GeneratedFiles[1:] {
+		if !containsString(generated, name) {
+			t.Fatalf("generated projections missing %q in %#v", name, generated)
 		}
 	}
 }
@@ -645,7 +651,7 @@ deploy() {
 	}
 
 	for _, name := range []string{"routes.json", "routes.md", "flows.json", "flows.md", "navigation.md"} {
-		if _, err := os.Stat(filepath.Join(root, "goregraph-out", name)); err != nil {
+		if _, err := os.Stat(migratedTestOutputPath(filepath.Join(root, "goregraph-out", name))); err != nil {
 			t.Fatalf("%s was not written: %v", name, err)
 		}
 	}
@@ -1747,7 +1753,7 @@ func TestRunSkipsLargeBinaryAndSymlinkFiles(t *testing.T) {
 
 func writeFile(t *testing.T, root, rel, body string) {
 	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
+	path := migratedTestOutputPath(filepath.Join(root, filepath.FromSlash(rel)))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1758,7 +1764,7 @@ func writeFile(t *testing.T, root, rel, body string) {
 
 func readJSON(t *testing.T, path string, dest any) {
 	t.Helper()
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(migratedTestOutputPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1769,9 +1775,27 @@ func readJSON(t *testing.T, path string, dest any) {
 
 func readText(t *testing.T, path string) string {
 	t.Helper()
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(migratedTestOutputPath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return string(body)
+}
+
+func migratedTestOutputPath(path string) string {
+	dir, name := filepath.Dir(path), filepath.Base(path)
+	if name == "manifest.json" {
+		return path
+	}
+	parent := filepath.Base(dir)
+	if parent != "goregraph-out" && parent != ".goregraph-workspace" {
+		return path
+	}
+	if name == "agent-guide.md" {
+		return filepath.Join(dir, "agent", name)
+	}
+	if strings.HasSuffix(name, ".json") {
+		return filepath.Join(dir, "index", name)
+	}
+	return filepath.Join(dir, "dashboard", name)
 }

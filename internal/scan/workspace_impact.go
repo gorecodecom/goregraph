@@ -10,11 +10,12 @@ import (
 
 func WorkspaceImpact(workspaceOut string, changedFiles []string) (WorkspaceImpactRecord, error) {
 	var dossiers []FeatureDossierRecord
-	if err := readWorkspaceJSON(filepath.Join(workspaceOut, "feature-dossiers.json"), &dossiers); err != nil {
+	layout := NewWorkspaceOutputLayout(workspaceOut)
+	if err := readWorkspaceJSON(layout.Index("feature-dossiers.json"), &dossiers); err != nil {
 		return WorkspaceImpactRecord{}, err
 	}
 	var flows []WorkspaceFeatureFlowRecord
-	if err := readWorkspaceJSON(filepath.Join(workspaceOut, "feature-flows.json"), &flows); err != nil && !os.IsNotExist(err) {
+	if err := readWorkspaceJSON(layout.Index("feature-flows.json"), &flows); err != nil && !os.IsNotExist(err) {
 		return WorkspaceImpactRecord{}, err
 	}
 	flowsByID := map[string]WorkspaceFeatureFlowRecord{}

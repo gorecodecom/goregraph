@@ -182,7 +182,7 @@ func TestValidateSymbolProjectionRejectsInvalidReferences(t *testing.T) {
 		{
 			name: "usage schema other than two",
 			mutate: func(_ *scan.WorkspaceSymbolIndexRecord, usages *scan.WorkspaceSymbolUsageIndexRecord, _ map[string]bool) {
-				usages.SchemaVersion = 3
+				usages.SchemaVersion = 4
 			},
 			offending: "schema_version",
 		},
@@ -201,7 +201,7 @@ func TestValidateSymbolProjectionRejectsInvalidReferences(t *testing.T) {
 			if !strings.Contains(err.Error(), test.offending) {
 				t.Fatalf("error %q does not identify offending value %q", err, test.offending)
 			}
-			for _, want := range []string{"goregraph workspace clean", "goregraph workspace scan-all"} {
+			for _, want := range []string{"goregraph workspace clean", "goregraph workspace build all"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Fatalf("error %q does not include remediation %q", err, want)
 				}
@@ -254,6 +254,17 @@ func TestDoctorRejectsMissingCurrentWorkspaceSymbolProjection(t *testing.T) {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeTestJSON(t, filepath.Join(out, "manifest.json"), scan.OutputManifest{
+		Tool:      scan.ToolName,
+		Schema:    scan.SchemaVersion,
+		Scope:     "workspace",
+		OutputDir: ".goregraph-workspace",
+		Index: scan.ProjectionStatus{
+			Complete: true,
+			Files:    []string{"index/registry.json", "index/symbol-index.json", "index/symbol-usages.json"},
+		},
+		Dashboard: scan.ProjectionStatus{Complete: true},
+	})
 	writeTestJSON(t, filepath.Join(out, "registry.json"), scan.WorkspaceRegistryRecord{
 		Root: filepath.ToSlash(root),
 	})
@@ -266,7 +277,7 @@ func TestDoctorRejectsMissingCurrentWorkspaceSymbolProjection(t *testing.T) {
 	if result.Failures == 0 || !containsLine(result.Lines, "symbol-index.json") {
 		t.Fatalf("missing workspace symbol projection passed Doctor: %v", result.Lines)
 	}
-	want := "goregraph workspace clean " + root + " --execute && goregraph workspace scan-all " + root
+	want := "goregraph workspace clean " + root + " --execute && goregraph workspace build all " + root
 	if !containsLine(result.Lines, want) {
 		t.Fatalf("Doctor remediation missing %q: %v", want, result.Lines)
 	}
@@ -283,12 +294,10 @@ func TestDoctorRejectsMissingProjectionAtDetectedWorkspaceRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Failures == 0 ||
-		!containsLine(result.Lines, "symbol-index.json") ||
-		!containsLine(result.Lines, "symbol-usages.json") {
+	if result.Failures == 0 || !containsLine(result.Lines, "manifest.json") {
 		t.Fatalf("missing detected workspace projection passed Doctor: %v", result.Lines)
 	}
-	want := "goregraph workspace clean " + root + " --execute && goregraph workspace scan-all " + root
+	want := "goregraph workspace build all " + root
 	if !containsLine(result.Lines, want) {
 		t.Fatalf("Doctor remediation missing %q: %v", want, result.Lines)
 	}
@@ -309,7 +318,7 @@ func TestDoctorValidatesParentWorkspaceProjectionFromProjectRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeWorkspaceProjectionFixture(t, workspace)
-	out := filepath.Join(workspace, ".goregraph-workspace", "symbol-usages.json")
+	out := filepath.Join(workspace, ".goregraph-workspace", "index", "symbol-usages.json")
 	_, usages, _ := validSymbolProjection()
 	usages.Root = filepath.ToSlash(workspace)
 	usages.Usages[0].ProviderSymbolID = "symbol:missing-parent-provider"
@@ -653,6 +662,21 @@ func writeWorkspaceProjectionFixture(t *testing.T, root string) {
 			{ID: "evidence:api-consumer", Project: "frontend/app", File: "src/page.ts"},
 		}),
 	}
+	writeTestJSON(t, filepath.Join(out, "manifest.json"), scan.OutputManifest{
+		Tool:      scan.ToolName,
+		Schema:    scan.SchemaVersion,
+		Scope:     "workspace",
+		OutputDir: ".goregraph-workspace",
+		Index: scan.ProjectionStatus{
+			Complete: true,
+			Files: []string{
+				"index/registry.json",
+				"index/symbol-index.json",
+				"index/symbol-usages.json",
+			},
+		},
+		Dashboard: scan.ProjectionStatus{Complete: true},
+	})
 	writeTestJSON(t, filepath.Join(out, "registry.json"), scan.WorkspaceRegistryRecord{
 		Root:     filepath.ToSlash(root),
 		Projects: projects,

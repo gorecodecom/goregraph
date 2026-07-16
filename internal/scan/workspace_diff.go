@@ -3,7 +3,6 @@ package scan
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -21,21 +20,22 @@ func WorkspaceDiff(beforeDir, afterDir string) (WorkspaceDiffRecord, error) {
 }
 
 func readWorkspaceSnapshot(dir string) (WorkspaceSnapshotRecord, error) {
+	layout := NewWorkspaceOutputLayout(dir)
 	var snapshot WorkspaceSnapshotRecord
-	if err := readWorkspaceJSON(filepath.Join(dir, "contract-matches.json"), &snapshot.Contracts); err != nil {
+	if err := readWorkspaceJSON(layout.Index("contract-matches.json"), &snapshot.Contracts); err != nil {
 		return WorkspaceSnapshotRecord{}, fmt.Errorf("read contract matches: %w", err)
 	}
-	if err := readWorkspaceJSON(filepath.Join(dir, "feature-flows.json"), &snapshot.Flows); err != nil {
+	if err := readWorkspaceJSON(layout.Index("feature-flows.json"), &snapshot.Flows); err != nil {
 		return WorkspaceSnapshotRecord{}, fmt.Errorf("read feature flows: %w", err)
 	}
 	var traces WorkspaceEndpointTraceIndexRecord
-	if err := readWorkspaceJSON(filepath.Join(dir, "workspace-endpoint-traces.json"), &traces); err == nil {
+	if err := readWorkspaceJSON(layout.Index("workspace-endpoint-traces.json"), &traces); err == nil {
 		snapshot.Traces = traces.Traces
 	} else if !os.IsNotExist(err) {
 		return WorkspaceSnapshotRecord{}, fmt.Errorf("read endpoint traces: %w", err)
 	}
 	var services WorkspaceServiceMapRecord
-	if err := readWorkspaceJSON(filepath.Join(dir, "workspace-service-map.json"), &services); err == nil {
+	if err := readWorkspaceJSON(layout.Index("workspace-service-map.json"), &services); err == nil {
 		snapshot.Services = services.Nodes
 		snapshot.Capabilities = services.Capabilities
 	} else if !os.IsNotExist(err) {

@@ -22,7 +22,10 @@ func TestServiceReturnsDirectedTraceAndTraversal(t *testing.T) {
 	}
 	index := scan.DirectedTraceIndexRecord{SchemaVersion: 1, Traces: []scan.DirectedTraceRecord{{ID: "trace:1", Route: "GET /users", Nodes: []scan.DirectedTraceNodeRecord{{ID: "entry", Role: scan.TraceRoleAPIClient}, {ID: "repo", Role: scan.TraceRoleRepository}}, Edges: []scan.DirectedTraceEdgeRecord{{From: "entry", To: "repo"}}, EntryNodes: []string{"entry"}, ExitNodes: []string{"repo"}, MainPath: []string{"entry", "repo"}}}}
 	body, _ := json.Marshal(index)
-	if err := os.WriteFile(filepath.Join(root, "goregraph-out", "directed-traces.json"), body, 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "goregraph-out", "index"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "goregraph-out", "index", "directed-traces.json"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	service := Service{}
@@ -78,7 +81,10 @@ func TestWorkspaceSummaryReturnsCanonicalContractCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(workspaceDir, "workspace-service-map.json"), body, 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(workspaceDir, "index"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceDir, "index", "workspace-service-map.json"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -246,7 +252,10 @@ func TestServiceReturnsImpactSummaryFromWorkspaceRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(workspaceOut, "feature-flows.json"), body, 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(workspaceOut, "index"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceOut, "index", "feature-flows.json"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	result, err := (Service{}).Run(Request{Root: root, Task: "impact-summary", Query: "/documents", Limit: 5})
@@ -483,7 +492,11 @@ func writeWorkspaceProjectionJSON(t *testing.T, workspace, name string, value an
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(workspace, ".goregraph-workspace", name), body, 0o644); err != nil {
+	path := filepath.Join(workspace, ".goregraph-workspace", "index", name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -494,7 +507,14 @@ func writeTaskContextJSON(t *testing.T, root, name string, value any) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "goregraph-out", name), body, 0o644); err != nil {
+	path := filepath.Join(root, "goregraph-out", "index", name)
+	if name == "manifest.json" {
+		path = filepath.Join(root, "goregraph-out", name)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
