@@ -102,28 +102,50 @@ type AuditRecord struct {
 }
 
 type RichSymbolRecord struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Kind           string `json:"kind"`
-	Language       string `json:"language"`
-	File           string `json:"file"`
-	Line           int    `json:"line,omitempty"`
-	Owner          string `json:"owner,omitempty"`
-	SourceLocation string `json:"source_location,omitempty"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Kind             string     `json:"kind"`
+	Language         string     `json:"language"`
+	File             string     `json:"file"`
+	Line             int        `json:"line,omitempty"`
+	Owner            string     `json:"owner,omitempty"`
+	SourceLocation   string     `json:"source_location,omitempty"`
+	QualifiedName    string     `json:"qualified_name,omitempty"`
+	Package          string     `json:"package,omitempty"`
+	Module           string     `json:"module,omitempty"`
+	Application      string     `json:"application,omitempty"`
+	WorkspacePackage string     `json:"workspace_package,omitempty"`
+	Artifact         string     `json:"artifact,omitempty"`
+	ExportName       string     `json:"export_name,omitempty"`
+	DeclarationID    string     `json:"declaration_id,omitempty"`
+	EvidenceIDs      []string   `json:"evidence_ids,omitempty"`
+	Analyzer         string     `json:"analyzer,omitempty"`
+	Confidence       Confidence `json:"symbol_confidence,omitempty"`
+	Coverage         Coverage   `json:"coverage,omitempty"`
+	Limitations      []string   `json:"limitations,omitempty"`
 }
 
 type RichRelationRecord struct {
-	ID              string   `json:"id"`
-	From            string   `json:"from"`
-	To              string   `json:"to"`
-	Type            string   `json:"type"`
-	Language        string   `json:"language,omitempty"`
-	Line            int      `json:"line,omitempty"`
-	SourceLocation  string   `json:"source_location,omitempty"`
-	Confidence      string   `json:"confidence"`
-	ConfidenceScore float64  `json:"confidence_score"`
-	Internal        bool     `json:"internal,omitempty"`
-	EvidenceIDs     []string `json:"evidence_ids,omitempty"`
+	ID                  string           `json:"id"`
+	From                string           `json:"from"`
+	To                  string           `json:"to"`
+	Type                string           `json:"type"`
+	Language            string           `json:"language,omitempty"`
+	Line                int              `json:"line,omitempty"`
+	SourceLocation      string           `json:"source_location,omitempty"`
+	Confidence          string           `json:"confidence"`
+	ConfidenceScore     float64          `json:"confidence_score"`
+	Internal            bool             `json:"internal,omitempty"`
+	EvidenceIDs         []string         `json:"evidence_ids,omitempty"`
+	FromSymbolID        string           `json:"from_symbol_id,omitempty"`
+	ToSymbolID          string           `json:"to_symbol_id,omitempty"`
+	TargetQualifiedName string           `json:"target_qualified_name,omitempty"`
+	TargetModule        string           `json:"target_module,omitempty"`
+	TargetExport        string           `json:"target_export,omitempty"`
+	Resolution          SymbolResolution `json:"resolution,omitempty"`
+	Reason              string           `json:"reason,omitempty"`
+	CandidateSymbolIDs  []string         `json:"candidate_symbol_ids,omitempty"`
+	DependencyEvidence  []string         `json:"dependency_evidence,omitempty"`
 }
 
 type RichGraph struct {
@@ -165,16 +187,21 @@ type CallGraphRecord struct {
 }
 
 type CallGraphEdgeRecord struct {
-	ID              string          `json:"id"`
-	From            MethodRefRecord `json:"from"`
-	To              MethodRefRecord `json:"to"`
-	Type            string          `json:"type"`
-	Line            int             `json:"line,omitempty"`
-	SourceFile      string          `json:"source_file,omitempty"`
-	Confidence      string          `json:"confidence"`
-	ConfidenceScore float64         `json:"confidence_score"`
-	Reason          string          `json:"reason,omitempty"`
-	EvidenceIDs     []string        `json:"evidence_ids,omitempty"`
+	ID                  string           `json:"id"`
+	From                MethodRefRecord  `json:"from"`
+	To                  MethodRefRecord  `json:"to"`
+	Type                string           `json:"type"`
+	Line                int              `json:"line,omitempty"`
+	SourceFile          string           `json:"source_file,omitempty"`
+	Confidence          string           `json:"confidence"`
+	ConfidenceScore     float64          `json:"confidence_score"`
+	Reason              string           `json:"reason,omitempty"`
+	EvidenceIDs         []string         `json:"evidence_ids,omitempty"`
+	FromSymbolID        string           `json:"from_symbol_id,omitempty"`
+	ToSymbolID          string           `json:"to_symbol_id,omitempty"`
+	TargetQualifiedName string           `json:"target_qualified_name,omitempty"`
+	Resolution          SymbolResolution `json:"resolution,omitempty"`
+	CandidateSymbolIDs  []string         `json:"candidate_symbol_ids,omitempty"`
 }
 
 type SpringEndpointFlowRecord struct {

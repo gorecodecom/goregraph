@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,43 @@ import (
 
 	"github.com/gorecodecom/goregraph/internal/config"
 )
+
+func TestRichSymbolAdditionsPreserveLegacyGraphIdentity(t *testing.T) {
+	legacy := RichSymbolRecord{
+		ID:       "legacy-symbol-id",
+		Name:     "UserService",
+		Kind:     "class",
+		Language: "java",
+		File:     "src/UserService.java",
+		Line:     3,
+	}
+	enriched := legacy
+	enriched.QualifiedName = "com.weka.UserService"
+
+	legacyJSON, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrichedJSON, err := json.Marshal(enriched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(legacyJSON), `"qualified_name"`) {
+		t.Fatalf("legacy-only symbol emitted additive field: %s", legacyJSON)
+	}
+	if !strings.Contains(string(enrichedJSON), `"qualified_name":"com.weka.UserService"`) {
+		t.Fatalf("enriched symbol omitted qualified name: %s", enrichedJSON)
+	}
+
+	legacyGraph := buildRichGraph(nil, []RichSymbolRecord{legacy}, nil)
+	enrichedGraph := buildRichGraph(nil, []RichSymbolRecord{enriched}, nil)
+	if len(legacyGraph.Nodes) != 1 || len(enrichedGraph.Nodes) != 1 {
+		t.Fatalf("unexpected graph nodes: legacy=%#v enriched=%#v", legacyGraph.Nodes, enrichedGraph.Nodes)
+	}
+	if legacyGraph.Nodes[0].ID != legacy.ID || enrichedGraph.Nodes[0].ID != legacy.ID {
+		t.Fatalf("additive fields changed graph identity: legacy=%#v enriched=%#v", legacyGraph.Nodes[0], enrichedGraph.Nodes[0])
+	}
+}
 
 func TestRunWritesRichGraphForAllCurrentLanguages(t *testing.T) {
 	root := t.TempDir()
