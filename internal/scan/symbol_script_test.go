@@ -243,6 +243,33 @@ const objectDivision = { retry: true } / loadUser() / divisor;
 	}
 }
 
+func TestExtractScriptMasksRegexAfterOptionalCatchAndTypedFunctionBlocks(t *testing.T) {
+	body := `
+import { loadUser } from "./api";
+import type { User } from "./User";
+try {
+  work();
+} catch {
+}
+/; export class CatchFake {} loadUser()/.test(value);
+function load(): User {
+  return value;
+}
+/; export class TypedFunctionFake {} loadUser()/.test(value);
+const objectDivision = { catch: true } / loadUser() / divisor;
+`
+	facts := ExtractScriptSymbolFacts(FileRecord{Path: "src/real.ts", Language: "typescript"}, body)
+	for _, declaration := range facts.Declarations {
+		if declaration.Name == "CatchFake" || declaration.Name == "TypedFunctionFake" {
+			t.Fatalf("optional-catch or typed-function regex created declaration: %#v", declaration)
+		}
+	}
+	references := scriptReferences(t, facts.References, "calls_export", "./api", "loadUser")
+	if len(references) != 1 || references[0].Line != 13 {
+		t.Fatalf("optional-catch or typed-function regex extraction = %#v, want only line-13 division call", references)
+	}
+}
+
 func TestScriptReturnTypesRequireFunctionLikeSignature(t *testing.T) {
 	file := FileRecord{Path: "src/types.ts", Language: "typescript"}
 	facts := ExtractScriptSymbolFacts(file, `
@@ -945,6 +972,35 @@ func TestScriptDynamicImportOwnershipUsesOffsets(t *testing.T) {
 	secondImport := assertScriptReference(t, facts.References, "imports_module", "./second", "*")
 	if secondImport.FromSymbolID != second.ID {
 		t.Fatalf("second dynamic import owner = %q, want %q: %#v", secondImport.FromSymbolID, second.ID, secondImport)
+	}
+}
+
+func TestScriptSameLineUsageReferencesRetainDistinctOwners(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { loadUser } from "./api";
+export const first = () => { loadUser(); }; export const second = () => { loadUser(); };
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function loadUser() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	references := scriptReferences(t, resolved.References, "calls_export", "./api", "loadUser")
+	if len(references) != 2 {
+		t.Fatalf("same-line owner calls = %#v, want two references", references)
+	}
+	owners := map[string]bool{}
+	for _, reference := range references {
+		if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" || reference.FromSymbolID == "" {
+			t.Fatalf("same-line owner call did not resolve exactly: %#v", reference)
+		}
+		owners[reference.FromSymbolID] = true
+	}
+	if len(owners) != 2 {
+		t.Fatalf("same-line owner identities = %#v, want two distinct owners", references)
 	}
 }
 

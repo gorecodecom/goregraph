@@ -40,6 +40,7 @@ func ExtractScriptSymbolFacts(file FileRecord, body string) ProjectSymbolFacts {
 	moduleReferences := extractScriptModuleReferences(file, body, masked)
 	spans := scriptDeclarationSpans(file, masked, declarations)
 	bindScriptReferenceOwners(moduleReferences, spans)
+	moduleReferences = dedupeRichRelationFacts(moduleReferences)
 	facts := ProjectSymbolFacts{Declarations: declarations, References: moduleReferences}
 	facts.References = append(facts.References, extractScriptUsageReferences(file, masked, declarations, moduleReferences, spans)...)
 	sort.Slice(facts.Declarations, func(i, j int) bool { return facts.Declarations[i].ID < facts.Declarations[j].ID })
@@ -235,7 +236,7 @@ func extractScriptModuleReferences(file FileRecord, body, masked string) []RichR
 			references = append(references, newScriptReference(file, "reexports_all", module, "*", line, "star re-export", false))
 		}
 	}
-	return dedupeRichRelationFacts(references)
+	return references
 }
 
 func isStandaloneScriptImport(masked string, offset int) bool {
@@ -427,9 +428,26 @@ func bindScriptReferenceOwners(references []RichRelationRecord, spans []scriptDe
 			continue
 		}
 		if owner := innermostScriptOwner(spans, references[index].scriptOffset); owner.ID != "" {
-			references[index].FromSymbolID = owner.ID
+			bindScriptReferenceOwner(&references[index], owner.ID)
 		}
 	}
+}
+
+func bindScriptReferenceOwner(reference *RichRelationRecord, ownerID string) {
+	if reference == nil || ownerID == "" {
+		return
+	}
+	reference.FromSymbolID = ownerID
+	reference.ID = StableWorkspaceUsageID(
+		"",
+		"",
+		reference.FromSymbolID,
+		SymbolUsageUnresolved,
+		reference.Type,
+		reference.TargetQualifiedName,
+		reference.From,
+		reference.Line,
+	)
 }
 
 func extractScriptUsageReferences(file FileRecord, masked string, declarations []RichSymbolRecord, imports []RichRelationRecord, spans []scriptDeclarationSpan) []RichRelationRecord {
@@ -454,14 +472,14 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		reference := newScriptReference(file, kind, binding.TargetModule, binding.TargetExport, scriptLineAt(masked, offset), reason, false)
 		reference.scriptLocalName = name
 		if owner := innermostScriptOwner(spans, offset); owner.ID != "" {
-			reference.FromSymbolID = owner.ID
+			bindScriptReferenceOwner(&reference, owner.ID)
 		}
 		references = append(references, reference)
 	}
 	addUnresolved := func(kind, name string, offset int, reason string) {
 		reference := newScriptReference(file, kind, "", name, scriptLineAt(masked, offset), reason, true)
 		if owner := innermostScriptOwner(spans, offset); owner.ID != "" {
-			reference.FromSymbolID = owner.ID
+			bindScriptReferenceOwner(&reference, owner.ID)
 		}
 		references = append(references, reference)
 	}
@@ -525,7 +543,7 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		}
 		reference := newScriptReference(file, "instantiates", "", name, scriptLineAt(masked, match[0]), "constructor has no static module binding", true)
 		if owner := innermostScriptOwner(spans, match[0]); owner.ID != "" {
-			reference.FromSymbolID = owner.ID
+			bindScriptReferenceOwner(&reference, owner.ID)
 		}
 		references = append(references, reference)
 	}
@@ -569,7 +587,7 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 	for _, match := range scriptComputedCallRE.FindAllStringSubmatchIndex(masked, -1) {
 		reference := newScriptReference(file, "calls_export", "", "", scriptLineAt(masked, match[0]), "computed property call", true)
 		if owner := innermostScriptOwner(spans, match[0]); owner.ID != "" {
-			reference.FromSymbolID = owner.ID
+			bindScriptReferenceOwner(&reference, owner.ID)
 		}
 		references = append(references, reference)
 	}
@@ -1416,7 +1434,7 @@ func isScriptStatementBlockOpen(masked []byte, open int) bool {
 			previous--
 		}
 		switch string(masked[previous+1 : end]) {
-		case "else", "finally":
+		case "catch", "else", "finally":
 			return true
 		}
 	}
@@ -1442,11 +1460,32 @@ func isScriptStatementBlockOpen(masked []byte, open int) bool {
 		}
 		statementStart := scriptStatementStart(masked, paramsOpen)
 		prefix := string(masked[statementStart:paramsOpen])
-		return strings.Contains(prefix, "function") && !strings.Contains(prefix, "=")
+		return hasScriptIdentifierWord(prefix, "function") && !strings.Contains(prefix, "=")
 	}
 	statementStart := scriptStatementStart(masked, open)
 	prefix := strings.TrimSpace(string(masked[statementStart:open]))
+	if hasScriptIdentifierWord(prefix, "function") && !strings.Contains(prefix, "=") {
+		return true
+	}
 	return (strings.HasPrefix(prefix, "class ") || strings.HasPrefix(prefix, "export class ")) && !strings.Contains(prefix, "=")
+}
+
+func hasScriptIdentifierWord(value, word string) bool {
+	for search := 0; search < len(value); {
+		relative := strings.Index(value[search:], word)
+		if relative < 0 {
+			return false
+		}
+		start := search + relative
+		end := start + len(word)
+		beforeOK := start == 0 || !isScriptIdentifierByte(value[start-1])
+		afterOK := end == len(value) || !isScriptIdentifierByte(value[end])
+		if beforeOK && afterOK {
+			return true
+		}
+		search = end
+	}
+	return false
 }
 
 func isScriptLabelledBlockOpen(masked []byte, open, colon int) bool {
