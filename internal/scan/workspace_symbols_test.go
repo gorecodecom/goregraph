@@ -284,6 +284,91 @@ func TestWorkspaceSymbolsResolveDuplicateJavaFQNByMavenArtifact(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSymbolsRequireJavaDependencyEvidenceForCrossProjectExact(t *testing.T) {
+	fqn := "com.weka.UserService"
+	provider := workspaceJavaProject(
+		"microservices/ms-users",
+		"com.weka:users",
+		RichSymbolRecord{
+			ID: "provider", Name: "UserService", Kind: "class", Language: "java",
+			File: "src/UserService.java", QualifiedName: fqn, Artifact: "com.weka:users",
+			Analyzer: "java-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		},
+	)
+	consumer := workspaceJavaConsumer("microservices/ms-consumer", "com.weka:consumer", fqn)
+	consumer.maven.Edges = nil
+	registry := workspaceSymbolRegistry(provider.record, consumer.record)
+
+	_, usages, err := BuildWorkspaceSymbolProjection(registry, []workspaceIndexProject{provider, consumer}, registry.Generated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(usages.Usages) != 1 ||
+		usages.Usages[0].Resolution != SymbolResolutionUnresolved ||
+		usages.Usages[0].ProviderSymbolID != "" {
+		t.Fatalf("unique cross-project FQN without dependency became Exact: %#v", usages.Usages)
+	}
+}
+
+func TestWorkspaceSymbolsDoNotPromoteNonPromotableJavaReference(t *testing.T) {
+	fqn := "com.weka.UserService"
+	provider := workspaceJavaProject(
+		"microservices/ms-users",
+		"com.weka:users",
+		RichSymbolRecord{
+			ID: "provider", Name: "UserService", Kind: "class", Language: "java",
+			File: "src/UserService.java", QualifiedName: fqn, Artifact: "com.weka:users",
+			Analyzer: "java-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		},
+	)
+	consumer := workspaceJavaConsumer("microservices/ms-consumer", "com.weka:consumer", fqn)
+	consumer.maven = MavenGraphRecord{Edges: []MavenEdgeRecord{{
+		From: "com.weka:consumer", To: "com.weka:users", Type: "depends_on",
+	}}}
+	consumer.relations[0].NonPromotable = true
+	consumer.relations = jsonRoundTrip[[]RichRelationRecord](t, consumer.relations)
+	registry := workspaceSymbolRegistry(provider.record, consumer.record)
+
+	_, usages, err := BuildWorkspaceSymbolProjection(registry, []workspaceIndexProject{provider, consumer}, registry.Generated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(usages.Usages) != 1 ||
+		usages.Usages[0].Resolution != SymbolResolutionUnresolved ||
+		usages.Usages[0].ProviderSymbolID != "" {
+		t.Fatalf("non-promotable reference became Exact: %#v", usages.Usages)
+	}
+}
+
+func TestWorkspaceSymbolsDoNotPromoteProjectAmbiguousJavaReference(t *testing.T) {
+	fqn := "com.weka.UserService"
+	provider := workspaceJavaProject(
+		"microservices/ms-users",
+		"com.weka:users",
+		RichSymbolRecord{
+			ID: "provider", Name: "UserService", Kind: "class", Language: "java",
+			File: "src/UserService.java", QualifiedName: fqn, Artifact: "com.weka:users",
+			Analyzer: "java-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		},
+	)
+	consumer := workspaceJavaConsumer("microservices/ms-consumer", "com.weka:consumer", fqn)
+	consumer.maven = MavenGraphRecord{Edges: []MavenEdgeRecord{{
+		From: "com.weka:consumer", To: "com.weka:users", Type: "depends_on",
+	}}}
+	consumer.relations[0].Resolution = SymbolResolutionAmbiguous
+	registry := workspaceSymbolRegistry(provider.record, consumer.record)
+
+	_, usages, err := BuildWorkspaceSymbolProjection(registry, []workspaceIndexProject{provider, consumer}, registry.Generated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(usages.Usages) != 1 ||
+		usages.Usages[0].Resolution == SymbolResolutionExact ||
+		usages.Usages[0].ProviderSymbolID != "" {
+		t.Fatalf("project-ambiguous reference became Exact: %#v", usages.Usages)
+	}
+}
+
 func TestWorkspaceSymbolsPreserveEveryAmbiguousJavaCandidate(t *testing.T) {
 	fqn := "com.weka.shared.UserService"
 	providerA := workspaceJavaProject(
@@ -402,6 +487,101 @@ func TestWorkspaceSymbolsResolveJavaScriptWorkspacePackageDependency(t *testing.
 	}
 	if !reflect.DeepEqual(got.DependencyEvidence, []string{"node:@weka/admin -> @weka/users"}) {
 		t.Fatalf("dependency evidence = %#v", got.DependencyEvidence)
+	}
+}
+
+func TestWorkspaceSymbolsUseOnlyEvidencedScriptExportsAndPreserveAliases(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/index.ts", Language: "typescript"},
+		{Path: "src/core.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+class PrivateService {}
+class LocalService {}
+export { LocalService as Service };
+export { CoreService as ReexportedService } from "./core";
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `
+export class CoreService {}
+`))
+	facts = ResolveScriptSymbolFacts(files, nil, nil, facts)
+	facts = FinalizeProjectSymbolFacts(files, WorkspaceIndex{NodePackages: []NodePackageRecord{{
+		Path: "package.json", Name: "@weka/users",
+	}}}, facts)
+
+	providerRecord := WorkspaceProjectRecord{
+		Path: "frontend/packages/users", Kind: "frontend", BuildSystem: "node", Indexed: true,
+	}
+	provider := workspaceIndexProject{
+		record:    providerRecord,
+		symbols:   jsonRoundTrip[[]RichSymbolRecord](t, facts.Declarations),
+		relations: jsonRoundTrip[[]RichRelationRecord](t, facts.References),
+		packages: PackageGraphRecord{Nodes: []PackageNodeRecord{{
+			Name: "@weka/users", Path: "package.json", Kind: "package",
+		}}},
+	}
+	consumerRecord := WorkspaceProjectRecord{
+		Path: "frontend/apps/admin", Kind: "frontend", BuildSystem: "node", Indexed: true,
+	}
+	consumerSymbol := RichSymbolRecord{
+		ID: "app", Name: "App", ExportName: "App", Kind: "function", Language: "typescript",
+		File: "src/App.ts", QualifiedName: "src/App#App", Module: "src/App",
+		WorkspacePackage: "@weka/admin", Analyzer: "script-source",
+		Confidence: ConfidenceExact, Coverage: CoverageComplete,
+	}
+	consumer := workspaceIndexProject{
+		record:  consumerRecord,
+		symbols: []RichSymbolRecord{consumerSymbol},
+		relations: []RichRelationRecord{
+			{
+				ID: "local-alias", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "script-source", Line: 3,
+				TargetModule: "@weka/users", TargetExport: "Service",
+				Resolution: SymbolResolutionUnresolved,
+			},
+			{
+				ID: "reexport-alias", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "script-source", Line: 4,
+				TargetModule: "@weka/users", TargetExport: "ReexportedService",
+				Resolution: SymbolResolutionUnresolved,
+			},
+			{
+				ID: "private", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "script-source", Line: 5,
+				TargetModule: "@weka/users", TargetExport: "PrivateService",
+				Resolution: SymbolResolutionUnresolved,
+			},
+		},
+		packages: PackageGraphRecord{Edges: []PackageEdgeRecord{{
+			From: "@weka/admin", To: "@weka/users", Type: "depends_on",
+		}}},
+	}
+	registry := workspaceSymbolRegistry(provider.record, consumer.record)
+
+	symbols, usages, err := BuildWorkspaceSymbolProjection(registry, []workspaceIndexProject{consumer, provider}, registry.Generated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalByName := map[string]string{}
+	for _, symbol := range symbols.Symbols {
+		originalByName[symbol.Name] = symbol.ID
+	}
+	usageByExport := map[string]CanonicalSymbolUsageRecord{}
+	for _, usage := range usages.Usages {
+		usageByExport[usage.TargetExport] = usage
+	}
+	if usageByExport["Service"].Resolution != SymbolResolutionExact ||
+		usageByExport["Service"].ProviderSymbolID != originalByName["LocalService"] {
+		t.Fatalf("local alias usage = %#v, symbols = %#v", usageByExport["Service"], symbols.Symbols)
+	}
+	if usageByExport["ReexportedService"].Resolution != SymbolResolutionExact ||
+		usageByExport["ReexportedService"].ProviderSymbolID != originalByName["CoreService"] {
+		t.Fatalf("reexport alias usage = %#v, symbols = %#v", usageByExport["ReexportedService"], symbols.Symbols)
+	}
+	if usageByExport["PrivateService"].Resolution != SymbolResolutionUnresolved ||
+		usageByExport["PrivateService"].ProviderSymbolID != "" {
+		t.Fatalf("private declaration became an implicit export: %#v", usageByExport["PrivateService"])
 	}
 }
 
@@ -559,6 +739,114 @@ func TestWorkspaceSymbolProjectionRejectsDuplicateCanonicalID(t *testing.T) {
 	assertContains(t, err.Error(), wantID)
 }
 
+func TestWorkspaceSymbolProjectionRejectsUnknownLocalReferenceIDs(t *testing.T) {
+	fqn := "com.weka.UserService"
+	provider := workspaceJavaProject(
+		"microservices/ms-users",
+		"com.weka:users",
+		RichSymbolRecord{
+			ID: "provider", Name: "UserService", Kind: "class", Language: "java",
+			File: "src/UserService.java", QualifiedName: fqn, Artifact: "com.weka:users",
+			Analyzer: "java-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		},
+	)
+	consumer := workspaceJavaConsumer("microservices/ms-consumer", "com.weka:consumer", fqn)
+	consumer.maven = MavenGraphRecord{Edges: []MavenEdgeRecord{{
+		From: "com.weka:consumer", To: "com.weka:users", Type: "depends_on",
+	}}}
+	registry := workspaceSymbolRegistry(provider.record, consumer.record)
+
+	tests := []struct {
+		name  string
+		field string
+		value string
+		apply func(*RichRelationRecord)
+	}{
+		{
+			name: "from symbol", field: "from_symbol_id", value: "missing-consumer",
+			apply: func(reference *RichRelationRecord) {
+				reference.FromSymbolID = "missing-consumer"
+			},
+		},
+		{
+			name: "to symbol", field: "to_symbol_id", value: "missing-provider",
+			apply: func(reference *RichRelationRecord) {
+				reference.ToSymbolID = "missing-provider"
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			broken := consumer
+			broken.relations = append([]RichRelationRecord(nil), consumer.relations...)
+			test.apply(&broken.relations[0])
+
+			_, _, err := BuildWorkspaceSymbolProjection(
+				registry,
+				[]workspaceIndexProject{provider, broken},
+				registry.Generated,
+			)
+			if err == nil {
+				t.Fatalf("unknown %s did not fail projection", test.field)
+			}
+			for _, want := range []string{
+				consumer.record.Path,
+				consumer.relations[0].ID,
+				test.field,
+				test.value,
+			} {
+				assertContains(t, err.Error(), want)
+			}
+		})
+	}
+}
+
+func TestReconcileWorkspaceRejectsUnknownLocalReferenceID(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	project := filepath.Join(workspace, "microservices", "ms-users")
+	writeFile(t, project, "pom.xml", `<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.weka</groupId>
+  <artifactId>users</artifactId>
+  <version>1</version>
+</project>`)
+	writeFile(t, project, "src/main/java/com/weka/UserService.java", `package com.weka;
+class UserService {}
+`)
+	writeFile(t, project, "src/main/java/com/weka/Consumer.java", `package com.weka;
+class Consumer {
+  UserService service;
+}
+`)
+	cfg := config.Defaults()
+	if _, err := Run(project, cfg); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(project, cfg.OutputDir)
+	var relations []RichRelationRecord
+	readJSON(t, filepath.Join(out, "relations-full.json"), &relations)
+	if len(relations) == 0 {
+		t.Fatal("fixture did not produce rich relations")
+	}
+	relations[0].FromSymbolID = "missing-consumer"
+	if err := writeJSON(filepath.Join(out, "relations-full.json"), relations); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := ReconcileWorkspace(project, cfg)
+	if err == nil {
+		t.Fatal("reconciliation accepted unknown local reference ID")
+	}
+	for _, want := range []string{
+		"microservices/ms-users",
+		relations[0].ID,
+		"from_symbol_id",
+		"missing-consumer",
+	} {
+		assertContains(t, err.Error(), want)
+	}
+}
+
 func TestWorkspaceSymbolProjectionReportsCoverageAndMissingProjects(t *testing.T) {
 	java := workspaceJavaProject(
 		"microservices/ms-users",
@@ -689,6 +977,84 @@ func TestLoadWorkspaceIndexesReportsMissingOptionalSymbolFactsAsPartialCoverage(
 		!strings.Contains(direct.Reason, "relations-full.json") ||
 		!strings.Contains(direct.Reason, "callgraph.json") {
 		t.Fatalf("missing usage facts coverage = %#v", direct)
+	}
+}
+
+func TestWorkspaceSymbolCoverageScopesDependencyAndCallGraphReadIssues(t *testing.T) {
+	tests := []struct {
+		name          string
+		malformedFile string
+		missingFile   string
+		wantUsage     Coverage
+	}{
+		{
+			name:          "malformed Maven graph",
+			malformedFile: "maven-graph.json",
+			wantUsage:     CoverageFailed,
+		},
+		{
+			name:          "malformed call graph",
+			malformedFile: "callgraph.json",
+			wantUsage:     CoverageFailed,
+		},
+		{
+			name:        "missing Maven graph",
+			missingFile: "maven-graph.json",
+			wantUsage:   CoveragePartial,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			project := workspaceProjectOnDisk(root, "microservices/ms-users")
+			symbol := RichSymbolRecord{
+				ID: "users", Name: "UserService", Kind: "class", Language: "java",
+				File: "src/UserService.java", QualifiedName: "com.weka.UserService",
+				Artifact: "com.weka:users", Analyzer: "java-source",
+				Confidence: ConfidenceExact, Coverage: CoverageComplete,
+			}
+			writeWorkspaceProjectFacts(t, project, []RichSymbolRecord{symbol}, []RichRelationRecord{})
+			if test.malformedFile != "" {
+				if err := os.WriteFile(
+					filepath.Join(project.AbsPath, project.OutputDir, test.malformedFile),
+					[]byte("{"),
+					0o644,
+				); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if test.missingFile != "" {
+				if err := os.Remove(filepath.Join(project.AbsPath, project.OutputDir, test.missingFile)); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			loaded, err := loadWorkspaceIndexes([]WorkspaceProjectRecord{project})
+			if err != nil {
+				t.Fatal(err)
+			}
+			registry := workspaceSymbolRegistry(project)
+			symbols, usages, err := BuildWorkspaceSymbolProjection(registry, loaded, registry.Generated)
+			if err != nil {
+				t.Fatal(err)
+			}
+			declarations := findSymbolCoverage(symbols.Coverage, project.Path, "java", "declarations")
+			if declarations.Coverage != CoverageComplete {
+				t.Fatalf("declaration coverage = %#v, want COMPLETE", declarations)
+			}
+			direct := findSymbolCoverage(usages.Coverage, project.Path, "java", "direct_usages")
+			if direct.Coverage != test.wantUsage {
+				t.Fatalf("direct usage coverage = %#v, want %s", direct, test.wantUsage)
+			}
+			affected := test.malformedFile
+			if affected == "" {
+				affected = test.missingFile
+			}
+			assertContains(t, direct.Reason, affected)
+			if strings.Contains(declarations.Reason, affected) {
+				t.Fatalf("declaration coverage was degraded by %s: %#v", affected, declarations)
+			}
+		})
 	}
 }
 
@@ -934,6 +1300,19 @@ func findSymbolCoverage(records []SymbolCoverageRecord, project, language, capab
 		}
 	}
 	return SymbolCoverageRecord{}
+}
+
+func jsonRoundTrip[T any](t *testing.T, value T) T {
+	t.Helper()
+	body, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result T
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func assertContains(t *testing.T, value, want string) {

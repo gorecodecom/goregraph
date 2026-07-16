@@ -46,6 +46,13 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 	}
 	for index := range facts.References {
 		reference := &facts.References[index]
+		reference.NonPromotable = reference.NonPromotable || reference.preventExact
+		if reference.LocalName == "" {
+			reference.LocalName = reference.scriptLocalName
+		}
+		if reference.ExportAlias == "" {
+			reference.ExportAlias = reference.scriptExportAlias
+		}
 		if replacement := replacedIDs[reference.FromSymbolID]; replacement != "" {
 			reference.FromSymbolID = replacement
 		}

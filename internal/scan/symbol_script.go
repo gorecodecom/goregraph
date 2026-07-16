@@ -240,6 +240,7 @@ func extractScriptModuleReferences(file FileRecord, body, masked string) []RichR
 					if isScriptIdentifier(localName) && localName != "class" && localName != "function" {
 						reference := newScriptReference(file, "exports_local", module, localName, line, "default local export", false)
 						reference.scriptExportAlias = "default"
+						reference.ExportAlias = "default"
 						references = append(references, reference)
 					}
 				}
@@ -313,8 +314,10 @@ func appendScriptNamedReferences(target *[]RichRelationRecord, file FileRecord, 
 		}
 		if reexport {
 			reference.scriptExportAlias = alias
+			reference.ExportAlias = alias
 		} else {
 			reference.scriptLocalName = alias
+			reference.LocalName = alias
 		}
 		*target = append(*target, reference)
 	}

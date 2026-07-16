@@ -65,17 +65,24 @@ func BuildWorkspaceSymbolProjection(registry WorkspaceRegistryRecord, projects [
 				lookup.javaByQualifiedName[declaration.QualifiedName] = append(lookup.javaByQualifiedName[declaration.QualifiedName], canonical)
 			}
 			if isScriptLanguage(declaration.Language) {
-				exportName := scriptWorkspaceExportName(declaration)
-				if declaration.Module != "" && exportName != "" {
-					key := scriptProjectModuleKey(project.record.Path, declaration.Module, exportName)
+				if declaration.Module != "" && declaration.ExportName != "" {
+					key := scriptProjectModuleKey(project.record.Path, declaration.Module, declaration.ExportName)
 					lookup.scriptByProjectModule[key] = append(lookup.scriptByProjectModule[key], canonical)
 				}
-				if declaration.WorkspacePackage != "" && exportName != "" {
-					key := scriptWorkspacePackageKey(declaration.WorkspacePackage, exportName)
+				if declaration.WorkspacePackage != "" && declaration.ExportName != "" {
+					key := scriptWorkspacePackageKey(declaration.WorkspacePackage, declaration.ExportName)
 					lookup.scriptByWorkspacePackage[key] = append(lookup.scriptByWorkspacePackage[key], canonical)
 				}
 			}
 		}
+	}
+	for _, project := range projects {
+		if err := validateWorkspaceProjectReferenceIDs(project, workspaceProjectSymbolReferences(project), lookup); err != nil {
+			return WorkspaceSymbolIndexRecord{}, WorkspaceSymbolUsageIndexRecord{}, err
+		}
+	}
+	for _, project := range projects {
+		indexWorkspaceScriptExportRelations(project, lookup)
 	}
 
 	sort.Slice(symbolIndex.Symbols, func(i, j int) bool {
@@ -106,6 +113,36 @@ func BuildWorkspaceSymbolProjection(registry WorkspaceRegistryRecord, projects [
 	symbolIndex.Coverage = append([]SymbolCoverageRecord(nil), coverage...)
 	usageIndex.Coverage = append([]SymbolCoverageRecord(nil), coverage...)
 	return symbolIndex, usageIndex, nil
+}
+
+func validateWorkspaceProjectReferenceIDs(project workspaceIndexProject, references []RichRelationRecord, lookup workspaceSymbolLookup) error {
+	for _, reference := range references {
+		referenceID := reference.ID
+		if referenceID == "" {
+			referenceID = "<missing>"
+		}
+		for _, local := range []struct {
+			field string
+			value string
+		}{
+			{field: "from_symbol_id", value: reference.FromSymbolID},
+			{field: "to_symbol_id", value: reference.ToSymbolID},
+		} {
+			if local.value == "" {
+				continue
+			}
+			if lookup.byProjectLocalID[project.record.Path+"\x00"+local.value] == "" {
+				return fmt.Errorf(
+					"workspace project %q reference %q has unknown %s %q",
+					project.record.Path,
+					referenceID,
+					local.field,
+					local.value,
+				)
+			}
+		}
+	}
+	return nil
 }
 
 func writeWorkspaceSymbolProjectionPair(out string, symbols WorkspaceSymbolIndexRecord, usages WorkspaceSymbolUsageIndexRecord) error {
@@ -316,49 +353,21 @@ func buildWorkspaceSymbolCoverage(registry WorkspaceRegistryRecord, projects []w
 			continue
 		}
 		languages := workspaceSymbolLanguages(project)
-		if len(project.loadFailures) > 0 {
-			if len(languages) == 0 {
-				languages = []string{"unknown"}
-			}
-			reason := "project symbol facts could not be read: " + strings.Join(sortedStrings(project.loadFailures), "; ")
-			for _, language := range languages {
-				coverage = append(
-					coverage,
-					SymbolCoverageRecord{
-						Project: project.record.Path, Language: language, Capability: "declarations",
-						Coverage: CoverageFailed, Reason: reason,
-					},
-					SymbolCoverageRecord{
-						Project: project.record.Path, Language: language, Capability: "direct_usages",
-						Coverage: CoverageFailed, Reason: reason,
-					},
-				)
-			}
-			continue
-		}
 		if len(languages) == 0 {
 			languages = []string{"unknown"}
 		}
-		missingReason := ""
-		if len(project.missingFacts) > 0 {
-			missingReason = "optional symbol inputs are missing: " + strings.Join(sortedStrings(project.missingFacts), ", ")
-		}
 		for _, language := range languages {
-			if language == "unknown" && missingReason != "" {
-				coverage = append(
-					coverage,
-					SymbolCoverageRecord{
-						Project: project.record.Path, Language: language, Capability: "declarations",
-						Coverage: CoveragePartial, Reason: missingReason,
-					},
-					SymbolCoverageRecord{
-						Project: project.record.Path, Language: language, Capability: "direct_usages",
-						Coverage: CoveragePartial, Reason: missingReason,
-					},
-				)
-				continue
-			}
 			if !isWorkspaceSymbolLanguageSupported(language) {
+				if language == "unknown" &&
+					(workspaceSymbolCapabilityHasIssues(project, language, "declarations") ||
+						workspaceSymbolCapabilityHasIssues(project, language, "direct_usages")) {
+					coverage = append(
+						coverage,
+						buildWorkspaceSymbolCoverageRecord(project, language, "declarations"),
+						buildWorkspaceSymbolCoverageRecord(project, language, "direct_usages"),
+					)
+					continue
+				}
 				coverage = append(
 					coverage,
 					SymbolCoverageRecord{
@@ -371,26 +380,11 @@ func buildWorkspaceSymbolCoverage(registry WorkspaceRegistryRecord, projects []w
 					},
 				)
 				continue
-			}
-			declarationCoverage := CoverageComplete
-			declarationReason := "indexed declarations are projected with canonical workspace identities"
-			usageReason := "static direct-usage resolution cannot observe every runtime or generated binding"
-			if missingReason != "" {
-				declarationCoverage = CoveragePartial
-				declarationReason += "; " + missingReason
-				usageReason += "; " + missingReason
 			}
 			coverage = append(
 				coverage,
-				SymbolCoverageRecord{
-					Project: project.record.Path, Language: language, Capability: "declarations",
-					Coverage: declarationCoverage, Reason: declarationReason,
-				},
-				SymbolCoverageRecord{
-					Project: project.record.Path, Language: language, Capability: "direct_usages",
-					Coverage: CoveragePartial, Reason: usageReason,
-					Limitations: workspaceSymbolLanguageLimitations(language),
-				},
+				buildWorkspaceSymbolCoverageRecord(project, language, "declarations"),
+				buildWorkspaceSymbolCoverageRecord(project, language, "direct_usages"),
 			)
 		}
 	}
@@ -404,6 +398,94 @@ func buildWorkspaceSymbolCoverage(registry WorkspaceRegistryRecord, projects []w
 		return coverage[i].Capability < coverage[j].Capability
 	})
 	return coverage
+}
+
+func buildWorkspaceSymbolCoverageRecord(project workspaceIndexProject, language, capability string) SymbolCoverageRecord {
+	relevant := workspaceSymbolCapabilityFiles(language, capability)
+	failures := workspaceSymbolFactFailures(project.loadFailures, relevant)
+	missing := workspaceSymbolMissingFacts(project.missingFacts, relevant)
+	record := SymbolCoverageRecord{
+		Project:    project.record.Path,
+		Language:   language,
+		Capability: capability,
+	}
+	switch capability {
+	case "declarations":
+		record.Coverage = CoverageComplete
+		record.Reason = "indexed declarations are projected with canonical workspace identities"
+	case "direct_usages":
+		record.Coverage = CoveragePartial
+		record.Reason = "static direct-usage resolution cannot observe every runtime or generated binding"
+		record.Limitations = workspaceSymbolLanguageLimitations(language)
+	}
+	if len(failures) > 0 {
+		record.Coverage = CoverageFailed
+		record.Reason = "project symbol facts could not be read: " + strings.Join(failures, "; ")
+		return record
+	}
+	if len(missing) > 0 {
+		if record.Coverage == CoverageComplete {
+			record.Coverage = CoveragePartial
+		}
+		record.Reason += "; optional symbol inputs are missing: " + strings.Join(missing, ", ")
+	}
+	return record
+}
+
+func workspaceSymbolCapabilityHasIssues(project workspaceIndexProject, language, capability string) bool {
+	relevant := workspaceSymbolCapabilityFiles(language, capability)
+	return len(workspaceSymbolFactFailures(project.loadFailures, relevant)) > 0 ||
+		len(workspaceSymbolMissingFacts(project.missingFacts, relevant)) > 0
+}
+
+func workspaceSymbolCapabilityFiles(language, capability string) []string {
+	if capability == "declarations" {
+		return []string{"symbols-full.json"}
+	}
+	files := []string{"callgraph.json", "evidence.json", "relations-full.json", "symbols-full.json"}
+	switch language {
+	case "java":
+		files = append(files, "maven-graph.json")
+	case "javascript", "typescript":
+		files = append(files, "package-graph.json")
+	default:
+		files = append(files, "maven-graph.json", "package-graph.json")
+	}
+	sort.Strings(files)
+	return files
+}
+
+func workspaceSymbolFactFailures(failures, relevant []string) []string {
+	relevantSet := workspaceSymbolStringSet(relevant)
+	var result []string
+	for _, failure := range failures {
+		for filename := range relevantSet {
+			if strings.Contains(failure, "/"+filename+":") {
+				result = append(result, failure)
+				break
+			}
+		}
+	}
+	return sortedStrings(result)
+}
+
+func workspaceSymbolMissingFacts(missing, relevant []string) []string {
+	relevantSet := workspaceSymbolStringSet(relevant)
+	var result []string
+	for _, filename := range missing {
+		if relevantSet[filename] {
+			result = append(result, filename)
+		}
+	}
+	return sortedStrings(result)
+}
+
+func workspaceSymbolStringSet(values []string) map[string]bool {
+	result := make(map[string]bool, len(values))
+	for _, value := range values {
+		result[value] = true
+	}
+	return result
 }
 
 func workspaceSymbolLanguages(project workspaceIndexProject) []string {
@@ -466,6 +548,9 @@ func sortedStrings(values []string) []string {
 }
 
 func resolveWorkspaceSymbolCandidates(project workspaceIndexProject, reference RichRelationRecord, consumerID string, lookup workspaceSymbolLookup) ([]CanonicalSymbolRecord, []string) {
+	if reference.NonPromotable {
+		return nil, nil
+	}
 	if reference.ToSymbolID != "" {
 		if canonicalID := lookup.byProjectLocalID[project.record.Path+"\x00"+reference.ToSymbolID]; canonicalID != "" {
 			return []CanonicalSymbolRecord{lookup.byID[canonicalID]}, nil
@@ -474,6 +559,12 @@ func resolveWorkspaceSymbolCandidates(project workspaceIndexProject, reference R
 	switch {
 	case reference.Language == "java" && reference.TargetQualifiedName != "":
 		candidates := append([]CanonicalSymbolRecord(nil), lookup.javaByQualifiedName[reference.TargetQualifiedName]...)
+		if reference.Resolution == SymbolResolutionAmbiguous {
+			if len(candidates) > 1 {
+				return candidates, nil
+			}
+			return nil, nil
+		}
 		if len(candidates) == 0 {
 			return nil, nil
 		}
@@ -484,6 +575,9 @@ func resolveWorkspaceSymbolCandidates(project workspaceIndexProject, reference R
 		}
 		localKey := scriptProjectModuleKey(project.record.Path, reference.TargetModule, reference.TargetExport)
 		if candidates := lookup.scriptByProjectModule[localKey]; len(candidates) > 0 {
+			if reference.Resolution == SymbolResolutionAmbiguous && len(candidates) < 2 {
+				return nil, nil
+			}
 			return append([]CanonicalSymbolRecord(nil), candidates...), nil
 		}
 		candidates := append(
@@ -491,6 +585,12 @@ func resolveWorkspaceSymbolCandidates(project workspaceIndexProject, reference R
 			lookup.scriptByWorkspacePackage[scriptWorkspacePackageKey(reference.TargetModule, reference.TargetExport)]...,
 		)
 		if len(candidates) == 0 {
+			return nil, nil
+		}
+		if reference.Resolution == SymbolResolutionAmbiguous {
+			if len(candidates) > 1 {
+				return candidates, nil
+			}
 			return nil, nil
 		}
 		return filterScriptWorkspaceCandidates(project, lookup.byID[consumerID], reference.From, candidates)
@@ -581,12 +681,16 @@ func filterJavaWorkspaceCandidates(project workspaceIndexProject, consumer Canon
 	var filtered []CanonicalSymbolRecord
 	var evidence []string
 	for _, candidate := range candidates {
+		if candidate.Project == project.record.Path {
+			filtered = append(filtered, candidate)
+			continue
+		}
 		if dependency := dependencyTargets[candidate.Artifact]; dependency != "" {
 			filtered = append(filtered, candidate)
 			evidence = append(evidence, dependency)
 		}
 	}
-	if len(filtered) == 0 && len(dependencyTargets) == 0 {
+	if len(filtered) == 0 && len(dependencyTargets) == 0 && len(candidates) > 1 {
 		return candidates, nil
 	}
 	sort.Strings(evidence)
@@ -797,11 +901,63 @@ func sortWorkspaceSymbolLookup(index map[string][]CanonicalSymbolRecord) {
 	}
 }
 
-func scriptWorkspaceExportName(declaration RichSymbolRecord) string {
-	if declaration.ExportName != "" {
-		return declaration.ExportName
+func indexWorkspaceScriptExportRelations(project workspaceIndexProject, lookup workspaceSymbolLookup) {
+	for _, reference := range project.relations {
+		if !isScriptLanguage(reference.Language) {
+			continue
+		}
+		publicExport := reference.ExportAlias
+		if publicExport == "" {
+			publicExport = reference.TargetExport
+		}
+		if publicExport == "" || publicExport == "*" {
+			continue
+		}
+		var target CanonicalSymbolRecord
+		switch reference.Type {
+		case "exports_local":
+			if reference.ToSymbolID != "" {
+				target = lookup.byID[lookup.byProjectLocalID[project.record.Path+"\x00"+reference.ToSymbolID]]
+			}
+			if target.ID == "" {
+				target = exactWorkspaceScriptLocalDeclaration(project, reference, lookup)
+			}
+		case "reexports_value", "reexports_type":
+			if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
+				continue
+			}
+			target = lookup.byID[lookup.byProjectLocalID[project.record.Path+"\x00"+reference.ToSymbolID]]
+		default:
+			continue
+		}
+		if target.ID == "" {
+			continue
+		}
+		module := scriptModuleIdentity(reference.From)
+		if module != "" {
+			key := scriptProjectModuleKey(project.record.Path, module, publicExport)
+			lookup.scriptByProjectModule[key] = append(lookup.scriptByProjectModule[key], target)
+		}
+		if target.WorkspacePackage != "" {
+			key := scriptWorkspacePackageKey(target.WorkspacePackage, publicExport)
+			lookup.scriptByWorkspacePackage[key] = append(lookup.scriptByWorkspacePackage[key], target)
+		}
 	}
-	return declaration.Name
+}
+
+func exactWorkspaceScriptLocalDeclaration(project workspaceIndexProject, reference RichRelationRecord, lookup workspaceSymbolLookup) CanonicalSymbolRecord {
+	var found CanonicalSymbolRecord
+	for _, declaration := range project.symbols {
+		if declaration.File != reference.From || declaration.Name != reference.TargetExport {
+			continue
+		}
+		canonicalID := lookup.byProjectLocalID[project.record.Path+"\x00"+declaration.ID]
+		if canonicalID == "" || (found.ID != "" && found.ID != canonicalID) {
+			return CanonicalSymbolRecord{}
+		}
+		found = lookup.byID[canonicalID]
+	}
+	return found
 }
 
 func scriptProjectModuleKey(project, module, exportName string) string {

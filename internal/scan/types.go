@@ -152,6 +152,9 @@ type RichRelationRecord struct {
 	Reason              string           `json:"reason,omitempty"`
 	CandidateSymbolIDs  []string         `json:"candidate_symbol_ids,omitempty"`
 	DependencyEvidence  []string         `json:"dependency_evidence,omitempty"`
+	LocalName           string           `json:"local_name,omitempty"`
+	ExportAlias         string           `json:"export_alias,omitempty"`
+	NonPromotable       bool             `json:"non_promotable,omitempty"`
 	preventExact        bool
 	scriptLocalName     string
 	scriptExportAlias   string
