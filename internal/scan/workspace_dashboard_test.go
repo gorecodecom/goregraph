@@ -219,7 +219,7 @@ func TestWorkspaceDashboardCodeExplorerRendersSemanticInventorySearchAndCounts(t
 		`<aside class="code-inventory"`,
 		`<h2 class="code-symbol-group-title"`,
 		`data-code-symbol`,
-		`aria-selected="`,
+		`aria-pressed="`,
 		`id="code-search"`,
 		`symbol.name,symbol.qualified_name,symbol.export_name,symbol.package,symbol.module,symbol.workspace_package,symbol.declaration_file`,
 		`symbol.language`,
@@ -273,7 +273,7 @@ func TestWorkspaceDashboardCodeExplorerSeparatesUsageTabsFiltersAndEvidence(t *t
 		"Ordered API steps",
 		"Limitations",
 		`sourceActions(usage.consumer_project,usage.source_file,usage.source_line)`,
-		"No verified usages in indexed coverage; this is not proof that the symbol is unused.",
+		"No projected usage evidence exists for this symbol in indexed coverage; this is not proof that the symbol is unused.",
 		`symbolUsages.coverage`,
 	} {
 		if !strings.Contains(html, want) {
@@ -310,16 +310,13 @@ func TestWorkspaceDashboardCodeExplorerIsAccessibleResponsiveAndRestoresArchitec
 		`state.panY=saved.panY`,
 		`focusReturnedArchitectureService`,
 		`event.key==="Enter"||event.key===" "`,
-		`role="tablist"`,
-		`role="tab"`,
-		`aria-selected="`,
 		`aria-pressed="`,
 		`aria-describedby="code-explorer-help"`,
 		`.code-explorer button:focus-visible`,
 		`@media (min-width:1241px) and (max-width:1439px)`,
 		`@media (min-width:1440px) and (max-width:1679px)`,
 		`@media (min-width:1680px)`,
-		`@media (max-width:1100px)`,
+		`@media (max-width:1679px)`,
 		`grid-template-columns:minmax(320px,.8fr) minmax(520px,1.4fr)`,
 		`overflow-y:auto`,
 		`min-height:44px`,
@@ -327,6 +324,62 @@ func TestWorkspaceDashboardCodeExplorerIsAccessibleResponsiveAndRestoresArchitec
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing Code Explorer accessibility contract %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardCodeExplorerReviewRegressions(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+
+	for _, want := range []string{
+		`const symbolUsagesByConsumer=new Map()`,
+		`usage.consumer_symbol_id`,
+		`.concat(symbolUsagesByConsumer.get(symbolID)||[])`,
+		`function wireCodeExplorerChrome(workbench)`,
+		`wireCodeExplorerChrome(workbench);`,
+		`No projected usage evidence exists for this symbol in indexed coverage; this is not proof that the symbol is unused.`,
+		`No direct references match this view. Reached-through-API evidence is available in its own tab.`,
+		`No usage evidence matches the current tab and filters.`,
+		`main.classList.contains("workbench-view")`,
+		`#workspace-workbench [data-select-id]`,
+		`#graph-layer [data-select-id]`,
+		`@media (max-width:1679px){.code-explorer-grid{grid-template-columns:1fr}`,
+		`@media (min-width:1680px){.code-explorer{max-width:1480px}.code-explorer-grid{grid-template-columns:minmax(320px,.8fr) minmax(520px,1.4fr)`,
+		`data-code-tab="direct" aria-pressed="`,
+		`data-code-symbol="`,
+		`data-code-usage="`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing Code Explorer review fix %q", want)
+		}
+	}
+
+	renderStart := strings.Index(html, "function renderCodeExplorer()")
+	renderEnd := strings.Index(html[renderStart:], "function setElementHidden")
+	if renderStart < 0 || renderEnd < 0 {
+		t.Fatal("dashboard missing Code Explorer render boundaries")
+	}
+	renderCodeExplorer := html[renderStart : renderStart+renderEnd]
+	wireIndex := strings.Index(renderCodeExplorer, "wireCodeExplorerChrome(workbench);")
+	emptyIndex := strings.Index(renderCodeExplorer, "if(!symbol)")
+	if wireIndex < 0 || emptyIndex < 0 || wireIndex > emptyIndex {
+		t.Fatal("Code Explorer must wire search and back controls before the no-symbol return")
+	}
+
+	for _, forbidden := range []string{
+		`role="tablist"`,
+		`role="tab"`,
+		`role="listbox"`,
+		`role="option"`,
+	} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("Code Explorer must not advertise incomplete composite widget semantics %q", forbidden)
 		}
 	}
 }
