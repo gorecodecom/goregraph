@@ -493,6 +493,11 @@ func checkWorkspaceSymbolProjection(workspaceRoot string, result *Result) {
 		result.fix(remediation)
 		return
 	}
+	if err := validateWorkspaceProjectionRoots(workspaceRoot, registry, index, usages); err != nil {
+		result.fail("workspace-symbols", err.Error())
+		result.fix(remediation)
+		return
+	}
 	knownEvidence, err := loadWorkspaceProjectionEvidence(workspaceRoot, registry)
 	if err != nil {
 		result.fail("workspace-symbols", err.Error())
@@ -507,6 +512,40 @@ func checkWorkspaceSymbolProjection(workspaceRoot string, result *Result) {
 	result.ok("workspace-symbols", "workspace symbol projection valid")
 }
 
+func validateWorkspaceProjectionRoots(
+	workspaceRoot string,
+	registry scan.WorkspaceRegistryRecord,
+	index scan.WorkspaceSymbolIndexRecord,
+	usages scan.WorkspaceSymbolUsageIndexRecord,
+) error {
+	requested, err := canonicalDoctorPath(workspaceRoot)
+	if err != nil {
+		return err
+	}
+	for _, record := range []struct {
+		name string
+		root string
+	}{
+		{name: "registry.json", root: registry.Root},
+		{name: "symbol-index.json", root: index.Root},
+		{name: "symbol-usages.json", root: usages.Root},
+	} {
+		candidate, err := canonicalDoctorPath(record.root)
+		if err != nil {
+			return fmt.Errorf("%s root %q is invalid: %w", record.name, record.root, err)
+		}
+		if candidate != requested {
+			return fmt.Errorf(
+				"%s root %q does not match requested workspace %q",
+				record.name,
+				record.root,
+				workspaceRoot,
+			)
+		}
+	}
+	return nil
+}
+
 func loadWorkspaceProjectionEvidence(workspaceRoot string, registry scan.WorkspaceRegistryRecord) (map[string]bool, error) {
 	knownEvidence := map[string]bool{}
 	for _, project := range registry.Projects {
@@ -519,18 +558,15 @@ func loadWorkspaceProjectionEvidence(workspaceRoot string, registry scan.Workspa
 		if !project.Indexed {
 			continue
 		}
-		projectRoot := project.AbsPath
-		if projectRoot == "" {
-			projectRoot = filepath.Join(workspaceRoot, filepath.FromSlash(project.Path))
-		} else if !filepath.IsAbs(projectRoot) {
-			projectRoot = filepath.Join(workspaceRoot, filepath.FromSlash(projectRoot))
-		}
 		outputDir := project.OutputDir
 		if outputDir == "" {
 			outputDir = "goregraph-out"
 		}
+		path, err := workspaceProjectEvidencePath(workspaceRoot, project.Path, outputDir)
+		if err != nil {
+			return nil, fmt.Errorf("workspace project %q evidence path is invalid: %w", project.Path, err)
+		}
 		var evidence []scan.EvidenceRecord
-		path := filepath.Join(projectRoot, outputDir, "evidence.json")
 		if err := readJSON(path, &evidence); err != nil {
 			return nil, fmt.Errorf("workspace project %q evidence.json invalid: %w", project.Path, err)
 		}
@@ -547,6 +583,77 @@ func loadWorkspaceProjectionEvidence(workspaceRoot string, registry scan.Workspa
 		}
 	}
 	return knownEvidence, nil
+}
+
+func workspaceProjectEvidencePath(workspaceRoot, projectPath, outputDir string) (string, error) {
+	projectRelative, err := cleanWorkspaceRelativePath(projectPath)
+	if err != nil {
+		return "", err
+	}
+	outputRelative, err := cleanWorkspaceRelativePath(outputDir)
+	if err != nil {
+		return "", err
+	}
+	evidencePath := filepath.Join(
+		workspaceRoot,
+		projectRelative,
+		outputRelative,
+		"evidence.json",
+	)
+	if err := requirePathWithinWorkspace(workspaceRoot, evidencePath); err != nil {
+		return "", err
+	}
+	return evidencePath, nil
+}
+
+func cleanWorkspaceRelativePath(value string) (string, error) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(value), `\`, "/")
+	if normalized == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	local := filepath.FromSlash(normalized)
+	if filepath.IsAbs(local) || filepath.VolumeName(local) != "" {
+		return "", fmt.Errorf("path %q must be workspace-relative", value)
+	}
+	cleaned := filepath.Clean(local)
+	if cleaned == ".." || strings.HasPrefix(filepath.ToSlash(cleaned), "../") {
+		return "", fmt.Errorf("path %q escapes the workspace", value)
+	}
+	return cleaned, nil
+}
+
+func requirePathWithinWorkspace(workspaceRoot, candidate string) error {
+	root, err := canonicalDoctorPath(workspaceRoot)
+	if err != nil {
+		return err
+	}
+	path, err := canonicalDoctorPath(candidate)
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return err
+	}
+	if relative == ".." || strings.HasPrefix(filepath.ToSlash(relative), "../") {
+		return fmt.Errorf("path %q escapes requested workspace %q", candidate, workspaceRoot)
+	}
+	return nil
+}
+
+func canonicalDoctorPath(value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	absolute, err := filepath.Abs(filepath.FromSlash(value))
+	if err != nil {
+		return "", err
+	}
+	absolute = filepath.Clean(absolute)
+	if resolved, err := filepath.EvalSymlinks(absolute); err == nil {
+		absolute = filepath.Clean(resolved)
+	}
+	return absolute, nil
 }
 
 func workspaceSymbolRemediation(workspaceRoot string) string {

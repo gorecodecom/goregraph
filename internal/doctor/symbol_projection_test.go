@@ -311,6 +311,7 @@ func TestDoctorValidatesParentWorkspaceProjectionFromProjectRoot(t *testing.T) {
 	writeWorkspaceProjectionFixture(t, workspace)
 	out := filepath.Join(workspace, ".goregraph-workspace", "symbol-usages.json")
 	_, usages, _ := validSymbolProjection()
+	usages.Root = filepath.ToSlash(workspace)
 	usages.Usages[0].ProviderSymbolID = "symbol:missing-parent-provider"
 	writeTestJSON(t, out, usages)
 
@@ -349,6 +350,118 @@ func TestDoctorKeepsLegacyProjectValidUnderWorkspaceLikeParent(t *testing.T) {
 	}
 	if containsLine(result.Lines, "workspace symbol projection missing") {
 		t.Fatalf("heuristic parent triggered workspace validation: %v", result.Lines)
+	}
+}
+
+func TestDoctorRejectsCopiedWorkspaceRootMetadata(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*scan.WorkspaceRegistryRecord, *scan.WorkspaceSymbolIndexRecord, *scan.WorkspaceSymbolUsageIndexRecord)
+	}{
+		{
+			name: "registry root",
+			mutate: func(registry *scan.WorkspaceRegistryRecord, _ *scan.WorkspaceSymbolIndexRecord, _ *scan.WorkspaceSymbolUsageIndexRecord) {
+				registry.Root = "/original/workspace"
+			},
+		},
+		{
+			name: "symbol index root",
+			mutate: func(_ *scan.WorkspaceRegistryRecord, index *scan.WorkspaceSymbolIndexRecord, _ *scan.WorkspaceSymbolUsageIndexRecord) {
+				index.Root = "/original/workspace"
+			},
+		},
+		{
+			name: "symbol usages root",
+			mutate: func(_ *scan.WorkspaceRegistryRecord, _ *scan.WorkspaceSymbolIndexRecord, usages *scan.WorkspaceSymbolUsageIndexRecord) {
+				usages.Root = "/original/workspace"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeWorkspaceProjectionFixture(t, root)
+			out := filepath.Join(root, ".goregraph-workspace")
+			var registry scan.WorkspaceRegistryRecord
+			var index scan.WorkspaceSymbolIndexRecord
+			var usages scan.WorkspaceSymbolUsageIndexRecord
+			readTestJSON(t, filepath.Join(out, "registry.json"), &registry)
+			readTestJSON(t, filepath.Join(out, "symbol-index.json"), &index)
+			readTestJSON(t, filepath.Join(out, "symbol-usages.json"), &usages)
+			test.mutate(&registry, &index, &usages)
+			writeTestJSON(t, filepath.Join(out, "registry.json"), registry)
+			writeTestJSON(t, filepath.Join(out, "symbol-index.json"), index)
+			writeTestJSON(t, filepath.Join(out, "symbol-usages.json"), usages)
+
+			result, err := Run(root)
+
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Failures == 0 || !containsLine(result.Lines, "/original/workspace") {
+				t.Fatalf("copied workspace metadata passed Doctor: %v", result.Lines)
+			}
+		})
+	}
+}
+
+func TestDoctorDoesNotTrustRegistryAbsPathOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceProjectionFixture(t, root)
+	external := t.TempDir()
+	externalOut := filepath.Join(external, "goregraph-out")
+	if err := os.MkdirAll(externalOut, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestJSON(t, filepath.Join(externalOut, "evidence.json"), []scan.EvidenceRecord{
+		{ID: "evidence:external", Project: "backend/service", File: "src/Service.java"},
+	})
+
+	out := filepath.Join(root, ".goregraph-workspace")
+	var registry scan.WorkspaceRegistryRecord
+	readTestJSON(t, filepath.Join(out, "registry.json"), &registry)
+	for index := range registry.Projects {
+		if registry.Projects[index].Path == "backend/service" {
+			registry.Projects[index].AbsPath = filepath.ToSlash(external)
+		}
+	}
+	writeTestJSON(t, filepath.Join(out, "registry.json"), registry)
+	var symbols scan.WorkspaceSymbolIndexRecord
+	readTestJSON(t, filepath.Join(out, "symbol-index.json"), &symbols)
+	symbols.Symbols[0].EvidenceIDs = []string{"backend/service#evidence:external"}
+	writeTestJSON(t, filepath.Join(out, "symbol-index.json"), symbols)
+
+	result, err := Run(root)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failures == 0 || !containsLine(result.Lines, "backend/service#evidence:external") {
+		t.Fatalf("external registry AbsPath supplied workspace evidence: %v", result.Lines)
+	}
+}
+
+func TestLoadWorkspaceProjectionEvidenceRejectsEscapingProjectPath(t *testing.T) {
+	root := t.TempDir()
+	external := t.TempDir()
+	externalOut := filepath.Join(external, "goregraph-out")
+	if err := os.MkdirAll(externalOut, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestJSON(t, filepath.Join(externalOut, "evidence.json"), []scan.EvidenceRecord{})
+
+	_, err := loadWorkspaceProjectionEvidence(root, scan.WorkspaceRegistryRecord{
+		Projects: []scan.WorkspaceProjectRecord{{
+			Path:      "../outside",
+			AbsPath:   filepath.ToSlash(external),
+			Indexed:   true,
+			OutputDir: "goregraph-out",
+		}},
+	})
+
+	if err == nil || !strings.Contains(err.Error(), "../outside") {
+		t.Fatalf("escaping project path was accepted: %v", err)
 	}
 }
 
