@@ -58,7 +58,9 @@ func (Service) Run(request Request) (Result, error) {
 		end = len(items)
 	}
 	page := append([]Item(nil), items[offset:end]...)
-	warnings = compactWarnings(warnings, 12)
+	if !isSymbolTask(request.Task) {
+		warnings = compactWarnings(warnings, 12)
+	}
 	freshness := "generated output loaded"
 	if request.Task == "task-context" && len(page) > 0 {
 		if value, ok := page[0].Data["freshness"].(string); ok && value != "" {
@@ -71,6 +73,10 @@ func (Service) Run(request Request) (Result, error) {
 		result.Continuation = encodeContinuation(request.Task, end)
 	}
 	return result, nil
+}
+
+func isSymbolTask(task string) bool {
+	return strings.HasPrefix(task, "symbol-")
 }
 
 func loadTask(request Request) ([]Item, []string, error) {

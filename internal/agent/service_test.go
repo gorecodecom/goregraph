@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -366,6 +367,40 @@ func TestServiceReportsUsageCoverageGapsWithoutMatchingRecords(t *testing.T) {
 	if len(api.CoverageWarnings) != 1 ||
 		!strings.Contains(api.CoverageWarnings[0], "frontend/legacy / javascript / http_reachability") {
 		t.Fatalf("API usage coverage warnings = %#v", api.CoverageWarnings)
+	}
+}
+
+func TestServiceReturnsAllRelevantSymbolCoverageWarnings(t *testing.T) {
+	workspace, _, symbols, usages := writeSymbolProjectionFixture(t)
+	usages.Coverage = nil
+	for index := 14; index >= 0; index-- {
+		usages.Coverage = append(usages.Coverage, scan.SymbolCoverageRecord{
+			Project:    fmt.Sprintf("frontend/app-%02d", index),
+			Language:   "typescript",
+			Capability: "direct_usages",
+			Coverage:   scan.CoveragePartial,
+			Reason:     "dynamic imports are not statically resolved",
+		})
+	}
+	writeWorkspaceProjectionJSON(t, workspace, "symbol-usages.json", usages)
+
+	result, err := (Service{}).Run(Request{
+		Root: workspace, Task: "symbol-usages", Query: symbols.Symbols[1].ID, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.CoverageWarnings) != 15 {
+		t.Fatalf("coverage warning count = %d, want 15: %#v", len(result.CoverageWarnings), result.CoverageWarnings)
+	}
+	if !strings.Contains(result.CoverageWarnings[0], "frontend/app-00") ||
+		!strings.Contains(result.CoverageWarnings[14], "frontend/app-14") {
+		t.Fatalf("coverage warnings are not deterministic: %#v", result.CoverageWarnings)
+	}
+	for _, warning := range result.CoverageWarnings {
+		if strings.Contains(warning, "omitted") || strings.Contains(warning, "continue the coverage query") {
+			t.Fatalf("symbol warning contains invalid continuation guidance: %q", warning)
+		}
 	}
 }
 
