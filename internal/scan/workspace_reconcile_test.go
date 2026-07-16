@@ -2,6 +2,7 @@ package scan
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -516,6 +517,97 @@ func TestBuildWorkspaceAgentContextIndexKeepsDistinctPersistenceTargets(t *testi
 	}
 	if index.Facts[0].ID == index.Facts[1].ID {
 		t.Fatalf("persistence targets share ID %q: %#v", index.Facts[0].ID, index.Facts)
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexKeepsDistinctPersistenceTargetsAcrossInputOrder(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/users", Indexed: true,
+	}}}
+	user := PersistenceStepRecord{
+		Repository: "UserRepository", Method: "delete",
+		Entity: "User", Table: "users", File: "UserRepository.java", Line: 12,
+	}
+	audit := PersistenceStepRecord{
+		Repository: "UserRepository", Method: "delete",
+		Entity: "UserAudit", Table: "user_audit", File: "UserRepository.java", Line: 12,
+	}
+	build := func(path []PersistenceStepRecord) AgentContextIndexRecord {
+		t.Helper()
+		return BuildWorkspaceAgentContextIndex(
+			registry,
+			nil,
+			nil,
+			[]FeatureDossierRecord{{
+				Route:           "DELETE /users/{id}",
+				BackendProject:  "services/users",
+				PersistencePath: path,
+			}},
+			WorkspaceEndpointTraceIndexRecord{},
+			"generated",
+		)
+	}
+
+	forward := build([]PersistenceStepRecord{user, audit})
+	reversed := build([]PersistenceStepRecord{audit, user})
+
+	if got := countContextFacts(reversed.Facts, "persistence"); got != 2 {
+		t.Fatalf("reversed persistence facts = %d, want 2: %#v", got, reversed.Facts)
+	}
+	if !reflect.DeepEqual(forward.Facts, reversed.Facts) {
+		t.Fatalf("persistence facts depend on input order:\nforward: %#v\nreversed: %#v", forward.Facts, reversed.Facts)
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexAssignsCopiedPersistenceFactAcrossInputOrder(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/users", Indexed: true,
+	}}}
+	projectIndex := AgentContextIndexRecord{
+		Root: "services/users",
+		Facts: []AgentContextFactRecord{{
+			ID: "persistence", Kind: "persistence",
+			Name: "UserRepository.delete", Qualified: "UserRepository.delete",
+			File: "UserRepository.java", Line: 12,
+		}},
+	}
+	user := PersistenceStepRecord{
+		Repository: "UserRepository", Method: "delete",
+		Entity: "User", Table: "users", File: "UserRepository.java", Line: 12,
+	}
+	audit := PersistenceStepRecord{
+		Repository: "UserRepository", Method: "delete",
+		Entity: "UserAudit", Table: "user_audit", File: "UserRepository.java", Line: 12,
+	}
+	build := func(path []PersistenceStepRecord) AgentContextIndexRecord {
+		t.Helper()
+		return BuildWorkspaceAgentContextIndex(
+			registry,
+			[]AgentContextIndexRecord{projectIndex},
+			nil,
+			[]FeatureDossierRecord{{
+				Route:           "DELETE /users/{id}",
+				BackendProject:  "services/users",
+				PersistencePath: path,
+			}},
+			WorkspaceEndpointTraceIndexRecord{},
+			"generated",
+		)
+	}
+
+	forward := build([]PersistenceStepRecord{user, audit})
+	reversed := build([]PersistenceStepRecord{audit, user})
+
+	if got := countContextFacts(reversed.Facts, "persistence"); got != 2 {
+		t.Fatalf("reversed persistence facts = %d, want copied plus synthesized target: %#v", got, reversed.Facts)
+	}
+	if !reflect.DeepEqual(forward.Facts, reversed.Facts) {
+		t.Fatalf("copied persistence assignment depends on input order:\nforward: %#v\nreversed: %#v", forward.Facts, reversed.Facts)
+	}
+	copied := findContextFactByID(reversed.Facts, "services/users#persistence")
+	if !strings.Contains(copied.Summary+" "+copied.Search, "User") ||
+		strings.Contains(copied.Summary+" "+copied.Search, "UserAudit") {
+		t.Fatalf("copied fact was not assigned to the sorted first target: %#v", copied)
 	}
 }
 

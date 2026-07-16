@@ -915,7 +915,7 @@ func (builder *workspaceAgentContextBuilder) indexTraceHandlerLocations(traces W
 }
 
 func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureDossierRecord) {
-	persistenceTargets := workspaceDossierPersistenceTargets(dossiers)
+	persistenceFactIDs := builder.addDossierPersistenceFacts(dossiers)
 	for _, dossier := range dossiers {
 		handlerID := ""
 		if dossier.BackendHandler != "" && builder.projects[dossier.BackendProject] {
@@ -949,62 +949,9 @@ func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureD
 			if !builder.projects[dossier.BackendProject] {
 				continue
 			}
-			name := strings.Trim(strings.TrimSpace(persistence.Repository)+"."+strings.TrimSpace(persistence.Method), ".")
-			persistenceID := ""
-			copiedID := builder.findFact(
-				dossier.BackendProject,
-				"persistence",
-				"",
-				"",
-				persistence.File,
-				persistence.Line,
-				name,
-			)
 			baseKey := workspacePersistenceBaseKey(dossier.BackendProject, persistence)
 			targetKey := workspacePersistenceTargetKey(persistence)
-			targets := persistenceTargets[baseKey]
-			if copiedID != "" && (len(targets) <= 1 || targetKey == targets[0]) {
-				persistenceID = copiedID
-				builder.addFact(AgentContextFactRecord{
-					ID:         copiedID,
-					Summary:    strings.TrimSpace("entity " + persistence.Entity + " table " + persistence.Table),
-					Confidence: persistence.Confidence,
-					Search: compactContextSearch(
-						dossier.Route,
-						name,
-						persistence.Entity,
-						persistence.Table,
-					),
-				})
-			}
-			if persistenceID == "" {
-				persistenceID = builder.addFact(AgentContextFactRecord{
-					ID: StableWorkspaceID(
-						"agent-context-fact",
-						dossier.BackendProject,
-						"persistence",
-						name,
-						persistence.Entity,
-						persistence.Table,
-						persistence.File,
-						fmt.Sprint(persistence.Line),
-					),
-					Project:    dossier.BackendProject,
-					Kind:       "persistence",
-					Name:       firstNonEmpty(name, persistence.Entity, persistence.Table),
-					Qualified:  name,
-					File:       workspaceAgentFile(dossier.BackendProject, persistence.File),
-					Line:       persistence.Line,
-					Summary:    strings.TrimSpace("entity " + persistence.Entity + " table " + persistence.Table),
-					Confidence: persistence.Confidence,
-					Search: compactContextSearch(
-						dossier.Route,
-						name,
-						persistence.Entity,
-						persistence.Table,
-					),
-				})
-			}
+			persistenceID := persistenceFactIDs[baseKey][targetKey]
 			builder.addDossierEdge(handlerID, persistenceID, "persistence", dossier.Confidence)
 		}
 		for _, test := range dossier.Tests {
@@ -1042,35 +989,176 @@ func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureD
 	}
 }
 
-func workspaceDossierPersistenceTargets(dossiers []FeatureDossierRecord) map[string][]string {
-	targetSets := map[string]map[string]bool{}
+type workspaceDossierPersistenceOccurrence struct {
+	project     string
+	route       string
+	persistence PersistenceStepRecord
+}
+
+type workspaceDossierPersistenceGroup struct {
+	project     string
+	name        string
+	file        string
+	line        int
+	occurrences map[string][]workspaceDossierPersistenceOccurrence
+}
+
+func (builder *workspaceAgentContextBuilder) addDossierPersistenceFacts(
+	dossiers []FeatureDossierRecord,
+) map[string]map[string]string {
+	copiedFacts := make([]AgentContextFactRecord, 0, len(builder.factsByID))
+	for _, fact := range builder.factsByID {
+		if fact.Kind == "persistence" {
+			copiedFacts = append(copiedFacts, fact)
+		}
+	}
+
+	groups := map[string]*workspaceDossierPersistenceGroup{}
 	for _, dossier := range dossiers {
+		if !builder.projects[dossier.BackendProject] {
+			continue
+		}
 		for _, persistence := range dossier.PersistencePath {
 			baseKey := workspacePersistenceBaseKey(dossier.BackendProject, persistence)
-			if targetSets[baseKey] == nil {
-				targetSets[baseKey] = map[string]bool{}
+			group := groups[baseKey]
+			if group == nil {
+				name := workspacePersistenceName(persistence)
+				group = &workspaceDossierPersistenceGroup{
+					project:     contextPathKey(dossier.BackendProject),
+					name:        name,
+					file:        workspaceAgentFile(dossier.BackendProject, persistence.File),
+					line:        persistence.Line,
+					occurrences: map[string][]workspaceDossierPersistenceOccurrence{},
+				}
+				groups[baseKey] = group
 			}
-			targetSets[baseKey][workspacePersistenceTargetKey(persistence)] = true
+			targetKey := workspacePersistenceTargetKey(persistence)
+			group.occurrences[targetKey] = append(
+				group.occurrences[targetKey],
+				workspaceDossierPersistenceOccurrence{
+					project:     dossier.BackendProject,
+					route:       dossier.Route,
+					persistence: persistence,
+				},
+			)
 		}
 	}
-	targets := map[string][]string{}
-	for baseKey, targetSet := range targetSets {
-		for targetKey := range targetSet {
-			targets[baseKey] = append(targets[baseKey], targetKey)
-		}
-		sort.Strings(targets[baseKey])
+
+	baseKeys := make([]string, 0, len(groups))
+	for baseKey := range groups {
+		baseKeys = append(baseKeys, baseKey)
 	}
-	return targets
+	sort.Strings(baseKeys)
+
+	factIDs := map[string]map[string]string{}
+	for _, baseKey := range baseKeys {
+		group := groups[baseKey]
+		targetKeys := make([]string, 0, len(group.occurrences))
+		for targetKey := range group.occurrences {
+			targetKeys = append(targetKeys, targetKey)
+		}
+		sort.Strings(targetKeys)
+
+		copiedID := uniqueCopiedPersistenceFact(copiedFacts, *group)
+		factIDs[baseKey] = map[string]string{}
+		for targetIndex, targetKey := range targetKeys {
+			occurrences := group.occurrences[targetKey]
+			sort.Slice(occurrences, func(i, j int) bool {
+				return workspacePersistenceOccurrenceKey(occurrences[i]) <
+					workspacePersistenceOccurrenceKey(occurrences[j])
+			})
+			representative := occurrences[0]
+			persistenceID := ""
+			if targetIndex == 0 && copiedID != "" {
+				persistenceID = copiedID
+			} else {
+				persistence := representative.persistence
+				persistenceID = builder.addFact(AgentContextFactRecord{
+					ID: StableWorkspaceID(
+						"agent-context-fact",
+						representative.project,
+						"persistence",
+						group.name,
+						persistence.Entity,
+						persistence.Table,
+						persistence.File,
+						fmt.Sprint(persistence.Line),
+					),
+					Project:   representative.project,
+					Kind:      "persistence",
+					Name:      firstNonEmpty(group.name, persistence.Entity, persistence.Table),
+					Qualified: group.name,
+					File:      workspaceAgentFile(representative.project, persistence.File),
+					Line:      persistence.Line,
+				})
+			}
+			for _, occurrence := range occurrences {
+				persistence := occurrence.persistence
+				builder.addFact(AgentContextFactRecord{
+					ID:         persistenceID,
+					Summary:    strings.TrimSpace("entity " + persistence.Entity + " table " + persistence.Table),
+					Confidence: persistence.Confidence,
+					Search: compactContextSearch(
+						occurrence.route,
+						group.name,
+						persistence.Entity,
+						persistence.Table,
+					),
+				})
+			}
+			factIDs[baseKey][targetKey] = persistenceID
+		}
+	}
+	return factIDs
+}
+
+func uniqueCopiedPersistenceFact(
+	copiedFacts []AgentContextFactRecord,
+	group workspaceDossierPersistenceGroup,
+) string {
+	var candidates []string
+	for _, fact := range copiedFacts {
+		if fact.Project != group.project || fact.Kind != "persistence" ||
+			fact.File != group.file || fact.Line != group.line ||
+			!workspaceAgentExactIdentity(fact, group.name) {
+			continue
+		}
+		candidates = append(candidates, fact.ID)
+	}
+	sort.Strings(candidates)
+	if len(candidates) != 1 {
+		return ""
+	}
+	return candidates[0]
+}
+
+func workspacePersistenceOccurrenceKey(occurrence workspaceDossierPersistenceOccurrence) string {
+	persistence := occurrence.persistence
+	return strings.Join([]string{
+		contextPathKey(occurrence.project),
+		occurrence.route,
+		persistence.Repository,
+		persistence.Method,
+		persistence.Entity,
+		persistence.Table,
+		persistence.File,
+		fmt.Sprint(persistence.Line),
+		persistence.Source,
+		persistence.Confidence,
+	}, "\x00")
 }
 
 func workspacePersistenceBaseKey(project string, persistence PersistenceStepRecord) string {
-	name := strings.Trim(strings.TrimSpace(persistence.Repository)+"."+strings.TrimSpace(persistence.Method), ".")
 	return strings.Join([]string{
 		contextPathKey(project),
-		contextLabelKey(name),
+		contextLabelKey(workspacePersistenceName(persistence)),
 		workspaceAgentFile(project, persistence.File),
 		fmt.Sprint(persistence.Line),
 	}, "\x00")
+}
+
+func workspacePersistenceName(persistence PersistenceStepRecord) string {
+	return strings.Trim(strings.TrimSpace(persistence.Repository)+"."+strings.TrimSpace(persistence.Method), ".")
 }
 
 func workspacePersistenceTargetKey(persistence PersistenceStepRecord) string {
