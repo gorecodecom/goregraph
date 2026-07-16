@@ -14,7 +14,7 @@ var (
 	javaFieldLineRE           = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*(final\s+)?([A-Za-z_][A-Za-z0-9_$<>, ?\[\].]*)\s+([A-Za-z_][A-Za-z0-9_]*)(\s*(?:\[\s*\])*)\s*(?:=.*)?;\s*$`)
 	javaAnnotationLineRE      = regexp.MustCompile(`^\s*@([A-Za-z_][A-Za-z0-9_.]*)(?:\((.*)\))?\s*$`)
 	javaConstantLineRE        = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*;`)
-	javaCallRE                = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+	javaCallRE                = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	javaNewCallRE             = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	javaBareCallRE            = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	javaHTTPCallRE            = regexp.MustCompile(`\b(get|post|put|delete|patch)\s*\(([^)]*)\)`)
@@ -38,10 +38,12 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	typeStack := []javaTypeScope{}
 	blockComment := false
 	methodSignature := ""
+	methodSignatureSource := ""
 	methodSignatureLine := 0
+	typeSignature := ""
+	typeSignatureLine := 0
 	annotationSignature := ""
 	annotationSignatureLine := 0
-	pendingTypeIndex := -1
 
 	for index, raw := range lines {
 		lineNo := index + 1
@@ -51,10 +53,21 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		if lexicalLine == "" {
 			continue
 		}
-		if pendingTypeIndex >= 0 && strings.Contains(lexicalLine, "{") {
-			typeStack = append(typeStack, javaTypeScope{typeIndex: pendingTypeIndex, bodyDepth: braceDepth + 1})
-			currentOwner = source.Types[pendingTypeIndex].Name
-			pendingTypeIndex = -1
+		sourceLine := strings.TrimSpace(raw)
+		if typeSignature != "" {
+			typeSignature += " " + lexicalLine
+			if javaDeclarationBodyOpen(typeSignature) >= 0 {
+				if typeIndex, ok := appendJavaType(&source, typeSignature, typeSignatureLine, file.Path, pending, typeStack); ok {
+					typeStack = append(typeStack, javaTypeScope{typeIndex: typeIndex, bodyDepth: braceDepth + 1})
+					currentOwner = source.Types[typeIndex].Name
+					pending = nil
+				}
+				typeSignature = ""
+				typeSignatureLine = 0
+			}
+			braceDepth += strings.Count(lexicalLine, "{")
+			braceDepth -= strings.Count(lexicalLine, "}")
+			continue
 		}
 		if annotationSignature != "" {
 			if isAnnotationBoundary(lexicalLine) {
@@ -78,13 +91,15 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			}
 		}
 		if methodSignature != "" {
-			methodSignature += " " + strings.TrimSpace(line)
-			if strings.Contains(lexicalLine, "{") {
-				if method, ok := parseJavaMethod(methodSignature, file.Path, currentOwner, methodSignatureLine, pending); ok {
+			methodSignature += " " + lexicalLine
+			methodSignatureSource += " " + sourceLine
+			if javaDeclarationBodyOpen(methodSignature) >= 0 {
+				if method, ok := parseJavaMethodWithSource(methodSignature, methodSignatureSource, file.Path, currentOwner, methodSignatureLine, pending); ok {
 					source.Methods = append(source.Methods, method)
 					pending = nil
 				}
 				methodSignature = ""
+				methodSignatureSource = ""
 				methodSignatureLine = 0
 			}
 			braceDepth += strings.Count(lexicalLine, "{")
@@ -115,34 +130,17 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		if match := javaConstantLineRE.FindStringSubmatch(line); len(match) == 3 {
 			source.Constants[match[1]] = match[2]
 		}
-		if match := javaTypeLineRE.FindStringSubmatch(lexicalLine); len(match) == 4 {
-			owner := ""
-			if len(typeStack) > 0 {
-				owner = source.Types[typeStack[len(typeStack)-1].typeIndex].QualifiedName
+		if javaTypeLineRE.MatchString(lexicalLine) {
+			if javaDeclarationBodyOpen(lexicalLine) < 0 {
+				typeSignature = lexicalLine
+				typeSignatureLine = lineNo
+				continue
 			}
-			typ := JavaTypeRecord{
-				Name:          match[2],
-				Kind:          match[1],
-				Package:       source.Package,
-				File:          file.Path,
-				Line:          lineNo,
-				Owner:         owner,
-				QualifiedName: qualifiedJavaTypeName(source.Package, owner, match[2]),
-				Annotations:   pending,
+			if typeIndex, ok := appendJavaType(&source, lexicalLine, lineNo, file.Path, pending, typeStack); ok {
+				currentOwner = source.Types[typeIndex].Name
+				typeStack = append(typeStack, javaTypeScope{typeIndex: typeIndex, bodyDepth: braceDepth + 1})
+				pending = nil
 			}
-			typeParameters, inheritanceTail := parseLeadingJavaTypeParameters(match[3])
-			typ.TypeParameters = typeParameters
-			typ.Extends = parseJavaExtends(inheritanceTail)
-			typ.Implements = parseJavaImplements(inheritanceTail)
-			source.Types = append(source.Types, typ)
-			currentOwner = typ.Name
-			openCount := strings.Count(lexicalLine, "{")
-			if openCount > 0 {
-				typeStack = append(typeStack, javaTypeScope{typeIndex: len(source.Types) - 1, bodyDepth: braceDepth + 1})
-			} else {
-				pendingTypeIndex = len(source.Types) - 1
-			}
-			pending = nil
 		} else if match := javaFieldLineRE.FindStringSubmatch(lexicalLine); len(match) == 5 && currentOwner != "" && javaAtCurrentTypeBody(braceDepth, typeStack) && !strings.Contains(lexicalLine, "(") {
 			source.Fields = append(source.Fields, JavaFieldRecord{
 				Name:        match[3],
@@ -154,18 +152,19 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 				Annotations: pending,
 			})
 			pending = nil
-		} else if currentOwner != "" && looksLikeJavaMethodStart(lexicalLine) && !strings.Contains(lexicalLine, "{") {
-			methodSignature = strings.TrimSpace(line)
+		} else if currentOwner != "" && (looksLikeJavaMethodStart(lexicalLine) || looksLikeJavaGenericMethodPrefix(lexicalLine)) && javaDeclarationBodyOpen(lexicalLine) < 0 {
+			methodSignature = lexicalLine
+			methodSignatureSource = sourceLine
 			methodSignatureLine = lineNo
-		} else if method, ok := parseJavaMethod(lexicalLine, file.Path, currentOwner, lineNo, pending); ok && currentOwner != "" {
+		} else if method, ok := parseJavaMethodWithSource(lexicalLine, sourceLine, file.Path, currentOwner, lineNo, pending); ok && currentOwner != "" {
 			source.Methods = append(source.Methods, method)
 			pending = nil
 		} else if len(source.Methods) > 0 {
 			last := &source.Methods[len(source.Methods)-1]
 			last.StringVars = mergeJavaStringVars(last.StringVars, extractJavaStringVars(line))
-			last.Calls = append(last.Calls, extractJavaCallsWithSource(lexicalLine, line, lineNo)...)
+			last.Calls = append(last.Calls, extractJavaCallsWithSource(lexicalLine, sourceLine, lineNo)...)
 			last.Auth = append(last.Auth, extractJavaSecurityAuth(lexicalLine, lineNo, file.Path)...)
-			requests, pending := extractJavaHTTPRequestsWithPending(line, lineNo, last.StringVars, last.PendingHTTP)
+			requests, pending := extractJavaHTTPRequestsWithPending(sourceLine, lineNo, last.StringVars, last.PendingHTTP)
 			last.PendingHTTP = pending
 			last.HTTPRequests = append(last.HTTPRequests, requests...)
 		}
@@ -179,8 +178,6 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		}
 		if len(typeStack) > 0 {
 			currentOwner = source.Types[typeStack[len(typeStack)-1].typeIndex].Name
-		} else if pendingTypeIndex >= 0 {
-			currentOwner = source.Types[pendingTypeIndex].Name
 		} else {
 			currentOwner = ""
 		}
@@ -207,6 +204,37 @@ type javaTypeScope struct {
 
 func javaAtCurrentTypeBody(braceDepth int, stack []javaTypeScope) bool {
 	return len(stack) > 0 && braceDepth == stack[len(stack)-1].bodyDepth
+}
+
+func appendJavaType(source *JavaSourceRecord, signature string, line int, file string, annotations []JavaAnnotationRecord, stack []javaTypeScope) (int, bool) {
+	match := javaTypeLineRE.FindStringSubmatch(signature)
+	if len(match) != 4 {
+		return -1, false
+	}
+	owner := ""
+	if len(stack) > 0 {
+		owner = source.Types[stack[len(stack)-1].typeIndex].QualifiedName
+	}
+	tail := match[3]
+	if index := javaDeclarationBodyOpen(tail); index >= 0 {
+		tail = tail[:index]
+	}
+	typeParameters, inheritanceTail := parseLeadingJavaTypeParameters(tail)
+	typ := JavaTypeRecord{
+		Name:           match[2],
+		Kind:           match[1],
+		Package:        source.Package,
+		File:           file,
+		Line:           line,
+		Owner:          owner,
+		QualifiedName:  qualifiedJavaTypeName(source.Package, owner, match[2]),
+		TypeParameters: typeParameters,
+		Extends:        parseJavaExtends(inheritanceTail),
+		Implements:     parseJavaImplements(inheritanceTail),
+		Annotations:    annotations,
+	}
+	source.Types = append(source.Types, typ)
+	return len(source.Types) - 1, true
 }
 
 func sanitizeJavaLexical(body string) string {
@@ -322,12 +350,23 @@ func parseLeadingJavaTypeParameters(value string) ([]string, string) {
 	}
 	var names []string
 	for _, raw := range splitTopLevel(trimmed[1:closeIndex], ',') {
-		fields := strings.Fields(strings.TrimSpace(raw))
+		fields := strings.Fields(stripLeadingJavaAnnotations(strings.TrimSpace(raw)))
 		if len(fields) > 0 && javaTypeParameterNameRE.MatchString(fields[0]) {
 			names = append(names, fields[0])
 		}
 	}
 	return names, strings.TrimSpace(trimmed[closeIndex+1:])
+}
+
+func stripLeadingJavaAnnotations(value string) string {
+	for strings.HasPrefix(strings.TrimSpace(value), "@") {
+		_, rest, ok := consumeJavaParameterAnnotation(value)
+		if !ok {
+			break
+		}
+		value = rest
+	}
+	return strings.TrimSpace(value)
 }
 
 func extractJavaSecurityAuth(line string, lineNo int, file string) []AuthRecord {
@@ -396,6 +435,10 @@ func balancedJavaParens(line string) bool {
 }
 
 func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnnotationRecord) (JavaMethodRecord, bool) {
+	return parseJavaMethodWithSource(line, line, file, owner, lineNo, annotations)
+}
+
+func parseJavaMethodWithSource(line, sourceLine, file, owner string, lineNo int, annotations []JavaAnnotationRecord) (JavaMethodRecord, bool) {
 	if owner == "" || isJavaControlLine(line) {
 		return JavaMethodRecord{}, false
 	}
@@ -408,7 +451,7 @@ func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnn
 			Visibility:  visibility,
 			Parameters:  parseJavaParameters(params),
 			Annotations: annotations,
-			Calls:       extractJavaCalls(line, lineNo),
+			Calls:       extractJavaCallsWithSource(line, sourceLine, lineNo),
 		}, true
 	}
 	if name, returnType, params, visibility, typeParameters, ok := parseJavaMethodSignatureWithTypeParameters(line); ok {
@@ -421,8 +464,8 @@ func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnn
 			ReturnType:     returnType,
 			Parameters:     parseJavaParameters(params),
 			Annotations:    annotations,
-			Calls:          extractJavaCalls(line, lineNo),
-			HTTPRequests:   extractJavaHTTPRequestsWithVars(line, lineNo, nil),
+			Calls:          extractJavaCallsWithSource(line, sourceLine, lineNo),
+			HTTPRequests:   extractJavaHTTPRequestsWithVars(sourceLine, lineNo, nil),
 			TypeParameters: typeParameters,
 		}, true
 	}
@@ -437,8 +480,8 @@ func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnn
 			ReturnType:   cleanJavaType(match[2]),
 			Parameters:   parseJavaParameters(match[4]),
 			Annotations:  annotations,
-			Calls:        extractJavaCalls(line, lineNo),
-			HTTPRequests: extractJavaHTTPRequestsWithVars(line, lineNo, nil),
+			Calls:        extractJavaCallsWithSource(line, sourceLine, lineNo),
+			HTTPRequests: extractJavaHTTPRequestsWithVars(sourceLine, lineNo, nil),
 		}, true
 	}
 	return JavaMethodRecord{}, false
@@ -446,14 +489,14 @@ func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnn
 
 func parseJavaConstructorSignature(line, owner string) (params, visibility string, ok bool) {
 	signature := strings.TrimSpace(line)
-	if index := strings.Index(signature, "{"); index >= 0 {
+	if index := javaDeclarationBodyOpen(signature); index >= 0 {
 		signature = strings.TrimSpace(signature[:index])
 	}
 	if index := strings.Index(signature, " throws "); index >= 0 {
 		signature = strings.TrimSpace(signature[:index])
 	}
-	open := strings.Index(signature, "(")
-	close := strings.LastIndex(signature, ")")
+	open := javaMethodParameterOpen(signature)
+	close := matchingJavaParen(signature, open)
 	if open < 0 || close < open {
 		return "", "", false
 	}
@@ -478,14 +521,14 @@ func parseJavaMethodSignature(line string) (name, returnType, params, visibility
 
 func parseJavaMethodSignatureWithTypeParameters(line string) (name, returnType, params, visibility string, typeParameters []string, ok bool) {
 	signature := strings.TrimSpace(line)
-	if index := strings.Index(signature, "{"); index >= 0 {
+	if index := javaDeclarationBodyOpen(signature); index >= 0 {
 		signature = strings.TrimSpace(signature[:index])
 	}
 	if index := strings.Index(signature, " throws "); index >= 0 {
 		signature = strings.TrimSpace(signature[:index])
 	}
-	open := strings.Index(signature, "(")
-	close := strings.LastIndex(signature, ")")
+	open := javaMethodParameterOpen(signature)
+	close := matchingJavaParen(signature, open)
 	if open < 0 || close < open {
 		return "", "", "", "", nil, false
 	}
@@ -536,6 +579,86 @@ func looksLikeJavaMethodStart(line string) bool {
 	}
 	prefix := trimmed[:open]
 	return !strings.Contains(prefix, "=") && !strings.Contains(prefix, ".")
+}
+
+func looksLikeJavaGenericMethodPrefix(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	for {
+		fields := strings.Fields(trimmed)
+		if len(fields) == 0 {
+			return false
+		}
+		switch fields[0] {
+		case "public", "protected", "private", "static", "final", "abstract", "synchronized", "default", "native", "strictfp":
+			trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, fields[0]))
+		default:
+			return strings.HasPrefix(trimmed, "<")
+		}
+	}
+}
+
+func matchingJavaParen(value string, open int) int {
+	if open < 0 || open >= len(value) || value[open] != '(' {
+		return -1
+	}
+	depth := 0
+	for index := open; index < len(value); index++ {
+		switch value[index] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func javaMethodParameterOpen(value string) int {
+	angleDepth := 0
+	for index := 0; index < len(value); index++ {
+		switch value[index] {
+		case '<':
+			angleDepth++
+		case '>':
+			if angleDepth > 0 {
+				angleDepth--
+			}
+		case '(':
+			if angleDepth == 0 {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func javaDeclarationBodyOpen(value string) int {
+	angleDepth := 0
+	parenDepth := 0
+	for index := 0; index < len(value); index++ {
+		switch value[index] {
+		case '<':
+			angleDepth++
+		case '>':
+			if angleDepth > 0 {
+				angleDepth--
+			}
+		case '(':
+			parenDepth++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case '{':
+			if angleDepth == 0 && parenDepth == 0 {
+				return index
+			}
+		}
+	}
+	return -1
 }
 
 func javaSymbols(source JavaSourceRecord) []SymbolRecord {

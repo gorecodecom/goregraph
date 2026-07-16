@@ -459,3 +459,110 @@ class Consumer {
 	assertJavaReference(t, facts.References, "parameter_type", "com.weka.users.UserService", 8)
 	assertJavaReference(t, facts.References, "instantiates", "com.weka.users.Box", 9)
 }
+
+func TestJavaAnnotatedGenericScopesAndMultilineTypeHeaders(t *testing.T) {
+	body := `package com.weka.users;
+
+@interface TypeUse { String value() default ""; }
+class Bound {}
+class Base<T> {}
+interface Port<T> {}
+
+class Child<
+    @TypeUse("class") T extends Bound
+>
+    extends Base<T>
+    implements Port<T>
+{
+    public <
+        @TypeUse("method") R extends Bound
+    > R map(R input)
+    {
+        return input;
+    }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Child.java", Language: "java"}, body)
+	var child JavaTypeRecord
+	for _, candidate := range source.Types {
+		if candidate.QualifiedName == "com.weka.users.Child" {
+			child = candidate
+			break
+		}
+	}
+	if child.QualifiedName == "" {
+		t.Fatalf("multiline type declaration was not extracted: %#v", source.Types)
+	}
+	if child.Line != 8 || !reflect.DeepEqual(child.TypeParameters, []string{"T"}) || child.Extends != "Base<T>" || !reflect.DeepEqual(child.Implements, []string{"Port<T>"}) {
+		t.Fatalf("multiline type header = %#v, want line 8 with T, Base<T>, and Port<T>", child)
+	}
+	var method JavaMethodRecord
+	for _, candidate := range source.Methods {
+		if candidate.Name == "map" {
+			method = candidate
+			break
+		}
+	}
+	if method.Name == "" || !reflect.DeepEqual(method.TypeParameters, []string{"R"}) || method.ReturnType != "R" || len(method.Parameters) != 1 || method.Parameters[0].Type != "R" {
+		t.Fatalf("annotated multiline generic method = %#v, want scoped R method", method)
+	}
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	assertJavaReference(t, facts.References, "extends_type", "com.weka.users.Base", 8)
+	assertJavaReference(t, facts.References, "implements_type", "com.weka.users.Port", 8)
+	for _, reference := range facts.References {
+		if strings.HasSuffix(reference.TargetQualifiedName, ".T") || strings.HasSuffix(reference.TargetQualifiedName, ".R") {
+			t.Fatalf("annotated type variable became a project reference: %#v", reference)
+		}
+	}
+}
+
+func TestJavaQualifiedReceiverChainResolvesNestedOwner(t *testing.T) {
+	providerBody := `package com.provider;
+class Outer {
+    static class Inner { static void run() {} }
+}
+`
+	consumerBody := `package com.consumer;
+import com.provider.Outer;
+class Inner {}
+class Consumer {
+    void call() { Outer.Inner.run(); }
+}
+`
+	provider := extractJavaSource(FileRecord{Path: "src/main/java/com/provider/Outer.java", Language: "java"}, providerBody)
+	consumer := extractJavaSource(FileRecord{Path: "src/main/java/com/consumer/Consumer.java", Language: "java"}, consumerBody)
+	providerFacts := ExtractJavaSymbolFacts(provider, providerBody, WorkspaceIndex{})
+	consumerFacts := ExtractJavaSymbolFacts(consumer, consumerBody, WorkspaceIndex{})
+	facts := ProjectSymbolFacts{
+		Declarations: append(providerFacts.Declarations, consumerFacts.Declarations...),
+		References:   append(providerFacts.References, consumerFacts.References...),
+	}
+	facts = FinalizeProjectSymbolFacts(nil, WorkspaceIndex{}, facts)
+	providerInner := assertRichDeclaration(t, facts.Declarations, "class", "com.provider.Outer.Inner", "")
+	consumerOwner := assertRichDeclaration(t, facts.Declarations, "class", "com.consumer.Consumer", "")
+	call := assertJavaReference(t, facts.References, "calls_method_owner", "com.provider.Outer.Inner", 5)
+	if call.ToSymbolID != providerInner.ID || call.FromSymbolID != consumerOwner.ID {
+		t.Fatalf("qualified receiver chain resolved incorrectly: %#v", call)
+	}
+}
+
+func TestJavaOneLineMethodPreservesLiteralHTTPAndBareCallArguments(t *testing.T) {
+	body := `class OneLine {
+    void call() { get("/users"); helper("value"); }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/OneLine.java", Language: "java"}, body)
+	if len(source.Methods) != 1 {
+		t.Fatalf("one-line method extraction = %#v, want one method", source.Methods)
+	}
+	method := source.Methods[0]
+	if len(method.HTTPRequests) != 1 || method.HTTPRequests[0].HTTPMethod != "GET" || method.HTTPRequests[0].Path != "/users" {
+		t.Fatalf("one-line HTTP extraction = %#v, want GET /users", method.HTTPRequests)
+	}
+	for _, call := range method.Calls {
+		if call.Method == "helper" && reflect.DeepEqual(call.Arguments, []string{`"value"`}) {
+			return
+		}
+	}
+	t.Fatalf("one-line bare call arguments = %#v, want helper(\"value\")", method.Calls)
+}

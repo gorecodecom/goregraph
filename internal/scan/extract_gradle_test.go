@@ -168,3 +168,47 @@ class Consumer {}`
 		t.Fatalf("computed Maven artifact provenance = %#v, want partial", partial)
 	}
 }
+
+func TestGradleIgnoresCommentsAndMultilineStrings(t *testing.T) {
+	body := `/*
+group = "com.fake.block"
+implementation("com.fake:block-comment:1")
+*/
+// rootProject.name = "fake-line"
+def docs = """
+group = "com.fake.text"
+rootProject.name = "fake-text"
+implementation("com.fake:text:1")
+"""
+group = "com.weka"
+rootProject.name = "users-api"
+dependencies {
+    implementation("com.weka:shared:1.2")
+}`
+	record, ok := extractGradlePackage("build.gradle", body)
+	if !ok || record.Group != "com.weka" || record.Artifact != "users-api" {
+		t.Fatalf("Gradle comments/string metadata leaked into provenance: %#v, %v", record, ok)
+	}
+	if len(record.Dependencies) != 1 || record.Dependencies[0].Group != "com.weka" || record.Dependencies[0].Artifact != "shared" {
+		t.Fatalf("Gradle comments/string dependencies leaked: %#v", record.Dependencies)
+	}
+	if limitations := gradleExtractionLimitations("build.gradle", body); len(limitations) != 0 {
+		t.Fatalf("Gradle comments/string limitations leaked: %#v", limitations)
+	}
+}
+
+func TestGradleMultipleAssignmentsStayPartial(t *testing.T) {
+	body := `group = "com.first"
+group = "com.second"
+rootProject.name = "users-api"
+rootProject.name = providers.gradleProperty("artifact")
+`
+	record, ok := extractGradlePackage("build.gradle", body)
+	if ok || record.Group != "" || record.Artifact != "" {
+		t.Fatalf("multiple Gradle assignments were guessed: %#v, %v", record, ok)
+	}
+	limitations := gradleExtractionLimitations("build.gradle", body)
+	if len(limitations) != 2 {
+		t.Fatalf("multiple Gradle assignment limitations = %#v, want group and artifact limitations", limitations)
+	}
+}

@@ -27,21 +27,10 @@ func gradleExtractionLimitations(filePath, body string) []string {
 func parseGradleMetadata(filePath, body string) (GradlePackageRecord, []string) {
 	record := GradlePackageRecord{Path: filePath}
 	var limitations []string
-	if match := gradleGroupAssignmentRE.FindStringSubmatch(body); len(match) == 2 {
-		if value, ok := literalGradleValue(match[1]); ok {
-			record.Group = value
-		} else {
-			limitations = append(limitations, filePath+": computed Gradle group is not statically resolved")
-		}
-	}
-	if match := gradleArtifactAssignmentRE.FindStringSubmatch(body); len(match) == 2 {
-		if value, ok := literalGradleValue(match[1]); ok {
-			record.Artifact = value
-		} else {
-			limitations = append(limitations, filePath+": computed Gradle artifact is not statically resolved")
-		}
-	}
-	for _, match := range gradleDependencyStatementRE.FindAllStringSubmatch(body, -1) {
+	sanitized := sanitizeGradleLexical(body)
+	record.Group, limitations = resolveGradleAssignments(filePath, "group", gradleGroupAssignmentRE.FindAllStringSubmatch(sanitized, -1), limitations)
+	record.Artifact, limitations = resolveGradleAssignments(filePath, "artifact", gradleArtifactAssignmentRE.FindAllStringSubmatch(sanitized, -1), limitations)
+	for _, match := range gradleDependencyStatementRE.FindAllStringSubmatch(sanitized, -1) {
 		coordinate, ok := literalGradleValue(match[2])
 		if !ok {
 			limitations = append(limitations, filePath+": computed Gradle "+match[1]+" dependency coordinates are not statically resolved")
@@ -68,6 +57,120 @@ func parseGradleMetadata(filePath, body string) (GradlePackageRecord, []string) 
 		return record.Dependencies[i].Scope < record.Dependencies[j].Scope
 	})
 	return record, limitations
+}
+
+func resolveGradleAssignments(filePath, kind string, matches [][]string, limitations []string) (string, []string) {
+	if len(matches) == 0 {
+		return "", limitations
+	}
+	if len(matches) > 1 {
+		return "", append(limitations, filePath+": multiple Gradle "+kind+" assignments are not statically resolved")
+	}
+	if value, ok := literalGradleValue(matches[0][1]); ok {
+		return value, limitations
+	}
+	return "", append(limitations, filePath+": computed Gradle "+kind+" is not statically resolved")
+}
+
+func sanitizeGradleLexical(body string) string {
+	const (
+		gradleLexCode = iota
+		gradleLexLineComment
+		gradleLexBlockComment
+		gradleLexSingleQuote
+		gradleLexDoubleQuote
+		gradleLexTripleSingleQuote
+		gradleLexTripleDoubleQuote
+	)
+	result := []byte(body)
+	state := gradleLexCode
+	for index := 0; index < len(result); {
+		if result[index] == '\n' {
+			if state == gradleLexLineComment {
+				state = gradleLexCode
+			}
+			index++
+			continue
+		}
+		switch state {
+		case gradleLexCode:
+			switch {
+			case index+1 < len(result) && result[index] == '/' && result[index+1] == '/':
+				blankGradleBytes(result, index, 2)
+				index += 2
+				state = gradleLexLineComment
+			case index+1 < len(result) && result[index] == '/' && result[index+1] == '*':
+				blankGradleBytes(result, index, 2)
+				index += 2
+				state = gradleLexBlockComment
+			case hasGradleTripleQuote(result, index, '\''):
+				blankGradleBytes(result, index, 3)
+				index += 3
+				state = gradleLexTripleSingleQuote
+			case hasGradleTripleQuote(result, index, '"'):
+				blankGradleBytes(result, index, 3)
+				index += 3
+				state = gradleLexTripleDoubleQuote
+			case result[index] == '\'':
+				index++
+				state = gradleLexSingleQuote
+			case result[index] == '"':
+				index++
+				state = gradleLexDoubleQuote
+			default:
+				index++
+			}
+		case gradleLexLineComment:
+			result[index] = ' '
+			index++
+		case gradleLexBlockComment:
+			if index+1 < len(result) && result[index] == '*' && result[index+1] == '/' {
+				blankGradleBytes(result, index, 2)
+				index += 2
+				state = gradleLexCode
+			} else {
+				result[index] = ' '
+				index++
+			}
+		case gradleLexSingleQuote, gradleLexDoubleQuote:
+			quote := byte('\'')
+			if state == gradleLexDoubleQuote {
+				quote = '"'
+			}
+			if result[index] == '\\' && index+1 < len(result) {
+				index += 2
+			} else if result[index] == quote {
+				index++
+				state = gradleLexCode
+			} else {
+				index++
+			}
+		case gradleLexTripleSingleQuote, gradleLexTripleDoubleQuote:
+			quote := byte('\'')
+			if state == gradleLexTripleDoubleQuote {
+				quote = '"'
+			}
+			if hasGradleTripleQuote(result, index, quote) {
+				blankGradleBytes(result, index, 3)
+				index += 3
+				state = gradleLexCode
+			} else {
+				result[index] = ' '
+				index++
+			}
+		}
+	}
+	return string(result)
+}
+
+func hasGradleTripleQuote(body []byte, index int, quote byte) bool {
+	return index+2 < len(body) && body[index] == quote && body[index+1] == quote && body[index+2] == quote
+}
+
+func blankGradleBytes(body []byte, index, count int) {
+	for offset := 0; offset < count; offset++ {
+		body[index+offset] = ' '
+	}
 }
 
 func literalGradleValue(expression string) (string, bool) {
