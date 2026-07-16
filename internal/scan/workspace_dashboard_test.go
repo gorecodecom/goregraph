@@ -384,6 +384,46 @@ func TestWorkspaceDashboardCodeExplorerReviewRegressions(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDashboardCodeExplorerPreservesUsageDirectionAndMatrixFocus(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+
+	for _, want := range []string{
+		`symbolUsageRecords.forEach(function(usage){if(usage.category!=="reached_through_api")return;const consumer=usage.consumer_symbol_id`,
+		`architectureSelectionOrigin:"graph"`,
+		`architectureReturnFocus:null`,
+		`state.architectureSelectionOrigin="matrix-service"`,
+		`state.architectureSelectionOrigin="matrix-provider"`,
+		`state.architectureReturnFocus=state.architectureSelectionOrigin`,
+		`function focusReturnedArchitectureService(origin)`,
+		`#workspace-workbench [data-matrix-provider]`,
+		`const focusOrigin=state.architectureReturnFocus`,
+		`focusReturnedArchitectureService(focusOrigin)`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing Code Explorer usage direction or matrix focus contract %q", want)
+		}
+	}
+
+	consumerIndexStart := strings.Index(html, `symbolUsageRecords.forEach(function(usage){if(usage.category!=="reached_through_api")return;const consumer=usage.consumer_symbol_id`)
+	if consumerIndexStart < 0 {
+		t.Fatal("dashboard must index consumer-side usages only after the outbound API category guard")
+	}
+	consumerIndexEnd := strings.Index(html[consumerIndexStart:], `});`)
+	if consumerIndexEnd < 0 {
+		t.Fatal("dashboard must index consumer-side usages only after the outbound API category guard")
+	}
+	consumerIndex := html[consumerIndexStart : consumerIndexStart+consumerIndexEnd]
+	if !strings.Contains(consumerIndex, `records.push(usage)`) {
+		t.Fatal("dashboard must retain outbound API usages for the consumer symbol")
+	}
+}
+
 func TestWorkspaceDashboardShowsCanonicalContractSummary(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
