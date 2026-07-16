@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,7 +41,15 @@ type callParams struct {
 	Arguments map[string]any `json:"arguments"`
 }
 
+type Options struct {
+	ExpertTools bool
+}
+
 func Serve(input io.Reader, output io.Writer) error {
+	return ServeWithOptions(input, output, Options{})
+}
+
+func ServeWithOptions(input io.Reader, output io.Writer, options Options) error {
 	scanner := bufio.NewScanner(input)
 	encoder := json.NewEncoder(output)
 	for scanner.Scan() {
@@ -55,14 +64,14 @@ func Serve(input io.Reader, output io.Writer) error {
 			}
 			continue
 		}
-		if err := encoder.Encode(handle(req)); err != nil {
+		if err := encoder.Encode(handle(req, options)); err != nil {
 			return err
 		}
 	}
 	return scanner.Err()
 }
 
-func handle(req request) response {
+func handle(req request, options Options) response {
 	switch req.Method {
 	case "initialize":
 		return okResponse(req.ID, map[string]any{
@@ -74,13 +83,13 @@ func handle(req request) response {
 			"capabilities": map[string]any{"tools": map[string]any{}},
 		})
 	case "tools/list":
-		return okResponse(req.ID, map[string]any{"tools": tools()})
+		return okResponse(req.ID, map[string]any{"tools": tools(options)})
 	case "tools/call":
 		var params callParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			return errorResponse(req.ID, -32602, "invalid tool call params")
 		}
-		text, err := callTool(params.Name, params.Arguments)
+		text, err := callTool(options, params.Name, params.Arguments)
 		if err != nil {
 			return errorResponse(req.ID, -32000, err.Error())
 		}
@@ -92,7 +101,33 @@ func handle(req request) response {
 	}
 }
 
-func tools() []map[string]any {
+func tools(options Options) []map[string]any {
+	listed := []map[string]any{taskContextTool()}
+	if options.ExpertTools {
+		listed = append(listed, legacyTools()...)
+	}
+	return listed
+}
+
+func taskContextTool() map[string]any {
+	return map[string]any{
+		"name":        "task_context",
+		"description": "Return one compact, budgeted Context Pack for a coding task. If fallback_required is true, stop using GoreGraph and inspect source directly. Call at most twice per task.",
+		"inputSchema": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []string{"query"},
+			"properties": map[string]any{
+				"root":          map[string]any{"type": "string"},
+				"query":         map[string]any{"type": "string", "minLength": 1},
+				"budget_tokens": map[string]any{"type": "integer", "minimum": 256, "maximum": 4000, "default": 1800},
+				"max_files":     map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "default": 12},
+			},
+		},
+	}
+}
+
+func legacyTools() []map[string]any {
 	return []map[string]any{
 		tool("query_code_map", "Search the generated GoreGraph index."),
 		tool("get_project_summary", "Read the generated project report."),
@@ -106,7 +141,6 @@ func tools() []map[string]any {
 		agentTool("workspace_delta", "Compare a before workspace snapshot with the current root."),
 		agentTool("service_context", "Return generated context for a service."),
 		agentTool("endpoint_search", "Search generated endpoint facts."),
-		agentTool("task_context", "Return compact evidence-backed context for one change target."),
 		agentTool("endpoint_trace", "Return evidence-backed directed endpoint traces."),
 		agentTool("symbol_trace", "Return directed traces containing a symbol."),
 		agentTool("trace_from", "Traverse upstream and downstream from a trace node."),
@@ -140,7 +174,13 @@ func tool(name, description string) map[string]any {
 	}
 }
 
-func callTool(name string, args map[string]any) (string, error) {
+func callTool(options Options, name string, args map[string]any) (string, error) {
+	if name == "task_context" {
+		return callTaskContext(args)
+	}
+	if !options.ExpertTools {
+		return "", fmt.Errorf("unknown tool: %s", name)
+	}
 	root := stringArg(args, "root", ".")
 	switch name {
 	case "query_code_map":
@@ -183,13 +223,76 @@ func callTool(name string, args map[string]any) (string, error) {
 	}
 }
 
+func callTaskContext(args map[string]any) (string, error) {
+	for name := range args {
+		switch name {
+		case "root", "query", "budget_tokens", "max_files":
+		default:
+			return "", fmt.Errorf("unknown task_context argument: %s", name)
+		}
+	}
+
+	root := "."
+	if value, ok := args["root"]; ok {
+		var valid bool
+		root, valid = value.(string)
+		if !valid {
+			return "", fmt.Errorf("task_context root must be a string")
+		}
+	}
+	queryValue, ok := args["query"]
+	if !ok {
+		return "", fmt.Errorf("task_context query is required")
+	}
+	query, ok := queryValue.(string)
+	if !ok || strings.TrimSpace(query) == "" {
+		return "", fmt.Errorf("task_context query must be a non-empty string")
+	}
+	budgetTokens, err := boundedIntegerArg(args, "budget_tokens", 256, 4000)
+	if err != nil {
+		return "", err
+	}
+	maxFiles, err := boundedIntegerArg(args, "max_files", 1, 20)
+	if err != nil {
+		return "", err
+	}
+	pack, err := agent.BuildContext(agent.ContextRequest{
+		Root:         root,
+		Query:        query,
+		BudgetTokens: budgetTokens,
+		MaxFiles:     maxFiles,
+	})
+	if err != nil {
+		return "", err
+	}
+	body, err := json.Marshal(pack)
+	if err != nil {
+		return "", err
+	}
+	return string(body) + "\n", nil
+}
+
+func boundedIntegerArg(args map[string]any, name string, minimum, maximum int) (int, error) {
+	value, ok := args[name]
+	if !ok {
+		return 0, nil
+	}
+	number, ok := value.(float64)
+	if !ok || math.IsNaN(number) || math.IsInf(number, 0) || math.Trunc(number) != number {
+		return 0, fmt.Errorf("task_context %s must be an integer", name)
+	}
+	if number < float64(minimum) || number > float64(maximum) {
+		return 0, fmt.Errorf("task_context %s must be between %d and %d", name, minimum, maximum)
+	}
+	return int(number), nil
+}
+
 func agentTaskForTool(name string) (string, bool) {
 	tasks := map[string]string{
 		"workspace_summary":    "workspace-summary",
 		"workspace_delta":      "workspace-delta",
 		"service_context":      "service-context",
 		"endpoint_search":      "endpoint-search",
-		"task_context":         "task-context",
 		"endpoint_trace":       "endpoint-trace",
 		"symbol_trace":         "symbol-trace",
 		"trace_from":           "trace-from",

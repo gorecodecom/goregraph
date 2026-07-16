@@ -936,18 +936,78 @@ func TestRunDoctorWarnsForStaleIndex(t *testing.T) {
 }
 
 func TestRunMCPHelpPrintsUsage(t *testing.T) {
-	var stdout, stderr bytes.Buffer
+	want := `Usage: goregraph mcp [--expert-tools]
 
-	code := Run([]string{"mcp", "help"}, &stdout, &stderr)
+Starts the read-only MCP stdio server.
+Default mode exposes only task_context to prevent query cascades.
+--expert-tools exposes legacy diagnostic and exploration tools.
+`
+	for _, help := range []string{"help", "--help", "-h"} {
+		var stdout, stderr bytes.Buffer
+		code := Run([]string{"mcp", help}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("%s exit code = %d, want 0; stderr=%s", help, code, stderr.String())
+		}
+		if stdout.String() != want {
+			t.Fatalf("%s help = %q, want %q", help, stdout.String(), want)
+		}
+	}
+}
 
-	if code != 0 {
-		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+func TestRunMCPRejectsUnknownDuplicateAndPositionalOptions(t *testing.T) {
+	for _, args := range [][]string{
+		{"mcp", "--unknown"},
+		{"mcp", "expert"},
+		{"mcp", "--expert-tools", "--expert-tools"},
+		{"mcp", "--expert-tools", "extra"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(args, &stdout, &stderr); code != 2 {
+			t.Fatalf("%v exit code = %d, want 2; stdout=%s stderr=%s", args, code, stdout.String(), stderr.String())
+		}
+		if stdout.Len() != 0 || !strings.Contains(stderr.String(), "usage: goregraph mcp [--expert-tools]") {
+			t.Fatalf("%v streams: stdout=%q stderr=%q", args, stdout.String(), stderr.String())
+		}
 	}
-	if !strings.Contains(stdout.String(), "Usage: goregraph mcp") {
-		t.Fatalf("mcp help missing usage:\n%s", stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "stdio") {
-		t.Fatalf("mcp help missing stdio note:\n%s", stdout.String())
+}
+
+func TestRunMCPPropagatesStandardAndExpertModes(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		args      []string
+		want      string
+		forbidden string
+	}{
+		{name: "standard", args: []string{"mcp"}, want: `"name":"task_context"`, forbidden: `"name":"coverage"`},
+		{name: "expert", args: []string{"mcp", "--expert-tools"}, want: `"name":"coverage"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reader, writer, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := writer.WriteString(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}` + "\n"); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			oldStdin := os.Stdin
+			os.Stdin = reader
+			t.Cleanup(func() {
+				os.Stdin = oldStdin
+				_ = reader.Close()
+			})
+
+			var stdout, stderr bytes.Buffer
+			if code := Run(test.args, &stdout, &stderr); code != 0 {
+				t.Fatalf("exit code = %d, stderr=%s", code, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), test.want) ||
+				test.forbidden != "" && strings.Contains(stdout.String(), test.forbidden) {
+				t.Fatalf("unexpected MCP tool list:\n%s", stdout.String())
+			}
+		})
 	}
 }
 

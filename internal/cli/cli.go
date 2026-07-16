@@ -75,15 +75,26 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 }
 
 func runMCP(args []string, stdout, stderr io.Writer) int {
-	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph mcp\n\nStarts the read-only MCP stdio server. It reads existing GoreGraph output and does not scan or write project files.\n")
+	const help = `Usage: goregraph mcp [--expert-tools]
+
+Starts the read-only MCP stdio server.
+Default mode exposes only task_context to prevent query cascades.
+--expert-tools exposes legacy diagnostic and exploration tools.
+`
+	if len(args) == 1 && isHelp(args[0]) {
+		fmt.Fprint(stdout, help)
 		return 0
 	}
-	if len(args) > 0 {
-		fmt.Fprintf(stderr, "error: usage: goregraph mcp\n")
+	options := mcp.Options{}
+	switch {
+	case len(args) == 0:
+	case len(args) == 1 && args[0] == "--expert-tools":
+		options.ExpertTools = true
+	default:
+		fmt.Fprint(stderr, "error: usage: goregraph mcp [--expert-tools]\n")
 		return 2
 	}
-	if err := mcp.Serve(os.Stdin, stdout); err != nil {
+	if err := mcp.ServeWithOptions(os.Stdin, stdout, options); err != nil {
 		fmt.Fprintf(stderr, "error: mcp failed: %v\n", err)
 		return 1
 	}
