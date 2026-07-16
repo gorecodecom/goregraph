@@ -117,6 +117,11 @@ func tools() []map[string]any {
 		agentTool("evidence", "Return stable source evidence records."),
 		agentTool("tests", "Return generated test mappings."),
 		agentTool("change_context", "Return generated change context."),
+		agentTool("symbol_inventory", "List canonical workspace symbol declarations by project, package, module, or name."),
+		agentTool("symbol_resolve", "Resolve human text to every matching canonical symbol candidate without choosing one."),
+		agentTool("symbol_usages", "Return exact direct references for a stable symbol ID; human text should first use symbol_resolve."),
+		agentTool("symbol_api_consumers", "Return HTTP reachability consumers for a stable symbol ID; human text should first use symbol_resolve."),
+		agentTool("symbol_explain", "Explain a stable symbol or usage ID from canonical projections; human text should first use symbol_resolve."),
 	}
 }
 
@@ -179,7 +184,28 @@ func callTool(name string, args map[string]any) (string, error) {
 }
 
 func agentTaskForTool(name string) (string, bool) {
-	tasks := map[string]string{"workspace_summary": "workspace-summary", "workspace_delta": "workspace-delta", "service_context": "service-context", "endpoint_search": "endpoint-search", "task_context": "task-context", "endpoint_trace": "endpoint-trace", "symbol_trace": "symbol-trace", "trace_from": "trace-from", "data_flow": "data-flow", "impact_summary": "impact-summary", "diagnostics": "diagnostics", "coverage": "coverage", "evidence": "evidence", "tests": "tests", "change_context": "change-context"}
+	tasks := map[string]string{
+		"workspace_summary":    "workspace-summary",
+		"workspace_delta":      "workspace-delta",
+		"service_context":      "service-context",
+		"endpoint_search":      "endpoint-search",
+		"task_context":         "task-context",
+		"endpoint_trace":       "endpoint-trace",
+		"symbol_trace":         "symbol-trace",
+		"trace_from":           "trace-from",
+		"data_flow":            "data-flow",
+		"impact_summary":       "impact-summary",
+		"diagnostics":          "diagnostics",
+		"coverage":             "coverage",
+		"evidence":             "evidence",
+		"tests":                "tests",
+		"change_context":       "change-context",
+		"symbol_inventory":     "symbol-inventory",
+		"symbol_resolve":       "symbol-resolve",
+		"symbol_usages":        "symbol-usages",
+		"symbol_api_consumers": "symbol-api-consumers",
+		"symbol_explain":       "symbol-explain",
+	}
 	task, ok := tasks[name]
 	return task, ok
 }

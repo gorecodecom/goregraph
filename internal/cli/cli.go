@@ -765,7 +765,18 @@ func emptyCLI(value string) string {
 
 func runQuery(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph query <path> <term-or-output>\n\nSearches an existing goregraph-out index. Known output aliases such as graph-full, callgraph, routes, flows, api-contracts, frontend-usage, package-graph, maven-graph, navigation, endpoint-flows, spring, endpoints, dependencies, analyzers, workspace, workspace-context, workspace-contracts, workspace-features, workspace-next-actions, frontend-consumers, affected, and audit print that generated file directly.\n")
+		fmt.Fprint(stdout, `Usage: goregraph query <path> <term-or-output>
+
+Searches existing generated output. Canonical symbol operations are:
+  symbol-inventory       List declarations by project, package, module, or name
+  symbol-resolve         Resolve human text to every matching stable symbol candidate
+  symbol-usages          Return exact direct references for a stable symbol ID
+  symbol-api-consumers   Return HTTP reachability consumers for a stable symbol ID
+  symbol-explain         Explain a stable symbol or usage ID
+
+Task options: --query <value> --format <json|text|markdown> --detail <summary|standard|full> --limit <1-100> --continue <token>
+Known output aliases such as graph-full, symbol-index, symbol-usages-json, workspace-context, and audit print that generated file directly.
+`)
 		return 0
 	}
 	if len(args) < 2 {
@@ -802,6 +813,10 @@ func runQuery(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 		}
+		if symbolTaskRequiresQuery(options.Task) && strings.TrimSpace(options.Query) == "" {
+			fmt.Fprintf(stderr, "error: %s requires --query\n", options.Task)
+			return 2
+		}
 		result, err := query.RunTask(options)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: query failed: %v\n", err)
@@ -819,9 +834,19 @@ func runQuery(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func symbolTaskRequiresQuery(task string) bool {
+	switch task {
+	case "symbol-resolve", "symbol-usages", "symbol-api-consumers", "symbol-explain":
+		return true
+	default:
+		return false
+	}
+}
+
 func isAgentQueryTask(value string) bool {
 	switch value {
-	case "workspace-summary", "workspace-delta", "service-context", "endpoint-search", "task-context", "endpoint-trace", "symbol-trace", "trace-from", "data-flow", "diagnostics", "coverage", "evidence", "tests", "change-context", "impact-summary":
+	case "workspace-summary", "workspace-delta", "service-context", "endpoint-search", "task-context", "endpoint-trace", "symbol-trace", "trace-from", "data-flow", "diagnostics", "coverage", "evidence", "tests", "change-context", "impact-summary",
+		"symbol-inventory", "symbol-resolve", "symbol-usages", "symbol-api-consumers", "symbol-explain":
 		return true
 	default:
 		return false
@@ -830,7 +855,7 @@ func isAgentQueryTask(value string) bool {
 
 func runExplain(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph explain <path> <file-or-symbol>\n\nExplains a file or symbol from an existing goregraph-out index.\n")
+		fmt.Fprint(stdout, "Usage: goregraph explain <path> <file-or-symbol-or-stable-id>\n\nExplains a local file/symbol or a canonical symbol:<id> / usage:<id> from generated output.\n")
 		return 0
 	}
 	if len(args) < 2 {

@@ -254,6 +254,143 @@ func TestServiceReturnsImpactSummaryFromWorkspaceRoot(t *testing.T) {
 	}
 }
 
+func TestServiceReturnsSymbolInventory(t *testing.T) {
+	workspace, project, symbols, _ := writeSymbolProjectionFixture(t)
+
+	first, err := (Service{}).Run(Request{
+		Root: project, Task: "symbol-inventory", Query: "microservices/ms-user", Limit: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Count != 1 || !first.Truncated || first.Continuation == "" {
+		t.Fatalf("first inventory page = %#v", first)
+	}
+	symbol, ok := first.Items[0].Data["symbol"].(scan.CanonicalSymbolRecord)
+	if !ok || symbol.Project != "microservices/ms-user" {
+		t.Fatalf("inventory symbol = %#v", first.Items[0].Data["symbol"])
+	}
+	if len(first.CoverageWarnings) == 0 || !strings.Contains(first.CoverageWarnings[0], "PARTIAL") {
+		t.Fatalf("inventory coverage warnings = %#v", first.CoverageWarnings)
+	}
+
+	second, err := (Service{}).Run(Request{
+		Root: workspace, Task: "symbol-inventory", Query: "microservices/ms-user",
+		Limit: 1, Continuation: first.Continuation,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Count != 1 || second.Items[0].ID == first.Items[0].ID {
+		t.Fatalf("second inventory page = %#v", second)
+	}
+	if second.Items[0].ID != symbols.Symbols[1].ID {
+		t.Fatalf("second inventory ID = %q, want %q", second.Items[0].ID, symbols.Symbols[1].ID)
+	}
+}
+
+func TestServiceResolvesSymbolCandidatesWithoutGuessing(t *testing.T) {
+	workspace, _, symbols, _ := writeSymbolProjectionFixture(t)
+
+	ambiguous, err := (Service{}).Run(Request{
+		Root: workspace, Task: "symbol-resolve", Query: "UserService", Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ambiguous.Count != 2 {
+		t.Fatalf("same-name candidates = %#v", ambiguous)
+	}
+	gotIDs := []string{ambiguous.Items[0].ID, ambiguous.Items[1].ID}
+	wantIDs := []string{symbols.Symbols[0].ID, symbols.Symbols[2].ID}
+	if strings.Join(gotIDs, ",") != strings.Join(wantIDs, ",") {
+		t.Fatalf("same-name candidate IDs = %#v, want %#v", gotIDs, wantIDs)
+	}
+	for _, item := range ambiguous.Items {
+		if item.Resolution != "" {
+			t.Fatalf("resolver selected candidate %#v", item)
+		}
+	}
+
+	unique, err := (Service{}).Run(Request{
+		Root: workspace, Task: "symbol-resolve", Query: "com.weka.UserRepository", Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unique.Count != 1 || unique.Items[0].ID != symbols.Symbols[1].ID {
+		t.Fatalf("qualified-name result = %#v", unique)
+	}
+}
+
+func writeSymbolProjectionFixture(t *testing.T) (string, string, scan.WorkspaceSymbolIndexRecord, scan.WorkspaceSymbolUsageIndexRecord) {
+	t.Helper()
+	workspace := filepath.Join(t.TempDir(), "weka")
+	project := filepath.Join(workspace, "microservices", "ms-user")
+	if err := os.MkdirAll(filepath.Join(workspace, ".goregraph-workspace"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symbols := scan.WorkspaceSymbolIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Root:          filepath.ToSlash(workspace),
+		Symbols: []scan.CanonicalSymbolRecord{
+			{
+				ID: "symbol:01", Project: "microservices/ms-user", Language: "java",
+				Kind: "class", Name: "UserService", QualifiedName: "com.weka.UserService",
+				DeclarationFile: "src/UserService.java", DeclarationLine: 10,
+				Analyzer: "java-source", Confidence: scan.ConfidenceExact, Coverage: scan.CoveragePartial,
+				Limitations: []string{"reflection may add runtime consumers"},
+			},
+			{
+				ID: "symbol:02", Project: "microservices/ms-user", Language: "java",
+				Kind: "interface", Name: "UserRepository", QualifiedName: "com.weka.UserRepository",
+				DeclarationFile: "src/UserRepository.java", DeclarationLine: 5,
+				Analyzer: "java-source", Confidence: scan.ConfidenceExact, Coverage: scan.CoverageComplete,
+			},
+			{
+				ID: "symbol:03", Project: "microservices/ms-order", Language: "java",
+				Kind: "class", Name: "UserService", QualifiedName: "com.weka.order.UserService",
+				DeclarationFile: "src/UserService.java", DeclarationLine: 8,
+				Analyzer: "java-source", Confidence: scan.ConfidenceExact, Coverage: scan.CoverageComplete,
+			},
+		},
+		Coverage: []scan.SymbolCoverageRecord{{
+			Project: "microservices/ms-user", Language: "java", Capability: "declarations",
+			Coverage: scan.CoveragePartial, Reason: "reflection is not statically resolved",
+			Limitations: []string{"reflection"},
+		}},
+	}
+	usages := scan.WorkspaceSymbolUsageIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Root:          filepath.ToSlash(workspace),
+		Usages: []scan.CanonicalSymbolUsageRecord{{
+			ID: "usage:01", ProviderSymbolID: "symbol:01", ConsumerProject: "microservices/ms-order",
+			Category: scan.SymbolUsageDirectReference, Language: "java", RelationKind: "calls_method_owner",
+			SourceFile: "src/OrderService.java", SourceLine: 20, Confidence: scan.ConfidenceExact,
+			Resolution: scan.SymbolResolutionExact, Reason: "qualified Java reference",
+			Analyzer: "workspace-symbols", EvidenceIDs: []string{"microservices/ms-order#evidence:1"},
+		}},
+		Coverage: symbols.Coverage,
+	}
+	writeWorkspaceProjectionJSON(t, workspace, "symbol-index.json", symbols)
+	writeWorkspaceProjectionJSON(t, workspace, "symbol-usages.json", usages)
+	return workspace, project, symbols, usages
+}
+
+func writeWorkspaceProjectionJSON(t *testing.T, workspace, name string, value any) {
+	t.Helper()
+	body, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, ".goregraph-workspace", name), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeTaskContextJSON(t *testing.T, root, name string, value any) {
 	t.Helper()
 	body, err := json.Marshal(value)

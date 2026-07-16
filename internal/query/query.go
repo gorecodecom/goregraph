@@ -46,6 +46,9 @@ func renderTaskText(result agent.Result, markdown bool) string {
 	for _, item := range result.Items {
 		prefix := "- "
 		lines = append(lines, prefix+item.Title+" — "+item.Summary)
+		if result.Task == "symbol-explain" {
+			lines = append(lines, renderSymbolExplanation(item)...)
+		}
 	}
 	if len(result.Items) == 0 {
 		lines = append(lines, "No matching generated facts. Review coverage before concluding that the behavior is absent.")
@@ -57,6 +60,60 @@ func renderTaskText(result agent.Result, markdown bool) string {
 		lines = append(lines, "Suggested next: "+result.SuggestedNext)
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func renderSymbolExplanation(item agent.Item) []string {
+	if symbol, ok := item.Data["symbol"].(scan.CanonicalSymbolRecord); ok {
+		lines := []string{
+			"  - Stable ID: `" + symbol.ID + "`",
+			"  - Project: `" + symbol.Project + "`",
+			"  - Declaration: `" + symbol.DeclarationFile + ":" + fmt.Sprint(symbol.DeclarationLine) + "`",
+			"  - Confidence / coverage: `" + string(symbol.Confidence) + "` / `" + string(symbol.Coverage) + "`",
+		}
+		if len(symbol.EvidenceIDs) > 0 {
+			lines = append(lines, "  - Evidence: "+strings.Join(symbol.EvidenceIDs, ", "))
+		}
+		if len(symbol.Limitations) > 0 {
+			lines = append(lines, "  - Limitations: "+strings.Join(symbol.Limitations, ", "))
+		}
+		return lines
+	}
+	usage, ok := item.Data["usage"].(scan.CanonicalSymbolUsageRecord)
+	if !ok {
+		return nil
+	}
+	lines := []string{
+		"  - Stable ID: `" + usage.ID + "`",
+		"  - Category / resolution: `" + string(usage.Category) + "` / `" + string(usage.Resolution) + "`",
+		"  - Reason: " + usage.Reason,
+	}
+	if usage.ProviderSymbolID != "" {
+		lines = append(lines, "  - Provider: `"+usage.ProviderSymbolID+"`")
+	}
+	if usage.ConsumerSymbolID != "" {
+		lines = append(lines, "  - Consumer: `"+usage.ConsumerSymbolID+"`")
+	}
+	if len(usage.CandidateSymbolIDs) > 0 {
+		lines = append(lines, "  - Candidate symbols: "+strings.Join(usage.CandidateSymbolIDs, ", "))
+	}
+	if len(usage.CandidatePathIDs) > 0 {
+		lines = append(lines, "  - Candidate paths: "+strings.Join(usage.CandidatePathIDs, ", "))
+	}
+	if len(usage.DependencyEvidence) > 0 {
+		lines = append(lines, "  - Dependency evidence: "+strings.Join(usage.DependencyEvidence, ", "))
+	}
+	if len(usage.EvidenceIDs) > 0 {
+		lines = append(lines, "  - Evidence: "+strings.Join(usage.EvidenceIDs, ", "))
+	}
+	for _, step := range usage.APIPath {
+		lines = append(lines, fmt.Sprintf(
+			"  - API path %d: %s — %s", step.Position, step.Kind, step.Label,
+		))
+	}
+	if len(usage.Limitations) > 0 {
+		lines = append(lines, "  - Limitations: "+strings.Join(usage.Limitations, ", "))
+	}
+	return lines
 }
 
 func Search(root, term string) (string, error) {
@@ -147,6 +204,8 @@ var outputAliases = map[string]string{
 	"analyzers":                    "analyzers.md",
 	"analyzers-json":               "analyzers.json",
 	"affected":                     "affected.md",
+	"symbol-index":                 "symbol-index.json",
+	"symbol-usages-json":           "symbol-usages.json",
 }
 
 var workspaceOutputFallbacks = map[string]string{
@@ -155,6 +214,8 @@ var workspaceOutputFallbacks = map[string]string{
 	"workspace-feature-flows.md":    "feature-flows.md",
 	"workspace-feature-flows.json":  "feature-flows.json",
 	"workspace-next-actions.md":     "next-actions.md",
+	"symbol-index.json":             "symbol-index.json",
+	"symbol-usages.json":            "symbol-usages.json",
 }
 
 func ReadOutput(root, name string) (string, error) {
@@ -169,6 +230,11 @@ func ReadOutput(root, name string) (string, error) {
 				if body, fallbackErr := os.ReadFile(filepath.Join(root, ".goregraph-workspace", fallbackName)); fallbackErr == nil {
 					return string(body), nil
 				}
+				if workspaceRoot, found, workspaceErr := scan.WorkspaceRoot(root, cfg); workspaceErr == nil && found {
+					if body, fallbackErr := os.ReadFile(filepath.Join(workspaceRoot, ".goregraph-workspace", fallbackName)); fallbackErr == nil {
+						return string(body), nil
+					}
+				}
 			}
 			return "", fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
 		}
@@ -181,6 +247,12 @@ func Explain(root, target string) (string, error) {
 	target = strings.TrimSpace(filepath.ToSlash(target))
 	if target == "" {
 		return "", fmt.Errorf("explain target is required")
+	}
+	if strings.HasPrefix(target, "symbol:") || strings.HasPrefix(target, "usage:") {
+		return RunTask(TaskOptions{
+			Root: root, Task: "symbol-explain", Query: target,
+			Format: "markdown", Detail: "full", Limit: 20,
+		})
 	}
 	files, symbols, relations, err := loadIndex(root)
 	if err != nil {

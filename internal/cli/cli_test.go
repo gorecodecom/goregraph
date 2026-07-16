@@ -813,6 +813,171 @@ func TestRunQueryRecognizesImpactSummaryTask(t *testing.T) {
 	}
 }
 
+func TestRunQueryAndExplainExposeCanonicalSymbolOperations(t *testing.T) {
+	workspace := writeCLISymbolProjectionFixture(t)
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{
+			args: []string{"query", workspace, "symbol-inventory", "--query", "microservices/ms-user", "--format", "markdown", "--limit", "20"},
+			want: "# GoreGraph symbol-inventory",
+		},
+		{
+			args: []string{"query", workspace, "symbol-resolve", "--query", "com.weka.UserService", "--format", "json", "--limit", "20"},
+			want: `"task": "symbol-resolve"`,
+		},
+		{
+			args: []string{"query", workspace, "symbol-usages", "--query", "symbol:cli-01", "--format", "markdown", "--limit", "20"},
+			want: "direct_reference",
+		},
+		{
+			args: []string{"query", workspace, "symbol-api-consumers", "--query", "symbol:cli-01", "--format", "json", "--limit", "20"},
+			want: `"category": "reached_through_api"`,
+		},
+		{
+			args: []string{"query", workspace, "symbol-explain", "--query", "usage:cli-direct", "--detail", "full", "--format", "json", "--limit", "20"},
+			want: `"reason": "qualified Java reference"`,
+		},
+		{
+			args: []string{"explain", workspace, "symbol:cli-01"},
+			want: "# GoreGraph symbol-explain",
+		},
+		{
+			args: []string{"explain", workspace, "usage:cli-direct"},
+			want: "qualified Java reference",
+		},
+	}
+	for _, test := range cases {
+		var stdout, stderr bytes.Buffer
+		if code := Run(test.args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", test.args, code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), test.want) {
+			t.Fatalf("%v output missing %q:\n%s", test.args, test.want, stdout.String())
+		}
+	}
+}
+
+func TestRunSymbolQuerySyntaxAndMissingProjectionExitCodes(t *testing.T) {
+	for _, task := range []string{
+		"symbol-inventory",
+		"symbol-resolve",
+		"symbol-usages",
+		"symbol-api-consumers",
+		"symbol-explain",
+	} {
+		if !isAgentQueryTask(task) {
+			t.Fatalf("%s must be dispatched through the agent query path", task)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"query", t.TempDir(), "symbol-inventory", "--query"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("syntax exit code = %d, want 2; stderr=%s", code, stderr.String())
+	}
+	for _, task := range []string{"symbol-resolve", "symbol-usages", "symbol-api-consumers", "symbol-explain"} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run([]string{"query", t.TempDir(), task, "--limit", "20"}, &stdout, &stderr); code != 2 {
+			t.Fatalf("%s missing-query exit code = %d, want 2; stderr=%s", task, code, stderr.String())
+		}
+	}
+
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, ".goregraph-workspace"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"query", workspace, "symbol-inventory", "--limit", "20"}, &stdout, &stderr); code != 1 {
+		t.Fatalf("missing projection exit code = %d, want 1; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "workspace scan-all") {
+		t.Fatalf("missing projection remediation:\n%s", stderr.String())
+	}
+}
+
+func TestQueryHelpListsCanonicalSymbolOperations(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"query", "--help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, task := range []string{
+		"symbol-inventory",
+		"symbol-resolve",
+		"symbol-usages",
+		"symbol-api-consumers",
+		"symbol-explain",
+	} {
+		if !strings.Contains(stdout.String(), task) {
+			t.Fatalf("query help missing %s:\n%s", task, stdout.String())
+		}
+	}
+}
+
+func writeCLISymbolProjectionFixture(t *testing.T) string {
+	t.Helper()
+	workspace := filepath.Join(t.TempDir(), "weka")
+	writeFile(t, workspace, ".goregraph-workspace/symbol-index.json", `{
+  "schema_version": 2,
+  "symbols": [{
+    "id": "symbol:cli-01",
+    "project": "microservices/ms-user",
+    "language": "java",
+    "kind": "class",
+    "name": "UserService",
+    "qualified_name": "com.weka.UserService",
+    "declaration_file": "src/UserService.java",
+    "declaration_line": 10,
+    "analyzer": "java-source",
+    "confidence": "EXACT",
+    "coverage": "COMPLETE"
+  }],
+  "coverage": []
+}`)
+	writeFile(t, workspace, ".goregraph-workspace/symbol-usages.json", `{
+  "schema_version": 2,
+  "usages": [{
+    "id": "usage:cli-direct",
+    "provider_symbol_id": "symbol:cli-01",
+    "consumer_project": "microservices/ms-order",
+    "category": "direct_reference",
+    "language": "java",
+    "relation_kind": "calls_method_owner",
+    "source_file": "src/OrderService.java",
+    "source_line": 20,
+    "confidence": "EXACT",
+    "resolution": "EXACT",
+    "reason": "qualified Java reference",
+    "analyzer": "workspace-symbols"
+  }, {
+    "id": "usage:cli-api",
+    "provider_symbol_id": "symbol:cli-01",
+    "consumer_project": "frontend/app",
+    "category": "reached_through_api",
+    "language": "typescript",
+    "relation_kind": "http_reachability",
+    "source_file": "src/UserPage.tsx",
+    "source_line": 7,
+    "confidence": "RESOLVED",
+    "resolution": "EXACT",
+    "reason": "resolved HTTP contract and implementation",
+    "analyzer": "workspace-symbol-api",
+    "transport": "http",
+    "api_path": [{
+      "position": 0,
+      "kind": "selected_symbol",
+      "project": "microservices/ms-user",
+      "symbol_id": "symbol:cli-01",
+      "label": "UserService"
+    }]
+  }],
+  "coverage": []
+}`)
+	return workspace
+}
+
 func writeFile(t *testing.T, root, rel, body string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))

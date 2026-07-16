@@ -75,6 +75,16 @@ func (Service) Run(request Request) (Result, error) {
 
 func loadTask(request Request) ([]Item, []string, error) {
 	switch request.Task {
+	case "symbol-inventory":
+		return loadSymbolInventory(request, false)
+	case "symbol-resolve":
+		return loadSymbolInventory(request, true)
+	case "symbol-usages":
+		return loadSymbolUsages(request, scan.SymbolUsageDirectReference)
+	case "symbol-api-consumers":
+		return loadSymbolUsages(request, scan.SymbolUsageReachedThroughAPI)
+	case "symbol-explain":
+		return loadSymbolExplain(request)
 	case "coverage":
 		var records []scan.CapabilityRecord
 		if err := readOutput(request.Root, "capabilities.json", &records); err != nil {
@@ -286,6 +296,158 @@ func loadTask(request Request) ([]Item, []string, error) {
 	}
 }
 
+func loadSymbolInventory(request Request, resolve bool) ([]Item, []string, error) {
+	var index scan.WorkspaceSymbolIndexRecord
+	if err := readWorkspaceOutput(request.Root, "symbol-index.json", &index); err != nil {
+		return nil, nil, err
+	}
+	query := strings.TrimSpace(request.Query)
+	if resolve && query == "" {
+		return nil, nil, fmt.Errorf("symbol-resolve query is required")
+	}
+	items := []Item{}
+	projects := []string{}
+	for _, symbol := range index.Symbols {
+		matches := matchesQuery(
+			query,
+			symbol.ID,
+			symbol.Project,
+			symbol.Service,
+			symbol.Module,
+			symbol.Package,
+			symbol.WorkspacePackage,
+			symbol.Artifact,
+			symbol.Name,
+			symbol.QualifiedName,
+			symbol.ExportName,
+			symbol.DeclarationFile,
+		)
+		if resolve {
+			matches = symbolResolveMatches(query, symbol)
+		}
+		if !matches {
+			continue
+		}
+		items = append(items, symbolItem(symbol))
+		projects = append(projects, symbol.Project)
+	}
+	sortItems(items)
+	return items, symbolCoverageWarnings(index.Coverage, projects), nil
+}
+
+func loadSymbolUsages(request Request, category scan.SymbolUsageCategory) ([]Item, []string, error) {
+	symbolID := strings.TrimSpace(request.Query)
+	if !strings.HasPrefix(symbolID, "symbol:") {
+		return nil, nil, fmt.Errorf("%s query must be a stable symbol ID", request.Task)
+	}
+	var index scan.WorkspaceSymbolUsageIndexRecord
+	if err := readWorkspaceOutput(request.Root, "symbol-usages.json", &index); err != nil {
+		return nil, nil, err
+	}
+	items := []Item{}
+	projects := []string{}
+	for _, usage := range index.Usages {
+		if usage.ProviderSymbolID != symbolID || usage.Category != category {
+			continue
+		}
+		items = append(items, symbolUsageItem(usage, "symbol_usage"))
+		projects = append(projects, usage.ConsumerProject)
+	}
+	sortItems(items)
+	return items, symbolCoverageWarnings(index.Coverage, projects), nil
+}
+
+func loadSymbolExplain(request Request) ([]Item, []string, error) {
+	target := strings.TrimSpace(request.Query)
+	switch {
+	case strings.HasPrefix(target, "symbol:"):
+		var symbols scan.WorkspaceSymbolIndexRecord
+		if err := readWorkspaceOutput(request.Root, "symbol-index.json", &symbols); err != nil {
+			return nil, nil, err
+		}
+		for _, symbol := range symbols.Symbols {
+			if symbol.ID == target {
+				item := symbolItem(symbol)
+				item.Kind = "symbol_explanation"
+				return []Item{item}, symbolCoverageWarnings(symbols.Coverage, []string{symbol.Project}), nil
+			}
+		}
+		return nil, nil, fmt.Errorf("symbol %q not found in workspace projection", target)
+	case strings.HasPrefix(target, "usage:"):
+		var usages scan.WorkspaceSymbolUsageIndexRecord
+		if err := readWorkspaceOutput(request.Root, "symbol-usages.json", &usages); err != nil {
+			return nil, nil, err
+		}
+		for _, usage := range usages.Usages {
+			if usage.ID == target {
+				return []Item{symbolUsageItem(usage, "symbol_explanation")},
+					symbolCoverageWarnings(usages.Coverage, []string{usage.ConsumerProject}), nil
+			}
+		}
+		return nil, nil, fmt.Errorf("usage %q not found in workspace projection", target)
+	default:
+		return nil, nil, fmt.Errorf("symbol-explain query must be a stable symbol or usage ID")
+	}
+}
+
+func symbolItem(symbol scan.CanonicalSymbolRecord) Item {
+	title := firstText(symbol.QualifiedName, symbol.ExportName, symbol.Name)
+	summary := symbol.Language + " " + symbol.Kind + " declared in " +
+		symbol.DeclarationFile + ":" + strconv.Itoa(symbol.DeclarationLine)
+	return Item{
+		ID: symbol.ID, Kind: "canonical_symbol", Title: title, Summary: summary,
+		Project: symbol.Project, File: symbol.DeclarationFile, Line: symbol.DeclarationLine,
+		Confidence: string(symbol.Confidence), EvidenceIDs: symbol.EvidenceIDs,
+		Data: map[string]any{"symbol": symbol},
+	}
+}
+
+func symbolUsageItem(usage scan.CanonicalSymbolUsageRecord, kind string) Item {
+	return Item{
+		ID: usage.ID, Kind: kind, Title: usage.ConsumerProject + " / " + usage.RelationKind,
+		Summary: string(usage.Category) + " — " + usage.Reason,
+		Project: usage.ConsumerProject, File: usage.SourceFile, Line: usage.SourceLine,
+		Confidence: string(usage.Confidence), Resolution: string(usage.Resolution),
+		EvidenceIDs: usage.EvidenceIDs, Data: map[string]any{"usage": usage},
+	}
+}
+
+func symbolResolveMatches(query string, symbol scan.CanonicalSymbolRecord) bool {
+	for _, candidate := range []string{
+		symbol.ID,
+		symbol.Name,
+		symbol.QualifiedName,
+		symbol.ExportName,
+	} {
+		if candidate != "" && strings.EqualFold(query, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func symbolCoverageWarnings(coverage []scan.SymbolCoverageRecord, projects []string) []string {
+	projectSet := make(map[string]bool, len(projects))
+	for _, project := range projects {
+		projectSet[project] = true
+	}
+	warnings := []string{}
+	for _, record := range coverage {
+		if record.Coverage == scan.CoverageComplete ||
+			len(projectSet) > 0 && !projectSet[record.Project] {
+			continue
+		}
+		warning := record.Project + " / " + record.Language + " / " + record.Capability +
+			": " + string(record.Coverage) + " — " + record.Reason
+		if len(record.Limitations) > 0 {
+			warning += " (" + strings.Join(record.Limitations, ", ") + ")"
+		}
+		warnings = appendUnique(warnings, warning)
+	}
+	sort.Strings(warnings)
+	return warnings
+}
+
 func loadTaskContext(request Request) ([]Item, []string, error) {
 	var routes []scan.CodeRouteRecord
 	if err := readOutput(request.Root, "routes.json", &routes); err != nil {
@@ -443,6 +605,32 @@ func readOutput(root, name string, dest any) error {
 		return fmt.Errorf("output %s is missing; run `goregraph scan <path>` first", name)
 	}
 	return json.Unmarshal(body, dest)
+}
+func readWorkspaceOutput(root, name string, dest any) error {
+	cfg, err := config.Load(root)
+	if err != nil {
+		return err
+	}
+	workspaceRoot := root
+	directPath := filepath.Join(root, ".goregraph-workspace", name)
+	body, err := os.ReadFile(directPath)
+	if os.IsNotExist(err) {
+		resolved, ok, resolveErr := scan.WorkspaceRoot(root, cfg)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if ok {
+			workspaceRoot = resolved
+			body, err = os.ReadFile(filepath.Join(workspaceRoot, ".goregraph-workspace", name))
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("workspace output %s is missing; run `goregraph workspace scan-all <path>` first", name)
+	}
+	if err := json.Unmarshal(body, dest); err != nil {
+		return fmt.Errorf("workspace output %s is invalid: %w", name, err)
+	}
+	return nil
 }
 func readOutputText(root, name string) (string, error) {
 	cfg, err := config.Load(root)
