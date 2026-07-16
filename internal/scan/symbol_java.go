@@ -223,10 +223,7 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 		for _, call := range method.Calls {
 			targetType := call.TargetOwner
 			if targetType == "" {
-				targetType = receivers[call.Receiver]
-			}
-			if targetType == "" && call.Receiver != "" && unicode.IsUpper(rune(call.Receiver[0])) {
-				targetType = call.Receiver
+				targetType = javaReceiverTargetType(call.Receiver, owner, receivers, fieldTypes, source, resolver)
 			}
 			if targetType != "" {
 				addScoped("calls_method_owner", targetType, call.Line, owner, typeVariables)
@@ -235,6 +232,84 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 	}
 
 	return dedupeRichRelationFacts(records)
+}
+
+func javaReceiverTargetType(receiver string, owner RichSymbolRecord, receivers map[string]string, fieldTypes map[string]map[string]string, source JavaSourceRecord, resolver javaFactResolver) string {
+	parts := strings.Split(strings.TrimSpace(receiver), ".")
+	if len(parts) == 0 || parts[0] == "" {
+		return ""
+	}
+	currentType := ""
+	nextPart := 0
+	switch parts[0] {
+	case "this":
+		currentType = owner.QualifiedName
+		nextPart = 1
+	case "super":
+		currentType = javaSuperType(source, owner)
+		nextPart = 1
+	default:
+		if declaredType := receivers[parts[0]]; declaredType != "" {
+			currentType = declaredType
+			nextPart = 1
+		} else {
+			nextPart = javaReceiverTypePrefix(parts)
+			if nextPart == 0 {
+				return ""
+			}
+			currentType = strings.Join(parts[:nextPart], ".")
+		}
+	}
+	if currentType == "" {
+		return ""
+	}
+	for ; nextPart < len(parts); nextPart++ {
+		resolved := resolver.resolve(primaryJavaTypeReference(currentType))
+		if resolved.resolution != SymbolResolutionExact || resolved.toSymbolID == "" {
+			return ""
+		}
+		fieldType := fieldTypes[resolved.toSymbolID][parts[nextPart]]
+		if fieldType == "" {
+			return ""
+		}
+		currentType = fieldType
+	}
+	return primaryJavaTypeReference(currentType)
+}
+
+func javaReceiverTypePrefix(parts []string) int {
+	firstType := -1
+	for index, part := range parts {
+		if part != "" && unicode.IsUpper(rune(part[0])) {
+			firstType = index
+			break
+		}
+	}
+	if firstType < 0 {
+		return 0
+	}
+	end := firstType + 1
+	for end < len(parts) && parts[end] != "" && unicode.IsUpper(rune(parts[end][0])) {
+		end++
+	}
+	return end
+}
+
+func javaSuperType(source JavaSourceRecord, owner RichSymbolRecord) string {
+	for _, typ := range source.Types {
+		if typ.QualifiedName == owner.QualifiedName {
+			return primaryJavaTypeReference(typ.Extends)
+		}
+	}
+	return ""
+}
+
+func primaryJavaTypeReference(value string) string {
+	references := normalizeJavaTypeReferences(value)
+	if len(references) == 0 {
+		return ""
+	}
+	return references[0]
 }
 
 func qualifiedJavaAnnotationLines(body string) map[int]bool {

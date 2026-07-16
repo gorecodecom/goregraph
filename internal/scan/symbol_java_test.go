@@ -566,3 +566,98 @@ func TestJavaOneLineMethodPreservesLiteralHTTPAndBareCallArguments(t *testing.T)
 	}
 	t.Fatalf("one-line bare call arguments = %#v, want helper(\"value\")", method.Calls)
 }
+
+func TestJavaAccumulatedTypeHeaderFinalizesBeforeFollowingTopLevelType(t *testing.T) {
+	body := `package com.weka.users;
+
+class First
+{}
+class Second {}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Types.java", Language: "java"}, body)
+	if len(source.Types) != 2 {
+		t.Fatalf("type extraction = %#v, want two top-level types", source.Types)
+	}
+	first, second := source.Types[0], source.Types[1]
+	if first.QualifiedName != "com.weka.users.First" || first.Owner != "" || first.EndLine != 4 {
+		t.Fatalf("accumulated first type = %#v, want top-level type ending on line 4", first)
+	}
+	if second.QualifiedName != "com.weka.users.Second" || second.Owner != "" {
+		t.Fatalf("following type inherited stale owner: %#v", second)
+	}
+}
+
+func TestJavaReceiverChainsResolveFieldsParametersNestedAndQualifiedTypes(t *testing.T) {
+	body := `package com.weka.users;
+
+class Service { void run() {} }
+class Holder {
+    Service service;
+}
+class Base {
+    Service inherited;
+}
+class Outer {
+    static Service service;
+    static class Inner { static void run() {} }
+}
+class Consumer extends Base {
+    Service field;
+    void call(Service parameter, Holder holder) {
+        this.field.run();
+        super.inherited.run();
+        parameter.run();
+        holder.service.run();
+        Outer.service.run();
+        Outer.Inner.run();
+        com.weka.users.Outer.Inner.run();
+    }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Consumer.java", Language: "java"}, body)
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	service := assertRichDeclaration(t, facts.Declarations, "class", "com.weka.users.Service", "")
+	inner := assertRichDeclaration(t, facts.Declarations, "class", "com.weka.users.Outer.Inner", "")
+	consumer := assertRichDeclaration(t, facts.Declarations, "class", "com.weka.users.Consumer", "")
+	for _, line := range []int{17, 18, 19, 20, 21} {
+		call := assertJavaReference(t, facts.References, "calls_method_owner", "com.weka.users.Service", line)
+		if call.ToSymbolID != service.ID || call.FromSymbolID != consumer.ID || call.Resolution != SymbolResolutionExact {
+			t.Fatalf("semantic receiver at line %d = %#v, want exact Service from Consumer", line, call)
+		}
+	}
+	for _, line := range []int{22, 23} {
+		call := assertJavaReference(t, facts.References, "calls_method_owner", "com.weka.users.Outer.Inner", line)
+		if call.ToSymbolID != inner.ID || call.Resolution != SymbolResolutionExact {
+			t.Fatalf("nested/static receiver at line %d = %#v, want exact Outer.Inner", line, call)
+		}
+	}
+	for _, reference := range facts.References {
+		if reference.Type == "calls_method_owner" && strings.Contains(reference.TargetQualifiedName, "Outer.service") {
+			t.Fatalf("member access was treated as a nested type: %#v", reference)
+		}
+	}
+}
+
+func TestJavaInlineCommentsCannotCreateHTTPOrCallArguments(t *testing.T) {
+	body := `class Inline {
+    void call() { helper("real" /*, "fake" */); get("/real"); /* get("/block"); helper("block"); */ } // get("/line"); helper("line");
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/Inline.java", Language: "java"}, body)
+	if len(source.Methods) != 1 {
+		t.Fatalf("inline method extraction = %#v, want one method", source.Methods)
+	}
+	method := source.Methods[0]
+	if len(method.HTTPRequests) != 1 || method.HTTPRequests[0].Path != "/real" {
+		t.Fatalf("inline comment HTTP leakage = %#v, want only /real", method.HTTPRequests)
+	}
+	var helperCalls []JavaCallRecord
+	for _, call := range method.Calls {
+		if call.Method == "helper" {
+			helperCalls = append(helperCalls, call)
+		}
+	}
+	if len(helperCalls) != 1 || !reflect.DeepEqual(helperCalls[0].Arguments, []string{`"real"`}) {
+		t.Fatalf("inline comment call leakage = %#v, want helper(\"real\")", helperCalls)
+	}
+}

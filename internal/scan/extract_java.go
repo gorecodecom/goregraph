@@ -11,7 +11,7 @@ var (
 	javaImportLineRE          = regexp.MustCompile(`^\s*import\s+(static\s+)?([^;]+);`)
 	javaTypeLineRE            = regexp.MustCompile(`^\s*(?:public|protected|private|abstract|final|sealed|non-sealed|static|\s)*\s*(class|interface|enum|record)\s+([A-Za-z_][A-Za-z0-9_]*)\b(.*)$`)
 	javaMethodLineRE          = regexp.MustCompile(`^\s*(public|protected|private)?\s*(?:static\s+)?(?:final\s+)?([A-Za-z_][A-Za-z0-9_$<>, ?\[\].]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*(?:throws\s+[^{]+)?\{?\s*$`)
-	javaFieldLineRE           = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*(final\s+)?([A-Za-z_][A-Za-z0-9_$<>, ?\[\].]*)\s+([A-Za-z_][A-Za-z0-9_]*)(\s*(?:\[\s*\])*)\s*(?:=.*)?;\s*$`)
+	javaFieldLineRE           = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*(?:static\s+)?(final\s+)?([A-Za-z_][A-Za-z0-9_$<>, ?\[\].]*)\s+([A-Za-z_][A-Za-z0-9_]*)(\s*(?:\[\s*\])*)\s*(?:=.*)?;\s*$`)
 	javaAnnotationLineRE      = regexp.MustCompile(`^\s*@([A-Za-z_][A-Za-z0-9_.]*)(?:\((.*)\))?\s*$`)
 	javaConstantLineRE        = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*;`)
 	javaCallRE                = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
@@ -32,6 +32,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	source := JavaSourceRecord{File: file.Path, Constants: map[string]string{}}
 	lines := strings.Split(body, "\n")
 	lexicalLines := strings.Split(sanitizeJavaLexical(body), "\n")
+	literalLines := strings.Split(sanitizeJavaComments(body), "\n")
 	var pending []JavaAnnotationRecord
 	currentOwner := ""
 	braceDepth := 0
@@ -53,7 +54,6 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		if lexicalLine == "" {
 			continue
 		}
-		sourceLine := strings.TrimSpace(raw)
 		if typeSignature != "" {
 			typeSignature += " " + lexicalLine
 			if javaDeclarationBodyOpen(typeSignature) >= 0 {
@@ -67,6 +67,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			}
 			braceDepth += strings.Count(lexicalLine, "{")
 			braceDepth -= strings.Count(lexicalLine, "}")
+			typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
 			continue
 		}
 		if annotationSignature != "" {
@@ -91,8 +92,8 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			}
 		}
 		if methodSignature != "" {
-			methodSignature += " " + lexicalLine
-			methodSignatureSource += " " + sourceLine
+			methodSignature += " " + lexicalLines[index]
+			methodSignatureSource += " " + literalLines[index]
 			if javaDeclarationBodyOpen(methodSignature) >= 0 {
 				if method, ok := parseJavaMethodWithSource(methodSignature, methodSignatureSource, file.Path, currentOwner, methodSignatureLine, pending); ok {
 					source.Methods = append(source.Methods, method)
@@ -104,6 +105,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			}
 			braceDepth += strings.Count(lexicalLine, "{")
 			braceDepth -= strings.Count(lexicalLine, "}")
+			typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
 			continue
 		}
 
@@ -153,37 +155,25 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			})
 			pending = nil
 		} else if currentOwner != "" && (looksLikeJavaMethodStart(lexicalLine) || looksLikeJavaGenericMethodPrefix(lexicalLine)) && javaDeclarationBodyOpen(lexicalLine) < 0 {
-			methodSignature = lexicalLine
-			methodSignatureSource = sourceLine
+			methodSignature = lexicalLines[index]
+			methodSignatureSource = literalLines[index]
 			methodSignatureLine = lineNo
-		} else if method, ok := parseJavaMethodWithSource(lexicalLine, sourceLine, file.Path, currentOwner, lineNo, pending); ok && currentOwner != "" {
+		} else if method, ok := parseJavaMethodWithSource(lexicalLines[index], literalLines[index], file.Path, currentOwner, lineNo, pending); ok && currentOwner != "" {
 			source.Methods = append(source.Methods, method)
 			pending = nil
 		} else if len(source.Methods) > 0 {
 			last := &source.Methods[len(source.Methods)-1]
-			last.StringVars = mergeJavaStringVars(last.StringVars, extractJavaStringVars(line))
-			last.Calls = append(last.Calls, extractJavaCallsWithSource(lexicalLine, sourceLine, lineNo)...)
+			last.StringVars = mergeJavaStringVars(last.StringVars, extractJavaStringVars(strings.TrimSpace(literalLines[index])))
+			last.Calls = append(last.Calls, extractJavaCallsWithSource(lexicalLines[index], literalLines[index], lineNo)...)
 			last.Auth = append(last.Auth, extractJavaSecurityAuth(lexicalLine, lineNo, file.Path)...)
-			requests, pending := extractJavaHTTPRequestsWithPending(sourceLine, lineNo, last.StringVars, last.PendingHTTP)
+			requests, pending := extractJavaHTTPRequestsWithPendingSource(lexicalLines[index], literalLines[index], lineNo, last.StringVars, last.PendingHTTP)
 			last.PendingHTTP = pending
 			last.HTTPRequests = append(last.HTTPRequests, requests...)
 		}
 
 		braceDepth += strings.Count(lexicalLine, "{")
 		braceDepth -= strings.Count(lexicalLine, "}")
-		for len(typeStack) > 0 && braceDepth < typeStack[len(typeStack)-1].bodyDepth {
-			scope := typeStack[len(typeStack)-1]
-			source.Types[scope.typeIndex].EndLine = lineNo
-			typeStack = typeStack[:len(typeStack)-1]
-		}
-		if len(typeStack) > 0 {
-			currentOwner = source.Types[typeStack[len(typeStack)-1].typeIndex].Name
-		} else {
-			currentOwner = ""
-		}
-		if braceDepth <= 0 {
-			braceDepth = 0
-		}
+		typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
 	}
 	for len(typeStack) > 0 {
 		scope := typeStack[len(typeStack)-1]
@@ -204,6 +194,22 @@ type javaTypeScope struct {
 
 func javaAtCurrentTypeBody(braceDepth int, stack []javaTypeScope) bool {
 	return len(stack) > 0 && braceDepth == stack[len(stack)-1].bodyDepth
+}
+
+func finalizeJavaTypeScopes(source *JavaSourceRecord, stack []javaTypeScope, braceDepth, line int) ([]javaTypeScope, string, int) {
+	for len(stack) > 0 && braceDepth < stack[len(stack)-1].bodyDepth {
+		scope := stack[len(stack)-1]
+		source.Types[scope.typeIndex].EndLine = line
+		stack = stack[:len(stack)-1]
+	}
+	owner := ""
+	if len(stack) > 0 {
+		owner = source.Types[stack[len(stack)-1].typeIndex].Name
+	}
+	if braceDepth < 0 {
+		braceDepth = 0
+	}
+	return stack, owner, braceDepth
 }
 
 func appendJavaType(source *JavaSourceRecord, signature string, line int, file string, annotations []JavaAnnotationRecord, stack []javaTypeScope) (int, bool) {
@@ -238,6 +244,14 @@ func appendJavaType(source *JavaSourceRecord, signature string, line int, file s
 }
 
 func sanitizeJavaLexical(body string) string {
+	return sanitizeJavaSource(body, false)
+}
+
+func sanitizeJavaComments(body string) string {
+	return sanitizeJavaSource(body, true)
+}
+
+func sanitizeJavaSource(body string, preserveLiterals bool) string {
 	const (
 		javaLexCode = iota
 		javaLexLineComment
@@ -268,15 +282,21 @@ func sanitizeJavaLexical(body string) string {
 				index += 2
 				state = javaLexBlockComment
 			case index+2 < len(result) && result[index] == '"' && result[index+1] == '"' && result[index+2] == '"':
-				result[index], result[index+1], result[index+2] = ' ', ' ', ' '
+				if !preserveLiterals {
+					result[index], result[index+1], result[index+2] = ' ', ' ', ' '
+				}
 				index += 3
 				state = javaLexTextBlock
 			case result[index] == '"':
-				result[index] = ' '
+				if !preserveLiterals {
+					result[index] = ' '
+				}
 				index++
 				state = javaLexString
 			case result[index] == '\'':
-				result[index] = ' '
+				if !preserveLiterals {
+					result[index] = ' '
+				}
 				index++
 				state = javaLexChar
 			default:
@@ -300,23 +320,33 @@ func sanitizeJavaLexical(body string) string {
 				quote = '\''
 			}
 			if result[index] == '\\' && index+1 < len(result) {
-				result[index], result[index+1] = ' ', ' '
+				if !preserveLiterals {
+					result[index], result[index+1] = ' ', ' '
+				}
 				index += 2
 			} else if result[index] == quote {
-				result[index] = ' '
+				if !preserveLiterals {
+					result[index] = ' '
+				}
 				index++
 				state = javaLexCode
 			} else {
-				result[index] = ' '
+				if !preserveLiterals {
+					result[index] = ' '
+				}
 				index++
 			}
 		case javaLexTextBlock:
 			if index+2 < len(result) && result[index] == '"' && result[index+1] == '"' && result[index+2] == '"' {
-				result[index], result[index+1], result[index+2] = ' ', ' ', ' '
+				if !preserveLiterals {
+					result[index], result[index+1], result[index+2] = ' ', ' ', ' '
+				}
 				index += 3
 				state = javaLexCode
 			} else {
-				result[index] = ' '
+				if !preserveLiterals {
+					result[index] = ' '
+				}
 				index++
 			}
 		}
@@ -465,7 +495,7 @@ func parseJavaMethodWithSource(line, sourceLine, file, owner string, lineNo int,
 			Parameters:     parseJavaParameters(params),
 			Annotations:    annotations,
 			Calls:          extractJavaCallsWithSource(line, sourceLine, lineNo),
-			HTTPRequests:   extractJavaHTTPRequestsWithVars(sourceLine, lineNo, nil),
+			HTTPRequests:   extractJavaHTTPRequestsWithSource(line, sourceLine, lineNo, nil),
 			TypeParameters: typeParameters,
 		}, true
 	}
@@ -481,7 +511,7 @@ func parseJavaMethodWithSource(line, sourceLine, file, owner string, lineNo int,
 			Parameters:   parseJavaParameters(match[4]),
 			Annotations:  annotations,
 			Calls:        extractJavaCallsWithSource(line, sourceLine, lineNo),
-			HTTPRequests: extractJavaHTTPRequestsWithVars(sourceLine, lineNo, nil),
+			HTTPRequests: extractJavaHTTPRequestsWithSource(line, sourceLine, lineNo, nil),
 		}, true
 	}
 	return JavaMethodRecord{}, false
@@ -941,33 +971,53 @@ func extractJavaHTTPRequestsWithVars(line string, lineNo int, vars map[string]st
 }
 
 func extractJavaHTTPRequestsWithPending(line string, lineNo int, vars map[string]string, pending string) ([]JavaHTTPCallRecord, string) {
+	return extractJavaHTTPRequestsWithPendingSource(line, line, lineNo, vars, pending)
+}
+
+func extractJavaHTTPRequestsWithSource(scanLine, literalLine string, lineNo int, vars map[string]string) []JavaHTTPCallRecord {
+	requests, _ := extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine, lineNo, vars, "")
+	return requests
+}
+
+func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, lineNo int, vars map[string]string, pending string) ([]JavaHTTPCallRecord, string) {
 	var requests []JavaHTTPCallRecord
-	for _, match := range javaHTTPCallRE.FindAllStringSubmatch(line, -1) {
-		if len(match) == 3 {
-			if path, ok := javaHTTPRequestPath(match[2], vars); ok {
-				requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(match[1]), Path: path, Line: lineNo})
-			}
+	for _, match := range javaHTTPCallRE.FindAllStringSubmatchIndex(literalLine, -1) {
+		if len(match) != 6 || !javaSourceSpanIsStructural(scanLine, literalLine, match[2], match[3]) {
+			continue
+		}
+		if path, ok := javaHTTPRequestPath(literalLine[match[4]:match[5]], vars); ok {
+			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, Line: lineNo})
 		}
 	}
-	for _, match := range javaHTTPBuilderRefRE.FindAllStringSubmatch(line, -1) {
-		if len(match) == 3 {
-			if path, ok := javaHTTPRequestPath(match[2], vars); ok {
-				requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(match[1]), Path: path, Line: lineNo})
-			}
+	for _, match := range javaHTTPBuilderRefRE.FindAllStringSubmatchIndex(literalLine, -1) {
+		if len(match) != 6 || !javaSourceSpanIsStructural(scanLine, literalLine, match[2], match[3]) {
+			continue
+		}
+		if path, ok := javaHTTPRequestPath(literalLine[match[4]:match[5]], vars); ok {
+			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, Line: lineNo})
 		}
 	}
-	if match := javaHTTPChainVerbRE.FindStringSubmatch(line); len(match) == 2 {
-		pending = strings.ToUpper(match[1])
+	if match := javaHTTPChainVerbRE.FindStringSubmatchIndex(literalLine); len(match) == 4 && javaSourceSpanIsStructural(scanLine, literalLine, match[2], match[3]) {
+		pending = strings.ToUpper(literalLine[match[2]:match[3]])
 	}
 	if pending != "" {
-		if match := javaHTTPChainURIRE.FindStringSubmatch(line); len(match) == 2 {
-			if path, ok := javaHTTPRequestPath(match[1], vars); ok {
+		if match := javaHTTPChainURIRE.FindStringSubmatchIndex(literalLine); len(match) == 4 {
+			uriStart := strings.Index(literalLine, ".uri")
+			if uriStart >= 0 && javaSourceSpanIsStructural(scanLine, literalLine, uriStart, uriStart+4) {
+				path, ok := javaHTTPRequestPath(literalLine[match[2]:match[3]], vars)
+				if !ok {
+					return requests, pending
+				}
 				requests = append(requests, JavaHTTPCallRecord{HTTPMethod: pending, Path: path, Line: lineNo})
 				pending = ""
 			}
 		}
 	}
 	return requests, pending
+}
+
+func javaSourceSpanIsStructural(scanLine, literalLine string, start, end int) bool {
+	return start >= 0 && end <= len(scanLine) && end <= len(literalLine) && scanLine[start:end] == literalLine[start:end]
 }
 
 func javaHTTPRequestPath(expression string, vars map[string]string) (string, bool) {
