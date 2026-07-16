@@ -211,6 +211,58 @@ func TestArchitectureBundlesFanEveryRelationshipThroughSharedGeometry(t *testing
 	}
 }
 
+func TestArchitectureSameDomainBundleGeometryChoosesAnAvailableRailSide(t *testing.T) {
+	type geometry struct {
+		Width          float64
+		CardLeft       float64
+		CardRight      float64
+		TrunkX         float64
+		BadgeLeft      float64
+		BadgeRight     float64
+		SourceStartXs  []float64
+		RepeatedTrunkX float64
+	}
+	var result struct {
+		Leftmost  geometry
+		Middle    geometry
+		Rightmost geometry
+	}
+	runArchitectureModel(t, `(()=>{
+		const nodes=[{id:"alpha-a",domain:"alpha"},{id:"alpha-b",domain:"alpha"},{id:"omega-a",domain:"omega"},{id:"omega-b",domain:"omega"}],layout=architectureLayout(nodes,1040),byID=new Map(nodes.map(node=>[node.id,node])),middleNodes=nodes.concat([{id:"middle-a",domain:"middle"},{id:"middle-b",domain:"middle"}]),middleLayout=architectureLayout(middleNodes,1040),middleByID=new Map(middleNodes.map(node=>[node.id,node]));
+		function inspect(layout,byID,edges){
+			const bundle=architectureBundles(edges,byID)[0],geometry=architectureBundleGeometry(bundle,layout,0),repeated=architectureBundleGeometry(bundle,layout,0),card=layout.positions.get(edges[0].from),label=bundle.total+" call"+(bundle.total===1?"":"s"),badgeHalfWidth=Math.max(58,label.length*7+18)/2;
+			return {Width:layout.width,CardLeft:card.x,CardRight:card.x+card.w,TrunkX:Number(geometry.trunkPath.slice(1).split(" ")[0]),BadgeLeft:geometry.badge.x-badgeHalfWidth,BadgeRight:geometry.badge.x+badgeHalfWidth,SourceStartXs:geometry.branches.map(branch=>Number(branch.sourcePath.slice(1).split(" ")[0])),RepeatedTrunkX:Number(repeated.trunkPath.slice(1).split(" ")[0])};
+		}
+		return {Leftmost:inspect(layout,byID,[{id:"alpha-edge",from:"alpha-a",to:"alpha-b",total:2}]),Middle:inspect(middleLayout,middleByID,[{id:"middle-edge",from:"middle-a",to:"middle-b",total:2}]),Rightmost:inspect(layout,byID,[{id:"omega-edge-a",from:"omega-a",to:"omega-b",total:2},{id:"omega-edge-b",from:"omega-b",to:"omega-a",total:1}])};
+	})()`, &result)
+	const trunkHalfStroke = 1.2
+	for name, geometry := range map[string]geometry{"leftmost": result.Leftmost, "middle": result.Middle, "rightmost": result.Rightmost} {
+		if geometry.TrunkX-trunkHalfStroke < 0 || geometry.TrunkX+trunkHalfStroke > geometry.Width {
+			t.Fatalf("%s trunk x = %.2f exceeds layout width %.2f with stroke", name, geometry.TrunkX, geometry.Width)
+		}
+		if geometry.BadgeLeft < 0 || geometry.BadgeRight > geometry.Width {
+			t.Fatalf("%s badge bounds = [%.2f, %.2f], want within [0, %.2f]", name, geometry.BadgeLeft, geometry.BadgeRight, geometry.Width)
+		}
+		if geometry.TrunkX != geometry.RepeatedTrunkX {
+			t.Fatalf("%s trunk changed across repeated geometry: %.2f != %.2f", name, geometry.TrunkX, geometry.RepeatedTrunkX)
+		}
+	}
+	if result.Leftmost.TrunkX <= result.Leftmost.CardRight {
+		t.Fatalf("leftmost rail x = %.2f, want right of card edge %.2f", result.Leftmost.TrunkX, result.Leftmost.CardRight)
+	}
+	if result.Middle.TrunkX <= result.Middle.CardRight {
+		t.Fatalf("middle rail x = %.2f, want right of card edge %.2f", result.Middle.TrunkX, result.Middle.CardRight)
+	}
+	if result.Rightmost.TrunkX >= result.Rightmost.CardLeft {
+		t.Fatalf("rightmost rail x = %.2f, want left of card edge %.2f", result.Rightmost.TrunkX, result.Rightmost.CardLeft)
+	}
+	for _, sourceX := range result.Rightmost.SourceStartXs {
+		if sourceX != result.Rightmost.CardLeft {
+			t.Fatalf("rightmost source branch starts at %.2f, want left card edge %.2f", sourceX, result.Rightmost.CardLeft)
+		}
+	}
+}
+
 func TestArchitectureDeferredAutoFitRestoresOriginalMatrixViewport(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
