@@ -1885,7 +1885,7 @@ func TestDashboardArchitectureCompactGeometryIsWiredToProduction(t *testing.T) {
 func TestDashboardArchitectureRenderedGeometryAtRequiredViewports(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
-		denseArchitectureFixture(),
+		architectureGeometryStressFixture(),
 		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
 		nil,
 		nil,
@@ -1934,17 +1934,43 @@ func TestDashboardArchitectureRenderedGeometryAtRequiredViewports(t *testing.T) 
 				}
 			}
 		}
-	}
-
-	for _, wide := range geometries {
-		if wide.Viewport == 1920 && wide.Scenario == "unselected" {
-			if wide.Headers[0].Top != 12 || wide.Headers[1].Top != 12 || wide.Headers[2].Top != 12 || wide.Headers[3].Top != 96 {
-				t.Fatalf("1920px Architecture header layout changed unexpectedly: %#v", wide)
+		if geometry.Viewport == 1920 && geometry.Scenario == "selected" {
+			focus, domainTop := geometry.Headers[3], geometry.Main.Bottom
+			for _, content := range geometry.Content {
+				if strings.HasPrefix(content.Name, "domain-header-") && content.Top < domainTop {
+					domainTop = content.Top
+				}
 			}
-			return
+			if focus.Top != 96 || focus.Bottom != 166 {
+				t.Fatalf("1920px selected focus bounds = %#v, want top 96 and bottom 166", focus)
+			}
+			if domainTop <= focus.Bottom {
+				t.Fatalf("1920px selected domain titles start at %.2f, want below focus bottom %.2f", domainTop, focus.Bottom)
+			}
 		}
 	}
-	t.Fatal("1920px unselected Architecture geometry was not measured")
+
+	var wideUnselected, wideSelected *dashboardHeaderGeometry
+	for index := range geometries {
+		geometry := &geometries[index]
+		if geometry.Viewport != 1920 {
+			continue
+		}
+		if geometry.Scenario == "unselected" {
+			wideUnselected = geometry
+		} else if geometry.Scenario == "selected" {
+			wideSelected = geometry
+		}
+	}
+	if wideUnselected == nil || wideSelected == nil {
+		t.Fatal("1920px selected and unselected Architecture geometry was not measured")
+	}
+	if wideUnselected.Headers[0].Top != 12 || wideUnselected.Headers[1].Top != 12 || wideUnselected.Headers[2].Top != 12 || wideUnselected.Headers[3].Top != 96 {
+		t.Fatalf("1920px Architecture header layout changed unexpectedly: %#v", wideUnselected)
+	}
+	if wideUnselected.Transform != "translate(0 0) scale(1)" || wideSelected.Transform != wideUnselected.Transform || wideSelected.ViewBox != wideUnselected.ViewBox {
+		t.Fatalf("1920px selected layout changed graph coordinates or zoom: unselected=%#v selected=%#v", wideUnselected, wideSelected)
+	}
 }
 
 type dashboardHeaderRect struct {
@@ -1966,6 +1992,8 @@ type dashboardHeaderGeometry struct {
 	Headers     []dashboardHeaderRect `json:"headers"`
 	Content     []dashboardHeaderRect `json:"content"`
 	ScrollWidth float64               `json:"scrollWidth"`
+	Transform   string                `json:"transform"`
+	ViewBox     string                `json:"viewBox"`
 }
 
 func renderedDashboardHeaderGeometries(t *testing.T, html string) []dashboardHeaderGeometry {
@@ -1986,7 +2014,7 @@ func renderedDashboardHeaderGeometries(t *testing.T, html string) []dashboardHea
 		`const html=` + string(encodedHTML) + `;`,
 		`const headerSelectors=[["presentation",'[aria-label="Architecture presentation"]'],["legend",'[aria-label="Architecture map legend"]'],["tools",".canvas-tools"],["focus",'[aria-label="Architecture focus"]']];`,
 		`const contentSelectors=[["domain-header","#architecture-lane-layer .domain-title"],["service-card","#architecture-node-layer .service-node"],["relationship-badge","#architecture-label-layer .bundle-count, #architecture-label-layer .architecture-call-pill"]];`,
-		`(async()=>{const browser=await chromium.launch({headless:true}),geometries=[];try{for(const viewport of [{width:1280,height:720},{width:1440,height:900},{width:1920,height:1080}]){const page=await browser.newPage({viewport:viewport});await page.setContent(html,{waitUntil:"load"});await page.waitForFunction(()=>document.querySelectorAll("#architecture-node-layer .service-node").length>0);const measure=async scenario=>geometries.push(await page.evaluate(({headerSelectors,contentSelectors,scenario})=>{const rect=(name,element)=>{const value=element.getBoundingClientRect();return {name:name,left:value.left,right:value.right,top:value.top,bottom:value.bottom};},one=(name,selector)=>rect(name,document.querySelector(selector)),many=(name,selector)=>Array.from(document.querySelectorAll(selector)).map((element,index)=>rect(name+"-"+index,element));return {viewport:innerWidth,scenario:scenario,main:one("main","main"),headers:headerSelectors.map(item=>one(item[0],item[1])),content:contentSelectors.flatMap(item=>many(item[0],item[1])),scrollWidth:document.documentElement.scrollWidth};},{headerSelectors,contentSelectors,scenario}));await measure("unselected");await page.evaluate(()=>document.querySelector("#architecture-node-layer .service-node").dispatchEvent(new MouseEvent("click",{bubbles:true})));await page.waitForFunction(()=>!document.getElementById("architecture-relationship-summary").hidden);await measure("selected");await page.close();}}finally{await browser.close();}process.stdout.write(JSON.stringify(geometries));})().catch(error=>{console.error(error);process.exit(1);});`,
+		`(async()=>{const browser=await chromium.launch({headless:true}),geometries=[];try{for(const viewport of [{width:1280,height:720},{width:1440,height:900},{width:1920,height:1080}]){const page=await browser.newPage({viewport:viewport});await page.setContent(html,{waitUntil:"load"});await page.waitForFunction(()=>document.querySelectorAll("#architecture-node-layer .service-node").length>0);const measure=async scenario=>geometries.push(await page.evaluate(({headerSelectors,contentSelectors,scenario})=>{const rect=(name,element)=>{const value=element.getBoundingClientRect();return {name:name,left:value.left,right:value.right,top:value.top,bottom:value.bottom};},one=(name,selector)=>rect(name,document.querySelector(selector)),many=(name,selector)=>Array.from(document.querySelectorAll(selector)).map((element,index)=>rect(name+"-"+index,element)),svg=document.getElementById("workspace-graph");return {viewport:innerWidth,scenario:scenario,main:one("main","main"),headers:headerSelectors.map(item=>one(item[0],item[1])),content:contentSelectors.flatMap(item=>many(item[0],item[1])),scrollWidth:document.documentElement.scrollWidth,transform:document.getElementById("graph-layer").getAttribute("transform"),viewBox:svg.getAttribute("viewBox")};},{headerSelectors,contentSelectors,scenario}));await measure("unselected");await page.evaluate(()=>{const id=serviceNodes[0].id;state.selected=id;state.selections.architecture=id;state.pendingArchitectureServiceFit=null;renderList();renderCanvas();});await page.waitForFunction(()=>!document.getElementById("architecture-relationship-summary").hidden);await measure("selected");await page.close();}}finally{await browser.close();}process.stdout.write(JSON.stringify(geometries));})().catch(error=>{console.error(error);process.exit(1);});`,
 	}, "\n")
 	output, err := exec.Command(node, "-e", source).CombinedOutput()
 	if err != nil {

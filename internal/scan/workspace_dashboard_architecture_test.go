@@ -29,6 +29,21 @@ func denseArchitectureFixture() WorkspaceServiceMapRecord {
 	return WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, Nodes: nodes, Edges: edges}
 }
 
+func architectureGeometryStressFixture() WorkspaceServiceMapRecord {
+	nodes := make([]WorkspaceServiceNodeRecord, 0, 6*13)
+	for domainIndex := range 6 {
+		domain := "d" + formatDashboardFixtureIndex(domainIndex)
+		for nodeIndex := range 13 {
+			id := "service:geometry-" + formatDashboardFixtureIndex(domainIndex) + "-" + formatDashboardFixtureIndex(nodeIndex)
+			nodes = append(nodes, WorkspaceServiceNodeRecord{ID: id, Label: id, Project: id, Domain: domain})
+		}
+	}
+	edges := []WorkspaceServiceEdgeRecord{{
+		ID: "edge:geometry", From: nodes[0].ID, To: nodes[13].ID, Total: 1, Resolved: 1,
+	}}
+	return WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, Nodes: nodes, Edges: edges}
+}
+
 func TestWorkspaceDashboardCoversArchitectureMapIssue23Acceptance(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, denseArchitectureFixture(), WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil)
 	for _, want := range []string{
@@ -363,11 +378,12 @@ func TestArchitectureCanvasGeometryInsetsCompactContentBelowStackedControls(t *t
 		ContentInset    int
 	}
 	var result struct {
-		Compact1280 geometry
-		Compact1440 geometry
-		Wide1920    geometry
-		FirstCardY  int
-		LaneTop     int
+		Compact1280  geometry
+		Compact1440  geometry
+		Wide1920     geometry
+		WideSelected geometry
+		FirstCardY   int
+		LaneTop      int
 	}
 	runArchitectureModel(t, `(()=>{
 		const nodes=[{id:"web",domain:"experience"},{id:"orders",domain:"commerce"}];
@@ -376,6 +392,7 @@ func TestArchitectureCanvasGeometryInsetsCompactContentBelowStackedControls(t *t
 			Compact1280:architectureCanvasGeometry(580,84),
 			Compact1440:architectureCanvasGeometry(740,84),
 			Wide1920:architectureCanvasGeometry(1220,46),
+			WideSelected:architectureCanvasGeometry(1220,70),
 			FirstCardY:layout.positions.get("orders").y,
 			LaneTop:layout.laneTop
 		};
@@ -393,6 +410,9 @@ func TestArchitectureCanvasGeometryInsetsCompactContentBelowStackedControls(t *t
 	}
 	if result.Wide1920.Compact || result.Wide1920.PresentationTop != 12 || result.Wide1920.LegendTop != 12 || result.Wide1920.ToolsTop != 12 || result.Wide1920.FocusTop != 96 || result.Wide1920.ContentInset != 0 {
 		t.Fatalf("1920px geometry changed unexpectedly: %#v", result.Wide1920)
+	}
+	if result.WideSelected.Compact || result.WideSelected.FocusBottom != 166 || result.WideSelected.ContentInset != 40 {
+		t.Fatalf("1920px selected geometry does not clear the expanded focus panel: %#v", result.WideSelected)
 	}
 	if result.FirstCardY != 190 || result.LaneTop != 118 {
 		t.Fatalf("wide Architecture coordinates changed: first card y=%d lane top=%d", result.FirstCardY, result.LaneTop)

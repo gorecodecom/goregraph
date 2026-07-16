@@ -16,8 +16,8 @@ function architectureDomains(nodes){
   return Array.from(groups.entries()).map(function(entry){const id=entry[0],domainNodes=entry[1].slice().sort(function(a,b){return architectureStringCompare(a.label||a.project||a.id,b.label||b.project||b.id)||architectureStringCompare(a.id,b.id);});return {id:id,label:architectureDomainLabel(id),color:architectureDomainColor(id),nodes:domainNodes};}).sort(function(a,b){return architectureStringCompare(a.label,b.label)||architectureStringCompare(a.id,b.id);});
 }
 function architectureCanvasGeometry(width,focusHeight){
-  const compact=(width||0)<=1000,presentationTop=12,legendTop=compact?56:12,toolsTop=compact?100:12,focusTop=compact?144:96,resolvedFocusHeight=Math.max(44,focusHeight||0),focusBottom=focusTop+resolvedFocusHeight;
-  return {compact:compact,presentationTop:presentationTop,legendTop:legendTop,toolsTop:toolsTop,focusTop:focusTop,focusBottom:focusBottom,contentInset:compact?focusBottom+24:0};
+  const compact=(width||0)<=1000,presentationTop=12,legendTop=compact?56:12,toolsTop=compact?100:12,focusTop=compact?144:96,resolvedFocusHeight=Math.max(44,focusHeight||0),focusBottom=focusTop+resolvedFocusHeight,wideFocusHeight=46,wideTitleClearance=16,wideContentInset=resolvedFocusHeight>wideFocusHeight?resolvedFocusHeight-wideFocusHeight+wideTitleClearance:0;
+  return {compact:compact,presentationTop:presentationTop,legendTop:legendTop,toolsTop:toolsTop,focusTop:focusTop,focusBottom:focusBottom,contentInset:compact?focusBottom+24:wideContentInset};
 }
 function architectureLayout(nodes,width){
   const domains=architectureDomains(nodes),layoutWidth=Math.max(width||0,Math.max(1040,domains.length*300+84)),margin=42,cardWidth=224,cardHeight=74,laneTop=118;
