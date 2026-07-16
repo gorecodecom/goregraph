@@ -703,47 +703,51 @@ func scriptArrowScopeShadows(masked, name string, usageOffset int) bool {
 
 func scriptArrowParameterRange(masked string, arrow int) (int, int, bool) {
 	end := arrow
-	for end > 0 && (masked[end-1] == ' ' || masked[end-1] == '\t') {
+	for end > 0 && isScriptWhitespace(masked[end-1]) {
 		end--
 	}
 	if end == 0 {
 		return 0, 0, false
 	}
-	close := end - 1
-	if masked[close] != ')' {
-		typeStart := close
-		for typeStart >= 0 && isScriptIdentifierByte(masked[typeStart]) {
-			typeStart--
+	for close := end - 1; close >= 0; close-- {
+		if masked[close] != ')' {
+			continue
 		}
-		beforeType := typeStart
-		for beforeType >= 0 && (masked[beforeType] == ' ' || masked[beforeType] == '\t') {
-			beforeType--
+		open := matchingScriptDelimiterBackward(masked, close, '(', ')')
+		if open < 0 {
+			continue
 		}
-		if beforeType < 0 || masked[beforeType] != ':' {
-			return typeStart + 1, end, typeStart+1 < end
+		annotation := strings.TrimSpace(masked[close+1 : end])
+		if annotation != "" && !strings.HasPrefix(annotation, ":") {
+			close = open
+			continue
 		}
-		close = beforeType - 1
-		for close >= 0 && (masked[close] == ' ' || masked[close] == '\t') {
-			close--
+		if isScriptArrowParameterOpen(masked, open) && isPlausibleScriptParameterList(masked[open+1:close]) {
+			return open + 1, close, true
 		}
-		if close < 0 || masked[close] != ')' {
-			return 0, 0, false
-		}
+		close = open
 	}
-	open := matchingScriptDelimiterBackward(masked, close, '(', ')')
-	if open < 0 || !isScriptArrowParameterOpen(masked, open) || !isPlausibleScriptParameterList(masked[open+1:close]) {
-		return 0, 0, false
+	start := end - 1
+	for start >= 0 && isScriptIdentifierByte(masked[start]) {
+		start--
 	}
-	return open + 1, close, true
+	return start + 1, end, start+1 < end
 }
 
 func isScriptArrowParameterOpen(masked string, open int) bool {
 	previous := open - 1
-	for previous >= 0 && (masked[previous] == ' ' || masked[previous] == '\t' || masked[previous] == '\r' || masked[previous] == '\n') {
+	for previous >= 0 && isScriptWhitespace(masked[previous]) {
 		previous--
 	}
 	if previous < 0 {
 		return true
+	}
+	if isScriptIdentifierByte(masked[previous]) {
+		end := previous + 1
+		for previous >= 0 && isScriptIdentifierByte(masked[previous]) {
+			previous--
+		}
+		return masked[previous+1:end] == "async"
 	}
 	return !isScriptIdentifierByte(masked[previous]) &&
 		masked[previous] != '.' &&
@@ -781,27 +785,23 @@ func isPlausibleScriptParameterList(params string) bool {
 
 func scriptVariableScopeShadows(masked, name string, usageOffset int) bool {
 	for _, location := range scriptVariableBindingRE.FindAllStringIndex(masked, -1) {
-		patternStart := nextScriptNonSpace(masked, location[1])
-		if patternStart >= len(masked) {
+		statementStart := nextScriptNonSpace(masked, location[1])
+		statementEnd := scriptVariableStatementEnd(masked, statementStart)
+		if statementStart >= statementEnd {
 			continue
 		}
-		patternEnd := patternStart
-		switch masked[patternStart] {
-		case '{':
-			patternEnd = matchingScriptDelimiter(masked, patternStart, '{', '}')
-		case '[':
-			patternEnd = matchingScriptDelimiter(masked, patternStart, '[', ']')
-		default:
-			for patternEnd < len(masked) && isScriptIdentifierByte(masked[patternEnd]) {
-				patternEnd++
+		bindsName := false
+		for _, declarator := range splitScriptTopLevel(masked[statementStart:statementEnd], ',') {
+			pattern := declarator
+			if equals := findScriptTopLevel(pattern, '='); equals >= 0 {
+				pattern = pattern[:equals]
 			}
-			patternEnd--
+			if scriptBindingPatternNames(pattern)[name] {
+				bindsName = true
+				break
+			}
 		}
-		if patternEnd < patternStart {
-			continue
-		}
-		names := scriptBindingPatternNames(masked[patternStart : patternEnd+1])
-		if !names[name] {
+		if !bindsName {
 			continue
 		}
 		start, end := scriptContainingScope(masked, location[0])
@@ -810,6 +810,37 @@ func scriptVariableScopeShadows(masked, name string, usageOffset int) bool {
 		}
 	}
 	return false
+}
+
+func scriptVariableStatementEnd(masked string, start int) int {
+	round, square, curly := 0, 0, 0
+	for index := start; index < len(masked); index++ {
+		switch masked[index] {
+		case '(':
+			round++
+		case ')':
+			if round > 0 {
+				round--
+			}
+		case '[':
+			square++
+		case ']':
+			if square > 0 {
+				square--
+			}
+		case '{':
+			curly++
+		case '}':
+			if curly > 0 {
+				curly--
+			}
+		case ';', '\n':
+			if round == 0 && square == 0 && curly == 0 {
+				return index
+			}
+		}
+	}
+	return len(masked)
 }
 
 func scriptBindingPatternNames(pattern string) map[string]bool {
@@ -933,8 +964,12 @@ func isScriptIdentifierByte(value byte) bool {
 		value == '_' || value == '$'
 }
 
+func isScriptWhitespace(value byte) bool {
+	return value == ' ' || value == '\t' || value == '\r' || value == '\n'
+}
+
 func nextScriptNonSpace(masked string, start int) int {
-	for start < len(masked) && (masked[start] == ' ' || masked[start] == '\t' || masked[start] == '\r' || masked[start] == '\n') {
+	for start < len(masked) && isScriptWhitespace(masked[start]) {
 		start++
 	}
 	return start
@@ -1246,11 +1281,21 @@ func isScriptStatementBlockClose(masked []byte, close int) bool {
 		return false
 	}
 	previous := open - 1
-	for previous >= 0 && (masked[previous] == ' ' || masked[previous] == '\t') {
+	for previous >= 0 && isScriptWhitespace(masked[previous]) {
 		previous--
 	}
 	if previous < 0 || masked[previous] == ';' || masked[previous] == '}' {
 		return true
+	}
+	if isScriptIdentifierByte(masked[previous]) {
+		end := previous + 1
+		for previous >= 0 && isScriptIdentifierByte(masked[previous]) {
+			previous--
+		}
+		switch string(masked[previous+1 : end]) {
+		case "else", "finally":
+			return true
+		}
 	}
 	if masked[previous] == ')' {
 		paramsOpen := matchingScriptDelimiterBackward(string(masked), previous, '(', ')')

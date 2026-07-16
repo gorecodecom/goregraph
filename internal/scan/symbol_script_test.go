@@ -158,6 +158,35 @@ const identifierDivision = total / loadUser() / divisor;
 	}
 }
 
+func TestExtractScriptMasksRegexAfterElseAndFinallyBlocks(t *testing.T) {
+	body := `
+import { loadUser } from "./api";
+if (ready) {
+  work();
+} else
+{
+}
+/; export class ElseRegexFake {} loadUser()/.test(value);
+try {
+  work();
+} finally
+  {
+  }
+/; export class FinallyRegexFake {} loadUser()/.test(value);
+const objectDivision = { finally: true } / loadUser() / divisor;
+`
+	facts := ExtractScriptSymbolFacts(FileRecord{Path: "src/real.ts", Language: "typescript"}, body)
+	for _, declaration := range facts.Declarations {
+		if declaration.Name == "ElseRegexFake" || declaration.Name == "FinallyRegexFake" {
+			t.Fatalf("else/finally regex created declaration: %#v", declaration)
+		}
+	}
+	references := scriptReferences(t, facts.References, "calls_export", "./api", "loadUser")
+	if len(references) != 1 || references[0].Line != 15 {
+		t.Fatalf("else/finally regex or object division extraction = %#v, want only line-15 division call", references)
+	}
+}
+
 func TestScriptReturnTypesRequireFunctionLikeSignature(t *testing.T) {
 	file := FileRecord{Path: "src/types.ts", Language: "typescript"}
 	facts := ExtractScriptSymbolFacts(file, `
@@ -932,6 +961,25 @@ const invoke = (loadUser): void => loadUser();
 	}
 }
 
+func TestScriptAsyncComplexTypedArrowPreservesParameterShadow(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { loadUser } from "./api";
+const invoke = async <T>(loadUser): Promise<Result<T[]> | ((value: T) => void)> => loadUser();
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function loadUser() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 3)
+	if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
+		t.Fatalf("async complex typed arrow did not shadow imported call: %#v", reference)
+	}
+}
+
 func TestScriptDestructuredLocalBindingsShadowImports(t *testing.T) {
 	files := []FileRecord{
 		{Path: "src/App.ts", Language: "typescript"},
@@ -973,6 +1021,28 @@ export function PropertyKeyOnly(source) {
 	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 21)
 	if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
 		t.Fatalf("object property key incorrectly shadowed imported call: %#v", reference)
+	}
+}
+
+func TestScriptLaterCommaSeparatedDeclaratorsShadowImports(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { loadUser } from "./api";
+export function Multiple(source) {
+  const first = build({ values: [1, 2], label: "," }), { nested: [ignored, ...loadUser] = [] } = source;
+  loadUser();
+}
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function loadUser() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 5)
+	if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
+		t.Fatalf("later destructured declarator did not shadow imported call: %#v", reference)
 	}
 }
 
