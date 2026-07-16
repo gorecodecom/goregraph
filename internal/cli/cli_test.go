@@ -21,6 +21,48 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestWorkspaceHelpExplainsFlatWorkspaceDetection(t *testing.T) {
+	for _, args := range [][]string{
+		{"help"},
+		{"workspace", "help"},
+		{"workspace", "scan-all", "help"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, want 0; stderr=%s", args, code, stderr.String())
+		}
+		for _, want := range []string{".goregraph-workspace.yml", "--workspace"} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("%v help output missing %q:\n%s", args, want, stdout.String())
+			}
+		}
+	}
+}
+
+func TestWorkspaceScanAllExplainsHowToUseFlatProjectLayout(t *testing.T) {
+	root := t.TempDir()
+	for _, project := range []string{"service-a", "service-b", "service-common"} {
+		writeFile(t, root, filepath.Join(project, "pom.xml"), "<project></project>\n")
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "scan-all", root, "--dry-run"}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1; stdout=%s; stderr=%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		"no GoreGraph workspace detected",
+		"flat project layout",
+		"--workspace",
+		".goregraph-workspace.yml",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("workspace detection error missing %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
 func TestRunScanWritesOutputAndUpdatesGitignore(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "README.md", "# Demo\n")

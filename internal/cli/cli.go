@@ -564,7 +564,15 @@ func runWorkspaceScanAll(args []string, stdout, stderr io.Writer) int {
 			i++
 			overrides.WorkspaceRoot = args[i]
 		case "--help", "help":
-			fmt.Fprint(stdout, "Usage: goregraph workspace scan-all [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]\n\nScans every discovered project in the detected workspace and refreshes workspace overlays after each scan.\n")
+			fmt.Fprint(stdout, `Usage: goregraph workspace scan-all [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]
+
+Scans every discovered project in the detected workspace and refreshes workspace overlays after each scan.
+
+Workspace detection:
+  GoreGraph detects common frontend/services group layouts and workspace output.
+  For a flat directory of projects, use --workspace <path> or add
+  .goregraph-workspace.yml to the workspace root.
+`)
 			return 0
 		default:
 			if strings.HasPrefix(arg, "-") {
@@ -587,6 +595,9 @@ func runWorkspaceScanAll(args []string, stdout, stderr io.Writer) int {
 	plan, err := scan.WorkspaceProjectScanPlan(root, loaded)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: workspace scan-all failed: %v\n", err)
+		if err.Error() == "no GoreGraph workspace detected" {
+			fmt.Fprint(stderr, "hint: a flat project layout is not auto-detected; rerun with --workspace <workspace-root> (for the current directory: --workspace .) or add .goregraph-workspace.yml to the workspace root\n")
+		}
 		return 1
 	}
 	printWorkspaceScanAllPlan(stdout, plan, dryRun)
@@ -1023,6 +1034,10 @@ Examples:
   goregraph workspace impact --changed-file src/api/users.ts
   goregraph mcp
   goregraph version
+
+Workspace detection:
+  For a flat directory of projects, pass --workspace <path> to workspace
+  commands or add .goregraph-workspace.yml to the workspace root.
 `)
 }
 
@@ -1054,6 +1069,11 @@ Examples:
   goregraph workspace explain "GET /users/{userId}"
   goregraph workspace path --from frontend/app --to UserController.get
   goregraph workspace impact --changed-file frontend/app/src/api/users.ts
+
+Workspace detection:
+  Common frontend/services group layouts are detected automatically.
+  For a flat directory of projects, use --workspace <path> or add
+  .goregraph-workspace.yml to the workspace root.
 `)
 }
 

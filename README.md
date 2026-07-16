@@ -345,6 +345,21 @@ Scan every discovered project in the workspace:
 goregraph workspace scan-all .
 ```
 
+GoreGraph automatically recognizes existing `.goregraph-workspace/` output and
+common group layouts such as `frontend/`, `microservices/`, `services/`, and
+`backends/`. A flat directory containing sibling projects needs an explicit
+workspace root on its first scan:
+
+```bash
+goregraph workspace scan-all . --workspace .
+```
+
+Alternatively, add an empty `.goregraph-workspace.yml` file to the workspace
+root as a permanent detection marker. The generated `.goregraph-workspace/`
+directory also enables automatic detection, but
+`goregraph workspace clean . --execute` removes that generated directory. It does not remove
+`.goregraph-workspace.yml`.
+
 For acceptance of a new GoreGraph binary, rebuild the workspace from clean
 generated output instead of refreshing older indexes:
 
@@ -506,6 +521,9 @@ goregraph workspace scan-all <path>
 ```
 
 Scan every discovered project in the detected workspace and refresh workspace overlays after each scan. Use `--dry-run` to print the plan without scanning.
+For a flat directory of sibling projects, pass `--workspace <path>` or add
+`.goregraph-workspace.yml` to the workspace root so detection still works after
+generated workspace output is cleaned.
 
 ```bash
 goregraph workspace refresh <path>

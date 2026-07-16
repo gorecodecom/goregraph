@@ -889,6 +889,13 @@ Important behavior:
 - does not write files
 - uses the same auto-detection as `goregraph scan`
 
+Workspace roots are automatically recognized from existing
+`.goregraph-workspace/` output, a `.goregraph-workspace.yml` marker, or common
+group directories such as `frontend/`, `microservices/`, `services/`, and
+`backends/`. A flat directory containing sibling projects is not inferred from
+the project markers alone; pass `--workspace <path>` or add an empty
+`.goregraph-workspace.yml` file to that directory.
+
 ## `goregraph workspace git update [path]`
 
 Previews or executes safe Git updates for every project discovered in the
@@ -998,6 +1005,17 @@ Options:
 - `--dry-run`: show the scan plan without scanning or writing files.
 - `--workspace <path>`: force the workspace root used for discovery.
 - `--no-update-gitignore`: skip generated-output `.gitignore` updates while scanning.
+
+For a flat workspace, the first scan can be run as:
+
+```bash
+goregraph workspace scan-all . --workspace .
+```
+
+The generated `.goregraph-workspace/` directory makes later automatic detection
+possible until `workspace clean --execute` removes it. A
+`.goregraph-workspace.yml` marker is permanent and is not removed by
+`workspace clean`.
 
 ## `goregraph workspace clean [path]`
 
