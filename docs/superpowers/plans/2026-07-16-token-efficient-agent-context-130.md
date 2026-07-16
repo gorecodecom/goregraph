@@ -648,8 +648,6 @@ git commit -m "Separate agent and dashboard outputs" -m "- Add target-aware proj
 **Files:**
 - Create: `internal/scan/agent_context_index.go`
 - Create: `internal/scan/agent_context_index_test.go`
-- Modify: `internal/scan/scan.go`
-- Modify: `release_files_test.go`
 
 **Interfaces:**
 - Consumes: existing `RichSymbolRecord`, `RichRelationRecord`, `CodeRouteRecord`, `CodeFlowRecord`, `TestMapRecord`, `APIContractRecord`, `EvidenceRecord`, and `CapabilityRecord`.
@@ -709,11 +707,6 @@ func TestBuildProjectAgentContextIndexIsCompactAndDeterministic(t *testing.T) {
 	}
 }
 
-func TestContextIndexOutputIsPartOfReleaseContract(t *testing.T) {
-	if !slices.Contains(AgentGeneratedFiles, "context-index.json") {
-		t.Fatal("agent/context-index.json is not registered as agent output")
-	}
-}
 ```
 
 Use the repository's existing JSON comparison helper pattern; if no shared helper exists, define this test-local helper:
@@ -734,7 +727,7 @@ func cmpJSON(left, right any) string {
 Run:
 
 ```bash
-env GOCACHE=/private/tmp/goregraph-gocache-context go test ./internal/scan . -run 'TestBuildProjectAgentContextIndexIsCompactAndDeterministic|TestContextIndexOutputIsPartOfReleaseContract' -count=1
+env GOCACHE=/private/tmp/goregraph-gocache-context go test ./internal/scan -run 'TestBuildProjectAgentContextIndex' -count=1
 ```
 
 Expected: compilation failure because the context index records and builder do not exist.
@@ -771,7 +764,7 @@ Rules:
 9. Stable IDs use the existing `stableID` helper with every identity field.
 10. Sort facts by `Project`, `Kind`, `Qualified`, `Name`, `File`, `Line`, then `ID`. Sort edges by `FromLabel`, `ToLabel`, `Kind`, `File`, `Line`, then `ID`.
 
-Add `"context-index.json"` to `AgentGeneratedFiles` and the release-file assertions. Do not add it to the shared `index/` or dashboard contracts.
+Do not register or write `context-index.json` in this task. Task 3 registers it in `AgentGeneratedFiles` at the same time the project/workspace writers are added, so no intermediate manifest can claim a missing file.
 
 - [ ] **Step 4: Run focused tests and verify GREEN**
 
@@ -782,10 +775,10 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/scan/agent_context_index.go internal/scan/agent_context_index_test.go internal/scan/scan.go release_files_test.go
+git add internal/scan/agent_context_index.go internal/scan/agent_context_index_test.go
 git commit -m "Add compact agent context index contract" -m "- Define deterministic navigation facts and relationships
-- Register agent/context-index.json in the Schema 3 agent projection
-- Cover compact search terms and stable ordering"
+- Cover compact search terms, filtering, and stable ordering
+- Defer file registration until the Task 3 writers exist"
 ```
 
 ---
@@ -799,6 +792,7 @@ git commit -m "Add compact agent context index contract" -m "- Define determinis
 - Modify: `internal/scan/workspace_reconcile_test.go`
 - Modify: `internal/doctor/doctor.go`
 - Create: `internal/doctor/context_index_test.go`
+- Modify: `release_files_test.go`
 
 **Interfaces:**
 - Consumes: `BuildProjectAgentContextIndex` from Task 2 and existing workspace registry, contract matches, feature dossiers, and endpoint traces.
@@ -864,13 +858,23 @@ func TestWorkspaceReconciliationMergesProjectAndCrossProjectContext(t *testing.T
 
 Add Doctor assertions that malformed JSON, duplicate fact IDs, and dangling `FromFactID`/`ToFactID` fail.
 
+Add the release contract assertion:
+
+```go
+func TestContextIndexOutputIsPartOfReleaseContract(t *testing.T) {
+	if !slices.Contains(scan.AgentGeneratedFiles, "context-index.json") {
+		t.Fatal("agent/context-index.json is not registered as agent output")
+	}
+}
+```
+
 - [ ] **Step 2: Run the focused tests and observe RED**
 
 ```bash
 env GOCACHE=/private/tmp/goregraph-gocache-context go test ./internal/scan ./internal/doctor -run 'TestScanWritesCompactAgentContextIndex|TestWorkspaceReconciliationMergesProjectAndCrossProjectContext|TestDoctor.*ContextIndex' -count=1
 ```
 
-Expected: FAIL because scans and reconciliation do not write the index.
+Expected: FAIL because scans and reconciliation do not write or register the index.
 
 - [ ] **Step 3: Write the project index during scanning**
 
@@ -898,6 +902,8 @@ if err := writeJSON(layout.Agent("context-index.json"), contextIndex); err != ni
 	return Result{}, err
 }
 ```
+
+Add `"context-index.json"` to `AgentGeneratedFiles` in the same change, after both project and workspace agent writers exist. Do not add it to `IndexGeneratedFiles` or `DashboardGeneratedFiles`.
 
 - [ ] **Step 4: Merge workspace facts without reading dashboard artifacts**
 
@@ -952,7 +958,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add internal/scan/scan.go internal/scan/scan_test.go internal/scan/workspace_reconcile.go internal/scan/workspace_reconcile_test.go internal/doctor/doctor.go internal/doctor/context_index_test.go
+git add internal/scan/scan.go internal/scan/scan_test.go internal/scan/workspace_reconcile.go internal/scan/workspace_reconcile_test.go internal/doctor/doctor.go internal/doctor/context_index_test.go release_files_test.go
 git commit -m "Generate compact context indexes" -m "- Write project navigation facts during scans
 - Merge workspace contracts, dossiers, and traces
 - Validate context indexes without loading dashboard artifacts"
