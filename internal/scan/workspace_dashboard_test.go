@@ -7,6 +7,61 @@ import (
 	"testing"
 )
 
+func TestBuildWorkspaceDashboardArtifactsDefersUsagePayloadsByProject(t *testing.T) {
+	symbols := WorkspaceSymbolIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Symbols: []CanonicalSymbolRecord{
+			{ID: "symbol:frontend", Project: "frontend/app", Language: "typescript", Kind: "component", Name: "Page", QualifiedName: "src/Page#Page", DeclarationFile: "src/Page.tsx", Confidence: ConfidenceExact, Coverage: CoverageComplete},
+			{ID: "symbol:backend", Project: "services/users", Language: "java", Kind: "class", Name: "UserService", QualifiedName: "com.example.UserService", DeclarationFile: "src/UserService.java", Confidence: ConfidenceExact, Coverage: CoverageComplete},
+			{ID: "symbol:other", Project: "services/other", Language: "java", Kind: "class", Name: "OtherService", QualifiedName: "com.example.OtherService", DeclarationFile: "src/OtherService.java", Confidence: ConfidenceExact, Coverage: CoverageComplete},
+		},
+	}
+	usages := WorkspaceSymbolUsageIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Usages: []CanonicalSymbolUsageRecord{
+			{ID: "usage:direct", ProviderSymbolID: "symbol:backend", ConsumerProject: "services/users", ConsumerSymbolID: "symbol:backend", Category: SymbolUsageDirectReference, Language: "java", RelationKind: "calls", SourceFile: "src/UserController.java", Confidence: ConfidenceExact, Resolution: SymbolResolutionExact},
+			{ID: "usage:http", ProviderSymbolID: "symbol:backend", ConsumerProject: "frontend/app", ConsumerSymbolID: "symbol:frontend", Category: SymbolUsageReachedThroughAPI, Language: "typescript", RelationKind: "http_reachability", SourceFile: "src/Page.tsx", Confidence: ConfidenceExact, Resolution: SymbolResolutionExact, Transport: "http"},
+			{ID: "usage:other", ProviderSymbolID: "symbol:other", ConsumerProject: "services/other", ConsumerSymbolID: "symbol:other", Category: SymbolUsageDirectReference, Language: "java", RelationKind: "calls", SourceFile: "src/OtherController.java", Confidence: ConfidenceExact, Resolution: SymbolResolutionExact},
+		},
+	}
+
+	artifacts := buildWorkspaceDashboardArtifacts(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		symbols,
+		usages,
+	)
+
+	for _, usageID := range []string{"usage:direct", "usage:http", "usage:other"} {
+		if strings.Contains(artifacts.HTML, usageID) {
+			t.Fatalf("startup HTML must not embed deferred usage %q", usageID)
+		}
+	}
+	for _, want := range []string{
+		`"code_usage_assets"`,
+		`function loadCodeUsageShard(project)`,
+		`Loading symbol usage evidence`,
+	} {
+		if !strings.Contains(artifacts.HTML, want) {
+			t.Fatalf("lazy dashboard HTML missing %q", want)
+		}
+	}
+
+	frontendAsset := string(artifacts.Assets[artifacts.AssetByProject["frontend/app"]])
+	if !strings.Contains(frontendAsset, "usage:http") ||
+		strings.Contains(frontendAsset, "usage:direct") ||
+		strings.Contains(frontendAsset, "usage:other") {
+		t.Fatalf("frontend usage shard contains the wrong evidence:\n%s", frontendAsset)
+	}
+	backendAsset := string(artifacts.Assets[artifacts.AssetByProject["services/users"]])
+	if !strings.Contains(backendAsset, "usage:direct") ||
+		!strings.Contains(backendAsset, "usage:http") ||
+		strings.Contains(backendAsset, "usage:other") {
+		t.Fatalf("backend usage shard contains the wrong evidence:\n%s", backendAsset)
+	}
+}
+
 func TestRenderWorkspaceDashboardHTMLEscapesInlineScriptPayload(t *testing.T) {
 	injected := `</script><script>globalThis.dashboardInjected=true</script>`
 	html := RenderWorkspaceDashboardHTMLWithModels(
@@ -339,7 +394,9 @@ func TestWorkspaceDashboardCodeExplorerReviewRegressions(t *testing.T) {
 	)
 
 	for _, want := range []string{
-		`const symbolUsagesByConsumer=new Map()`,
+		`let symbolUsagesByConsumer=new Map()`,
+		`function loadCodeUsageShard(project)`,
+		`if(state.mode!=="code-explorer"||state.codeProject!==project)return;`,
 		`usage.consumer_symbol_id`,
 		`.concat(symbolUsagesByConsumer.get(symbolID)||[])`,
 		`function wireCodeExplorerChrome(workbench)`,
@@ -455,8 +512,9 @@ func TestWorkspaceDashboardCodeExplorerIncludesOnlyOutboundHTTPConsumerUsages(t 
 		return workspaceDashboardScript[from : from+to]
 	}
 	source := strings.Join([]string{
-		`const symbolUsageRecords=` + string(encodedUsages) + `;`,
-		section("const symbolUsagesByProvider=new Map();", "const state="),
+		`let symbolUsageRecords=[];let symbolUsagesByProvider=new Map();let symbolUsagesByCandidate=new Map();let symbolUsagesByConsumer=new Map();`,
+		section("function indexSymbolUsageRecords(records)", "indexSymbolUsageRecords(symbolUsageRecords);"),
+		`indexSymbolUsageRecords(` + string(encodedUsages) + `);`,
 		`const state={codeTab:"all"};`,
 		section("function codeUsagesForSymbol(symbolID)", "function codeUsageCounts(symbolID)"),
 		section("function codeUsageCounts(symbolID)", "function codeSameNameNote(symbol)"),

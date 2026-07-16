@@ -616,7 +616,10 @@ Workspace files are additive overlays. `.goregraph-workspace/registry.json` list
 
 The workspace dashboard at `.goregraph-workspace/workspace-map.html` is a
 standalone offline UI with six top-level views and a selected-service Code
-Explorer:
+Explorer. Its generated `.goregraph-workspace/workspace-map-assets/` directory
+keeps project-specific symbol-usage evidence out of the startup document and
+loads it only when Code Explorer is opened; keep that directory next to the HTML
+file when moving the offline dashboard:
 
 - **Architecture:** understand how projects and services communicate without losing the full workspace layout. Dynamic domain lanes come from service-map metadata. Selecting a service keeps every card at its stable position, highlights all direct incoming and outgoing relationships, and dims unrelated context. Background relationships share bundled trunks; selected relationships fan out to explicit card ports. The persistent summary shows relationship, neighboring-service, resolved, unresolved, and mismatch counts and filters by direction or risk. `N calls` means statically detected relationships, not runtime request frequency.
 - **Endpoints:** search for and select a service, inspect its caller -> endpoint -> provider rows in a normal-scale scrollable workbench, then open an endpoint to follow its implementation trace. Long routes wrap instead of shrinking the whole inventory. Long implementation traces start with readable cards at 100%; pan explores the path and **Fit** explicitly shows the complete overview.

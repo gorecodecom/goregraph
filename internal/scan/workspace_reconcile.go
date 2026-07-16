@@ -151,7 +151,21 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	if err := writeJSON(filepath.Join(workspaceOut, "freshness.json"), workspaceFreshness); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-map.html"), []byte(RenderWorkspaceDashboardHTMLWithCodeExplorer(workspaceGraph, serviceMap, endpointTraces, symbolIndex, symbolUsageIndex)), 0o644); err != nil {
+	dashboardArtifacts := buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, symbolIndex, symbolUsageIndex)
+	dashboardAssetRoot := filepath.Join(workspaceOut, workspaceDashboardAssetDir)
+	if err := os.RemoveAll(dashboardAssetRoot); err != nil {
+		return nil, err
+	}
+	for assetPath, body := range dashboardArtifacts.Assets {
+		path := filepath.Join(workspaceOut, filepath.FromSlash(assetPath))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(path, body, 0o644); err != nil {
+			return nil, err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-map.html"), []byte(dashboardArtifacts.HTML), 0o644); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(workspaceOut, "workspace-context.md"), []byte(renderWorkspaceContextReport(context)), 0o644); err != nil {

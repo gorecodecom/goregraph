@@ -725,6 +725,13 @@ class UserController {
 	if _, err := os.Stat(dashboard); err != nil {
 		t.Fatalf("refresh should recreate dashboard: %v", err)
 	}
+	assets, err := filepath.Glob(filepath.Join(workspace, ".goregraph-workspace", "workspace-map-assets", "*.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assets) == 0 {
+		t.Fatal("refresh should create project-specific dashboard usage assets")
+	}
 	if !strings.Contains(stdout.String(), "Refreshed workspace overlay") ||
 		!strings.Contains(stdout.String(), "workspace-map.html") {
 		t.Fatalf("refresh output missing summary:\n%s", stdout.String())
