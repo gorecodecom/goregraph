@@ -1218,6 +1218,187 @@ func TestContextCLIHelpAndGlobalOrdering(t *testing.T) {
 	}
 }
 
+func TestContextHelpDocumentsBoundedAgentWorkflow(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"context", "help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("context help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Call Context once",
+		"one exact route or symbol",
+		"one narrower retry",
+		"fallback_required",
+		"stop using GoreGraph",
+		"There is no third Context call",
+		"goregraph-out/agent/",
+		".goregraph-workspace/agent/",
+		"Do not read index/, dashboard/",
+		"goregraph doctor .",
+		"missing or stale output",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("context help missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("context help stderr = %q", stderr.String())
+	}
+}
+
+func TestQueryAndReportHelpDocumentManualCompatibilityAndDashboardPath(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"query", "help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("query help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Legacy/manual compatibility",
+		"not the normal agent workflow",
+		"goregraph context",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("query help missing %q:\n%s", want, stdout.String())
+		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"report", "help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("report help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "goregraph-out/dashboard/report.md") ||
+		strings.Contains(stdout.String(), "goregraph-out/report.md") {
+		t.Fatalf("report help uses stale path:\n%s", stdout.String())
+	}
+}
+
+func TestBuildHelpDocumentsSharedExtractionAndWorkspaceReconciliation(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want []string
+	}{
+		{
+			args: []string{"build", "help"},
+			want: []string{
+				"goregraph build <agent|dashboard|all>",
+				"Extracts source once",
+				"does not require a workspace marker",
+			},
+		},
+		{
+			args: []string{"workspace", "build", "help"},
+			want: []string{
+				"goregraph workspace build <agent|dashboard|all>",
+				"Scans each discovered project once",
+				"reconciles the workspace once",
+			},
+		},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(test.args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", test.args, code, stderr.String())
+		}
+		for _, want := range test.want {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("%v help missing %q:\n%s", test.args, want, stdout.String())
+			}
+		}
+	}
+}
+
+func TestGlobalAndWorkspaceHelpLeadWithCanonicalBuildsAndMarkerRules(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want []string
+	}{
+		{
+			args: []string{"help"},
+			want: []string{
+				"goregraph build agent .",
+				"goregraph build dashboard .",
+				"goregraph build all .",
+				"goregraph update . --target agent",
+				"scan is the compatibility alias for build all",
+				"standard MCP exposes only task_context",
+				"--expert-tools is for manual diagnostics",
+				"Project build commands do not require a workspace marker",
+				"does not create .goregraph-workspace.yml",
+				".goregraph-workspace/ is removable generated output",
+			},
+		},
+		{
+			args: []string{"workspace", "help"},
+			want: []string{
+				"goregraph workspace build agent .",
+				"goregraph workspace build dashboard .",
+				"goregraph workspace build all .",
+				"goregraph workspace refresh . --target agent",
+				"scan-all is the compatibility alias for workspace build all",
+				"Scans each discovered project once and reconciles once",
+				"--workspace <path>",
+				".goregraph-workspace.yml",
+				"does not create .goregraph-workspace.yml",
+				".goregraph-workspace/ is removable generated output",
+			},
+		},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(test.args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", test.args, code, stderr.String())
+		}
+		for _, want := range test.want {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("%v help missing %q:\n%s", test.args, want, stdout.String())
+			}
+		}
+	}
+}
+
+func TestWorkspaceUsageAndDashboardHelpMatchCanonicalActions(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"workspace"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("workspace exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "workspace <build|status|") {
+		t.Fatalf("workspace usage omits build:\n%s", stderr.String())
+	}
+
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"dashboard", "help"}, want: "Usage: goregraph dashboard path|open [path]"},
+		{args: []string{"workspace", "dashboard", "help"}, want: "Usage: goregraph workspace dashboard path|open [path] [--workspace <path>]"},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run(test.args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", test.args, code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), test.want) {
+			t.Fatalf("%v help missing %q:\n%s", test.args, test.want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceScanAllHelpDocumentsOneReconciliationAndMarkerOwnership(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"workspace", "scan-all", "help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("workspace scan-all help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Compatibility alias for goregraph workspace build all",
+		"Scans each discovered project once and reconciles the workspace once",
+		"--workspace <path>",
+		".goregraph-workspace.yml",
+		"does not create .goregraph-workspace.yml",
+		".goregraph-workspace/ is removable generated output",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace scan-all help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestContextCLIAcceptsBudgetAndMaxFiles(t *testing.T) {
 	root := writeCLIContextFixture(t, 1)
 	var stdout, stderr bytes.Buffer

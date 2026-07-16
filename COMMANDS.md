@@ -2,41 +2,59 @@
 
 This file lists every user-facing GoreGraph command, what it does, and common variations.
 
-## Task context
+## Normal agent workflow
 
-`goregraph query <path> task-context --query <route-or-symbol> --format markdown --limit 20`
+```bash
+goregraph build agent <path>
+goregraph context <path> --query "<current coding task>" --budget-tokens 1800 --max-files 12
+```
 
-The equivalent MCP tool is `task_context`. Start with a narrow route, symbol,
-file, or service query and read only the cited source files.
+The equivalent standard MCP tool is `task_context`. Read only the cited source
+ranges required to verify the result. If `fallback_required` is true, confidence
+is low, or the result does not contain one exact route or symbol, stop using
+GoreGraph and inspect source directly. At most one narrower retry is allowed,
+and only when the first pack is not low-confidence and contains one exact route
+or symbol; use that exact returned value. After the retry, continue from source;
+do not call specialist tools in sequence.
 
-## Workspace delta
+Run `goregraph doctor <path>` only when Context reports missing or stale output.
+
+## Manual compatibility and expert operations
+
+The specialist query CLI remains supported for manual diagnostics and
+exploration. MCP equivalents are available only with
+`goregraph mcp --expert-tools`; they are not a fallback from the bounded Context
+workflow.
+
+### Workspace delta
 
 `goregraph query <after-snapshot> workspace-delta --query <before-snapshot> --format markdown --limit 20`
 
-The equivalent MCP tool is `workspace_delta`; pass the current snapshot as `root`
-and the previous snapshot directory as `query`. Stable IDs and semantic fields are
-compared; generation timestamps are ignored.
+In expert MCP mode, the equivalent tool is `workspace_delta`; pass the current
+snapshot as `root` and the previous snapshot directory as `query`. Stable IDs
+and semantic fields are compared; generation timestamps are ignored.
 
-## Diagnostic families
+### Diagnostic families
 
 `goregraph query <path> diagnostics --query <service-or-route> --format markdown --limit 20`
 
-The equivalent MCP tool is `diagnostics`. Results are grouped by canonical root
-cause and retain stable member diagnostic and evidence IDs.
+In expert MCP mode, the equivalent tool is `diagnostics`. Results are grouped by
+canonical root cause and retain stable member diagnostic and evidence IDs.
 
-## Impact summary
+### Impact summary
 
 `goregraph query <path> impact-summary --query <route-or-flow> --format markdown --limit 20`
 
-The equivalent MCP tool is `impact_summary`. Results keep direct and indirect
-consumers, dependent tests, affected packages, public API surface, confidence,
-reasons, and coverage uncertainty separate. Traversal depth is bounded by the
-requested detail level and result pagination uses the normal continuation token.
+In expert MCP mode, the equivalent tool is `impact_summary`. Results keep direct
+and indirect consumers, dependent tests, affected packages, public API surface,
+confidence, reasons, and coverage uncertainty separate. Traversal depth is
+bounded by the requested detail level and result pagination uses the normal
+continuation token.
 
-## Exact symbol operations
+### Exact symbol operations
 
 The exact Code Explorer operations read the canonical workspace projections
-created by `goregraph workspace scan-all`:
+created by `goregraph workspace build all` (or its `workspace scan-all` alias):
 
 ```bash
 goregraph query . symbol-inventory --query microservices/ms-user --format markdown --limit 20
@@ -46,7 +64,7 @@ goregraph query . symbol-api-consumers --query symbol:<stable-id> --format json 
 goregraph query . symbol-explain --query usage:<stable-id> --detail full --format markdown --limit 20
 ```
 
-The equivalent MCP tools replace hyphens with underscores:
+Expert MCP tools replace hyphens with underscores:
 `symbol_inventory`, `symbol_resolve`, `symbol_usages`,
 `symbol_api_consumers`, and `symbol_explain`.
 
@@ -63,12 +81,11 @@ uses the equivalent `limit` and `continuation` fields.
 
 ## Dashboard questions
 
-The offline workspace dashboard exposes six distinct views: Architecture for
-service relationships, Endpoints for call paths, Feature Flow for the functional
-implementation chain, Data Flow for field-level movement, Diagnostics for
-uncertain relationships, and Coverage for workspace completeness plus analyzer
-support. Inventory views use normal browser-scale HTML; zoom controls are reserved
-for spatial graphs and implementation traces.
+The offline workspace dashboard is the full human exploration surface. Its seven
+views are Architecture, Endpoints, Feature Flow, Data Flow, Code Explorer,
+Diagnostics, and Coverage. Inventory views use normal browser-scale HTML; zoom
+controls are reserved for spatial graphs and implementation traces. Dashboard
+files are not recommended AI prompt input.
 
 ## Workspace context scope
 
@@ -85,7 +102,7 @@ command -v goregraph
 goregraph version
 goregraph workspace clean .
 goregraph workspace clean . --execute
-goregraph workspace scan-all .
+goregraph workspace build all .
 goregraph workspace status .
 goregraph workspace dashboard .
 ```
@@ -122,13 +139,40 @@ not as:
 
 This makes output stable across different machines and checkout locations.
 
-By default, scan output is written to:
+Project output uses this ownership split:
 
 ```text
 <path>/goregraph-out/
+  manifest.json
+  index/                  # complete shared machine index; not prompt input
+  agent/
+    context-index.json    # only generated index recommended for AI context
+    agent-guide.md
+  dashboard/              # full human project reports
+    report.md
+    ...
 ```
 
-If `goregraph.yml` configures another output directory, commands that read generated output use that configured directory instead.
+Workspace output mirrors it:
+
+```text
+<workspace>/.goregraph-workspace/
+  manifest.json
+  index/                  # registry, graphs, symbols, usages, flows
+  agent/
+    context-index.json
+    agent-guide.md
+  dashboard/
+    workspace-map.html
+    workspace-map-assets/
+    ...
+```
+
+`agent/` and bounded Context Packs are the only recommended AI inputs.
+`dashboard/` is for human exploration, including Code Explorer. `index/` is
+GoreGraph's internal canonical data and should not be added directly to prompts.
+If `goregraph.yml` configures another project output directory, the same three
+subtrees live below that directory.
 
 ## `goregraph help`
 
@@ -147,9 +191,29 @@ goregraph --help
 goregraph -h
 ```
 
+## `goregraph build <agent|dashboard|all> [path]`
+
+Builds one project projection or both from one shared source extraction. A
+single-project build requires no workspace marker.
+
+```bash
+goregraph build agent .
+goregraph build dashboard .
+goregraph build all .
+```
+
+- `agent` writes `index/` plus `agent/context-index.json` and
+  `agent/agent-guide.md`.
+- `dashboard` writes `index/` plus human-readable `dashboard/` reports.
+- `all` writes both projections without extracting source twice.
+- a valid non-selected projection is preserved.
+
+Options are `--no-update-gitignore` and `--no-workspace`. Missing or unknown
+targets are usage errors.
+
 ## `goregraph scan <path>`
 
-Creates or fully rebuilds GoreGraph output for a project.
+Compatibility alias for `goregraph build all <path>`.
 
 `<path>` must point to the project root you want to analyze. In most cases this is `.` because you run GoreGraph from inside the repository:
 
@@ -158,7 +222,7 @@ cd /Users/name/projects/my-app
 goregraph scan .
 ```
 
-Use when:
+Use this alias when:
 
 - you run GoreGraph for the first time in a project
 - source files changed and you want a fresh index
@@ -183,58 +247,12 @@ Expected result:
 - prints a short completion summary
 - returns a non-zero exit code if config, filesystem access, or scan safety checks fail
 
-Generated files include:
+Generated files are grouped by owner:
 
-- `manifest.json`
-- `files.json`
-- `symbols.json`
-- `relations.json`
-- `graph.json`
-- `symbols-full.json`
-- `relations-full.json`
-- `graph-full.json`
-- `callgraph.json`
-- `endpoint-flows.json`
-- `test-map.json`
-- `routes.json`
-- `flows.json`
-- `api-contracts.json`
-- `frontend-usage.json`
-- `contract-matches.json`
-- `diagnostics.json`
-- `package-graph.json`
-- `maven-graph.json`
-- `analyzers.json`
-- `spring.json`
-- `workspace.md`
-- `endpoints.md`
-- `endpoint-flows.md`
-- `dependencies.md`
-- `callgraph.md`
-- `routes.md`
-- `flows.md`
-- `api-contracts.md`
-- `frontend-usage.md`
-- `contract-matches.md`
-- `potentially-broken-contracts.md`
-- `diagnostics.md`
-- `workspace-context.md`
-- `workspace-contract-matches.json`
-- `workspace-contract-matches.md`
-- `workspace-feature-flows.json`
-- `workspace-feature-flows.md`
-- `workspace-next-actions.md`
-- `frontend-consumers.md`
-- `package-graph.md`
-- `maven-graph.md`
-- `navigation.md`
-- `analyzers.md`
-- `affected.md`
-- `audit.json`
-- `report.md`
-- `modules.md`
-- `entrypoints.md`
-- `test-map.md`
+- root `manifest.json` records index, agent, and dashboard projection status;
+- `index/*.json` contains the complete canonical machine index;
+- `agent/context-index.json` and `agent/agent-guide.md` are the AI projection;
+- `dashboard/*.md` contains the human-readable project reports.
 
 Variations:
 
@@ -256,7 +274,9 @@ goregraph scan --help
 
 Without `--workspace`, GoreGraph scores ancestor directories and prefers a parent that contains both frontend and backend group directories, such as `frontend/` plus `microservices/`, over an intermediate frontend-only grouping folder.
 
-What the generated files mean:
+What the generated files mean follows below using logical names. Physically,
+JSON machine data lives under `index/`, Markdown reports live under
+`dashboard/`, and only `manifest.json` lives at the output root:
 
 - `manifest.json`: metadata about the scan, schema, generated files, and scanned project.
 - `files.json`: all indexed files with relative path, language, size, hash, and kind.
@@ -309,24 +329,23 @@ What the generated files mean:
 - `entrypoints.md`: likely app, CLI, script, package, and front-controller entrypoints.
 - `test-map.md`: best-effort source/test associations.
 
-Workspace overlays:
+Workspace records use the same ownership split:
 
-- `.goregraph-workspace/registry.json`: discovered sibling projects with `current`, `indexed`, or `not_indexed` status.
-- `.goregraph-workspace/context.json`: loaded indexes, known backend services, and referenced but missing services with contract counts and matching workspace project status when known.
-- `.goregraph-workspace/contract-matches.json`: cross-project API-to-backend matches from already scanned projects, including the API caller name when detected.
-- `.goregraph-workspace/feature-flows.json`: cross-project frontend route/component/API-to-backend feature flows from already scanned projects, with component-aware frontend route steps, React effect calls, and local event handler calls when available.
-- `.goregraph-workspace/next-actions.md`: workspace coverage summary and prioritized follow-up actions from already scanned project indexes.
-- `workspace-context.md`: readable workspace project/index summary with prioritized missing services and suggested next scans.
-- `workspace-contract-matches.json`: project-local cross-project contract matches relevant to the scanned project, refreshed after later sibling scans.
-- `workspace-contract-matches.md`: readable cross-project contract matches relevant to a scanned project, including API caller names when detected.
-- `workspace-feature-flows.md`: readable frontend-route-to-API-to-backend-to-test feature flows, including JSX component hops, effect/event-handler reasons, API caller fallback for weak route matches, unresolved-route reasons, and missing-test reasons.
-- `workspace-next-actions.md`: project-local copy of the workspace next-action summary.
-- `frontend-consumers.md`: backend-oriented view of frontend API callers with caller names when detected; frontend projects explain the report scope instead of showing an ambiguous empty result.
+- `.goregraph-workspace/index/` contains registry, context, contracts, feature
+  flows, graphs, symbols, usages, traces, and other canonical JSON.
+- `.goregraph-workspace/agent/` contains only `context-index.json` and
+  `agent-guide.md` for the recommended AI workflow.
+- `.goregraph-workspace/dashboard/` contains human summaries,
+  `workspace-map.html`, and `workspace-map-assets/`.
+- project-local reconciled JSON remains under each project's `index/`; readable
+  reconciled reports remain under its `dashboard/`.
 
 Workspace reconciliation also refreshes:
 
-- `diagnostics.md` and `diagnostics.json` with outgoing frontend contracts and incoming backend consumers for the project.
-- `endpoints.md` with a `Frontend Consumers` section for backend projects.
+- `dashboard/diagnostics.md` and `index/diagnostics.json` with outgoing frontend
+  contracts and incoming backend consumers for the project.
+- `dashboard/endpoints.md` with a `Frontend Consumers` section for backend
+  projects.
 
 When workspace discovery is active, `scan` also adds `.goregraph-workspace/` to the detected workspace root `.gitignore` unless `--no-update-gitignore` is used.
 
@@ -339,47 +358,71 @@ Important behavior:
 - does not run project code
 - does not call AI or network services
 
-## `goregraph update`
+## `goregraph update [path] [--target agent|dashboard|all]`
 
-Refreshes the current project index.
+Refreshes generated output for one project. `[path]` defaults to `.` and
+`--target` defaults to `all`.
 
-Use when:
+Targets:
 
-- you are already in the project root
-- you want to refresh `goregraph-out/` after code changes
+- `agent` rebuilds only `agent/` from one fresh extraction.
+- `dashboard` rebuilds only the full human-facing `dashboard/` surface from one
+  fresh extraction.
+- `all` rebuilds `index/`, `agent/`, and `dashboard/` together while sharing
+  that extraction.
+
+Examples:
+
+```bash
+goregraph update
+goregraph update . --target agent
+goregraph update . --target dashboard
+goregraph update . --target all
+```
+
+Important behavior:
+
+- preserves a valid non-selected projection when refreshing only `agent` or
+  `dashboard`
+- respects `goregraph.yml`
+- does not install hooks, watch files, or run in the background
+- returns a non-zero exit code if the refresh fails
+
+## `goregraph dashboard path|open [path]`
+
+Locates or opens the generated human-facing project dashboard. Build it first
+with `goregraph build dashboard [path]` or `goregraph build all [path]`.
+
+Examples:
+
+```bash
+goregraph dashboard path .
+goregraph dashboard open .
+```
+
+`path` prints `<configured-output>/dashboard/`. `open` opens the primary
+`dashboard/report.md` entry point. Project dashboards are Markdown reports;
+the interactive Code Explorer is part of the workspace dashboard.
+
+## `goregraph context <path> --query <task> [--budget-tokens 1800] [--max-files 12]`
+
+Returns the bounded Context Pack for the normal AI workflow. It reads only the
+generated `agent/context-index.json` projection and never asks an assistant to
+ingest `index/`, `dashboard/`, dashboard assets, or broad symbol-usage files.
 
 Example:
 
 ```bash
-goregraph update
+goregraph build agent .
+goregraph context . --query "Trace GET /users/{id}" --budget-tokens 1800 --max-files 12
 ```
 
-`update` is intentionally a convenience command for the current directory. It is equivalent to refreshing the project at `.`:
-
-```bash
-goregraph scan .
-```
-
-Current behavior:
-
-- performs an explicit full refresh of the current project
-- does not install hooks
-- does not watch files
-- does not run in the background
-
-Expected result:
-
-- replaces the current `goregraph-out/` content with a fresh index
-- keeps the same output rules as `scan`
-- respects `goregraph.yml`
-- returns a non-zero exit code if the refresh fails
-
-Variations:
-
-```bash
-goregraph update
-goregraph update --no-update-gitignore
-```
+Use the first Context Pack directly and read only cited source ranges needed to
+verify it. If it reports `fallback_required`, low confidence, or no single exact
+route/symbol, stop using GoreGraph and inspect source. Only a non-low-confidence
+pack with one exact returned route or symbol permits one narrower retry using
+that exact value. After the retry, inspect source; there is no third Context call
+or specialist-query fallback cascade.
 
 ## `goregraph git update [path]`
 
@@ -516,23 +559,24 @@ Exit codes:
 
 Prints the generated Markdown project report.
 
-`<path>` must point to a project that has already been scanned:
+`<path>` must point to a project whose dashboard projection has already been
+built:
 
 ```bash
-goregraph scan .
+goregraph build dashboard .
 goregraph report .
 ```
 
 This command reads:
 
 ```text
-<path>/<configured-output>/report.md
+<path>/<configured-output>/dashboard/report.md
 ```
 
 With default config and `.` as path, that means:
 
 ```text
-./goregraph-out/report.md
+./goregraph-out/dashboard/report.md
 ```
 
 Use when:
@@ -581,7 +625,7 @@ Common follow-up:
 
 ```bash
 goregraph doctor .
-goregraph scan .
+goregraph build dashboard .
 ```
 
 Use `doctor` first when you are unsure whether the generated output is missing, stale, or broken.
@@ -589,6 +633,9 @@ Use `doctor` first when you are unsure whether the generated output is missing, 
 ## `goregraph query <path> <term>`
 
 Searches the generated GoreGraph index.
+
+This is a manual compatibility interface, not the recommended AI input. For an
+AI task, use one `goregraph context` call or the MCP `task_context` tool.
 
 `<path>` is the scanned project root. `<term>` is the search text.
 
@@ -685,8 +732,8 @@ If `<term>` is a known output alias, `query` prints that generated file directly
 - `analyzers-json` -> `analyzers.json`
 - `affected` -> `affected.md`
 - `audit` -> `audit.json`
-- `symbol-index` -> `.goregraph-workspace/symbol-index.json`
-- `symbol-usages-json` -> `.goregraph-workspace/symbol-usages.json`
+- `symbol-index` -> `.goregraph-workspace/index/symbol-index.json`
+- `symbol-usages-json` -> `.goregraph-workspace/index/symbol-usages.json`
 
 Matches can include:
 
@@ -709,8 +756,8 @@ Important behavior:
 - does not call AI
 - returns an actionable error if the index is missing
 
-Canonical symbol operations read `.goregraph-workspace/symbol-index.json` and
-`.goregraph-workspace/symbol-usages.json`. Their records preserve canonical
+Canonical symbol operations read `.goregraph-workspace/index/symbol-index.json`
+and `.goregraph-workspace/index/symbol-usages.json`. Their records preserve canonical
 symbol IDs, canonical usage IDs, analyzer, confidence, source file and line,
 evidence IDs, dependency or artifact evidence, and coverage warnings.
 
@@ -724,7 +771,7 @@ Categories and resolutions are intentionally separate:
 - `unresolved` / `UNRESOLVED`: no safe provider was selected.
 
 Evidence IDs are namespaced as `<project>#<local-evidence-id>`. Rich fields are
-additive Schema 2 fields; existing output aliases and legacy fields retain their
+additive Schema 3 fields; existing output aliases and legacy fields retain their
 meaning. A missing result is not proof that no usage exists: read coverage
 warnings and limitations for partial, unavailable, or failed analyzer coverage.
 
@@ -733,6 +780,7 @@ Use `query` when you know roughly what you are looking for. Use `explain` when y
 ## `goregraph explain <path> <file-or-symbol>`
 
 Shows indexed context for one file path or symbol name.
+This is a manual compatibility operation, not a normal agent-context step.
 
 `<path>` is the scanned project root. `<file-or-symbol>` can be:
 
@@ -809,7 +857,7 @@ Checks:
 - schema version is supported
 - JSON index files are valid
 - indexed source hashes still match current files
-- workspace `symbol-index.json` and `symbol-usages.json` exist, use Schema 2,
+- workspace `index/symbol-index.json` and `index/symbol-usages.json` exist, use Schema 3,
   reference valid projects/evidence/source paths, and contain consistent exact,
   ambiguous, unresolved, and HTTP API path records
 
@@ -822,7 +870,7 @@ Common output:
 
 ```text
 OK   output: goregraph-out exists
-OK   schema: version 2 supported
+OK   schema: version 3 supported
 WARN stale: 1 indexed files changed or disappeared
 
 Suggested fix:
@@ -889,11 +937,12 @@ Important behavior:
 - does not write files
 - uses the same auto-detection as `goregraph scan`
 
-Workspace roots are automatically recognized from existing
-`.goregraph-workspace/` output, a `.goregraph-workspace.yml` marker, or common
-group directories such as `frontend/`, `microservices/`, `services/`, and
-`backends/`. A flat directory containing sibling projects is not inferred from
-the project markers alone; pass `--workspace <path>` or add an empty
+Reliable workspace signals are a `.goregraph-workspace.yml` marker, an explicit
+`--workspace <path>`, or common group directories such as `frontend/`,
+`microservices/`, `services/`, and `backends/`. Generated
+`.goregraph-workspace/` is removable output and is not a persistent marker
+guarantee. A flat directory containing sibling projects is not inferred from
+project markers alone; pass `--workspace <path>` or add an empty
 `.goregraph-workspace.yml` file to that directory.
 
 ## `goregraph workspace git update [path]`
@@ -921,12 +970,12 @@ exit-code behavior as `goregraph git update`. In addition, it:
 - returns exit code `1` after processing every repository when any result is a
   blocker or failure, including a mix of successful and unsuccessful results
 
-Recommended update-then-scan flow:
+Recommended update-then-build flow:
 
 ```bash
 goregraph workspace git update .
 goregraph workspace git update . --execute
-goregraph workspace scan-all .
+goregraph workspace build all .
 ```
 
 Review the preview before adding `--execute`. If execution reports a blocker or
@@ -970,19 +1019,56 @@ Options:
 Execution behavior:
 
 - scans each selected missing service project with normal GoreGraph scan logic
-- refreshes workspace overlays after each scan
+- reconciles workspace output once after the selected project scans
 - keeps existing project output locations from each project's config
 - stops on the first scan error and reports the failing project
 
+## `goregraph workspace build <agent|dashboard|all> [path]`
+
+Builds the selected projection for every project discovered in a workspace and
+then reconciles the workspace once. Each project is scanned once; `all` shares
+that extraction across `index/`, `agent/`, and `dashboard/` instead of running
+separate agent and dashboard scans.
+
+Examples:
+
+```bash
+goregraph workspace build agent .
+goregraph workspace build dashboard .
+goregraph workspace build all .
+goregraph workspace build all . --dry-run
+goregraph workspace build all frontend/frontend-monorepo --workspace /Users/name/projects/weka
+```
+
+Targets:
+
+- `agent` builds the recommended workspace Context Pack input under
+  `.goregraph-workspace/agent/`.
+- `dashboard` builds the full human-facing workspace reports and interactive
+  Code Explorer under `.goregraph-workspace/dashboard/`.
+- `all` builds `index/`, `agent/`, and `dashboard/` in one pass.
+
+Options:
+
+- `--dry-run`: show the build plan without scanning or writing files.
+- `--workspace <path>`: force the workspace root used for discovery.
+- `--no-update-gitignore`: skip generated-output `.gitignore` updates.
+
+A workspace build requires one of these workspace signals: grouped-directory
+auto-detection, an explicit `--workspace <path>`, or a permanent
+`.goregraph-workspace.yml` marker. The generated `.goregraph-workspace/`
+directory is removable output, not the persistent marker, and the build command
+does not create `.goregraph-workspace.yml`.
+
 ## `goregraph workspace scan-all [path]`
 
-Scans every project discovered in the detected workspace.
+Compatibility alias for `goregraph workspace build all [path]`.
 
 Use when:
 
 - you want a fresh index for the full workspace
 - frontend and backend source changed and all project-local indexes should be rebuilt
-- you want workspace overlays refreshed after each project scan
+- you use the established `scan-all` spelling in scripts
 
 Examples:
 
@@ -995,8 +1081,9 @@ goregraph workspace scan-all . --no-update-gitignore
 
 Default behavior:
 
-- scans every discovered workspace project
-- refreshes workspace overlays after each project scan
+- scans every discovered workspace project once
+- reconciles workspace output once after all project scans
+- shares each project's extraction across `index/`, `agent/`, and `dashboard/`
 - keeps each project's configured output directory
 - stops on the first scan error and reports the failing project
 
@@ -1012,10 +1099,10 @@ For a flat workspace, the first scan can be run as:
 goregraph workspace scan-all . --workspace .
 ```
 
-The generated `.goregraph-workspace/` directory makes later automatic detection
-possible until `workspace clean --execute` removes it. A
-`.goregraph-workspace.yml` marker is permanent and is not removed by
-`workspace clean`.
+Do not rely on generated `.goregraph-workspace/` output for later detection:
+`workspace clean --execute` removes it. Use `--workspace`, a grouped layout, or
+the permanent `.goregraph-workspace.yml` marker; `workspace clean` does not
+remove that YAML marker.
 
 ## `goregraph workspace clean [path]`
 
@@ -1046,9 +1133,10 @@ Options:
 - `--execute`: remove the listed generated output paths.
 - `--workspace <path>`: force the workspace root used for discovery.
 
-## `goregraph workspace refresh [path]`
+## `goregraph workspace refresh [path] [--target agent|dashboard|all]`
 
-Rebuilds workspace overlays from existing project indexes without scanning source files.
+Rebuilds selected workspace projections from existing project indexes without
+scanning source files. `--target` defaults to `all`.
 
 Use when:
 
@@ -1060,6 +1148,9 @@ Examples:
 
 ```bash
 goregraph workspace refresh .
+goregraph workspace refresh . --target agent
+goregraph workspace refresh . --target dashboard
+goregraph workspace refresh . --target all
 goregraph workspace refresh frontend/frontend-monorepo --workspace /Users/name/projects/weka
 ```
 
@@ -1067,23 +1158,29 @@ Important behavior:
 
 - reads existing project outputs
 - does not rescan source files
+- preserves a valid non-selected projection when refreshing only `agent` or
+  `dashboard`
 - does not prove that project indexes were produced by the current binary
-- must not replace `workspace clean . --execute` followed by `workspace scan-all .` during release acceptance
+- must not replace `workspace clean . --execute` followed by
+  `workspace build all .` during release acceptance
 
-## `goregraph workspace dashboard [path]`
+## `goregraph workspace dashboard [path]|path [path]|open [path]`
 
-Prints the path to the generated standalone workspace dashboard.
-
-Example:
+Compatibility form that prints the path to the generated standalone workspace
+dashboard. Prefer the explicit `path` or `open` action:
 
 ```bash
+goregraph workspace dashboard path .
+goregraph workspace dashboard open .
 goregraph workspace dashboard .
 ```
+
+Build it with `goregraph workspace build dashboard` or `build all` first.
 
 The dashboard is normally generated at:
 
 ```text
-<workspace>/.goregraph-workspace/workspace-map.html
+<workspace>/.goregraph-workspace/dashboard/workspace-map.html
 ```
 
 The 1.3.0 dashboard is organized around seven views:
@@ -1111,9 +1208,11 @@ is unused.
 
 Important behavior:
 
-- prints an existing generated dashboard path; it does not launch a browser
+- `path` and the no-action compatibility form print the existing dashboard path
+- `open` launches the generated dashboard in the configured browser
 - does not scan source files
-- requires workspace output generated by `scan`, `workspace scan-all`, or `workspace refresh`
+- requires a dashboard projection generated by `workspace build dashboard`,
+  `workspace build all`, the `scan-all` alias, or a dashboard-targeted refresh
 - the dashboard is self-contained and works offline
 - Endpoints, Feature Flow, Data Flow, and Coverage are HTML workbenches; Architecture and implementation traces are spatial SVG graphs with zoom controls
 - long implementation traces start with readable cards at 100%; drag or wheel navigation explores the path, while **Fit** shows the complete overview
@@ -1121,6 +1220,7 @@ Important behavior:
 ## `goregraph workspace explain <target>`
 
 Explains a workspace route, file, symbol, contract, or feature using generated workspace evidence.
+This is a manual compatibility operation, not a normal agent-context step.
 
 Examples:
 
@@ -1141,6 +1241,7 @@ Important behavior:
 ## `goregraph workspace path --from <target> --to <target>`
 
 Finds a directed path between two workspace targets.
+This is a manual compatibility operation, not a normal agent-context step.
 
 Examples:
 
@@ -1160,6 +1261,7 @@ Important behavior:
 ## `goregraph workspace impact --changed-file <path>`
 
 Shows workspace features and relationships that may be affected by one or more changed files.
+This is a manual compatibility operation, not a normal agent-context step.
 
 Examples:
 
@@ -1184,8 +1286,7 @@ This command is meant to be started by an MCP-capable coding assistant or editor
 
 Use when:
 
-- an MCP-capable coding assistant should read an existing GoreGraph index
-- you want tool access to query/explain/project-summary functionality
+- an MCP-capable coding assistant should request a bounded task Context Pack
 - you want local integration without network listeners or project writes
 
 Example:
@@ -1205,8 +1306,7 @@ Important behavior:
 Expected usage flow:
 
 ```bash
-goregraph scan .
-goregraph doctor .
+goregraph build agent .
 ```
 
 Then configure the MCP client to run:
@@ -1215,29 +1315,27 @@ Then configure the MCP client to run:
 goregraph mcp
 ```
 
-Provided tools:
+The standard server exposes only `task_context`. Give it the task and use its
+first Context Pack directly. If it reports `fallback_required`, low confidence,
+or no single exact route/symbol, stop using GoreGraph and inspect source. Only a
+non-low-confidence first pack with one exact returned route or symbol permits
+one narrower `task_context` call using that exact value. After that retry,
+inspect source regardless of its outcome.
 
-- `query_code_map`
-- `get_project_summary`
-- `get_file`
-- `get_symbol`
-- `get_related_files`
-- `explain_file`
-- `doctor`
+Legacy specialist tools are manual compatibility operations. Expose them only
+with the explicit expert mode:
 
-Tool behavior:
+```bash
+goregraph mcp --expert-tools
+```
 
-- `query_code_map`: searches the generated index for a term.
-- `get_project_summary`: reads the generated `report.md`.
-- `get_file`: returns indexed metadata for one file.
-- `get_symbol`: finds indexed symbols by name.
-- `get_related_files`: returns indexed relation context for one file.
-- `explain_file`: returns the same kind of explanation as `goregraph explain`.
-- `doctor`: checks whether generated output is usable.
+Do not cascade specialist tools as the normal AI workflow.
 
 Important limitation:
 
-- MCP reads existing output only. If the index is stale or missing, run `goregraph scan .` manually.
+- MCP reads existing output only. If the agent projection is stale or missing,
+  run `goregraph doctor .` to confirm the problem, then
+  `goregraph build agent .` manually.
 
 ## `goregraph version`
 
@@ -1259,12 +1357,12 @@ goregraph version
 Expected output:
 
 ```text
-goregraph 1.1.0
+goregraph 1.3.0
 commit: dev
 built: unknown
 go: go1.26.x
 platform: darwin/arm64
-schema: 2
+schema: 3
 ```
 
 Field meaning:

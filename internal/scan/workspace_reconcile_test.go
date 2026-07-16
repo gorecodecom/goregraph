@@ -60,6 +60,11 @@ func TestWorkspaceReconciliationMergesProjectAndCrossProjectContext(t *testing.T
 	if !hasContextEdge(index.Edges, "frontend/app#frontend:api", "services/users#backend:route", "http_contract") {
 		t.Fatalf("workspace edges = %#v", index.Edges)
 	}
+	guide := readText(t, layout.Agent("agent-guide.md"))
+	assertAgentGuideContract(t, guide)
+	if guide != renderAgentGuideEntry() {
+		t.Fatalf("workspace guide differs from shared renderer:\n%s", guide)
+	}
 	assertOutputNotExists(t, filepath.Join(layout.Root, "dashboard"))
 	assertOutputNotExists(t, layout.Index("symbol-usages.json"))
 }

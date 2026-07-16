@@ -8,10 +8,36 @@ Current unreleased source target:
 v1.3.0
 ```
 
-The unreleased 1.3.0 source target includes preview-first safe Git updates and
-the exact cross-project Code Explorer from Issue #25. It preserves Schema 2 and
-adds:
+The unreleased 1.3.0 source target moves generated output to Schema 3 and adds
+preview-first safe Git updates, target-aware agent/dashboard builds, a bounded
+Context Pack workflow, and the exact cross-project Code Explorer from Issue
+#25:
 
+- Schema 3 output roots with `manifest.json` plus `index/`, `agent/`, and
+  `dashboard/` ownership boundaries for projects and workspaces;
+- project targets `goregraph build agent|dashboard|all .` and target-aware
+  `goregraph update . --target agent|dashboard|all`;
+- workspace targets `goregraph workspace build agent|dashboard|all .` and
+  target-aware `goregraph workspace refresh . --target agent|dashboard|all`;
+- compatibility aliases `goregraph scan .` for `build all` and
+  `goregraph workspace scan-all .` for `workspace build all`;
+- one shared project source extraction per build, with `all` writing both
+  projections without rescanning, and one workspace reconciliation after each
+  project has been scanned once;
+- marker-free single-project builds; workspace-wide commands use an
+  auto-detectable grouped layout, explicit `--workspace <root>`, or a persistent
+  `.goregraph-workspace.yml` marker;
+- no implicit YAML marker creation: `.goregraph-workspace/` remains removable
+  generated output rather than a persistent workspace marker;
+- compact generated AI input in `goregraph-out/agent/` and
+  `.goregraph-workspace/agent/`, separate from the shared machine `index/` and
+  human `dashboard/` projections;
+- `goregraph context` with defaults of 1,800 estimated tokens and 12 files,
+  immediate `fallback_required` source inspection, and at most one narrower
+  retry using one exact route or symbol;
+- standard MCP with exactly `task_context`; explicit
+  `goregraph mcp --expert-tools` retains legacy diagnostics and exploration for
+  manual use only;
 - preview-first project Git updates through `goregraph git update [path]`;
 - preview-first updates for each unique workspace repository through `goregraph workspace git update [path]`;
 - strictly local previews that use cached `origin` references and perform no network access;
@@ -22,19 +48,22 @@ adds:
 - a persistent relationship summary with domain, direction, risk, and reset controls;
 - keyboard-accessible static-call badges whose details remain separate from runtime traffic claims;
 - canonical Java / Spring and JavaScript / TypeScript / Node.js / React
-  declarations in `.goregraph-workspace/symbol-index.json`;
+  declarations in `.goregraph-workspace/index/symbol-index.json`;
 - exact direct, ambiguous, unresolved, and HTTP-reachable symbol usages in
-  `.goregraph-workspace/symbol-usages.json`;
+  `.goregraph-workspace/index/symbol-usages.json`;
 - selected-service **Explore classes & symbols** navigation with separate
   **Direct references** and **Reached through API** evidence;
-- Query operations `symbol-inventory`, `symbol-resolve`, `symbol-usages`,
-  `symbol-api-consumers`, and `symbol-explain`, with matching MCP tools;
+- legacy/manual Query operations `symbol-inventory`, `symbol-resolve`,
+  `symbol-usages`, `symbol-api-consumers`, and `symbol-explain`, with matching
+  tools in explicit expert MCP mode;
 - canonical symbol and usage IDs, project-namespaced evidence, ordered API path
   steps, pagination, coverage warnings, and Doctor validation/remediation;
 - full exact-symbol and direct-usage depth for Java and JavaScript/TypeScript,
   Java/Spring HTTP provider reachability, and JavaScript/TypeScript/Node.js/React
   HTTP consumer plus provider reachability;
-- unchanged Schema 2 compatibility.
+- a project Markdown dashboard under `goregraph-out/dashboard/` and the
+  interactive seven-view workspace dashboard under
+  `.goregraph-workspace/dashboard/`.
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.
 
@@ -322,7 +351,7 @@ commit: <commit>
 built: <timestamp>
 go: <go-version>
 platform: <os>/<arch>
-schema: 2
+schema: 3
 ```
 
 ## Release Flow

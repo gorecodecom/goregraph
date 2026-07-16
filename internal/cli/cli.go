@@ -128,7 +128,7 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if len(args) == 0 {
-		fmt.Fprint(stderr, "error: usage: goregraph workspace <status|scan-missing|scan-all|refresh|clean|diff|dashboard|explain|path|impact|git> [path] [options]\n")
+		fmt.Fprint(stderr, "error: usage: goregraph workspace <build|status|scan-missing|scan-all|refresh|clean|diff|dashboard|explain|path|impact|git> [path] [options]\n")
 		return 2
 	}
 	switch args[0] {
@@ -165,7 +165,16 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 func runBuild(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || isHelp(args[0]) {
 		if len(args) > 0 {
-			fmt.Fprint(stdout, "Usage: goregraph build <agent|dashboard|all> [path] [--no-update-gitignore] [--no-workspace]\n")
+			fmt.Fprint(stdout, `Usage: goregraph build <agent|dashboard|all> [path] [--no-update-gitignore] [--no-workspace]
+
+Builds the shared machine index and the selected project projection.
+  agent      Write bounded agent context under goregraph-out/agent/
+  dashboard  Write human reports under goregraph-out/dashboard/
+  all        Write both projections
+
+Extracts source once per command; all reuses that extraction for both projections.
+A single-project build does not require a workspace marker.
+`)
 			return 0
 		}
 		fmt.Fprint(stderr, "error: build target is required; accepted values: agent, dashboard, all\n")
@@ -184,7 +193,12 @@ func runBuild(args []string, stdout, stderr io.Writer) int {
 func runWorkspaceBuild(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || isHelp(args[0]) {
 		if len(args) > 0 {
-			fmt.Fprint(stdout, "Usage: goregraph workspace build <agent|dashboard|all> [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]\n")
+			fmt.Fprint(stdout, `Usage: goregraph workspace build <agent|dashboard|all> [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]
+
+Builds the shared workspace index and the selected projection.
+Scans each discovered project once and reconciles the workspace once after the project loop.
+Use a detected grouped layout, --workspace <path>, or .goregraph-workspace.yml.
+`)
 			return 0
 		}
 		fmt.Fprint(stderr, "error: workspace build target is required; accepted values: agent, dashboard, all\n")
@@ -278,7 +292,7 @@ func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
 			i++
 			cfg.WorkspaceRoot = args[i]
 		case "--help", "help":
-			fmt.Fprint(stdout, "Usage: goregraph workspace dashboard [path] [--workspace <path>]\n\nPrints the generated workspace dashboard HTML path.\n")
+			fmt.Fprint(stdout, "Usage: goregraph workspace dashboard path|open [path] [--workspace <path>]\n\nPrints or opens the generated workspace dashboard HTML.\n")
 			return 0
 		default:
 			if strings.HasPrefix(arg, "-") {
@@ -317,7 +331,7 @@ func runDashboard(args []string, stdout, stderr io.Writer) int {
 		args = args[1:]
 	}
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph dashboard <path|open> [path]\n")
+		fmt.Fprint(stdout, "Usage: goregraph dashboard path|open [path]\n")
 		return 0
 	}
 	if len(args) > 0 {
@@ -716,12 +730,14 @@ func runWorkspaceScanAllTarget(args []string, stdout, stderr io.Writer, target s
 		case "--help", "help":
 			fmt.Fprint(stdout, `Usage: goregraph workspace scan-all [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]
 
-Scans every discovered project in the detected workspace and refreshes workspace overlays after each scan.
+Compatibility alias for goregraph workspace build all.
+Scans each discovered project once and reconciles the workspace once after the project loop.
 
 Workspace detection:
-  GoreGraph detects common frontend/services group layouts and workspace output.
-  For a flat directory of projects, use --workspace <path> or add
-  .goregraph-workspace.yml to the workspace root.
+  GoreGraph detects common grouped frontend/services layouts. Otherwise use
+  --workspace <path> or add .goregraph-workspace.yml to the workspace root.
+  A scan does not create .goregraph-workspace.yml. The generated
+  .goregraph-workspace/ is removable generated output, not a persistent marker.
 `)
 			return 0
 		default:
@@ -936,7 +952,22 @@ func emptyCLI(value string) string {
 
 func runContext(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph context <path> --query <task> [--budget-tokens 1800] [--max-files 12] [--format markdown|json]\n\nBuilds one deterministic, budgeted Context Pack from existing generated output.\nBudget tokens: 256-4000. Max files: 1-20.\n")
+		fmt.Fprint(stdout, `Usage: goregraph context <path> --query <task> [--budget-tokens 1800] [--max-files 12] [--format markdown|json]
+
+Builds one deterministic, budgeted Context Pack from existing generated output.
+Budget tokens: 256-4000. Max files: 1-20.
+
+Normal agent workflow:
+  Call Context once for the current coding task and verify only cited source ranges.
+  If fallback_required is true, stop using GoreGraph and inspect source directly.
+  If confidence is low, or there is not one exact route or symbol, inspect source.
+  Otherwise, one narrower retry with that one exact route or symbol is allowed.
+  There is no third Context call and no specialist-query fallback cascade.
+  Run goregraph doctor . only when Context reports missing or stale output.
+
+Agent input comes only from goregraph-out/agent/ or .goregraph-workspace/agent/.
+Do not read index/, dashboard/, dashboard assets, or index/symbol-usages.json as AI context.
+`)
 		return 0
 	}
 	if len(args) == 0 {
@@ -998,7 +1029,11 @@ func runQuery(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
 		fmt.Fprint(stdout, `Usage: goregraph query <path> <term-or-output>
 
-Searches existing generated output. Canonical symbol operations are:
+Searches existing generated output.
+Legacy/manual compatibility operations are supported but are not the normal agent workflow.
+Agents should use goregraph context and inspect source after its bounded workflow.
+
+Canonical symbol operations are:
   symbol-inventory       List declarations by project, package, module, or name
   symbol-resolve         Resolve human text to every matching stable symbol candidate
   symbol-usages          Return exact direct references for a stable symbol ID
@@ -1135,7 +1170,7 @@ func runExplain(args []string, stdout, stderr io.Writer) int {
 
 func runReport(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph report <path>\n\nPrints goregraph-out/report.md for a project.\n")
+		fmt.Fprint(stdout, "Usage: goregraph report <path>\n\nPrints goregraph-out/dashboard/report.md for a project.\n")
 		return 0
 	}
 	root := "."
@@ -1308,11 +1343,15 @@ Commands:
   doctor <path>     Check generated output health
   git update [path] Preview or execute a safe Git update
   workspace         Show, scan, clean, and inspect workspace projects
-  mcp               Start the read-only MCP stdio server
+  mcp               Start standard MCP with task_context only
   version           Print build metadata
   help              Show this help
 
 Examples:
+  goregraph build agent .
+  goregraph build dashboard .
+  goregraph build all .
+  goregraph update . --target agent
   goregraph scan .
   goregraph scan . --no-update-gitignore
   goregraph update
@@ -1330,21 +1369,36 @@ Examples:
   goregraph git update . --execute
   goregraph workspace status .
   goregraph workspace scan-missing . --top 5
+  goregraph workspace build agent .
+  goregraph workspace build dashboard .
+  goregraph workspace build all .
   goregraph workspace scan-all .
   goregraph workspace git update .
   goregraph workspace git update . --execute
-  goregraph workspace refresh .
+  goregraph workspace refresh . --target agent
   goregraph workspace clean . --execute
   goregraph workspace dashboard .
   goregraph workspace explain "GET /users/{userId}"
   goregraph workspace path --from frontend/app --to UserController.get
   goregraph workspace impact --changed-file src/api/users.ts
   goregraph mcp
+  goregraph mcp --expert-tools
   goregraph version
 
+Build behavior:
+  Project build commands do not require a workspace marker. Each build extracts
+  source once; all writes agent and dashboard projections from that extraction.
+  scan is the compatibility alias for build all.
+
+MCP behavior:
+  standard MCP exposes only task_context. --expert-tools is for manual diagnostics
+  and exploration, not the normal agent workflow.
+
 Workspace detection:
-  For a flat directory of projects, pass --workspace <path> to workspace
-  commands or add .goregraph-workspace.yml to the workspace root.
+  Workspace commands require a detected grouped layout, --workspace <path>, or
+  .goregraph-workspace.yml at the workspace root.
+  A build or scan does not create .goregraph-workspace.yml. The generated
+  .goregraph-workspace/ is removable generated output, not a persistent marker.
 `)
 }
 
@@ -1368,10 +1422,13 @@ Examples:
   goregraph workspace status .
   goregraph workspace scan-missing .
   goregraph workspace scan-missing . --top 5 --execute
+  goregraph workspace build agent .
+  goregraph workspace build dashboard .
+  goregraph workspace build all .
+  goregraph workspace refresh . --target agent
   goregraph workspace scan-all .
   goregraph workspace git update .
   goregraph workspace git update . --execute
-  goregraph workspace refresh .
   goregraph workspace clean . --execute
   goregraph workspace dashboard .
   goregraph workspace explain "GET /users/{userId}"
@@ -1379,9 +1436,12 @@ Examples:
   goregraph workspace impact --changed-file frontend/app/src/api/users.ts
 
 Workspace detection:
-  Common frontend/services group layouts are detected automatically.
-  For a flat directory of projects, use --workspace <path> or add
-  .goregraph-workspace.yml to the workspace root.
+  Common grouped frontend/services layouts are detected automatically. Otherwise
+  use --workspace <path> or add .goregraph-workspace.yml to the workspace root.
+  Scans each discovered project once and reconciles once after the project loop.
+  scan-all is the compatibility alias for workspace build all.
+  A build or scan does not create .goregraph-workspace.yml. The generated
+  .goregraph-workspace/ is removable generated output, not a persistent marker.
 `)
 }
 

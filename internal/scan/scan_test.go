@@ -82,16 +82,19 @@ func TestRunWritesEvidenceCapabilitiesAndCoverageOutputs(t *testing.T) {
 	}
 }
 
-func TestRunWritesPrimaryAgentMarkdownEntryPoints(t *testing.T) {
+func TestRunWritesHumanDashboardReportsWithoutAgentQueryCascade(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc main(){}\n")
 	if _, err := Run(root, config.Defaults()); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"workspace-summary.md", "architecture.md", "diagnostics.md", "agent-guide.md"} {
+	for _, name := range []string{"workspace-summary.md", "architecture.md", "diagnostics.md"} {
 		body := readText(t, filepath.Join(root, "goregraph-out", name))
-		if !strings.Contains(body, "goregraph query") || !strings.Contains(body, "coverage") {
-			t.Fatalf("%s lacks agent orientation:\n%s", name, body)
+		if strings.Contains(body, "goregraph query") || strings.Contains(body, "MCP") {
+			t.Fatalf("%s promotes an agent query cascade:\n%s", name, body)
+		}
+		if !strings.Contains(body, "Dashboard") || !strings.Contains(body, "Code Explorer") {
+			t.Fatalf("%s lacks human dashboard orientation:\n%s", name, body)
 		}
 	}
 }
@@ -116,26 +119,14 @@ class UserController {
 	}
 }
 
-func TestAgentGuideContainsTaskRecipesExactlyOnce(t *testing.T) {
+func TestRunWritesOneBoundedAgentContextWorkflow(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc main(){}\n")
 	if _, err := Run(root, config.Defaults()); err != nil {
 		t.Fatal(err)
 	}
 	guide := readText(t, filepath.Join(root, "goregraph-out", "agent-guide.md"))
-	t.Log("\n" + guide)
-	for _, want := range []string{
-		"Endpoint change", "Service impact", "Test gaps", "Open contracts", "Data flow", "Workspace delta", "Evidence lookup", "Freshness check",
-		"task-context", "service-context", "tests", "diagnostics", "data-flow", "workspace-delta", "evidence", "task_context", "workspace_delta",
-		"read only the cited source files", "incomplete coverage is uncertainty",
-	} {
-		if !strings.Contains(guide, want) {
-			t.Fatalf("agent guide missing %q:\n%s", want, guide)
-		}
-	}
-	if count := strings.Count(guide, "goregraph query . coverage"); count != 1 {
-		t.Fatalf("coverage command occurs %d times, want 1:\n%s", count, guide)
-	}
+	assertAgentGuideContract(t, guide)
 }
 
 func TestRunExtractsSymbolsRelationsAndGraph(t *testing.T) {

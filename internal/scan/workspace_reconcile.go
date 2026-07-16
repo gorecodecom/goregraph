@@ -272,7 +272,7 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 		if err := writeJSON(layout.Agent("context-index.json"), agentContextIndex); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(layout.Agent("agent-guide.md"), []byte("# GoreGraph Workspace Agent Guide\n"), 0o644); err != nil {
+		if err := os.WriteFile(layout.Agent("agent-guide.md"), []byte(renderAgentGuideEntry()), 0o644); err != nil {
 			return nil, err
 		}
 	}
