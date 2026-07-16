@@ -143,7 +143,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 				typeStack = append(typeStack, javaTypeScope{typeIndex: typeIndex, bodyDepth: braceDepth + 1})
 				pending = nil
 			}
-		} else if match := javaFieldLineRE.FindStringSubmatch(lexicalLine); len(match) == 5 && currentOwner != "" && javaAtCurrentTypeBody(braceDepth, typeStack) && !strings.Contains(lexicalLine, "(") {
+		} else if match := javaFieldLineRE.FindStringSubmatch(lexicalLine); len(match) == 5 && currentOwner != "" && javaAtCurrentTypeBody(braceDepth, typeStack) {
 			source.Fields = append(source.Fields, JavaFieldRecord{
 				Name:        match[3],
 				Type:        cleanJavaType(match[2] + strings.ReplaceAll(match[4], " ", "")),

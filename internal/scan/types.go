@@ -148,6 +148,7 @@ type RichRelationRecord struct {
 	Reason              string           `json:"reason,omitempty"`
 	CandidateSymbolIDs  []string         `json:"candidate_symbol_ids,omitempty"`
 	DependencyEvidence  []string         `json:"dependency_evidence,omitempty"`
+	preventExact        bool
 }
 
 type RichGraph struct {

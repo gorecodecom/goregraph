@@ -133,6 +133,7 @@ func Run(root string, cfg config.Config) (Result, error) {
 
 func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Index, int, error) {
 	var index Index
+	javaBodies := map[string]string{}
 	skipped := 0
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -198,7 +199,7 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 		if record.Language == "java" {
 			source := extractJavaSource(record, text)
 			index.JavaSources = append(index.JavaSources, source)
-			MergeProjectSymbolFacts(&index.SymbolFacts, ExtractJavaSymbolFacts(source, text, index.Workspace))
+			javaBodies[source.File] = text
 		}
 		mergeCodeIntelligence(&index.Code, extractCodeIntelligence(record, text))
 		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, extractArchitectureCapabilityFacts(record, text)...)
@@ -206,6 +207,7 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 		return nil
 	})
 	if err == nil {
+		index.SymbolFacts = ExtractJavaProjectSymbolFacts(index.JavaSources, javaBodies, index.Workspace)
 		index.SymbolFacts = FinalizeProjectSymbolFacts(index.Files, index.Workspace, index.SymbolFacts)
 	}
 	return index, skipped, err

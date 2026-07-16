@@ -718,3 +718,114 @@ class Consumer {
 		}
 	}
 }
+
+func TestJavaInitializedFieldProvidesSameFileReceiverMetadata(t *testing.T) {
+	body := `package com.weka.users;
+
+class Service { void run() {} }
+class Outer {
+    static Service SERVICE = new Service();
+    static class SERVICE { static void run() {} }
+}
+class Consumer {
+    void call() { Outer.SERVICE.run(); }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Consumer.java", Language: "java"}, body)
+	var initializedField bool
+	for _, field := range source.Fields {
+		if field.Owner == "Outer" && field.Name == "SERVICE" && field.Type == "Service" {
+			initializedField = true
+		}
+	}
+	if !initializedField {
+		t.Fatalf("initialized field metadata missing: %#v", source.Fields)
+	}
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	call := assertJavaReference(t, facts.References, "calls_method_owner", "com.weka.users.Service", 9)
+	if call.Resolution != SymbolResolutionExact {
+		t.Fatalf("initialized field receiver = %#v, want exact Service", call)
+	}
+}
+
+func TestRunResolvesImportedInitializedFieldBeforeNestedType(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main/java/com/consumer/Consumer.java", `package com.consumer;
+
+import com.provider.Outer;
+class Consumer {
+    void call() { Outer.SERVICE.run(); }
+}
+`)
+	writeFile(t, root, "src/main/java/com/provider/Outer.java", `package com.provider;
+
+class Service { void run() {} }
+public class Outer {
+    public static Service SERVICE = new Service();
+    public static class SERVICE { public static void run() {} }
+}
+`)
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	var relations []RichRelationRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "relations-full.json"), &relations)
+	call := assertJavaReference(t, relations, "calls_method_owner", "com.provider.Service", 5)
+	if call.Resolution != SymbolResolutionExact || call.ToSymbolID == "" {
+		t.Fatalf("cross-file initialized field receiver = %#v, want exact provider Service", call)
+	}
+	for _, reference := range relations {
+		if reference.Type == "calls_method_owner" && reference.TargetQualifiedName == "com.provider.Outer.SERVICE" {
+			t.Fatalf("cross-file field was finalized as nested type: %#v", reference)
+		}
+	}
+}
+
+func TestRunLeavesUnprovenImportedUppercaseReceiverUnresolved(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main/java/com/consumer/Consumer.java", `package com.consumer;
+
+import com.provider.Outer;
+class Consumer {
+    void call() { Outer.SERVICE.run(); }
+}
+`)
+	writeFile(t, root, "src/main/java/com/provider/Outer.java", `package com.provider;
+
+@interface Marker {}
+class Service { void run() {} }
+public class Outer {
+    public static @Marker Service SERVICE = new Service();
+    public static class SERVICE { public static void run() {} }
+}
+`)
+	if _, err := Run(root, config.Defaults()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	var relations []RichRelationRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "relations-full.json"), &relations)
+	call := assertJavaReference(t, relations, "calls_method_owner", "com.provider.Outer.SERVICE", 5)
+	if call.Resolution != SymbolResolutionUnresolved || call.ToSymbolID != "" {
+		t.Fatalf("unproven imported uppercase receiver = %#v, want unresolved collision", call)
+	}
+}
+
+func TestJavaScopedArrayTypeVariableReceiversEmitNoProjectCallFact(t *testing.T) {
+	body := `package com.weka.users;
+
+class Generic<T> {
+    T[] values;
+    void call(T... parameters) {
+        values.clone();
+        parameters.clone();
+    }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Generic.java", Language: "java"}, body)
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	for _, reference := range facts.References {
+		if reference.Type == "calls_method_owner" && (reference.Line == 6 || reference.Line == 7) {
+			t.Fatalf("scoped array type variable emitted project call fact: %#v", reference)
+		}
+	}
+}

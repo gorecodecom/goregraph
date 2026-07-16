@@ -45,14 +45,14 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 			reference.ToSymbolID = replacement
 		}
 		candidates := byQualified[reference.TargetQualifiedName]
-		if len(candidates) == 1 {
+		if len(candidates) == 1 && !reference.preventExact {
 			reference.ToSymbolID = candidates[0].ID
 			reference.Resolution = SymbolResolutionExact
 			reference.Confidence = string(ConfidenceExact)
 			reference.ConfidenceScore = 1
 			reference.Internal = true
 			reference.CandidateSymbolIDs = nil
-		} else if len(candidates) > 1 {
+		} else if len(candidates) > 1 && !reference.preventExact {
 			reference.ToSymbolID = ""
 			reference.Resolution = SymbolResolutionAmbiguous
 			reference.Confidence = string(ConfidenceNormalized)

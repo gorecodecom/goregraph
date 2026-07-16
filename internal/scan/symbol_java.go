@@ -32,6 +32,27 @@ type javaTypeResolution struct {
 
 func ExtractJavaSymbolFacts(source JavaSourceRecord, body string, workspace WorkspaceIndex) ProjectSymbolFacts {
 	provenance := javaSourceProvenance(source.File, workspace)
+	declarations := extractJavaDeclarations(source, provenance)
+	references := extractJavaReferenceFacts(source, body, declarations, provenance, nil)
+	return ProjectSymbolFacts{Declarations: declarations, References: references}
+}
+
+func ExtractJavaProjectSymbolFacts(sources []JavaSourceRecord, bodies map[string]string, workspace WorkspaceIndex) ProjectSymbolFacts {
+	var declarations []RichSymbolRecord
+	for _, source := range sources {
+		declarations = append(declarations, extractJavaDeclarations(source, javaSourceProvenance(source.File, workspace))...)
+	}
+	sort.Slice(declarations, func(i, j int) bool { return declarations[i].ID < declarations[j].ID })
+	fieldTypes := javaProjectFieldTypes(sources, declarations)
+	var references []RichRelationRecord
+	for _, source := range sources {
+		provenance := javaSourceProvenance(source.File, workspace)
+		references = append(references, extractJavaReferenceFacts(source, bodies[source.File], declarations, provenance, fieldTypes)...)
+	}
+	return ProjectSymbolFacts{Declarations: declarations, References: references}
+}
+
+func extractJavaDeclarations(source JavaSourceRecord, provenance javaBuildProvenance) []RichSymbolRecord {
 	declarations := make([]RichSymbolRecord, 0, len(source.Types))
 	for _, typ := range source.Types {
 		qualifiedName := typ.QualifiedName
@@ -59,11 +80,10 @@ func ExtractJavaSymbolFacts(source JavaSourceRecord, body string, workspace Work
 		})
 	}
 	sort.Slice(declarations, func(i, j int) bool { return declarations[i].ID < declarations[j].ID })
-	references := extractJavaReferenceFacts(source, body, declarations, provenance)
-	return ProjectSymbolFacts{Declarations: declarations, References: references}
+	return declarations
 }
 
-func extractJavaReferenceFacts(source JavaSourceRecord, body string, declarations []RichSymbolRecord, provenance javaBuildProvenance) []RichRelationRecord {
+func extractJavaReferenceFacts(source JavaSourceRecord, body string, declarations []RichSymbolRecord, provenance javaBuildProvenance, projectFieldTypes map[string]map[string]string) []RichRelationRecord {
 	resolver := newJavaFactResolver(source, declarations)
 	primary := primaryJavaDeclaration(source.File, declarations)
 	lexicalBody := sanitizeJavaLexical(body)
@@ -118,7 +138,7 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 	add := func(kind, rawTarget string, line int, owner RichSymbolRecord) {
 		addScoped(kind, rawTarget, line, owner, nil)
 	}
-	addUnresolved := func(kind, target string, line int, owner RichSymbolRecord) {
+	addUnresolved := func(kind, target string, line int, owner RichSymbolRecord, preventExact bool) {
 		if owner.ID == "" {
 			owner = primary
 		}
@@ -144,6 +164,7 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 			TargetQualifiedName: target,
 			Resolution:          SymbolResolutionUnresolved,
 			Reason:              reason,
+			preventExact:        preventExact,
 		})
 	}
 
@@ -159,7 +180,7 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 		add("imports_type", imported.Name, imported.Line, primary)
 	}
 	for _, typ := range source.Types {
-		owner := declarationByQualifiedName(declarations, typ.QualifiedName)
+		owner := declarationByQualifiedNameAndFile(declarations, typ.QualifiedName, typ.File)
 		typeVariables := javaTypeVariableSet(typ.TypeParameters)
 		for _, annotation := range typ.Annotations {
 			if qualifiedAnnotationLines[annotation.Line] {
@@ -227,13 +248,16 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 		}
 	}
 
-	fieldTypes := map[string]map[string]string{}
-	for _, field := range source.Fields {
-		owner := declarationForJavaSourceOwner(source, declarations, field.Owner, field.Line)
-		if fieldTypes[owner.ID] == nil {
-			fieldTypes[owner.ID] = map[string]string{}
+	fieldTypes := projectFieldTypes
+	if fieldTypes == nil {
+		fieldTypes = map[string]map[string]string{}
+		for _, field := range source.Fields {
+			owner := declarationForJavaSourceOwner(source, declarations, field.Owner, field.Line)
+			if fieldTypes[owner.ID] == nil {
+				fieldTypes[owner.ID] = map[string]string{}
+			}
+			fieldTypes[owner.ID][field.Name] = field.Type
 		}
-		fieldTypes[owner.ID][field.Name] = field.Type
 	}
 	for _, method := range source.Methods {
 		owner := declarationForJavaSourceOwner(source, declarations, method.Owner, method.Line)
@@ -254,8 +278,16 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 				targetType = javaReceiverTargetType(call.Receiver, owner, receivers, fieldTypes, source, resolver)
 			}
 			if targetType != "" {
-				if isJavaArrayReceiverType(targetType) {
-					addUnresolved("calls_method_owner", targetType, call.Line, owner)
+				if isJavaUnprovenUppercaseReceiver(call.Receiver, targetType) {
+					unresolvedTarget := targetType
+					if resolved := resolver.resolve(targetType); resolved.qualifiedName != "" {
+						unresolvedTarget = resolved.qualifiedName
+					}
+					addUnresolved("calls_method_owner", unresolvedTarget, call.Line, owner, true)
+				} else if isJavaArrayReceiverType(targetType) {
+					if !javaTypeReferenceIsScoped(targetType, typeVariables) {
+						addUnresolved("calls_method_owner", targetType, call.Line, owner, false)
+					}
 				} else {
 					addScoped("calls_method_owner", targetType, call.Line, owner, typeVariables)
 				}
@@ -350,6 +382,66 @@ func isJavaArrayReceiverType(value string) bool {
 	return strings.Contains(compact, "[]") || strings.Contains(compact, "...")
 }
 
+func isJavaUnprovenUppercaseReceiver(receiver, targetType string) bool {
+	receiver = strings.TrimSpace(receiver)
+	targetType = strings.TrimSpace(targetType)
+	if receiver == "" || receiver != targetType {
+		return false
+	}
+	segment := receiver
+	if index := strings.LastIndex(segment, "."); index >= 0 {
+		segment = segment[index+1:]
+	}
+	hasLetter := false
+	for _, char := range segment {
+		if unicode.IsLetter(char) {
+			hasLetter = true
+			if unicode.IsLower(char) {
+				return false
+			}
+		}
+	}
+	return hasLetter
+}
+
+func javaTypeReferenceIsScoped(value string, typeVariables map[string]bool) bool {
+	for _, reference := range normalizeJavaTypeReferences(value) {
+		first := reference
+		if index := strings.Index(first, "."); index >= 0 {
+			first = first[:index]
+		}
+		if typeVariables[first] {
+			return true
+		}
+	}
+	return false
+}
+
+func javaProjectFieldTypes(sources []JavaSourceRecord, declarations []RichSymbolRecord) map[string]map[string]string {
+	fieldTypes := map[string]map[string]string{}
+	for _, source := range sources {
+		resolver := newJavaFactResolver(source, declarations)
+		for _, field := range source.Fields {
+			owner := declarationForJavaSourceOwner(source, declarations, field.Owner, field.Line)
+			if owner.ID == "" {
+				continue
+			}
+			fieldType := field.Type
+			if reference := primaryJavaTypeReference(field.Type); reference != "" {
+				resolved := resolver.resolve(reference)
+				if resolved.resolution == SymbolResolutionExact {
+					fieldType = strings.Replace(field.Type, reference, resolved.qualifiedName, 1)
+				}
+			}
+			if fieldTypes[owner.ID] == nil {
+				fieldTypes[owner.ID] = map[string]string{}
+			}
+			fieldTypes[owner.ID][field.Name] = fieldType
+		}
+	}
+	return fieldTypes
+}
+
 func qualifiedJavaAnnotationLines(body string) map[int]bool {
 	result := map[int]bool{}
 	for index, line := range strings.Split(body, "\n") {
@@ -425,7 +517,9 @@ func newJavaFactResolver(source JavaSourceRecord, declarations []RichSymbolRecor
 	}
 	for _, declaration := range declarations {
 		resolver.byQualified[declaration.QualifiedName] = append(resolver.byQualified[declaration.QualifiedName], declaration)
-		resolver.bySimple[declaration.Name] = append(resolver.bySimple[declaration.Name], declaration)
+		if declaration.Package == source.Package {
+			resolver.bySimple[declaration.Name] = append(resolver.bySimple[declaration.Name], declaration)
+		}
 	}
 	return resolver
 }
@@ -511,21 +605,21 @@ func isJavaLangType(name string) bool {
 func primaryJavaDeclaration(file string, declarations []RichSymbolRecord) RichSymbolRecord {
 	base := strings.TrimSuffix(path.Base(file), path.Ext(file))
 	for _, declaration := range declarations {
-		if declaration.Name == base {
+		if declaration.File == file && declaration.Name == base {
 			return declaration
 		}
 	}
 	for index := len(declarations) - 1; index >= 0; index-- {
-		if declarations[index].Owner == "" {
+		if declarations[index].File == file && declarations[index].Owner == "" {
 			return declarations[index]
 		}
 	}
 	return RichSymbolRecord{}
 }
 
-func declarationByQualifiedName(declarations []RichSymbolRecord, qualifiedName string) RichSymbolRecord {
+func declarationByQualifiedNameAndFile(declarations []RichSymbolRecord, qualifiedName, file string) RichSymbolRecord {
 	for _, declaration := range declarations {
-		if declaration.QualifiedName == qualifiedName {
+		if declaration.QualifiedName == qualifiedName && declaration.File == file {
 			return declaration
 		}
 	}
@@ -556,7 +650,7 @@ func declarationForJavaSourceOwner(source JavaSourceRecord, declarations []RichS
 		}
 	}
 	if best.QualifiedName != "" {
-		return declarationByQualifiedName(declarations, best.QualifiedName)
+		return declarationByQualifiedNameAndFile(declarations, best.QualifiedName, best.File)
 	}
 	return declarationForJavaOwner(declarations, owner, line)
 }
@@ -585,7 +679,7 @@ func declarationForJavaSourceLine(source JavaSourceRecord, declarations []RichSy
 		}
 	}
 	if best.QualifiedName != "" {
-		return declarationByQualifiedName(declarations, best.QualifiedName)
+		return declarationByQualifiedNameAndFile(declarations, best.QualifiedName, best.File)
 	}
 	return declarationForJavaLine(declarations, line)
 }
