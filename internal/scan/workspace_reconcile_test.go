@@ -96,6 +96,52 @@ func TestBuildWorkspaceAgentContextIndexReusesDossierPersistenceAndTestFacts(t *
 	}
 }
 
+func TestBuildWorkspaceAgentContextIndexEnrichesCopiedPersistenceFact(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/users", Indexed: true,
+	}}}
+	projectIndex := AgentContextIndexRecord{
+		Root: "services/users",
+		Facts: []AgentContextFactRecord{{
+			ID: "persistence", Kind: "persistence",
+			Name: "UserRepository.delete", Qualified: "UserRepository.delete",
+			File: "UserRepository.java", Line: 12,
+		}},
+	}
+	dossiers := []FeatureDossierRecord{{
+		Route:          "DELETE /users/{id}",
+		BackendProject: "services/users",
+		PersistencePath: []PersistenceStepRecord{{
+			Repository: "UserRepository", Method: "delete",
+			Entity: "User", Table: "users", File: "UserRepository.java", Line: 12,
+		}},
+	}}
+
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, WorkspaceEndpointTraceIndexRecord{}, "generated")
+
+	if got := countContextFacts(index.Facts, "persistence"); got != 1 {
+		t.Fatalf("persistence facts = %d, want copied fact reuse: %#v", got, index.Facts)
+	}
+	fact := findContextFactByID(index.Facts, "services/users#persistence")
+	if fact.ID == "" {
+		t.Fatalf("copied persistence fact was not retained: %#v", index.Facts)
+	}
+	for _, want := range []string{"User", "users"} {
+		if !strings.Contains(fact.Summary+" "+fact.Search, want) {
+			t.Fatalf("copied persistence fact missing %q enrichment: %#v", want, fact)
+		}
+	}
+}
+
+func findContextFactByID(facts []AgentContextFactRecord, id string) AgentContextFactRecord {
+	for _, fact := range facts {
+		if fact.ID == id {
+			return fact
+		}
+	}
+	return AgentContextFactRecord{}
+}
+
 func TestBuildWorkspaceAgentContextIndexReusesCopiedHandlerSymbolAcrossDossierAndTrace(t *testing.T) {
 	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
 		Path: "services/users", Indexed: true,
@@ -150,6 +196,63 @@ func TestBuildWorkspaceAgentContextIndexReusesCopiedHandlerSymbolAcrossDossierAn
 		"backend_route_to_backend_handler",
 	) {
 		t.Fatalf("route-to-handler transition did not target copied symbol: %#v", index.Edges)
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexPrefersHandlerSymbolNearSpringRouteLine(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/users", Indexed: true,
+	}}}
+	projectIndex := AgentContextIndexRecord{
+		Root: "services/users",
+		Facts: []AgentContextFactRecord{
+			{
+				ID: "route", Kind: "route", Name: "DELETE /users/{id}",
+				Qualified: "UserController.deleteUser", HTTPMethod: "DELETE", Path: "/users/{id}",
+				File: "UserController.java", Line: 20,
+			},
+			{
+				ID: "handler", Kind: "symbol", Name: "deleteUser",
+				Qualified: "UserController.deleteUser", File: "UserController.java", Line: 21,
+			},
+		},
+	}
+	dossiers := []FeatureDossierRecord{{
+		Route:          "DELETE /users/{id}",
+		BackendProject: "services/users",
+		BackendHandler: "UserController.deleteUser",
+	}}
+	traces := WorkspaceEndpointTraceIndexRecord{Traces: []WorkspaceEndpointTraceRecord{{
+		Method: "DELETE", Path: "/users/{id}",
+		Steps: []WorkspaceEndpointTraceStepRecord{
+			{
+				ID: "route-step", Kind: "backend_route", Label: "DELETE /users/{id}",
+				Project: "services/users", HTTPMethod: "DELETE", Path: "/users/{id}",
+				File: "UserController.java", Line: 20, Symbol: "UserController.deleteUser",
+			},
+			{
+				ID: "handler-step", Kind: "backend_handler", Label: "UserController.deleteUser",
+				Project: "services/users", File: "UserController.java", Line: 20,
+				Symbol: "UserController.deleteUser",
+			},
+		},
+		Edges: []WorkspaceEndpointTraceEdgeRecord{{
+			From: "route-step", To: "handler-step", Kind: "backend_route_to_backend_handler",
+		}},
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, traces, "generated")
+
+	if got := countContextFacts(index.Facts, "backend_handler"); got != 0 {
+		t.Fatalf("synthetic handler facts = %d, want nearby copied symbol reuse: %#v", got, index.Facts)
+	}
+	if !hasContextEdge(
+		index.Edges,
+		"services/users#route",
+		"services/users#handler",
+		"backend_route_to_backend_handler",
+	) {
+		t.Fatalf("route-to-handler transition did not target nearby copied symbol: %#v", index.Edges)
 	}
 }
 

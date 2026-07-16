@@ -915,6 +915,7 @@ func (builder *workspaceAgentContextBuilder) indexTraceHandlerLocations(traces W
 }
 
 func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureDossierRecord) {
+	persistenceTargets := workspaceDossierPersistenceTargets(dossiers)
 	for _, dossier := range dossiers {
 		handlerID := ""
 		if dossier.BackendHandler != "" && builder.projects[dossier.BackendProject] {
@@ -950,16 +951,31 @@ func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureD
 			}
 			name := strings.Trim(strings.TrimSpace(persistence.Repository)+"."+strings.TrimSpace(persistence.Method), ".")
 			persistenceID := ""
-			if persistence.Entity == "" && persistence.Table == "" {
-				persistenceID = builder.findFact(
-					dossier.BackendProject,
-					"persistence",
-					"",
-					"",
-					persistence.File,
-					persistence.Line,
-					name,
-				)
+			copiedID := builder.findFact(
+				dossier.BackendProject,
+				"persistence",
+				"",
+				"",
+				persistence.File,
+				persistence.Line,
+				name,
+			)
+			baseKey := workspacePersistenceBaseKey(dossier.BackendProject, persistence)
+			targetKey := workspacePersistenceTargetKey(persistence)
+			targets := persistenceTargets[baseKey]
+			if copiedID != "" && (len(targets) <= 1 || targetKey == targets[0]) {
+				persistenceID = copiedID
+				builder.addFact(AgentContextFactRecord{
+					ID:         copiedID,
+					Summary:    strings.TrimSpace("entity " + persistence.Entity + " table " + persistence.Table),
+					Confidence: persistence.Confidence,
+					Search: compactContextSearch(
+						dossier.Route,
+						name,
+						persistence.Entity,
+						persistence.Table,
+					),
+				})
 			}
 			if persistenceID == "" {
 				persistenceID = builder.addFact(AgentContextFactRecord{
@@ -1024,6 +1040,41 @@ func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureD
 			}
 		}
 	}
+}
+
+func workspaceDossierPersistenceTargets(dossiers []FeatureDossierRecord) map[string][]string {
+	targetSets := map[string]map[string]bool{}
+	for _, dossier := range dossiers {
+		for _, persistence := range dossier.PersistencePath {
+			baseKey := workspacePersistenceBaseKey(dossier.BackendProject, persistence)
+			if targetSets[baseKey] == nil {
+				targetSets[baseKey] = map[string]bool{}
+			}
+			targetSets[baseKey][workspacePersistenceTargetKey(persistence)] = true
+		}
+	}
+	targets := map[string][]string{}
+	for baseKey, targetSet := range targetSets {
+		for targetKey := range targetSet {
+			targets[baseKey] = append(targets[baseKey], targetKey)
+		}
+		sort.Strings(targets[baseKey])
+	}
+	return targets
+}
+
+func workspacePersistenceBaseKey(project string, persistence PersistenceStepRecord) string {
+	name := strings.Trim(strings.TrimSpace(persistence.Repository)+"."+strings.TrimSpace(persistence.Method), ".")
+	return strings.Join([]string{
+		contextPathKey(project),
+		contextLabelKey(name),
+		workspaceAgentFile(project, persistence.File),
+		fmt.Sprint(persistence.Line),
+	}, "\x00")
+}
+
+func workspacePersistenceTargetKey(persistence PersistenceStepRecord) string {
+	return contextLabelKey(persistence.Entity) + "\x00" + contextLabelKey(persistence.Table)
 }
 
 func (builder *workspaceAgentContextBuilder) addDossierEdge(fromID, toID, kind, confidence string) {
@@ -1162,7 +1213,7 @@ func (builder *workspaceAgentContextBuilder) resolveHandler(
 			line = locations[0].line
 		}
 	}
-	if candidates := builder.exactHandlerFacts(project, "symbol", handler, file, line); len(candidates) == 1 {
+	if candidates := builder.nearestHandlerSymbolFacts(project, handler, file, line); len(candidates) == 1 {
 		builder.handlerFactIDs[key] = candidates[0]
 		return candidates[0]
 	} else if len(candidates) > 1 {
@@ -1187,6 +1238,48 @@ func (builder *workspaceAgentContextBuilder) resolveHandler(
 	})
 	builder.handlerFactIDs[key] = id
 	return id
+}
+
+func (builder *workspaceAgentContextBuilder) nearestHandlerSymbolFacts(project, handler, file string, line int) []string {
+	var candidates []AgentContextFactRecord
+	for _, fact := range builder.factsByID {
+		if fact.Project != contextPathKey(project) || fact.Kind != "symbol" ||
+			!workspaceAgentExactIdentity(fact, handler) {
+			continue
+		}
+		if file != "" && fact.File != file {
+			continue
+		}
+		candidates = append(candidates, fact)
+	}
+	if line > 0 && len(candidates) > 1 {
+		minDistance := -1
+		var nearest []AgentContextFactRecord
+		for _, fact := range candidates {
+			if fact.Line <= 0 {
+				continue
+			}
+			distance := fact.Line - line
+			if distance < 0 {
+				distance = -distance
+			}
+			if minDistance < 0 || distance < minDistance {
+				minDistance = distance
+				nearest = []AgentContextFactRecord{fact}
+			} else if distance == minDistance {
+				nearest = append(nearest, fact)
+			}
+		}
+		if minDistance >= 0 {
+			candidates = nearest
+		}
+	}
+	ids := make([]string, 0, len(candidates))
+	for _, fact := range candidates {
+		ids = append(ids, fact.ID)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func (builder *workspaceAgentContextBuilder) exactHandlerFacts(project, kind, handler, file string, line int) []string {
