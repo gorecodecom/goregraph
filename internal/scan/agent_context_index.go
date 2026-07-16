@@ -64,12 +64,14 @@ type agentContextBuilder struct {
 	factIDsByLabel       map[string][]string
 	factIDsByFile        map[string][]string
 	routeFactIDs         map[string][]string
+	routeFactIDsBySource map[string][]string
 	backendRouteFactIDs  map[string]bool
 	symbols              []RichSymbolRecord
 	symbolsByID          map[string]RichSymbolRecord
 	symbolsByLabel       map[string][]RichSymbolRecord
 	selectedSymbolKinds  map[string]string
 	symbolFactIDs        map[string]string
+	flowRouteFactIDs     []string
 	flowStepFactIDs      [][]string
 	testFactIDs          []string
 	contractFactIDs      []string
@@ -112,6 +114,7 @@ func newAgentContextBuilder(project string, symbols []RichSymbolRecord, evidence
 		factIDsByLabel:       map[string][]string{},
 		factIDsByFile:        map[string][]string{},
 		routeFactIDs:         map[string][]string{},
+		routeFactIDsBySource: map[string][]string{},
 		backendRouteFactIDs:  map[string]bool{},
 		symbols:              append([]RichSymbolRecord(nil), symbols...),
 		symbolsByID:          map[string]RichSymbolRecord{},
@@ -174,6 +177,9 @@ func (builder *agentContextBuilder) selectSymbols(
 		builder.selectMatchingSymbol(contextSimpleName(contract.Caller), contract.File, contract.Line, "symbol")
 	}
 	for _, relation := range relations {
+		if relation.NonPromotable {
+			continue
+		}
 		if _, ok := contextSemanticRelationKind(relation.Type); !ok {
 			continue
 		}
@@ -308,6 +314,12 @@ func (builder *agentContextBuilder) addRouteFacts(routes []CodeRouteRecord) {
 			builder.routeFactIDs[key],
 			id,
 		)
+		if route.RouteID != "" {
+			builder.routeFactIDsBySource[route.RouteID] = append(
+				builder.routeFactIDsBySource[route.RouteID],
+				id,
+			)
+		}
 		if route.Kind == "backend" {
 			builder.backendRouteFactIDs[id] = true
 		}
@@ -342,12 +354,14 @@ func (builder *agentContextBuilder) addSymbolFacts() {
 }
 
 func (builder *agentContextBuilder) addFlowFacts(flows []CodeFlowRecord) {
+	builder.flowRouteFactIDs = make([]string, len(flows))
 	builder.flowStepFactIDs = make([][]string, len(flows))
 	for flowIndex, flow := range flows {
+		builder.flowRouteFactIDs[flowIndex] = builder.routeFactIDForFlow(flow)
 		builder.flowStepFactIDs[flowIndex] = make([]string, len(flow.Steps))
 		for stepIndex, step := range flow.Steps {
 			if stepIndex == 0 && contextRouteHandlerStep(step) {
-				if id := builder.routeFactIDForFlow(flow); id != "" {
+				if id := builder.flowRouteFactIDs[flowIndex]; id != "" {
 					builder.flowStepFactIDs[flowIndex][stepIndex] = id
 					continue
 				}
@@ -487,6 +501,9 @@ func (builder *agentContextBuilder) addAPIContractFacts(contracts []APIContractR
 
 func (builder *agentContextBuilder) addRelationEdges(relations []RichRelationRecord) {
 	for _, relation := range relations {
+		if relation.NonPromotable {
+			continue
+		}
 		kind, ok := contextSemanticRelationKind(relation.Type)
 		if !ok || relation.Resolution == SymbolResolutionAmbiguous {
 			continue
@@ -495,7 +512,7 @@ func (builder *agentContextBuilder) addRelationEdges(relations []RichRelationRec
 		toID := builder.resolveFactID(
 			relation.ToSymbolID,
 			firstNonEmpty(relation.TargetQualifiedName, relation.To),
-			"",
+			relation.To,
 			0,
 			"",
 		)
@@ -531,11 +548,8 @@ func (builder *agentContextBuilder) addFlowEdges(flows []CodeFlowRecord) {
 		if len(stepIDs) == 0 {
 			continue
 		}
-		routeIDs := builder.routeFactIDs[contextRouteKey(flow.HTTPMethod, flow.Path)]
-		for _, routeID := range routeIDs {
-			if stepIDs[0] == "" || routeID == stepIDs[0] {
-				continue
-			}
+		routeID := builder.flowRouteFactIDs[flowIndex]
+		if routeID != "" && stepIDs[0] != "" && routeID != stepIDs[0] {
 			builder.addEdge(AgentContextEdgeRecord{
 				FromFactID: routeID,
 				ToFactID:   stepIDs[0],
@@ -658,22 +672,54 @@ func (builder *agentContextBuilder) addAPIContractEdges(contracts []APIContractR
 }
 
 func (builder *agentContextBuilder) addCoverage(capabilities []CapabilityRecord) {
+	grouped := map[string][]CapabilityRecord{}
 	for _, capability := range capabilities {
 		if !contextAgentCapability(capability.ID) || !contextCodeCapability(capability) {
 			continue
 		}
+		key := builder.project + "\x00" + string(capability.ID)
+		grouped[key] = append(grouped[key], capability)
+	}
+	for key, candidates := range grouped {
+		winningRank := -1
+		for _, candidate := range candidates {
+			winningRank = max(winningRank, contextCoverageRank(string(candidate.Coverage)))
+		}
+		var winning []CapabilityRecord
+		for _, candidate := range candidates {
+			if contextCoverageRank(string(candidate.Coverage)) == winningRank {
+				winning = append(winning, candidate)
+			}
+		}
+		sort.Slice(winning, func(i, j int) bool {
+			if winning[i].Language != winning[j].Language {
+				return winning[i].Language < winning[j].Language
+			}
+			if winning[i].StatusReason != winning[j].StatusReason {
+				return winning[i].StatusReason < winning[j].StatusReason
+			}
+			if winning[i].Reason != winning[j].Reason {
+				return winning[i].Reason < winning[j].Reason
+			}
+			return winning[i].Coverage < winning[j].Coverage
+		})
+		reason := ""
+		for _, candidate := range winning {
+			reason = firstNonEmpty(candidate.StatusReason, candidate.Reason)
+			if reason != "" {
+				break
+			}
+		}
+		if len(winning) == 0 {
+			continue
+		}
 		record := AgentContextCoverageRecord{
 			Project:    builder.project,
-			Capability: string(capability.ID),
-			Coverage:   string(capability.Coverage),
-			Reason:     firstNonEmpty(capability.StatusReason, capability.Reason),
+			Capability: string(winning[0].ID),
+			Coverage:   string(winning[0].Coverage),
+			Reason:     reason,
 		}
-		key := record.Project + "\x00" + record.Capability
-		current, exists := builder.coverageByCapability[key]
-		if !exists || contextCoverageRank(record.Coverage) > contextCoverageRank(current.Coverage) ||
-			(contextCoverageRank(record.Coverage) == contextCoverageRank(current.Coverage) && record.Reason < current.Reason) {
-			builder.coverageByCapability[key] = record
-		}
+		builder.coverageByCapability[key] = record
 	}
 }
 
@@ -802,6 +848,15 @@ func (builder *agentContextBuilder) bestFactID(ids []string, file string, line i
 }
 
 func (builder *agentContextBuilder) routeFactIDForFlow(flow CodeFlowRecord) string {
+	if flow.RouteID != "" {
+		ids := builder.routeFactIDsBySource[flow.RouteID]
+		if len(ids) == 1 {
+			return ids[0]
+		}
+		if len(ids) > 1 {
+			return builder.bestFactID(ids, flow.File, flow.Line, "route")
+		}
+	}
 	key := contextRouteKey(flow.HTTPMethod, flow.Path)
 	ids := builder.routeFactIDs[key]
 	if len(ids) == 1 {

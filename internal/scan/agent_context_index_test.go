@@ -209,6 +209,38 @@ func TestBuildProjectAgentContextIndexNormalizesRoutesAndFlowTransitions(t *test
 	}
 }
 
+func TestBuildProjectAgentContextIndexUsesOneSelectedRoutePerFlow(t *testing.T) {
+	routes := []CodeRouteRecord{
+		{
+			RouteID: "route:admin", Kind: "backend", HTTPMethod: "GET", Path: "/users",
+			Handler: "AdminUserController.listUsers", File: "admin/AdminUserController.java", Line: 10,
+		},
+		{
+			RouteID: "route:public", Kind: "backend", HTTPMethod: "GET", Path: "/users",
+			Handler: "PublicUserController.listUsers", File: "public/PublicUserController.java", Line: 20,
+		},
+	}
+	flows := []CodeFlowRecord{{
+		RouteID: "route:public", HTTPMethod: "GET", Path: "/users",
+		Handler: "PublicUserController.listUsers", File: "public/PublicUserController.java", Line: 20,
+		Steps: []CodeFlowStep{
+			{Name: "listUsers", Owner: "PublicUserController", Kind: "route_handler", File: "public/PublicUserController.java", Line: 20},
+			{Name: "findUsers", Owner: "UserService", Kind: "service_method", File: "service/UserService.java", Line: 30},
+		},
+	}}
+
+	index := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		routes, flows, nil, nil, nil, nil, nil, nil)
+
+	if len(index.Edges) != 1 {
+		t.Fatalf("flow edges = %#v", index.Edges)
+	}
+	publicRoute := findContextFactByQualified(index.Facts, "PublicUserController.listUsers")
+	if index.Edges[0].FromFactID != publicRoute.ID || index.Edges[0].ToLabel != "UserService.findUsers" {
+		t.Fatalf("selected flow edge = %#v, public route = %#v", index.Edges[0], publicRoute)
+	}
+}
+
 func TestBuildProjectAgentContextIndexRejectsLexicalAndAmbiguousRelations(t *testing.T) {
 	symbols := []RichSymbolRecord{
 		{ID: "consumer-a", Name: "ConsumerA", QualifiedName: "pkg.ConsumerA", Kind: "class", Language: "java", File: "a/Consumer.java", Line: 1},
@@ -225,6 +257,64 @@ func TestBuildProjectAgentContextIndexRejectsLexicalAndAmbiguousRelations(t *tes
 
 	if len(index.Edges) != 0 {
 		t.Fatalf("lexical or ambiguous relations leaked: %#v", index.Edges)
+	}
+}
+
+func TestBuildProjectAgentContextIndexRejectsNonPromotableRelationsBeforeSelection(t *testing.T) {
+	symbols := []RichSymbolRecord{
+		{ID: "consumer", Name: "loadUsers", QualifiedName: "src/page#loadUsers", Kind: "function", Language: "typescript", File: "src/page.ts", Line: 5},
+		{ID: "provider", Name: "fetchUsers", QualifiedName: "src/api#fetchUsers", Kind: "function", Language: "typescript", File: "src/api.ts", Line: 8},
+	}
+	relations := []RichRelationRecord{{
+		ID: "computed-call", From: "src/page.ts", To: "src/api#fetchUsers",
+		Type: "calls_export", FromSymbolID: "consumer", ToSymbolID: "provider",
+		TargetQualifiedName: "src/api#fetchUsers", Resolution: SymbolResolutionUnresolved,
+		NonPromotable: true, Line: 12,
+	}}
+
+	index := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		nil, nil, symbols, relations, nil, nil, nil, nil)
+
+	if len(index.Facts) != 0 || len(index.Edges) != 0 {
+		t.Fatalf("non-promotable relation leaked into compact context: %#v", index)
+	}
+}
+
+func TestBuildProjectAgentContextIndexResolvesUniqueLegacyFileTarget(t *testing.T) {
+	symbols := []RichSymbolRecord{
+		{ID: "consumer", Name: "Consumer", QualifiedName: "pkg.Consumer", Kind: "class", Language: "java", File: "a/Consumer.java", Line: 1},
+		{ID: "provider", Name: "Provider", QualifiedName: "pkg.Provider", Kind: "class", Language: "java", File: "b/Provider.java", Line: 1},
+	}
+	relations := []RichRelationRecord{{
+		ID: "legacy-call", From: "a/Consumer.java", To: `b\Provider.java`,
+		Type: "calls", Line: 12, Confidence: "EXTRACTED",
+	}}
+
+	index := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		nil, nil, symbols, relations, nil, nil, nil, nil)
+
+	if len(index.Edges) != 1 || index.Edges[0].FromLabel != "pkg.Consumer" ||
+		index.Edges[0].ToLabel != "pkg.Provider" {
+		t.Fatalf("legacy file-target edge = %#v", index.Edges)
+	}
+}
+
+func TestBuildProjectAgentContextIndexRejectsAmbiguousLegacyFileTarget(t *testing.T) {
+	symbols := []RichSymbolRecord{
+		{ID: "consumer", Name: "Consumer", QualifiedName: "pkg.Consumer", Kind: "class", Language: "java", File: "a/Consumer.java", Line: 1},
+		{ID: "provider", Name: "Provider", QualifiedName: "pkg.Provider", Kind: "class", Language: "java", File: "b/Provider.java", Line: 1},
+		{ID: "helper", Name: "ProviderHelper", QualifiedName: "pkg.ProviderHelper", Kind: "class", Language: "java", File: "b/Provider.java", Line: 20},
+	}
+	relations := []RichRelationRecord{{
+		ID: "legacy-call", From: "a/Consumer.java", To: "b/Provider.java",
+		Type: "calls", Line: 12, Confidence: "EXTRACTED",
+	}}
+
+	index := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		nil, nil, symbols, relations, nil, nil, nil, nil)
+
+	if len(index.Edges) != 0 {
+		t.Fatalf("ambiguous legacy file-target edge leaked: %#v", index.Edges)
 	}
 }
 
@@ -268,6 +358,28 @@ func TestBuildProjectAgentContextIndexAggregatesCoverageFailures(t *testing.T) {
 	}
 }
 
+func TestBuildProjectAgentContextIndexKeepsDeterministicNonEmptyCoverageReason(t *testing.T) {
+	withoutReason := CapabilityRecord{
+		ID: CapabilityCalls, Language: "java", SourceClass: "code", Coverage: CoverageComplete,
+	}
+	withReason := CapabilityRecord{
+		ID: CapabilityCalls, Language: "typescript", SourceClass: "code", Coverage: CoverageComplete,
+		StatusReason: "TypeScript calls are indexed.",
+	}
+
+	first := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		nil, nil, nil, nil, nil, nil, nil, []CapabilityRecord{withoutReason, withReason})
+	second := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		nil, nil, nil, nil, nil, nil, nil, []CapabilityRecord{withReason, withoutReason})
+
+	if diff := cmpJSON(first, second); diff != "" {
+		t.Fatalf("coverage reason depends on input order: %s", diff)
+	}
+	if len(first.Coverage) != 1 || first.Coverage[0].Reason != "TypeScript calls are indexed." {
+		t.Fatalf("coverage reason = %#v", first.Coverage)
+	}
+}
+
 func TestBuildProjectAgentContextIndexFiltersNonSemanticEdges(t *testing.T) {
 	symbols := []RichSymbolRecord{
 		{ID: "consumer", Name: "Consumer", QualifiedName: "pkg.Consumer", Kind: "class", Language: "java", File: "a/Consumer.java", Line: 1},
@@ -305,6 +417,15 @@ func hasContextFact(facts []AgentContextFactRecord, kind, name string) bool {
 func findContextFact(facts []AgentContextFactRecord, kind, name string) AgentContextFactRecord {
 	for _, fact := range facts {
 		if fact.Kind == kind && fact.Name == name {
+			return fact
+		}
+	}
+	return AgentContextFactRecord{}
+}
+
+func findContextFactByQualified(facts []AgentContextFactRecord, qualified string) AgentContextFactRecord {
+	for _, fact := range facts {
+		if fact.Qualified == qualified {
 			return fact
 		}
 	}
