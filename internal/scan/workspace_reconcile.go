@@ -259,7 +259,10 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	for _, project := range indexed {
 		out := filepath.Join(project.record.AbsPath, project.record.OutputDir)
 		projectLayout := NewProjectOutputLayout(out)
-		if err := publishProjectReconciliationIncomplete(projectLayout, target); err != nil {
+		projectManifest := readCurrentOutputManifest(projectLayout.Manifest)
+		writeProjectDashboard := target.IncludesDashboard() &&
+			validProjectionStatus(projectLayout.Root, projectManifest.Dashboard).Complete
+		if err := publishProjectReconciliationIncomplete(projectLayout, writeProjectDashboard); err != nil {
 			return nil, err
 		}
 		projectMatches := filterWorkspaceContractMatches(project.record.Path, matches)
@@ -277,10 +280,10 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 		if err := writeJSON(projectLayout.Index("workspace-graph.json"), filterWorkspaceGraph(project.record.Path, workspaceGraph)); err != nil {
 			return nil, err
 		}
-		if err := updateWorkspaceProjectDiagnostics(projectLayout, project.record.Path, matches, target.IncludesDashboard()); err != nil {
+		if err := updateWorkspaceProjectDiagnostics(projectLayout, project.record.Path, matches, writeProjectDashboard); err != nil {
 			return nil, err
 		}
-		if target.IncludesDashboard() {
+		if writeProjectDashboard {
 			for name, body := range map[string]string{
 				"workspace-context.md":          renderProjectWorkspaceContextReport(context, project.record.Path),
 				"workspace-contract-matches.md": renderProjectWorkspaceMatchesReport(project.record.Path, matches),
@@ -298,7 +301,7 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 				return nil, err
 			}
 		}
-		if err := republishReconciledProjectManifest(projectLayout, target, registry.Generated); err != nil {
+		if err := republishReconciledProjectManifest(projectLayout, writeProjectDashboard, registry.Generated); err != nil {
 			return nil, err
 		}
 	}
@@ -308,14 +311,14 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	return &registry, nil
 }
 
-func publishProjectReconciliationIncomplete(layout OutputLayout, target BuildTarget) error {
+func publishProjectReconciliationIncomplete(layout OutputLayout, writeDashboard bool) error {
 	manifest := readCurrentOutputManifest(layout.Manifest)
 	if manifest.Scope != "project" {
 		return fmt.Errorf("project manifest %s is missing or invalid", layout.Manifest)
 	}
 	manifest.Index.Complete = false
 	manifest.Agent = validProjectionStatus(layout.Root, manifest.Agent)
-	if target.IncludesDashboard() {
+	if writeDashboard {
 		manifest.Dashboard.Complete = false
 	} else {
 		manifest.Dashboard = validProjectionStatus(layout.Root, manifest.Dashboard)
@@ -323,7 +326,7 @@ func publishProjectReconciliationIncomplete(layout OutputLayout, target BuildTar
 	return writeOutputManifestAtomic(layout.Manifest, manifest)
 }
 
-func republishReconciledProjectManifest(layout OutputLayout, target BuildTarget, generatedAt string) error {
+func republishReconciledProjectManifest(layout OutputLayout, writeDashboard bool, generatedAt string) error {
 	manifest := readCurrentOutputManifest(layout.Manifest)
 	if manifest.Scope != "project" {
 		return fmt.Errorf("project manifest %s is missing or invalid", layout.Manifest)
@@ -335,7 +338,7 @@ func republishReconciledProjectManifest(layout OutputLayout, target BuildTarget,
 	}
 	manifest.Index.GeneratedAt = generatedAt
 	manifest.Agent = validProjectionStatus(layout.Root, manifest.Agent)
-	if target.IncludesDashboard() {
+	if writeDashboard {
 		manifest.Dashboard.Complete = true
 		manifest.Dashboard = validProjectionStatus(layout.Root, manifest.Dashboard)
 		if !manifest.Dashboard.Complete {

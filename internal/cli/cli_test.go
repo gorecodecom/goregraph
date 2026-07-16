@@ -2,10 +2,13 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
 func TestRunHelpPrintsUsage(t *testing.T) {
@@ -153,6 +156,70 @@ func TestRunWorkspaceRefreshAcceptsBuildTargets(t *testing.T) {
 	}
 }
 
+func TestRunWorkspaceRefreshBuildsDashboardWithoutCreatingMissingProjectDashboards(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		refreshArgs func(string) []string
+	}{
+		{
+			name: "dashboard",
+			refreshArgs: func(workspace string) []string {
+				return []string{"workspace", "refresh", workspace, "--target", "dashboard", "--workspace", workspace}
+			},
+		},
+		{
+			name: "default_all",
+			refreshArgs: func(workspace string) []string {
+				return []string{"workspace", "refresh", workspace, "--workspace", workspace}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			projects := []string{
+				filepath.Join(workspace, "frontend", "web"),
+				filepath.Join(workspace, "services", "api"),
+			}
+			writeFile(t, projects[0], "package.json", `{"name":"web"}`)
+			writeFile(t, projects[1], "go.mod", "module example.test/api\n")
+			var buildOut, buildErr bytes.Buffer
+			if code := Run([]string{"workspace", "build", "agent", workspace, "--workspace", workspace, "--no-update-gitignore"}, &buildOut, &buildErr); code != 0 {
+				t.Fatalf("workspace agent build exit code = %d, stderr=%s", code, buildErr.String())
+			}
+			for _, project := range projects {
+				assertCLIPathState(t, filepath.Join(project, "goregraph-out", "dashboard"), false)
+			}
+			var stdout, stderr bytes.Buffer
+
+			code := Run(test.refreshArgs(workspace), &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("workspace refresh exit code = %d, stdout=%s, stderr=%s", code, stdout.String(), stderr.String())
+			}
+			workspaceOut := filepath.Join(workspace, ".goregraph-workspace")
+			assertCLIPathExists(t, filepath.Join(workspaceOut, "dashboard", "workspace-map.html"))
+			workspaceManifest := readCLIOutputManifest(t, filepath.Join(workspaceOut, "manifest.json"))
+			if !workspaceManifest.Dashboard.Complete {
+				t.Fatalf("workspace dashboard is incomplete: %#v", workspaceManifest.Dashboard)
+			}
+			for _, project := range projects {
+				projectOut := filepath.Join(project, "goregraph-out")
+				assertCLIPathState(t, filepath.Join(projectOut, "dashboard"), false)
+				projectManifest := readCLIOutputManifest(t, filepath.Join(projectOut, "manifest.json"))
+				if !projectManifest.Index.Complete {
+					t.Fatalf("%s index is incomplete after workspace refresh: %#v", project, projectManifest.Index)
+				}
+				if !projectManifest.Agent.Complete {
+					t.Fatalf("%s agent projection was not preserved: %#v", project, projectManifest.Agent)
+				}
+				if projectManifest.Dashboard.Complete || len(projectManifest.Dashboard.Files) != 0 {
+					t.Fatalf("%s acquired an empty or incomplete dashboard publication: %#v", project, projectManifest.Dashboard)
+				}
+			}
+		})
+	}
+}
+
 func TestRunWorkspaceRefreshListsWrittenAndPreservedProjections(t *testing.T) {
 	workspace := t.TempDir()
 	writeFile(t, workspace, "frontend/web/package.json", `{"name":"web"}`)
@@ -176,6 +243,19 @@ func TestRunWorkspaceRefreshListsWrittenAndPreservedProjections(t *testing.T) {
 			t.Fatalf("output missing %q:\n%s", want, stdout.String())
 		}
 	}
+}
+
+func readCLIOutputManifest(t *testing.T, path string) scan.OutputManifest {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest scan.OutputManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	return manifest
 }
 
 func assertCLIProjection(t *testing.T, root, projection string, want bool) {
