@@ -172,7 +172,12 @@ func extractNodePackage(path, body string) (NodePackageRecord, bool) {
 	if record.Types == "" {
 		record.Types = strings.TrimSpace(pkg.Typings)
 	}
-	return record, record.Name != "" || len(record.Scripts) > 0 || len(record.Workspaces) > 0
+	return record, record.Name != "" ||
+		len(record.Scripts) > 0 ||
+		len(record.Workspaces) > 0 ||
+		len(record.Dependencies) > 0 ||
+		len(record.Exports) > 0 ||
+		record.Types != ""
 }
 
 func normalizePackageExports(value any) map[string][]string {

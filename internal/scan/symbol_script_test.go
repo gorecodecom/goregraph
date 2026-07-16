@@ -224,6 +224,117 @@ func TestScriptReexportsPreserveOriginalDeclaration(t *testing.T) {
 	}
 }
 
+func TestScriptLocalExportClausesAndDefaultNamesResolve(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/service.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import DefaultService, { Service, factory } from "./service";
+export function App() {
+  factory();
+  new Service();
+  new DefaultService();
+}
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `
+class LocalService {}
+const factory = () => {};
+export { LocalService as Service, factory };
+export default LocalService;
+`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	localService := scriptDeclarationByQualified(t, resolved.Declarations, "src/service#LocalService")
+	factory := scriptDeclarationByQualified(t, resolved.Declarations, "src/service#factory")
+	for _, want := range []struct {
+		kind, exportName string
+		target           RichSymbolRecord
+	}{
+		{kind: "imports_value", exportName: "Service", target: localService},
+		{kind: "imports_value", exportName: "factory", target: factory},
+		{kind: "imports_value", exportName: "default", target: localService},
+		{kind: "calls_export", exportName: "factory", target: factory},
+		{kind: "instantiates", exportName: "Service", target: localService},
+		{kind: "instantiates", exportName: "default", target: localService},
+	} {
+		reference := assertScriptReference(t, resolved.References, want.kind, "./service", want.exportName)
+		if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID != want.target.ID {
+			t.Fatalf("local export %s#%s = %#v, want %s", want.kind, want.exportName, reference, want.target.ID)
+		}
+	}
+}
+
+func TestScriptLocalExportClauseForwardsImportedBinding(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/barrel.ts", Language: "typescript"},
+		{Path: "src/service.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `import { Service } from "./barrel";`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `
+import { LocalService } from "./service";
+export { LocalService as Service };
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[2], `export class LocalService {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	reference := assertScriptReference(t, resolved.References, "imports_value", "./barrel", "Service")
+	declaration := scriptDeclarationByQualified(t, resolved.Declarations, "src/service#LocalService")
+	if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID != declaration.ID {
+		t.Fatalf("local export of imported binding = %#v, want %s", reference, declaration.ID)
+	}
+}
+
+func TestScriptSemicolonlessLocalExportStopsAtLineBoundary(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/service.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `import { Service } from "./service"`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `
+class LocalService {}
+export { LocalService as Service }
+const label = from + 1
+`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	reference := assertScriptReference(t, resolved.References, "imports_value", "./service", "Service")
+	declaration := scriptDeclarationByQualified(t, resolved.Declarations, "src/service#LocalService")
+	if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID != declaration.ID {
+		t.Fatalf("semicolonless local export = %#v, want exact declaration %s", reference, declaration.ID)
+	}
+}
+
+func TestScriptCombinedDefaultNamespaceImportRetainsAlias(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import DefaultAPI, * as api from "./api";
+export function App() { api.loadUser(); return new DefaultAPI(); }
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `
+export default class API {}
+export function loadUser() {}
+`))
+
+	namespace := assertScriptReference(t, facts.References, "imports_namespace", "./api", "*")
+	if namespace.scriptLocalName != "api" {
+		t.Fatalf("combined namespace local alias = %q, want api", namespace.scriptLocalName)
+	}
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	call := assertScriptReference(t, resolved.References, "calls_export", "./api", "loadUser")
+	if call.Resolution != SymbolResolutionExact || call.ToSymbolID == "" {
+		t.Fatalf("combined namespace call = %#v", call)
+	}
+}
+
 func TestScriptReexportCycleRemainsUnresolved(t *testing.T) {
 	files := []FileRecord{
 		{Path: "src/App.ts", Language: "typescript"},
@@ -264,6 +375,104 @@ func TestScriptConditionalPackageTargetsRemainAmbiguous(t *testing.T) {
 	reference := assertScriptReference(t, resolved.References, "imports_value", "@weka/ui/user", "User")
 	if reference.Resolution != SymbolResolutionAmbiguous || reference.ToSymbolID != "" || len(reference.CandidateSymbolIDs) != 2 {
 		t.Fatalf("conditional package export = %#v", reference)
+	}
+}
+
+func TestScriptPackageTargetAmbiguitySurvivesOneExistingFile(t *testing.T) {
+	files := []FileRecord{
+		{Path: "app/src/App.ts", Language: "typescript"},
+		{Path: "packages/ui/src/user.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `import { User } from "@weka/ui/user";`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export interface User { id: string }`))
+	packages := []NodePackageRecord{
+		{Path: "app/package.json", Name: "app", Dependencies: []string{"@weka/ui"}},
+		{Path: "packages/ui/package.json", Name: "@weka/ui", Exports: map[string][]string{"./user": {"./src/missing.ts", "./src/user.ts"}}},
+	}
+
+	resolved := ResolveScriptSymbolFacts(files, packages, nil, facts)
+	reference := assertScriptReference(t, resolved.References, "imports_value", "@weka/ui/user", "User")
+	if reference.Resolution != SymbolResolutionAmbiguous || reference.ToSymbolID != "" || len(reference.CandidateSymbolIDs) != 1 {
+		t.Fatalf("package target ambiguity collapsed after one file survived: %#v", reference)
+	}
+}
+
+func TestScriptModuleAmbiguitySurvivesSingleExportCandidate(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/user.ts", Language: "typescript"},
+		{Path: "src/user.tsx", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `import { User } from "./user";`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export interface User { id: string }`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[2], `export function UserCard() { return <div /> }`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	reference := assertScriptReference(t, resolved.References, "imports_value", "./user", "User")
+	if reference.Resolution != SymbolResolutionAmbiguous || reference.ToSymbolID != "" || len(reference.CandidateSymbolIDs) != 1 {
+		t.Fatalf("module ambiguity collapsed to one export candidate: %#v", reference)
+	}
+}
+
+func TestScriptAliasCannotBypassWorkspaceDependency(t *testing.T) {
+	files := []FileRecord{
+		{Path: "apps/web/src/App.ts", Language: "typescript"},
+		{Path: "packages/ui/src/user.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `import { User } from "@ui/user";`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export interface User { id: string }`))
+	configs := map[string]ScriptResolutionConfig{
+		"apps/web/tsconfig.json": {
+			BaseURL: ".",
+			Paths:   map[string][]string{"@ui/*": {"../../packages/ui/src/*"}},
+		},
+	}
+	packages := []NodePackageRecord{
+		{Path: "apps/web/package.json", Name: "web"},
+		{Path: "packages/ui/package.json", Name: "@weka/ui"},
+	}
+
+	unresolved := ResolveScriptSymbolFacts(files, packages, configs, facts)
+	reference := assertScriptReference(t, unresolved.References, "imports_value", "@ui/user", "User")
+	if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "dependency") {
+		t.Fatalf("alias bypassed workspace dependency gating: %#v", reference)
+	}
+
+	packages[0].Dependencies = []string{"@weka/ui"}
+	exact := ResolveScriptSymbolFacts(files, packages, configs, facts)
+	reference = assertScriptReference(t, exact.References, "imports_value", "@ui/user", "User")
+	if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
+		t.Fatalf("declared alias dependency did not resolve: %#v", reference)
+	}
+}
+
+func TestNearestScriptConfigPrefersTsconfigAtEqualDepth(t *testing.T) {
+	configs := map[string]ScriptResolutionConfig{
+		"apps/web/jsconfig.json": {BaseURL: "js"},
+		"apps/web/tsconfig.json": {BaseURL: "ts"},
+	}
+	for range 100 {
+		path, config, ok := nearestScriptConfig("apps/web/src/App.ts", configs)
+		if !ok || path != "apps/web/tsconfig.json" || config.BaseURL != "ts" {
+			t.Fatalf("equal-depth config selection = %q %#v, want tsconfig", path, config)
+		}
+	}
+}
+
+func TestExtractNodePackageKeepsResolutionOnlyMetadata(t *testing.T) {
+	record, ok := extractNodePackage("package.json", `{
+  "dependencies": {"@weka/ui": "workspace:*"},
+  "types": "./src/index.ts",
+  "exports": "./src/index.ts"
+}`)
+	if !ok {
+		t.Fatal("dependency/resolution-only package.json was discarded")
+	}
+	if !reflect.DeepEqual(record.Dependencies, []string{"@weka/ui"}) || record.Types != "./src/index.ts" || !reflect.DeepEqual(record.Exports["."], []string{"./src/index.ts"}) {
+		t.Fatalf("resolution-only package metadata = %#v", record)
 	}
 }
 
@@ -449,6 +658,141 @@ function helper() {}
 	}
 }
 
+func TestScriptShadowedImportsNeverResolveExact(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { loadUser } from "./api"; import * as api from "./api";
+export function App(loadUser: () => void) {
+  loadUser();
+  {
+    const loadUser = () => {};
+    loadUser();
+  }
+}
+export function Other() {
+  loadUser();
+}
+export const Arrow = (loadUser) => {
+  loadUser();
+};
+export function Namespace(api) {
+  api.loadUser();
+}
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function loadUser() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	for _, line := range []int{4, 7, 14, 17} {
+		reference := scriptReferenceAtLine(t, resolved.References, "calls_export", line)
+		if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
+			t.Fatalf("shadowed imported call at line %d resolved exact: %#v", line, reference)
+		}
+	}
+	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 11)
+	if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
+		t.Fatalf("unshadowed imported call did not resolve: %#v", reference)
+	}
+}
+
+func TestScriptNestedDeclarationsAreNonselectableAndScopeLocal(t *testing.T) {
+	file := FileRecord{Path: "src/App.ts", Language: "typescript"}
+	facts := ExtractScriptSymbolFacts(file, `
+export function Outer() {
+  function helper() {}
+  helper();
+}
+export function Sibling() {
+  helper();
+}
+`)
+	for _, declaration := range facts.Declarations {
+		if declaration.Name == "helper" {
+			t.Fatalf("nested helper became a module declaration: %#v", declaration)
+		}
+	}
+	resolved := ResolveScriptSymbolFacts([]FileRecord{file}, nil, nil, facts)
+	for _, line := range []int{4, 7} {
+		for _, reference := range resolved.References {
+			if reference.Line == line && reference.TargetExport == "helper" && (reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "") {
+				t.Fatalf("scope-local helper leaked at line %d: %#v", line, reference)
+			}
+		}
+	}
+}
+
+func TestExtractScriptRejectsTypeTokensExpressionsAndNestedDeclarations(t *testing.T) {
+	file := FileRecord{Path: "src/Declarations.ts", Language: "typescript"}
+	facts := ExtractScriptSymbolFacts(file, `
+import type Imported from "./Imported";
+const ClassFactory = class ExpressionClass {};
+const FunctionFactory = function ExpressionFunction() {};
+export function Same() {}
+export function Outer() {
+  function Same() {}
+  class NestedClass {}
+}
+export class RealService {}
+`)
+	wants := map[string]int{
+		"src/Declarations#Same":        5,
+		"src/Declarations#Outer":       6,
+		"src/Declarations#RealService": 10,
+	}
+	if len(facts.Declarations) != len(wants) {
+		t.Fatalf("declarations = %#v, want only top-level named declarations", facts.Declarations)
+	}
+	for qualified, line := range wants {
+		declaration := scriptDeclarationByQualified(t, facts.Declarations, qualified)
+		if declaration.Line != line {
+			t.Fatalf("%s line = %d, want %d", qualified, declaration.Line, line)
+		}
+	}
+}
+
+func TestScriptTypeAndJSXReferencesRequireProvenContext(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/View.tsx", Language: "typescript"},
+		{Path: "src/UserService.ts", Language: "typescript"},
+		{Path: "src/UserCard.tsx", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { UserService } from "./UserService";
+import { UserCard } from "./UserCard";
+export function App(value: number) {
+  const object = {ctor: UserService};
+  const typed: UserService = object.ctor;
+  return value < UserCard > 0;
+}
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `
+import { UserCard } from "./UserCard";
+export function View() { return <UserCard />; }
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[2], `export class UserService {}`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[3], `export function UserCard() { return <div /> }`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	typeReferences := scriptReferences(t, resolved.References, "type_reference", "./UserService", "UserService")
+	if len(typeReferences) != 1 || typeReferences[0].Line != 6 || typeReferences[0].Resolution != SymbolResolutionExact {
+		t.Fatalf("proven type references = %#v, want only variable annotation line 6", typeReferences)
+	}
+	for _, reference := range resolved.References {
+		if reference.From == "src/App.ts" && reference.Type == "renders_component" {
+			t.Fatalf(".ts comparison emitted JSX relation: %#v", reference)
+		}
+	}
+	jsx := assertScriptReference(t, resolved.References, "renders_component", "./UserCard", "UserCard")
+	if jsx.From != "src/View.tsx" || jsx.Resolution != SymbolResolutionExact {
+		t.Fatalf("tsx component reference = %#v", jsx)
+	}
+}
+
 func TestRunWritesScriptCanonicalSymbolFactsAndCallEdges(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "tsconfig.json", `{"compilerOptions":{"baseUrl":".","paths":{"@api":["src/api"]}}}`)
@@ -579,6 +923,17 @@ func scriptReferences(t *testing.T, references []RichRelationRecord, kind, modul
 		}
 	}
 	return result
+}
+
+func scriptReferenceAtLine(t *testing.T, references []RichRelationRecord, kind string, line int) RichRelationRecord {
+	t.Helper()
+	for _, reference := range references {
+		if reference.Type == kind && reference.Line == line {
+			return reference
+		}
+	}
+	t.Fatalf("missing %s reference at line %d in %#v", kind, line, references)
+	return RichRelationRecord{}
 }
 
 func scriptDeclarationByQualified(t *testing.T, declarations []RichSymbolRecord, qualified string) RichSymbolRecord {

@@ -78,12 +78,21 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 		if reference.Resolution == SymbolResolutionExact && targetIdentity == "" {
 			targetIdentity = reference.TargetQualifiedName
 		}
+		if (reference.Language == "javascript" || reference.Language == "typescript") && reference.TargetModule != "" {
+			targetIdentity += "\x00" + reference.TargetModule + "\x00" + reference.TargetExport
+		}
 		if reference.Resolution == SymbolResolutionUnresolved {
 			category = SymbolUsageUnresolved
 			targetIdentity = reference.TargetQualifiedName
+			if reference.Language == "javascript" || reference.Language == "typescript" {
+				targetIdentity += "\x00" + reference.TargetModule + "\x00" + reference.TargetExport
+			}
 		} else if reference.Resolution == SymbolResolutionAmbiguous {
 			category = SymbolUsageAmbiguous
 			targetIdentity = strings.Join(reference.CandidateSymbolIDs, ",")
+			if reference.Language == "javascript" || reference.Language == "typescript" {
+				targetIdentity += "\x00" + reference.TargetModule + "\x00" + reference.TargetExport
+			}
 		}
 		reference.ID = StableWorkspaceUsageID(reference.ToSymbolID, "", reference.FromSymbolID, category, reference.Type, targetIdentity, reference.From, reference.Line)
 	}

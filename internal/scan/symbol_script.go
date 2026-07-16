@@ -15,19 +15,22 @@ type ScriptResolutionConfig struct {
 }
 
 var (
-	scriptTypeDeclarationRE = regexp.MustCompile(`(?m)\b(export\s+)?(default\s+)?(class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)\b`)
-	scriptFunctionRE        = regexp.MustCompile(`(?m)\b(export\s+)?(default\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
-	scriptArrowRE           = regexp.MustCompile(`(?m)\b(export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?(?:\([^;=]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>`)
+	scriptTypeDeclarationRE = regexp.MustCompile(`(?m)(?:^|;)[ \t]*(export\s+)?(default\s+)?(class|interface|type|enum)\s+([A-Za-z_$][A-Za-z0-9_$]*)\b`)
+	scriptFunctionRE        = regexp.MustCompile(`(?m)(?:^|;)[ \t]*(export\s+)?(default\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
+	scriptArrowRE           = regexp.MustCompile(`(?m)(?:^|;)[ \t]*(export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?(?:\([^;=]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>`)
 	scriptImportKeywordRE   = regexp.MustCompile(`\bimport\b`)
 	scriptExportKeywordRE   = regexp.MustCompile(`\bexport\b`)
 	scriptQuotedModuleRE    = regexp.MustCompile(`(?:from\s*)?["']([^"']+)["']`)
 	scriptNamedBindingRE    = regexp.MustCompile(`\{([^}]*)\}`)
-	scriptTypeUsageRE       = regexp.MustCompile(`:\s*([A-Z][A-Za-z0-9_$]*)\b`)
+	scriptVariableTypeRE    = regexp.MustCompile(`\b(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*:\s*([A-Z][A-Za-z0-9_$]*)\b`)
+	scriptParameterTypeRE   = regexp.MustCompile(`(?:\(|,)\s*[A-Za-z_$][A-Za-z0-9_$]*\??\s*:\s*([A-Z][A-Za-z0-9_$]*)\b`)
+	scriptReturnTypeRE      = regexp.MustCompile(`\)\s*:\s*([A-Z][A-Za-z0-9_$]*)\b`)
 	scriptJSXUsageRE        = regexp.MustCompile(`<([A-Z][A-Za-z0-9_$]*)\b`)
 	scriptNewUsageRE        = regexp.MustCompile(`\bnew\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	scriptMemberCallRE      = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	scriptDirectCallRE      = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	scriptComputedCallRE    = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\[[^\]]+\]\s*\(`)
+	scriptVariableBindingRE = regexp.MustCompile(`\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\b`)
 )
 
 // ExtractScriptSymbolFacts extracts conservative declaration and module-binding facts.
@@ -66,9 +69,13 @@ func extractScriptDeclarations(file FileRecord, masked string) []RichSymbolRecor
 			Analyzer:       "script-source",
 			Confidence:     ConfidenceExact,
 			Coverage:       CoverageComplete,
+			scriptOffset:   offset,
 		})
 	}
 	for _, match := range scriptTypeDeclarationRE.FindAllStringSubmatchIndex(masked, -1) {
+		if scriptBraceDepthAt(masked, match[0]) != 0 {
+			continue
+		}
 		kind := masked[match[6]:match[7]]
 		name := masked[match[8]:match[9]]
 		exportName := ""
@@ -81,6 +88,9 @@ func extractScriptDeclarations(file FileRecord, masked string) []RichSymbolRecor
 		add(kind, name, exportName, match[0])
 	}
 	for _, match := range scriptFunctionRE.FindAllStringSubmatchIndex(masked, -1) {
+		if scriptBraceDepthAt(masked, match[0]) != 0 {
+			continue
+		}
 		name := masked[match[6]:match[7]]
 		kind := "function"
 		if isLikelyReactComponent(name, file.Path) {
@@ -96,6 +106,9 @@ func extractScriptDeclarations(file FileRecord, masked string) []RichSymbolRecor
 		add(kind, name, exportName, match[0])
 	}
 	for _, match := range scriptArrowRE.FindAllStringSubmatchIndex(masked, -1) {
+		if scriptBraceDepthAt(masked, match[0]) != 0 {
+			continue
+		}
 		name := masked[match[4]:match[5]]
 		kind := "function"
 		if isLikelyReactComponent(name, file.Path) {
@@ -170,21 +183,42 @@ func extractScriptModuleReferences(file FileRecord, body, masked string) []RichR
 			if strings.HasPrefix(rest, "{") {
 				appendScriptNamedReferences(&references, file, "imports_value", module, rest, line, false)
 			} else if strings.HasPrefix(rest, "*") {
-				references = append(references, newScriptReference(file, "imports_namespace", module, "*", line, "namespace import", false))
+				reference := newScriptReference(file, "imports_namespace", module, "*", line, "namespace import", false)
+				if fields := strings.Fields(rest); len(fields) >= 3 && fields[1] == "as" {
+					reference.scriptLocalName = fields[2]
+				}
+				references = append(references, reference)
 			}
 		}
 	}
 	for _, location := range scriptExportKeywordRE.FindAllStringIndex(masked, -1) {
 		statement, statementMasked := scriptStatementAt(body, masked, location[0])
+		line := scriptLineAt(masked, location[0])
+		trimmed := strings.TrimSpace(strings.TrimPrefix(statement, "export"))
 		if !strings.Contains(statementMasked, " from ") {
+			module := scriptModuleIdentity(file.Path)
+			switch {
+			case strings.HasPrefix(trimmed, "type {"):
+				appendScriptNamedReferences(&references, file, "exports_local", module, strings.TrimPrefix(trimmed, "type "), line, true)
+			case strings.HasPrefix(trimmed, "{"):
+				appendScriptNamedReferences(&references, file, "exports_local", module, trimmed, line, true)
+			case strings.HasPrefix(trimmed, "default "):
+				fields := strings.Fields(strings.TrimPrefix(trimmed, "default "))
+				if len(fields) > 0 {
+					localName := strings.TrimSuffix(fields[0], ";")
+					if isScriptIdentifier(localName) && localName != "class" && localName != "function" {
+						reference := newScriptReference(file, "exports_local", module, localName, line, "default local export", false)
+						reference.scriptExportAlias = "default"
+						references = append(references, reference)
+					}
+				}
+			}
 			continue
 		}
 		module := scriptModuleSpecifier(statement)
 		if module == "" {
 			continue
 		}
-		line := scriptLineAt(masked, location[0])
-		trimmed := strings.TrimSpace(strings.TrimPrefix(statement, "export"))
 		switch {
 		case strings.HasPrefix(trimmed, "type {"):
 			appendScriptNamedReferences(&references, file, "reexports_type", module, strings.TrimPrefix(trimmed, "type "), line, true)
@@ -260,6 +294,24 @@ func newScriptReference(file FileRecord, kind, module, exportName string, line i
 	}
 }
 
+func isScriptIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for index, char := range value {
+		if index == 0 {
+			if !((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || char == '_' || char == '$') {
+				return false
+			}
+			continue
+		}
+		if !((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' || char == '$') {
+			return false
+		}
+	}
+	return true
+}
+
 type scriptDeclarationSpan struct {
 	start       int
 	end         int
@@ -268,14 +320,13 @@ type scriptDeclarationSpan struct {
 }
 
 func scriptDeclarationSpans(file FileRecord, masked string, declarations []RichSymbolRecord) []scriptDeclarationSpan {
-	byQualified := map[string]RichSymbolRecord{}
+	byOffset := map[int]RichSymbolRecord{}
 	for _, declaration := range declarations {
-		byQualified[declaration.QualifiedName] = declaration
+		byOffset[declaration.scriptOffset] = declaration
 	}
-	module := scriptModuleIdentity(file.Path)
 	var spans []scriptDeclarationSpan
-	add := func(name string, start, signatureEnd int, multilineBlock bool) {
-		declaration := byQualified[module+"#"+name]
+	add := func(start, signatureEnd int, multilineBlock bool) {
+		declaration := byOffset[start]
 		if declaration.ID == "" {
 			return
 		}
@@ -293,15 +344,15 @@ func scriptDeclarationSpans(file FileRecord, masked string, declarations []RichS
 		spans = append(spans, scriptDeclarationSpan{start: start, end: end, endLine: scriptLineAt(masked, end), declaration: declaration})
 	}
 	for _, match := range scriptFunctionRE.FindAllStringSubmatchIndex(masked, -1) {
-		add(masked[match[6]:match[7]], match[0], match[1], true)
+		add(match[0], match[1], true)
 	}
 	for _, match := range scriptArrowRE.FindAllStringSubmatchIndex(masked, -1) {
-		add(masked[match[4]:match[5]], match[0], match[1], false)
+		add(match[0], match[1], false)
 	}
 	for _, match := range scriptTypeDeclarationRE.FindAllStringSubmatchIndex(masked, -1) {
 		kind := masked[match[6]:match[7]]
 		if kind == "class" {
-			add(masked[match[8]:match[9]], match[0], match[1], true)
+			add(match[0], match[1], true)
 		}
 	}
 	sort.Slice(spans, func(i, j int) bool {
@@ -380,22 +431,45 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		}
 		references = append(references, reference)
 	}
-	for _, match := range scriptTypeUsageRE.FindAllStringSubmatchIndex(masked, -1) {
-		name := masked[match[2]:match[3]]
-		if binding, ok := bindings[name]; ok {
-			add("type_reference", name, match[0], binding, "explicit TypeScript type binding")
+	addUnresolved := func(kind, name string, offset int, reason string) {
+		reference := newScriptReference(file, kind, "", name, scriptLineAt(masked, offset), reason, true)
+		if owner := innermostScriptOwner(spans, offset); owner.ID != "" {
+			reference.FromSymbolID = owner.ID
+		}
+		references = append(references, reference)
+	}
+	for _, usageRE := range []*regexp.Regexp{scriptVariableTypeRE, scriptParameterTypeRE, scriptReturnTypeRE} {
+		for _, match := range usageRE.FindAllStringSubmatchIndex(masked, -1) {
+			name := masked[match[2]:match[3]]
+			if binding, ok := bindings[name]; ok {
+				if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+					addUnresolved("type_reference", name, match[0], reason)
+				} else {
+					add("type_reference", name, match[0], binding, "explicit TypeScript type binding")
+				}
+			}
 		}
 	}
-	for _, match := range scriptJSXUsageRE.FindAllStringSubmatchIndex(masked, -1) {
-		name := masked[match[2]:match[3]]
-		if binding, ok := bindings[name]; ok {
-			add("renders_component", name, match[0], binding, "JSX imported component binding")
+	if strings.HasSuffix(strings.ToLower(file.Path), ".tsx") || strings.HasSuffix(strings.ToLower(file.Path), ".jsx") {
+		for _, match := range scriptJSXUsageRE.FindAllStringSubmatchIndex(masked, -1) {
+			name := masked[match[2]:match[3]]
+			if binding, ok := bindings[name]; ok {
+				if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+					addUnresolved("renders_component", name, match[0], reason)
+				} else {
+					add("renders_component", name, match[0], binding, "JSX imported component binding")
+				}
+			}
 		}
 	}
 	for _, match := range scriptNewUsageRE.FindAllStringSubmatchIndex(masked, -1) {
 		name := masked[match[2]:match[3]]
 		if binding, ok := bindings[name]; ok {
-			add("instantiates", name, match[0], binding, "constructor imported binding")
+			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+				addUnresolved("instantiates", name, match[0], reason)
+			} else {
+				add("instantiates", name, match[0], binding, "constructor imported binding")
+			}
 			continue
 		}
 		reference := newScriptReference(file, "instantiates", "", name, scriptLineAt(masked, match[0]), "constructor has no static module binding", true)
@@ -411,7 +485,11 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		memberMethodOffsets[match[4]] = true
 		if namespace, ok := namespaces[ownerName]; ok {
 			namespace.TargetExport = methodName
-			add("calls_export", methodName, match[0], namespace, "namespace imported call binding")
+			if reason := scriptShadowReason(masked, ownerName, match[0]); reason != "" {
+				addUnresolved("calls_export", methodName, match[0], reason)
+			} else {
+				add("calls_export", methodName, match[0], namespace, "namespace imported call binding")
+			}
 		}
 	}
 	for _, match := range scriptDirectCallRE.FindAllStringSubmatchIndex(masked, -1) {
@@ -421,12 +499,20 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 			continue
 		}
 		if binding, ok := bindings[name]; ok {
-			add("calls_export", name, match[0], binding, "direct imported call binding")
+			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+				addUnresolved("calls_export", name, match[0], reason)
+			} else {
+				add("calls_export", name, match[0], binding, "direct imported call binding")
+			}
 			continue
 		}
 		if local, ok := locals[name]; ok {
-			binding := RichRelationRecord{TargetModule: local.Module, TargetExport: local.Name}
-			add("calls_local", name, match[0], binding, "same-module lexical call")
+			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+				addUnresolved("calls_local", name, match[0], reason)
+			} else {
+				binding := RichRelationRecord{TargetModule: local.Module, TargetExport: local.Name}
+				add("calls_local", name, match[0], binding, "same-module lexical call")
+			}
 		}
 	}
 	for _, match := range scriptComputedCallRE.FindAllStringSubmatchIndex(masked, -1) {
@@ -437,6 +523,137 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		references = append(references, reference)
 	}
 	return dedupeRichRelationFacts(references)
+}
+
+func scriptBraceDepthAt(masked string, offset int) int {
+	depth := 0
+	for index := 0; index < offset; index++ {
+		switch masked[index] {
+		case '{':
+			depth++
+		case '}':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return depth
+}
+
+func scriptShadowReason(masked, name string, usageOffset int) string {
+	for _, match := range scriptFunctionRE.FindAllStringSubmatchIndex(masked, -1) {
+		open := strings.Index(masked[match[1]:], "{")
+		if open < 0 {
+			continue
+		}
+		open += match[1]
+		close := matchingScriptBrace(masked, open)
+		if close < 0 || usageOffset <= open || usageOffset >= close {
+			continue
+		}
+		paramsStart := strings.Index(masked[match[0]:open], "(")
+		paramsEnd := strings.LastIndex(masked[match[0]:open], ")")
+		if paramsStart < 0 || paramsEnd <= paramsStart {
+			continue
+		}
+		params := masked[match[0]+paramsStart+1 : match[0]+paramsEnd]
+		if scriptParameterNames(params)[name] {
+			return "lexically shadowed by function parameter"
+		}
+	}
+	for _, match := range scriptArrowRE.FindAllStringSubmatchIndex(masked, -1) {
+		signature := masked[match[0]:match[1]]
+		equals := strings.Index(signature, "=")
+		arrow := strings.LastIndex(signature, "=>")
+		if equals < 0 || arrow <= equals {
+			continue
+		}
+		params := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(signature[equals+1:arrow]), "async"))
+		params = strings.TrimSpace(strings.TrimPrefix(strings.TrimSuffix(params, ")"), "("))
+		statementEnd := scriptStatementEnd(masked, match[1])
+		openRelative := strings.Index(masked[match[1]:statementEnd], "{")
+		if openRelative < 0 {
+			continue
+		}
+		open := match[1] + openRelative
+		close := matchingScriptBrace(masked, open)
+		if close < 0 || usageOffset <= open || usageOffset >= close {
+			continue
+		}
+		if scriptParameterNames(params)[name] {
+			return "lexically shadowed by arrow parameter"
+		}
+	}
+	for _, match := range scriptVariableBindingRE.FindAllStringSubmatchIndex(masked, -1) {
+		if masked[match[2]:match[3]] != name {
+			continue
+		}
+		start, end := scriptContainingScope(masked, match[0])
+		if usageOffset > start && usageOffset < end {
+			return "lexically shadowed by local variable"
+		}
+	}
+	for _, match := range scriptFunctionRE.FindAllStringSubmatchIndex(masked, -1) {
+		if scriptBraceDepthAt(masked, match[0]) == 0 || masked[match[6]:match[7]] != name {
+			continue
+		}
+		start, end := scriptContainingScope(masked, match[0])
+		if usageOffset > start && usageOffset < end {
+			return "lexically shadowed by nested function"
+		}
+	}
+	for _, match := range scriptTypeDeclarationRE.FindAllStringSubmatchIndex(masked, -1) {
+		if scriptBraceDepthAt(masked, match[0]) == 0 || masked[match[8]:match[9]] != name {
+			continue
+		}
+		start, end := scriptContainingScope(masked, match[0])
+		if usageOffset > start && usageOffset < end {
+			return "lexically shadowed by nested declaration"
+		}
+	}
+	return ""
+}
+
+func scriptParameterNames(params string) map[string]bool {
+	names := map[string]bool{}
+	for _, raw := range strings.Split(params, ",") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" || strings.HasPrefix(raw, "{") || strings.HasPrefix(raw, "[") {
+			continue
+		}
+		name := raw
+		if index := strings.IndexAny(name, "?:="); index >= 0 {
+			name = name[:index]
+		}
+		name = strings.TrimSpace(name)
+		if name != "" {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+func scriptContainingScope(masked string, offset int) (int, int) {
+	stack := []int{}
+	for index := 0; index < offset; index++ {
+		switch masked[index] {
+		case '{':
+			stack = append(stack, index)
+		case '}':
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+	if len(stack) == 0 {
+		return 0, len(masked)
+	}
+	open := stack[len(stack)-1]
+	close := matchingScriptBrace(masked, open)
+	if close < 0 {
+		close = len(masked)
+	}
+	return open, close
 }
 
 func innermostScriptOwner(spans []scriptDeclarationSpan, offset int) RichSymbolRecord {
@@ -491,7 +708,7 @@ func scriptStatementAt(body, masked string, start int) (string, string) {
 		}
 		if masked[index] == '\n' && depth == 0 {
 			statement := strings.TrimSpace(body[start:index])
-			waitingForModule := (strings.HasPrefix(statement, "import ") || strings.HasPrefix(statement, "export ")) &&
+			waitingForModule := (strings.HasPrefix(statement, "import ") || strings.HasPrefix(statement, "export *")) &&
 				scriptModuleSpecifier(statement) == "" && !strings.HasPrefix(statement, "import(") && !strings.HasPrefix(statement, "import (")
 			if waitingForModule {
 				continue
@@ -642,12 +859,15 @@ func ResolveScriptSymbolFacts(files []FileRecord, packages []NodePackageRecord, 
 			resolver.resolveModuleReference(reference)
 			continue
 		}
-		if reference.TargetModule == "" || reference.TargetExport == "" || reference.Type == "reexports_all" {
+		if reference.TargetModule == "" ||
+			reference.TargetExport == "" ||
+			reference.Type == "reexports_all" ||
+			reference.Type == "exports_local" {
 			continue
 		}
-		candidates, reason := resolver.resolveReference(*reference)
-		if len(candidates) == 1 {
-			candidate := candidates[0]
+		resolved := resolver.resolveReference(*reference)
+		if !resolved.ambiguous && len(resolved.modules) == 1 && len(resolved.candidates) == 1 {
+			candidate := resolved.candidates[0]
 			reference.To = candidate.QualifiedName
 			reference.ToSymbolID = candidate.ID
 			reference.TargetQualifiedName = candidate.QualifiedName
@@ -656,28 +876,29 @@ func ResolveScriptSymbolFacts(files []FileRecord, packages []NodePackageRecord, 
 			reference.ConfidenceScore = 1
 			reference.Internal = true
 			reference.CandidateSymbolIDs = nil
-			reference.Reason = reason
+			reference.Reason = resolved.reason
 			reference.preventExact = false
-			reference.ID = StableWorkspaceUsageID(candidate.ID, "", reference.FromSymbolID, SymbolUsageDirectReference, reference.Type, candidate.ID, reference.From, reference.Line)
+			targetIdentity := candidate.ID + "\x00" + reference.TargetModule + "\x00" + reference.TargetExport
+			reference.ID = StableWorkspaceUsageID(candidate.ID, "", reference.FromSymbolID, SymbolUsageDirectReference, reference.Type, targetIdentity, reference.From, reference.Line)
 			continue
 		}
-		if len(candidates) > 1 {
+		if resolved.ambiguous || len(resolved.modules) > 1 || len(resolved.candidates) > 1 {
 			reference.Resolution = SymbolResolutionAmbiguous
 			reference.Confidence = string(ConfidenceNormalized)
 			reference.ConfidenceScore = javaFactConfidenceScore(ConfidenceNormalized)
 			reference.ToSymbolID = ""
 			reference.CandidateSymbolIDs = reference.CandidateSymbolIDs[:0]
-			for _, candidate := range candidates {
+			for _, candidate := range resolved.candidates {
 				reference.CandidateSymbolIDs = append(reference.CandidateSymbolIDs, candidate.ID)
 			}
 			sort.Strings(reference.CandidateSymbolIDs)
-			reference.Reason = reason
+			reference.Reason = resolved.reason
 			reference.preventExact = true
 			reference.ID = StableWorkspaceUsageID("", "", reference.FromSymbolID, SymbolUsageAmbiguous, reference.Type, strings.Join(reference.CandidateSymbolIDs, ","), reference.From, reference.Line)
 			continue
 		}
-		if reason != "" {
-			reference.Reason = reason
+		if resolved.reason != "" {
+			reference.Reason = resolved.reason
 		}
 	}
 	result.Declarations = dedupeRichSymbolFacts(result.Declarations)
@@ -689,24 +910,24 @@ func (resolver scriptFactResolver) resolveModuleReference(reference *RichRelatio
 	if reference == nil || reference.TargetModule == "" {
 		return
 	}
-	modules, reason := resolver.resolveModule(reference.From, reference.TargetModule)
-	if len(modules) != 1 {
-		if len(modules) > 1 {
+	resolved := resolver.resolveModule(reference.From, reference.TargetModule)
+	if resolved.ambiguous || len(resolved.modules) != 1 {
+		if resolved.ambiguous || len(resolved.modules) > 1 {
 			reference.Resolution = SymbolResolutionAmbiguous
 			reference.Reason = "ambiguous static module import"
-		} else if reason != "" {
-			reference.Reason = reason
+		} else if resolved.reason != "" {
+			reference.Reason = resolved.reason
 		}
 		return
 	}
-	module := modules[0]
+	module := resolved.modules[0]
 	reference.To = module
 	reference.TargetQualifiedName = module
 	reference.Resolution = SymbolResolutionExact
 	reference.Confidence = string(ConfidenceExact)
 	reference.ConfidenceScore = 1
 	reference.Internal = true
-	reference.Reason = reason
+	reference.Reason = resolved.reason
 	reference.preventExact = false
 	reference.ID = StableWorkspaceUsageID("", "", reference.FromSymbolID, SymbolUsageDirectReference, reference.Type, module, reference.From, reference.Line)
 }
@@ -720,54 +941,113 @@ type scriptFactResolver struct {
 	facts        ProjectSymbolFacts
 }
 
-func (resolver scriptFactResolver) resolveReference(reference RichRelationRecord) ([]RichSymbolRecord, string) {
+type scriptReferenceResolution struct {
+	modules    []string
+	candidates []RichSymbolRecord
+	reason     string
+	ambiguous  bool
+}
+
+type scriptModuleResolution struct {
+	modules   []string
+	reason    string
+	ambiguous bool
+}
+
+type scriptExportResolution struct {
+	candidates []RichSymbolRecord
+	cyclic     bool
+	ambiguous  bool
+}
+
+func (resolver scriptFactResolver) resolveReference(reference RichRelationRecord) scriptReferenceResolution {
 	if reference.Type == "calls_local" && reference.TargetModule == scriptModuleIdentity(reference.From) {
 		candidates := dedupeScriptDeclarations(resolver.locals[reference.TargetModule][reference.TargetExport])
 		if len(candidates) == 1 {
-			return candidates, "same-module lexical declaration"
+			return scriptReferenceResolution{modules: []string{reference.TargetModule}, candidates: candidates, reason: "same-module lexical declaration"}
 		}
 		if len(candidates) > 1 {
-			return candidates, "ambiguous same-module declaration"
+			return scriptReferenceResolution{modules: []string{reference.TargetModule}, candidates: candidates, reason: "ambiguous same-module declaration"}
 		}
-		return nil, "same-module declaration not found"
+		return scriptReferenceResolution{modules: []string{reference.TargetModule}, reason: "same-module declaration not found"}
 	}
-	modules, moduleReason := resolver.resolveModule(reference.From, reference.TargetModule)
-	if len(modules) == 0 {
-		return nil, moduleReason
+	moduleResolution := resolver.resolveModule(reference.From, reference.TargetModule)
+	if len(moduleResolution.modules) == 0 {
+		return scriptReferenceResolution{reason: moduleResolution.reason, ambiguous: moduleResolution.ambiguous}
 	}
 	var candidates []RichSymbolRecord
 	cyclic := false
-	for _, module := range modules {
-		resolved, cycle := resolver.resolveExport(module, reference.TargetExport, map[string]bool{})
-		candidates = append(candidates, resolved...)
-		cyclic = cyclic || cycle
+	ambiguous := moduleResolution.ambiguous
+	for _, module := range moduleResolution.modules {
+		resolved := resolver.resolveExport(module, reference.TargetExport, map[string]bool{})
+		candidates = append(candidates, resolved.candidates...)
+		cyclic = cyclic || resolved.cyclic
+		ambiguous = ambiguous || resolved.ambiguous
 	}
 	candidates = dedupeScriptDeclarations(candidates)
 	if cyclic && len(candidates) == 0 {
-		return nil, "cyclic re-export"
+		return scriptReferenceResolution{modules: moduleResolution.modules, reason: "cyclic re-export", ambiguous: ambiguous}
 	}
-	if len(modules) > 1 || len(candidates) > 1 {
-		return candidates, "ambiguous static module export"
+	if ambiguous || len(moduleResolution.modules) > 1 || len(candidates) > 1 {
+		return scriptReferenceResolution{modules: moduleResolution.modules, candidates: candidates, reason: "ambiguous static module export", ambiguous: true}
 	}
 	if len(candidates) == 1 {
-		return candidates, "static module and export binding"
+		return scriptReferenceResolution{modules: moduleResolution.modules, candidates: candidates, reason: "static module and export binding"}
 	}
-	return nil, "module resolved but export was not found"
+	return scriptReferenceResolution{modules: moduleResolution.modules, reason: "module resolved but export was not found"}
 }
 
-func (resolver scriptFactResolver) resolveExport(module, exportName string, visited map[string]bool) ([]RichSymbolRecord, bool) {
+func (resolver scriptFactResolver) resolveExport(module, exportName string, visited map[string]bool) scriptExportResolution {
 	key := module + "\x00" + exportName
 	if visited[key] {
-		return nil, true
+		return scriptExportResolution{cyclic: true}
 	}
 	visited[key] = true
 	defer delete(visited, key)
 	if direct := resolver.declarations[module][exportName]; len(direct) > 0 {
-		return append([]RichSymbolRecord(nil), direct...), false
+		return scriptExportResolution{candidates: append([]RichSymbolRecord(nil), direct...)}
 	}
 	var result []RichSymbolRecord
 	cyclic := false
+	ambiguous := false
 	moduleFile := scriptFileForModule(module, resolver.files)
+	for _, reference := range resolver.facts.References {
+		if reference.From != moduleFile || reference.Type != "exports_local" {
+			continue
+		}
+		publicExport := reference.scriptExportAlias
+		if publicExport == "" {
+			publicExport = reference.TargetExport
+		}
+		if publicExport != exportName {
+			continue
+		}
+		localCandidates := resolver.locals[module][reference.TargetExport]
+		result = append(result, localCandidates...)
+		if len(localCandidates) > 0 {
+			continue
+		}
+		for _, imported := range resolver.facts.References {
+			if imported.From != moduleFile ||
+				!strings.HasPrefix(imported.Type, "imports_") ||
+				imported.scriptLocalName != reference.TargetExport ||
+				imported.TargetModule == "" ||
+				imported.TargetExport == "" {
+				continue
+			}
+			targetModules := resolver.resolveModule(imported.From, imported.TargetModule)
+			ambiguous = ambiguous || targetModules.ambiguous
+			for _, targetModule := range targetModules.modules {
+				resolved := resolver.resolveExport(targetModule, imported.TargetExport, visited)
+				result = append(result, resolved.candidates...)
+				cyclic = cyclic || resolved.cyclic
+				ambiguous = ambiguous || resolved.ambiguous
+			}
+		}
+	}
+	if result = dedupeScriptDeclarations(result); len(result) > 0 {
+		return scriptExportResolution{candidates: result, cyclic: cyclic, ambiguous: ambiguous}
+	}
 	for _, reference := range resolver.facts.References {
 		if reference.From != moduleFile || !strings.HasPrefix(reference.Type, "reexports_") {
 			continue
@@ -784,27 +1064,50 @@ func (resolver scriptFactResolver) resolveExport(module, exportName string, visi
 		if publicExport != exportName {
 			continue
 		}
-		targetModules, _ := resolver.resolveModule(reference.From, reference.TargetModule)
-		for _, targetModule := range targetModules {
-			resolved, cycle := resolver.resolveExport(targetModule, sourceExport, visited)
-			result = append(result, resolved...)
-			cyclic = cyclic || cycle
+		targetModules := resolver.resolveModule(reference.From, reference.TargetModule)
+		ambiguous = ambiguous || targetModules.ambiguous
+		for _, targetModule := range targetModules.modules {
+			resolved := resolver.resolveExport(targetModule, sourceExport, visited)
+			result = append(result, resolved.candidates...)
+			cyclic = cyclic || resolved.cyclic
+			ambiguous = ambiguous || resolved.ambiguous
 		}
 	}
-	return dedupeScriptDeclarations(result), cyclic
+	return scriptExportResolution{candidates: dedupeScriptDeclarations(result), cyclic: cyclic, ambiguous: ambiguous}
 }
 
-func (resolver scriptFactResolver) resolveModule(fromFile, specifier string) ([]string, string) {
+func (resolver scriptFactResolver) resolveModule(fromFile, specifier string) scriptModuleResolution {
 	if strings.HasPrefix(specifier, ".") {
-		return resolver.resolveFileModules(path.Join(path.Dir(fromFile), specifier))
+		modules, reason := resolver.resolveFileModules(path.Join(path.Dir(fromFile), specifier))
+		return scriptModuleResolution{modules: modules, reason: reason, ambiguous: len(modules) > 1}
 	}
 	if modules := resolver.resolveAliasModules(fromFile, specifier); len(modules) > 0 {
-		return modules, "TypeScript path alias"
+		if reason := resolver.aliasDependencyLimitation(fromFile, modules); reason != "" {
+			return scriptModuleResolution{reason: reason}
+		}
+		return scriptModuleResolution{modules: modules, reason: "TypeScript path alias", ambiguous: len(modules) > 1}
 	}
 	if modules, reason := resolver.resolveWorkspaceModules(fromFile, specifier); len(modules) > 0 || reason != "" {
-		return modules, reason
+		return scriptModuleResolution{modules: modules, reason: reason, ambiguous: strings.Contains(reason, "ambiguous")}
 	}
-	return nil, "external or unresolved module specifier"
+	return scriptModuleResolution{reason: "external or unresolved module specifier"}
+}
+
+func (resolver scriptFactResolver) aliasDependencyLimitation(fromFile string, modules []string) string {
+	consumer, consumerKnown := nearestNodePackage(fromFile, resolver.packages)
+	for _, module := range modules {
+		provider, providerKnown := nearestNodePackage(module, resolver.packages)
+		if !providerKnown || provider.Name == "" {
+			continue
+		}
+		if consumerKnown && consumer.Path == provider.Path {
+			continue
+		}
+		if !consumerKnown || !scriptContainsString(consumer.Dependencies, provider.Name) {
+			return "TypeScript path alias crosses workspace package without declared dependency on " + provider.Name
+		}
+	}
+	return ""
 }
 
 func (resolver scriptFactResolver) resolveFileModules(base string) ([]string, string) {
@@ -813,7 +1116,7 @@ func (resolver scriptFactResolver) resolveFileModules(base string) ([]string, st
 	for _, file := range files {
 		modules = append(modules, scriptModuleIdentity(file))
 	}
-	modules = sortedUniqueStrings(modules)
+	sort.Strings(modules)
 	if len(modules) > 1 {
 		return modules, "ambiguous module path"
 	}
@@ -856,7 +1159,8 @@ func (resolver scriptFactResolver) resolveAliasModules(fromFile, specifier strin
 			modules = append(modules, scriptModuleIdentity(file))
 		}
 	}
-	return sortedUniqueStrings(modules)
+	sort.Strings(modules)
+	return modules
 }
 
 func (resolver scriptFactResolver) resolveWorkspaceModules(fromFile, specifier string) ([]string, string) {
@@ -925,16 +1229,30 @@ func scriptFileForModule(module string, files map[string]bool) string {
 }
 
 func nearestScriptConfig(file string, configs map[string]ScriptResolutionConfig) (string, ScriptResolutionConfig, bool) {
-	best := ""
+	var candidates []string
 	for configPath := range configs {
 		dir := path.Dir(configPath)
-		if (dir == "." || file == dir || strings.HasPrefix(file, dir+"/")) && (best == "" || len(dir) > len(path.Dir(best))) {
-			best = configPath
+		if dir == "." || file == dir || strings.HasPrefix(file, dir+"/") {
+			candidates = append(candidates, configPath)
 		}
 	}
-	if best == "" {
+	if len(candidates) == 0 {
 		return "", ScriptResolutionConfig{}, false
 	}
+	sort.Slice(candidates, func(i, j int) bool {
+		leftDir := path.Dir(candidates[i])
+		rightDir := path.Dir(candidates[j])
+		if len(leftDir) != len(rightDir) {
+			return len(leftDir) > len(rightDir)
+		}
+		leftTS := path.Base(candidates[i]) == "tsconfig.json"
+		rightTS := path.Base(candidates[j]) == "tsconfig.json"
+		if leftTS != rightTS {
+			return leftTS
+		}
+		return candidates[i] < candidates[j]
+	})
+	best := candidates[0]
 	return best, configs[best], true
 }
 

@@ -126,6 +126,7 @@ type RichSymbolRecord struct {
 	Confidence       Confidence `json:"symbol_confidence,omitempty"`
 	Coverage         Coverage   `json:"coverage,omitempty"`
 	Limitations      []string   `json:"limitations,omitempty"`
+	scriptOffset     int
 }
 
 type RichRelationRecord struct {
