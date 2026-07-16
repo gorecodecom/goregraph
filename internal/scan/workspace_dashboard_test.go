@@ -1861,6 +1861,47 @@ func TestDashboardMobileGridOrdersCanvasBeforeDetailsAndEnlargesControls(t *test
 	}
 }
 
+func TestDashboardNarrowDesktopSeparatesArchitectureHeaderRows(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+
+	start := strings.Index(html, `@media (min-width:1241px) and (max-width:1439px){`)
+	if start < 0 {
+		t.Fatal("dashboard missing narrow-desktop media query")
+	}
+	end := strings.Index(html[start:], `@media (min-width:1440px)`)
+	if end < 0 {
+		t.Fatal("dashboard missing wide-desktop media query after narrow-desktop rules")
+	}
+	narrowDesktop := html[start : start+end]
+	for _, want := range []string{
+		`.architecture-tabs{top:12px;left:12px}`,
+		`main[data-active-view="architecture"].graph-view .architecture-overlay-legend{top:56px;left:12px;right:auto}`,
+		`main[data-active-view="architecture"].graph-view .canvas-tools{top:100px;left:12px}`,
+		`main[data-active-view="architecture"].graph-view .architecture-focus-panel{top:144px}`,
+	} {
+		if !strings.Contains(narrowDesktop, want) {
+			t.Fatalf("narrow-desktop Architecture header does not separate responsive rows: missing %q", want)
+		}
+	}
+
+	for _, want := range []string{
+		`.architecture-tabs{position:absolute;z-index:3;top:12px;left:12px`,
+		`main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:350px}`,
+		`.architecture-overlay-legend{display:none;position:absolute;z-index:3;top:12px;right:12px`,
+		`.architecture-focus-panel{display:none;position:absolute;z-index:4;top:96px;left:12px;right:12px`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("wide Architecture header layout changed unexpectedly: missing %q", want)
+		}
+	}
+}
+
 func TestRenderWorkspaceDashboardHTMLShowsUnconnectedFrontendClients(t *testing.T) {
 	serviceMap := WorkspaceServiceMapRecord{
 		SchemaVersion: SchemaVersion,
