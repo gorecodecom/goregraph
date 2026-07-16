@@ -42,6 +42,10 @@ function architectureDirectNeighborhood(edges,selected){
   (edges||[]).forEach(function(edge){if(edge.from===selected||edge.to===selected){nodeIDs.add(edge.from);nodeIDs.add(edge.to);}});
   return nodeIDs;
 }
+function architectureRelationshipSummary(selected,edges){
+  const incoming=(edges||[]).filter(function(edge){return edge.to===selected;}),outgoing=(edges||[]).filter(function(edge){return edge.from===selected;}),all=incoming.concat(outgoing),sum=function(records,key){return records.reduce(function(total,edge){return total+(edge[key]||0);},0);};
+  return {incomingRelationships:sum(incoming,"total"),incomingServices:new Set(incoming.map(function(edge){return edge.from;})).size,outgoingRelationships:sum(outgoing,"total"),outgoingServices:new Set(outgoing.map(function(edge){return edge.to;})).size,resolved:sum(all,"resolved"),unresolved:sum(all,"unresolved"),mismatched:sum(all,"mismatched")};
+}
 function architectureBundleRisk(edge){return edge.mismatched?"mismatch":edge.unresolved?"unresolved":"resolved";}
 function architectureBundles(edges,nodeByID){
   const bundles=new Map();

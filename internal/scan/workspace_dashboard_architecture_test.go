@@ -46,6 +46,30 @@ func runArchitectureModel(t *testing.T, expression string, target any) {
 	}
 }
 
+func TestArchitectureRelationshipSummaryCountsRelationsServicesAndRiskBuckets(t *testing.T) {
+	var result struct {
+		IncomingRelationships int
+		IncomingServices      int
+		OutgoingRelationships int
+		OutgoingServices      int
+		Resolved              int
+		Unresolved            int
+		Mismatched            int
+	}
+	runArchitectureModel(t, `architectureRelationshipSummary("orders",[
+		{id:"web-orders",from:"web",to:"orders",total:4,resolved:3,unresolved:1},
+		{id:"worker-orders",from:"worker",to:"orders",total:1,resolved:1},
+		{id:"orders-billing",from:"orders",to:"billing",total:2,resolved:1,mismatched:1},
+		{id:"orders-audit",from:"orders",to:"audit",total:1,resolved:1}
+	])`, &result)
+	if result.IncomingRelationships != 5 || result.IncomingServices != 2 || result.OutgoingRelationships != 3 || result.OutgoingServices != 2 {
+		t.Fatalf("counts = %#v", result)
+	}
+	if result.Resolved != 6 || result.Unresolved != 1 || result.Mismatched != 1 {
+		t.Fatalf("buckets = %#v", result)
+	}
+}
+
 func TestArchitectureModelDerivesDynamicDomainsAndStablePositions(t *testing.T) {
 	nodes, err := json.Marshal(denseArchitectureFixture().Nodes)
 	if err != nil {

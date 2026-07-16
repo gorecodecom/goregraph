@@ -527,6 +527,56 @@ func TestWorkspaceDashboardKeepsAllSelectedServiceRelationsUnbundled(t *testing.
 	}
 }
 
+func TestWorkspaceDashboardExposesPersistentSummaryAndInspectableStaticCallBadges(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`id="architecture-relationship-summary"`,
+		`aria-live="polite"`,
+		`id="architecture-relationship-tooltip"`,
+		`role="tooltip"`,
+		`data-architecture-edge`,
+		`data-architecture-bundle`,
+		`tabindex="0"`,
+		`not runtime request frequency`,
+		`function renderArchitectureSummary`,
+		`function architectureRelationshipBadge`,
+		`function architectureBundleBadge`,
+		`function wireArchitectureRelationshipBadges`,
+		`function showArchitectureRelationshipDetails`,
+		`function showArchitectureTooltip`,
+		`function hideArchitectureTooltip`,
+		`detailField("Direction"`,
+		`detailField("Endpoints"`,
+		`detailField("Problems"`,
+		`detailField("Evidence"`,
+		`Reset focus`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing summary contract %q", want)
+		}
+	}
+	start := strings.Index(html, "function wireArchitectureRelationshipBadges()")
+	end := strings.Index(html, "function architectureDirection(")
+	if start < 0 || end <= start {
+		t.Fatal("dashboard missing inspectable badge handler boundaries")
+	}
+	handler := html[start:end]
+	for _, forbidden := range []string{"architectureLayout", "setViewBox", "fitArchitecture", "zoomAtPoint", "panBy", "setArchitectureServiceSelection", "renderCanvas"} {
+		if strings.Contains(handler, forbidden) {
+			t.Fatalf("badge inspection changes architecture layout or viewport through %q", forbidden)
+		}
+	}
+	if strings.Contains(html, "runtime calls") {
+		t.Fatal("dashboard labels static relationships as runtime calls")
+	}
+}
+
 func TestDashboardViewportControlsPreserveUserContext(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
@@ -1423,7 +1473,8 @@ func TestWorkspaceDashboardKeepsArchitectureExplanationVisible(t *testing.T) {
 	for _, want := range []string{
 		`class="architecture-overlay-legend"`,
 		`aria-label="Architecture map legend"`,
-		"Statically detected API calls from ",
+		"statically detected call relationship",
+		"not runtime request frequency",
 		"Grouped calls",
 		"Direct calls",
 		"Risk",

@@ -79,6 +79,13 @@ const workspaceDashboardShell = `<div class="shell">
 </div>
 <button type="button" id="architecture-risk-toggle" aria-pressed="false">Risk</button>
 <button type="button" id="reset-architecture-focus">Reset focus</button>
+<div id="architecture-relationship-summary" class="architecture-relationship-summary" aria-live="polite" hidden>
+<strong id="architecture-summary-service">No service selected</strong>
+<span><b id="architecture-summary-incoming">0</b> incoming</span>
+<span><b id="architecture-summary-outgoing">0</b> outgoing</span>
+<span><b id="architecture-summary-resolution">0 resolved · 0 unresolved · 0 mismatch</b></span>
+</div>
+<div id="architecture-relationship-tooltip" class="architecture-relationship-tooltip" role="tooltip" hidden></div>
 </section>
 <svg id="workspace-graph" role="group" aria-label="Directed workspace relationship map"><defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8fa2ae"></path></marker><marker id="arrow-focus" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#0b6b79"></path></marker><marker id="arrow-outgoing" markerWidth="13" markerHeight="11" refX="11" refY="5.5" orient="auto"><path d="M0,0 L13,5.5 L0,11 z" fill="#0b6b79"></path></marker><marker id="arrow-incoming" markerWidth="13" markerHeight="11" refX="11" refY="5.5" orient="auto"><path d="M0,0 L13,5.5 L0,11 z" fill="#a56a00"></path></marker></defs><g id="graph-layer"></g></svg>
 <section id="workspace-workbench" class="workspace-workbench" hidden aria-label="Workspace data workbench"></section>
