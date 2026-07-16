@@ -29,6 +29,47 @@ func denseArchitectureFixture() WorkspaceServiceMapRecord {
 	return WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, Nodes: nodes, Edges: edges}
 }
 
+func TestWorkspaceDashboardCoversArchitectureMapIssue23Acceptance(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, denseArchitectureFixture(), WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil)
+	for _, want := range []string{
+		"architecture-lane-layer", "architecture-bundle-trunk", "architecture-bundle-branch",
+		"architecture-relationship-summary", "architecture-relationship-tooltip",
+		"architectureFocusModel", "architectureRelationshipSummary",
+		"data-architecture-domain", "data-architecture-direction", "data-architecture-edge",
+		"not runtime request frequency", "prefers-reduced-motion:reduce",
+		"@media (max-width:1240px)", "aria-pressed", "tabindex=\"0\"",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("issue #23 acceptance missing %q", want)
+		}
+	}
+	for _, obsolete := range []string{
+		`const domains=["frontend","document","cadaster","identity","platform"]`,
+		`nodes=focusedMode?allNodes.filter`, `>OUT<`, `>Caller<`, `>Called<`,
+	} {
+		if strings.Contains(html, obsolete) {
+			t.Fatalf("issue #23 obsolete behavior remains: %q", obsolete)
+		}
+	}
+}
+
+func TestWorkspaceDashboardEmbeddedJavaScriptParses(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for embedded dashboard syntax validation")
+	}
+	html := RenderWorkspaceDashboardHTMLWithModels(WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, denseArchitectureFixture(), WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil)
+	start, end := strings.Index(html, "<script>\n"), strings.LastIndex(html, "\n</script>")
+	if start < 0 || end <= start {
+		t.Fatal("embedded dashboard script boundaries not found")
+	}
+	cmd := exec.Command(node, "--check", "-")
+	cmd.Stdin = strings.NewReader(html[start+len("<script>\n") : end])
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("embedded dashboard JavaScript is invalid: %v\n%s", err, output)
+	}
+}
+
 func runArchitectureModel(t *testing.T, expression string, target any) {
 	t.Helper()
 	node, err := exec.LookPath("node")

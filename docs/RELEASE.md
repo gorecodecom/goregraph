@@ -14,6 +14,11 @@ v1.3.0
 - preview-first updates for each unique workspace repository through `goregraph workspace git update [path]`;
 - strictly local previews that use cached `origin` references and perform no network access;
 - explicit `--execute` updates that fetch, repeat safety checks, and only switch or fast-forward eligible clean repositories;
+- dynamic metadata-derived Architecture domain lanes with stable service-card positions;
+- simultaneous incoming/outgoing selected-service focus with unrelated context dimmed;
+- deterministic background relationship trunks and direct card-port fan-out;
+- a persistent relationship summary with domain, direction, risk, and reset controls;
+- keyboard-accessible static-call badges whose details remain separate from runtime traffic claims;
 - unchanged Schema 2 compatibility.
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.

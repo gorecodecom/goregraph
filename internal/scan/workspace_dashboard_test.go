@@ -1133,7 +1133,7 @@ func TestDashboardEndpointInventoryUsesReadableRowsAtBrowserScale(t *testing.T) 
 		`class="endpoint-inventory-row`,
 		`data-endpoint-id="`,
 		`aria-label="Open endpoint trace`,
-		`endpointInventoryCell("Caller",row.from,row.kind)`,
+		`endpointInventoryCell("Caller service",row.from,row.kind)`,
 		`endpointInventoryCell("Endpoint",row.route`,
 		`endpointInventoryCell("Provider",row.to,row.kind)`,
 		`endpointInventoryScrollTop:0`,
@@ -1773,6 +1773,28 @@ func TestWorkspaceDashboardCoversSixViewAcceptance(t *testing.T) {
 	for _, want := range []string{"Architecture", "Endpoints", "Feature Flow", "Data Flow", "Diagnostics", "Coverage", "@media (max-width:", "prefers-reduced-motion", "Focus selected", "Most useful next scans", "Changing this may affect", `grid-template-areas:"side" "main" "details"`, ".impact-grid,.feature-verification,.next-scans article{grid-template-columns:1fr}"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing visual acceptance marker %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardLocksIssue23ResponsiveAccessibilityStyles(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`button:focus-visible,input:focus-visible,.source-link:focus-visible,[data-select-id]:focus-visible,[data-architecture-domain]:focus-visible,[data-architecture-edge]:focus-visible,[data-architecture-bundle]:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}`,
+		`@media (max-width:1240px){`,
+		`.architecture-focus-panel{position:absolute;top:96px;left:12px;right:12px}`,
+		`.architecture-focus-panel button{min-height:44px}`,
+		`.architecture-relationship-summary{flex-basis:100%;border-left:0;border-top:1px solid var(--color-border);padding:7px 0 0}`,
+		`@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition-duration:0.01ms!important;animation-duration:0.01ms!important}}`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing issue #23 responsive/accessibility style %q", want)
 		}
 	}
 }

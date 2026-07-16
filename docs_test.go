@@ -31,6 +31,25 @@ func TestCommandsReferenceDocumentsEveryUserCommand(t *testing.T) {
 	}
 }
 
+func TestArchitectureMapDocumentationMatchesIssue23(t *testing.T) {
+	files := []string{"README.md", "COMMANDS.md", "docs/OUTPUTS.md", "docs/RELEASE.md", "docs/design-system.md"}
+	var combined strings.Builder
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		combined.Write(content)
+		combined.WriteByte('\n')
+	}
+	text := strings.ToLower(combined.String())
+	for _, want := range []string{"dynamic domain lanes", "incoming and outgoing", "statically detected", "not runtime", "1.3.0"} {
+		if !strings.Contains(text, strings.ToLower(want)) {
+			t.Fatalf("architecture documentation missing %q", want)
+		}
+	}
+}
+
 func TestDashboardDesignSystemDocumentsRequiredTokensAndBehavior(t *testing.T) {
 	content, err := os.ReadFile("docs/design-system.md")
 	if err != nil {
