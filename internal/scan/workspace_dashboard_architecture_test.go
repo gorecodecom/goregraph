@@ -352,6 +352,53 @@ func TestArchitectureModelDerivesDynamicDomainsAndStablePositions(t *testing.T) 
 	}
 }
 
+func TestArchitectureCanvasGeometryInsetsCompactContentBelowStackedControls(t *testing.T) {
+	type geometry struct {
+		Compact         bool
+		PresentationTop int
+		LegendTop       int
+		ToolsTop        int
+		FocusTop        int
+		FocusBottom     int
+		ContentInset    int
+	}
+	var result struct {
+		Compact1280 geometry
+		Compact1440 geometry
+		Wide1920    geometry
+		FirstCardY  int
+		LaneTop     int
+	}
+	runArchitectureModel(t, `(()=>{
+		const nodes=[{id:"web",domain:"experience"},{id:"orders",domain:"commerce"}];
+		const layout=architectureLayout(nodes,1220);
+		return {
+			Compact1280:architectureCanvasGeometry(580,84),
+			Compact1440:architectureCanvasGeometry(740,84),
+			Wide1920:architectureCanvasGeometry(1220,46),
+			FirstCardY:layout.positions.get("orders").y,
+			LaneTop:layout.laneTop
+		};
+	})()`, &result)
+	for name, geometry := range map[string]geometry{
+		"1280px": result.Compact1280,
+		"1440px": result.Compact1440,
+	} {
+		if !geometry.Compact || geometry.PresentationTop != 12 || geometry.LegendTop != 56 || geometry.ToolsTop != 100 || geometry.FocusTop != 144 || geometry.FocusBottom != 228 {
+			t.Fatalf("%s compact header geometry = %#v", name, geometry)
+		}
+		if geometry.ContentInset < geometry.FocusBottom+24 {
+			t.Fatalf("%s content inset %d does not clear focus bottom %d", name, geometry.ContentInset, geometry.FocusBottom)
+		}
+	}
+	if result.Wide1920.Compact || result.Wide1920.PresentationTop != 12 || result.Wide1920.LegendTop != 12 || result.Wide1920.ToolsTop != 12 || result.Wide1920.FocusTop != 96 || result.Wide1920.ContentInset != 0 {
+		t.Fatalf("1920px geometry changed unexpectedly: %#v", result.Wide1920)
+	}
+	if result.FirstCardY != 190 || result.LaneTop != 118 {
+		t.Fatalf("wide Architecture coordinates changed: first card y=%d lane top=%d", result.FirstCardY, result.LaneTop)
+	}
+}
+
 func TestArchitectureFocusModelKeepsDomainNeighborsAndAllServiceRelations(t *testing.T) {
 	var result struct {
 		DomainNodes  []string
