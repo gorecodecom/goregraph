@@ -855,6 +855,10 @@ func scriptVariableStatementEnd(masked string, start int) int {
 					if previous >= start && masked[previous] == ',' {
 						continue
 					}
+					next := nextScriptNonSpace(masked, index+1)
+					if next < len(masked) && masked[next] == ',' {
+						continue
+					}
 				}
 				return index
 			}
@@ -1066,7 +1070,8 @@ func isProvenScriptParameterType(masked string, offset int) bool {
 		}
 		arrow := search + relative
 		paramsStart, paramsEnd, ok := scriptArrowParameterRange(masked, arrow)
-		if ok && offset >= paramsStart && offset < paramsEnd {
+		if ok && offset >= paramsStart && offset < paramsEnd &&
+			isScriptParameterAnnotationAt(masked[paramsStart:paramsEnd], offset-paramsStart) {
 			return true
 		}
 		search = arrow + 2
@@ -1078,7 +1083,8 @@ func isProvenScriptParameterType(masked string, offset int) bool {
 		}
 		if offset > open && offset < close &&
 			isScriptParameterScopePrefix(masked, open) &&
-			scriptParameterBlockBodyStart(masked, close) >= 0 {
+			scriptParameterBlockBodyStart(masked, close) >= 0 &&
+			isScriptParameterAnnotationAt(masked[open+1:close], offset-open-1) {
 			return true
 		}
 		relative := strings.IndexByte(masked[close+1:], '(')
@@ -1086,6 +1092,22 @@ func isProvenScriptParameterType(masked string, offset int) bool {
 			break
 		}
 		open = close + 1 + relative
+	}
+	return false
+}
+
+func isScriptParameterAnnotationAt(params string, offset int) bool {
+	start := 0
+	for _, segment := range splitScriptTopLevel(params, ',') {
+		end := start + len(segment)
+		if offset >= start && offset < end {
+			relative := offset - start
+			colon := findScriptTopLevel(segment, ':')
+			equals := findScriptTopLevel(segment, '=')
+			return colon >= 0 && colon < relative &&
+				(equals < 0 || (colon < equals && relative < equals))
+		}
+		start = end + 1
 	}
 	return false
 }
@@ -1385,6 +1407,9 @@ func isScriptStatementBlockOpen(masked []byte, open int) bool {
 	if previous < 0 || masked[previous] == ';' || masked[previous] == '}' {
 		return true
 	}
+	if hasScriptLineBreak(masked, previous+1, open) && scriptTokenCanEndStatement(masked, previous) {
+		return true
+	}
 	if isScriptIdentifierByte(masked[previous]) {
 		end := previous + 1
 		for previous >= 0 && isScriptIdentifierByte(masked[previous]) {
@@ -1440,6 +1465,11 @@ func isScriptLabelledBlockOpen(masked []byte, open, colon int) bool {
 	for previous >= 0 && isScriptWhitespace(masked[previous]) {
 		previous--
 	}
+	if previous >= 0 &&
+		hasScriptLineBreak(masked, previous+1, labelStart) &&
+		scriptTokenCanEndStatement(masked, previous) {
+		previous = -1
+	}
 	if previous >= 0 && masked[previous] != ';' && masked[previous] != '{' && masked[previous] != '}' {
 		return false
 	}
@@ -1447,6 +1477,29 @@ func isScriptLabelledBlockOpen(masked []byte, open, colon int) bool {
 		return false
 	}
 	return true
+}
+
+func hasScriptLineBreak(masked []byte, start, end int) bool {
+	for index := start; index < end; index++ {
+		if masked[index] == '\n' || masked[index] == '\r' {
+			return true
+		}
+	}
+	return false
+}
+
+func scriptTokenCanEndStatement(masked []byte, index int) bool {
+	if index < 0 {
+		return false
+	}
+	if isScriptIdentifierByte(masked[index]) {
+		return true
+	}
+	switch masked[index] {
+	case ')', ']', '}', '\'', '"', '`':
+		return true
+	}
+	return false
 }
 
 func containingScriptBraceOpen(masked []byte, before int) int {

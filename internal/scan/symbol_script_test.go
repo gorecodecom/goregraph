@@ -217,6 +217,32 @@ const nestedObjectDivision = { retry: {} / loadUser() / divisor };
 	}
 }
 
+func TestExtractScriptMasksRegexAfterSemicolonlessStatementBlocks(t *testing.T) {
+	body := `
+import { loadUser } from "./api";
+work()
+{
+}
+/; export class SemicolonlessBareFake {} loadUser()/.test(value);
+work()
+retry:
+{
+}
+/; export class SemicolonlessLabelFake {} loadUser()/.test(value);
+const objectDivision = { retry: true } / loadUser() / divisor;
+`
+	facts := ExtractScriptSymbolFacts(FileRecord{Path: "src/real.ts", Language: "typescript"}, body)
+	for _, declaration := range facts.Declarations {
+		if declaration.Name == "SemicolonlessBareFake" || declaration.Name == "SemicolonlessLabelFake" {
+			t.Fatalf("semicolonless statement block regex created declaration: %#v", declaration)
+		}
+	}
+	references := scriptReferences(t, facts.References, "calls_export", "./api", "loadUser")
+	if len(references) != 1 || references[0].Line != 12 {
+		t.Fatalf("semicolonless block regex or object division extraction = %#v, want only line-12 division call", references)
+	}
+}
+
 func TestScriptReturnTypesRequireFunctionLikeSignature(t *testing.T) {
 	file := FileRecord{Path: "src/types.ts", Language: "typescript"}
 	facts := ExtractScriptSymbolFacts(file, `
@@ -272,6 +298,25 @@ const consume = (model: User) => model;
 		if reference.Line == 3 {
 			t.Fatalf("object literal value emitted parameter type relation: %#v", reference)
 		}
+	}
+}
+
+func TestScriptParameterTypesIgnoreDefaultValueExpressions(t *testing.T) {
+	file := FileRecord{Path: "src/types.ts", Language: "typescript"}
+	facts := ExtractScriptSymbolFacts(file, `
+import type { Nested, User } from "./User";
+function consume(value = { first: source, model: Nested }) {}
+const consume = (value = { first: source, model: Nested }) => value;
+function consumeTyped(value: User = { first: source, model: Nested }) {}
+const consumeTyped = (value: User = { first: source, model: Nested }) => value;
+`)
+
+	references := scriptReferences(t, facts.References, "type_reference", "./User", "User")
+	if len(references) != 2 {
+		t.Fatalf("valid parameter annotations = %#v, want line-5 and line-6 User annotations", references)
+	}
+	if nested := scriptReferences(t, facts.References, "type_reference", "./User", "Nested"); len(nested) != 0 {
+		t.Fatalf("default expressions emitted parameter type relations: %#v", nested)
 	}
 }
 
@@ -1119,6 +1164,29 @@ export function Multiple(source) {
 	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 6)
 	if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
 		t.Fatalf("newline-continued declarator did not shadow imported call: %#v", reference)
+	}
+}
+
+func TestScriptLeadingCommaContinuesMultilineShadowBinding(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { loadUser } from "./api";
+export function Multiple(source) {
+  const first = build({ nested: [1, 2] })
+    , { loadUser = fallback } = source;
+  loadUser();
+}
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function loadUser() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 6)
+	if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
+		t.Fatalf("leading-comma declarator did not shadow imported call: %#v", reference)
 	}
 }
 
