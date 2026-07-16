@@ -14,6 +14,7 @@ type Index struct {
 	Workspace                WorkspaceIndex
 	Code                     CodeIntelligenceRecord
 	ArchitectureCapabilities []ArchitectureCapabilityFact
+	SymbolFacts              ProjectSymbolFacts
 }
 
 type ArchitectureCapabilityFact struct {
@@ -131,6 +132,7 @@ type RichRelationRecord struct {
 	To                  string           `json:"to"`
 	Type                string           `json:"type"`
 	Language            string           `json:"language,omitempty"`
+	Analyzer            string           `json:"analyzer,omitempty"`
 	Line                int              `json:"line,omitempty"`
 	SourceLocation      string           `json:"source_location,omitempty"`
 	Confidence          string           `json:"confidence"`
@@ -625,14 +627,17 @@ type JavaImportRecord struct {
 }
 
 type JavaTypeRecord struct {
-	Name        string                 `json:"name"`
-	Kind        string                 `json:"kind"`
-	Package     string                 `json:"package,omitempty"`
-	File        string                 `json:"file"`
-	Line        int                    `json:"line"`
-	Extends     string                 `json:"extends,omitempty"`
-	Implements  []string               `json:"implements,omitempty"`
-	Annotations []JavaAnnotationRecord `json:"annotations,omitempty"`
+	Name          string                 `json:"name"`
+	Kind          string                 `json:"kind"`
+	Package       string                 `json:"package,omitempty"`
+	File          string                 `json:"file"`
+	Line          int                    `json:"line"`
+	Owner         string                 `json:"owner,omitempty"`
+	QualifiedName string                 `json:"qualified_name,omitempty"`
+	EndLine       int                    `json:"end_line,omitempty"`
+	Extends       string                 `json:"extends,omitempty"`
+	Implements    []string               `json:"implements,omitempty"`
+	Annotations   []JavaAnnotationRecord `json:"annotations,omitempty"`
 }
 
 type JavaMethodRecord struct {
@@ -1030,8 +1035,24 @@ type SpringBeanRecord struct {
 }
 
 type WorkspaceIndex struct {
-	MavenPackages []MavenPackageRecord `json:"maven_packages,omitempty"`
-	NodePackages  []NodePackageRecord  `json:"node_packages,omitempty"`
+	MavenPackages     []MavenPackageRecord  `json:"maven_packages,omitempty"`
+	GradlePackages    []GradlePackageRecord `json:"gradle_packages,omitempty"`
+	NodePackages      []NodePackageRecord   `json:"node_packages,omitempty"`
+	gradleLimitations []string
+}
+
+type GradlePackageRecord struct {
+	Path         string                   `json:"path"`
+	Group        string                   `json:"group,omitempty"`
+	Artifact     string                   `json:"artifact,omitempty"`
+	Dependencies []GradleDependencyRecord `json:"dependencies,omitempty"`
+}
+
+type GradleDependencyRecord struct {
+	Group    string `json:"group"`
+	Artifact string `json:"artifact"`
+	Version  string `json:"version,omitempty"`
+	Scope    string `json:"scope,omitempty"`
 }
 
 type MavenPackageRecord struct {

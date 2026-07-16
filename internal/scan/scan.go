@@ -196,13 +196,18 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 		index.Symbols = append(index.Symbols, extractSymbols(record, text)...)
 		index.Relations = append(index.Relations, extractRelations(record, text)...)
 		if record.Language == "java" {
-			index.JavaSources = append(index.JavaSources, extractJavaSource(record, text))
+			source := extractJavaSource(record, text)
+			index.JavaSources = append(index.JavaSources, source)
+			MergeProjectSymbolFacts(&index.SymbolFacts, ExtractJavaSymbolFacts(source, text, index.Workspace))
 		}
 		mergeCodeIntelligence(&index.Code, extractCodeIntelligence(record, text))
 		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, extractArchitectureCapabilityFacts(record, text)...)
 		mergeWorkspaceIndex(&index.Workspace, extractWorkspaceRecord(record, text))
 		return nil
 	})
+	if err == nil {
+		index.SymbolFacts = FinalizeProjectSymbolFacts(index.Files, index.Workspace, index.SymbolFacts)
+	}
 	return index, skipped, err
 }
 
@@ -255,6 +260,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	springIndex := buildSpringIndex(index.JavaSources)
 	callGraph := buildJavaCallGraph(index.JavaSources)
 	callGraph = mergeCallGraphs(callGraph, buildGenericCallGraph(index.Code))
+	linkCallGraphSymbolFacts(&callGraph, index.SymbolFacts)
 	index.Relations = append(index.Relations, buildCallRelations(callGraph)...)
 	sort.Slice(index.Relations, func(i, j int) bool {
 		if index.Relations[i].From != index.Relations[j].From {
@@ -282,10 +288,10 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
 	capabilities := BuildCapabilityInventory(index.Files, index.Workspace, index.ArchitectureCapabilities)
 	coverage := BuildCoverage(index.Files, capabilities)
-	richSymbols := buildRichSymbols(index.Files, index.Symbols)
-	richRelations := buildRichRelations(index.Files, index.Relations)
+	richSymbols := dedupeRichSymbolFacts(append(buildRichSymbols(index.Files, index.Symbols), index.SymbolFacts.Declarations...))
+	richRelations := dedupeRichRelationFacts(append(buildRichRelations(index.Files, index.Relations), index.SymbolFacts.References...))
 	richGraph := buildRichGraph(index.Files, richSymbols, richRelations)
-	evidence := LinkEvidenceReferences(filepath.Base(root), index.Files, richRelations, &callGraph, routes, codeFlows, contractMatches)
+	evidence := LinkEvidenceReferences(filepath.Base(root), index.Files, richSymbols, richRelations, &callGraph, routes, codeFlows, contractMatches)
 	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
 	diagnosticFamilies := BuildDiagnosticFamilies(filepath.Base(root), canonicalDiagnostics)
 	finished := time.Now().UTC()

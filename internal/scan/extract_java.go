@@ -10,8 +10,8 @@ var (
 	javaPackageLineRE    = regexp.MustCompile(`^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*);`)
 	javaImportLineRE     = regexp.MustCompile(`^\s*import\s+(static\s+)?([^;]+);`)
 	javaTypeLineRE       = regexp.MustCompile(`^\s*(?:public|protected|private|abstract|final|sealed|non-sealed|static|\s)*\s*(class|interface|enum|record)\s+([A-Za-z_][A-Za-z0-9_]*)\b(.*)$`)
-	javaMethodLineRE     = regexp.MustCompile(`^\s*(public|protected|private)?\s*(?:static\s+)?(?:final\s+)?([A-Za-z_][A-Za-z0-9_<>, ?\[\].]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*(?:throws\s+[^{]+)?\{?\s*$`)
-	javaFieldLineRE      = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*(final\s+)?([A-Za-z_][A-Za-z0-9_<>, ?\[\].]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:=.*)?;\s*$`)
+	javaMethodLineRE     = regexp.MustCompile(`^\s*(public|protected|private)?\s*(?:static\s+)?(?:final\s+)?([A-Za-z_][A-Za-z0-9_$<>, ?\[\].]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*)\)\s*(?:throws\s+[^{]+)?\{?\s*$`)
+	javaFieldLineRE      = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*(final\s+)?([A-Za-z_][A-Za-z0-9_$<>, ?\[\].]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:=.*)?;\s*$`)
 	javaAnnotationLineRE = regexp.MustCompile(`^\s*@([A-Za-z_][A-Za-z0-9_.]*)(?:\((.*)\))?\s*$`)
 	javaConstantLineRE   = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*;`)
 	javaCallRE           = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
@@ -32,6 +32,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	var pending []JavaAnnotationRecord
 	currentOwner := ""
 	braceDepth := 0
+	typeStack := []javaTypeScope{}
 	blockComment := false
 	methodSignature := ""
 	methodSignatureLine := 0
@@ -103,20 +104,30 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			source.Constants[match[1]] = match[2]
 		}
 		if match := javaTypeLineRE.FindStringSubmatch(line); len(match) == 4 {
-			currentOwner = match[2]
+			owner := ""
+			if len(typeStack) > 0 {
+				owner = source.Types[typeStack[len(typeStack)-1].typeIndex].QualifiedName
+			}
 			typ := JavaTypeRecord{
-				Name:        match[2],
-				Kind:        match[1],
-				Package:     source.Package,
-				File:        file.Path,
-				Line:        lineNo,
-				Annotations: pending,
+				Name:          match[2],
+				Kind:          match[1],
+				Package:       source.Package,
+				File:          file.Path,
+				Line:          lineNo,
+				Owner:         owner,
+				QualifiedName: qualifiedJavaTypeName(source.Package, owner, match[2]),
+				Annotations:   pending,
 			}
 			typ.Extends = parseJavaExtends(match[3])
 			typ.Implements = parseJavaImplements(match[3])
 			source.Types = append(source.Types, typ)
+			currentOwner = typ.Name
+			openCount := strings.Count(line, "{")
+			if openCount > 0 {
+				typeStack = append(typeStack, javaTypeScope{typeIndex: len(source.Types) - 1, bodyDepth: braceDepth + openCount})
+			}
 			pending = nil
-		} else if match := javaFieldLineRE.FindStringSubmatch(line); len(match) == 4 && currentOwner != "" && braceDepth <= 1 && !strings.Contains(line, "(") {
+		} else if match := javaFieldLineRE.FindStringSubmatch(line); len(match) == 4 && currentOwner != "" && javaAtCurrentTypeBody(braceDepth, typeStack) && !strings.Contains(line, "(") {
 			source.Fields = append(source.Fields, JavaFieldRecord{
 				Name:        match[3],
 				Type:        cleanJavaType(match[2]),
@@ -145,16 +156,39 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 
 		braceDepth += strings.Count(line, "{")
 		braceDepth -= strings.Count(line, "}")
-		if braceDepth <= 0 {
+		for len(typeStack) > 0 && braceDepth < typeStack[len(typeStack)-1].bodyDepth {
+			scope := typeStack[len(typeStack)-1]
+			source.Types[scope.typeIndex].EndLine = lineNo
+			typeStack = typeStack[:len(typeStack)-1]
+		}
+		if len(typeStack) > 0 {
+			currentOwner = source.Types[typeStack[len(typeStack)-1].typeIndex].Name
+		} else {
 			currentOwner = ""
+		}
+		if braceDepth <= 0 {
 			braceDepth = 0
 		}
+	}
+	for len(typeStack) > 0 {
+		scope := typeStack[len(typeStack)-1]
+		source.Types[scope.typeIndex].EndLine = len(lines)
+		typeStack = typeStack[:len(typeStack)-1]
 	}
 
 	if len(source.Constants) == 0 {
 		source.Constants = nil
 	}
 	return source
+}
+
+type javaTypeScope struct {
+	typeIndex int
+	bodyDepth int
+}
+
+func javaAtCurrentTypeBody(braceDepth int, stack []javaTypeScope) bool {
+	return len(stack) > 0 && braceDepth == stack[len(stack)-1].bodyDepth
 }
 
 func extractJavaSecurityAuth(line string, lineNo int, file string) []AuthRecord {
@@ -226,6 +260,18 @@ func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnn
 	if owner == "" || isJavaControlLine(line) {
 		return JavaMethodRecord{}, false
 	}
+	if params, visibility, ok := parseJavaConstructorSignature(line, owner); ok {
+		return JavaMethodRecord{
+			Name:        owner,
+			File:        file,
+			Line:        lineNo,
+			Owner:       owner,
+			Visibility:  visibility,
+			Parameters:  parseJavaParameters(params),
+			Annotations: annotations,
+			Calls:       extractJavaCalls(line, lineNo),
+		}, true
+	}
 	if name, returnType, params, visibility, ok := parseJavaMethodSignature(line); ok {
 		return JavaMethodRecord{
 			Name:         name,
@@ -256,6 +302,33 @@ func parseJavaMethod(line, file, owner string, lineNo int, annotations []JavaAnn
 		}, true
 	}
 	return JavaMethodRecord{}, false
+}
+
+func parseJavaConstructorSignature(line, owner string) (params, visibility string, ok bool) {
+	signature := strings.TrimSpace(line)
+	if index := strings.Index(signature, "{"); index >= 0 {
+		signature = strings.TrimSpace(signature[:index])
+	}
+	if index := strings.Index(signature, " throws "); index >= 0 {
+		signature = strings.TrimSpace(signature[:index])
+	}
+	open := strings.Index(signature, "(")
+	close := strings.LastIndex(signature, ")")
+	if open < 0 || close < open {
+		return "", "", false
+	}
+	prefix := strings.Fields(strings.TrimSpace(signature[:open]))
+	if len(prefix) == 2 {
+		switch prefix[0] {
+		case "public", "protected", "private":
+			visibility = prefix[0]
+			prefix = prefix[1:]
+		}
+	}
+	if len(prefix) != 1 || prefix[0] != owner {
+		return "", "", false
+	}
+	return signature[open+1 : close], visibility, true
 }
 
 func parseJavaMethodSignature(line string) (name, returnType, params, visibility string, ok bool) {

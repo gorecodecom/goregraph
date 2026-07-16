@@ -42,7 +42,7 @@ func BuildEvidence(project string, files []FileRecord, relations []RichRelationR
 	return records
 }
 
-func LinkEvidenceReferences(project string, files []FileRecord, relations []RichRelationRecord, calls *CallGraphRecord, routes []CodeRouteRecord, flows []CodeFlowRecord, matches []ContractMatchRecord) []EvidenceRecord {
+func LinkEvidenceReferences(project string, files []FileRecord, symbols []RichSymbolRecord, relations []RichRelationRecord, calls *CallGraphRecord, routes []CodeRouteRecord, flows []CodeFlowRecord, matches []ContractMatchRecord) []EvidenceRecord {
 	hashes := map[string]string{}
 	for _, file := range files {
 		hashes[file.Path] = file.Hash
@@ -58,8 +58,25 @@ func LinkEvidenceReferences(project string, files []FileRecord, relations []Rich
 		byID[record.ID] = record
 		return record.ID
 	}
+	for i := range symbols {
+		if symbols[i].DeclarationID == "" || symbols[i].Analyzer == "" {
+			continue
+		}
+		reason := symbols[i].Language + " " + symbols[i].Kind + " declaration"
+		if id := link(symbols[i].File, symbols[i].Line, symbols[i].Analyzer, "", "declaration", reason); id != "" {
+			symbols[i].EvidenceIDs = []string{id}
+		}
+	}
 	for i := range relations {
-		if id := link(relations[i].From, relations[i].Line, relations[i].Language, "", "syntax", relations[i].Type); id != "" {
+		analyzer := relations[i].Analyzer
+		if analyzer == "" {
+			analyzer = relations[i].Language
+		}
+		reason := relations[i].Reason
+		if reason == "" {
+			reason = relations[i].Type
+		}
+		if id := link(relations[i].From, relations[i].Line, analyzer, "", "syntax", reason); id != "" {
 			relations[i].EvidenceIDs = []string{id}
 		}
 	}

@@ -52,15 +52,25 @@ func extractWorkspaceRecord(file FileRecord, body string) WorkspaceIndex {
 		if record, ok := extractNodePackage(file.Path, body); ok {
 			return WorkspaceIndex{NodePackages: []NodePackageRecord{record}}
 		}
+	case "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts":
+		result := WorkspaceIndex{gradleLimitations: gradleExtractionLimitations(file.Path, body)}
+		if record, ok := extractGradlePackage(file.Path, body); ok {
+			result.GradlePackages = []GradlePackageRecord{record}
+		}
+		return result
 	}
 	return WorkspaceIndex{}
 }
 
 func mergeWorkspaceIndex(index *WorkspaceIndex, add WorkspaceIndex) {
 	index.MavenPackages = append(index.MavenPackages, add.MavenPackages...)
+	index.GradlePackages = append(index.GradlePackages, add.GradlePackages...)
 	index.NodePackages = append(index.NodePackages, add.NodePackages...)
+	index.gradleLimitations = append(index.gradleLimitations, add.gradleLimitations...)
 	sort.Slice(index.MavenPackages, func(i, j int) bool { return index.MavenPackages[i].Path < index.MavenPackages[j].Path })
+	sort.Slice(index.GradlePackages, func(i, j int) bool { return index.GradlePackages[i].Path < index.GradlePackages[j].Path })
 	sort.Slice(index.NodePackages, func(i, j int) bool { return index.NodePackages[i].Path < index.NodePackages[j].Path })
+	sort.Strings(index.gradleLimitations)
 }
 
 func extractMavenPackage(path, body string) (MavenPackageRecord, bool) {

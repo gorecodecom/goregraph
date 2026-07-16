@@ -9,7 +9,7 @@ func TestLinkEvidenceReferencesConnectsRouteAndCallFacts(t *testing.T) {
 	files := []FileRecord{{Path: "src/app.go", Language: "go", Hash: "hash"}}
 	routes := []CodeRouteRecord{{Language: "go", Framework: "net/http", File: "src/app.go", Line: 4, Reason: "route registration"}}
 	calls := CallGraphRecord{Edges: []CallGraphEdgeRecord{{SourceFile: "src/app.go", Line: 8, Reason: "resolved call"}}}
-	evidence := LinkEvidenceReferences("demo", files, nil, &calls, routes, nil, nil)
+	evidence := LinkEvidenceReferences("demo", files, nil, nil, &calls, routes, nil, nil)
 	if len(evidence) != 2 {
 		t.Fatalf("len(evidence) = %d, want 2", len(evidence))
 	}
