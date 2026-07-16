@@ -15,11 +15,13 @@ const workspaceDashboardShell = `<div class="shell">
 <button data-view-mode="endpoints" aria-pressed="false">Endpoints</button>
 <button data-view-mode="feature-flow" aria-pressed="false">Feature Flow</button>
 <button data-view-mode="data-flow" aria-pressed="false">Data Flow</button>
+<button data-view-mode="code-explorer" aria-pressed="false">Code Explorer</button>
 <button data-view-mode="diagnostics" aria-pressed="false">Diagnostics</button>
 <button data-view-mode="coverage" aria-pressed="false">Coverage</button>
 </div>
 <p class="help" id="mode-help">See how projects and services communicate across the workspace. Select a service to highlight direct incoming and outgoing relationships without changing the layout.</p>
 <input id="workspace-search" aria-label="Search workspace map" placeholder="Search service, endpoint, route, file, symbol">
+<section id="workspace-kind-controls">
 <h2>Filter</h2>
 <div class="filters">
 <button data-kind-filter="all" class="active" aria-pressed="true">All</button>
@@ -28,6 +30,7 @@ const workspaceDashboardShell = `<div class="shell">
 <button data-kind-filter="unresolved" aria-pressed="false">Unresolved</button>
 </div>
 <div class="filters" style="margin-top:8px"><button id="clear-selection" type="button">Clear selection</button></div>
+</section>
 <div class="filters" style="margin-top:8px"><button id="isolate-neighborhood" type="button" hidden>Isolate neighborhood</button><button id="show-full-architecture" type="button" hidden>Show full architecture</button></div>
 <div class="filters" style="margin-top:8px"><button id="focus-selected" type="button" hidden>Focus selected</button><button id="back-to-full-architecture" type="button" hidden>Back to full architecture</button></div>
 <section id="endpoint-filters" class="endpoint-filters" hidden aria-label="Endpoint debugging filters">

@@ -1068,21 +1068,22 @@ The dashboard is normally generated at:
 <workspace>/.goregraph-workspace/workspace-map.html
 ```
 
-The 1.3.0 dashboard is organized around six views:
+The 1.3.0 dashboard is organized around seven views:
 
 - **Architecture** is the first and default view. Dynamic domain lanes come from service-map metadata. Service selection keeps stable card positions while highlighting all direct incoming and outgoing relationships and dimming unrelated context. Background relationships share bundled trunks; selected relationships fan out to explicit card ports. A persistent summary reports relationship, neighboring-service, resolved, unresolved, and mismatch counts and filters by direction or risk. `N calls` means statically detected relationships, not runtime request frequency.
 - **Endpoints** shows a normal-scale, scrollable caller -> endpoint -> provider inventory and opens a directed implementation trace for a selected endpoint. Long routes wrap instead of shrinking the view. **Back to endpoint inventory** restores service, filters, and scroll position.
 - **Feature Flow** shows the evidence-backed route-to-component-to-API-to-backend-to-persistence implementation chain, linked tests, and safe verification commands.
 - **Data Flow** uses a sidebar master list and renders one selected request/field/persistence/response chain at normal scale, with unknown mappings displayed in place as explicit gaps.
+- **Code Explorer** lists services with indexed classes and symbols, then opens the exact symbol inventory with separate Direct references, Reached through API, All, and uncertainty views.
 - **Diagnostics** explains relationships GoreGraph could not safely confirm, including the classification, reason, possible impact, evidence, and suggested next check. Expected frontend-internal behavior is distinguished from likely defects or incomplete scan coverage.
 - **Coverage** uses a dedicated normal-scale workbench grouped by project and language. It summarizes analyzed groups and gaps, then shows each capability as `COMPLETE`, `PARTIAL`, `UNAVAILABLE`, or `FAILED`. It describes analysis coverage, not whether source behavior exists.
 
-Select a service in **Architecture** and choose **Explore classes & symbols** to
-open the offline Code Explorer. It keeps exact symbol inventory separate from
-usage evidence, with **Direct references**, **Reached through API**, **All**, and
-an ambiguity/unresolved view when uncertainty exists. Filters cover consumer,
-category, relation kind, language, and confidence. Source locations expose
-**Copy path** and **Open source** actions.
+Open **Code Explorer** directly and choose a service, or select a service in
+**Architecture** and choose **Explore classes & symbols**. The workbench keeps
+exact symbol inventory separate from usage evidence, with **Direct references**,
+**Reached through API**, **All**, and an ambiguity/unresolved view when
+uncertainty exists. Filters cover consumer, category, relation kind, language,
+and confidence. Source locations expose **Copy path** and **Open source** actions.
 
 Direct references are static source or compile relationships, not runtime call
 counts. HTTP reachability is a static consumer-to-route-to-implementation chain,

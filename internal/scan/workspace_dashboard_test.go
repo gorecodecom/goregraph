@@ -166,7 +166,7 @@ func TestWorkspaceDashboardEmbedsCanonicalSymbolProjection(t *testing.T) {
 	}
 }
 
-func TestWorkspaceDashboardOffersCodeExplorerForSelectedService(t *testing.T) {
+func TestWorkspaceDashboardOffersDiscoverableCodeExplorerAndSelectedServiceEntry(t *testing.T) {
 	serviceMap := WorkspaceServiceMapRecord{
 		SchemaVersion: SchemaVersion,
 		Nodes: []WorkspaceServiceNodeRecord{
@@ -207,18 +207,25 @@ func TestWorkspaceDashboardOffersCodeExplorerForSelectedService(t *testing.T) {
 	)
 
 	for _, want := range []string{
+		`data-view-mode="code-explorer" aria-pressed="false">Code Explorer</button>`,
 		"Explore classes &amp; symbols",
 		`data-open-code-explorer`,
 		`function codeExplorerAvailability(project)`,
+		`function renderCodeExplorerLanding()`,
+		`Choose a service to browse its indexed classes`,
+		`data-code-project`,
+		`function leaveCodeExplorer()`,
+		`id="workspace-kind-controls"`,
+		`function syncModeChrome(mode)`,
+		`kindControls.hidden=codeExplorer`,
+		`workspaceSearch.hidden=codeExplorer&&!!state.codeProject`,
+		`Back to services`,
 		"No supported symbol inventory is available for this project.",
 		"language has no supported symbol analyzer",
 	} {
 		if !strings.Contains(html, want) {
-			t.Fatalf("dashboard missing selected-service Code Explorer contract %q", want)
+			t.Fatalf("dashboard missing discoverable Code Explorer contract %q", want)
 		}
-	}
-	if strings.Contains(html, `data-view-mode="code-explorer"`) {
-		t.Fatal("Code Explorer must only be entered from a selected service, not as a global empty view")
 	}
 }
 
