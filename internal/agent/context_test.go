@@ -560,6 +560,126 @@ func TestBuildContextPreservesLargestFittingEvidencePrefix(t *testing.T) {
 	}
 }
 
+func TestBuildContextEvidenceDoesNotDisplaceDirectRelationship(t *testing.T) {
+	evidenceIDs := make([]string, 30)
+	for index := range evidenceIDs {
+		evidenceIDs[index] = fmt.Sprintf("evidence:%032x", index)
+	}
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "route", Kind: "route", Name: "GET /users",
+				HTTPMethod: "GET", Path: "/users", File: "users.go",
+				Confidence: "EXACT", EvidenceIDs: evidenceIDs,
+			},
+			{ID: "handler", Kind: "symbol", Name: "handler", File: "users.go"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "call", FromFactID: "route", ToFactID: "handler",
+			FromLabel: "GET /users", ToLabel: "handler", Kind: "call",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "GET /users", BudgetTokens: 256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.CallChain) != 1 || len(pack.Entrypoints) != 1 ||
+		len(pack.Entrypoints[0].EvidenceIDs) == 0 {
+		t.Fatalf("optional evidence displaced structural context: %#v", pack)
+	}
+	assertContextEvidencePrefixIsMaximal(
+		t,
+		pack,
+		evidenceIDs,
+		func(candidate *ContextPack, ids []string) {
+			candidate.Entrypoints[0].EvidenceIDs = ids
+		},
+	)
+}
+
+func TestBuildContextFinalizesHighConfidenceBeforeEvidenceBackfill(t *testing.T) {
+	evidenceIDs := make([]string, 200)
+	for index := range evidenceIDs {
+		evidenceIDs[index] = fmt.Sprintf("e%03d", index)
+	}
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "seed", Kind: "symbol", Name: "operation",
+				Search: "delete users", File: "users.go",
+			},
+			{
+				ID: "contract", Kind: "api_contract", Name: "POST /audit",
+				HTTPMethod: "POST", Path: "/audit", File: "users.go",
+				EvidenceIDs: evidenceIDs,
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "contract-edge", FromFactID: "seed", ToFactID: "contract",
+			FromLabel: "operation", ToLabel: "POST /audit", Kind: "http_contract",
+			Reason: "ok",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "delete users", BudgetTokens: 256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Confidence != "HIGH" || len(pack.CallChain) != 1 ||
+		len(pack.Contracts) != 1 {
+		t.Fatalf("relationship-dependent confidence or contract was lost: %#v", pack)
+	}
+	assertContextEvidencePrefixIsMaximal(
+		t,
+		pack,
+		evidenceIDs,
+		func(candidate *ContextPack, ids []string) {
+			candidate.Contracts[0].EvidenceIDs = ids
+		},
+	)
+}
+
+func assertContextEvidencePrefixIsMaximal(
+	t *testing.T,
+	pack ContextPack,
+	allEvidence []string,
+	set func(*ContextPack, []string),
+) {
+	t.Helper()
+	var retained []string
+	switch {
+	case len(pack.Contracts) > 0:
+		retained = pack.Contracts[0].EvidenceIDs
+	case len(pack.Entrypoints) > 0:
+		retained = pack.Entrypoints[0].EvidenceIDs
+	}
+	if len(retained) >= len(allEvidence) {
+		return
+	}
+	candidate := cloneContextPack(pack)
+	next := append(append([]string(nil), retained...), allEvidence[len(retained)])
+	set(&candidate, next)
+	candidate, err := finalizeContextEstimate(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.EstimatedTokens <= pack.BudgetTokens {
+		t.Fatalf(
+			"evidence prefix was not maximal: retained=%d candidate=%d budget=%d",
+			len(retained),
+			candidate.EstimatedTokens,
+			pack.BudgetTokens,
+		)
+	}
+}
+
 func TestScopedContextUncertaintiesIgnoreUnknownCoverage(t *testing.T) {
 	uncertainties, allIncomplete := scopedContextUncertainties(
 		[]scan.AgentContextCoverageRecord{

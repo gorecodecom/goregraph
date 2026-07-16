@@ -119,6 +119,7 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		relationship := contextRelationship(expandedEdge.edge, from, to)
 		candidate, accepted, appendErr := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
 			candidate.CallChain = append(candidate.CallChain, relationship)
+			candidate.Confidence = contextPackConfidence(top, true)
 			if !mergeContextFile(candidate, contextFileForFact(from, "call_chain", "direct "+expandedEdge.edge.Kind), request.MaxFiles) {
 				return false
 			}
@@ -225,6 +226,10 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		if accepted {
 			pack = candidate
 		}
+	}
+	pack, err = backfillContextEvidence(pack, factByID, request.BudgetTokens)
+	if err != nil {
+		return ContextPack{}, err
 	}
 	return finalizeContextEstimate(pack)
 }
@@ -547,40 +552,108 @@ func tryAddContextLocation(
 	role string,
 	appendLocation func(*ContextPack, ContextLocation),
 ) (ContextPack, bool, error) {
-	evidenceIDs := sortedContextStrings(fact.EvidenceIDs)
+	compacted := fact
+	compacted.EvidenceIDs = nil
+	location := contextLocation(compacted, reason)
+	return tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
+		appendLocation(candidate, location)
+		return mergeContextFile(
+			candidate,
+			contextFileForFact(compacted, role, reason),
+			request.MaxFiles,
+		)
+	})
+}
+
+func backfillContextEvidence(
+	pack ContextPack,
+	factByID map[string]scan.AgentContextFactRecord,
+	budget int,
+) (ContextPack, error) {
+	sections := []struct {
+		length int
+		id     func(int) string
+		set    func(*ContextPack, int, []string)
+	}{
+		{
+			length: len(pack.Entrypoints),
+			id:     func(index int) string { return pack.Entrypoints[index].ID },
+			set: func(candidate *ContextPack, index int, evidenceIDs []string) {
+				candidate.Entrypoints[index].EvidenceIDs = evidenceIDs
+			},
+		},
+		{
+			length: len(pack.Contracts),
+			id:     func(index int) string { return pack.Contracts[index].ID },
+			set: func(candidate *ContextPack, index int, evidenceIDs []string) {
+				candidate.Contracts[index].EvidenceIDs = evidenceIDs
+			},
+		},
+		{
+			length: len(pack.Persistence),
+			id:     func(index int) string { return pack.Persistence[index].ID },
+			set: func(candidate *ContextPack, index int, evidenceIDs []string) {
+				candidate.Persistence[index].EvidenceIDs = evidenceIDs
+			},
+		},
+		{
+			length: len(pack.Tests),
+			id:     func(index int) string { return pack.Tests[index].ID },
+			set: func(candidate *ContextPack, index int, evidenceIDs []string) {
+				candidate.Tests[index].EvidenceIDs = evidenceIDs
+			},
+		},
+	}
+	for _, section := range sections {
+		for index := 0; index < section.length; index++ {
+			fact, ok := factByID[section.id(index)]
+			if !ok {
+				continue
+			}
+			var err error
+			pack, err = maximizeContextEvidencePrefix(
+				pack,
+				budget,
+				fact.EvidenceIDs,
+				func(candidate *ContextPack, evidenceIDs []string) {
+					section.set(candidate, index, evidenceIDs)
+				},
+			)
+			if err != nil {
+				return ContextPack{}, err
+			}
+		}
+	}
+	return pack, nil
+}
+
+func maximizeContextEvidencePrefix(
+	pack ContextPack,
+	budget int,
+	evidenceIDs []string,
+	set func(*ContextPack, []string),
+) (ContextPack, error) {
+	evidenceIDs = sortedContextStrings(evidenceIDs)
 	low := 0
 	high := len(evidenceIDs)
 	best := pack
-	found := false
 	for low <= high {
 		count := low + (high-low)/2
-		compacted := fact
-		compacted.EvidenceIDs = append([]string(nil), evidenceIDs[:count]...)
-		location := contextLocation(compacted, reason)
-		candidate, accepted, err := tryContextPack(
-			pack,
-			request.BudgetTokens,
-			func(candidate *ContextPack) bool {
-				appendLocation(candidate, location)
-				return mergeContextFile(
-					candidate,
-					contextFileForFact(compacted, role, reason),
-					request.MaxFiles,
-				)
-			},
-		)
+		candidate := cloneContextPack(pack)
+		set(&candidate, append([]string(nil), evidenceIDs[:count]...))
+		var err error
+		candidate, err = finalizeContextEstimate(candidate)
 		if err != nil {
-			return ContextPack{}, false, err
+			return ContextPack{}, err
 		}
-		if accepted {
+		if candidate.EstimatedTokens <= budget {
 			best = candidate
-			found = true
 			low = count + 1
 			continue
 		}
 		high = count - 1
 	}
-	return best, found, nil
+	return best, nil
 }
 
 func contextLocation(fact scan.AgentContextFactRecord, reason string) ContextLocation {
