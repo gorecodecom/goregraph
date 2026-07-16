@@ -115,10 +115,7 @@ func BuildWorkspaceSymbolProjection(registry WorkspaceRegistryRecord, projects [
 			)
 		}
 	}
-	usageIndex.Usages = dedupeWorkspaceSymbolUsages(usageIndex.Usages)
-	sort.Slice(usageIndex.Usages, func(i, j int) bool {
-		return usageIndex.Usages[i].ID < usageIndex.Usages[j].ID
-	})
+	usageIndex.Usages = mergeWorkspaceSymbolUsageRecords(usageIndex.Usages)
 	coverage := buildWorkspaceSymbolCoverage(registry, projects)
 	symbolIndex.Coverage = append([]SymbolCoverageRecord(nil), coverage...)
 	usageIndex.Coverage = append([]SymbolCoverageRecord(nil), coverage...)
@@ -271,11 +268,31 @@ func validateWorkspaceSymbolProjectionPair(symbols WorkspaceSymbolIndexRecord, u
 func validateWorkspaceSymbolUsage(usage CanonicalSymbolUsageRecord, symbols map[string]bool) error {
 	switch usage.Resolution {
 	case SymbolResolutionExact:
-		if usage.Category != SymbolUsageDirectReference || usage.ProviderSymbolID == "" {
-			return fmt.Errorf("EXACT usage must have one direct provider")
+		if usage.ProviderSymbolID == "" {
+			return fmt.Errorf("EXACT usage must have one provider")
+		}
+		if usage.Category != SymbolUsageDirectReference && usage.Category != SymbolUsageReachedThroughAPI {
+			return fmt.Errorf("EXACT usage must be a direct reference or API reachability record")
 		}
 		if !symbols[usage.ProviderSymbolID] {
 			return fmt.Errorf("EXACT provider %q is not in symbol index", usage.ProviderSymbolID)
+		}
+		if usage.Category == SymbolUsageReachedThroughAPI {
+			if usage.Transport != "http" {
+				return fmt.Errorf("API reachability transport must be http")
+			}
+			if len(usage.APIPath) == 0 {
+				return fmt.Errorf("API reachability path is empty")
+			}
+			for position, step := range usage.APIPath {
+				if step.Position != position {
+					return fmt.Errorf("API reachability path position %d is %d", position, step.Position)
+				}
+			}
+			selected := usage.APIPath[len(usage.APIPath)-1]
+			if selected.Kind != "selected_symbol" || selected.SymbolID != usage.ProviderSymbolID {
+				return fmt.Errorf("API reachability path does not end at provider %q", usage.ProviderSymbolID)
+			}
 		}
 	case SymbolResolutionAmbiguous:
 		if usage.Category != SymbolUsageAmbiguous || usage.ProviderSymbolID == "" || len(usage.CandidateSymbolIDs) < 2 {
@@ -309,6 +326,21 @@ func validateWorkspaceSymbolUsage(usage CanonicalSymbolUsageRecord, symbols map[
 		return fmt.Errorf("invalid symbol resolution %q", usage.Resolution)
 	}
 	return nil
+}
+
+func finalizeWorkspaceSymbolUsageProjection(
+	symbols WorkspaceSymbolIndexRecord,
+	usages WorkspaceSymbolUsageIndexRecord,
+	matches []WorkspaceContractMatchRecord,
+	flows []WorkspaceFeatureFlowRecord,
+	traces WorkspaceEndpointTraceIndexRecord,
+) (WorkspaceSymbolUsageIndexRecord, error) {
+	apiUsages := BuildWorkspaceSymbolAPIUsages(symbols, matches, flows, traces)
+	usages.Usages = mergeWorkspaceSymbolUsageRecords(usages.Usages, apiUsages)
+	if err := validateWorkspaceSymbolProjectionPair(symbols, usages); err != nil {
+		return WorkspaceSymbolUsageIndexRecord{}, err
+	}
+	return usages, nil
 }
 
 func restoreWorkspaceSymbolBackup(backup, live string, backedUp bool) error {
@@ -709,6 +741,18 @@ func dedupeWorkspaceSymbolUsages(usages []CanonicalSymbolUsageRecord) []Canonica
 		result = append(result, usage)
 	}
 	return result
+}
+
+func mergeWorkspaceSymbolUsageRecords(groups ...[]CanonicalSymbolUsageRecord) []CanonicalSymbolUsageRecord {
+	var usages []CanonicalSymbolUsageRecord
+	for _, group := range groups {
+		usages = append(usages, group...)
+	}
+	usages = dedupeWorkspaceSymbolUsages(usages)
+	sort.Slice(usages, func(i, j int) bool {
+		return usages[i].ID < usages[j].ID
+	})
+	return usages
 }
 
 func filterJavaWorkspaceCandidates(project workspaceIndexProject, consumer CanonicalSymbolRecord, sourceFile string, candidates []CanonicalSymbolRecord, existingEvidence []string) ([]CanonicalSymbolRecord, []string) {

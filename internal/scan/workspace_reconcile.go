@@ -101,6 +101,10 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	directedTraces := BuildDirectedTraceIndex(endpointTraces)
 	endpointTraces.Directed = directedTraces.Traces
+	symbolUsageIndex, err = finalizeWorkspaceSymbolUsageProjection(symbolIndex, symbolUsageIndex, matches, featureFlows, endpointTraces)
+	if err != nil {
+		return nil, err
+	}
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 	workspaceFreshness := BuildWorkspaceFreshness(indexed, registry.Generated)
 
