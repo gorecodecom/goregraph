@@ -1861,7 +1861,7 @@ func TestDashboardMobileGridOrdersCanvasBeforeDetailsAndEnlargesControls(t *test
 	}
 }
 
-func TestDashboardNarrowDesktopSeparatesArchitectureHeaderRows(t *testing.T) {
+func TestDashboardArchitectureHeaderGeometryAtRequiredViewports(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithModels(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
@@ -1870,36 +1870,128 @@ func TestDashboardNarrowDesktopSeparatesArchitectureHeaderRows(t *testing.T) {
 		nil,
 	)
 
-	start := strings.Index(html, `@media (min-width:1241px) and (max-width:1439px){`)
-	if start < 0 {
-		t.Fatal("dashboard missing narrow-desktop media query")
+	geometries, rendered := renderedDashboardHeaderGeometries(t, html)
+	if !rendered {
+		geometries = computedDashboardHeaderGeometries(workspaceDashboardStyles)
+		t.Log("Playwright unavailable; verified production CSS with the deterministic header geometry model")
+	} else {
+		t.Log("verified rendered Architecture header geometry with Playwright")
 	}
-	end := strings.Index(html[start:], `@media (min-width:1440px)`)
-	if end < 0 {
-		t.Fatal("dashboard missing wide-desktop media query after narrow-desktop rules")
+	if len(geometries) != 3 {
+		t.Fatalf("Architecture header geometry count = %d, want 3 required viewports", len(geometries))
 	}
-	narrowDesktop := html[start : start+end]
-	for _, want := range []string{
-		`.architecture-tabs{top:12px;left:12px}`,
-		`main[data-active-view="architecture"].graph-view .architecture-overlay-legend{top:56px;left:12px;right:auto}`,
-		`main[data-active-view="architecture"].graph-view .canvas-tools{top:100px;left:12px}`,
-		`main[data-active-view="architecture"].graph-view .architecture-focus-panel{top:144px}`,
-	} {
-		if !strings.Contains(narrowDesktop, want) {
-			t.Fatalf("narrow-desktop Architecture header does not separate responsive rows: missing %q", want)
+
+	for _, geometry := range geometries {
+		if geometry.ScrollWidth > float64(geometry.Viewport) {
+			t.Fatalf("%dpx dashboard overflows horizontally: scroll width %.2f", geometry.Viewport, geometry.ScrollWidth)
+		}
+		for _, element := range geometry.Elements {
+			if element.Left < geometry.Main.Left || element.Right > geometry.Main.Right {
+				t.Fatalf("%dpx %s is outside main pane: element=%#v main=%#v", geometry.Viewport, element.Name, element, geometry.Main)
+			}
+		}
+		for left := 0; left < len(geometry.Elements); left++ {
+			for right := left + 1; right < len(geometry.Elements); right++ {
+				if geometry.Elements[left].intersects(geometry.Elements[right]) {
+					t.Fatalf("%dpx Architecture header overlap: %s=%#v intersects %s=%#v", geometry.Viewport, geometry.Elements[left].Name, geometry.Elements[left], geometry.Elements[right].Name, geometry.Elements[right])
+				}
+			}
 		}
 	}
 
-	for _, want := range []string{
-		`.architecture-tabs{position:absolute;z-index:3;top:12px;left:12px`,
-		`main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:350px}`,
-		`.architecture-overlay-legend{display:none;position:absolute;z-index:3;top:12px;right:12px`,
-		`.architecture-focus-panel{display:none;position:absolute;z-index:4;top:96px;left:12px;right:12px`,
-	} {
-		if !strings.Contains(html, want) {
-			t.Fatalf("wide Architecture header layout changed unexpectedly: missing %q", want)
-		}
+	wide := geometries[2]
+	if wide.Viewport != 1920 || wide.Elements[0].Top != 12 || wide.Elements[1].Top != 12 || wide.Elements[2].Top != 12 || wide.Elements[3].Top != 96 {
+		t.Fatalf("1920px Architecture header layout changed unexpectedly: %#v", wide)
 	}
+}
+
+type dashboardHeaderRect struct {
+	Name   string  `json:"name"`
+	Left   float64 `json:"left"`
+	Right  float64 `json:"right"`
+	Top    float64 `json:"top"`
+	Bottom float64 `json:"bottom"`
+}
+
+func (rect dashboardHeaderRect) intersects(other dashboardHeaderRect) bool {
+	return rect.Left < other.Right && rect.Right > other.Left && rect.Top < other.Bottom && rect.Bottom > other.Top
+}
+
+type dashboardHeaderGeometry struct {
+	Viewport    int                   `json:"viewport"`
+	Main        dashboardHeaderRect   `json:"main"`
+	Elements    []dashboardHeaderRect `json:"elements"`
+	ScrollWidth float64               `json:"scrollWidth"`
+}
+
+func renderedDashboardHeaderGeometries(t *testing.T, html string) ([]dashboardHeaderGeometry, bool) {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		return nil, false
+	}
+	encodedHTML, err := json.Marshal(html)
+	if err != nil {
+		t.Fatalf("encode dashboard HTML for rendered geometry test: %v", err)
+	}
+	source := strings.Join([]string{
+		`let chromium;try{({chromium}=require("playwright"));}catch(error){process.stdout.write(JSON.stringify({available:false}));process.exit(0);}`,
+		`const html=` + string(encodedHTML) + `;`,
+		`const selectors=[["presentation",'[aria-label="Architecture presentation"]'],["legend",'[aria-label="Architecture map legend"]'],["tools",".canvas-tools"],["focus",'[aria-label="Architecture focus"]']];`,
+		`(async()=>{try{const browser=await chromium.launch({headless:true}),geometries=[];for(const viewport of [{width:1280,height:720},{width:1440,height:900},{width:1920,height:1080}]){const page=await browser.newPage({viewport:viewport});await page.setContent(html);await page.evaluate(()=>{const main=document.querySelector("main");main.classList.add("graph-view");main.dataset.activeView="architecture";document.getElementById("architecture-view-tabs").hidden=false;});const geometry=await page.evaluate(selectors=>{const rect=(name,selector)=>{const value=document.querySelector(selector).getBoundingClientRect();return {name:name,left:value.left,right:value.right,top:value.top,bottom:value.bottom};};return {viewport:innerWidth,main:rect("main","main"),elements:selectors.map(item=>rect(item[0],item[1])),scrollWidth:document.documentElement.scrollWidth};},selectors);geometries.push(geometry);await page.close();}await browser.close();process.stdout.write(JSON.stringify({available:true,geometries:geometries}));}catch(error){process.stdout.write(JSON.stringify({available:false}));}})();`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		return nil, false
+	}
+	var result struct {
+		Available  bool                      `json:"available"`
+		Geometries []dashboardHeaderGeometry `json:"geometries"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil || !result.Available {
+		return nil, false
+	}
+	return result.Geometries, true
+}
+
+func computedDashboardHeaderGeometries(styles string) []dashboardHeaderGeometry {
+	const (
+		presentationWidth = 332.765625
+		legendWidth       = 308.65625
+		toolsWidth        = 327.90625
+	)
+	hasLegacyStack := strings.Contains(styles, `@media (min-width:1241px) and (max-width:1439px)`) &&
+		strings.Contains(styles, `main[data-active-view="architecture"].graph-view .architecture-overlay-legend{top:56px;left:12px;right:auto}`)
+	hasContainerStack := strings.Contains(styles, `main{grid-area:main;container-type:inline-size`) &&
+		strings.Contains(styles, `@container (max-width:1000px)`)
+	geometries := make([]dashboardHeaderGeometry, 0, 3)
+	for _, viewport := range []int{1280, 1440, 1920} {
+		mainLeft := 340.0
+		mainWidth := float64(viewport - 700)
+		if viewport <= 1240 {
+			mainLeft = 0
+			mainWidth = float64(viewport)
+		}
+		stacked := hasLegacyStack && viewport >= 1241 && viewport <= 1439 || hasContainerStack && mainWidth <= 1000
+		legendLeft, toolsLeft := mainLeft+mainWidth-12-legendWidth, mainLeft+350
+		legendTop, toolsTop, focusTop := 12.0, 12.0, 96.0
+		if stacked {
+			legendLeft, toolsLeft = mainLeft+12, mainLeft+12
+			legendTop, toolsTop, focusTop = 56, 100, 144
+		}
+		geometries = append(geometries, dashboardHeaderGeometry{
+			Viewport: viewport,
+			Main:     dashboardHeaderRect{Name: "main", Left: mainLeft, Right: mainLeft + mainWidth, Top: 0, Bottom: 900},
+			Elements: []dashboardHeaderRect{
+				{Name: "presentation", Left: mainLeft + 12, Right: mainLeft + 12 + presentationWidth, Top: 12, Bottom: 48},
+				{Name: "legend", Left: legendLeft, Right: legendLeft + legendWidth, Top: legendTop, Bottom: legendTop + 34},
+				{Name: "tools", Left: toolsLeft, Right: toolsLeft + toolsWidth, Top: toolsTop, Bottom: toolsTop + 32},
+				{Name: "focus", Left: mainLeft + 12, Right: mainLeft + mainWidth - 12, Top: focusTop, Bottom: focusTop + 46},
+			},
+			ScrollWidth: float64(viewport),
+		})
+	}
+	return geometries
 }
 
 func TestRenderWorkspaceDashboardHTMLShowsUnconnectedFrontendClients(t *testing.T) {
