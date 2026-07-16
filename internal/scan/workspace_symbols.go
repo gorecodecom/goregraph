@@ -304,10 +304,6 @@ func validateWorkspaceSymbolUsage(usage CanonicalSymbolUsageRecord, symbols map[
 			return fmt.Errorf("AMBIGUOUS usage must disclose a selected candidate and the complete candidate set")
 		}
 		selectedDisclosed := false
-		selectedSymbolID := usage.ProviderSymbolID
-		if flowAmbiguous && usage.ConsumerSymbolID != "" {
-			selectedSymbolID = usage.ConsumerSymbolID
-		}
 		previous := ""
 		for _, candidateID := range usage.CandidateSymbolIDs {
 			if candidateID == previous {
@@ -319,13 +315,14 @@ func validateWorkspaceSymbolUsage(usage CanonicalSymbolUsageRecord, symbols map[
 			if !symbols[candidateID] {
 				return fmt.Errorf("AMBIGUOUS candidate %q is not in symbol index", candidateID)
 			}
-			if candidateID == selectedSymbolID {
+			if candidateID == usage.ProviderSymbolID ||
+				flowAmbiguous && candidateID == usage.ConsumerSymbolID {
 				selectedDisclosed = true
 			}
 			previous = candidateID
 		}
 		if !selectedDisclosed {
-			return fmt.Errorf("AMBIGUOUS selected symbol %q is not in the candidate set", selectedSymbolID)
+			return fmt.Errorf("AMBIGUOUS selected provider/origin is not in the candidate set")
 		}
 		if !symbols[usage.ProviderSymbolID] {
 			return fmt.Errorf("AMBIGUOUS provider %q is not in symbol index", usage.ProviderSymbolID)

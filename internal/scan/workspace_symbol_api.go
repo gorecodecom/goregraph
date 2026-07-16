@@ -44,9 +44,11 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 				CodeFlowStep{},
 				"resolved HTTP contract has no feature flow with the same call-site identity",
 				"workspace_feature_flow_missing",
+				nil,
 			))
 			continue
 		}
+		flowCandidateIDs := workspaceSymbolAPIFlowCandidateIDs(candidateFlows)
 		origins := workspaceSymbolAPIOrigins(symbols.Symbols, match, candidateFlows)
 		if len(origins) == 0 {
 			usages = append(usages, unresolvedWorkspaceSymbolAPIUsage(
@@ -59,11 +61,11 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 				CodeFlowStep{},
 				"resolved HTTP contract has feature-flow evidence but no uniquely selectable frontend origin",
 				"frontend_origin_unresolved",
+				flowCandidateIDs,
 			))
 			continue
 		}
 		originCandidateIDs := workspaceSymbolAPIOriginCandidateIDs(origins)
-		flowCandidateIDs := workspaceSymbolAPIFlowCandidateIDs(candidateFlows)
 		ambiguousOrigin := len(candidateFlows) > 1 || len(originCandidateIDs) > 1
 		for _, origin := range origins {
 			if len(origin.flow.BackendSteps) == 0 {
@@ -77,6 +79,7 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 					origin.helperStep,
 					"resolved HTTP contract has no Spring implementation steps",
 					"backend_implementation_steps_missing",
+					flowCandidateIDs,
 				))
 				continue
 			}
@@ -93,14 +96,15 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 					implementation,
 					candidates,
 				)
-				if ambiguousOrigin {
-					built = markWorkspaceSymbolAPIOriginAmbiguous(
+				if len(flowCandidateIDs) > 1 {
+					built = markWorkspaceSymbolAPIFlowCandidates(
 						built,
 						match,
 						origin.flow,
 						implementation,
 						originCandidateIDs,
 						flowCandidateIDs,
+						ambiguousOrigin,
 					)
 				}
 				usages = append(usages, built...)
@@ -409,6 +413,7 @@ func unresolvedWorkspaceSymbolAPIUsage(
 	helperStep CodeFlowStep,
 	reason string,
 	limitation string,
+	candidatePathIDs []string,
 ) CanonicalSymbolUsageRecord {
 	if flow.FrontendProject == "" {
 		flow.FrontendProject = match.APIProject
@@ -437,6 +442,7 @@ func unresolvedWorkspaceSymbolAPIUsage(
 		Analyzer:         symbolAPIAnalyzer,
 		Transport:        "http",
 		Limitations:      []string{limitation},
+		CandidatePathIDs: append([]string(nil), candidatePathIDs...),
 		APIPath: workspaceSymbolAPIPath(
 			match,
 			trace,
@@ -462,25 +468,27 @@ func unresolvedWorkspaceSymbolAPIUsage(
 	return usage
 }
 
-func markWorkspaceSymbolAPIOriginAmbiguous(
+func markWorkspaceSymbolAPIFlowCandidates(
 	usages []CanonicalSymbolUsageRecord,
 	match WorkspaceContractMatchRecord,
 	flow WorkspaceFeatureFlowRecord,
 	implementation SpringEndpointFlowStep,
 	originCandidateIDs []string,
 	flowCandidateIDs []string,
+	ambiguousOrigin bool,
 ) []CanonicalSymbolUsageRecord {
 	for index := range usages {
-		if usages[index].Category != SymbolUsageReachedThroughAPI {
-			continue
-		}
-		usages[index].Category = SymbolUsageAmbiguous
-		usages[index].Resolution = SymbolResolutionAmbiguous
-		usages[index].Confidence = ConfidenceNormalized
-		usages[index].Reason = "multiple feature flows survive the complete contract call-site identity"
-		usages[index].CandidateSymbolIDs = append([]string(nil), originCandidateIDs...)
 		usages[index].CandidatePathIDs = append([]string(nil), flowCandidateIDs...)
 		usages[index].Limitations = sortedUniqueStrings(append(usages[index].Limitations, "feature_flow_join_ambiguous"))
+		if usages[index].Category == SymbolUsageReachedThroughAPI && ambiguousOrigin {
+			usages[index].Category = SymbolUsageAmbiguous
+			usages[index].Resolution = SymbolResolutionAmbiguous
+			usages[index].Confidence = ConfidenceNormalized
+			usages[index].Reason = "multiple feature flows survive the complete contract call-site identity"
+			usages[index].CandidateSymbolIDs = append([]string(nil), originCandidateIDs...)
+		} else if usages[index].Category == SymbolUsageAmbiguous {
+			usages[index].Reason += "; multiple feature flows survive the complete contract call-site identity"
+		}
 		usages[index].ID = workspaceSymbolAPIUsageID(usages[index], match.ID+"\x00"+flow.ID, implementation)
 	}
 	return usages
@@ -662,20 +670,9 @@ func BuildWorkspaceSymbolAPIUsageCoverage(
 	if len(projects) == 0 {
 		return nil
 	}
-	languagesByProject := map[string]map[string]bool{}
-	for _, symbol := range symbols.Symbols {
-		if symbol.Language != "java" && !isScriptLanguage(symbol.Language) {
-			continue
-		}
-		if languagesByProject[symbol.Project] == nil {
-			languagesByProject[symbol.Project] = map[string]bool{}
-		}
-		languagesByProject[symbol.Project][symbol.Language] = true
-	}
 	var records []SymbolCoverageRecord
 	for _, project := range projects {
-		languages := languagesByProject[project.record.Path]
-		for language := range languages {
+		for _, language := range workspaceSymbolAPIUsageLanguages(project, symbols.Symbols) {
 			if project.record.Kind == "frontend" && !isScriptLanguage(language) {
 				continue
 			}
@@ -692,6 +689,48 @@ func BuildWorkspaceSymbolAPIUsageCoverage(
 		return records[i].Language < records[j].Language
 	})
 	return records
+}
+
+func workspaceSymbolAPIUsageLanguages(project workspaceIndexProject, symbols []CanonicalSymbolRecord) []string {
+	languages := map[string]bool{}
+	add := func(language string) {
+		if isWorkspaceSymbolLanguageSupported(language) {
+			languages[language] = true
+		}
+	}
+	for _, symbol := range symbols {
+		if symbol.Project == project.record.Path {
+			add(symbol.Language)
+		}
+	}
+	for _, language := range workspaceSymbolLanguages(project) {
+		add(language)
+	}
+	for _, route := range project.routes {
+		add(route.Language)
+	}
+	for _, flow := range project.codeFlows {
+		add(flow.Language)
+		for _, step := range flow.Steps {
+			add(step.Language)
+		}
+	}
+	if project.record.Kind == "backend" &&
+		(project.record.BuildSystem == "maven" ||
+			project.record.BuildSystem == "gradle" ||
+			len(project.spring.Applications) > 0 ||
+			len(project.spring.Components) > 0 ||
+			len(project.spring.Endpoints) > 0 ||
+			len(project.endpoints) > 0 ||
+			len(project.endpointFlows) > 0) {
+		add("java")
+	}
+	result := make([]string, 0, len(languages))
+	for language := range languages {
+		result = append(result, language)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func workspaceSymbolAPIUsageCoverageRecord(
@@ -754,19 +793,25 @@ func workspaceSymbolAPIUsageCoverageRecord(
 			limitations = append(limitations, "workspace_feature_flow_missing")
 			continue
 		}
-		if isScriptLanguage(language) {
-			origins := workspaceSymbolAPIOrigins(symbols.Symbols, match, candidateFlows)
-			switch {
-			case len(origins) == 0:
-				limitations = append(limitations, "frontend_origin_unresolved")
-			case len(candidateFlows) > 1 || len(workspaceSymbolAPIOriginCandidateIDs(origins)) > 1:
-				limitations = append(limitations, "feature_flow_join_ambiguous")
-			}
+		origins := workspaceSymbolAPIOrigins(symbols.Symbols, match, candidateFlows)
+		switch {
+		case len(origins) == 0:
+			limitations = append(limitations, "frontend_origin_unresolved")
+		case len(candidateFlows) > 1 || len(workspaceSymbolAPIOriginCandidateIDs(origins)) > 1:
+			limitations = append(limitations, "feature_flow_join_ambiguous")
 		}
-		if language == "java" {
-			for _, flow := range candidateFlows {
-				if len(flow.BackendSteps) == 0 {
-					limitations = append(limitations, "backend_implementation_steps_missing")
+		for _, flow := range candidateFlows {
+			if len(flow.BackendSteps) == 0 {
+				limitations = append(limitations, "backend_implementation_steps_missing")
+				continue
+			}
+			for _, step := range flow.BackendSteps {
+				switch len(workspaceSymbolAPIJavaCandidates(symbols.Symbols, match.BackendProject, step)) {
+				case 0:
+					limitations = append(limitations, "java_provider_unresolved")
+				case 1:
+				default:
+					limitations = append(limitations, "java_provider_ambiguous")
 				}
 			}
 		}
@@ -774,11 +819,20 @@ func workspaceSymbolAPIUsageCoverageRecord(
 	if len(limitations) > 0 {
 		record.Limitations = sortedUniqueStrings(limitations)
 		record.Coverage = CoveragePartial
-		record.Reason = "resolved HTTP contracts have incomplete or ambiguous static reachability evidence"
+		record.Reason = workspaceSymbolAPIUsageCoverageReason(record.Limitations)
 		return record
 	}
-	record.Reason = "resolved HTTP contracts have uniquely selected frontend origins and Spring implementation steps"
+	record.Reason = "resolved HTTP contracts have uniquely selected frontend origins, paths, and Java providers"
 	return record
+}
+
+func workspaceSymbolAPIUsageCoverageReason(limitations []string) string {
+	for _, limitation := range limitations {
+		if limitation == "java_provider_unresolved" || limitation == "java_provider_ambiguous" {
+			return "resolved HTTP contracts do not select exactly one indexed Java provider"
+		}
+	}
+	return "resolved HTTP contracts have incomplete or ambiguous static reachability evidence"
 }
 
 func workspaceSymbolAPIResolvedMatches(project string, matches []WorkspaceContractMatchRecord) []WorkspaceContractMatchRecord {

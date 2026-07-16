@@ -529,6 +529,97 @@ func TestWorkspaceSymbolAPIUsageKeepsSameOriginFlowCandidatesAmbiguous(t *testin
 	}
 }
 
+func TestWorkspaceSymbolAPIUsagePreservesAllCandidatePathsWhenOriginUnresolved(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	symbols.Symbols = symbols.Symbols[1:]
+	matches[0].APILine = 0
+	matches[0].APICaller = ""
+	first := flows[0]
+	first.ID = "flow:first"
+	second := flows[0]
+	second.ID = "flow:second"
+	second.FrontendRouteID = "route:alternate"
+	wantPaths := []string{"flow:first", "flow:second"}
+
+	usages := BuildWorkspaceSymbolAPIUsages(
+		symbols,
+		matches,
+		[]WorkspaceFeatureFlowRecord{second, first},
+		BuildWorkspaceEndpointTraces(matches, []WorkspaceFeatureFlowRecord{second, first}, nil),
+	)
+
+	if len(usages) != 1 ||
+		usages[0].Category != SymbolUsageUnresolved ||
+		!reflect.DeepEqual(usages[0].CandidatePathIDs, wantPaths) {
+		t.Fatalf("unresolved origin usages = %#v, want every candidate path", usages)
+	}
+}
+
+func TestWorkspaceSymbolAPIUsagePreservesAllCandidatePathsWithProviderAmbiguity(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	duplicateProvider := symbols.Symbols[len(symbols.Symbols)-1]
+	duplicateProvider.ID = "symbol:user-service-duplicate"
+	symbols.Symbols = append(symbols.Symbols, duplicateProvider)
+	matches[0].APILine = 0
+	matches[0].APICaller = ""
+	first := flows[0]
+	first.ID = "flow:first"
+	second := flows[0]
+	second.ID = "flow:second"
+	second.FrontendRouteID = "route:alternate"
+	wantPaths := []string{"flow:first", "flow:second"}
+	wantProviders := []string{"symbol:user-service", "symbol:user-service-duplicate"}
+
+	usages := BuildWorkspaceSymbolAPIUsages(
+		symbols,
+		matches,
+		[]WorkspaceFeatureFlowRecord{second, first},
+		BuildWorkspaceEndpointTraces(matches, []WorkspaceFeatureFlowRecord{second, first}, nil),
+	)
+
+	if len(usages) != 4 {
+		t.Fatalf("provider/flow ambiguous usages = %#v", usages)
+	}
+	for _, usage := range usages {
+		if usage.Category != SymbolUsageAmbiguous ||
+			!reflect.DeepEqual(usage.CandidateSymbolIDs, wantProviders) ||
+			!reflect.DeepEqual(usage.CandidatePathIDs, wantPaths) {
+			t.Fatalf("provider/flow ambiguous usage = %#v", usage)
+		}
+	}
+}
+
+func TestWorkspaceSymbolAPIUsagePreservesAllCandidatePathsWhenBackendStepsMissing(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	matches[0].APILine = 0
+	matches[0].APICaller = ""
+	first := flows[0]
+	first.ID = "flow:first"
+	first.BackendSteps = nil
+	second := flows[0]
+	second.ID = "flow:second"
+	second.FrontendRouteID = "route:alternate"
+	second.BackendSteps = nil
+	wantPaths := []string{"flow:first", "flow:second"}
+
+	usages := BuildWorkspaceSymbolAPIUsages(
+		symbols,
+		matches,
+		[]WorkspaceFeatureFlowRecord{second, first},
+		BuildWorkspaceEndpointTraces(matches, []WorkspaceFeatureFlowRecord{second, first}, nil),
+	)
+
+	if len(usages) != 2 {
+		t.Fatalf("missing backend step usages = %#v", usages)
+	}
+	for _, usage := range usages {
+		if usage.Category != SymbolUsageUnresolved ||
+			!reflect.DeepEqual(usage.CandidatePathIDs, wantPaths) {
+			t.Fatalf("missing backend step usage = %#v, want every candidate path", usage)
+		}
+	}
+}
+
 func TestWorkspaceSymbolAPIUsageCoverageReportsCompletePartialAndFailedEvidence(t *testing.T) {
 	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
 	frontend := workspaceIndexProject{
@@ -549,6 +640,91 @@ func TestWorkspaceSymbolAPIUsageCoverageReportsCompletePartialAndFailedEvidence(
 	degraded := BuildWorkspaceSymbolAPIUsageCoverage(symbols, matches, flows, []workspaceIndexProject{frontend, backend})
 	assertSymbolCoverage(t, degraded, "frontend/app", "typescript", symbolAPIRelationKind, CoveragePartial, []string{"flows_missing"})
 	assertSymbolCoverage(t, degraded, "microservices/ms-user", "java", symbolAPIRelationKind, CoverageFailed, []string{"endpoint_flows_unreadable"})
+}
+
+func TestWorkspaceSymbolAPIUsageCoverageRequiresUniqueJavaProvider(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	frontend := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "frontend/app", Kind: "frontend", Indexed: true},
+		codeFlows: []CodeFlowRecord{{Kind: "frontend", File: "src/pages/UserPage.tsx"}},
+	}
+	backend := workspaceIndexProject{
+		record:        WorkspaceProjectRecord{Path: "microservices/ms-user", Kind: "backend", Indexed: true},
+		endpointFlows: []SpringEndpointFlowRecord{{HTTPMethod: "GET", Path: "/users/{id}", Steps: flows[0].BackendSteps}},
+	}
+	projects := []workspaceIndexProject{frontend, backend}
+
+	withoutProvider := symbols
+	withoutProvider.Symbols = withoutProvider.Symbols[:len(withoutProvider.Symbols)-1]
+	unresolved := BuildWorkspaceSymbolAPIUsageCoverage(withoutProvider, matches, flows, projects)
+	for _, want := range []struct {
+		project  string
+		language string
+	}{
+		{project: "frontend/app", language: "typescript"},
+		{project: "microservices/ms-user", language: "java"},
+	} {
+		assertSymbolCoverage(t, unresolved, want.project, want.language, symbolAPIRelationKind, CoveragePartial, []string{"java_provider_unresolved"})
+		record := findSymbolCoverage(unresolved, want.project, want.language, symbolAPIRelationKind)
+		if !strings.Contains(record.Reason, "Java provider") {
+			t.Fatalf("unresolved provider coverage = %#v", record)
+		}
+	}
+
+	ambiguousSymbols := symbols
+	duplicate := ambiguousSymbols.Symbols[len(ambiguousSymbols.Symbols)-1]
+	duplicate.ID = "symbol:user-service-duplicate"
+	ambiguousSymbols.Symbols = append(ambiguousSymbols.Symbols, duplicate)
+	ambiguous := BuildWorkspaceSymbolAPIUsageCoverage(ambiguousSymbols, matches, flows, projects)
+	for _, want := range []struct {
+		project  string
+		language string
+	}{
+		{project: "frontend/app", language: "typescript"},
+		{project: "microservices/ms-user", language: "java"},
+	} {
+		assertSymbolCoverage(t, ambiguous, want.project, want.language, symbolAPIRelationKind, CoveragePartial, []string{"java_provider_ambiguous"})
+		record := findSymbolCoverage(ambiguous, want.project, want.language, symbolAPIRelationKind)
+		if !strings.Contains(record.Reason, "Java provider") {
+			t.Fatalf("ambiguous provider coverage = %#v", record)
+		}
+	}
+}
+
+func TestWorkspaceSymbolAPIUsageCoverageDerivesLanguagesWithoutCanonicalSymbols(t *testing.T) {
+	frontend := workspaceIndexProject{
+		record:       WorkspaceProjectRecord{Path: "frontend/app", Kind: "frontend", Indexed: true},
+		capabilities: []CapabilityRecord{{ID: CapabilitySymbols, Language: "typescript", Coverage: CoverageFailed}},
+		loadFailures: []string{"frontend/app/flows.json: invalid character"},
+	}
+	backend := workspaceIndexProject{
+		record:       WorkspaceProjectRecord{Path: "microservices/ms-user", Kind: "backend", Indexed: true},
+		capabilities: []CapabilityRecord{{ID: CapabilitySymbols, Language: "java", Coverage: CoverageFailed}},
+		loadFailures: []string{"microservices/ms-user/endpoint-flows.json: invalid character"},
+	}
+	symbols := WorkspaceSymbolIndexRecord{
+		Symbols: []CanonicalSymbolRecord{{
+			Project: "frontend/app",
+			Name:    "malformed-without-language",
+		}},
+	}
+
+	failed := BuildWorkspaceSymbolAPIUsageCoverage(symbols, nil, nil, []workspaceIndexProject{frontend, backend})
+	assertSymbolCoverage(t, failed, "frontend/app", "typescript", symbolAPIRelationKind, CoverageFailed, []string{"flows_unreadable"})
+	assertSymbolCoverage(t, failed, "microservices/ms-user", "java", symbolAPIRelationKind, CoverageFailed, []string{"endpoint_flows_unreadable"})
+
+	frontend.capabilities = nil
+	frontend.loadFailures = nil
+	frontend.missingFacts = []string{"flows.json"}
+	frontend.codeFlows = []CodeFlowRecord{{Language: "typescript", Kind: "frontend"}}
+	backend.capabilities = nil
+	backend.loadFailures = nil
+	backend.missingFacts = []string{"endpoint-flows.json"}
+	backend.endpointFlows = []SpringEndpointFlowRecord{{HTTPMethod: "GET", Path: "/users/{id}"}}
+
+	partial := BuildWorkspaceSymbolAPIUsageCoverage(symbols, nil, nil, []workspaceIndexProject{frontend, backend})
+	assertSymbolCoverage(t, partial, "frontend/app", "typescript", symbolAPIRelationKind, CoveragePartial, []string{"flows_missing"})
+	assertSymbolCoverage(t, partial, "microservices/ms-user", "java", symbolAPIRelationKind, CoveragePartial, []string{"endpoint_flows_missing"})
 }
 
 func TestWorkspaceSymbolAPIUsageCoverageDistinguishesNoUsageFromMissingEvidence(t *testing.T) {

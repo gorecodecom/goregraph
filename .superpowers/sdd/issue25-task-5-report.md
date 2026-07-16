@@ -56,6 +56,8 @@ When more than one distinct flow survives:
 - distinct canonical frontend origins produce `ambiguous` usages;
 - every selected origin is disclosed through sorted candidate symbol IDs;
 - every surviving flow is disclosed through sorted `candidate_path_ids`;
+- unresolved origins, missing backend steps, and ambiguous Java providers retain
+  the complete path candidate set independently of symbol resolution;
 - identical-origin flow candidates remain `ambiguous` and are never promoted
   to Exact.
 
@@ -96,7 +98,9 @@ Resolved contracts no longer disappear when required evidence is absent:
   `feature_flow_join_ambiguous`.
 
 These are emitted as unresolved or ambiguous usage records and are also
-reflected in coverage where applicable.
+reflected in coverage where applicable. Surviving path candidates are retained
+on every unresolved or ambiguous record, so deduplication cannot erase
+independent flow alternatives.
 
 ## HTTP Reachability Coverage
 
@@ -107,19 +111,30 @@ Frontend JavaScript/TypeScript coverage is tied to:
 
 - readable and present `flows.json`;
 - a matching workspace feature flow;
-- uniquely selectable frontend origin evidence.
+- uniquely selectable frontend origin evidence;
+- uniquely selectable feature-flow path evidence;
+- exactly one indexed Java provider for every selected implementation step.
 
 Backend Java coverage is tied to:
 
 - readable and present `endpoint-flows.json`;
-- non-empty Spring backend implementation steps.
+- non-empty Spring backend implementation steps;
+- uniquely selectable frontend origin and feature-flow evidence;
+- exactly one indexed Java provider for every selected implementation step.
+
+Project languages are derived from canonical symbols, raw symbol/relation
+facts, symbol capabilities, frontend route/flow facts, and Java project/Spring
+facts. Coverage failures therefore remain visible when canonical symbols are
+empty or malformed.
 
 Coverage meanings:
 
 - `COMPLETE`: required inputs loaded and either verified paths exist or there
-  are explicitly no resolved HTTP contracts for the project.
+  are explicitly no resolved HTTP contracts for the project. A verified path
+  requires one frontend origin, one path, and one Java provider.
 - `PARTIAL`: inputs are missing/empty, a feature flow is absent, origin
-  selection is unresolved/ambiguous, or backend steps are missing.
+  selection is unresolved/ambiguous, backend steps are missing, or Java
+  provider selection has zero or multiple candidates.
 - `FAILED`: a required reachability fact file is malformed or unreadable.
 
 Limitations include:
@@ -134,6 +149,8 @@ Limitations include:
 - `frontend_origin_unresolved`
 - `feature_flow_join_ambiguous`
 - `backend_implementation_steps_missing`
+- `java_provider_unresolved`
+- `java_provider_ambiguous`
 
 This makes verified zero usage distinguishable from missing evidence.
 
@@ -244,20 +261,68 @@ go test ./internal/scan \
 ok github.com/gorecodecom/goregraph/internal/scan
 ```
 
+### Signoff 3: candidate paths survive uncertainty
+
+RED:
+
+```text
+unresolved origin usage had candidate_path_ids: nil
+provider/flow ambiguity collapsed four records to two and omitted path IDs
+missing backend-step usages had candidate_path_ids: nil
+```
+
+GREEN:
+
+```text
+go test ./internal/scan \
+  -run 'TestWorkspaceSymbolAPIUsagePreservesAllCandidatePaths|TestWorkspaceSymbolAPIUsageKeepsSameOriginFlowCandidatesAmbiguous|TestWorkspaceSymbolAPIUsageMarksMultipleSurvivingFlowsAmbiguous' \
+  -count=1
+ok github.com/gorecodecom/goregraph/internal/scan
+```
+
+### Signoff 3: unique Java provider completeness
+
+RED:
+
+```text
+frontend/typescript HTTP coverage was COMPLETE when no indexed Java provider existed
+backend/java coverage disappeared with the missing canonical provider symbol
+```
+
+GREEN:
+
+```text
+go test ./internal/scan \
+  -run 'TestWorkspaceSymbolAPIUsageCoverageRequiresUniqueJavaProvider' \
+  -count=1
+ok github.com/gorecodecom/goregraph/internal/scan
+```
+
+### Signoff 3: language derivation without canonical symbols
+
+RED:
+
+```text
+missing coverage for frontend/app/typescript/http_reachability
+in []scan.SymbolCoverageRecord(nil)
+```
+
+GREEN:
+
+```text
+go test ./internal/scan \
+  -run 'TestWorkspaceSymbolAPIUsageCoverageDerivesLanguagesWithoutCanonicalSymbols' \
+  -count=1
+ok github.com/gorecodecom/goregraph/internal/scan
+```
+
 ## Regression Verification
 
 The final source state was verified with:
 
 ```text
-go test ./internal/scan \
-  -run 'TestWorkspaceSymbolAPI|TestLoadWorkspaceIndexesRecordsHTTPReachabilityFactFailures|TestBuildWorkspaceEndpointTraces|TestWorkspaceFeatureFlow|TestCanonicalFeatureFlow' \
-  -count=1
-ok github.com/gorecodecom/goregraph/internal/scan 0.919s
-```
-
-```text
 go test ./internal/scan -count=1
-ok github.com/gorecodecom/goregraph/internal/scan 1.344s
+ok github.com/gorecodecom/goregraph/internal/scan 1.333s
 ```
 
 ```text
@@ -266,7 +331,7 @@ PASS: all packages
 ```
 
 ```text
-go vet ./internal/scan
+go vet ./...
 PASS
 ```
 
