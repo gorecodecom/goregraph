@@ -107,7 +107,8 @@ func TestDashboardArchitectureSelectionKeepsCanonicalLayoutAcrossFocusStates(t *
 		`architectureRiskOnly:false`,
 		"allNodes=serviceNodes.slice()",
 		"layout=architectureLayout(allNodes,width)",
-		"allEdges=filteredServiceEdges().filter",
+		"allEdges=canonicalEdges",
+		"emphasizedEdges=filteredServiceEdges().filter",
 		"focus=architectureFocusModel(allNodes,allEdges",
 		"focused=!!(state.selected||state.architectureDomain||state.architectureRiskOnly)",
 		"state.positions=layout.positions",
@@ -133,10 +134,12 @@ func TestDashboardArchitectureKeepsCanonicalEdgeAndBundleMembership(t *testing.T
 	)
 	for _, want := range []string{
 		"canonicalEdges=serviceEdges.filter",
-		"allEdges=filteredServiceEdges().filter",
-		"emphasizedEdgeIds=new Set(allEdges.map",
-		"bundleModels=architectureBundles(canonicalEdges)",
-		"focusedEdges=canonicalEdges.filter",
+		"allEdges=canonicalEdges",
+		"emphasizedEdges=filteredServiceEdges().filter",
+		"emphasizedEdgeIds=new Set(emphasizedEdges.map",
+		"bundleModels=architectureBundles(backgroundEdges,nodeByID)",
+		"directEdges=allEdges.filter",
+		"backgroundEdges=allEdges.filter",
 		"function architectureEdgeDimmed(edge,emphasizedEdgeIds,focus,focused)",
 		`(dim?' dim':'')`,
 		`.edge.architecture-bundle.dim{`,
@@ -148,7 +151,7 @@ func TestDashboardArchitectureKeepsCanonicalEdgeAndBundleMembership(t *testing.T
 	}
 	for _, unstable := range []string{
 		"visibleEdges=filteredServiceEdges()",
-		"architectureBundles(backgroundEdges)",
+		"architectureBundles(canonicalEdges)",
 	} {
 		if strings.Contains(html, unstable) {
 			t.Fatalf("architecture edge membership still changes with emphasis %q", unstable)
@@ -374,7 +377,7 @@ func TestDashboardArchitectureAutoFitUsesCanonicalDirectNeighborhood(t *testing.
 	)
 	for _, want := range []string{
 		"function architectureDirectNeighborhood(edges,selected)",
-		"neighborhoodNodeIDs=architectureDirectNeighborhood(canonicalEdges,state.selected)",
+		"neighborhoodNodeIDs=architectureDirectNeighborhood(allEdges,state.selected)",
 		"fitArchitectureNeighborhoodIfNeeded(neighborhoodNodeIDs)",
 	} {
 		if !strings.Contains(html, want) {
@@ -481,6 +484,45 @@ func TestDashboardArchitectureShowsDirectionalArrowsAndExplicitCardPorts(t *test
 	} {
 		if strings.Contains(html, obsolete) {
 			t.Fatalf("dashboard still renders obsolete Architecture direction badge %q", obsolete)
+		}
+	}
+}
+
+func TestWorkspaceDashboardKeepsAllSelectedServiceRelationsUnbundled(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`const directEdges=allEdges.filter(function(edge){return focus.edgeIDs.has(edge.id)&&state.selected&&(edge.from===state.selected||edge.to===state.selected);})`,
+		`const directEdgeIDs=new Set(directEdges.map(function(edge){return edge.id;}));`,
+		`const backgroundEdges=allEdges.filter(function(edge){return !directEdgeIDs.has(edge.id);})`,
+		`const nodeByID=new Map(allNodes.map(function(node){return [node.id,node];}));`,
+		`architecturePortOffset(directEdges,edge,edge.from)`,
+		`architecturePortOffset(directEdges,edge,edge.to)`,
+		`marker-end="url(#arrow-`,
+		`backgroundSourceLayer+backgroundTrunkLayer+backgroundTargetLayer+directEdgeLayer`,
+		`portLayer+labelLayer`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing direct relationship contract %q", want)
+		}
+	}
+	renderStart := strings.Index(html, "function renderArchitectureMap()")
+	if renderStart < 0 {
+		t.Fatal("dashboard missing Architecture renderer start")
+	}
+	renderEnd := strings.Index(html[renderStart:], "function architectureEdgeID(edge)")
+	if renderEnd < 0 {
+		t.Fatal("dashboard missing Architecture renderer boundaries")
+	}
+	render := html[renderStart : renderStart+renderEnd]
+	for _, obsolete := range []string{"Caller", "Called", "OUT", "direction-badge", "architectureBundles(allEdges)"} {
+		if strings.Contains(render, obsolete) {
+			t.Fatalf("Architecture renderer retains obsolete or duplicate selected-edge behavior %q", obsolete)
 		}
 	}
 }
@@ -1335,8 +1377,14 @@ func TestWorkspaceDashboardBundlesBackgroundArchitectureEdges(t *testing.T) {
 	)
 	for _, want := range []string{
 		"function architectureBundles",
+		"function architectureBundleGeometry",
 		"bundle-count",
 		"data-architecture-bundle",
+		"data-architecture-edge-ids",
+		"architecture-bundle-branch source",
+		"architecture-bundle-branch target",
+		`backgroundTargetLayer+='<path class="'+cls+' architecture-bundle-branch target"'+attributes+' marker-end="url(#arrow)"`,
+		`backgroundTrunkLayer+='<path class="'+cls+' architecture-bundle-trunk"`,
 		"Unrelated relationships remain grouped",
 	} {
 		if !strings.Contains(html, want) {
@@ -1351,7 +1399,7 @@ func TestWorkspaceDashboardUsesMockupArchitectureViews(t *testing.T) {
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
 		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
 	)
-	for _, want := range []string{`data-architecture-view="flow"`, `data-architecture-view="matrix"`, `data-architecture-view="selected"`, `main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:350px}`, "architecture-lane-layer", "architecture-edge-layer", "architecture-node-layer", "architecture-label-layer", "architectureDomains", "architectureDomainColor", "layout.domains", "architecture-call-pill", "architecture-legend", "setViewBox(layout.width,layout.height)", "otherPosition.x-gutter/2", "otherPosition.y+otherPosition.h/2", "y:190+index*90", "labelY=200+index*32", "svg{height:100vh}"} {
+	for _, want := range []string{`data-architecture-view="flow"`, `data-architecture-view="matrix"`, `data-architecture-view="selected"`, `main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:350px}`, "architecture-lane-layer", "architecture-edge-layer", "architecture-node-layer", "architecture-label-layer", "architectureDomains", "architectureDomainColor", "layout.domains", "architecture-call-pill", "architecture-legend", "setViewBox(layout.width,layout.height)", "otherPosition.x-gutter/2", "otherPosition.y+otherPosition.h/2", "y:190+index*90", "architectureBundleGeometry", "svg{height:100vh}"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing mockup architecture contract %q", want)
 		}

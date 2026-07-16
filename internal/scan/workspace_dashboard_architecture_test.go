@@ -162,6 +162,55 @@ func TestArchitectureDirectNeighborhoodIgnoresDirectionAndRiskEmphasis(t *testin
 	}
 }
 
+func TestArchitectureBundlesAreDeterministicAndRetainParallelRelationships(t *testing.T) {
+	var result []struct {
+		ID      string
+		Total   int
+		EdgeIDs []string
+	}
+	runArchitectureModel(t, `(()=>{
+		const nodes=[{id:"web",domain:"experience"},{id:"admin",domain:"experience"},{id:"orders",domain:"commerce"},{id:"billing",domain:"commerce"}],byID=new Map(nodes.map(n=>[n.id,n]));
+		const edges=[{id:"b",from:"admin",to:"billing",total:2,resolved:2},{id:"a",from:"web",to:"orders",total:4,resolved:3,unresolved:1,risk:"has_unresolved"},{id:"c",from:"admin",to:"orders",total:1,resolved:1}];
+		return architectureBundles(edges,byID).map(bundle=>({ID:bundle.id,Total:bundle.total,EdgeIDs:bundle.edges.map(edge=>edge.id)}));
+	})()`, &result)
+	if len(result) != 2 {
+		t.Fatalf("bundles = %#v, want resolved and unresolved groups", result)
+	}
+	if result[0].ID > result[1].ID {
+		t.Fatalf("bundles not sorted: %#v", result)
+	}
+	if result[0].ID != "bundle:experience|commerce|resolved" || result[0].Total != 3 || strings.Join(result[0].EdgeIDs, ",") != "b,c" {
+		t.Fatalf("resolved bundle = %#v, want sorted parallel edges b,c with total 3", result[0])
+	}
+	if result[1].ID != "bundle:experience|commerce|unresolved" || result[1].Total != 4 || strings.Join(result[1].EdgeIDs, ",") != "a" {
+		t.Fatalf("unresolved bundle = %#v, want edge a with total 4", result[1])
+	}
+}
+
+func TestArchitectureBundlesFanEveryRelationshipThroughSharedGeometry(t *testing.T) {
+	var result struct {
+		TrunkPath  string
+		BranchIDs  []string
+		SourcePath []string
+		TargetPath []string
+	}
+	runArchitectureModel(t, `(()=>{
+		const nodes=[{id:"web",domain:"experience"},{id:"admin",domain:"experience"},{id:"orders",domain:"commerce"},{id:"billing",domain:"commerce"}],layout=architectureLayout(nodes,1040),byID=new Map(nodes.map(node=>[node.id,node]));
+		const edges=[{id:"web-orders",from:"web",to:"orders",total:4},{id:"admin-billing",from:"admin",to:"billing",total:2}];
+		const geometry=architectureBundleGeometry(architectureBundles(edges,byID)[0],layout,0);
+		return {TrunkPath:geometry.trunkPath,BranchIDs:geometry.branches.map(branch=>branch.edge.id),SourcePath:geometry.branches.map(branch=>branch.sourcePath),TargetPath:geometry.branches.map(branch=>branch.targetPath)};
+	})()`, &result)
+	if result.TrunkPath == "" {
+		t.Fatal("bundle geometry is missing a shared trunk")
+	}
+	if !reflect.DeepEqual(result.BranchIDs, []string{"admin-billing", "web-orders"}) {
+		t.Fatalf("branch IDs = %v, want every sorted parallel relationship", result.BranchIDs)
+	}
+	if len(result.SourcePath) != 2 || len(result.TargetPath) != 2 || result.SourcePath[0] == result.SourcePath[1] || result.TargetPath[0] == result.TargetPath[1] {
+		t.Fatalf("bundle branches do not fan to distinct card endpoints: %#v", result)
+	}
+}
+
 func TestArchitectureDeferredAutoFitRestoresOriginalMatrixViewport(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

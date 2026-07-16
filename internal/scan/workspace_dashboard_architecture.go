@@ -42,4 +42,29 @@ function architectureDirectNeighborhood(edges,selected){
   (edges||[]).forEach(function(edge){if(edge.from===selected||edge.to===selected){nodeIDs.add(edge.from);nodeIDs.add(edge.to);}});
   return nodeIDs;
 }
+function architectureBundleRisk(edge){return edge.mismatched?"mismatch":edge.unresolved?"unresolved":"resolved";}
+function architectureBundles(edges,nodeByID){
+  const bundles=new Map();
+  (edges||[]).slice().sort(function(a,b){return architectureStringCompare(a.id,b.id);}).forEach(function(edge){
+    const from=nodeByID.get(edge.from),to=nodeByID.get(edge.to);if(!from||!to)return;
+    const fromDomain=architectureDomainKey(from),toDomain=architectureDomainKey(to),risk=architectureBundleRisk(edge),key=[fromDomain,toDomain,risk].join("|");
+    if(!bundles.has(key))bundles.set(key,{id:"bundle:"+key,fromDomain:fromDomain,toDomain:toDomain,risk:risk,total:0,edges:[]});
+    const bundle=bundles.get(key);bundle.total+=edge.total||1;bundle.edges.push(edge);
+  });
+  return Array.from(bundles.values()).sort(function(a,b){return architectureStringCompare(a.id,b.id);});
+}
+function architectureBundleGeometry(bundle,layout,index){
+  const records=bundle.edges.map(function(edge){return {edge:edge,from:layout.positions.get(edge.from),to:layout.positions.get(edge.to)};}).filter(function(record){return record.from&&record.to;});
+  if(!records.length)return null;
+  const forward=records.reduce(function(total,record){return total+(record.to.x-record.from.x);},0)>=0,sourceLane=records[0].from.lane,targetLane=records[0].to.lane,gutter=Math.max(72,layout.step-layout.cardWidth);
+  if(sourceLane===targetLane){
+    const railX=layout.margin+sourceLane*layout.step+layout.cardWidth+gutter*.34,branches=records.map(function(record){const source={x:record.from.x+record.from.w,y:record.from.y+record.from.h/2},target={x:record.to.x+record.to.w,y:record.to.y+record.to.h/2};return {edge:record.edge,sourcePath:"M"+source.x+" "+source.y+" C"+railX+" "+source.y+" "+railX+" "+source.y+" "+railX+" "+source.y,targetPath:"M"+railX+" "+target.y+" C"+railX+" "+target.y+" "+target.x+" "+target.y+" "+target.x+" "+target.y,target:target};}),branchYs=branches.flatMap(function(branch){return [layout.positions.get(branch.edge.from).y+layout.cardHeight/2,layout.positions.get(branch.edge.to).y+layout.cardHeight/2];}).sort(function(a,b){return a-b;});
+    return {trunkPath:"M"+railX+" "+branchYs[0]+" L"+railX+" "+branchYs[branchYs.length-1],branches:branches,badge:{x:railX,y:branchYs[Math.floor(branchYs.length/2)]}};
+  }
+  const sourceTrunkX=forward?layout.margin+sourceLane*layout.step+layout.cardWidth+gutter*.34:layout.margin+sourceLane*layout.step-gutter*.34;
+  const targetTrunkX=forward?layout.margin+targetLane*layout.step-gutter*.34:layout.margin+targetLane*layout.step+layout.cardWidth+gutter*.34;
+  const ys=records.flatMap(function(record){return [record.from.y+record.from.h/2,record.to.y+record.to.h/2];}).sort(function(a,b){return a-b;}),trunkY=ys[Math.floor(ys.length/2)]+index%3*10;
+  const branches=records.map(function(record){const source={x:forward?record.from.x+record.from.w:record.from.x,y:record.from.y+record.from.h/2},target={x:forward?record.to.x:record.to.x+record.to.w,y:record.to.y+record.to.h/2};return {edge:record.edge,sourcePath:"M"+source.x+" "+source.y+" C"+sourceTrunkX+" "+source.y+" "+sourceTrunkX+" "+trunkY+" "+sourceTrunkX+" "+trunkY,targetPath:"M"+targetTrunkX+" "+trunkY+" C"+targetTrunkX+" "+target.y+" "+target.x+" "+target.y+" "+target.x+" "+target.y,target:target};});
+  return {trunkPath:"M"+sourceTrunkX+" "+trunkY+" L"+targetTrunkX+" "+trunkY,branches:branches,badge:{x:(sourceTrunkX+targetTrunkX)/2,y:trunkY}};
+}
 `
