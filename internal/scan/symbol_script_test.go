@@ -95,6 +95,57 @@ export type { UserRole } from "./roles";
 	}
 }
 
+func TestScriptSameLineAliasesRemainDistinctAcrossFactStages(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	appFacts := ExtractScriptSymbolFacts(files[0], `
+import { foo as a, foo as b } from "./api";
+export function useAliases() { a(); b(); }
+`)
+	apiFacts := ExtractScriptSymbolFacts(files[1], `
+export function foo() {}
+export { foo as a, foo as b };
+`)
+
+	assertAliases := func(stage string, references []RichRelationRecord, kind, module, exportName string, wantLocal bool) {
+		t.Helper()
+		matches := scriptReferences(t, references, kind, module, exportName)
+		if len(matches) != 2 {
+			t.Errorf("%s %s aliases = %#v, want two references", stage, kind, matches)
+			return
+		}
+		aliases := map[string]bool{}
+		ids := map[string]bool{}
+		for _, reference := range matches {
+			alias := reference.scriptExportAlias
+			if wantLocal {
+				alias = reference.scriptLocalName
+			}
+			aliases[alias] = true
+			ids[reference.ID] = true
+		}
+		if !aliases["a"] || !aliases["b"] || len(aliases) != 2 || len(ids) != 2 {
+			t.Errorf("%s %s identities = %#v, want distinct a/b aliases and IDs", stage, kind, matches)
+		}
+	}
+
+	assertAliases("extracted", appFacts.References, "imports_value", "./api", "foo", true)
+	assertAliases("extracted", apiFacts.References, "exports_local", "src/api", "foo", false)
+
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, appFacts)
+	MergeProjectSymbolFacts(&facts, apiFacts)
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	assertAliases("resolved", resolved.References, "imports_value", "./api", "foo", true)
+	assertAliases("resolved", resolved.References, "exports_local", "src/api", "foo", false)
+
+	finalized := FinalizeProjectSymbolFacts(files, WorkspaceIndex{}, resolved)
+	assertAliases("finalized", finalized.References, "imports_value", "./api", "foo", true)
+	assertAliases("finalized", finalized.References, "exports_local", "src/api", "foo", false)
+}
+
 func TestExtractScriptIgnoresCommentsStringsAndTemplates(t *testing.T) {
 	body := `
 // export class CommentFake {}

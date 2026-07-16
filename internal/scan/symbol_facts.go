@@ -94,6 +94,9 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 				targetIdentity += "\x00" + reference.TargetModule + "\x00" + reference.TargetExport
 			}
 		}
+		if reference.Language == "javascript" || reference.Language == "typescript" {
+			targetIdentity = scriptReferenceAliasIdentity(*reference, targetIdentity)
+		}
 		reference.ID = StableWorkspaceUsageID(reference.ToSymbolID, "", reference.FromSymbolID, category, reference.Type, targetIdentity, reference.From, reference.Line)
 	}
 	facts.Declarations = dedupeRichSymbolFacts(facts.Declarations)

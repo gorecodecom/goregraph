@@ -40,9 +40,12 @@ func ExtractScriptSymbolFacts(file FileRecord, body string) ProjectSymbolFacts {
 	moduleReferences := extractScriptModuleReferences(file, body, masked)
 	spans := scriptDeclarationSpans(file, masked, declarations)
 	bindScriptReferenceOwners(moduleReferences, spans)
-	moduleReferences = dedupeRichRelationFacts(moduleReferences)
 	facts := ProjectSymbolFacts{Declarations: declarations, References: moduleReferences}
 	facts.References = append(facts.References, extractScriptUsageReferences(file, masked, declarations, moduleReferences, spans)...)
+	for index := range facts.References {
+		refreshScriptReferenceID(&facts.References[index])
+	}
+	facts.References = dedupeRichRelationFacts(facts.References)
 	sort.Slice(facts.Declarations, func(i, j int) bool { return facts.Declarations[i].ID < facts.Declarations[j].ID })
 	sort.Slice(facts.References, func(i, j int) bool { return facts.References[i].ID < facts.References[j].ID })
 	return facts
@@ -438,16 +441,34 @@ func bindScriptReferenceOwner(reference *RichRelationRecord, ownerID string) {
 		return
 	}
 	reference.FromSymbolID = ownerID
+	refreshScriptReferenceID(reference)
+}
+
+func refreshScriptReferenceID(reference *RichRelationRecord) {
+	if reference == nil {
+		return
+	}
+	targetIdentity := scriptReferenceAliasIdentity(*reference, reference.TargetQualifiedName)
 	reference.ID = StableWorkspaceUsageID(
 		"",
 		"",
 		reference.FromSymbolID,
 		SymbolUsageUnresolved,
 		reference.Type,
-		reference.TargetQualifiedName,
+		targetIdentity,
 		reference.From,
 		reference.Line,
 	)
+}
+
+func scriptReferenceAliasIdentity(reference RichRelationRecord, targetIdentity string) string {
+	if reference.scriptLocalName != "" {
+		targetIdentity += "\x00local\x00" + reference.scriptLocalName
+	}
+	if reference.scriptExportAlias != "" {
+		targetIdentity += "\x00export\x00" + reference.scriptExportAlias
+	}
+	return targetIdentity
 }
 
 func extractScriptUsageReferences(file FileRecord, masked string, declarations []RichSymbolRecord, imports []RichRelationRecord, spans []scriptDeclarationSpan) []RichRelationRecord {
@@ -1690,6 +1711,7 @@ func ResolveScriptSymbolFacts(files []FileRecord, packages []NodePackageRecord, 
 			reference.Reason = resolved.reason
 			reference.preventExact = false
 			targetIdentity := candidate.ID + "\x00" + reference.TargetModule + "\x00" + reference.TargetExport
+			targetIdentity = scriptReferenceAliasIdentity(*reference, targetIdentity)
 			reference.ID = StableWorkspaceUsageID(candidate.ID, "", reference.FromSymbolID, SymbolUsageDirectReference, reference.Type, targetIdentity, reference.From, reference.Line)
 			continue
 		}
@@ -1705,7 +1727,8 @@ func ResolveScriptSymbolFacts(files []FileRecord, packages []NodePackageRecord, 
 			sort.Strings(reference.CandidateSymbolIDs)
 			reference.Reason = resolved.reason
 			reference.preventExact = true
-			reference.ID = StableWorkspaceUsageID("", "", reference.FromSymbolID, SymbolUsageAmbiguous, reference.Type, strings.Join(reference.CandidateSymbolIDs, ","), reference.From, reference.Line)
+			targetIdentity := scriptReferenceAliasIdentity(*reference, strings.Join(reference.CandidateSymbolIDs, ","))
+			reference.ID = StableWorkspaceUsageID("", "", reference.FromSymbolID, SymbolUsageAmbiguous, reference.Type, targetIdentity, reference.From, reference.Line)
 			continue
 		}
 		if resolved.reason != "" {
@@ -1740,7 +1763,8 @@ func (resolver scriptFactResolver) resolveModuleReference(reference *RichRelatio
 	reference.Internal = true
 	reference.Reason = resolved.reason
 	reference.preventExact = false
-	reference.ID = StableWorkspaceUsageID("", "", reference.FromSymbolID, SymbolUsageDirectReference, reference.Type, module.identity, reference.From, reference.Line)
+	targetIdentity := scriptReferenceAliasIdentity(*reference, module.identity)
+	reference.ID = StableWorkspaceUsageID("", "", reference.FromSymbolID, SymbolUsageDirectReference, reference.Type, targetIdentity, reference.From, reference.Line)
 }
 
 type scriptFactResolver struct {
