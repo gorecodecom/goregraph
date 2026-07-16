@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/gorecodecom/goregraph/internal/config"
@@ -63,6 +65,7 @@ func checkProject(root string, cfg config.Config, result *Result) {
 
 	checkGeneratedFiles(out, manifest, result)
 	checkJSONFiles(out, result)
+	checkAgentContextIndex(out, manifest, result)
 	checkFreshnessIntegrity(out, result)
 	checkEvidenceIntegrity(out, result)
 	checkCanonicalFeatureFlows(out, result)
@@ -323,9 +326,208 @@ func checkWorkspace(root string, result *Result) {
 	}
 	checkGeneratedFiles(out, manifest, result)
 	checkWorkspaceJSONFiles(out, manifest.Index.Files, result)
+	checkAgentContextIndex(out, manifest, result)
 	if manifest.Dashboard.Complete {
 		checkWorkspaceSymbolProjection(root, result)
 	}
+}
+
+func checkAgentContextIndex(out string, manifest scan.Manifest, result *Result) {
+	if !manifest.Agent.Complete {
+		return
+	}
+	manifestFiles := map[string]bool{}
+	for _, name := range manifest.Agent.Files {
+		manifestFiles[filepath.ToSlash(name)] = true
+	}
+	for _, name := range scan.AgentGeneratedFiles {
+		required := filepath.ToSlash(filepath.Join("agent", name))
+		if !manifestFiles[required] {
+			result.fail("context-index", "complete agent manifest omits required file "+required)
+			return
+		}
+	}
+	var index scan.AgentContextIndexRecord
+	path := scan.NewProjectOutputLayout(out).Agent("context-index.json")
+	if err := readJSON(path, &index); err != nil {
+		result.fail("context-index", "context-index.json invalid: "+err.Error())
+		return
+	}
+	if index.SchemaVersion != scan.SchemaVersion {
+		result.fail("context-index", fmt.Sprintf("context index schema %d unsupported, want %d", index.SchemaVersion, scan.SchemaVersion))
+		return
+	}
+	factIDs := map[string]bool{}
+	for _, fact := range index.Facts {
+		if fact.ID == "" {
+			result.fail("context-index", "context-index.json contains an empty fact ID")
+			return
+		}
+		if factIDs[fact.ID] {
+			result.fail("context-index", "context-index.json contains duplicate fact ID "+fact.ID)
+			return
+		}
+		factIDs[fact.ID] = true
+		if fact.Line < 0 || fact.EndLine < 0 {
+			result.fail("context-index", "context-index.json fact "+fact.ID+" contains a negative line")
+			return
+		}
+		if !portableContextPath(fact.File) {
+			result.fail("context-index", "context-index.json fact "+fact.ID+" has invalid relative path "+fact.File)
+			return
+		}
+	}
+	allIDs := map[string]bool{}
+	for id := range factIDs {
+		allIDs[id] = true
+	}
+	for _, edge := range index.Edges {
+		if edge.ID == "" {
+			result.fail("context-index", "context-index.json contains an empty edge ID")
+			return
+		}
+		if allIDs[edge.ID] {
+			result.fail("context-index", "context-index.json contains duplicate ID "+edge.ID)
+			return
+		}
+		allIDs[edge.ID] = true
+		if edge.FromFactID == "" {
+			result.fail("context-index", "context-index.json contains an empty from_fact_id")
+			return
+		}
+		if edge.ToFactID == "" {
+			result.fail("context-index", "context-index.json contains an empty to_fact_id")
+			return
+		}
+		if edge.Line < 0 {
+			result.fail("context-index", "context-index.json edge "+edge.ID+" contains a negative line")
+			return
+		}
+		if !portableContextPath(edge.File) {
+			result.fail("context-index", "context-index.json edge "+edge.ID+" has invalid relative path "+edge.File)
+			return
+		}
+		if !factIDs[edge.FromFactID] {
+			result.fail("context-index", "context-index.json contains dangling from_fact_id "+edge.FromFactID)
+			return
+		}
+		if !factIDs[edge.ToFactID] {
+			result.fail("context-index", "context-index.json contains dangling to_fact_id "+edge.ToFactID)
+			return
+		}
+	}
+	if !contextFactsSorted(index.Facts) {
+		result.fail("context-index", "context-index.json contains unsorted facts")
+		return
+	}
+	if !contextEdgesSorted(index.Edges) {
+		result.fail("context-index", "context-index.json contains unsorted edges")
+		return
+	}
+	if !contextCoverageSorted(index.Coverage) {
+		result.fail("context-index", "context-index.json contains unsorted coverage")
+		return
+	}
+	result.ok("context-index", "context-index.json valid")
+}
+
+func portableContextPath(value string) bool {
+	value = strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	if value == "" {
+		return true
+	}
+	if strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") {
+		return false
+	}
+	if len(value) >= 3 &&
+		((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z')) &&
+		value[1] == ':' && value[2] == '/' {
+		return false
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func contextFactsSorted(records []scan.AgentContextFactRecord) bool {
+	if len(records) < 2 {
+		return true
+	}
+	sorted := append([]scan.AgentContextFactRecord(nil), records...)
+	sort.Slice(sorted, func(i, j int) bool {
+		left, right := sorted[i], sorted[j]
+		if left.Project != right.Project {
+			return left.Project < right.Project
+		}
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		if left.Qualified != right.Qualified {
+			return left.Qualified < right.Qualified
+		}
+		if left.Name != right.Name {
+			return left.Name < right.Name
+		}
+		if left.File != right.File {
+			return left.File < right.File
+		}
+		if left.Line != right.Line {
+			return left.Line < right.Line
+		}
+		return left.ID < right.ID
+	})
+	return reflect.DeepEqual(records, sorted)
+}
+
+func contextEdgesSorted(records []scan.AgentContextEdgeRecord) bool {
+	if len(records) < 2 {
+		return true
+	}
+	sorted := append([]scan.AgentContextEdgeRecord(nil), records...)
+	sort.Slice(sorted, func(i, j int) bool {
+		left, right := sorted[i], sorted[j]
+		if left.FromLabel != right.FromLabel {
+			return left.FromLabel < right.FromLabel
+		}
+		if left.ToLabel != right.ToLabel {
+			return left.ToLabel < right.ToLabel
+		}
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		if left.File != right.File {
+			return left.File < right.File
+		}
+		if left.Line != right.Line {
+			return left.Line < right.Line
+		}
+		return left.ID < right.ID
+	})
+	return reflect.DeepEqual(records, sorted)
+}
+
+func contextCoverageSorted(records []scan.AgentContextCoverageRecord) bool {
+	if len(records) < 2 {
+		return true
+	}
+	sorted := append([]scan.AgentContextCoverageRecord(nil), records...)
+	sort.Slice(sorted, func(i, j int) bool {
+		left, right := sorted[i], sorted[j]
+		if left.Project != right.Project {
+			return left.Project < right.Project
+		}
+		if left.Capability != right.Capability {
+			return left.Capability < right.Capability
+		}
+		if left.Coverage != right.Coverage {
+			return left.Coverage < right.Coverage
+		}
+		return left.Reason < right.Reason
+	})
+	return reflect.DeepEqual(records, sorted)
 }
 
 func checkWorkspaceJSONFiles(out string, files []string, result *Result) {

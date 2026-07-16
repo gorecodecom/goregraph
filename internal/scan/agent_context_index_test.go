@@ -481,6 +481,15 @@ func hasContextFact(facts []AgentContextFactRecord, kind, name string) bool {
 	return findContextFact(facts, kind, name).ID != ""
 }
 
+func hasContextEdge(edges []AgentContextEdgeRecord, fromFactID, toFactID, kind string) bool {
+	for _, edge := range edges {
+		if edge.FromFactID == fromFactID && edge.ToFactID == toFactID && edge.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
 func findContextFact(facts []AgentContextFactRecord, kind, name string) AgentContextFactRecord {
 	for _, fact := range facts {
 		if fact.Kind == kind && fact.Name == name {

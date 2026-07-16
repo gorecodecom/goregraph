@@ -76,6 +76,41 @@ func TestProjectBuildDashboardDoesNotWriteAgent(t *testing.T) {
 	assertOutputNotExists(t, filepath.Join(root, "goregraph-out", "agent"))
 }
 
+func TestDashboardRefreshDoesNotPreserveGuideOnlyAgentManifest(t *testing.T) {
+	root := writeBuildFixture(t)
+	cfg := config.Defaults()
+	cfg.Workspace = false
+	if _, err := RunBuild(root, cfg, BuildTargetDashboard); err != nil {
+		t.Fatal(err)
+	}
+	layout := NewProjectOutputLayout(filepath.Join(root, "goregraph-out"))
+	if err := os.MkdirAll(filepath.Join(layout.Root, "agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(layout.Agent("agent-guide.md"), []byte("# old agent projection\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var manifest Manifest
+	readJSON(t, layout.Manifest, &manifest)
+	manifest.Agent = ProjectionStatus{
+		GeneratedAt: "2026-07-15T00:00:00Z",
+		Complete:    true,
+		Files:       []string{"agent/agent-guide.md"},
+	}
+	if err := writeOutputManifestAtomic(layout.Manifest, manifest); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := RunBuild(root, cfg, BuildTargetDashboard); err != nil {
+		t.Fatal(err)
+	}
+
+	readJSON(t, layout.Manifest, &manifest)
+	if manifest.Agent.Complete {
+		t.Fatalf("guide-only agent projection remained complete: %#v", manifest.Agent)
+	}
+}
+
 func TestProjectBuildAllExtractsSourceOnce(t *testing.T) {
 	root := writeBuildFixture(t)
 	cfg := config.Defaults()

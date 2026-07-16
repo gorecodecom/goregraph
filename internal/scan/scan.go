@@ -62,6 +62,7 @@ var IndexGeneratedFiles = []string{
 
 var AgentGeneratedFiles = []string{
 	"agent-guide.md",
+	"context-index.json",
 }
 
 var DashboardGeneratedFiles = []string{
@@ -391,9 +392,24 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
 	diagnosticFamilies := BuildDiagnosticFamilies(filepath.Base(root), canonicalDiagnostics)
 	finished := time.Now().UTC()
+	var contextIndex AgentContextIndexRecord
+	if target.IncludesAgent() {
+		contextIndex = BuildProjectAgentContextIndex(
+			filepath.Base(root),
+			finished.Format(time.RFC3339),
+			routes,
+			codeFlows,
+			richSymbols,
+			richRelations,
+			testMap,
+			index.Code.APIContracts,
+			evidence,
+			capabilities,
+		)
+	}
 	layout := NewProjectOutputLayout(out)
 	previous := readCurrentOutputManifest(layout.Manifest)
-	previous.Agent = validProjectionStatus(layout.Root, previous.Agent)
+	previous.Agent = currentAgentProjectionStatus(layout.Root, previous.Agent)
 	previous.Dashboard = validProjectionStatus(layout.Root, previous.Dashboard)
 	manifest := OutputManifest{
 		Tool:        ToolName,
@@ -554,6 +570,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		if err := os.MkdirAll(filepath.Join(out, "agent"), 0o755); err != nil {
 			return err
 		}
+		if err := writeJSON(layout.Agent("context-index.json"), contextIndex); err != nil {
+			return err
+		}
 		if err := os.WriteFile(layout.Agent("agent-guide.md"), []byte(renderAgentGuideEntry()), 0o644); err != nil {
 			return err
 		}
@@ -608,6 +627,26 @@ func validProjectionStatus(root string, status ProjectionStatus) ProjectionStatu
 	for _, name := range status.Files {
 		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(name)))
 		if err != nil || info.IsDir() {
+			return ProjectionStatus{}
+		}
+	}
+	return status
+}
+
+func currentAgentProjectionStatus(root string, status ProjectionStatus) ProjectionStatus {
+	status = validProjectionStatus(root, status)
+	if !status.Complete {
+		return ProjectionStatus{}
+	}
+	actual := append([]string(nil), status.Files...)
+	expected := prefixedGeneratedFiles("agent", AgentGeneratedFiles)
+	sort.Strings(actual)
+	sort.Strings(expected)
+	if len(actual) != len(expected) {
+		return ProjectionStatus{}
+	}
+	for index := range actual {
+		if actual[index] != expected[index] {
 			return ProjectionStatus{}
 		}
 	}

@@ -96,6 +96,26 @@ func TestRunWritesPrimaryAgentMarkdownEntryPoints(t *testing.T) {
 	}
 }
 
+func TestScanWritesCompactAgentContextIndex(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/UserController.java", `
+@RestController
+class UserController {
+  @DeleteMapping("/users/{id}")
+  void deleteUser() {}
+}`)
+
+	if _, err := RunBuild(root, config.Defaults(), BuildTargetAgent); err != nil {
+		t.Fatal(err)
+	}
+
+	var index AgentContextIndexRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "agent", "context-index.json"), &index)
+	if !hasContextFact(index.Facts, "route", "DELETE /users/{id}") {
+		t.Fatalf("context facts = %#v", index.Facts)
+	}
+}
+
 func TestAgentGuideContainsTaskRecipesExactlyOnce(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc main(){}\n")

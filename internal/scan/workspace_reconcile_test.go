@@ -8,6 +8,174 @@ import (
 	"github.com/gorecodecom/goregraph/internal/config"
 )
 
+func TestWorkspaceReconciliationMergesProjectAndCrossProjectContext(t *testing.T) {
+	workspace := t.TempDir()
+	frontend := filepath.Join(workspace, "frontend", "app")
+	backend := filepath.Join(workspace, "services", "users")
+	writeFile(t, frontend, "package.json", `{"name":"app"}`)
+	writeFile(t, frontend, "src/api/users.ts", "export const deleteUser = () => fetch('/users/1', { method: 'DELETE' })\n")
+	writeFile(t, backend, "go.mod", "module example.test/users\n")
+	writeFile(t, backend, "main.go", "package main\nfunc main() {}\n")
+
+	projectCfg := config.Defaults()
+	projectCfg.Workspace = false
+	for _, project := range []string{frontend, backend} {
+		if _, err := RunBuild(project, projectCfg, BuildTargetAgent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeProjectIndexJSON(t, frontend, "api-contracts.json", []APIContractRecord{{
+		HTTPMethod: "DELETE", Path: "/users/{id}", Caller: "deleteUser",
+		File: "src/api/users.ts", Line: 8,
+	}})
+	writeProjectIndexJSON(t, backend, "routes.json", []CodeRouteRecord{{
+		Kind: "backend", HTTPMethod: "DELETE", Path: "/users/{id}",
+		Handler: "UserController.deleteUser", File: "UserController.java", Line: 20,
+	}})
+	writeProjectContextIndex(t, frontend, AgentContextIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Facts: []AgentContextFactRecord{{
+			ID: "frontend:api", Project: "frontend/app", Kind: "api_contract",
+			Name: "DELETE /users/{id}", Qualified: "deleteUser",
+			HTTPMethod: "DELETE", Path: "/users/{id}", File: "src/api/users.ts", Line: 8,
+		}},
+	})
+	writeProjectContextIndex(t, backend, AgentContextIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Facts: []AgentContextFactRecord{{
+			ID: "backend:route", Project: "services/users", Kind: "route",
+			Name: "DELETE /users/{id}", Qualified: "UserController.deleteUser",
+			HTTPMethod: "DELETE", Path: "/users/{id}", File: "UserController.java", Line: 20,
+		}},
+	})
+
+	if _, err := ReconcileWorkspaceTarget(frontend, config.Config{Workspace: true, WorkspaceRoot: workspace}, BuildTargetAgent); err != nil {
+		t.Fatal(err)
+	}
+
+	layout := NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace"))
+	var index AgentContextIndexRecord
+	readJSON(t, layout.Agent("context-index.json"), &index)
+	if !hasContextEdge(index.Edges, "frontend/app#frontend:api", "services/users#backend:route", "http_contract") {
+		t.Fatalf("workspace edges = %#v", index.Edges)
+	}
+	assertOutputNotExists(t, filepath.Join(layout.Root, "dashboard"))
+	assertOutputNotExists(t, layout.Index("symbol-usages.json"))
+}
+
+func TestBuildWorkspaceAgentContextIndexReusesDossierPersistenceAndTestFacts(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/users", Indexed: true,
+	}}}
+	projectIndex := AgentContextIndexRecord{
+		Root: "services/users",
+		Facts: []AgentContextFactRecord{
+			{ID: "persistence", Kind: "persistence", Name: "UserRepository.delete", Qualified: "UserRepository.delete", File: "UserRepository.java", Line: 12},
+			{ID: "test", Kind: "test", Name: "deletesUser", Qualified: "UserControllerTest.deletesUser", File: "UserControllerTest.java", Line: 30},
+		},
+	}
+	dossiers := []FeatureDossierRecord{{
+		Route:          "DELETE /users/{id}",
+		BackendProject: "services/users",
+		PersistencePath: []PersistenceStepRecord{{
+			Repository: "UserRepository", Method: "delete", File: "UserRepository.java", Line: 12,
+		}},
+		Tests: []TestMapRecord{{
+			TestFile: "UserControllerTest.java", TestClass: "UserControllerTest",
+			TestMethod: "deletesUser", Line: 30,
+		}},
+	}}
+
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, WorkspaceEndpointTraceIndexRecord{}, "generated")
+
+	if got := countContextFacts(index.Facts, "persistence"); got != 1 {
+		t.Fatalf("persistence facts = %d, want copied fact reuse: %#v", got, index.Facts)
+	}
+	if got := countContextFacts(index.Facts, "test"); got != 1 {
+		t.Fatalf("test facts = %d, want copied fact reuse: %#v", got, index.Facts)
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexRequiresContractDiscriminators(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "frontend/app", Indexed: true},
+		{Path: "services/users", Indexed: true},
+	}}
+	projectIndexes := []AgentContextIndexRecord{
+		{
+			Root: "frontend/app",
+			Facts: []AgentContextFactRecord{{
+				ID: "api", Kind: "api_contract", Name: "DELETE /users/{id}",
+				Qualified: "deleteUser", HTTPMethod: "DELETE", Path: "/users/{id}",
+				File: "src/api/users.ts", Line: 8,
+			}},
+		},
+		{
+			Root: "services/users",
+			Facts: []AgentContextFactRecord{{
+				ID: "route", Kind: "route", Name: "DELETE /users/{id}",
+				Qualified: "UserController.deleteUser", HTTPMethod: "DELETE", Path: "/users/{id}",
+				File: "UserController.java", Line: 20,
+			}},
+		},
+	}
+	matches := []WorkspaceContractMatchRecord{{
+		APIProject: "frontend/app", APIHTTPMethod: "DELETE", APIPath: "/users/{id}",
+		APIFile: "src/api/users.ts", APILine: 8, APICaller: "differentCaller",
+		BackendProject: "services/users", BackendHTTPMethod: "DELETE", BackendPath: "/users/{id}",
+		BackendFile: "UserController.java", BackendLine: 20, BackendHandler: "UserController.deleteUser",
+		Issue: contractIssueMatched, Confidence: "RESOLVED",
+	}}
+
+	index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, matches, nil, WorkspaceEndpointTraceIndexRecord{}, "generated")
+
+	for _, edge := range index.Edges {
+		if edge.Kind == "http_contract" {
+			t.Fatalf("contract edge ignored caller discriminator: %#v", edge)
+		}
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexOmitsNonPortableFiles(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/users", Indexed: true,
+	}}}
+	projectIndex := AgentContextIndexRecord{
+		Root: "services/users",
+		Facts: []AgentContextFactRecord{
+			{ID: "a", Kind: "symbol", Name: "A", File: "/tmp/A.java"},
+			{ID: "b", Kind: "symbol", Name: "B", File: "src/B.java"},
+		},
+		Edges: []AgentContextEdgeRecord{{
+			ID: "edge", FromFactID: "a", ToFactID: "b",
+			FromLabel: "A", ToLabel: "B", Kind: "call", File: "src/../edge.java",
+		}},
+	}
+
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, nil, WorkspaceEndpointTraceIndexRecord{}, "generated")
+
+	for _, fact := range index.Facts {
+		if filepath.IsAbs(fact.File) || strings.Contains(fact.File, "..") {
+			t.Fatalf("workspace fact retained non-portable file: %#v", fact)
+		}
+	}
+	for _, edge := range index.Edges {
+		if filepath.IsAbs(edge.File) || strings.Contains(edge.File, "..") {
+			t.Fatalf("workspace edge retained non-portable file: %#v", edge)
+		}
+	}
+}
+
+func countContextFacts(facts []AgentContextFactRecord, kind string) int {
+	count := 0
+	for _, fact := range facts {
+		if fact.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
 func TestScanCreatesWorkspaceRegistryWithIndexedAndNotIndexedProjects(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "weka")
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
@@ -121,6 +289,22 @@ func assertWorkspaceProjectKindAndService(t *testing.T, projects []WorkspaceProj
 		}
 	}
 	t.Fatalf("missing workspace project %s", path)
+}
+
+func writeProjectIndexJSON(t *testing.T, project, name string, value any) {
+	t.Helper()
+	layout := NewProjectOutputLayout(filepath.Join(project, "goregraph-out"))
+	if err := writeJSON(layout.Index(name), value); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeProjectContextIndex(t *testing.T, project string, index AgentContextIndexRecord) {
+	t.Helper()
+	layout := NewProjectOutputLayout(filepath.Join(project, "goregraph-out"))
+	if err := writeJSON(layout.Agent("context-index.json"), index); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestLaterBackendScanRefreshesExistingFrontendWorkspaceOverlay(t *testing.T) {

@@ -929,6 +929,33 @@ func (builder *agentContextBuilder) index(generated string) AgentContextIndexRec
 	for _, fact := range builder.factsByID {
 		facts = append(facts, fact)
 	}
+	sortAgentContextFacts(facts)
+
+	edges := make([]AgentContextEdgeRecord, 0, len(builder.edgesByID))
+	for _, edge := range builder.edgesByID {
+		edges = append(edges, edge)
+	}
+	sortAgentContextEdges(edges)
+
+	coverage := make([]AgentContextCoverageRecord, 0, len(builder.coverageByCapability))
+	for _, record := range builder.coverageByCapability {
+		coverage = append(coverage, record)
+	}
+	sort.Slice(coverage, func(i, j int) bool {
+		return contextCoverageLess(coverage[i], coverage[j])
+	})
+
+	return AgentContextIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Generated:     generated,
+		Root:          builder.project,
+		Facts:         facts,
+		Edges:         edges,
+		Coverage:      coverage,
+	}
+}
+
+func sortAgentContextFacts(facts []AgentContextFactRecord) {
 	sort.Slice(facts, func(i, j int) bool {
 		left, right := facts[i], facts[j]
 		if left.Project != right.Project {
@@ -951,11 +978,9 @@ func (builder *agentContextBuilder) index(generated string) AgentContextIndexRec
 		}
 		return left.ID < right.ID
 	})
+}
 
-	edges := make([]AgentContextEdgeRecord, 0, len(builder.edgesByID))
-	for _, edge := range builder.edgesByID {
-		edges = append(edges, edge)
-	}
+func sortAgentContextEdges(edges []AgentContextEdgeRecord) {
 	sort.Slice(edges, func(i, j int) bool {
 		left, right := edges[i], edges[j]
 		if left.FromLabel != right.FromLabel {
@@ -975,23 +1000,6 @@ func (builder *agentContextBuilder) index(generated string) AgentContextIndexRec
 		}
 		return left.ID < right.ID
 	})
-
-	coverage := make([]AgentContextCoverageRecord, 0, len(builder.coverageByCapability))
-	for _, record := range builder.coverageByCapability {
-		coverage = append(coverage, record)
-	}
-	sort.Slice(coverage, func(i, j int) bool {
-		return contextCoverageLess(coverage[i], coverage[j])
-	})
-
-	return AgentContextIndexRecord{
-		SchemaVersion: SchemaVersion,
-		Generated:     generated,
-		Root:          builder.project,
-		Facts:         facts,
-		Edges:         edges,
-		Coverage:      coverage,
-	}
 }
 
 func contextTypeNavigationSymbol(symbol RichSymbolRecord) bool {

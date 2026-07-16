@@ -2,8 +2,11 @@ package goregraph_test
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
 func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
@@ -125,5 +128,20 @@ func TestReleaseFilesKeep130Unreleased(t *testing.T) {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("release documentation must not claim publication: %q", forbidden)
 		}
+	}
+}
+
+func TestContextIndexOutputIsPartOfReleaseContract(t *testing.T) {
+	if !slices.Contains(scan.AgentGeneratedFiles, "context-index.json") {
+		t.Fatal("agent/context-index.json is not registered as agent output")
+	}
+	if slices.Contains(scan.IndexGeneratedFiles, "context-index.json") {
+		t.Fatal("context-index.json must not be registered as canonical index output")
+	}
+	if slices.Contains(scan.DashboardGeneratedFiles, "context-index.json") {
+		t.Fatal("context-index.json must not be registered as dashboard output")
+	}
+	if !slices.Contains(scan.GeneratedFiles, "agent/context-index.json") {
+		t.Fatal("agent/context-index.json is missing from the complete generated-file contract")
 	}
 }

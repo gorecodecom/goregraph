@@ -89,6 +89,13 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	if err != nil {
 		return nil, err
 	}
+	var projectContextIndexes []AgentContextIndexRecord
+	if target.IncludesAgent() {
+		projectContextIndexes, err = loadWorkspaceAgentContextIndexes(indexed)
+		if err != nil {
+			return nil, err
+		}
+	}
 	context := buildWorkspaceContext(registry, indexed)
 	matches := buildWorkspaceContractMatches(indexed)
 	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
@@ -110,6 +117,17 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	directedTraces := BuildDirectedTraceIndex(endpointTraces)
 	endpointTraces.Directed = directedTraces.Traces
+	var agentContextIndex AgentContextIndexRecord
+	if target.IncludesAgent() {
+		agentContextIndex = BuildWorkspaceAgentContextIndex(
+			registry,
+			projectContextIndexes,
+			matches,
+			featureDossiers,
+			endpointTraces,
+			registry.Generated,
+		)
+	}
 	if target.IncludesDashboard() {
 		symbolIndex, symbolUsageIndex, err = BuildWorkspaceSymbolProjection(registry, indexed, registry.Generated)
 		if err != nil {
@@ -137,7 +155,7 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	}
 	layout := NewWorkspaceOutputLayout(workspaceOut)
 	previous := readCurrentOutputManifest(layout.Manifest)
-	previous.Agent = validProjectionStatus(layout.Root, previous.Agent)
+	previous.Agent = currentAgentProjectionStatus(layout.Root, previous.Agent)
 	previous.Dashboard = validProjectionStatus(layout.Root, previous.Dashboard)
 	indexFiles := workspaceIndexFiles(target)
 	if previous.Dashboard.Complete && !target.IncludesDashboard() {
@@ -251,6 +269,9 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 		if err := os.MkdirAll(filepath.Join(workspaceOut, "agent"), 0o755); err != nil {
 			return nil, err
 		}
+		if err := writeJSON(layout.Agent("context-index.json"), agentContextIndex); err != nil {
+			return nil, err
+		}
 		if err := os.WriteFile(layout.Agent("agent-guide.md"), []byte("# GoreGraph Workspace Agent Guide\n"), 0o644); err != nil {
 			return nil, err
 		}
@@ -317,7 +338,7 @@ func publishProjectReconciliationIncomplete(layout OutputLayout, writeDashboard 
 		return fmt.Errorf("project manifest %s is missing or invalid", layout.Manifest)
 	}
 	manifest.Index.Complete = false
-	manifest.Agent = validProjectionStatus(layout.Root, manifest.Agent)
+	manifest.Agent = currentAgentProjectionStatus(layout.Root, manifest.Agent)
 	if writeDashboard {
 		manifest.Dashboard.Complete = false
 	} else {
@@ -337,7 +358,7 @@ func republishReconciledProjectManifest(layout OutputLayout, writeDashboard bool
 		return fmt.Errorf("project canonical index is incomplete after workspace reconciliation: %s", layout.Root)
 	}
 	manifest.Index.GeneratedAt = generatedAt
-	manifest.Agent = validProjectionStatus(layout.Root, manifest.Agent)
+	manifest.Agent = currentAgentProjectionStatus(layout.Root, manifest.Agent)
 	if writeDashboard {
 		manifest.Dashboard.Complete = true
 		manifest.Dashboard = validProjectionStatus(layout.Root, manifest.Dashboard)
@@ -698,6 +719,486 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		result = append(result, loaded)
 	}
 	return result, nil
+}
+
+func loadWorkspaceAgentContextIndexes(projects []workspaceIndexProject) ([]AgentContextIndexRecord, error) {
+	var indexes []AgentContextIndexRecord
+	for _, project := range projects {
+		out := filepath.Join(project.record.AbsPath, project.record.OutputDir)
+		layout := NewProjectOutputLayout(out)
+		manifest := readCurrentOutputManifest(layout.Manifest)
+		if manifest.Scope != "project" || !currentAgentProjectionStatus(layout.Root, manifest.Agent).Complete {
+			continue
+		}
+		var index AgentContextIndexRecord
+		if err := readWorkspaceJSON(layout.Agent("context-index.json"), &index); err != nil {
+			return nil, err
+		}
+		index.Root = project.record.Path
+		indexes = append(indexes, index)
+	}
+	return indexes, nil
+}
+
+func BuildWorkspaceAgentContextIndex(
+	registry WorkspaceRegistryRecord,
+	projectIndexes []AgentContextIndexRecord,
+	matches []WorkspaceContractMatchRecord,
+	dossiers []FeatureDossierRecord,
+	traces WorkspaceEndpointTraceIndexRecord,
+	generated string,
+) AgentContextIndexRecord {
+	builder := newWorkspaceAgentContextBuilder(registry)
+	for _, index := range projectIndexes {
+		builder.mergeProjectIndex(index)
+	}
+	builder.addContractEdges(matches)
+	builder.addDossierFacts(dossiers)
+	builder.addTraceTransitions(traces)
+	return builder.index(generated)
+}
+
+type workspaceAgentContextBuilder struct {
+	registry       WorkspaceRegistryRecord
+	projects       map[string]bool
+	factsByID      map[string]AgentContextFactRecord
+	edgesByID      map[string]AgentContextEdgeRecord
+	coverageByKey  map[string]AgentContextCoverageRecord
+	projectFactIDs map[string]map[string]string
+}
+
+func newWorkspaceAgentContextBuilder(registry WorkspaceRegistryRecord) *workspaceAgentContextBuilder {
+	projects := map[string]bool{}
+	for _, project := range registry.Projects {
+		if project.Indexed {
+			projects[project.Path] = true
+		}
+	}
+	return &workspaceAgentContextBuilder{
+		registry:       registry,
+		projects:       projects,
+		factsByID:      map[string]AgentContextFactRecord{},
+		edgesByID:      map[string]AgentContextEdgeRecord{},
+		coverageByKey:  map[string]AgentContextCoverageRecord{},
+		projectFactIDs: map[string]map[string]string{},
+	}
+}
+
+func (builder *workspaceAgentContextBuilder) mergeProjectIndex(index AgentContextIndexRecord) {
+	project := contextPathKey(index.Root)
+	if project == "" || !builder.projects[project] {
+		return
+	}
+	if builder.projectFactIDs[project] == nil {
+		builder.projectFactIDs[project] = map[string]string{}
+	}
+	for _, fact := range index.Facts {
+		originalID := fact.ID
+		if originalID == "" {
+			continue
+		}
+		fact.ID = workspaceAgentFactID(project, fact.ID)
+		fact.Project = project
+		fact.File = workspaceAgentFile(project, fact.File)
+		builder.projectFactIDs[project][originalID] = fact.ID
+		builder.addFact(fact)
+	}
+	for _, edge := range index.Edges {
+		fromID := builder.projectFactIDs[project][edge.FromFactID]
+		toID := builder.projectFactIDs[project][edge.ToFactID]
+		if fromID == "" || toID == "" {
+			continue
+		}
+		if edge.ID == "" {
+			continue
+		}
+		edge.ID = workspaceAgentFactID(project, edge.ID)
+		edge.Project = project
+		edge.FromFactID = fromID
+		edge.ToFactID = toID
+		edge.File = workspaceAgentFile(project, edge.File)
+		builder.addEdge(edge)
+	}
+	for _, coverage := range index.Coverage {
+		if !contextAgentCapability(CapabilityID(coverage.Capability)) {
+			continue
+		}
+		coverage.Project = project
+		key := project + "\x00" + coverage.Capability
+		if existing, ok := builder.coverageByKey[key]; !ok ||
+			contextCoverageRank(coverage.Coverage) > contextCoverageRank(existing.Coverage) ||
+			contextCoverageRank(coverage.Coverage) == contextCoverageRank(existing.Coverage) &&
+				coverage.Reason < existing.Reason {
+			builder.coverageByKey[key] = coverage
+		}
+	}
+}
+
+func (builder *workspaceAgentContextBuilder) addContractEdges(matches []WorkspaceContractMatchRecord) {
+	for _, match := range matches {
+		if match.BackendProject == "" || match.Issue != contractIssueMatched ||
+			match.Confidence != "" && !strings.EqualFold(match.Confidence, "RESOLVED") {
+			continue
+		}
+		fromID := builder.findFact(
+			match.APIProject,
+			"api_contract",
+			match.APIHTTPMethod,
+			match.APIPath,
+			match.APIFile,
+			match.APILine,
+			match.APICaller,
+		)
+		toID := builder.findFact(
+			match.BackendProject,
+			"route",
+			firstNonEmpty(match.BackendHTTPMethod, match.APIHTTPMethod),
+			firstNonEmpty(match.BackendPath, match.APIPath),
+			match.BackendFile,
+			match.BackendLine,
+			match.BackendHandler,
+		)
+		if fromID == "" || toID == "" {
+			continue
+		}
+		builder.addEdge(AgentContextEdgeRecord{
+			Project:     match.APIProject,
+			FromFactID:  fromID,
+			ToFactID:    toID,
+			Kind:        "http_contract",
+			File:        workspaceAgentFile(match.APIProject, match.APIFile),
+			Line:        match.APILine,
+			Reason:      match.Reason,
+			Confidence:  match.Confidence,
+			EvidenceIDs: match.ResolutionEvidence,
+		})
+	}
+}
+
+func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureDossierRecord) {
+	for _, dossier := range dossiers {
+		handlerID := ""
+		if dossier.BackendHandler != "" && builder.projects[dossier.BackendProject] {
+			handlerID = builder.findFact(dossier.BackendProject, "", "", "", "", 0, dossier.BackendHandler)
+			if handlerID == "" {
+				handlerID = builder.addFact(AgentContextFactRecord{
+					Project:    dossier.BackendProject,
+					Kind:       "backend_handler",
+					Name:       contextSimpleName(dossier.BackendHandler),
+					Qualified:  dossier.BackendHandler,
+					Confidence: dossier.Confidence,
+					Search:     compactContextSearch(dossier.Route, dossier.BackendHandler),
+				})
+			}
+		}
+		for _, auth := range dossier.Auth {
+			project := firstNonEmpty(dossier.BackendProject, dossier.FrontendProject)
+			if !builder.projects[project] {
+				continue
+			}
+			authID := builder.addFact(AgentContextFactRecord{
+				Project:    project,
+				Kind:       "authentication",
+				Name:       firstNonEmpty(auth.Expression, auth.Kind),
+				File:       workspaceAgentFile(project, auth.File),
+				Line:       auth.Line,
+				Summary:    auth.Kind,
+				Confidence: auth.Confidence,
+				Search:     compactContextSearch(dossier.Route, auth.Kind, auth.Expression),
+			})
+			builder.addDossierEdge(handlerID, authID, "authentication", dossier.Confidence)
+		}
+		for _, persistence := range dossier.PersistencePath {
+			if !builder.projects[dossier.BackendProject] {
+				continue
+			}
+			name := strings.Trim(strings.TrimSpace(persistence.Repository)+"."+strings.TrimSpace(persistence.Method), ".")
+			persistenceID := builder.findFact(
+				dossier.BackendProject,
+				"persistence",
+				"",
+				"",
+				persistence.File,
+				persistence.Line,
+				name,
+			)
+			if persistenceID == "" {
+				persistenceID = builder.addFact(AgentContextFactRecord{
+					Project:    dossier.BackendProject,
+					Kind:       "persistence",
+					Name:       firstNonEmpty(name, persistence.Entity, persistence.Table),
+					Qualified:  name,
+					File:       workspaceAgentFile(dossier.BackendProject, persistence.File),
+					Line:       persistence.Line,
+					Summary:    strings.TrimSpace("entity " + persistence.Entity + " table " + persistence.Table),
+					Confidence: persistence.Confidence,
+					Search: compactContextSearch(
+						dossier.Route,
+						name,
+						persistence.Entity,
+						persistence.Table,
+					),
+				})
+			}
+			builder.addDossierEdge(handlerID, persistenceID, "persistence", dossier.Confidence)
+		}
+		for _, test := range dossier.Tests {
+			project := firstNonEmpty(dossier.BackendProject, dossier.FrontendProject)
+			if !builder.projects[project] {
+				continue
+			}
+			qualified := qualifiedContextName(test.TestClass, test.TestMethod)
+			testID := builder.findFact(project, "test", "", "", test.TestFile, test.Line, qualified)
+			if testID == "" {
+				testID = builder.addFact(AgentContextFactRecord{
+					Project:    project,
+					Kind:       "test",
+					Name:       firstNonEmpty(test.TestMethod, test.TestCase, test.TestClass, contextFileStem(test.TestFile)),
+					Qualified:  qualified,
+					File:       workspaceAgentFile(project, test.TestFile),
+					Line:       test.Line,
+					Summary:    "tests " + dossier.Route,
+					Confidence: test.Confidence,
+					Search:     compactContextSearch(dossier.Route, qualified, test.TestCase),
+				})
+			}
+			if handlerID != "" {
+				builder.addEdge(AgentContextEdgeRecord{
+					Project:    project,
+					FromFactID: testID,
+					ToFactID:   handlerID,
+					Kind:       "test_target",
+					File:       workspaceAgentFile(project, test.TestFile),
+					Line:       test.Line,
+					Confidence: test.Confidence,
+				})
+			}
+		}
+	}
+}
+
+func (builder *workspaceAgentContextBuilder) addDossierEdge(fromID, toID, kind, confidence string) {
+	if fromID == "" || toID == "" {
+		return
+	}
+	builder.addEdge(AgentContextEdgeRecord{
+		FromFactID: fromID,
+		ToFactID:   toID,
+		Kind:       kind,
+		Confidence: confidence,
+	})
+}
+
+func (builder *workspaceAgentContextBuilder) addTraceTransitions(traces WorkspaceEndpointTraceIndexRecord) {
+	for _, trace := range traces.Traces {
+		stepFactIDs := map[string]string{}
+		stepsByID := map[string]WorkspaceEndpointTraceStepRecord{}
+		for _, step := range trace.Steps {
+			if !builder.projects[step.Project] {
+				continue
+			}
+			kind := workspaceTraceFactKind(step.Kind)
+			findKind := kind
+			if step.Kind == "backend_handler" {
+				findKind = ""
+			}
+			factID := builder.findFact(step.Project, findKind, trace.Method, trace.Path, step.File, step.Line, firstNonEmpty(step.Symbol, step.Label))
+			if factID == "" {
+				factID = builder.addFact(AgentContextFactRecord{
+					Project:    step.Project,
+					Kind:       kind,
+					Name:       step.Label,
+					Qualified:  step.Symbol,
+					HTTPMethod: trace.Method,
+					Path:       trace.Path,
+					File:       workspaceAgentFile(step.Project, step.File),
+					Line:       step.Line,
+					Confidence: step.Confidence,
+					Search:     compactContextSearch(trace.Route, step.Label, step.Symbol),
+				})
+			}
+			stepFactIDs[step.ID] = factID
+			stepsByID[step.ID] = step
+		}
+		for _, edge := range trace.Edges {
+			fromID := stepFactIDs[edge.From]
+			toID := stepFactIDs[edge.To]
+			if fromID == "" || toID == "" {
+				continue
+			}
+			target := stepsByID[edge.To]
+			builder.addEdge(AgentContextEdgeRecord{
+				FromFactID: fromID,
+				ToFactID:   toID,
+				Kind:       firstNonEmpty(edge.Kind, "trace"),
+				File:       workspaceAgentFile(target.Project, target.File),
+				Line:       target.Line,
+				Reason:     edge.Direction,
+			})
+		}
+	}
+}
+
+func workspaceTraceFactKind(kind string) string {
+	switch kind {
+	case "backend_route":
+		return "route"
+	case "backend_step":
+		return "symbol"
+	default:
+		return kind
+	}
+}
+
+func (builder *workspaceAgentContextBuilder) findFact(project, kind, method, routePath, file string, line int, label string) string {
+	project = contextPathKey(project)
+	file = workspaceAgentFile(project, file)
+	method = strings.ToUpper(strings.TrimSpace(method))
+	routePath = normalizeOptionalContextPath(routePath)
+	labelKey := contextLabelKey(label)
+	var candidates []string
+	for id, fact := range builder.factsByID {
+		if fact.Project != project || kind != "" && fact.Kind != kind {
+			continue
+		}
+		if method != "" && fact.HTTPMethod != "" && !strings.EqualFold(fact.HTTPMethod, method) {
+			continue
+		}
+		if routePath != "" && fact.Path != "" && !pathsCompatibleWithKnownBasePrefixes(routePath, fact.Path) {
+			continue
+		}
+		if file != "" && fact.File != file {
+			continue
+		}
+		if line > 0 && fact.Line > 0 && fact.Line != line {
+			continue
+		}
+		if labelKey != "" &&
+			contextLabelKey(fact.Name) != labelKey &&
+			contextLabelKey(fact.Qualified) != labelKey &&
+			!strings.Contains(contextLabelKey(fact.Qualified), labelKey) {
+			continue
+		}
+		candidates = append(candidates, id)
+	}
+	sort.Strings(candidates)
+	if len(candidates) != 1 {
+		return ""
+	}
+	return candidates[0]
+}
+
+func (builder *workspaceAgentContextBuilder) addFact(fact AgentContextFactRecord) string {
+	fact.Project = contextPathKey(fact.Project)
+	fact.File = contextPathKey(fact.File)
+	fact.EvidenceIDs = compactContextStrings(fact.EvidenceIDs)
+	if fact.ID == "" {
+		fact.ID = StableWorkspaceID(
+			"agent-context-fact",
+			fact.Project,
+			fact.Kind,
+			fact.Name,
+			fact.Qualified,
+			fact.HTTPMethod,
+			fact.Path,
+			fact.File,
+			fmt.Sprint(fact.Line),
+		)
+	}
+	if existing, ok := builder.factsByID[fact.ID]; ok {
+		existing.EvidenceIDs = compactContextStrings(append(existing.EvidenceIDs, fact.EvidenceIDs...))
+		existing.Search = mergeContextSearch(existing.Search, fact.Search)
+		existing.Confidence = strongerContextConfidence(existing.Confidence, fact.Confidence)
+		existing.Summary = deterministicContextText(existing.Summary, fact.Summary)
+		builder.factsByID[fact.ID] = existing
+		return fact.ID
+	}
+	builder.factsByID[fact.ID] = fact
+	return fact.ID
+}
+
+func (builder *workspaceAgentContextBuilder) addEdge(edge AgentContextEdgeRecord) {
+	from, hasFrom := builder.factsByID[edge.FromFactID]
+	to, hasTo := builder.factsByID[edge.ToFactID]
+	if !hasFrom || !hasTo || edge.FromFactID == edge.ToFactID {
+		return
+	}
+	edge.Project = firstNonEmpty(edge.Project, from.Project)
+	edge.File = contextPathKey(edge.File)
+	edge.FromLabel = firstNonEmpty(edge.FromLabel, contextFactLabel(from))
+	edge.ToLabel = firstNonEmpty(edge.ToLabel, contextFactLabel(to))
+	edge.EvidenceIDs = compactContextStrings(edge.EvidenceIDs)
+	if edge.ID == "" {
+		edge.ID = StableWorkspaceID(
+			"agent-context-edge",
+			edge.FromFactID,
+			edge.ToFactID,
+			edge.Kind,
+			edge.File,
+			fmt.Sprint(edge.Line),
+		)
+	}
+	if existing, ok := builder.edgesByID[edge.ID]; ok {
+		existing.EvidenceIDs = compactContextStrings(append(existing.EvidenceIDs, edge.EvidenceIDs...))
+		existing.Confidence = strongerContextConfidence(existing.Confidence, edge.Confidence)
+		existing.Reason = deterministicContextText(existing.Reason, edge.Reason)
+		builder.edgesByID[edge.ID] = existing
+		return
+	}
+	builder.edgesByID[edge.ID] = edge
+}
+
+func (builder *workspaceAgentContextBuilder) index(generated string) AgentContextIndexRecord {
+	facts := make([]AgentContextFactRecord, 0, len(builder.factsByID))
+	for _, fact := range builder.factsByID {
+		facts = append(facts, fact)
+	}
+	sortAgentContextFacts(facts)
+	edges := make([]AgentContextEdgeRecord, 0, len(builder.edgesByID))
+	for _, edge := range builder.edgesByID {
+		edges = append(edges, edge)
+	}
+	sortAgentContextEdges(edges)
+	coverage := make([]AgentContextCoverageRecord, 0, len(builder.coverageByKey))
+	for _, record := range builder.coverageByKey {
+		coverage = append(coverage, record)
+	}
+	sort.Slice(coverage, func(i, j int) bool {
+		return contextCoverageLess(coverage[i], coverage[j])
+	})
+	return AgentContextIndexRecord{
+		SchemaVersion: SchemaVersion,
+		Generated:     generated,
+		Root:          builder.registry.Root,
+		Facts:         facts,
+		Edges:         edges,
+		Coverage:      coverage,
+	}
+}
+
+func workspaceAgentFactID(project, id string) string {
+	return contextPathKey(project) + "#" + strings.TrimSpace(id)
+}
+
+func workspaceAgentFile(_ string, file string) string {
+	file = contextPathKey(file)
+	if file == "" {
+		return ""
+	}
+	if strings.HasPrefix(file, "/") {
+		return ""
+	}
+	if len(file) >= 3 &&
+		((file[0] >= 'A' && file[0] <= 'Z') || (file[0] >= 'a' && file[0] <= 'z')) &&
+		file[1] == ':' && file[2] == '/' {
+		return ""
+	}
+	for _, segment := range strings.Split(file, "/") {
+		if segment == ".." {
+			return ""
+		}
+	}
+	return file
 }
 
 func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspaceIndexProject) WorkspaceContextRecord {
