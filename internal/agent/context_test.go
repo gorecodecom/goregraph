@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -250,15 +251,11 @@ func TestBuildContextExactMatchingPreservesTokenOrder(t *testing.T) {
 }
 
 func TestBuildContextExpandsOnlyRetainedSeeds(t *testing.T) {
-	largeEvidence := make([]string, 40)
-	for index := range largeEvidence {
-		largeEvidence[index] = strings.Repeat("evidence", 8) + string(rune('a'+index%26))
-	}
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{
 			{ID: "top", Kind: "route", Name: "GET /users", HTTPMethod: "GET", Path: "/users", File: "top.go", Line: 10, Confidence: "EXACT"},
-			{ID: "rejected-seed", Kind: "symbol", Name: "users", Search: "get users", File: "rejected.go", Line: 20, Confidence: "EXACT", EvidenceIDs: largeEvidence},
+			{ID: "rejected-seed", Kind: "symbol", Name: "users", Search: "get users", File: "rejected.go", Line: 20, Confidence: "EXACT"},
 			{ID: "neighbor", Kind: "symbol", Name: "audit", File: "top.go", Line: 30},
 		},
 		Edges: []scan.AgentContextEdgeRecord{{
@@ -267,7 +264,9 @@ func TestBuildContextExpandsOnlyRetainedSeeds(t *testing.T) {
 		}},
 	})
 
-	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /users", BudgetTokens: 256})
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "GET /users", BudgetTokens: 256, MaxFiles: 1,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,9 +301,33 @@ func TestBuildContextPreservesRankedSeedOrder(t *testing.T) {
 		pack.Entrypoints[1].ID != "lower" {
 		t.Fatalf("entrypoint rank order was lost: %#v", pack.Entrypoints)
 	}
-	if len(pack.CallChain) != 2 || pack.CallChain[0].From != "z-test" ||
+	if len(pack.CallChain) != 2 || pack.CallChain[0].From != "a-test" ||
 		len(pack.Tests) != 2 || pack.Tests[0].ID != "top-test" {
-		t.Fatalf("source-seed order was lost: relationships=%#v tests=%#v", pack.CallChain, pack.Tests)
+		t.Fatalf("published relationship or source-seed category order was lost: relationships=%#v tests=%#v", pack.CallChain, pack.Tests)
+	}
+}
+
+func TestBuildContextSortsCallChainByPublishedFields(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Kind: "route", Name: "GET /users", HTTPMethod: "GET", Path: "/users", File: "route.go", Confidence: "EXACT"},
+			{ID: "z", Kind: "symbol", Name: "z-neighbor", File: "z.go"},
+			{ID: "a", Kind: "symbol", Name: "a-neighbor", File: "a.go"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "fallback-labels", FromFactID: "route", ToFactID: "z", Kind: "call"},
+			{ID: "explicit-labels", FromFactID: "route", ToFactID: "a", FromLabel: "A", ToLabel: "a-neighbor", Kind: "call"},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /users"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.CallChain) != 2 || pack.CallChain[0].From != "A" ||
+		pack.CallChain[1].From != "GET /users" {
+		t.Fatalf("call chain is not canonical by published fields: %#v", pack.CallChain)
 	}
 }
 
@@ -349,6 +372,31 @@ func TestBuildContextScopesCoverageAndFallsBackWhenAllSelectedScopesFail(t *test
 	if !pack.FallbackRequired || len(pack.Uncertainties) != 1 ||
 		pack.Uncertainties[0].Scope != "users/routes" {
 		t.Fatalf("scoped fallback = %#v", pack)
+	}
+}
+
+func TestBuildContextUnmappedAuthenticationPreventsAllIncompleteFallback(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "app", Kind: "route", Name: "GET /users", HTTPMethod: "GET", Path: "/users", File: "route.go", Confidence: "EXACT"},
+			{ID: "auth", Project: "app", Kind: "authentication", Name: "authenticated", File: "security.go", Confidence: "EXACT"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "auth-edge", Project: "app", FromFactID: "route", ToFactID: "auth",
+			FromLabel: "GET /users", ToLabel: "authenticated", Kind: "authentication",
+		}},
+		Coverage: []scan.AgentContextCoverageRecord{{
+			Project: "app", Capability: "routes", Coverage: "FAILED", Reason: "route parser failed",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /users"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.CallChain) != 1 {
+		t.Fatalf("unmapped retained authentication was treated as failed coverage: %#v", pack)
 	}
 }
 
@@ -427,6 +475,101 @@ func TestBuildContextAccountsForFinalConfidenceDuringBudgetProbes(t *testing.T) 
 		if pack.EstimatedTokens > request.BudgetTokens {
 			t.Fatalf("evidence length %d exceeded budget: %#v", evidenceLength, pack)
 		}
+	}
+}
+
+func TestBuildContextDropsOptionalRelationshipAtExactConfidenceBoundary(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Kind: "route", Name: "GET /users", HTTPMethod: "GET", Path: "/users", File: "users.go", Confidence: "EXACT"},
+			{ID: "handler", Kind: "symbol", Name: "handler", File: "users.go", Confidence: "EXACT"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "edge", FromFactID: "route", ToFactID: "handler",
+			FromLabel: "route", ToLabel: "handler", Kind: "call",
+			Reason: strings.Repeat("r", 561),
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /users", BudgetTokens: 256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Confidence != "EXACT" || pack.EstimatedTokens > 256 || len(pack.CallChain) != 0 {
+		t.Fatalf("exact boundary pack retained oversized optional relationship: %#v", pack)
+	}
+}
+
+func TestBuildContextCompactsEvidenceAtMediumConfidenceBoundary(t *testing.T) {
+	evidenceIDs := make([]string, 14)
+	for index := range evidenceIDs {
+		evidenceIDs[index] = fmt.Sprintf("evidence:%032x", index)
+	}
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "seed", Kind: "persistence", Name: "operationxxxxxxxxxxxxxx",
+			Qualified: "abcdefghijklmnop", Search: "delete users", File: "repo.go",
+			EvidenceIDs: evidenceIDs,
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "delete users", BudgetTokens: 256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Confidence != "MEDIUM" || pack.EstimatedTokens > 256 || len(pack.Entrypoints) != 1 {
+		t.Fatalf("medium boundary pack = %#v", pack)
+	}
+	if len(pack.Entrypoints[0].EvidenceIDs) != len(evidenceIDs) {
+		t.Fatalf("medium boundary retained %d evidence IDs, want pre-fix full list", len(pack.Entrypoints[0].EvidenceIDs))
+	}
+}
+
+func TestBuildContextPreservesLargestFittingEvidencePrefix(t *testing.T) {
+	evidenceIDs := make([]string, 30)
+	for index := range evidenceIDs {
+		evidenceIDs[index] = fmt.Sprintf("evidence:%032x", index)
+	}
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "route", Kind: "route", Name: "GET /users", HTTPMethod: "GET", Path: "/users",
+			File: "users.go", Confidence: "EXACT", EvidenceIDs: evidenceIDs,
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /users", BudgetTokens: 256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained := pack.Entrypoints[0].EvidenceIDs
+	if len(retained) == 0 || len(retained) >= len(evidenceIDs) ||
+		!reflect.DeepEqual(retained, evidenceIDs[:len(retained)]) {
+		t.Fatalf("evidence prefix was not preserved deterministically: %#v", retained)
+	}
+	candidate := cloneContextPack(pack)
+	candidate.Entrypoints[0].EvidenceIDs = append(candidate.Entrypoints[0].EvidenceIDs, evidenceIDs[len(retained)])
+	candidate, err = finalizeContextEstimate(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.EstimatedTokens <= 256 {
+		t.Fatalf("retained evidence prefix was not maximal: current=%d candidate=%d", pack.EstimatedTokens, candidate.EstimatedTokens)
+	}
+}
+
+func TestScopedContextUncertaintiesIgnoreUnknownCoverage(t *testing.T) {
+	uncertainties, allIncomplete := scopedContextUncertainties(
+		[]scan.AgentContextCoverageRecord{
+			{Project: "app", Capability: "routes", Coverage: "UNKNOWN", Reason: "future value"},
+			{Project: "app", Capability: "tests", Coverage: "", Reason: "missing value"},
+		},
+		map[string]bool{"app\x00routes": true, "app\x00tests": true},
+	)
+	if allIncomplete || len(uncertainties) != 0 {
+		t.Fatalf("unknown coverage was treated as explicit failure: allIncomplete=%v uncertainties=%#v", allIncomplete, uncertainties)
 	}
 }
 

@@ -47,15 +47,27 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		return fallbackContextPack(index, request, "no sufficiently relevant context fact found", nil)
 	}
 
+	top := seeds[0]
 	pack, err := newContextEnvelope(index, request)
 	if err != nil {
 		return ContextPack{}, err
+	}
+	pack.Confidence = contextPackConfidence(top, false)
+	pack, err = finalizeContextEstimate(pack)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	if pack.EstimatedTokens > request.BudgetTokens {
+		return ContextPack{}, fmt.Errorf(
+			"context envelope requires %d tokens, exceeding budget %d",
+			pack.EstimatedTokens,
+			request.BudgetTokens,
+		)
 	}
 	includedFactIDs := map[string]bool{}
 	acceptedEdgeIDs := map[string]bool{}
 	retainedSeeds := make([]rankedContextFact, 0, len(seeds))
 
-	top := seeds[0]
 	pack, added, err := tryAddContextLocation(
 		pack,
 		request,
@@ -68,23 +80,6 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	)
 	if err != nil {
 		return ContextPack{}, err
-	}
-	if !added {
-		compacted := top.fact
-		compacted.EvidenceIDs = nil
-		pack, added, err = tryAddContextLocation(
-			pack,
-			request,
-			compacted,
-			top.reason,
-			"entrypoint",
-			func(candidate *ContextPack, location ContextLocation) {
-				candidate.Entrypoints = append(candidate.Entrypoints, location)
-			},
-		)
-		if err != nil {
-			return ContextPack{}, err
-		}
 	}
 	if !added {
 		return fallbackContextPack(index, request, "top context fact exceeds the requested budget", nil)
@@ -142,6 +137,7 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			includedFactIDs[to.ID] = true
 		}
 	}
+	sortContextRelationships(pack.CallChain)
 
 	seedIDs := map[string]bool{}
 	for _, seed := range retainedSeeds {
@@ -551,11 +547,40 @@ func tryAddContextLocation(
 	role string,
 	appendLocation func(*ContextPack, ContextLocation),
 ) (ContextPack, bool, error) {
-	location := contextLocation(fact, reason)
-	return tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
-		appendLocation(candidate, location)
-		return mergeContextFile(candidate, contextFileForFact(fact, role, reason), request.MaxFiles)
-	})
+	evidenceIDs := sortedContextStrings(fact.EvidenceIDs)
+	low := 0
+	high := len(evidenceIDs)
+	best := pack
+	found := false
+	for low <= high {
+		count := low + (high-low)/2
+		compacted := fact
+		compacted.EvidenceIDs = append([]string(nil), evidenceIDs[:count]...)
+		location := contextLocation(compacted, reason)
+		candidate, accepted, err := tryContextPack(
+			pack,
+			request.BudgetTokens,
+			func(candidate *ContextPack) bool {
+				appendLocation(candidate, location)
+				return mergeContextFile(
+					candidate,
+					contextFileForFact(compacted, role, reason),
+					request.MaxFiles,
+				)
+			},
+		)
+		if err != nil {
+			return ContextPack{}, false, err
+		}
+		if accepted {
+			best = candidate
+			found = true
+			low = count + 1
+			continue
+		}
+		high = count - 1
+	}
+	return best, found, nil
 }
 
 func contextLocation(fact scan.AgentContextFactRecord, reason string) ContextLocation {
@@ -681,9 +706,12 @@ func selectedContextScopes(
 	scopes := map[string]bool{}
 	for factID := range includedFactIDs {
 		fact := factByID[factID]
-		if capability := contextCapabilityForKind(fact.Kind); capability != "" {
-			scopes[fact.Project+"\x00"+capability] = true
+		capability := contextCapabilityForKind(fact.Kind)
+		if capability == "" {
+			scopes[fact.Project+"\x00"] = true
+			continue
 		}
+		scopes[fact.Project+"\x00"+capability] = true
 	}
 	for _, edge := range edges {
 		if !acceptedEdgeIDs[edge.ID] {
@@ -748,11 +776,17 @@ func scopedContextUncertainties(
 			continue
 		}
 		state := states[key]
-		state.has = true
-		if strings.EqualFold(record.Coverage, "COMPLETE") {
+		switch strings.ToUpper(strings.TrimSpace(record.Coverage)) {
+		case "COMPLETE":
+			state.has = true
 			state.complete = true
-		} else if state.record.Coverage == "" {
-			state.record = record
+		case "PARTIAL", "UNAVAILABLE", "FAILED":
+			state.has = true
+			if state.record.Coverage == "" {
+				state.record = record
+			}
+		default:
+			continue
 		}
 		states[key] = state
 	}
@@ -776,6 +810,24 @@ func scopedContextUncertainties(
 		})
 	}
 	return uncertainties, allIncomplete
+}
+
+func sortContextRelationships(values []ContextRelationship) {
+	sort.Slice(values, func(i, j int) bool {
+		if values[i].From != values[j].From {
+			return values[i].From < values[j].From
+		}
+		if values[i].To != values[j].To {
+			return values[i].To < values[j].To
+		}
+		if values[i].Kind != values[j].Kind {
+			return values[i].Kind < values[j].Kind
+		}
+		if values[i].Reason != values[j].Reason {
+			return values[i].Reason < values[j].Reason
+		}
+		return values[i].Confidence < values[j].Confidence
+	})
 }
 
 func sortContextFiles(values []ContextFile) {
