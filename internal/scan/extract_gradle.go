@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -30,6 +31,15 @@ func parseGradleMetadata(filePath, body string) (GradlePackageRecord, []string) 
 	sanitized := sanitizeGradleLexical(body)
 	record.Group, limitations = resolveGradleAssignments(filePath, "group", gradleGroupAssignmentRE.FindAllStringSubmatch(sanitized, -1), limitations)
 	record.Artifact, limitations = resolveGradleAssignments(filePath, "artifact", gradleArtifactAssignmentRE.FindAllStringSubmatch(sanitized, -1), limitations)
+	if record.Artifact == "" {
+		if artifact := derivedGradleSubprojectArtifact(filePath); artifact != "" {
+			record.Artifact = artifact
+			limitations = append(
+				limitations,
+				filePath+": Gradle artifact derived from build file directory; settings project renames are not statically resolved",
+			)
+		}
+	}
 	for _, match := range gradleDependencyStatementRE.FindAllStringSubmatch(sanitized, -1) {
 		coordinate, ok := literalGradleValue(match[2])
 		if !ok {
@@ -57,6 +67,20 @@ func parseGradleMetadata(filePath, body string) (GradlePackageRecord, []string) 
 		return record.Dependencies[i].Scope < record.Dependencies[j].Scope
 	})
 	return record, limitations
+}
+
+func derivedGradleSubprojectArtifact(filePath string) string {
+	normalized := strings.Trim(strings.ReplaceAll(filePath, "\\", "/"), "/")
+	switch path.Base(normalized) {
+	case "build.gradle", "build.gradle.kts":
+	default:
+		return ""
+	}
+	root := path.Dir(normalized)
+	if root == "." || root == "" {
+		return ""
+	}
+	return path.Base(root)
 }
 
 func resolveGradleAssignments(filePath, kind string, matches [][]string, limitations []string) (string, []string) {

@@ -99,6 +99,79 @@ dependencies {
 	}
 }
 
+func TestGradleMultiModuleDerivesPartialSubprojectProvenance(t *testing.T) {
+	var workspace WorkspaceIndex
+	mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+		FileRecord{Path: "settings.gradle"},
+		`rootProject.name = "platform"
+include("users-api", "orders-api")`,
+	))
+	mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+		FileRecord{Path: "users-api/build.gradle"},
+		`group = "com.weka"`,
+	))
+	mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+		FileRecord{Path: "orders-api/build.gradle"},
+		`group = "com.weka"
+dependencies {
+    implementation("com.weka:users-api:1.0")
+}`,
+	))
+
+	providerBody := `package com.weka.users.api;
+
+public class UserService {}
+`
+	consumerBody := `package com.weka.orders;
+
+import com.weka.users.api.UserService;
+
+class OrderService {
+    UserService users;
+}
+`
+	sources := []JavaSourceRecord{
+		extractJavaSource(FileRecord{
+			Path:     "users-api/src/main/java/com/weka/users/api/UserService.java",
+			Language: "java",
+		}, providerBody),
+		extractJavaSource(FileRecord{
+			Path:     "orders-api/src/main/java/com/weka/orders/OrderService.java",
+			Language: "java",
+		}, consumerBody),
+	}
+	facts := ExtractJavaProjectSymbolFacts(sources, map[string]string{
+		sources[0].File: providerBody,
+		sources[1].File: consumerBody,
+	}, workspace)
+
+	provider := assertRichDeclaration(
+		t,
+		facts.Declarations,
+		"class",
+		"com.weka.users.api.UserService",
+		"com.weka:users-api",
+	)
+	if provider.Coverage != CoveragePartial || len(provider.Limitations) == 0 {
+		t.Fatalf("derived Gradle provider provenance = %#v, want partial with limitation", provider)
+	}
+	consumer := assertRichDeclaration(
+		t,
+		facts.Declarations,
+		"class",
+		"com.weka.orders.OrderService",
+		"com.weka:orders-api",
+	)
+	if consumer.Coverage != CoveragePartial || len(consumer.Limitations) == 0 {
+		t.Fatalf("derived Gradle consumer provenance = %#v, want partial with limitation", consumer)
+	}
+	reference := assertJavaReference(t, facts.References, "imports_type", "com.weka.users.api.UserService", 3)
+	wantEvidence := []string{"gradle:com.weka:orders-api -> com.weka:users-api"}
+	if !reflect.DeepEqual(reference.DependencyEvidence, wantEvidence) {
+		t.Fatalf("multi-module Gradle dependency evidence = %#v, want %#v", reference.DependencyEvidence, wantEvidence)
+	}
+}
+
 func TestGradleInterpolationAndUnknownCallsStayUnresolved(t *testing.T) {
 	body := `group = "com.${tenant}"
 rootProject.name = "$service-api"
