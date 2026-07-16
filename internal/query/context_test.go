@@ -105,6 +105,69 @@ func TestRenderContextMarkdownNormalizesInlineValuesAndRanges(t *testing.T) {
 	}
 }
 
+func TestRenderContextMarkdownNeutralizesControlsAndSkipsEmptyRecords(t *testing.T) {
+	pack := agent.ContextPack{
+		Query:      "delete\x00users\x1b[2J",
+		Freshness:  "fresh\x07alert",
+		Confidence: "EXACT",
+		Entrypoints: []agent.ContextLocation{
+			{},
+			{
+				Kind: "route", Label: "GET\x08/users", Project: "api\x1b[31m",
+				File: "route\x7f.go", Reason: "exact\x00route",
+			},
+		},
+		CallChain: []agent.ContextRelationship{
+			{},
+			{From: "GET\x1b]52;c;YQ==\x07/users", To: "handler", Kind: "call"},
+		},
+		Files: []agent.ContextFile{
+			{},
+			{Path: "route\x00.go", Role: "entrypoint", Reason: "exact\x07route"},
+		},
+		Uncertainties: []agent.ContextUncertainty{
+			{},
+			{Scope: "api\x1b[2J/routes", Reason: "partial\x08coverage"},
+		},
+		BudgetTokens: 1800,
+	}
+
+	body := RenderContextMarkdown(pack)
+	for _, forbidden := range []string{"\x00", "\x07", "\x08", "\x1b", "\x7f"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("markdown retained control %q:\n%q", forbidden, body)
+		}
+	}
+	for _, malformed := range []string{"\n- \n", "\n- ``\n", "\n-  ----> \n"} {
+		if strings.Contains(body, malformed) {
+			t.Fatalf("markdown contains malformed record %q:\n%s", malformed, body)
+		}
+	}
+	if strings.Count(body, "## Entrypoints") != 1 ||
+		strings.Count(body, "## Call chain") != 1 ||
+		strings.Count(body, "## Files to inspect") != 1 ||
+		strings.Count(body, "## Uncertainties") != 1 {
+		t.Fatalf("meaningful records did not retain their sections:\n%s", body)
+	}
+
+	emptyBody := RenderContextMarkdown(agent.ContextPack{
+		Entrypoints: []agent.ContextLocation{{}},
+		CallChain:   []agent.ContextRelationship{{}},
+		Files:       []agent.ContextFile{{}},
+		Uncertainties: []agent.ContextUncertainty{{
+			Scope: "", Reason: "",
+		}},
+		BudgetTokens: 1800,
+	})
+	for _, heading := range []string{
+		"## Entrypoints", "## Call chain", "## Files to inspect", "## Uncertainties",
+	} {
+		if strings.Contains(emptyBody, heading) {
+			t.Fatalf("empty record emitted %q:\n%s", heading, emptyBody)
+		}
+	}
+}
+
 func TestRunContextReturnsBarePrettyJSONWithSeparateByteGates(t *testing.T) {
 	root := writeQueryContextIndex(t, simpleContextIndex())
 

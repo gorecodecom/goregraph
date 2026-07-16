@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/gorecodecom/goregraph/internal/agent"
 )
@@ -56,39 +57,65 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 
 	lines = appendContextLocationSection(lines, "Entrypoints", pack.Entrypoints)
 	if len(pack.CallChain) > 0 {
-		lines = append(lines, "", "## Call chain")
+		entries := make([]string, 0, len(pack.CallChain))
 		for _, relationship := range pack.CallChain {
+			if !contextRelationshipHasContent(relationship) {
+				continue
+			}
 			entry := fmt.Sprintf("- %s --%s--> %s",
 				contextInline(relationship.From),
 				contextInline(relationship.Kind),
 				contextInline(relationship.To),
 			)
 			entry = appendContextDetails(entry, relationship.Confidence, relationship.Reason, nil)
-			lines = append(lines, entry)
+			entries = append(entries, entry)
+		}
+		if len(entries) > 0 {
+			lines = append(lines, "", "## Call chain")
+			lines = append(lines, entries...)
 		}
 	}
 	lines = appendContextLocationSection(lines, "Contracts", pack.Contracts)
 	lines = appendContextLocationSection(lines, "Persistence", pack.Persistence)
 	lines = appendContextLocationSection(lines, "Tests", pack.Tests)
 	if len(pack.Files) > 0 {
-		lines = append(lines, "", "## Files to inspect")
+		entries := make([]string, 0, len(pack.Files))
 		for _, file := range pack.Files {
+			if contextInline(file.Path) == "" {
+				continue
+			}
 			entry := "- " + contextCodeReference(file.Project, file.Path, file.StartLine, file.EndLine)
 			entry = appendContextDetails(entry, file.Confidence, file.Reason, nil)
 			if role := contextInline(file.Role); role != "" {
 				entry += " — " + role
 			}
-			lines = append(lines, entry)
+			entries = append(entries, entry)
+		}
+		if len(entries) > 0 {
+			lines = append(lines, "", "## Files to inspect")
+			lines = append(lines, entries...)
 		}
 	}
 	if len(pack.Uncertainties) > 0 {
-		lines = append(lines, "", "## Uncertainties")
+		entries := make([]string, 0, len(pack.Uncertainties))
 		for _, uncertainty := range pack.Uncertainties {
-			entry := "- " + contextInline(uncertainty.Scope)
-			if reason := contextInline(uncertainty.Reason); reason != "" {
-				entry += " — " + reason
+			scope := contextInline(uncertainty.Scope)
+			reason := contextInline(uncertainty.Reason)
+			if scope == "" && reason == "" {
+				continue
 			}
-			lines = append(lines, entry)
+			entry := "- " + scope
+			if reason != "" {
+				if scope != "" {
+					entry += " — "
+				}
+				entry += reason
+			}
+			entries = append(entries, entry)
+		}
+		if len(entries) > 0 {
+			lines = append(lines, "", "## Uncertainties")
+			lines = append(lines, entries...)
 		}
 	}
 	if pack.FallbackRequired || pack.FallbackReason != "" {
@@ -108,22 +135,45 @@ func appendContextLocationSection(
 	if len(locations) == 0 {
 		return lines
 	}
-	lines = append(lines, "", "## "+heading)
+	entries := make([]string, 0, len(locations))
 	for _, location := range locations {
-		entry := "- " + contextInline(location.Kind)
-		if label := contextInline(location.Label); label != "" {
-			entry += " " + label
+		kind := contextInline(location.Kind)
+		label := contextInline(location.Label)
+		file := contextInline(location.File)
+		if kind == "" && label == "" {
+			label = contextInline(location.ID)
 		}
-		if location.File != "" {
+		if kind == "" && label == "" && file == "" &&
+			contextInline(location.Confidence) == "" &&
+			contextInline(location.Reason) == "" &&
+			len(contextEvidenceValues(location.EvidenceIDs)) == 0 {
+			continue
+		}
+		entry := "- "
+		switch {
+		case kind != "" && label != "":
+			entry += kind + " " + label
+		case kind != "":
+			entry += kind
+		case label != "":
+			entry += label
+		default:
+			entry += "context"
+		}
+		if file != "" {
 			entry += " — " + contextCodeReference(
 				location.Project,
-				location.File,
+				file,
 				location.Line,
 				location.EndLine,
 			)
 		}
 		entry = appendContextDetails(entry, location.Confidence, location.Reason, location.EvidenceIDs)
-		lines = append(lines, entry)
+		entries = append(entries, entry)
+	}
+	if len(entries) > 0 {
+		lines = append(lines, "", "## "+heading)
+		lines = append(lines, entries...)
 	}
 	return lines
 }
@@ -135,18 +185,28 @@ func appendContextDetails(entry, confidence, reason string, evidenceIDs []string
 	if reason = contextInline(reason); reason != "" {
 		entry += " — " + reason
 	}
-	if len(evidenceIDs) > 0 {
-		values := make([]string, 0, len(evidenceIDs))
-		for _, evidenceID := range evidenceIDs {
-			if value := contextInline(evidenceID); value != "" {
-				values = append(values, value)
-			}
-		}
-		if len(values) > 0 {
-			entry += " — evidence: " + strings.Join(values, ", ")
-		}
+	if values := contextEvidenceValues(evidenceIDs); len(values) > 0 {
+		entry += " — evidence: " + strings.Join(values, ", ")
 	}
 	return entry
+}
+
+func contextEvidenceValues(evidenceIDs []string) []string {
+	values := make([]string, 0, len(evidenceIDs))
+	for _, evidenceID := range evidenceIDs {
+		if value := contextInline(evidenceID); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func contextRelationshipHasContent(relationship agent.ContextRelationship) bool {
+	return contextInline(relationship.From) != "" ||
+		contextInline(relationship.To) != "" ||
+		contextInline(relationship.Kind) != "" ||
+		contextInline(relationship.Reason) != "" ||
+		contextInline(relationship.Confidence) != ""
 }
 
 func contextCodeReference(project, path string, startLine, endLine int) string {
@@ -166,6 +226,12 @@ func contextCodeReference(project, path string, startLine, endLine int) string {
 }
 
 func contextInline(value string) string {
+	value = strings.Map(func(current rune) rune {
+		if unicode.IsControl(current) {
+			return ' '
+		}
+		return current
+	}, value)
 	value = strings.Join(strings.Fields(value), " ")
 	return strings.ReplaceAll(value, "`", "'")
 }
