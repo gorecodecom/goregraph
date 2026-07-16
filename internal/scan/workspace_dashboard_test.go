@@ -2,6 +2,7 @@ package scan
 
 import (
 	"encoding/json"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -394,7 +395,7 @@ func TestWorkspaceDashboardCodeExplorerPreservesUsageDirectionAndMatrixFocus(t *
 	)
 
 	for _, want := range []string{
-		`symbolUsageRecords.forEach(function(usage){if(usage.category!=="reached_through_api")return;const consumer=usage.consumer_symbol_id`,
+		`symbolUsageRecords.forEach(function(usage){if(usage.transport!=="http"||!["reached_through_api","ambiguous","unresolved"].includes(usage.category))return;const consumer=usage.consumer_symbol_id`,
 		`architectureSelectionOrigin:"graph"`,
 		`architectureReturnFocus:null`,
 		`state.architectureSelectionOrigin="matrix-service"`,
@@ -410,17 +411,90 @@ func TestWorkspaceDashboardCodeExplorerPreservesUsageDirectionAndMatrixFocus(t *
 		}
 	}
 
-	consumerIndexStart := strings.Index(html, `symbolUsageRecords.forEach(function(usage){if(usage.category!=="reached_through_api")return;const consumer=usage.consumer_symbol_id`)
+	consumerIndexStart := strings.Index(html, `symbolUsageRecords.forEach(function(usage){if(usage.transport!=="http"||!["reached_through_api","ambiguous","unresolved"].includes(usage.category))return;const consumer=usage.consumer_symbol_id`)
 	if consumerIndexStart < 0 {
-		t.Fatal("dashboard must index consumer-side usages only after the outbound API category guard")
+		t.Fatal("dashboard must index consumer-side usages only after the outbound HTTP category guard")
 	}
 	consumerIndexEnd := strings.Index(html[consumerIndexStart:], `});`)
 	if consumerIndexEnd < 0 {
-		t.Fatal("dashboard must index consumer-side usages only after the outbound API category guard")
+		t.Fatal("dashboard must index consumer-side usages only after the outbound HTTP category guard")
 	}
 	consumerIndex := html[consumerIndexStart : consumerIndexStart+consumerIndexEnd]
 	if !strings.Contains(consumerIndex, `records.push(usage)`) {
-		t.Fatal("dashboard must retain outbound API usages for the consumer symbol")
+		t.Fatal("dashboard must retain outbound HTTP usages for the consumer symbol")
+	}
+}
+
+func TestWorkspaceDashboardCodeExplorerIncludesOnlyOutboundHTTPConsumerUsages(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for embedded Code Explorer model tests")
+	}
+
+	usages := []CanonicalSymbolUsageRecord{
+		{ID: "usage:http-exact", ProviderSymbolID: "symbol:backend", ConsumerProject: "frontend/app", ConsumerSymbolID: "symbol:frontend", Category: SymbolUsageReachedThroughAPI, Transport: "http"},
+		{ID: "usage:http-ambiguous", ProviderSymbolID: "symbol:backend-a", ConsumerProject: "frontend/app", ConsumerSymbolID: "symbol:frontend", Category: SymbolUsageAmbiguous, CandidateSymbolIDs: []string{"symbol:backend-a", "symbol:backend-b"}, Transport: "http"},
+		{ID: "usage:http-unresolved", ConsumerProject: "frontend/app", ConsumerSymbolID: "symbol:frontend", Category: SymbolUsageUnresolved, Transport: "http"},
+		{ID: "usage:direct-call", ProviderSymbolID: "symbol:backend", ConsumerProject: "frontend/app", ConsumerSymbolID: "symbol:frontend", Category: SymbolUsageDirectReference},
+		{ID: "usage:ambiguous-import", ProviderSymbolID: "symbol:backend-a", ConsumerProject: "frontend/app", ConsumerSymbolID: "symbol:frontend", Category: SymbolUsageAmbiguous, CandidateSymbolIDs: []string{"symbol:backend-a", "symbol:backend-b"}},
+	}
+	encodedUsages, err := json.Marshal(usages)
+	if err != nil {
+		t.Fatalf("encode Code Explorer usage fixture: %v", err)
+	}
+	section := func(start, end string) string {
+		t.Helper()
+		from := strings.Index(workspaceDashboardScript, start)
+		if from < 0 {
+			t.Fatalf("dashboard script missing section start %q", start)
+		}
+		to := strings.Index(workspaceDashboardScript[from:], end)
+		if to < 0 {
+			t.Fatalf("dashboard script missing section end %q", end)
+		}
+		return workspaceDashboardScript[from : from+to]
+	}
+	source := strings.Join([]string{
+		`const symbolUsageRecords=` + string(encodedUsages) + `;`,
+		section("const symbolUsagesByProvider=new Map();", "const state="),
+		`const state={codeTab:"all"};`,
+		section("function codeUsagesForSymbol(symbolID)", "function codeUsageCounts(symbolID)"),
+		section("function codeUsageCounts(symbolID)", "function codeSameNameNote(symbol)"),
+		section("function codeTabMatches(usage,tab)", "function codeUsageMatchesFilters(usage)"),
+		section("function codeTabsHTML(usages)", "function codeUsageRowsHTML(usages)"),
+		`const usages=codeUsagesForSymbol("symbol:frontend");`,
+		`const ids=function(tab){return usages.filter(function(usage){return codeTabMatches(usage,tab);}).map(function(usage){return usage.id;}).sort();};`,
+		`process.stdout.write(JSON.stringify({all:ids("all"),direct:ids("direct"),api:ids("api"),uncertainty:ids("uncertainty"),counts:codeUsageCounts("symbol:frontend"),hasUncertaintyTab:codeTabsHTML(usages).includes('data-code-tab="uncertainty"')}));`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Code Explorer consumer usage model failed: %v\n%s", err, output)
+	}
+	var result struct {
+		All         []string `json:"all"`
+		Direct      []string `json:"direct"`
+		API         []string `json:"api"`
+		Uncertainty []string `json:"uncertainty"`
+		Counts      struct {
+			Direct int `json:"directCount"`
+			API    int `json:"apiCount"`
+		} `json:"counts"`
+		HasUncertaintyTab bool `json:"hasUncertaintyTab"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("decode Code Explorer consumer usage result: %v\n%s", err, output)
+	}
+	if got := strings.Join(result.All, ","); got != "usage:http-ambiguous,usage:http-exact,usage:http-unresolved" {
+		t.Fatalf("all consumer usages = %q, want only exact, ambiguous, and unresolved HTTP evidence", got)
+	}
+	if len(result.Direct) != 0 || result.Counts.Direct != 0 {
+		t.Fatalf("consumer-side direct import/call leaked into incoming direct references: %#v", result)
+	}
+	if got := strings.Join(result.API, ","); got != "usage:http-exact" || result.Counts.API != 1 {
+		t.Fatalf("exact API tab/count = %q/%d, want one proven HTTP reachability usage", got, result.Counts.API)
+	}
+	if got := strings.Join(result.Uncertainty, ","); got != "usage:http-ambiguous,usage:http-unresolved" || !result.HasUncertaintyTab {
+		t.Fatalf("HTTP uncertainty tab = %q, visible=%v", got, result.HasUncertaintyTab)
 	}
 }
 
