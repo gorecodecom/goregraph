@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -209,6 +210,8 @@ func TestWorkspaceRefreshTargetsPreserveUnselectedProjection(t *testing.T) {
 	workspace, projects := writeWorkspaceBuildFixture(t)
 	buildWorkspaceProjects(t, workspace, projects, BuildTargetAll)
 	layout := NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace"))
+	var before OutputManifest
+	readJSON(t, layout.Manifest, &before)
 	dashboard := layout.Dashboard("workspace-map.html")
 	agent := layout.Agent("agent-guide.md")
 	dashboardTime := time.Unix(1_700_000_100, 0)
@@ -227,6 +230,19 @@ func TestWorkspaceRefreshTargetsPreserveUnselectedProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertOutputModTime(t, dashboard, dashboardTime)
+	var afterAgentRefresh OutputManifest
+	readJSON(t, layout.Manifest, &afterAgentRefresh)
+	if !afterAgentRefresh.Dashboard.Complete {
+		t.Fatalf("dashboard status was not preserved: %#v", afterAgentRefresh.Dashboard)
+	}
+	if strings.Join(afterAgentRefresh.Dashboard.Files, "\n") != strings.Join(before.Dashboard.Files, "\n") {
+		t.Fatalf("dashboard files changed:\nbefore=%v\nafter=%v", before.Dashboard.Files, afterAgentRefresh.Dashboard.Files)
+	}
+	for _, name := range []string{"index/symbol-index.json", "index/symbol-usages.json"} {
+		if !containsGeneratedFile(afterAgentRefresh.Index.Files, name) {
+			t.Fatalf("preserved dashboard index file %q missing from %v", name, afterAgentRefresh.Index.Files)
+		}
+	}
 	if err := os.Chtimes(agent, agentTime, agentTime); err != nil {
 		t.Fatal(err)
 	}
@@ -235,6 +251,117 @@ func TestWorkspaceRefreshTargetsPreserveUnselectedProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertOutputModTime(t, agent, agentTime)
+}
+
+func TestWorkspaceReconcileRepublishesAffectedProjectManifests(t *testing.T) {
+	workspace, projects := writeWorkspaceBuildFixture(t)
+	buildWorkspaceProjects(t, workspace, projects, BuildTargetAll)
+	projectLayout := NewProjectOutputLayout(filepath.Join(projects[0], config.Defaults().OutputDir))
+	var before OutputManifest
+	readJSON(t, projectLayout.Manifest, &before)
+	oldTime := time.Unix(1_600_000_000, 0)
+	if err := os.Chtimes(projectLayout.Manifest, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Workspace = true
+	cfg.WorkspaceRoot = workspace
+
+	registry, err := ReconcileWorkspaceTarget(projects[0], cfg, BuildTargetAgent)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	var after OutputManifest
+	readJSON(t, projectLayout.Manifest, &after)
+	if after.Index.GeneratedAt != registry.Generated {
+		t.Fatalf("project index generated_at = %q, want reconciliation time %q", after.Index.GeneratedAt, registry.Generated)
+	}
+	if after.Dashboard.GeneratedAt != before.Dashboard.GeneratedAt {
+		t.Fatalf("unselected dashboard generated_at changed from %q to %q", before.Dashboard.GeneratedAt, after.Dashboard.GeneratedAt)
+	}
+	manifestInfo, err := os.Stat(projectLayout.Manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlayInfo, err := os.Stat(projectLayout.Index("workspace-graph.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifestInfo.ModTime().Before(overlayInfo.ModTime()) {
+		t.Fatalf("project manifest modification time %v precedes reconciled overlay %v", manifestInfo.ModTime(), overlayInfo.ModTime())
+	}
+	if manifestInfo.ModTime().Equal(oldTime) {
+		t.Fatalf("project manifest was not republished after reconciliation")
+	}
+}
+
+func TestFailedSelectedProjectionRewritePublishesIncompleteManifest(t *testing.T) {
+	t.Run("project", func(t *testing.T) {
+		root := writeBuildFixture(t)
+		cfg := config.Defaults()
+		cfg.Workspace = false
+		if _, err := RunBuild(root, cfg, BuildTargetAll); err != nil {
+			t.Fatal(err)
+		}
+		restore := replaceProjectionWriteHookForTest(func(scope, projection string) error {
+			if scope == "project" && projection == "dashboard" {
+				return errors.New("injected dashboard write failure")
+			}
+			return nil
+		})
+		defer restore()
+
+		if _, err := RunBuild(root, cfg, BuildTargetDashboard); err == nil {
+			t.Fatal("project build succeeded despite injected selected projection failure")
+		}
+
+		var manifest OutputManifest
+		readJSON(t, NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir)).Manifest, &manifest)
+		if manifest.Dashboard.Complete {
+			t.Fatalf("failed dashboard rewrite left an old complete status: %#v", manifest.Dashboard)
+		}
+		if !manifest.Agent.Complete {
+			t.Fatalf("valid unselected agent projection was not preserved: %#v", manifest.Agent)
+		}
+	})
+
+	t.Run("workspace", func(t *testing.T) {
+		workspace, projects := writeWorkspaceBuildFixture(t)
+		buildWorkspaceProjects(t, workspace, projects, BuildTargetAll)
+		restore := replaceProjectionWriteHookForTest(func(scope, projection string) error {
+			if scope == "workspace" && projection == "agent" {
+				return errors.New("injected workspace agent write failure")
+			}
+			return nil
+		})
+		defer restore()
+		cfg := config.Defaults()
+		cfg.Workspace = true
+		cfg.WorkspaceRoot = workspace
+
+		if _, err := ReconcileWorkspaceTarget(projects[0], cfg, BuildTargetAgent); err == nil {
+			t.Fatal("workspace refresh succeeded despite injected selected projection failure")
+		}
+
+		var manifest OutputManifest
+		readJSON(t, NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace")).Manifest, &manifest)
+		if manifest.Agent.Complete {
+			t.Fatalf("failed workspace agent rewrite left an old complete status: %#v", manifest.Agent)
+		}
+		if !manifest.Dashboard.Complete {
+			t.Fatalf("valid unselected workspace dashboard was not preserved: %#v", manifest.Dashboard)
+		}
+	})
+}
+
+func containsGeneratedFile(files []string, want string) bool {
+	for _, name := range files {
+		if name == want {
+			return true
+		}
+	}
+	return false
 }
 
 func assertOutputModTime(t *testing.T, path string, want time.Time) {

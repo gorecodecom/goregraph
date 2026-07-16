@@ -322,10 +322,61 @@ func checkWorkspace(root string, result *Result) {
 		return
 	}
 	checkGeneratedFiles(out, manifest, result)
+	checkWorkspaceJSONFiles(out, manifest.Index.Files, result)
 	if manifest.Dashboard.Complete {
 		checkWorkspaceSymbolProjection(root, result)
 	}
 }
+
+func checkWorkspaceJSONFiles(out string, files []string, result *Result) {
+	for _, name := range files {
+		canonical := filepath.ToSlash(name)
+		if !strings.HasPrefix(canonical, "index/") || !strings.HasSuffix(canonical, ".json") {
+			continue
+		}
+		dest := workspaceJSONDestination(filepath.Base(canonical))
+		if err := readJSON(filepath.Join(out, filepath.FromSlash(canonical)), dest); err != nil {
+			result.fail("json", filepath.Base(canonical)+" invalid: "+err.Error())
+			continue
+		}
+		result.ok("json", filepath.Base(canonical)+" valid")
+	}
+}
+
+func workspaceJSONDestination(name string) any {
+	switch name {
+	case "registry.json":
+		return &scan.WorkspaceRegistryRecord{}
+	case "context.json":
+		return &scan.WorkspaceContextRecord{}
+	case "contract-matches.json":
+		return &[]scan.WorkspaceContractMatchRecord{}
+	case "feature-flows.json":
+		return &[]scan.WorkspaceFeatureFlowRecord{}
+	case "data-flows.json":
+		return &[]scan.DataFlowRecord{}
+	case "feature-dossiers.json":
+		return &[]scan.FeatureDossierRecord{}
+	case "workspace-graph.json":
+		return &scan.WorkspaceGraphRecord{}
+	case "workspace-service-map.json":
+		return &scan.WorkspaceServiceMapRecord{}
+	case "workspace-endpoint-traces.json":
+		return &scan.WorkspaceEndpointTraceIndexRecord{}
+	case "directed-traces.json":
+		return &scan.DirectedTraceIndexRecord{}
+	case "freshness.json":
+		return &scan.ArtifactFreshnessIndex{}
+	case "symbol-index.json":
+		return &scan.WorkspaceSymbolIndexRecord{}
+	case "symbol-usages.json":
+		return &scan.WorkspaceSymbolUsageIndexRecord{}
+	default:
+		return new(anyJSON)
+	}
+}
+
+type anyJSON any
 
 func legacyLayoutExists(out string) bool {
 	for _, name := range []string{"routes.json", "report.md", "workspace-map.html", "context-index.json"} {

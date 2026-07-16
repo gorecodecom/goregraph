@@ -40,6 +40,30 @@ func TestRunBuildCommandsWriteSelectedProjection(t *testing.T) {
 	}
 }
 
+func TestRunBuildListsWrittenAndPreservedProjections(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "main.go", "package main\nfunc main() {}\n")
+	var initialOut, initialErr bytes.Buffer
+	if code := Run([]string{"build", "all", root, "--no-workspace", "--no-update-gitignore"}, &initialOut, &initialErr); code != 0 {
+		t.Fatalf("initial build exit code = %d, stderr=%s", code, initialErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"build", "agent", root, "--no-workspace", "--no-update-gitignore"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Written projections: index, agent",
+		"Preserved projections: dashboard",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunBuildRejectsMissingOrUnknownTarget(t *testing.T) {
 	for _, args := range [][]string{
 		{"build"},
@@ -93,6 +117,24 @@ func TestRunUpdateAcceptsBuildTargets(t *testing.T) {
 	}
 }
 
+func TestRunScanRejectsTargetOption(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "main.go", "package main\nfunc main() {}\n")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"scan", root, "--target", "agent", "--no-update-gitignore"}, &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout=%s; stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--target is not supported by scan") {
+		t.Fatalf("error does not explain all-only scan alias:\n%s", stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "goregraph-out")); !os.IsNotExist(err) {
+		t.Fatalf("scan wrote output despite rejected target, err=%v", err)
+	}
+}
+
 func TestRunWorkspaceRefreshAcceptsBuildTargets(t *testing.T) {
 	workspace := t.TempDir()
 	writeFile(t, workspace, "frontend/web/package.json", `{"name":"web"}`)
@@ -107,6 +149,31 @@ func TestRunWorkspaceRefreshAcceptsBuildTargets(t *testing.T) {
 		code := Run([]string{"workspace", "refresh", workspace, "--target", target, "--workspace", workspace}, &stdout, &stderr)
 		if code != 0 {
 			t.Fatalf("target %s exit code = %d, stderr=%s", target, code, stderr.String())
+		}
+	}
+}
+
+func TestRunWorkspaceRefreshListsWrittenAndPreservedProjections(t *testing.T) {
+	workspace := t.TempDir()
+	writeFile(t, workspace, "frontend/web/package.json", `{"name":"web"}`)
+	writeFile(t, workspace, "services/api/go.mod", "module example.test/api\n")
+	var buildOut, buildErr bytes.Buffer
+	if code := Run([]string{"workspace", "build", "all", workspace, "--workspace", workspace, "--no-update-gitignore"}, &buildOut, &buildErr); code != 0 {
+		t.Fatalf("workspace build exit code = %d, stderr=%s", code, buildErr.String())
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "refresh", workspace, "--target", "agent", "--workspace", workspace}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("refresh exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Written projections: index, agent",
+		"Preserved projections: dashboard",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, stdout.String())
 		}
 	}
 }

@@ -125,12 +125,50 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	}
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 	workspaceFreshness := BuildWorkspaceFreshness(indexed, registry.Generated)
+	var dashboardFiles []string
+	var dashboardArtifacts workspaceDashboardArtifacts
+	if target.IncludesDashboard() {
+		dashboardArtifacts = buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, symbolIndex, symbolUsageIndex)
+		dashboardFiles = workspaceDashboardFiles(dashboardArtifacts.Assets)
+	}
 
 	if err := os.MkdirAll(workspaceOut, 0o755); err != nil {
 		return nil, err
 	}
 	layout := NewWorkspaceOutputLayout(workspaceOut)
+	previous := readCurrentOutputManifest(layout.Manifest)
+	previous.Agent = validProjectionStatus(layout.Root, previous.Agent)
+	previous.Dashboard = validProjectionStatus(layout.Root, previous.Dashboard)
+	indexFiles := workspaceIndexFiles(target)
+	if previous.Dashboard.Complete && !target.IncludesDashboard() {
+		indexFiles = mergeGeneratedPaths(indexFiles, workspaceIndexFiles(BuildTargetDashboard))
+	}
+	manifest := OutputManifest{
+		Tool:      ToolName,
+		Schema:    SchemaVersion,
+		Scope:     "workspace",
+		OutputDir: ".goregraph-workspace",
+		Index: ProjectionStatus{
+			GeneratedAt: registry.Generated,
+			Complete:    true,
+			Files:       indexFiles,
+		},
+		Agent:     previous.Agent,
+		Dashboard: previous.Dashboard,
+	}
+	if target.IncludesAgent() {
+		manifest.Agent = ProjectionStatus{GeneratedAt: registry.Generated, Complete: true, Files: prefixedGeneratedFiles("agent", AgentGeneratedFiles)}
+	}
+	if target.IncludesDashboard() {
+		manifest.Dashboard = ProjectionStatus{GeneratedAt: registry.Generated, Complete: true, Files: dashboardFiles}
+	}
+	if err := writeOutputManifestAtomic(layout.Manifest, incompleteManifestForTarget(manifest, target)); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Join(workspaceOut, "index"), 0o755); err != nil {
+		return nil, err
+	}
+	if err := projectionWriteHook("workspace", "index"); err != nil {
 		return nil, err
 	}
 	if target.IncludesDashboard() {
@@ -172,8 +210,10 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 		return nil, err
 	}
 	if target.IncludesDashboard() {
-		dashboardArtifacts := buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, symbolIndex, symbolUsageIndex)
 		if err := os.RemoveAll(filepath.Join(workspaceOut, "dashboard")); err != nil {
+			return nil, err
+		}
+		if err := projectionWriteHook("workspace", "dashboard"); err != nil {
 			return nil, err
 		}
 		if err := os.MkdirAll(filepath.Join(workspaceOut, "dashboard"), 0o755); err != nil {
@@ -205,6 +245,9 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 		if err := os.RemoveAll(filepath.Join(workspaceOut, "agent")); err != nil {
 			return nil, err
 		}
+		if err := projectionWriteHook("workspace", "agent"); err != nil {
+			return nil, err
+		}
 		if err := os.MkdirAll(filepath.Join(workspaceOut, "agent"), 0o755); err != nil {
 			return nil, err
 		}
@@ -216,6 +259,9 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	for _, project := range indexed {
 		out := filepath.Join(project.record.AbsPath, project.record.OutputDir)
 		projectLayout := NewProjectOutputLayout(out)
+		if err := publishProjectReconciliationIncomplete(projectLayout, target); err != nil {
+			return nil, err
+		}
 		projectMatches := filterWorkspaceContractMatches(project.record.Path, matches)
 		if err := writeJSON(projectLayout.Index("workspace-contract-matches.json"), projectMatches); err != nil {
 			return nil, err
@@ -252,37 +298,54 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 				return nil, err
 			}
 		}
-	}
-	previous := readCurrentOutputManifest(layout.Manifest)
-	previous.Agent = validProjectionStatus(layout.Root, previous.Agent)
-	previous.Dashboard = validProjectionStatus(layout.Root, previous.Dashboard)
-	indexFiles := workspaceIndexFiles(target)
-	if previous.Dashboard.Complete && !target.IncludesDashboard() {
-		indexFiles = mergeGeneratedPaths(indexFiles, workspaceIndexFiles(BuildTargetDashboard))
-	}
-	manifest := OutputManifest{
-		Tool:      ToolName,
-		Schema:    SchemaVersion,
-		Scope:     "workspace",
-		OutputDir: ".goregraph-workspace",
-		Index: ProjectionStatus{
-			GeneratedAt: registry.Generated,
-			Complete:    true,
-			Files:       indexFiles,
-		},
-		Agent:     previous.Agent,
-		Dashboard: previous.Dashboard,
-	}
-	if target.IncludesAgent() {
-		manifest.Agent = ProjectionStatus{GeneratedAt: registry.Generated, Complete: true, Files: prefixedGeneratedFiles("agent", AgentGeneratedFiles)}
-	}
-	if target.IncludesDashboard() {
-		manifest.Dashboard = ProjectionStatus{GeneratedAt: registry.Generated, Complete: true, Files: workspaceDashboardFiles()}
+		if err := republishReconciledProjectManifest(projectLayout, target, registry.Generated); err != nil {
+			return nil, err
+		}
 	}
 	if err := writeOutputManifestAtomic(layout.Manifest, manifest); err != nil {
 		return nil, err
 	}
 	return &registry, nil
+}
+
+func publishProjectReconciliationIncomplete(layout OutputLayout, target BuildTarget) error {
+	manifest := readCurrentOutputManifest(layout.Manifest)
+	if manifest.Scope != "project" {
+		return fmt.Errorf("project manifest %s is missing or invalid", layout.Manifest)
+	}
+	manifest.Index.Complete = false
+	manifest.Agent = validProjectionStatus(layout.Root, manifest.Agent)
+	if target.IncludesDashboard() {
+		manifest.Dashboard.Complete = false
+	} else {
+		manifest.Dashboard = validProjectionStatus(layout.Root, manifest.Dashboard)
+	}
+	return writeOutputManifestAtomic(layout.Manifest, manifest)
+}
+
+func republishReconciledProjectManifest(layout OutputLayout, target BuildTarget, generatedAt string) error {
+	manifest := readCurrentOutputManifest(layout.Manifest)
+	if manifest.Scope != "project" {
+		return fmt.Errorf("project manifest %s is missing or invalid", layout.Manifest)
+	}
+	manifest.Index.Complete = true
+	manifest.Index = validProjectionStatus(layout.Root, manifest.Index)
+	if !manifest.Index.Complete {
+		return fmt.Errorf("project canonical index is incomplete after workspace reconciliation: %s", layout.Root)
+	}
+	manifest.Index.GeneratedAt = generatedAt
+	manifest.Agent = validProjectionStatus(layout.Root, manifest.Agent)
+	if target.IncludesDashboard() {
+		manifest.Dashboard.Complete = true
+		manifest.Dashboard = validProjectionStatus(layout.Root, manifest.Dashboard)
+		if !manifest.Dashboard.Complete {
+			return fmt.Errorf("project dashboard is incomplete after workspace reconciliation: %s", layout.Root)
+		}
+		manifest.Dashboard.GeneratedAt = generatedAt
+	} else {
+		manifest.Dashboard = validProjectionStatus(layout.Root, manifest.Dashboard)
+	}
+	return writeOutputManifestAtomic(layout.Manifest, manifest)
 }
 
 // WorkspaceRoot returns the workspace root that would be used for a project.
@@ -2223,16 +2286,20 @@ func workspaceIndexFiles(target BuildTarget) []string {
 	return prefixedGeneratedFiles("index", names)
 }
 
-func workspaceDashboardFiles() []string {
-	return prefixedGeneratedFiles("dashboard", []string{
+func workspaceDashboardFiles(assets map[string][]byte) []string {
+	files := prefixedGeneratedFiles("dashboard", []string{
 		"workspace-map.html",
-		"workspace-map-assets",
 		"workspace-context.md",
 		"contract-matches.md",
 		"feature-flows.md",
 		"feature-dossiers.md",
 		"next-actions.md",
 	})
+	for name := range assets {
+		files = append(files, filepath.ToSlash(filepath.Join("dashboard", name)))
+	}
+	sort.Strings(files)
+	return files
 }
 
 func renderEndpointFrontendConsumersSection(projectPath string, records []WorkspaceContractMatchRecord) string {

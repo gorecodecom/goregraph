@@ -114,11 +114,23 @@ type projectExtractorFunc func(string, config.Config, gitignore.Matcher) (Index,
 
 var projectExtractor projectExtractorFunc = scanProject
 
+type projectionWriteHookFunc func(scope, projection string) error
+
+var projectionWriteHook projectionWriteHookFunc = func(string, string) error { return nil }
+
 func replaceProjectExtractorForTest(replacement projectExtractorFunc) func() {
 	previous := projectExtractor
 	projectExtractor = replacement
 	return func() {
 		projectExtractor = previous
+	}
+}
+
+func replaceProjectionWriteHookForTest(replacement projectionWriteHookFunc) func() {
+	previous := projectionWriteHook
+	projectionWriteHook = replacement
+	return func() {
+		projectionWriteHook = previous
 	}
 }
 
@@ -416,6 +428,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	}
 	freshness := BuildArtifactFreshness(manifest.Schema, finished.Format(time.RFC3339), index.Files, prefixedGeneratedFiles("index", IndexGeneratedFiles))
 	audit := newAuditRecord(root, cfg.OutputDir, started, finished, len(index.Files), skipped, generatedFilesForTarget(target))
+	if err := writeOutputManifestAtomic(layout.Manifest, incompleteManifestForTarget(manifest, target)); err != nil {
+		return err
+	}
 	writes := []struct {
 		name  string
 		value any
@@ -459,6 +474,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"audit.json", audit},
 	}
 	if err := os.RemoveAll(filepath.Join(out, "index")); err != nil {
+		return err
+	}
+	if err := projectionWriteHook("project", "index"); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(out, "index"), 0o755); err != nil {
@@ -511,6 +529,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		if err := os.RemoveAll(filepath.Join(out, "dashboard")); err != nil {
 			return err
 		}
+		if err := projectionWriteHook("project", "dashboard"); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Join(out, "dashboard"), 0o755); err != nil {
 			return err
 		}
@@ -527,6 +548,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		if err := os.RemoveAll(filepath.Join(out, "agent")); err != nil {
 			return err
 		}
+		if err := projectionWriteHook("project", "agent"); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Join(out, "agent"), 0o755); err != nil {
 			return err
 		}
@@ -535,6 +559,17 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		}
 	}
 	return writeOutputManifestAtomic(layout.Manifest, manifest)
+}
+
+func incompleteManifestForTarget(manifest OutputManifest, target BuildTarget) OutputManifest {
+	manifest.Index.Complete = false
+	if target.IncludesAgent() {
+		manifest.Agent.Complete = false
+	}
+	if target.IncludesDashboard() {
+		manifest.Dashboard.Complete = false
+	}
+	return manifest
 }
 
 func generatedFilesForTarget(target BuildTarget) []string {

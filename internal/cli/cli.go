@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -29,9 +30,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "build":
 		return runBuild(args[1:], stdout, stderr)
 	case "scan":
-		return runScan(args[1:], stdout, stderr, false)
+		return runScan(args[1:], stdout, stderr, false, false)
 	case "update":
-		return runScan(args[1:], stdout, stderr, true)
+		return runScan(args[1:], stdout, stderr, true, true)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
 	case "dashboard":
@@ -163,7 +164,7 @@ func runBuild(args []string, stdout, stderr io.Writer) int {
 	}
 	projectArgs := append([]string(nil), args[1:]...)
 	projectArgs = append(projectArgs, "--target", string(target))
-	return runScan(projectArgs, stdout, stderr, false)
+	return runScan(projectArgs, stdout, stderr, false, true)
 }
 
 func runWorkspaceBuild(args []string, stdout, stderr io.Writer) int {
@@ -238,6 +239,10 @@ func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
 	}
 	if target.IncludesDashboard() {
 		fmt.Fprintf(stdout, "- dashboard/workspace-map.html\n")
+	}
+	if err := printProjectionSummary(stdout, target, scan.NewWorkspaceOutputLayout(filepath.Join(registry.Root, ".goregraph-workspace")).Manifest); err != nil {
+		fmt.Fprintf(stderr, "error: reading workspace manifest failed: %v\n", err)
+		return 1
 	}
 	return 0
 }
@@ -780,6 +785,10 @@ Workspace detection:
 		}
 	}
 	fmt.Fprintf(stdout, "\nScanned %d workspace project(s).\n", scanned)
+	if err := printProjectionSummary(stdout, target, scan.NewWorkspaceOutputLayout(filepath.Join(plan.WorkspaceRoot, ".goregraph-workspace")).Manifest); err != nil {
+		fmt.Fprintf(stderr, "error: reading workspace build manifest failed: %v\n", err)
+		return 1
+	}
 	return 0
 }
 
@@ -1042,7 +1051,7 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runScan(args []string, stdout, stderr io.Writer, update bool) int {
+func runScan(args []string, stdout, stderr io.Writer, update, allowTarget bool) int {
 	if len(args) > 0 && isHelp(args[0]) {
 		printScanHelp(stdout)
 		return 0
@@ -1055,6 +1064,10 @@ func runScan(args []string, stdout, stderr io.Writer, update bool) int {
 		arg := args[i]
 		switch arg {
 		case "--target":
+			if !allowTarget {
+				fmt.Fprint(stderr, "error: --target is not supported by scan; scan is an alias for build all\n")
+				return 2
+			}
 			if i+1 >= len(args) {
 				fmt.Fprint(stderr, "error: --target requires agent, dashboard, or all\n")
 				return 2
@@ -1131,7 +1144,43 @@ func runScan(args []string, stdout, stderr io.Writer, update bool) int {
 
 	fmt.Fprintf(stdout, "Scanned %d files, skipped %d files.\n", result.ScannedFiles, result.SkippedFiles)
 	fmt.Fprintf(stdout, "Output written to %s\n", loaded.OutputDir)
+	if err := printProjectionSummary(stdout, target, filepath.Join(result.OutputDir, "manifest.json")); err != nil {
+		fmt.Fprintf(stderr, "error: reading build manifest failed: %v\n", err)
+		return 1
+	}
 	return 0
+}
+
+func printProjectionSummary(stdout io.Writer, target scan.BuildTarget, manifestPath string) error {
+	body, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return err
+	}
+	var manifest scan.OutputManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return err
+	}
+	written := []string{"index"}
+	if target.IncludesAgent() {
+		written = append(written, "agent")
+	}
+	if target.IncludesDashboard() {
+		written = append(written, "dashboard")
+	}
+	preserved := []string{}
+	if !target.IncludesAgent() && manifest.Agent.Complete {
+		preserved = append(preserved, "agent")
+	}
+	if !target.IncludesDashboard() && manifest.Dashboard.Complete {
+		preserved = append(preserved, "dashboard")
+	}
+	fmt.Fprintf(stdout, "Written projections: %s\n", strings.Join(written, ", "))
+	if len(preserved) == 0 {
+		fmt.Fprintln(stdout, "Preserved projections: none")
+	} else {
+		fmt.Fprintf(stdout, "Preserved projections: %s\n", strings.Join(preserved, ", "))
+	}
+	return nil
 }
 
 func isHelp(arg string) bool {
