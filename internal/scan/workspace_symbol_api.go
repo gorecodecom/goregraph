@@ -11,15 +11,17 @@ const (
 	symbolAPIAnalyzer     = "workspace-symbol-api"
 )
 
+type workspaceSymbolAPIOrigin struct {
+	flow       WorkspaceFeatureFlowRecord
+	consumer   CanonicalSymbolRecord
+	originStep CodeFlowStep
+	helper     CanonicalSymbolRecord
+	helperStep CodeFlowStep
+}
+
 // BuildWorkspaceSymbolAPIUsages derives HTTP-mediated symbol usages from
 // resolved frontend contracts and their Spring implementation flows.
 func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches []WorkspaceContractMatchRecord, flows []WorkspaceFeatureFlowRecord, traces WorkspaceEndpointTraceIndexRecord) []CanonicalSymbolUsageRecord {
-	flowByContract := make(map[string]WorkspaceFeatureFlowRecord, len(flows))
-	for _, match := range matches {
-		if flow, ok := workspaceSymbolAPIFlow(match, flows); ok {
-			flowByContract[match.ID] = flow
-		}
-	}
 	traceByContract := make(map[string]WorkspaceEndpointTraceRecord, len(traces.Traces))
 	for _, trace := range traces.Traces {
 		traceByContract[trace.ID] = trace
@@ -30,22 +32,79 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 		if match.Issue != contractIssueMatched || !strings.EqualFold(match.Confidence, string(ConfidenceResolved)) {
 			continue
 		}
-		flow, ok := flowByContract[match.ID]
-		if !ok {
+		candidateFlows := workspaceSymbolAPIFlows(match, flows)
+		if len(candidateFlows) == 0 {
+			usages = append(usages, unresolvedWorkspaceSymbolAPIUsage(
+				match,
+				WorkspaceFeatureFlowRecord{},
+				traceByContract[match.ID],
+				CanonicalSymbolRecord{},
+				CodeFlowStep{},
+				CanonicalSymbolRecord{},
+				CodeFlowStep{},
+				"resolved HTTP contract has no feature flow with the same call-site identity",
+				"workspace_feature_flow_missing",
+			))
 			continue
 		}
-		consumer, originStep, ok := workspaceSymbolAPIConsumer(symbols.Symbols, flow, match)
-		if !ok {
+		origins := workspaceSymbolAPIOrigins(symbols.Symbols, match, candidateFlows)
+		if len(origins) == 0 {
+			usages = append(usages, unresolvedWorkspaceSymbolAPIUsage(
+				match,
+				candidateFlows[0],
+				traceByContract[match.ID],
+				CanonicalSymbolRecord{},
+				CodeFlowStep{},
+				CanonicalSymbolRecord{},
+				CodeFlowStep{},
+				"resolved HTTP contract has feature-flow evidence but no uniquely selectable frontend origin",
+				"frontend_origin_unresolved",
+			))
 			continue
 		}
-		helper, helperStep := workspaceSymbolAPIHelper(symbols.Symbols, flow, match)
-		trace := traceByContract[match.ID]
-		for _, implementation := range flow.BackendSteps {
-			candidates := workspaceSymbolAPIJavaCandidates(symbols.Symbols, match.BackendProject, implementation)
-			usages = append(
-				usages,
-				buildWorkspaceSymbolAPIUsage(match, flow, trace, consumer, originStep, helper, helperStep, implementation, candidates)...,
-			)
+		originCandidateIDs := workspaceSymbolAPIOriginCandidateIDs(origins)
+		flowCandidateIDs := workspaceSymbolAPIFlowCandidateIDs(candidateFlows)
+		ambiguousOrigin := len(candidateFlows) > 1 || len(originCandidateIDs) > 1
+		for _, origin := range origins {
+			if len(origin.flow.BackendSteps) == 0 {
+				usages = append(usages, unresolvedWorkspaceSymbolAPIUsage(
+					match,
+					origin.flow,
+					traceByContract[match.ID],
+					origin.consumer,
+					origin.originStep,
+					origin.helper,
+					origin.helperStep,
+					"resolved HTTP contract has no Spring implementation steps",
+					"backend_implementation_steps_missing",
+				))
+				continue
+			}
+			for _, implementation := range origin.flow.BackendSteps {
+				candidates := workspaceSymbolAPIJavaCandidates(symbols.Symbols, match.BackendProject, implementation)
+				built := buildWorkspaceSymbolAPIUsage(
+					match,
+					origin.flow,
+					traceByContract[match.ID],
+					origin.consumer,
+					origin.originStep,
+					origin.helper,
+					origin.helperStep,
+					implementation,
+					candidates,
+				)
+				if ambiguousOrigin {
+					built = markWorkspaceSymbolAPIOriginAmbiguous(
+						built,
+						match,
+						origin.flow,
+						implementation,
+						originCandidateIDs,
+						flowCandidateIDs,
+					)
+				}
+				usages = append(usages, built...)
+			}
 		}
 	}
 	usages = dedupeWorkspaceSymbolUsages(usages)
@@ -55,25 +114,89 @@ func BuildWorkspaceSymbolAPIUsages(symbols WorkspaceSymbolIndexRecord, matches [
 	return usages
 }
 
-func workspaceSymbolAPIFlow(match WorkspaceContractMatchRecord, flows []WorkspaceFeatureFlowRecord) (WorkspaceFeatureFlowRecord, bool) {
+func workspaceSymbolAPIFlows(match WorkspaceContractMatchRecord, flows []WorkspaceFeatureFlowRecord) []WorkspaceFeatureFlowRecord {
+	var candidates []WorkspaceFeatureFlowRecord
 	for _, flow := range flows {
-		if flow.FrontendProject == match.APIProject &&
-			flow.BackendProject == match.BackendProject &&
-			flow.FrontendFile == match.APIFile &&
-			strings.EqualFold(flow.HTTPMethod, match.APIHTTPMethod) &&
-			flow.Path == match.APIPath {
-			return flow, true
+		if flow.FrontendProject != match.APIProject ||
+			flow.BackendProject != match.BackendProject ||
+			flow.FrontendFile != match.APIFile ||
+			!strings.EqualFold(flow.HTTPMethod, match.APIHTTPMethod) ||
+			flow.Path != match.APIPath {
+			continue
+		}
+		if match.APILine > 0 && flow.FrontendLine != match.APILine {
+			continue
+		}
+		if match.APICaller != "" && flow.FrontendCaller != match.APICaller {
+			continue
+		}
+		candidates = append(candidates, flow)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return workspaceSymbolAPIFlowIdentity(candidates[i]) < workspaceSymbolAPIFlowIdentity(candidates[j])
+	})
+	return candidates
+}
+
+func workspaceSymbolAPIFlowIdentity(flow WorkspaceFeatureFlowRecord) string {
+	return strings.Join([]string{
+		flow.ID,
+		flow.FrontendProject,
+		flow.FrontendFile,
+		fmt.Sprint(flow.FrontendLine),
+		flow.FrontendCaller,
+		flow.FrontendComponent,
+		flow.BackendProject,
+		flow.HTTPMethod,
+		flow.Path,
+	}, "\x00")
+}
+
+func workspaceSymbolAPIOrigins(symbols []CanonicalSymbolRecord, match WorkspaceContractMatchRecord, flows []WorkspaceFeatureFlowRecord) []workspaceSymbolAPIOrigin {
+	var origins []workspaceSymbolAPIOrigin
+	for _, flow := range flows {
+		consumer, originStep, ok := workspaceSymbolAPIConsumer(symbols, flow, match)
+		if !ok {
+			continue
+		}
+		helper, helperStep := workspaceSymbolAPIHelper(symbols, flow, match)
+		origins = append(origins, workspaceSymbolAPIOrigin{
+			flow:       flow,
+			consumer:   consumer,
+			originStep: originStep,
+			helper:     helper,
+			helperStep: helperStep,
+		})
+	}
+	sort.Slice(origins, func(i, j int) bool {
+		if origins[i].consumer.ID != origins[j].consumer.ID {
+			return origins[i].consumer.ID < origins[j].consumer.ID
+		}
+		return workspaceSymbolAPIFlowIdentity(origins[i].flow) < workspaceSymbolAPIFlowIdentity(origins[j].flow)
+	})
+	return origins
+}
+
+func workspaceSymbolAPIOriginCandidateIDs(origins []workspaceSymbolAPIOrigin) []string {
+	var ids []string
+	for _, origin := range origins {
+		if origin.consumer.ID != "" {
+			ids = append(ids, origin.consumer.ID)
 		}
 	}
+	return sortedUniqueStrings(ids)
+}
+
+func workspaceSymbolAPIFlowCandidateIDs(flows []WorkspaceFeatureFlowRecord) []string {
+	var ids []string
 	for _, flow := range flows {
-		if flow.FrontendProject == match.APIProject &&
-			flow.BackendProject == match.BackendProject &&
-			strings.EqualFold(flow.HTTPMethod, match.APIHTTPMethod) &&
-			flow.Path == match.APIPath {
-			return flow, true
+		id := flow.ID
+		if id == "" {
+			id = StableWorkspaceID("workspace-symbol-api-flow", workspaceSymbolAPIFlowIdentity(flow))
 		}
+		ids = append(ids, id)
 	}
-	return WorkspaceFeatureFlowRecord{}, false
+	return sortedUniqueStrings(ids)
 }
 
 func workspaceSymbolAPIConsumer(symbols []CanonicalSymbolRecord, flow WorkspaceFeatureFlowRecord, match WorkspaceContractMatchRecord) (CanonicalSymbolRecord, CodeFlowStep, bool) {
@@ -276,6 +399,93 @@ func buildWorkspaceSymbolAPIUsage(
 	}
 }
 
+func unresolvedWorkspaceSymbolAPIUsage(
+	match WorkspaceContractMatchRecord,
+	flow WorkspaceFeatureFlowRecord,
+	trace WorkspaceEndpointTraceRecord,
+	consumer CanonicalSymbolRecord,
+	originStep CodeFlowStep,
+	helper CanonicalSymbolRecord,
+	helperStep CodeFlowStep,
+	reason string,
+	limitation string,
+) CanonicalSymbolUsageRecord {
+	if flow.FrontendProject == "" {
+		flow.FrontendProject = match.APIProject
+		flow.FrontendCaller = match.APICaller
+		flow.FrontendFile = match.APIFile
+		flow.FrontendLine = match.APILine
+		flow.HTTPMethod = match.APIHTTPMethod
+		flow.Path = match.APIPath
+		flow.BackendProject = match.BackendProject
+		flow.BackendFile = match.BackendFile
+		flow.BackendLine = match.BackendLine
+	}
+	sourceFile := firstNonEmpty(consumer.DeclarationFile, match.APIFile)
+	sourceLine := firstNonZero(consumer.DeclarationLine, match.APILine)
+	usage := CanonicalSymbolUsageRecord{
+		ConsumerProject:  match.APIProject,
+		ConsumerSymbolID: consumer.ID,
+		Category:         SymbolUsageUnresolved,
+		Language:         firstNonEmpty(consumer.Language, "typescript"),
+		RelationKind:     symbolAPIRelationKind,
+		SourceFile:       sourceFile,
+		SourceLine:       sourceLine,
+		Confidence:       ConfidenceNormalized,
+		Resolution:       SymbolResolutionUnresolved,
+		Reason:           reason,
+		Analyzer:         symbolAPIAnalyzer,
+		Transport:        "http",
+		Limitations:      []string{limitation},
+		APIPath: workspaceSymbolAPIPath(
+			match,
+			trace,
+			consumer,
+			originStep,
+			helper,
+			helperStep,
+			SpringEndpointFlowStep{},
+			CanonicalSymbolRecord{},
+		),
+	}
+	usage.EvidenceIDs = workspaceSymbolAPIPathEvidence(usage.APIPath)
+	usage.ID = StableWorkspaceUsageID(
+		"",
+		usage.ConsumerProject,
+		usage.ConsumerSymbolID,
+		usage.Category,
+		usage.RelationKind,
+		strings.Join([]string{match.ID, flow.ID, limitation}, "\x00"),
+		usage.SourceFile,
+		usage.SourceLine,
+	)
+	return usage
+}
+
+func markWorkspaceSymbolAPIOriginAmbiguous(
+	usages []CanonicalSymbolUsageRecord,
+	match WorkspaceContractMatchRecord,
+	flow WorkspaceFeatureFlowRecord,
+	implementation SpringEndpointFlowStep,
+	originCandidateIDs []string,
+	flowCandidateIDs []string,
+) []CanonicalSymbolUsageRecord {
+	for index := range usages {
+		if usages[index].Category != SymbolUsageReachedThroughAPI {
+			continue
+		}
+		usages[index].Category = SymbolUsageAmbiguous
+		usages[index].Resolution = SymbolResolutionAmbiguous
+		usages[index].Confidence = ConfidenceNormalized
+		usages[index].Reason = "multiple feature flows survive the complete contract call-site identity"
+		usages[index].CandidateSymbolIDs = append([]string(nil), originCandidateIDs...)
+		usages[index].CandidatePathIDs = append([]string(nil), flowCandidateIDs...)
+		usages[index].Limitations = sortedUniqueStrings(append(usages[index].Limitations, "feature_flow_join_ambiguous"))
+		usages[index].ID = workspaceSymbolAPIUsageID(usages[index], match.ID+"\x00"+flow.ID, implementation)
+	}
+	return usages
+}
+
 func workspaceSymbolAPIPartialFrontendContext(confidence string) bool {
 	switch strings.ToUpper(strings.TrimSpace(confidence)) {
 	case "", "EXACT", "EXTRACTED", "MATCHED", "RESOLVED":
@@ -326,11 +536,15 @@ func workspaceSymbolAPIPath(
 	helperLabel := firstNonEmpty(helperStep.Name, helper.Name, match.APICaller, strings.TrimSpace(match.APIHTTPMethod+" "+match.APIPath))
 	helperFile := firstNonEmpty(helperStep.File, helper.DeclarationFile, match.APIFile)
 	helperLine := firstNonZero(helperStep.Line, helper.DeclarationLine, match.APILine)
+	originProject := firstNonEmpty(consumer.Project, match.APIProject)
+	originLabel := firstNonEmpty(consumer.QualifiedName, consumer.Name, originStep.Name, match.APICaller, match.APIFile)
+	originFile := firstNonEmpty(consumer.DeclarationFile, originStep.File, match.APIFile)
+	originLine := firstNonZero(consumer.DeclarationLine, originStep.Line, match.APILine)
 	path := []SymbolAPIPathStepRecord{
 		{
-			Kind: "frontend_symbol", Project: consumer.Project, SymbolID: consumer.ID,
-			Label: firstNonEmpty(consumer.QualifiedName, consumer.Name),
-			File:  consumer.DeclarationFile, Line: consumer.DeclarationLine, EvidenceIDs: originEvidence,
+			Kind: "frontend_symbol", Project: originProject, SymbolID: consumer.ID,
+			Label: originLabel,
+			File:  originFile, Line: originLine, EvidenceIDs: originEvidence,
 		},
 		{
 			Kind: "api_helper", Project: match.APIProject, SymbolID: helper.ID,
@@ -353,11 +567,13 @@ func workspaceSymbolAPIPath(
 			Kind: "spring_handler", Project: firstNonEmpty(handler.Project, match.BackendProject),
 			Label: handler.Label, File: handler.File, Line: handler.Line,
 		},
-		{
+	}
+	if implementation.Owner != "" || implementation.Method != "" || implementation.File != "" || implementation.Line > 0 {
+		path = append(path, SymbolAPIPathStepRecord{
 			Kind: "java_implementation", Project: match.BackendProject,
 			Label: strings.Trim(strings.TrimSpace(implementation.Owner)+"."+strings.TrimSpace(implementation.Method), "."),
 			File:  implementation.File, Line: implementation.Line,
-		},
+		})
 	}
 	if selected.ID != "" {
 		path = append(path, SymbolAPIPathStepRecord{
@@ -432,4 +648,148 @@ func mergeWorkspaceSymbolAPIEvidence(groups ...[]string) []string {
 	}
 	sort.Strings(result)
 	return dedupeStrings(result)
+}
+
+// BuildWorkspaceSymbolAPIUsageCoverage reports whether each supported project
+// has enough static evidence to distinguish verified HTTP reachability from
+// missing or incomplete reachability evidence.
+func BuildWorkspaceSymbolAPIUsageCoverage(
+	symbols WorkspaceSymbolIndexRecord,
+	matches []WorkspaceContractMatchRecord,
+	flows []WorkspaceFeatureFlowRecord,
+	projects []workspaceIndexProject,
+) []SymbolCoverageRecord {
+	if len(projects) == 0 {
+		return nil
+	}
+	languagesByProject := map[string]map[string]bool{}
+	for _, symbol := range symbols.Symbols {
+		if symbol.Language != "java" && !isScriptLanguage(symbol.Language) {
+			continue
+		}
+		if languagesByProject[symbol.Project] == nil {
+			languagesByProject[symbol.Project] = map[string]bool{}
+		}
+		languagesByProject[symbol.Project][symbol.Language] = true
+	}
+	var records []SymbolCoverageRecord
+	for _, project := range projects {
+		languages := languagesByProject[project.record.Path]
+		for language := range languages {
+			if project.record.Kind == "frontend" && !isScriptLanguage(language) {
+				continue
+			}
+			if project.record.Kind == "backend" && language != "java" {
+				continue
+			}
+			records = append(records, workspaceSymbolAPIUsageCoverageRecord(project, language, symbols, matches, flows))
+		}
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Project != records[j].Project {
+			return records[i].Project < records[j].Project
+		}
+		return records[i].Language < records[j].Language
+	})
+	return records
+}
+
+func workspaceSymbolAPIUsageCoverageRecord(
+	project workspaceIndexProject,
+	language string,
+	symbols WorkspaceSymbolIndexRecord,
+	matches []WorkspaceContractMatchRecord,
+	flows []WorkspaceFeatureFlowRecord,
+) SymbolCoverageRecord {
+	record := SymbolCoverageRecord{
+		Project:    project.record.Path,
+		Language:   language,
+		Capability: symbolAPIRelationKind,
+		Coverage:   CoverageComplete,
+	}
+	requiredFile := "endpoint-flows.json"
+	failedLimitation := "endpoint_flows_unreadable"
+	missingLimitation := "endpoint_flows_missing"
+	emptyLimitation := "endpoint_flows_empty"
+	if isScriptLanguage(language) {
+		requiredFile = "flows.json"
+		failedLimitation = "flows_unreadable"
+		missingLimitation = "flows_missing"
+		emptyLimitation = "flows_empty"
+	}
+	if len(workspaceSymbolFactFailures(project.loadFailures, []string{requiredFile})) > 0 {
+		record.Coverage = CoverageFailed
+		record.Reason = requiredFile + " could not be read; HTTP reachability is not verified for this project"
+		record.Limitations = []string{failedLimitation}
+		return record
+	}
+	if len(workspaceSymbolMissingFacts(project.missingFacts, []string{requiredFile})) > 0 {
+		record.Coverage = CoveragePartial
+		record.Reason = requiredFile + " is missing; absence of HTTP reachability records is not evidence of no usage"
+		record.Limitations = []string{missingLimitation}
+		return record
+	}
+	resolved := workspaceSymbolAPIResolvedMatches(project.record.Path, matches)
+	if len(resolved) == 0 {
+		record.Reason = "required reachability inputs were loaded; no resolved HTTP contracts involve this project"
+		return record
+	}
+	if isScriptLanguage(language) && len(project.codeFlows) == 0 {
+		record.Coverage = CoveragePartial
+		record.Reason = "flows.json contains no frontend flow evidence for resolved HTTP contracts"
+		record.Limitations = []string{emptyLimitation}
+		return record
+	}
+	if language == "java" && len(project.endpointFlows) == 0 {
+		record.Coverage = CoveragePartial
+		record.Reason = "endpoint-flows.json contains no Spring implementation flow evidence for resolved HTTP contracts"
+		record.Limitations = []string{emptyLimitation}
+		return record
+	}
+
+	var limitations []string
+	for _, match := range resolved {
+		candidateFlows := workspaceSymbolAPIFlows(match, flows)
+		if len(candidateFlows) == 0 {
+			limitations = append(limitations, "workspace_feature_flow_missing")
+			continue
+		}
+		if isScriptLanguage(language) {
+			origins := workspaceSymbolAPIOrigins(symbols.Symbols, match, candidateFlows)
+			switch {
+			case len(origins) == 0:
+				limitations = append(limitations, "frontend_origin_unresolved")
+			case len(candidateFlows) > 1 || len(workspaceSymbolAPIOriginCandidateIDs(origins)) > 1:
+				limitations = append(limitations, "feature_flow_join_ambiguous")
+			}
+		}
+		if language == "java" {
+			for _, flow := range candidateFlows {
+				if len(flow.BackendSteps) == 0 {
+					limitations = append(limitations, "backend_implementation_steps_missing")
+				}
+			}
+		}
+	}
+	if len(limitations) > 0 {
+		record.Limitations = sortedUniqueStrings(limitations)
+		record.Coverage = CoveragePartial
+		record.Reason = "resolved HTTP contracts have incomplete or ambiguous static reachability evidence"
+		return record
+	}
+	record.Reason = "resolved HTTP contracts have uniquely selected frontend origins and Spring implementation steps"
+	return record
+}
+
+func workspaceSymbolAPIResolvedMatches(project string, matches []WorkspaceContractMatchRecord) []WorkspaceContractMatchRecord {
+	var result []WorkspaceContractMatchRecord
+	for _, match := range matches {
+		if match.Issue != contractIssueMatched || !strings.EqualFold(match.Confidence, string(ConfidenceResolved)) {
+			continue
+		}
+		if match.APIProject == project || match.BackendProject == project {
+			result = append(result, match)
+		}
+	}
+	return result
 }

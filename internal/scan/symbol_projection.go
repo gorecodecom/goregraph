@@ -84,6 +84,7 @@ type CanonicalSymbolUsageRecord struct {
 	Analyzer            string                    `json:"analyzer"`
 	EvidenceIDs         []string                  `json:"evidence_ids,omitempty"`
 	CandidateSymbolIDs  []string                  `json:"candidate_symbol_ids,omitempty"`
+	CandidatePathIDs    []string                  `json:"candidate_path_ids,omitempty"`
 	DependencyEvidence  []string                  `json:"dependency_evidence,omitempty"`
 	Transport           string                    `json:"transport,omitempty"`
 	APIPath             []SymbolAPIPathStepRecord `json:"api_path,omitempty"`

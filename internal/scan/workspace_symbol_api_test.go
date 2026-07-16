@@ -2,6 +2,7 @@ package scan
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -415,6 +416,194 @@ func TestWorkspaceSymbolAPIProjectionMergesAndValidatesAllCategories(t *testing.
 	}
 	if counts[SymbolUsageDirectReference] != 1 || counts[SymbolUsageReachedThroughAPI] != 1 {
 		t.Fatalf("merged category counts = %#v", counts)
+	}
+}
+
+func TestWorkspaceSymbolAPIUsageJoinsFullCallSiteIdentityOrderIndependently(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	matches[0].APILine = 22
+	matches[0].APICaller = "loadUserDetails"
+	wrong := flows[0]
+	wrong.ID = "flow:wrong"
+	wrong.FrontendComponent = "UserPage"
+	wrong.FrontendCaller = "loadUser"
+	wrong.FrontendLine = 12
+	wrong.FrontendSteps[1].Name = "loadUser"
+	exact := flows[0]
+	exact.ID = "flow:exact"
+	exact.FrontendComponent = "UserDetailsPage"
+	exact.FrontendCaller = "loadUserDetails"
+	exact.FrontendLine = 22
+	exact.FrontendSteps = []CodeFlowStep{
+		{Name: "UserDetailsPage", Kind: "component", File: "src/pages/UserDetailsPage.tsx", Line: 18, Confidence: "EXTRACTED"},
+		{Name: "loadUserDetails", Kind: "api_helper", File: "src/api/users.ts", Line: 22, Confidence: "EXTRACTED"},
+	}
+	symbols.Symbols = append(symbols.Symbols,
+		CanonicalSymbolRecord{
+			ID: "symbol:user-details-page", Project: "frontend/app", Language: "typescript",
+			Kind: "function", Name: "UserDetailsPage", QualifiedName: "UserDetailsPage", ExportName: "UserDetailsPage",
+			DeclarationFile: "src/pages/UserDetailsPage.tsx", DeclarationLine: 18,
+			Analyzer: "typescript-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		},
+		CanonicalSymbolRecord{
+			ID: "symbol:load-user-details", Project: "frontend/app", Language: "typescript",
+			Kind: "function", Name: "loadUserDetails", QualifiedName: "loadUserDetails", ExportName: "loadUserDetails",
+			DeclarationFile: "src/api/users.ts", DeclarationLine: 22,
+			Analyzer: "typescript-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		},
+	)
+
+	for _, ordered := range [][]WorkspaceFeatureFlowRecord{{wrong, exact}, {exact, wrong}} {
+		usages := BuildWorkspaceSymbolAPIUsages(symbols, matches, ordered, BuildWorkspaceEndpointTraces(matches, ordered, nil))
+		if len(usages) != 1 ||
+			usages[0].Category != SymbolUsageReachedThroughAPI ||
+			usages[0].ConsumerSymbolID != "symbol:user-details-page" {
+			t.Fatalf("call-site join for order %#v = %#v", []string{ordered[0].ID, ordered[1].ID}, usages)
+		}
+	}
+}
+
+func TestWorkspaceSymbolAPIUsageMarksMultipleSurvivingFlowsAmbiguous(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	matches[0].APILine = 0
+	matches[0].APICaller = ""
+	first := flows[0]
+	first.ID = "flow:first"
+	second := flows[0]
+	second.ID = "flow:second"
+	second.FrontendSteps = append([]CodeFlowStep(nil), flows[0].FrontendSteps...)
+	second.FrontendComponent = "UserDetailsPage"
+	second.FrontendSteps[0] = CodeFlowStep{
+		Name: "UserDetailsPage", Kind: "component",
+		File: "src/pages/UserDetailsPage.tsx", Line: 18, Confidence: "EXTRACTED",
+	}
+	symbols.Symbols = append(symbols.Symbols, CanonicalSymbolRecord{
+		ID: "symbol:user-details-page", Project: "frontend/app", Language: "typescript",
+		Kind: "function", Name: "UserDetailsPage", QualifiedName: "UserDetailsPage", ExportName: "UserDetailsPage",
+		DeclarationFile: "src/pages/UserDetailsPage.tsx", DeclarationLine: 18,
+		Analyzer: "typescript-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+	})
+	wantCandidates := []string{"symbol:user-details-page", "symbol:user-page"}
+
+	for _, ordered := range [][]WorkspaceFeatureFlowRecord{{first, second}, {second, first}} {
+		usages := BuildWorkspaceSymbolAPIUsages(symbols, matches, ordered, BuildWorkspaceEndpointTraces(matches, ordered, nil))
+		if len(usages) != 2 {
+			t.Fatalf("ambiguous flow usages for order %#v = %#v", []string{ordered[0].ID, ordered[1].ID}, usages)
+		}
+		for _, usage := range usages {
+			if usage.Category != SymbolUsageAmbiguous ||
+				usage.Resolution != SymbolResolutionAmbiguous ||
+				!reflect.DeepEqual(usage.CandidateSymbolIDs, wantCandidates) {
+				t.Fatalf("ambiguous flow usage = %#v", usage)
+			}
+			if usage.ConsumerSymbolID != wantCandidates[0] && usage.ConsumerSymbolID != wantCandidates[1] {
+				t.Fatalf("ambiguous consumer = %q", usage.ConsumerSymbolID)
+			}
+		}
+	}
+}
+
+func TestWorkspaceSymbolAPIUsageKeepsSameOriginFlowCandidatesAmbiguous(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	matches[0].APILine = 0
+	matches[0].APICaller = ""
+	first := flows[0]
+	first.ID = "flow:first"
+	second := flows[0]
+	second.ID = "flow:second"
+	second.FrontendRouteID = "route:alternate"
+	wantPaths := []string{"flow:first", "flow:second"}
+
+	usages := BuildWorkspaceSymbolAPIUsages(symbols, matches, []WorkspaceFeatureFlowRecord{second, first}, BuildWorkspaceEndpointTraces(matches, []WorkspaceFeatureFlowRecord{second, first}, nil))
+
+	if len(usages) != 2 {
+		t.Fatalf("same-origin ambiguous usages = %#v", usages)
+	}
+	for _, usage := range usages {
+		if usage.Category != SymbolUsageAmbiguous ||
+			usage.Resolution != SymbolResolutionAmbiguous ||
+			!reflect.DeepEqual(usage.CandidateSymbolIDs, []string{"symbol:user-page"}) ||
+			!reflect.DeepEqual(usage.CandidatePathIDs, wantPaths) {
+			t.Fatalf("same-origin ambiguous usage = %#v", usage)
+		}
+	}
+}
+
+func TestWorkspaceSymbolAPIUsageCoverageReportsCompletePartialAndFailedEvidence(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	frontend := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "frontend/app", Kind: "frontend", Indexed: true},
+		codeFlows: []CodeFlowRecord{{Kind: "frontend", File: "src/pages/UserPage.tsx"}},
+	}
+	backend := workspaceIndexProject{
+		record:        WorkspaceProjectRecord{Path: "microservices/ms-user", Kind: "backend", Indexed: true},
+		endpointFlows: []SpringEndpointFlowRecord{{HTTPMethod: "GET", Path: "/users/{id}", Steps: flows[0].BackendSteps}},
+	}
+
+	complete := BuildWorkspaceSymbolAPIUsageCoverage(symbols, matches, flows, []workspaceIndexProject{frontend, backend})
+	assertSymbolCoverage(t, complete, "frontend/app", "typescript", symbolAPIRelationKind, CoverageComplete, nil)
+	assertSymbolCoverage(t, complete, "microservices/ms-user", "java", symbolAPIRelationKind, CoverageComplete, nil)
+
+	frontend.missingFacts = []string{"flows.json"}
+	backend.loadFailures = []string{"microservices/ms-user/endpoint-flows.json: invalid character"}
+	degraded := BuildWorkspaceSymbolAPIUsageCoverage(symbols, matches, flows, []workspaceIndexProject{frontend, backend})
+	assertSymbolCoverage(t, degraded, "frontend/app", "typescript", symbolAPIRelationKind, CoveragePartial, []string{"flows_missing"})
+	assertSymbolCoverage(t, degraded, "microservices/ms-user", "java", symbolAPIRelationKind, CoverageFailed, []string{"endpoint_flows_unreadable"})
+}
+
+func TestWorkspaceSymbolAPIUsageCoverageDistinguishesNoUsageFromMissingEvidence(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	frontend := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "frontend/app", Kind: "frontend", Indexed: true},
+		codeFlows: []CodeFlowRecord{{Kind: "frontend", File: "src/pages/UserPage.tsx"}},
+	}
+	backend := workspaceIndexProject{
+		record:        WorkspaceProjectRecord{Path: "microservices/ms-user", Kind: "backend", Indexed: true},
+		endpointFlows: []SpringEndpointFlowRecord{{HTTPMethod: "GET", Path: "/users/{id}", Steps: flows[0].BackendSteps}},
+	}
+
+	noUsage := BuildWorkspaceSymbolAPIUsageCoverage(symbols, nil, nil, []workspaceIndexProject{frontend, backend})
+	for _, want := range []struct {
+		project  string
+		language string
+	}{
+		{project: "frontend/app", language: "typescript"},
+		{project: "microservices/ms-user", language: "java"},
+	} {
+		record := findSymbolCoverage(noUsage, want.project, want.language, symbolAPIRelationKind)
+		if record.Coverage != CoverageComplete || !strings.Contains(record.Reason, "no resolved HTTP contracts") {
+			t.Fatalf("no-usage coverage for %s = %#v", want.project, record)
+		}
+	}
+
+	flows[0].BackendSteps = nil
+	usages := BuildWorkspaceSymbolAPIUsages(symbols, matches, flows, BuildWorkspaceEndpointTraces(matches, flows, nil))
+	if len(usages) != 1 ||
+		usages[0].Category != SymbolUsageUnresolved ||
+		!reflect.DeepEqual(usages[0].Limitations, []string{"backend_implementation_steps_missing"}) {
+		t.Fatalf("missing backend steps usages = %#v", usages)
+	}
+	missing := BuildWorkspaceSymbolAPIUsageCoverage(symbols, matches, flows, []workspaceIndexProject{frontend, backend})
+	assertSymbolCoverage(t, missing, "microservices/ms-user", "java", symbolAPIRelationKind, CoveragePartial, []string{"backend_implementation_steps_missing"})
+}
+
+func TestWorkspaceSymbolAPIUsageSurfacesMissingAndAmbiguousOrigins(t *testing.T) {
+	symbols, matches, flows := workspaceSymbolAPIMinimalFixture()
+	missingFlows := BuildWorkspaceSymbolAPIUsages(symbols, matches, nil, WorkspaceEndpointTraceIndexRecord{})
+	if len(missingFlows) != 1 ||
+		missingFlows[0].Category != SymbolUsageUnresolved ||
+		!reflect.DeepEqual(missingFlows[0].Limitations, []string{"workspace_feature_flow_missing"}) {
+		t.Fatalf("missing feature flow usages = %#v", missingFlows)
+	}
+
+	duplicate := symbols.Symbols[0]
+	duplicate.ID = "symbol:user-page-duplicate"
+	symbols.Symbols = append(symbols.Symbols, duplicate)
+	ambiguousOrigin := BuildWorkspaceSymbolAPIUsages(symbols, matches, flows, BuildWorkspaceEndpointTraces(matches, flows, nil))
+	if len(ambiguousOrigin) != 1 ||
+		ambiguousOrigin[0].Category != SymbolUsageUnresolved ||
+		!reflect.DeepEqual(ambiguousOrigin[0].Limitations, []string{"frontend_origin_unresolved"}) {
+		t.Fatalf("ambiguous origin usages = %#v", ambiguousOrigin)
 	}
 }
 

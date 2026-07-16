@@ -1437,6 +1437,48 @@ func TestWorkspaceDeclarationCoverageOverlaysCapabilitiesInputStatus(t *testing.
 	}
 }
 
+func TestLoadWorkspaceIndexesRecordsHTTPReachabilityFactFailures(t *testing.T) {
+	root := t.TempDir()
+	frontend := workspaceProjectOnDisk(root, "frontend/app")
+	frontend.Kind = "frontend"
+	backend := workspaceProjectOnDisk(root, "microservices/ms-user")
+	writeWorkspaceProjectFacts(t, frontend, []RichSymbolRecord{{
+		ID: "page", Name: "UserPage", Kind: "function", Language: "typescript",
+		File: "src/UserPage.tsx", QualifiedName: "UserPage", ExportName: "UserPage",
+		Analyzer: "typescript-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+	}}, nil)
+	writeWorkspaceProjectFacts(t, backend, []RichSymbolRecord{{
+		ID: "service", Name: "UserService", Kind: "class", Language: "java",
+		File: "src/UserService.java", QualifiedName: "com.example.UserService",
+		Analyzer: "java-source", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+	}}, nil)
+	if err := os.WriteFile(filepath.Join(frontend.AbsPath, frontend.OutputDir, "flows.json"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(backend.AbsPath, backend.OutputDir, "endpoint-flows.json"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := loadWorkspaceIndexes([]WorkspaceProjectRecord{frontend, backend})
+
+	if err != nil {
+		t.Fatalf("loadWorkspaceIndexes returned error instead of structured coverage failure: %v", err)
+	}
+	if len(loaded) != 2 {
+		t.Fatalf("loaded projects = %#v", loaded)
+	}
+	byPath := map[string]workspaceIndexProject{}
+	for _, project := range loaded {
+		byPath[project.record.Path] = project
+	}
+	if len(workspaceSymbolFactFailures(byPath[frontend.Path].loadFailures, []string{"flows.json"})) != 1 {
+		t.Fatalf("frontend flow failures = %#v", byPath[frontend.Path].loadFailures)
+	}
+	if len(workspaceSymbolFactFailures(byPath[backend.Path].loadFailures, []string{"endpoint-flows.json"})) != 1 {
+		t.Fatalf("backend endpoint-flow failures = %#v", byPath[backend.Path].loadFailures)
+	}
+}
+
 func TestWorkspaceSymbolProjectionPairRejectsInvalidUsage(t *testing.T) {
 	out := t.TempDir()
 	symbols := WorkspaceSymbolIndexRecord{

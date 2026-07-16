@@ -295,10 +295,19 @@ func validateWorkspaceSymbolUsage(usage CanonicalSymbolUsageRecord, symbols map[
 			}
 		}
 	case SymbolResolutionAmbiguous:
-		if usage.Category != SymbolUsageAmbiguous || usage.ProviderSymbolID == "" || len(usage.CandidateSymbolIDs) < 2 {
+		flowAmbiguous := usage.Transport == "http" &&
+			workspaceSymbolUsageHasLimitation(usage, "feature_flow_join_ambiguous")
+		if usage.Category != SymbolUsageAmbiguous ||
+			usage.ProviderSymbolID == "" ||
+			flowAmbiguous && (len(usage.CandidateSymbolIDs) < 1 || len(usage.CandidatePathIDs) < 2) ||
+			!flowAmbiguous && len(usage.CandidateSymbolIDs) < 2 {
 			return fmt.Errorf("AMBIGUOUS usage must disclose a selected candidate and the complete candidate set")
 		}
-		providerDisclosed := false
+		selectedDisclosed := false
+		selectedSymbolID := usage.ProviderSymbolID
+		if flowAmbiguous && usage.ConsumerSymbolID != "" {
+			selectedSymbolID = usage.ConsumerSymbolID
+		}
 		previous := ""
 		for _, candidateID := range usage.CandidateSymbolIDs {
 			if candidateID == previous {
@@ -310,13 +319,26 @@ func validateWorkspaceSymbolUsage(usage CanonicalSymbolUsageRecord, symbols map[
 			if !symbols[candidateID] {
 				return fmt.Errorf("AMBIGUOUS candidate %q is not in symbol index", candidateID)
 			}
-			if candidateID == usage.ProviderSymbolID {
-				providerDisclosed = true
+			if candidateID == selectedSymbolID {
+				selectedDisclosed = true
 			}
 			previous = candidateID
 		}
-		if !providerDisclosed {
-			return fmt.Errorf("AMBIGUOUS provider %q is not in the candidate set", usage.ProviderSymbolID)
+		if !selectedDisclosed {
+			return fmt.Errorf("AMBIGUOUS selected symbol %q is not in the candidate set", selectedSymbolID)
+		}
+		if !symbols[usage.ProviderSymbolID] {
+			return fmt.Errorf("AMBIGUOUS provider %q is not in symbol index", usage.ProviderSymbolID)
+		}
+		previous = ""
+		for _, candidateID := range usage.CandidatePathIDs {
+			if candidateID == "" || candidateID == previous {
+				return fmt.Errorf("AMBIGUOUS path candidate set contains invalid or duplicate %q", candidateID)
+			}
+			if previous != "" && candidateID < previous {
+				return fmt.Errorf("AMBIGUOUS path candidate set is not sorted")
+			}
+			previous = candidateID
 		}
 	case SymbolResolutionUnresolved:
 		if usage.Category != SymbolUsageUnresolved || usage.ProviderSymbolID != "" {
@@ -328,19 +350,59 @@ func validateWorkspaceSymbolUsage(usage CanonicalSymbolUsageRecord, symbols map[
 	return nil
 }
 
+func workspaceSymbolUsageHasLimitation(usage CanonicalSymbolUsageRecord, want string) bool {
+	for _, limitation := range usage.Limitations {
+		if limitation == want {
+			return true
+		}
+	}
+	return false
+}
+
 func finalizeWorkspaceSymbolUsageProjection(
 	symbols WorkspaceSymbolIndexRecord,
 	usages WorkspaceSymbolUsageIndexRecord,
 	matches []WorkspaceContractMatchRecord,
 	flows []WorkspaceFeatureFlowRecord,
 	traces WorkspaceEndpointTraceIndexRecord,
+	projectGroups ...[]workspaceIndexProject,
 ) (WorkspaceSymbolUsageIndexRecord, error) {
 	apiUsages := BuildWorkspaceSymbolAPIUsages(symbols, matches, flows, traces)
 	usages.Usages = mergeWorkspaceSymbolUsageRecords(usages.Usages, apiUsages)
+	if len(projectGroups) > 0 {
+		usages.Coverage = mergeWorkspaceSymbolCoverageRecords(
+			usages.Coverage,
+			BuildWorkspaceSymbolAPIUsageCoverage(symbols, matches, flows, projectGroups[0]),
+		)
+	}
 	if err := validateWorkspaceSymbolProjectionPair(symbols, usages); err != nil {
 		return WorkspaceSymbolUsageIndexRecord{}, err
 	}
 	return usages, nil
+}
+
+func mergeWorkspaceSymbolCoverageRecords(groups ...[]SymbolCoverageRecord) []SymbolCoverageRecord {
+	byKey := map[string]SymbolCoverageRecord{}
+	for _, group := range groups {
+		for _, record := range group {
+			key := strings.Join([]string{record.Project, record.Language, record.Capability}, "\x00")
+			byKey[key] = record
+		}
+	}
+	records := make([]SymbolCoverageRecord, 0, len(byKey))
+	for _, record := range byKey {
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Project != records[j].Project {
+			return records[i].Project < records[j].Project
+		}
+		if records[i].Language != records[j].Language {
+			return records[i].Language < records[j].Language
+		}
+		return records[i].Capability < records[j].Capability
+	})
+	return records
 }
 
 func restoreWorkspaceSymbolBackup(backup, live string, backedUp bool) error {

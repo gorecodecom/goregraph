@@ -101,7 +101,7 @@ func ReconcileWorkspace(currentRoot string, cfg config.Config) (*WorkspaceRegist
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	directedTraces := BuildDirectedTraceIndex(endpointTraces)
 	endpointTraces.Directed = directedTraces.Traces
-	symbolUsageIndex, err = finalizeWorkspaceSymbolUsageProjection(symbolIndex, symbolUsageIndex, matches, featureFlows, endpointTraces)
+	symbolUsageIndex, err = finalizeWorkspaceSymbolUsageProjection(symbolIndex, symbolUsageIndex, matches, featureFlows, endpointTraces, indexed)
 	if err != nil {
 		return nil, err
 	}
@@ -524,18 +524,18 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 				loaded.dependencies[i].FromProject = project.Path
 			}
 		}
-		if err := readWorkspaceJSON(filepath.Join(out, "flows.json"), &loaded.codeFlows); err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
+		loadSymbolFact("flows.json", &loaded.codeFlows, func() {
+			loaded.codeFlows = nil
+		})
 		var spring SpringIndex
 		if err := readWorkspaceJSON(filepath.Join(out, "spring.json"), &spring); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
 		loaded.spring = spring
 		loaded.endpoints = spring.Endpoints
-		if err := readWorkspaceJSON(filepath.Join(out, "endpoint-flows.json"), &loaded.endpointFlows); err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
+		loadSymbolFact("endpoint-flows.json", &loaded.endpointFlows, func() {
+			loaded.endpointFlows = nil
+		})
 		if err := readWorkspaceJSON(filepath.Join(out, "test-map.json"), &loaded.testMap); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
