@@ -138,6 +138,26 @@ loadUser();
 	}
 }
 
+func TestExtractScriptMasksRegexAfterStatementBlockButPreservesDivision(t *testing.T) {
+	body := `
+import { loadUser } from "./api";
+if (ready) {}
+/; export class BlockRegexFake {} loadUser()/.test(value);
+const objectDivision = {} / loadUser() / divisor;
+const identifierDivision = total / loadUser() / divisor;
+`
+	facts := ExtractScriptSymbolFacts(FileRecord{Path: "src/real.ts", Language: "typescript"}, body)
+	for _, declaration := range facts.Declarations {
+		if declaration.Name == "BlockRegexFake" {
+			t.Fatalf("block-following regex created declaration: %#v", declaration)
+		}
+	}
+	references := scriptReferences(t, facts.References, "calls_export", "./api", "loadUser")
+	if len(references) != 2 || references[0].Line == 4 || references[1].Line == 4 {
+		t.Fatalf("block regex or division call extraction = %#v, want only division calls", references)
+	}
+}
+
 func TestScriptReturnTypesRequireFunctionLikeSignature(t *testing.T) {
 	file := FileRecord{Path: "src/types.ts", Language: "typescript"}
 	facts := ExtractScriptSymbolFacts(file, `
@@ -158,6 +178,18 @@ const misleading = condition ? (makeValue()) : User;
 		if reference.Line == 8 {
 			t.Fatalf("ternary lookalike emitted return type reference: %#v", reference)
 		}
+	}
+}
+
+func TestScriptReturnTypeBelongsToSameArrowParameterList(t *testing.T) {
+	file := FileRecord{Path: "src/types.ts", Language: "typescript"}
+	facts := ExtractScriptSymbolFacts(file, `
+import type { User } from "./User";
+const misleading = condition ? makeValue() : User => User;
+`)
+
+	if references := scriptReferences(t, facts.References, "type_reference", "./User", "User"); len(references) != 0 {
+		t.Fatalf("ternary expression emitted arrow return type: %#v", references)
 	}
 }
 
@@ -749,6 +781,8 @@ func TestScriptDynamicImportKeywordMustBeStandalone(t *testing.T) {
 	facts := ExtractScriptSymbolFacts(file, `
 loader.import("./fake");
 loader. import("./spaced");
+import.meta.resolve("./meta");
+import . meta.resolve("./spaced-meta");
 const registry = { import() { return "./method"; } };
 const real = import("./real");
 `)
@@ -759,6 +793,14 @@ const real = import("./real");
 	for _, reference := range facts.References {
 		if reference.Type == "imports_module" && reference.TargetModule != "./real" {
 			t.Fatalf("member named import was extracted as dynamic import: %#v", reference)
+		}
+	}
+}
+
+func TestScriptImportMetaIsNotStandaloneImportKeyword(t *testing.T) {
+	for _, source := range []string{"import.meta", "import . meta"} {
+		if isStandaloneScriptImport(source, 0) {
+			t.Fatalf("%q classified as standalone import keyword", source)
 		}
 	}
 }
@@ -868,6 +910,69 @@ const handler = {
 		if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
 			t.Fatalf("extended shadow scope at line %d resolved exact: %#v", line, reference)
 		}
+	}
+}
+
+func TestScriptTypedArrowReturnAnnotationPreservesParameterShadow(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { loadUser } from "./api";
+const invoke = (loadUser): void => loadUser();
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function loadUser() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 3)
+	if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
+		t.Fatalf("typed arrow parameter did not shadow imported call: %#v", reference)
+	}
+}
+
+func TestScriptDestructuredLocalBindingsShadowImports(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { loadUser } from "./api";
+export function ObjectBinding(source) {
+  const { loadUser } = source;
+  loadUser();
+}
+export function ArrayBinding(source) {
+  let [loadUser] = source;
+  loadUser();
+}
+export function RestBinding(source) {
+  var { ...loadUser } = source;
+  loadUser();
+}
+export function DefaultBinding(source) {
+  const { loadUser = fallback } = source;
+  loadUser();
+}
+export function PropertyKeyOnly(source) {
+  const { loadUser: localLoadUser } = source;
+  loadUser();
+}
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function loadUser() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	for _, line := range []int{5, 9, 13, 17} {
+		reference := scriptReferenceAtLine(t, resolved.References, "calls_export", line)
+		if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
+			t.Fatalf("destructured local binding at line %d resolved imported call: %#v", line, reference)
+		}
+	}
+	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 21)
+	if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
+		t.Fatalf("object property key incorrectly shadowed imported call: %#v", reference)
 	}
 }
 

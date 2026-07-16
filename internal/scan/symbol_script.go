@@ -30,7 +30,7 @@ var (
 	scriptMemberCallRE      = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	scriptDirectCallRE      = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\(`)
 	scriptComputedCallRE    = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\[[^\]]+\]\s*\(`)
-	scriptVariableBindingRE = regexp.MustCompile(`\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\b`)
+	scriptVariableBindingRE = regexp.MustCompile(`\b(?:const|let|var)\b`)
 )
 
 // ExtractScriptSymbolFacts extracts conservative declaration and module-binding facts.
@@ -247,6 +247,9 @@ func isStandaloneScriptImport(masked string, offset int) bool {
 		return false
 	}
 	open := nextScriptNonSpace(masked, offset+len("import"))
+	if open < len(masked) && masked[open] == '.' {
+		return false
+	}
 	if open >= len(masked) || masked[open] != '(' {
 		return true
 	}
@@ -584,14 +587,8 @@ func scriptShadowReason(masked, name string, usageOffset int) string {
 	if scriptArrowScopeShadows(masked, name, usageOffset) {
 		return "lexically shadowed by arrow parameter"
 	}
-	for _, match := range scriptVariableBindingRE.FindAllStringSubmatchIndex(masked, -1) {
-		if masked[match[2]:match[3]] != name {
-			continue
-		}
-		start, end := scriptContainingScope(masked, match[0])
-		if usageOffset > start && usageOffset < end {
-			return "lexically shadowed by local variable"
-		}
+	if scriptVariableScopeShadows(masked, name, usageOffset) {
+		return "lexically shadowed by local variable"
 	}
 	for _, match := range scriptFunctionRE.FindAllStringSubmatchIndex(masked, -1) {
 		if scriptBraceDepthAt(masked, match[0]) == 0 || masked[match[6]:match[7]] != name {
@@ -712,30 +709,206 @@ func scriptArrowParameterRange(masked string, arrow int) (int, int, bool) {
 	if end == 0 {
 		return 0, 0, false
 	}
-	if masked[end-1] == ')' {
-		close := end - 1
-		depth := 0
-		for index := close; index >= 0; index-- {
-			switch masked[index] {
-			case ')':
-				depth++
-			case '(':
-				depth--
-				if depth == 0 {
-					return index + 1, close, true
-				}
-			}
+	close := end - 1
+	if masked[close] != ')' {
+		typeStart := close
+		for typeStart >= 0 && isScriptIdentifierByte(masked[typeStart]) {
+			typeStart--
 		}
+		beforeType := typeStart
+		for beforeType >= 0 && (masked[beforeType] == ' ' || masked[beforeType] == '\t') {
+			beforeType--
+		}
+		if beforeType < 0 || masked[beforeType] != ':' {
+			return typeStart + 1, end, typeStart+1 < end
+		}
+		close = beforeType - 1
+		for close >= 0 && (masked[close] == ' ' || masked[close] == '\t') {
+			close--
+		}
+		if close < 0 || masked[close] != ')' {
+			return 0, 0, false
+		}
+	}
+	open := matchingScriptDelimiterBackward(masked, close, '(', ')')
+	if open < 0 || !isScriptArrowParameterOpen(masked, open) || !isPlausibleScriptParameterList(masked[open+1:close]) {
 		return 0, 0, false
 	}
-	start := end - 1
-	for start >= 0 && ((masked[start] >= 'A' && masked[start] <= 'Z') ||
-		(masked[start] >= 'a' && masked[start] <= 'z') ||
-		(masked[start] >= '0' && masked[start] <= '9') ||
-		masked[start] == '_' || masked[start] == '$') {
-		start--
+	return open + 1, close, true
+}
+
+func isScriptArrowParameterOpen(masked string, open int) bool {
+	previous := open - 1
+	for previous >= 0 && (masked[previous] == ' ' || masked[previous] == '\t' || masked[previous] == '\r' || masked[previous] == '\n') {
+		previous--
 	}
-	return start + 1, end, start+1 < end
+	if previous < 0 {
+		return true
+	}
+	return !isScriptIdentifierByte(masked[previous]) &&
+		masked[previous] != '.' &&
+		masked[previous] != ')' &&
+		masked[previous] != ']'
+}
+
+func isPlausibleScriptParameterList(params string) bool {
+	for _, raw := range splitScriptTopLevel(params, ',') {
+		parameter := strings.TrimSpace(raw)
+		if parameter == "" {
+			continue
+		}
+		parameter = strings.TrimSpace(strings.TrimPrefix(parameter, "..."))
+		if parameter == "" {
+			return false
+		}
+		if parameter[0] == '{' || parameter[0] == '[' {
+			continue
+		}
+		end := 0
+		for end < len(parameter) && isScriptIdentifierByte(parameter[end]) {
+			end++
+		}
+		if end == 0 {
+			return false
+		}
+		rest := strings.TrimSpace(parameter[end:])
+		if rest != "" && !strings.HasPrefix(rest, "?") && !strings.HasPrefix(rest, ":") && !strings.HasPrefix(rest, "=") {
+			return false
+		}
+	}
+	return true
+}
+
+func scriptVariableScopeShadows(masked, name string, usageOffset int) bool {
+	for _, location := range scriptVariableBindingRE.FindAllStringIndex(masked, -1) {
+		patternStart := nextScriptNonSpace(masked, location[1])
+		if patternStart >= len(masked) {
+			continue
+		}
+		patternEnd := patternStart
+		switch masked[patternStart] {
+		case '{':
+			patternEnd = matchingScriptDelimiter(masked, patternStart, '{', '}')
+		case '[':
+			patternEnd = matchingScriptDelimiter(masked, patternStart, '[', ']')
+		default:
+			for patternEnd < len(masked) && isScriptIdentifierByte(masked[patternEnd]) {
+				patternEnd++
+			}
+			patternEnd--
+		}
+		if patternEnd < patternStart {
+			continue
+		}
+		names := scriptBindingPatternNames(masked[patternStart : patternEnd+1])
+		if !names[name] {
+			continue
+		}
+		start, end := scriptContainingScope(masked, location[0])
+		if usageOffset > start && usageOffset < end {
+			return true
+		}
+	}
+	return false
+}
+
+func scriptBindingPatternNames(pattern string) map[string]bool {
+	names := map[string]bool{}
+	var collect func(string)
+	collect = func(value string) {
+		value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "..."))
+		if value == "" {
+			return
+		}
+		if equals := findScriptTopLevel(value, '='); equals >= 0 {
+			value = strings.TrimSpace(value[:equals])
+		}
+		if value == "" {
+			return
+		}
+		switch value[0] {
+		case '{':
+			inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "{"), "}"))
+			for _, entry := range splitScriptTopLevel(inner, ',') {
+				entry = strings.TrimSpace(entry)
+				if entry == "" {
+					continue
+				}
+				if colon := findScriptTopLevel(entry, ':'); colon >= 0 {
+					collect(entry[colon+1:])
+				} else {
+					collect(entry)
+				}
+			}
+		case '[':
+			inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"))
+			for _, entry := range splitScriptTopLevel(inner, ',') {
+				collect(entry)
+			}
+		default:
+			end := 0
+			for end < len(value) && isScriptIdentifierByte(value[end]) {
+				end++
+			}
+			if end > 0 {
+				names[value[:end]] = true
+			}
+		}
+	}
+	collect(pattern)
+	return names
+}
+
+func splitScriptTopLevel(value string, separator byte) []string {
+	var result []string
+	start := 0
+	round, square, curly := 0, 0, 0
+	for index := 0; index < len(value); index++ {
+		switch value[index] {
+		case '(':
+			round++
+		case ')':
+			round--
+		case '[':
+			square++
+		case ']':
+			square--
+		case '{':
+			curly++
+		case '}':
+			curly--
+		default:
+			if value[index] == separator && round == 0 && square == 0 && curly == 0 {
+				result = append(result, value[start:index])
+				start = index + 1
+			}
+		}
+	}
+	return append(result, value[start:])
+}
+
+func findScriptTopLevel(value string, target byte) int {
+	round, square, curly := 0, 0, 0
+	for index := 0; index < len(value); index++ {
+		if value[index] == target && round == 0 && square == 0 && curly == 0 {
+			return index
+		}
+		switch value[index] {
+		case '(':
+			round++
+		case ')':
+			round--
+		case '[':
+			square++
+		case ']':
+			square--
+		case '{':
+			curly++
+		case '}':
+			curly--
+		}
+	}
+	return -1
 }
 
 func scriptParameterBindsName(params, name string) bool {
@@ -824,7 +997,8 @@ func isProvenScriptReturnType(masked string, closeParen, typeEnd int) bool {
 	}
 	next := nextScriptNonSpace(masked, typeEnd)
 	if next+1 < len(masked) && masked[next:next+2] == "=>" {
-		return true
+		paramsStart, paramsEnd, ok := scriptArrowParameterRange(masked, next)
+		return ok && paramsStart == openParen+1 && paramsEnd == closeParen
 	}
 	return next < len(masked) && masked[next] == '{' && isScriptParameterScopePrefix(masked, openParen)
 }
@@ -1035,6 +1209,8 @@ func isScriptRegexStart(masked []byte, slash int) bool {
 		return true
 	case '>':
 		return index > 0 && masked[index-1] == '='
+	case '}':
+		return isScriptStatementBlockClose(masked, index)
 	case ')':
 		open := matchingScriptDelimiterBackward(string(masked), index, '(', ')')
 		if open < 0 {
@@ -1062,6 +1238,53 @@ func isScriptRegexStart(masked []byte, slash int) bool {
 		return true
 	}
 	return false
+}
+
+func isScriptStatementBlockClose(masked []byte, close int) bool {
+	open := matchingScriptDelimiterBackward(string(masked), close, '{', '}')
+	if open < 0 {
+		return false
+	}
+	previous := open - 1
+	for previous >= 0 && (masked[previous] == ' ' || masked[previous] == '\t') {
+		previous--
+	}
+	if previous < 0 || masked[previous] == ';' || masked[previous] == '}' {
+		return true
+	}
+	if masked[previous] == ')' {
+		paramsOpen := matchingScriptDelimiterBackward(string(masked), previous, '(', ')')
+		if paramsOpen < 0 {
+			return false
+		}
+		wordEnd := paramsOpen
+		for wordEnd > 0 && (masked[wordEnd-1] == ' ' || masked[wordEnd-1] == '\t') {
+			wordEnd--
+		}
+		wordStart := wordEnd
+		for wordStart > 0 && isScriptIdentifierByte(masked[wordStart-1]) {
+			wordStart--
+		}
+		switch string(masked[wordStart:wordEnd]) {
+		case "if", "for", "while", "switch", "with", "catch":
+			return true
+		}
+		statementStart := scriptStatementStart(masked, paramsOpen)
+		prefix := string(masked[statementStart:paramsOpen])
+		return strings.Contains(prefix, "function") && !strings.Contains(prefix, "=")
+	}
+	statementStart := scriptStatementStart(masked, open)
+	prefix := strings.TrimSpace(string(masked[statementStart:open]))
+	return (strings.HasPrefix(prefix, "class ") || strings.HasPrefix(prefix, "export class ")) && !strings.Contains(prefix, "=")
+}
+
+func scriptStatementStart(masked []byte, before int) int {
+	for index := before - 1; index >= 0; index-- {
+		if masked[index] == ';' || masked[index] == '\n' {
+			return index + 1
+		}
+	}
+	return 0
 }
 
 func scriptRegexLiteralEnd(masked []byte, slash int) int {
