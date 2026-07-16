@@ -134,8 +134,9 @@ empty or malformed.
 
 Unresolved usage languages use the same evidence-first approach: selected
 consumer and helper symbols, frontend steps, API-file declarations, projected
-project capability coverage, and finally the API file extension. JavaScript
-facts remain `javascript`; there is no TypeScript default.
+API file extension, and finally project capability coverage. Exact `.js`/`.jsx`
+and `.ts`/`.tsx` evidence therefore wins in mixed JavaScript/TypeScript
+projects. JavaScript facts remain `javascript`; there is no TypeScript default.
 
 Coverage meanings:
 
@@ -361,6 +362,24 @@ GREEN:
 ```text
 go test ./internal/scan \
   -run 'TestWorkspaceSymbolAPIUsagePreservesJavaScriptLanguageWhenUnresolved' \
+  -count=1
+ok github.com/gorecodecom/goregraph/internal/scan
+```
+
+### Mixed-language API extension precedence
+
+RED:
+
+```text
+mixed JavaScript/TypeScript project coverage selected "javascript"
+for the exact API file src/api/users.ts
+```
+
+GREEN:
+
+```text
+go test ./internal/scan \
+  -run 'TestWorkspaceSymbolAPIUsagePreservesJavaScriptLanguageWhenUnresolved/API_extension_before_mixed_project_capability' \
   -count=1
 ok github.com/gorecodecom/goregraph/internal/scan
 ```

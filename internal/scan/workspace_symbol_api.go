@@ -541,13 +541,13 @@ func workspaceSymbolAPIUsageLanguage(
 			return symbol.Language
 		}
 	}
+	if language := detectLanguage(match.APIFile); isScriptLanguage(language) {
+		return language
+	}
 	for _, coverage := range symbols.Coverage {
 		if coverage.Project == match.APIProject && isScriptLanguage(coverage.Language) {
 			return coverage.Language
 		}
-	}
-	if language := detectLanguage(match.APIFile); isScriptLanguage(language) {
-		return language
 	}
 	return "unknown"
 }

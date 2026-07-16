@@ -690,6 +690,7 @@ func TestWorkspaceSymbolAPIUsagePreservesJavaScriptLanguageWhenUnresolved(t *tes
 
 	t.Run("project capability", func(t *testing.T) {
 		_, matches, _ := workspaceSymbolAPIMinimalFixture()
+		matches[0].APIFile = "src/api/users"
 		symbols := WorkspaceSymbolIndexRecord{
 			Coverage: []SymbolCoverageRecord{{
 				Project:    "frontend/app",
@@ -706,6 +707,34 @@ func TestWorkspaceSymbolAPIUsagePreservesJavaScriptLanguageWhenUnresolved(t *tes
 			usages[0].Language != "javascript" ||
 			!reflect.DeepEqual(usages[0].Limitations, []string{"workspace_feature_flow_missing"}) {
 			t.Fatalf("JavaScript capability-derived usage = %#v", usages)
+		}
+	})
+
+	t.Run("API extension before mixed project capability", func(t *testing.T) {
+		_, matches, _ := workspaceSymbolAPIMinimalFixture()
+		symbols := WorkspaceSymbolIndexRecord{
+			Coverage: []SymbolCoverageRecord{
+				{
+					Project:    "frontend/app",
+					Language:   "javascript",
+					Capability: "declarations",
+					Coverage:   CoveragePartial,
+				},
+				{
+					Project:    "frontend/app",
+					Language:   "typescript",
+					Capability: "declarations",
+					Coverage:   CoveragePartial,
+				},
+			},
+		}
+
+		usages := BuildWorkspaceSymbolAPIUsages(symbols, matches, nil, WorkspaceEndpointTraceIndexRecord{})
+
+		if len(usages) != 1 ||
+			usages[0].Category != SymbolUsageUnresolved ||
+			usages[0].Language != "typescript" {
+			t.Fatalf("mixed-project TypeScript API usage = %#v", usages)
 		}
 	})
 }
