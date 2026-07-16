@@ -15,6 +15,8 @@ type Index struct {
 	Code                     CodeIntelligenceRecord
 	ArchitectureCapabilities []ArchitectureCapabilityFact
 	SymbolFacts              ProjectSymbolFacts
+	ScriptConfigs            map[string]ScriptResolutionConfig `json:"script_configs,omitempty"`
+	scriptConfigLimitations  []string
 }
 
 type ArchitectureCapabilityFact struct {
@@ -149,6 +151,8 @@ type RichRelationRecord struct {
 	CandidateSymbolIDs  []string         `json:"candidate_symbol_ids,omitempty"`
 	DependencyEvidence  []string         `json:"dependency_evidence,omitempty"`
 	preventExact        bool
+	scriptLocalName     string
+	scriptExportAlias   string
 }
 
 type RichGraph struct {
@@ -1103,12 +1107,14 @@ type MavenEdgeRecord struct {
 }
 
 type NodePackageRecord struct {
-	Path           string   `json:"path"`
-	Name           string   `json:"name,omitempty"`
-	Version        string   `json:"version,omitempty"`
-	Private        bool     `json:"private"`
-	PackageManager string   `json:"package_manager,omitempty"`
-	Workspaces     []string `json:"workspaces,omitempty"`
-	Scripts        []string `json:"scripts,omitempty"`
-	Dependencies   []string `json:"dependencies,omitempty"`
+	Path           string              `json:"path"`
+	Name           string              `json:"name,omitempty"`
+	Version        string              `json:"version,omitempty"`
+	Private        bool                `json:"private"`
+	PackageManager string              `json:"package_manager,omitempty"`
+	Workspaces     []string            `json:"workspaces,omitempty"`
+	Scripts        []string            `json:"scripts,omitempty"`
+	Dependencies   []string            `json:"dependencies,omitempty"`
+	Exports        map[string][]string `json:"exports,omitempty"`
+	Types          string              `json:"types,omitempty"`
 }

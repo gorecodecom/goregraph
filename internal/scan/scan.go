@@ -134,6 +134,7 @@ func Run(root string, cfg config.Config) (Result, error) {
 func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Index, int, error) {
 	var index Index
 	javaBodies := map[string]string{}
+	scriptBodies := map[string]string{}
 	skipped := 0
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -201,13 +202,42 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 			index.JavaSources = append(index.JavaSources, source)
 			javaBodies[source.File] = text
 		}
+		if record.Language == "javascript" || record.Language == "typescript" {
+			scriptBodies[record.Path] = text
+		}
+		if base := filepath.Base(record.Path); base == "tsconfig.json" || base == "jsconfig.json" {
+			if scriptConfig, ok := ExtractScriptResolutionConfig(record.Path, text); ok {
+				if index.ScriptConfigs == nil {
+					index.ScriptConfigs = map[string]ScriptResolutionConfig{}
+				}
+				index.ScriptConfigs[record.Path] = scriptConfig
+			} else {
+				index.scriptConfigLimitations = append(index.scriptConfigLimitations, record.Path+": malformed script resolution config")
+			}
+		}
 		mergeCodeIntelligence(&index.Code, extractCodeIntelligence(record, text))
 		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, extractArchitectureCapabilityFacts(record, text)...)
 		mergeWorkspaceIndex(&index.Workspace, extractWorkspaceRecord(record, text))
 		return nil
 	})
 	if err == nil {
-		index.SymbolFacts = ExtractJavaProjectSymbolFacts(index.JavaSources, javaBodies, index.Workspace)
+		javaFacts := ExtractJavaProjectSymbolFacts(index.JavaSources, javaBodies, index.Workspace)
+		var scriptFacts ProjectSymbolFacts
+		for _, file := range index.Files {
+			if file.Language != "javascript" && file.Language != "typescript" {
+				continue
+			}
+			MergeProjectSymbolFacts(&scriptFacts, ExtractScriptSymbolFacts(file, scriptBodies[file.Path]))
+		}
+		scriptFacts = ResolveScriptSymbolFacts(index.Files, index.Workspace.NodePackages, index.ScriptConfigs, scriptFacts)
+		if len(index.scriptConfigLimitations) > 0 {
+			for factIndex := range scriptFacts.Declarations {
+				scriptFacts.Declarations[factIndex].Coverage = CoveragePartial
+				scriptFacts.Declarations[factIndex].Limitations = append([]string(nil), index.scriptConfigLimitations...)
+			}
+		}
+		index.SymbolFacts = javaFacts
+		MergeProjectSymbolFacts(&index.SymbolFacts, scriptFacts)
 		index.SymbolFacts = FinalizeProjectSymbolFacts(index.Files, index.Workspace, index.SymbolFacts)
 	}
 	return index, skipped, err

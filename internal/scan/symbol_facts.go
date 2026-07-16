@@ -23,12 +23,18 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 	replacedIDs := map[string]string{}
 	for index := range facts.Declarations {
 		declaration := &facts.Declarations[index]
-		provenance := javaSourceProvenance(declaration.File, workspace)
 		oldID := declaration.ID
-		declaration.Artifact = provenance.artifact
-		declaration.Coverage = provenance.coverage
-		declaration.Limitations = append([]string(nil), provenance.limitations...)
-		declaration.ID = StableWorkspaceSymbolID(declaration.Kind, "", declaration.Artifact, declaration.Language, declaration.QualifiedName, declaration.File)
+		if declaration.Language == "java" {
+			provenance := javaSourceProvenance(declaration.File, workspace)
+			declaration.Artifact = provenance.artifact
+			declaration.Coverage = provenance.coverage
+			declaration.Limitations = append([]string(nil), provenance.limitations...)
+			declaration.ID = StableWorkspaceSymbolID(declaration.Kind, "", declaration.Artifact, declaration.Language, declaration.QualifiedName, declaration.File)
+		} else if declaration.Language == "javascript" || declaration.Language == "typescript" {
+			if pkg, ok := nearestNodePackage(declaration.File, workspace.NodePackages); ok {
+				declaration.WorkspacePackage = pkg.Name
+			}
+		}
 		declaration.DeclarationID = declaration.ID
 		replacedIDs[oldID] = declaration.ID
 	}
@@ -63,10 +69,15 @@ func FinalizeProjectSymbolFacts(_ []FileRecord, workspace WorkspaceIndex, facts 
 			}
 			sort.Strings(reference.CandidateSymbolIDs)
 		}
-		provenance := javaSourceProvenance(reference.From, workspace)
-		reference.DependencyEvidence = javaGradleDependencyEvidence(provenance.artifact, reference.TargetQualifiedName, provenance.gradleDeps)
+		if reference.Language == "java" {
+			provenance := javaSourceProvenance(reference.From, workspace)
+			reference.DependencyEvidence = javaGradleDependencyEvidence(provenance.artifact, reference.TargetQualifiedName, provenance.gradleDeps)
+		}
 		category := SymbolUsageDirectReference
 		targetIdentity := reference.ToSymbolID
+		if reference.Resolution == SymbolResolutionExact && targetIdentity == "" {
+			targetIdentity = reference.TargetQualifiedName
+		}
 		if reference.Resolution == SymbolResolutionUnresolved {
 			category = SymbolUsageUnresolved
 			targetIdentity = reference.TargetQualifiedName
@@ -87,14 +98,21 @@ func linkCallGraphSymbolFacts(graph *CallGraphRecord, facts ProjectSymbolFacts) 
 	}
 	callFacts := map[string]RichRelationRecord{}
 	for _, reference := range facts.References {
-		if reference.Type != "calls_method_owner" {
-			continue
+		switch reference.Type {
+		case "calls_method_owner":
+			callFacts[reference.From+"\x00"+reference.TargetQualifiedName+"\x00"+lineKey(reference.Line)] = reference
+		case "calls_export", "calls_local", "renders_component":
+			if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
+				continue
+			}
+			callFacts[reference.From+"\x00"+scriptQualifiedSimpleName(reference.TargetQualifiedName)+"\x00"+lineKey(reference.Line)] = reference
 		}
-		callFacts[reference.From+"\x00"+reference.TargetQualifiedName+"\x00"+lineKey(reference.Line)] = reference
 	}
 	qualifiedBySimple := map[string][]RichSymbolRecord{}
+	declarationByID := map[string]RichSymbolRecord{}
 	for _, declaration := range facts.Declarations {
 		qualifiedBySimple[declaration.Name] = append(qualifiedBySimple[declaration.Name], declaration)
+		declarationByID[declaration.ID] = declaration
 	}
 	for index := range graph.Edges {
 		edge := &graph.Edges[index]
@@ -112,7 +130,26 @@ func linkCallGraphSymbolFacts(graph *CallGraphRecord, facts ProjectSymbolFacts) 
 			edge.CandidateSymbolIDs = append([]string(nil), reference.CandidateSymbolIDs...)
 			break
 		}
+		key := edge.SourceFile + "\x00" + edge.To.Method + "\x00" + lineKey(edge.Line)
+		if reference, ok := callFacts[key]; ok {
+			target := declarationByID[reference.ToSymbolID]
+			if target.ID == "" || target.File != edge.To.File || target.Name != edge.To.Method {
+				continue
+			}
+			edge.FromSymbolID = reference.FromSymbolID
+			edge.ToSymbolID = reference.ToSymbolID
+			edge.TargetQualifiedName = reference.TargetQualifiedName
+			edge.Resolution = reference.Resolution
+			edge.CandidateSymbolIDs = append([]string(nil), reference.CandidateSymbolIDs...)
+		}
 	}
+}
+
+func scriptQualifiedSimpleName(qualified string) string {
+	if index := strings.LastIndex(qualified, "#"); index >= 0 {
+		return qualified[index+1:]
+	}
+	return qualified
 }
 
 func lineKey(line int) string {

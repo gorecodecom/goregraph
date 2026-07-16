@@ -40,6 +40,9 @@ type packageJSON struct {
 	Dependencies     map[string]any `json:"dependencies"`
 	DevDependencies  map[string]any `json:"devDependencies"`
 	PeerDependencies map[string]any `json:"peerDependencies"`
+	Exports          any            `json:"exports"`
+	Types            string         `json:"types"`
+	Typings          string         `json:"typings"`
 }
 
 func extractWorkspaceRecord(file FileRecord, body string) WorkspaceIndex {
@@ -163,8 +166,81 @@ func extractNodePackage(path, body string) (NodePackageRecord, bool) {
 		Workspaces:     normalizeWorkspaces(pkg.Workspaces),
 		Scripts:        sortedKeys(pkg.Scripts),
 		Dependencies:   sortedDependencyKeys(pkg.Dependencies, pkg.DevDependencies, pkg.PeerDependencies),
+		Exports:        normalizePackageExports(pkg.Exports),
+		Types:          strings.TrimSpace(pkg.Types),
+	}
+	if record.Types == "" {
+		record.Types = strings.TrimSpace(pkg.Typings)
 	}
 	return record, record.Name != "" || len(record.Scripts) > 0 || len(record.Workspaces) > 0
+}
+
+func normalizePackageExports(value any) map[string][]string {
+	if value == nil {
+		return nil
+	}
+	result := map[string][]string{}
+	if text, ok := value.(string); ok {
+		result["."] = []string{text}
+		return result
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	hasSubpaths := false
+	for key := range object {
+		if key == "." || strings.HasPrefix(key, "./") {
+			hasSubpaths = true
+			break
+		}
+	}
+	if !hasSubpaths {
+		if leaves := staticStringLeaves(object); len(leaves) > 0 {
+			result["."] = leaves
+		}
+		return result
+	}
+	for key, raw := range object {
+		if key != "." && !strings.HasPrefix(key, "./") {
+			continue
+		}
+		if leaves := staticStringLeaves(raw); len(leaves) > 0 {
+			result[key] = leaves
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func staticStringLeaves(value any) []string {
+	seen := map[string]bool{}
+	var visit func(any)
+	visit = func(current any) {
+		switch typed := current.(type) {
+		case string:
+			if typed != "" {
+				seen[typed] = true
+			}
+		case []any:
+			for _, item := range typed {
+				visit(item)
+			}
+		case map[string]any:
+			for _, item := range typed {
+				visit(item)
+			}
+		}
+	}
+	visit(value)
+	result := make([]string, 0, len(seen))
+	for item := range seen {
+		result = append(result, item)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func sortedDependencyKeys(groups ...map[string]any) []string {
