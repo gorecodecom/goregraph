@@ -154,6 +154,7 @@ type RichRelationRecord struct {
 	preventExact        bool
 	scriptLocalName     string
 	scriptExportAlias   string
+	scriptOffset        int
 }
 
 type RichGraph struct {

@@ -112,6 +112,55 @@ export class RealService {}
 	}
 }
 
+func TestExtractScriptMasksRegexLiteralContents(t *testing.T) {
+	body := `
+import { loadUser } from "./api";
+const escaped = /; export class RegexFake {} import(".\/fake") loadUser()/gi;
+const charClass = /[/] ; export function OtherFake() {} loadUser()/m;
+const logical = ready && /; export interface LogicalFake {} loadUser()/;
+if (ready) /; export type ControlFake = string; loadUser()/.test(value);
+loadUser();
+`
+	facts := ExtractScriptSymbolFacts(FileRecord{Path: "src/real.ts", Language: "typescript"}, body)
+	for _, declaration := range facts.Declarations {
+		if declaration.Name == "RegexFake" || declaration.Name == "OtherFake" ||
+			declaration.Name == "LogicalFake" || declaration.Name == "ControlFake" {
+			t.Fatalf("regex literal created declaration: %#v", declaration)
+		}
+	}
+	if references := scriptReferences(t, facts.References, "calls_export", "./api", "loadUser"); len(references) != 1 || references[0].Line != 7 {
+		t.Fatalf("regex literal call extraction = %#v, want only real line-7 call", references)
+	}
+	for _, reference := range facts.References {
+		if reference.TargetModule == "./fake" {
+			t.Fatalf("regex literal created import: %#v", reference)
+		}
+	}
+}
+
+func TestScriptReturnTypesRequireFunctionLikeSignature(t *testing.T) {
+	file := FileRecord{Path: "src/types.ts", Language: "typescript"}
+	facts := ExtractScriptSymbolFacts(file, `
+import type { User } from "./User";
+function makeUser(): User { throw new Error(); }
+class Factory {
+  makeUser(): User { throw new Error(); }
+}
+const makeUser = (): User => { throw new Error(); };
+const misleading = condition ? (makeValue()) : User;
+`)
+
+	references := scriptReferences(t, facts.References, "type_reference", "./User", "User")
+	if len(references) != 3 {
+		t.Fatalf("return type references = %#v, want only function, method, and arrow signatures", references)
+	}
+	for _, reference := range references {
+		if reference.Line == 8 {
+			t.Fatalf("ternary lookalike emitted return type reference: %#v", reference)
+		}
+	}
+}
+
 func TestResolveScriptRelativeAliasAndWorkspaceImports(t *testing.T) {
 	files := []FileRecord{
 		{Path: "apps/web/src/App.tsx", Language: "typescript"},
@@ -416,6 +465,57 @@ func TestScriptModuleAmbiguitySurvivesSingleExportCandidate(t *testing.T) {
 	}
 }
 
+func TestScriptExplicitExtensionSelectsPhysicalFileExports(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/user.ts", Language: "typescript"},
+		{Path: "src/user.js", Language: "javascript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `import { User } from "./user.ts";`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export interface User { id: string }`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[2], `export class User {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	reference := assertScriptReference(t, resolved.References, "imports_value", "./user.ts", "User")
+	var declaration RichSymbolRecord
+	for _, candidate := range resolved.Declarations {
+		if candidate.File == "src/user.ts" && candidate.QualifiedName == "src/user#User" {
+			declaration = candidate
+			break
+		}
+	}
+	if declaration.ID == "" {
+		t.Fatalf("missing src/user.ts declaration in %#v", resolved.Declarations)
+	}
+	if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID != declaration.ID {
+		t.Fatalf("explicit .ts import = %#v, want exact %s", reference, declaration.ID)
+	}
+}
+
+func TestScriptDuplicateWorkspacePackageNamesRemainAmbiguous(t *testing.T) {
+	files := []FileRecord{
+		{Path: "app/src/App.ts", Language: "typescript"},
+		{Path: "packages/ui-a/src/index.ts", Language: "typescript"},
+		{Path: "packages/ui-b/src/index.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `import { User } from "@weka/ui";`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export interface User { source: "a" }`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[2], `export interface User { source: "b" }`))
+	packages := []NodePackageRecord{
+		{Path: "app/package.json", Name: "app", Dependencies: []string{"@weka/ui"}},
+		{Path: "packages/ui-a/package.json", Name: "@weka/ui", Types: "src/index.ts"},
+		{Path: "packages/ui-b/package.json", Name: "@weka/ui", Types: "src/index.ts"},
+	}
+
+	resolved := ResolveScriptSymbolFacts(files, packages, nil, facts)
+	reference := assertScriptReference(t, resolved.References, "imports_value", "@weka/ui", "User")
+	if reference.Resolution != SymbolResolutionAmbiguous || reference.ToSymbolID != "" || len(reference.CandidateSymbolIDs) != 2 {
+		t.Fatalf("duplicate workspace package providers = %#v, want two ambiguous candidates", reference)
+	}
+}
+
 func TestScriptAliasCannotBypassWorkspaceDependency(t *testing.T) {
 	files := []FileRecord{
 		{Path: "apps/web/src/App.ts", Language: "typescript"},
@@ -644,6 +744,41 @@ export function invoke(name: string, modulePath: string) {
 	}
 }
 
+func TestScriptDynamicImportKeywordMustBeStandalone(t *testing.T) {
+	file := FileRecord{Path: "src/loader.ts", Language: "typescript"}
+	facts := ExtractScriptSymbolFacts(file, `
+loader.import("./fake");
+loader. import("./spaced");
+const registry = { import() { return "./method"; } };
+const real = import("./real");
+`)
+
+	if references := scriptReferences(t, facts.References, "imports_module", "./real", "*"); len(references) != 1 {
+		t.Fatalf("missing standalone dynamic import: %#v", facts.References)
+	}
+	for _, reference := range facts.References {
+		if reference.Type == "imports_module" && reference.TargetModule != "./real" {
+			t.Fatalf("member named import was extracted as dynamic import: %#v", reference)
+		}
+	}
+}
+
+func TestScriptDynamicImportOwnershipUsesOffsets(t *testing.T) {
+	file := FileRecord{Path: "src/loader.ts", Language: "typescript"}
+	facts := ExtractScriptSymbolFacts(file, `export function first() { return import("./first"); }; export function second() { return import("./second"); }`)
+	first := scriptDeclarationByQualified(t, facts.Declarations, "src/loader#first")
+	second := scriptDeclarationByQualified(t, facts.Declarations, "src/loader#second")
+
+	firstImport := assertScriptReference(t, facts.References, "imports_module", "./first", "*")
+	if firstImport.FromSymbolID != first.ID {
+		t.Fatalf("first dynamic import owner = %q, want %q: %#v", firstImport.FromSymbolID, first.ID, firstImport)
+	}
+	secondImport := assertScriptReference(t, facts.References, "imports_module", "./second", "*")
+	if secondImport.FromSymbolID != second.ID {
+		t.Fatalf("second dynamic import owner = %q, want %q: %#v", secondImport.FromSymbolID, second.ID, secondImport)
+	}
+}
+
 func TestScriptExpressionArrowDoesNotOwnLaterTopLevelCall(t *testing.T) {
 	file := FileRecord{Path: "src/top-level.ts", Language: "typescript"}
 	facts := ExtractScriptSymbolFacts(file, `
@@ -695,6 +830,44 @@ export function Namespace(api) {
 	reference := scriptReferenceAtLine(t, resolved.References, "calls_export", 11)
 	if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID == "" {
 		t.Fatalf("unshadowed imported call did not resolve: %#v", reference)
+	}
+}
+
+func TestScriptExtendedParameterAndCatchScopesShadowImports(t *testing.T) {
+	files := []FileRecord{
+		{Path: "src/App.ts", Language: "typescript"},
+		{Path: "src/api.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[0], `
+import { loadUser } from "./api";
+const defaultArrow = (loadUser = fallback) => loadUser();
+const destructuredArrow = ({ loadUser }) => loadUser();
+const restArrow = (...loadUser) => loadUser();
+try {
+  work();
+} catch (loadUser) {
+  loadUser();
+}
+class Handler {
+  method(loadUser) {
+    loadUser();
+  }
+}
+const handler = {
+  method(loadUser) {
+    loadUser();
+  }
+};
+`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export function loadUser() {}`))
+
+	resolved := ResolveScriptSymbolFacts(files, nil, nil, facts)
+	for _, line := range []int{3, 4, 5, 9, 13, 18} {
+		reference := scriptReferenceAtLine(t, resolved.References, "calls_export", line)
+		if reference.Resolution == SymbolResolutionExact || reference.ToSymbolID != "" || !strings.Contains(reference.Reason, "shadow") {
+			t.Fatalf("extended shadow scope at line %d resolved exact: %#v", line, reference)
+		}
 	}
 }
 
