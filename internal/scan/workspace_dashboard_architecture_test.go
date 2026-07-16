@@ -45,10 +45,53 @@ func TestWorkspaceDashboardCoversArchitectureMapIssue23Acceptance(t *testing.T) 
 	}
 	for _, obsolete := range []string{
 		`const domains=["frontend","document","cadaster","identity","platform"]`,
-		`nodes=focusedMode?allNodes.filter`, `>OUT<`, `>Caller<`, `>Called<`,
+		`nodes=focusedMode?allNodes.filter`,
 	} {
 		if strings.Contains(html, obsolete) {
 			t.Fatalf("issue #23 obsolete behavior remains: %q", obsolete)
+		}
+	}
+	if obsolete, found := issue23ObsoleteArchitectureMarker(html); !found {
+		t.Fatal("issue #23 acceptance could not isolate the Architecture renderer")
+	} else if obsolete != "" {
+		t.Fatalf("issue #23 obsolete Architecture behavior remains: %q", obsolete)
+	}
+}
+
+func issue23ObsoleteArchitectureMarker(html string) (string, bool) {
+	start := strings.Index(html, "function renderArchitectureMap()")
+	if start < 0 {
+		return "", false
+	}
+	end := strings.Index(html[start:], "function architectureEdgeID(edge)")
+	if end < 0 {
+		return "", false
+	}
+	architecture := html[start : start+end]
+	for _, obsolete := range []string{`>OUT<`, `>Caller<`, `>Called<`} {
+		if strings.Contains(architecture, obsolete) {
+			return obsolete, true
+		}
+	}
+	return "", true
+}
+
+func TestIssue23ObsoleteRoleMarkersAreScopedToArchitectureRenderer(t *testing.T) {
+	endpointCaller := `<span>Caller</span><script>function renderArchitectureMap(){return "current"}function architectureEdgeID(edge){}</script>`
+	if obsolete, found := issue23ObsoleteArchitectureMarker(endpointCaller); !found || obsolete != "" {
+		t.Fatalf("Endpoint Caller copy was treated as obsolete Architecture markup: marker=%q found=%v", obsolete, found)
+	}
+	architectureCaller := `<span>Caller</span><script>function renderArchitectureMap(){return "<text>Caller</text>"}function architectureEdgeID(edge){}</script>`
+	if obsolete, found := issue23ObsoleteArchitectureMarker(architectureCaller); !found || obsolete != `>Caller<` {
+		t.Fatalf("obsolete Architecture Caller marker = %q, found=%v", obsolete, found)
+	}
+}
+
+func TestWorkspaceDashboardPreservesEndpointCallerCopy(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, denseArchitectureFixture(), WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil)
+	for _, want := range []string{`<span>Caller</span>`, `endpointInventoryCell("Caller",row.from,row.kind)`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("Endpoint inventory missing established Caller copy %q", want)
 		}
 	}
 }

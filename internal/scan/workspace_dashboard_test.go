@@ -1133,7 +1133,7 @@ func TestDashboardEndpointInventoryUsesReadableRowsAtBrowserScale(t *testing.T) 
 		`class="endpoint-inventory-row`,
 		`data-endpoint-id="`,
 		`aria-label="Open endpoint trace`,
-		`endpointInventoryCell("Caller service",row.from,row.kind)`,
+		`endpointInventoryCell("Caller",row.from,row.kind)`,
 		`endpointInventoryCell("Endpoint",row.route`,
 		`endpointInventoryCell("Provider",row.to,row.kind)`,
 		`endpointInventoryScrollTop:0`,
