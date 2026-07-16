@@ -158,7 +158,7 @@ func buildJavaTestMap(sources []JavaSourceRecord, endpoints []SpringEndpointReco
 			for _, call := range method.Calls {
 				toOwner := call.TargetOwner
 				if toOwner == "" && call.Receiver != "" {
-					toOwner = strings.TrimSuffix(call.Receiver, "Test")
+					toOwner = strings.TrimSuffix(legacyJavaCallReceiver(call), "Test")
 				}
 				if toOwner == "" {
 					continue
@@ -350,18 +350,27 @@ func resolveCallOwner(call JavaCallRecord, owner string, fields map[string]map[s
 	if call.TargetOwner != "" {
 		return call.TargetOwner
 	}
-	if call.Receiver == "this" {
+	receiver := legacyJavaCallReceiver(call)
+	if receiver == "this" {
 		return owner
 	}
-	if call.Receiver != "" {
-		if fieldType := fields[owner][call.Receiver]; fieldType != "" {
+	if receiver != "" {
+		if fieldType := fields[owner][receiver]; fieldType != "" {
 			return fieldType
 		}
-		if startsUpper(call.Receiver) {
-			return call.Receiver
+		if startsUpper(receiver) {
+			return receiver
 		}
 	}
 	return ""
+}
+
+func legacyJavaCallReceiver(call JavaCallRecord) string {
+	receiver := strings.TrimSpace(call.Receiver)
+	if index := strings.LastIndex(receiver, "."); index >= 0 {
+		return receiver[index+1:]
+	}
+	return receiver
 }
 
 func isJavaTestMethod(method JavaMethodRecord) bool {

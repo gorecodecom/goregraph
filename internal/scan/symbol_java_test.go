@@ -661,3 +661,60 @@ func TestJavaInlineCommentsCannotCreateHTTPOrCallArguments(t *testing.T) {
 		t.Fatalf("inline comment call leakage = %#v, want helper(\"real\")", helperCalls)
 	}
 }
+
+func TestJavaUppercaseFieldWinsOverNestedTypeReceiver(t *testing.T) {
+	body := `package com.weka.users;
+
+class Service { void run() {} }
+class Outer {
+    static Service SERVICE;
+    static class SERVICE { static void run() {} }
+}
+class Consumer {
+    void call() { Outer.SERVICE.run(); }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Consumer.java", Language: "java"}, body)
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	service := assertRichDeclaration(t, facts.Declarations, "class", "com.weka.users.Service", "")
+	call := assertJavaReference(t, facts.References, "calls_method_owner", "com.weka.users.Service", 9)
+	if call.ToSymbolID != service.ID || call.Resolution != SymbolResolutionExact {
+		t.Fatalf("uppercase field receiver = %#v, want exact Service", call)
+	}
+	for _, reference := range facts.References {
+		if reference.Type == "calls_method_owner" && reference.TargetQualifiedName == "com.weka.users.Outer.SERVICE" {
+			t.Fatalf("uppercase field was treated as nested type: %#v", reference)
+		}
+	}
+}
+
+func TestJavaArrayAndVarargsReceiversDoNotResolveToElementType(t *testing.T) {
+	body := `package com.weka.users;
+
+class Service { void clone() {} }
+class Consumer {
+    Service[] services;
+    void call(Service... parameters) {
+        services.clone();
+        parameters.clone();
+    }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/com/weka/users/Consumer.java", Language: "java"}, body)
+	facts := ExtractJavaSymbolFacts(source, body, WorkspaceIndex{})
+	for _, line := range []int{7, 8} {
+		var found bool
+		for _, reference := range facts.References {
+			if reference.Type != "calls_method_owner" || reference.Line != line {
+				continue
+			}
+			found = true
+			if reference.Resolution != SymbolResolutionUnresolved || reference.ToSymbolID != "" || reference.TargetQualifiedName == "com.weka.users.Service" {
+				t.Fatalf("array receiver at line %d resolved to element type: %#v", line, reference)
+			}
+		}
+		if !found {
+			t.Fatalf("missing unresolved array receiver fact at line %d in %#v", line, facts.References)
+		}
+	}
+}

@@ -133,6 +133,29 @@ func TestJavaCallGraphMarksTypeOnlyTargetsAsExtracted(t *testing.T) {
 	assertHasJavaCallGraphEdgeConfidence(t, graph.Edges, "ExampleService", "load", "ExampleRepository", "findById", "EXTRACTED")
 }
 
+func TestJavaCallGraphPreservesTerminalReceiverCompatibility(t *testing.T) {
+	body := `class Service {
+    void run() {}
+}
+class Outer {
+    static class Inner {
+        static void run() {}
+    }
+}
+class Consumer {
+    Service service;
+    void call() {
+        this.service.run();
+        Outer.Inner.run();
+    }
+}
+`
+	source := extractJavaSource(FileRecord{Path: "src/main/java/Consumer.java", Language: "java"}, body)
+	graph := buildJavaCallGraph([]JavaSourceRecord{source})
+	assertHasJavaCallGraphEdgeConfidence(t, graph.Edges, "Consumer", "call", "Service", "run", "EXTRACTED")
+	assertHasJavaCallGraphEdgeConfidence(t, graph.Edges, "Consumer", "call", "Inner", "run", "EXTRACTED")
+}
+
 func TestParseJavaMethodSignatureWithAnnotatedMultipartParameters(t *testing.T) {
 	line := `public ResponseEntity<?> importFile(@RequestPart(name = "csvFile") MultipartFile multipartFile, @RequestPart(name = "ownerUserId") String ownerUserId) throws Exception {`
 	name, returnType, params, visibility, ok := parseJavaMethodSignature(line)

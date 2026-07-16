@@ -118,6 +118,34 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 	add := func(kind, rawTarget string, line int, owner RichSymbolRecord) {
 		addScoped(kind, rawTarget, line, owner, nil)
 	}
+	addUnresolved := func(kind, target string, line int, owner RichSymbolRecord) {
+		if owner.ID == "" {
+			owner = primary
+		}
+		target = strings.TrimSpace(target)
+		if target == "" {
+			return
+		}
+		reason := "java " + strings.ReplaceAll(kind, "_", " ") + " reference"
+		evidenceID := stableID("java-evidence", source.File, fmt.Sprint(line), kind, target)
+		records = append(records, RichRelationRecord{
+			ID:                  StableWorkspaceUsageID("", "", owner.ID, SymbolUsageUnresolved, kind, target, source.File, line),
+			From:                source.File,
+			To:                  target,
+			Type:                kind,
+			Language:            "java",
+			Analyzer:            "java-source",
+			Line:                line,
+			SourceLocation:      sourceLocation(line),
+			Confidence:          string(ConfidenceNormalized),
+			ConfidenceScore:     javaFactConfidenceScore(ConfidenceNormalized),
+			EvidenceIDs:         []string{evidenceID},
+			FromSymbolID:        owner.ID,
+			TargetQualifiedName: target,
+			Resolution:          SymbolResolutionUnresolved,
+			Reason:              reason,
+		})
+	}
 
 	for _, imported := range source.Imports {
 		if imported.Static {
@@ -226,7 +254,11 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 				targetType = javaReceiverTargetType(call.Receiver, owner, receivers, fieldTypes, source, resolver)
 			}
 			if targetType != "" {
-				addScoped("calls_method_owner", targetType, call.Line, owner, typeVariables)
+				if isJavaArrayReceiverType(targetType) {
+					addUnresolved("calls_method_owner", targetType, call.Line, owner)
+				} else {
+					addScoped("calls_method_owner", targetType, call.Line, owner, typeVariables)
+				}
 			}
 		}
 	}
@@ -253,7 +285,7 @@ func javaReceiverTargetType(receiver string, owner RichSymbolRecord, receivers m
 			currentType = declaredType
 			nextPart = 1
 		} else {
-			nextPart = javaReceiverTypePrefix(parts)
+			nextPart = javaReceiverTypeRoot(parts)
 			if nextPart == 0 {
 				return ""
 			}
@@ -264,35 +296,36 @@ func javaReceiverTargetType(receiver string, owner RichSymbolRecord, receivers m
 		return ""
 	}
 	for ; nextPart < len(parts); nextPart++ {
+		if isJavaArrayReceiverType(currentType) {
+			return currentType
+		}
 		resolved := resolver.resolve(primaryJavaTypeReference(currentType))
-		if resolved.resolution != SymbolResolutionExact || resolved.toSymbolID == "" {
+		if resolved.resolution == SymbolResolutionExact && resolved.toSymbolID != "" {
+			if fieldType := fieldTypes[resolved.toSymbolID][parts[nextPart]]; fieldType != "" {
+				currentType = fieldType
+				continue
+			}
+		}
+		if parts[nextPart] == "" || !unicode.IsUpper(rune(parts[nextPart][0])) {
 			return ""
 		}
-		fieldType := fieldTypes[resolved.toSymbolID][parts[nextPart]]
-		if fieldType == "" {
+		nestedType := primaryJavaTypeReference(currentType) + "." + parts[nextPart]
+		nested := resolver.resolve(nestedType)
+		if nested.resolution != SymbolResolutionExact && resolved.confidence != ConfidenceExact && nested.confidence != ConfidenceExact {
 			return ""
 		}
-		currentType = fieldType
+		currentType = nestedType
 	}
-	return primaryJavaTypeReference(currentType)
+	return currentType
 }
 
-func javaReceiverTypePrefix(parts []string) int {
-	firstType := -1
+func javaReceiverTypeRoot(parts []string) int {
 	for index, part := range parts {
 		if part != "" && unicode.IsUpper(rune(part[0])) {
-			firstType = index
-			break
+			return index + 1
 		}
 	}
-	if firstType < 0 {
-		return 0
-	}
-	end := firstType + 1
-	for end < len(parts) && parts[end] != "" && unicode.IsUpper(rune(parts[end][0])) {
-		end++
-	}
-	return end
+	return 0
 }
 
 func javaSuperType(source JavaSourceRecord, owner RichSymbolRecord) string {
@@ -310,6 +343,11 @@ func primaryJavaTypeReference(value string) string {
 		return ""
 	}
 	return references[0]
+}
+
+func isJavaArrayReceiverType(value string) bool {
+	compact := strings.ReplaceAll(value, " ", "")
+	return strings.Contains(compact, "[]") || strings.Contains(compact, "...")
 }
 
 func qualifiedJavaAnnotationLines(body string) map[int]bool {
