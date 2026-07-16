@@ -20,14 +20,16 @@ type javaBuildProvenance struct {
 	coverage    Coverage
 	limitations []string
 	gradleDeps  []GradleDependencyRecord
+	gradle      bool
 }
 
 type javaTypeResolution struct {
-	qualifiedName string
-	toSymbolID    string
-	candidates    []string
-	confidence    Confidence
-	resolution    SymbolResolution
+	qualifiedName  string
+	toSymbolID     string
+	targetArtifact string
+	candidates     []string
+	confidence     Confidence
+	resolution     SymbolResolution
 }
 
 func ExtractJavaSymbolFacts(source JavaSourceRecord, body string, workspace WorkspaceIndex) ProjectSymbolFacts {
@@ -106,6 +108,28 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 				continue
 			}
 			reason := "java " + strings.ReplaceAll(kind, "_", " ") + " reference"
+			dependencyEvidence := javaGradleDependencyEvidence(provenance.artifact, resolved.qualifiedName, provenance.gradleDeps)
+			preventExact := false
+			if provenance.gradle &&
+				resolved.resolution == SymbolResolutionExact &&
+				provenance.artifact != "" &&
+				resolved.targetArtifact != "" &&
+				provenance.artifact != resolved.targetArtifact {
+				dependencyEvidence = javaGradleArtifactDependencyEvidence(
+					provenance.artifact,
+					resolved.targetArtifact,
+					provenance.gradleDeps,
+				)
+				if len(dependencyEvidence) == 0 {
+					candidateID := resolved.toSymbolID
+					resolved.toSymbolID = ""
+					resolved.candidates = []string{candidateID}
+					resolved.confidence = ConfidenceNormalized
+					resolved.resolution = SymbolResolutionUnresolved
+					preventExact = true
+					reason += " without matching Gradle dependency evidence"
+				}
+			}
 			evidenceID := stableID("java-evidence", source.File, fmt.Sprint(line), kind, resolved.qualifiedName)
 			category := SymbolUsageDirectReference
 			if resolved.resolution == SymbolResolutionUnresolved {
@@ -131,7 +155,8 @@ func extractJavaReferenceFacts(source JavaSourceRecord, body string, declaration
 				Resolution:          resolved.resolution,
 				Reason:              reason,
 				CandidateSymbolIDs:  resolved.candidates,
-				DependencyEvidence:  javaGradleDependencyEvidence(provenance.artifact, resolved.qualifiedName, provenance.gradleDeps),
+				DependencyEvidence:  dependencyEvidence,
+				preventExact:        preventExact,
 			})
 		}
 	}
@@ -564,6 +589,7 @@ func (resolver javaFactResolver) resolve(raw string) javaTypeResolution {
 	}
 	if len(candidates) == 1 {
 		result.toSymbolID = candidates[0].ID
+		result.targetArtifact = candidates[0].Artifact
 		result.confidence = ConfidenceExact
 		result.resolution = SymbolResolutionExact
 	} else if len(candidates) > 1 {
@@ -774,6 +800,34 @@ func javaSourceProvenance(file string, workspace WorkspaceIndex) javaBuildProven
 			bestGradleDepth = pathDepth(root)
 		}
 	}
+	included, includedRoot, includedDepth := nearestGradleIncludedProject(file, workspace.GradlePackages)
+	if includedDepth > bestGradleDepth {
+		group := ""
+		var limitations []string
+		for _, pkg := range workspace.GradlePackages {
+			root := buildFileRoot(pkg.Path)
+			if root == includedRoot && pkg.Group != "" {
+				group = pkg.Group
+			}
+		}
+		for _, limitation := range workspace.gradleLimitations {
+			limitPath := strings.SplitN(limitation, ":", 2)[0]
+			if buildFileRoot(limitPath) == includedRoot {
+				limitations = append(limitations, limitation)
+			}
+		}
+		limitations = append(
+			limitations,
+			included.settingsPath+": Gradle artifact for included project "+included.directory+
+				" is derived from literal settings; project renames and projectDir overrides are not statically resolved",
+		)
+		return javaBuildProvenance{
+			artifact:    strings.Trim(strings.TrimSpace(group)+":"+included.artifact, ":"),
+			coverage:    CoveragePartial,
+			limitations: limitations,
+			gradle:      true,
+		}
+	}
 	if bestGradleDepth < 0 {
 		return javaBuildProvenance{coverage: CoverageComplete}
 	}
@@ -810,7 +864,36 @@ func javaSourceProvenance(file string, workspace WorkspaceIndex) javaBuildProven
 		coverage:    coverage,
 		limitations: limitations,
 		gradleDeps:  dependencies,
+		gradle:      true,
 	}
+}
+
+type gradleIncludedProjectMatch struct {
+	gradleIncludedProject
+	settingsPath string
+}
+
+func nearestGradleIncludedProject(file string, packages []GradlePackageRecord) (gradleIncludedProjectMatch, string, int) {
+	bestDepth := -1
+	bestRoot := ""
+	var best gradleIncludedProjectMatch
+	for _, pkg := range packages {
+		settingsRoot := buildFileRoot(pkg.Path)
+		for _, included := range pkg.included {
+			projectRoot := strings.Trim(path.Join(settingsRoot, included.directory), "/")
+			depth := pathDepth(projectRoot)
+			if !pathContainsFile(projectRoot, file) || depth <= bestDepth {
+				continue
+			}
+			bestDepth = depth
+			bestRoot = settingsRoot
+			best = gradleIncludedProjectMatch{
+				gradleIncludedProject: included,
+				settingsPath:          pkg.Path,
+			}
+		}
+	}
+	return best, bestRoot, bestDepth
 }
 
 func javaGradleDependencyEvidence(fromArtifact, target string, dependencies []GradleDependencyRecord) []string {
@@ -824,6 +907,21 @@ func javaGradleDependencyEvidence(fromArtifact, target string, dependencies []Gr
 	}
 	sort.Strings(evidence)
 	return evidence
+}
+
+func javaGradleArtifactDependencyEvidence(fromArtifact, targetArtifact string, dependencies []GradleDependencyRecord) []string {
+	targetGroup, targetName, ok := strings.Cut(targetArtifact, ":")
+	if !ok || targetGroup == "" || targetName == "" {
+		return nil
+	}
+	var evidence []string
+	for _, dependency := range dependencies {
+		if dependency.Group != targetGroup || dependency.Artifact != targetName {
+			continue
+		}
+		evidence = append(evidence, "gradle:"+fromArtifact+" -> "+targetArtifact)
+	}
+	return sortedUniqueStrings(evidence)
 }
 
 func javaFactConfidenceScore(confidence Confidence) float64 {

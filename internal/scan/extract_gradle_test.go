@@ -172,6 +172,164 @@ class OrderService {
 	}
 }
 
+func TestGradleMultiModuleRequiresMatchingDependencyForCrossProjectExact(t *testing.T) {
+	tests := []struct {
+		name         string
+		dependencies string
+	}{
+		{name: "missing dependency"},
+		{
+			name: "mismatched dependency",
+			dependencies: `dependencies {
+    implementation("com.weka:inventory-api:1.0")
+}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var workspace WorkspaceIndex
+			mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+				FileRecord{Path: "settings.gradle"},
+				`rootProject.name = "platform"
+include("users-api", "orders-api")`,
+			))
+			mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+				FileRecord{Path: "users-api/build.gradle"},
+				`group = "com.weka"`,
+			))
+			mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+				FileRecord{Path: "orders-api/build.gradle"},
+				"group = \"com.weka\"\n"+test.dependencies,
+			))
+
+			providerBody := `package com.weka.users.api;
+
+public class UserService {}
+`
+			consumerBody := `package com.weka.orders;
+
+import com.weka.users.api.UserService;
+
+class OrderService {
+    UserService users;
+}
+`
+			sources := []JavaSourceRecord{
+				extractJavaSource(FileRecord{
+					Path:     "users-api/src/main/java/com/weka/users/api/UserService.java",
+					Language: "java",
+				}, providerBody),
+				extractJavaSource(FileRecord{
+					Path:     "orders-api/src/main/java/com/weka/orders/OrderService.java",
+					Language: "java",
+				}, consumerBody),
+			}
+			facts := ExtractJavaProjectSymbolFacts(sources, map[string]string{
+				sources[0].File: providerBody,
+				sources[1].File: consumerBody,
+			}, workspace)
+			provider := assertRichDeclaration(
+				t,
+				facts.Declarations,
+				"class",
+				"com.weka.users.api.UserService",
+				"com.weka:users-api",
+			)
+			reference := assertJavaReference(t, facts.References, "imports_type", "com.weka.users.api.UserService", 3)
+			if reference.ToSymbolID != "" || reference.Resolution != SymbolResolutionUnresolved {
+				t.Fatalf("cross-project reference without matching dependency became exact: %#v", reference)
+			}
+			if !reflect.DeepEqual(reference.CandidateSymbolIDs, []string{provider.ID}) {
+				t.Fatalf("cross-project candidates = %#v, want provider %q", reference.CandidateSymbolIDs, provider.ID)
+			}
+			if len(reference.DependencyEvidence) != 0 {
+				t.Fatalf("cross-project dependency evidence = %#v, want none", reference.DependencyEvidence)
+			}
+
+			finalized := FinalizeProjectSymbolFacts(nil, workspace, facts)
+			finalReference := assertJavaReference(t, finalized.References, "imports_type", "com.weka.users.api.UserService", 3)
+			if finalReference.ToSymbolID != "" ||
+				finalReference.Resolution != SymbolResolutionUnresolved ||
+				!finalReference.NonPromotable {
+				t.Fatalf("finalization promoted unsupported cross-project reference: %#v", finalReference)
+			}
+		})
+	}
+}
+
+func TestGradleIncludedProjectsDoNotInheritRootArtifactAsComplete(t *testing.T) {
+	tests := []struct {
+		name         string
+		settingsPath string
+		settingsBody string
+		sourcePath   string
+	}{
+		{
+			name:         "groovy",
+			settingsPath: "settings.gradle",
+			settingsBody: `rootProject.name = "platform"
+include 'users-api'`,
+			sourcePath: "users-api/src/main/java/com/weka/users/UserService.java",
+		},
+		{
+			name:         "kotlin",
+			settingsPath: "settings.gradle.kts",
+			settingsBody: `rootProject.name = "platform"
+include(":services:users-api")`,
+			sourcePath: "services/users-api/src/main/java/com/weka/users/UserService.java",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var workspace WorkspaceIndex
+			mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+				FileRecord{Path: "build.gradle"},
+				`group = "com.weka"`,
+			))
+			mergeWorkspaceIndex(&workspace, extractWorkspaceRecord(
+				FileRecord{Path: test.settingsPath},
+				test.settingsBody,
+			))
+			body := `package com.weka.users;
+
+public class UserService {}
+`
+			source := extractJavaSource(FileRecord{
+				Path:     test.sourcePath,
+				Language: "java",
+			}, body)
+			facts := ExtractJavaSymbolFacts(source, body, workspace)
+			declaration := assertRichDeclaration(
+				t,
+				facts.Declarations,
+				"class",
+				"com.weka.users.UserService",
+				"com.weka:users-api",
+			)
+			if declaration.Coverage != CoveragePartial || len(declaration.Limitations) == 0 {
+				t.Fatalf("included Gradle project provenance = %#v, want partial with limitation", declaration)
+			}
+			if declaration.Artifact == "com.weka:platform" {
+				t.Fatalf("included Gradle project inherited root artifact: %#v", declaration)
+			}
+		})
+	}
+}
+
+func TestGradleComputedIncludeArgumentsStayUnresolved(t *testing.T) {
+	body := `include(projectName)
+include(provider("users-api"))
+`
+	record, ok := extractGradlePackage("settings.gradle.kts", body)
+	if ok || len(record.included) != 0 {
+		t.Fatalf("computed Gradle includes were guessed: %#v, %v", record, ok)
+	}
+	limitations := gradleExtractionLimitations("settings.gradle.kts", body)
+	if len(limitations) != 2 {
+		t.Fatalf("computed Gradle include limitations = %#v, want two", limitations)
+	}
+}
+
 func TestGradleInterpolationAndUnknownCallsStayUnresolved(t *testing.T) {
 	body := `group = "com.${tenant}"
 rootProject.name = "$service-api"

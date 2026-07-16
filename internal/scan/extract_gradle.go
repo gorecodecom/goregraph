@@ -11,13 +11,19 @@ var (
 	gradleGroupAssignmentRE      = regexp.MustCompile(`(?m)^\s*group\s*=\s*(.+?)\s*$`)
 	gradleArtifactAssignmentRE   = regexp.MustCompile(`(?m)^\s*rootProject\.name\s*=\s*(.+?)\s*$`)
 	gradleDependencyStatementRE  = regexp.MustCompile(`(?m)^\s*(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly)\s*(.*?)\s*$`)
+	gradleIncludeStatementRE     = regexp.MustCompile(`(?m)^\s*include(?:\s*\((.*)\)|\s+(.+?))\s*$`)
 	gradleParenthesizedLiteralRE = regexp.MustCompile(`^\(\s*["']([^"']*)["']\s*\)$`)
 	gradleBareLiteralRE          = regexp.MustCompile(`^["']([^"']*)["']$`)
 )
 
+type gradleIncludedProject struct {
+	directory string
+	artifact  string
+}
+
 func extractGradlePackage(filePath, body string) (GradlePackageRecord, bool) {
 	record, _ := parseGradleMetadata(filePath, body)
-	return record, record.Group != "" || record.Artifact != "" || len(record.Dependencies) > 0
+	return record, record.Group != "" || record.Artifact != "" || len(record.Dependencies) > 0 || len(record.included) > 0
 }
 
 func gradleExtractionLimitations(filePath, body string) []string {
@@ -31,6 +37,7 @@ func parseGradleMetadata(filePath, body string) (GradlePackageRecord, []string) 
 	sanitized := sanitizeGradleLexical(body)
 	record.Group, limitations = resolveGradleAssignments(filePath, "group", gradleGroupAssignmentRE.FindAllStringSubmatch(sanitized, -1), limitations)
 	record.Artifact, limitations = resolveGradleAssignments(filePath, "artifact", gradleArtifactAssignmentRE.FindAllStringSubmatch(sanitized, -1), limitations)
+	record.included, limitations = extractGradleIncludedProjects(filePath, sanitized, limitations)
 	if record.Artifact == "" {
 		if artifact := derivedGradleSubprojectArtifact(filePath); artifact != "" {
 			record.Artifact = artifact
@@ -67,6 +74,61 @@ func parseGradleMetadata(filePath, body string) (GradlePackageRecord, []string) 
 		return record.Dependencies[i].Scope < record.Dependencies[j].Scope
 	})
 	return record, limitations
+}
+
+func extractGradleIncludedProjects(filePath, body string, limitations []string) ([]gradleIncludedProject, []string) {
+	switch path.Base(strings.ReplaceAll(filePath, "\\", "/")) {
+	case "settings.gradle", "settings.gradle.kts":
+	default:
+		return nil, limitations
+	}
+	byDirectory := map[string]gradleIncludedProject{}
+	for _, statement := range gradleIncludeStatementRE.FindAllStringSubmatch(body, -1) {
+		arguments := statement[1]
+		if arguments == "" {
+			arguments = statement[2]
+		}
+		for _, argument := range strings.Split(arguments, ",") {
+			literal, ok := literalGradleValue(argument)
+			if !ok {
+				limitations = append(limitations, filePath+": computed Gradle included projects are not statically resolved")
+				continue
+			}
+			project, ok := literalGradleIncludedProject(literal)
+			if !ok {
+				limitations = append(limitations, filePath+": invalid Gradle included project path is not statically resolved")
+				continue
+			}
+			byDirectory[project.directory] = project
+		}
+	}
+	directories := make([]string, 0, len(byDirectory))
+	for directory := range byDirectory {
+		directories = append(directories, directory)
+	}
+	sort.Strings(directories)
+	projects := make([]gradleIncludedProject, 0, len(directories))
+	for _, directory := range directories {
+		projects = append(projects, byDirectory[directory])
+	}
+	return projects, limitations
+}
+
+func literalGradleIncludedProject(value string) (gradleIncludedProject, bool) {
+	value = strings.Trim(strings.TrimSpace(value), ":")
+	if value == "" || strings.Contains(value, "$") || strings.ContainsAny(value, `/\`) {
+		return gradleIncludedProject{}, false
+	}
+	segments := strings.Split(value, ":")
+	for _, segment := range segments {
+		if segment == "" || segment == "." || segment == ".." {
+			return gradleIncludedProject{}, false
+		}
+	}
+	return gradleIncludedProject{
+		directory: strings.Join(segments, "/"),
+		artifact:  segments[len(segments)-1],
+	}, true
 }
 
 func derivedGradleSubprojectArtifact(filePath string) string {

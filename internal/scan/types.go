@@ -1065,6 +1065,7 @@ type GradlePackageRecord struct {
 	Group        string                   `json:"group,omitempty"`
 	Artifact     string                   `json:"artifact,omitempty"`
 	Dependencies []GradleDependencyRecord `json:"dependencies,omitempty"`
+	included     []gradleIncludedProject
 }
 
 type GradleDependencyRecord struct {
