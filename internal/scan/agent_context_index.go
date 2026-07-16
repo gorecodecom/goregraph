@@ -310,12 +310,12 @@ func (builder *agentContextBuilder) addRouteFacts(routes []CodeRouteRecord) {
 		}
 		id := builder.addFact(fact)
 		key := contextRouteKey(method, routePath)
-		builder.routeFactIDs[key] = append(
+		builder.routeFactIDs[key] = appendUniqueContextID(
 			builder.routeFactIDs[key],
 			id,
 		)
 		if route.RouteID != "" {
-			builder.routeFactIDsBySource[route.RouteID] = append(
+			builder.routeFactIDsBySource[route.RouteID] = appendUniqueContextID(
 				builder.routeFactIDsBySource[route.RouteID],
 				id,
 			)
@@ -509,13 +509,21 @@ func (builder *agentContextBuilder) addRelationEdges(relations []RichRelationRec
 			continue
 		}
 		fromID := builder.resolveFactID(relation.FromSymbolID, relation.From, relation.From, relation.Line, "route")
-		toID := builder.resolveFactID(
-			relation.ToSymbolID,
-			firstNonEmpty(relation.TargetQualifiedName, relation.To),
-			relation.To,
-			0,
-			"",
-		)
+		toID := ""
+		if relation.Resolution == SymbolResolutionUnresolved {
+			if relation.TargetQualifiedName == "" {
+				continue
+			}
+			toID = builder.resolveExactQualifiedFactID(relation.TargetQualifiedName)
+		} else {
+			toID = builder.resolveFactID(
+				relation.ToSymbolID,
+				firstNonEmpty(relation.TargetQualifiedName, relation.To),
+				relation.To,
+				0,
+				"",
+			)
+		}
 		if fromID == "" || toID == "" || fromID == toID {
 			continue
 		}
@@ -811,6 +819,23 @@ func (builder *agentContextBuilder) resolveFactID(symbolID, label, file string, 
 	return ""
 }
 
+func (builder *agentContextBuilder) resolveExactQualifiedFactID(qualified string) string {
+	qualified = strings.TrimSpace(qualified)
+	if qualified == "" {
+		return ""
+	}
+	var matches []string
+	for _, id := range builder.factIDsByLabel[contextLabelKey(qualified)] {
+		if builder.factsByID[id].Qualified == qualified {
+			matches = appendUniqueContextID(matches, id)
+		}
+	}
+	if len(matches) != 1 {
+		return ""
+	}
+	return matches[0]
+}
+
 func (builder *agentContextBuilder) bestFactID(ids []string, file string, line int, preferredKind string) string {
 	bestID := ""
 	bestScore := -1
@@ -852,9 +877,6 @@ func (builder *agentContextBuilder) routeFactIDForFlow(flow CodeFlowRecord) stri
 		ids := builder.routeFactIDsBySource[flow.RouteID]
 		if len(ids) == 1 {
 			return ids[0]
-		}
-		if len(ids) > 1 {
-			return builder.bestFactID(ids, flow.File, flow.Line, "route")
 		}
 	}
 	key := contextRouteKey(flow.HTTPMethod, flow.Path)

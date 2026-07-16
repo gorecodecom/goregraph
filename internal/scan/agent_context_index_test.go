@@ -241,6 +241,35 @@ func TestBuildProjectAgentContextIndexUsesOneSelectedRoutePerFlow(t *testing.T) 
 	}
 }
 
+func TestBuildProjectAgentContextIndexFallsBackFromDuplicateRouteIDToMethodPath(t *testing.T) {
+	routes := []CodeRouteRecord{
+		{
+			RouteID: "route:duplicate", Kind: "backend", HTTPMethod: "GET", Path: "/admin",
+			Handler: "Routes.listAdmins", File: "src/Routes.java", Line: 19,
+		},
+		{
+			RouteID: "route:duplicate", Kind: "backend", HTTPMethod: "POST", Path: "/users",
+			Handler: "Routes.createUser", File: "src/Routes.java", Line: 50,
+		},
+	}
+	flows := []CodeFlowRecord{{
+		RouteID: "route:duplicate", HTTPMethod: "POST", Path: "/users",
+		Handler: "Routes.createUser", File: "src/Routes.java", Line: 20,
+		Steps: []CodeFlowStep{
+			{Name: "createUser", Owner: "Routes", Kind: "route_handler", File: "src/Routes.java", Line: 20},
+			{Name: "save", Owner: "UserService", Kind: "service_method", File: "src/UserService.java", Line: 30},
+		},
+	}}
+
+	index := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		routes, flows, nil, nil, nil, nil, nil, nil)
+
+	if len(index.Edges) != 1 || index.Edges[0].FromLabel != "POST /users" ||
+		index.Edges[0].ToLabel != "UserService.save" {
+		t.Fatalf("duplicate route ID bound wrong flow route: %#v", index.Edges)
+	}
+}
+
 func TestBuildProjectAgentContextIndexRejectsLexicalAndAmbiguousRelations(t *testing.T) {
 	symbols := []RichSymbolRecord{
 		{ID: "consumer-a", Name: "ConsumerA", QualifiedName: "pkg.ConsumerA", Kind: "class", Language: "java", File: "a/Consumer.java", Line: 1},
@@ -315,6 +344,44 @@ func TestBuildProjectAgentContextIndexRejectsAmbiguousLegacyFileTarget(t *testin
 
 	if len(index.Edges) != 0 {
 		t.Fatalf("ambiguous legacy file-target edge leaked: %#v", index.Edges)
+	}
+}
+
+func TestBuildProjectAgentContextIndexRejectsUnresolvedFileOnlyTarget(t *testing.T) {
+	symbols := []RichSymbolRecord{
+		{ID: "consumer", Name: "Consumer", QualifiedName: "pkg.Consumer", Kind: "class", Language: "java", File: "a/Consumer.java", Line: 1},
+		{ID: "provider", Name: "Provider", QualifiedName: "pkg.Provider", Kind: "class", Language: "java", File: "b/Provider.java", Line: 1},
+	}
+	relations := []RichRelationRecord{{
+		ID: "unresolved-file-call", From: "a/Consumer.java", To: "b/Provider.java",
+		Type: "calls", Resolution: SymbolResolutionUnresolved, Line: 12,
+	}}
+
+	index := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		nil, nil, symbols, relations, nil, nil, nil, nil)
+
+	if len(index.Edges) != 0 {
+		t.Fatalf("unresolved file-only target leaked: %#v", index.Edges)
+	}
+}
+
+func TestBuildProjectAgentContextIndexAllowsExactQualifiedUnresolvedTarget(t *testing.T) {
+	symbols := []RichSymbolRecord{
+		{ID: "consumer", Name: "Consumer", QualifiedName: "pkg.Consumer", Kind: "class", Language: "java", File: "a/Consumer.java", Line: 1},
+		{ID: "provider", Name: "Provider", QualifiedName: "pkg.Provider", Kind: "class", Language: "java", File: "b/Provider.java", Line: 1},
+	}
+	relations := []RichRelationRecord{{
+		ID: "unresolved-qualified-call", From: "a/Consumer.java", To: "b/Provider.java",
+		TargetQualifiedName: "pkg.Provider", Type: "calls",
+		Resolution: SymbolResolutionUnresolved, Line: 12,
+	}}
+
+	index := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		nil, nil, symbols, relations, nil, nil, nil, nil)
+
+	if len(index.Edges) != 1 || index.Edges[0].FromLabel != "pkg.Consumer" ||
+		index.Edges[0].ToLabel != "pkg.Provider" {
+		t.Fatalf("exact-qualified unresolved target edge = %#v", index.Edges)
 	}
 }
 
