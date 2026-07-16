@@ -942,6 +942,82 @@ func TestScriptConditionalPackageTargetsRemainAmbiguous(t *testing.T) {
 	}
 }
 
+func TestScriptStaticImportSelectsConditionalImportBranch(t *testing.T) {
+	files := []FileRecord{
+		{Path: "app/src/App.ts", Language: "typescript"},
+		{Path: "packages/ui/src/esm.ts", Language: "typescript"},
+		{Path: "packages/ui/src/cjs.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(
+		files[0],
+		`import { CjsOnly, EsmOnly } from "@weka/ui";`,
+	))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export class EsmOnly {}`))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[2], `export class CjsOnly {}`))
+	provider, ok := extractNodePackage("packages/ui/package.json", `{
+		"name": "@weka/ui",
+		"exports": {
+			".": {
+				"import": "./src/esm.ts",
+				"require": "./src/cjs.ts"
+			}
+		}
+	}`)
+	if !ok {
+		t.Fatal("conditional package fixture was not extracted")
+	}
+	packages := []NodePackageRecord{
+		{Path: "app/package.json", Name: "app", Dependencies: []string{"@weka/ui"}},
+		provider,
+	}
+
+	resolved := ResolveScriptSymbolFacts(files, packages, nil, facts)
+	esm := assertScriptReference(t, resolved.References, "imports_value", "@weka/ui", "EsmOnly")
+	esmDeclaration := scriptDeclarationByQualified(t, resolved.Declarations, "packages/ui/src/esm#EsmOnly")
+	if esm.Resolution != SymbolResolutionExact || esm.ToSymbolID != esmDeclaration.ID {
+		t.Fatalf("ESM import branch = %#v, want exact %s", esm, esmDeclaration.ID)
+	}
+	cjs := assertScriptReference(t, resolved.References, "imports_value", "@weka/ui", "CjsOnly")
+	if cjs.Resolution != SymbolResolutionUnresolved || cjs.ToSymbolID != "" {
+		t.Fatalf("ESM import resolved require-only export: %#v", cjs)
+	}
+}
+
+func TestScriptStaticImportUsesConditionalDefaultFallback(t *testing.T) {
+	files := []FileRecord{
+		{Path: "app/src/App.ts", Language: "typescript"},
+		{Path: "packages/ui/src/default.ts", Language: "typescript"},
+	}
+	var facts ProjectSymbolFacts
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(
+		files[0],
+		`import { DefaultOnly } from "@weka/ui";`,
+	))
+	MergeProjectSymbolFacts(&facts, ExtractScriptSymbolFacts(files[1], `export class DefaultOnly {}`))
+	provider, ok := extractNodePackage("packages/ui/package.json", `{
+		"name": "@weka/ui",
+		"exports": {
+			".": {
+				"default": "./src/default.ts"
+			}
+		}
+	}`)
+	if !ok {
+		t.Fatal("default package fixture was not extracted")
+	}
+
+	resolved := ResolveScriptSymbolFacts(files, []NodePackageRecord{
+		{Path: "app/package.json", Name: "app", Dependencies: []string{"@weka/ui"}},
+		provider,
+	}, nil, facts)
+	reference := assertScriptReference(t, resolved.References, "imports_value", "@weka/ui", "DefaultOnly")
+	declaration := scriptDeclarationByQualified(t, resolved.Declarations, "packages/ui/src/default#DefaultOnly")
+	if reference.Resolution != SymbolResolutionExact || reference.ToSymbolID != declaration.ID {
+		t.Fatalf("conditional default fallback = %#v, want exact %s", reference, declaration.ID)
+	}
+}
+
 func TestScriptPackageTargetAmbiguitySurvivesOneExistingFile(t *testing.T) {
 	files := []FileRecord{
 		{Path: "app/src/App.ts", Language: "typescript"},
@@ -1178,6 +1254,19 @@ func TestExtractNodePackageScriptResolutionFields(t *testing.T) {
 	}
 	if !reflect.DeepEqual(record.Exports, want) {
 		t.Fatalf("exports = %#v, want %#v", record.Exports, want)
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wantCondition := range []string{
+		`"export_conditions"`,
+		`"types":["./src/user.d.ts"]`,
+		`"import":["./src/user.ts"]`,
+	} {
+		if !strings.Contains(string(encoded), wantCondition) {
+			t.Fatalf("conditional exports lost %s: %s", wantCondition, encoded)
+		}
 	}
 }
 

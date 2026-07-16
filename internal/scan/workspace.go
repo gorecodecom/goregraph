@@ -157,17 +157,19 @@ func extractNodePackage(path, body string) (NodePackageRecord, bool) {
 	if err := json.Unmarshal([]byte(body), &pkg); err != nil {
 		return NodePackageRecord{}, false
 	}
+	exports, exportConditions := normalizePackageExports(pkg.Exports)
 	record := NodePackageRecord{
-		Path:           path,
-		Name:           pkg.Name,
-		Version:        pkg.Version,
-		Private:        pkg.Private,
-		PackageManager: pkg.PackageManager,
-		Workspaces:     normalizeWorkspaces(pkg.Workspaces),
-		Scripts:        sortedKeys(pkg.Scripts),
-		Dependencies:   sortedDependencyKeys(pkg.Dependencies, pkg.DevDependencies, pkg.PeerDependencies),
-		Exports:        normalizePackageExports(pkg.Exports),
-		Types:          strings.TrimSpace(pkg.Types),
+		Path:             path,
+		Name:             pkg.Name,
+		Version:          pkg.Version,
+		Private:          pkg.Private,
+		PackageManager:   pkg.PackageManager,
+		Workspaces:       normalizeWorkspaces(pkg.Workspaces),
+		Scripts:          sortedKeys(pkg.Scripts),
+		Dependencies:     sortedDependencyKeys(pkg.Dependencies, pkg.DevDependencies, pkg.PeerDependencies),
+		Exports:          exports,
+		ExportConditions: exportConditions,
+		Types:            strings.TrimSpace(pkg.Types),
 	}
 	if record.Types == "" {
 		record.Types = strings.TrimSpace(pkg.Typings)
@@ -180,18 +182,19 @@ func extractNodePackage(path, body string) (NodePackageRecord, bool) {
 		record.Types != ""
 }
 
-func normalizePackageExports(value any) map[string][]string {
+func normalizePackageExports(value any) (map[string][]string, map[string]map[string][]string) {
 	if value == nil {
-		return nil
+		return nil, nil
 	}
 	result := map[string][]string{}
+	conditions := map[string]map[string][]string{}
 	if text, ok := value.(string); ok {
 		result["."] = []string{text}
-		return result
+		return result, nil
 	}
 	object, ok := value.(map[string]any)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	hasSubpaths := false
 	for key := range object {
@@ -204,7 +207,10 @@ func normalizePackageExports(value any) map[string][]string {
 		if leaves := staticStringLeaves(object); len(leaves) > 0 {
 			result["."] = leaves
 		}
-		return result
+		if normalized := staticPackageExportConditions(object); len(normalized) > 0 {
+			conditions["."] = normalized
+		}
+		return result, conditions
 	}
 	for key, raw := range object {
 		if key != "." && !strings.HasPrefix(key, "./") {
@@ -212,6 +218,29 @@ func normalizePackageExports(value any) map[string][]string {
 		}
 		if leaves := staticStringLeaves(raw); len(leaves) > 0 {
 			result[key] = leaves
+		}
+		if normalized := staticPackageExportConditions(raw); len(normalized) > 0 {
+			conditions[key] = normalized
+		}
+	}
+	if len(result) == 0 {
+		result = nil
+	}
+	if len(conditions) == 0 {
+		conditions = nil
+	}
+	return result, conditions
+}
+
+func staticPackageExportConditions(value any) map[string][]string {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	result := map[string][]string{}
+	for condition, raw := range object {
+		if leaves := staticStringLeaves(raw); len(leaves) > 0 {
+			result[condition] = leaves
 		}
 	}
 	if len(result) == 0 {

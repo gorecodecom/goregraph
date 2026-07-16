@@ -602,13 +602,14 @@ type PackageGraphRecord struct {
 }
 
 type PackageNodeRecord struct {
-	Name           string              `json:"name"`
-	Path           string              `json:"path"`
-	Kind           string              `json:"kind"`
-	PackageManager string              `json:"package_manager,omitempty"`
-	Scripts        []string            `json:"scripts,omitempty"`
-	Exports        map[string][]string `json:"exports,omitempty"`
-	Types          string              `json:"types,omitempty"`
+	Name             string                         `json:"name"`
+	Path             string                         `json:"path"`
+	Kind             string                         `json:"kind"`
+	PackageManager   string                         `json:"package_manager,omitempty"`
+	Scripts          []string                       `json:"scripts,omitempty"`
+	Exports          map[string][]string            `json:"exports,omitempty"`
+	ExportConditions map[string]map[string][]string `json:"export_conditions,omitempty"`
+	Types            string                         `json:"types,omitempty"`
 }
 
 type PackageEdgeRecord struct {
@@ -1117,14 +1118,15 @@ type MavenEdgeRecord struct {
 }
 
 type NodePackageRecord struct {
-	Path           string              `json:"path"`
-	Name           string              `json:"name,omitempty"`
-	Version        string              `json:"version,omitempty"`
-	Private        bool                `json:"private"`
-	PackageManager string              `json:"package_manager,omitempty"`
-	Workspaces     []string            `json:"workspaces,omitempty"`
-	Scripts        []string            `json:"scripts,omitempty"`
-	Dependencies   []string            `json:"dependencies,omitempty"`
-	Exports        map[string][]string `json:"exports,omitempty"`
-	Types          string              `json:"types,omitempty"`
+	Path             string                         `json:"path"`
+	Name             string                         `json:"name,omitempty"`
+	Version          string                         `json:"version,omitempty"`
+	Private          bool                           `json:"private"`
+	PackageManager   string                         `json:"package_manager,omitempty"`
+	Workspaces       []string                       `json:"workspaces,omitempty"`
+	Scripts          []string                       `json:"scripts,omitempty"`
+	Dependencies     []string                       `json:"dependencies,omitempty"`
+	Exports          map[string][]string            `json:"exports,omitempty"`
+	ExportConditions map[string]map[string][]string `json:"export_conditions,omitempty"`
+	Types            string                         `json:"types,omitempty"`
 }

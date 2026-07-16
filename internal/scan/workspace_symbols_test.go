@@ -637,6 +637,111 @@ func TestPackageGraphPreservesNodeEntrypoints(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSymbolsSelectStaticImportCondition(t *testing.T) {
+	providerPackage, ok := extractNodePackage("package.json", `{
+		"name": "@weka/users",
+		"exports": {
+			".": {
+				"import": "./src/esm.ts",
+				"require": "./src/cjs.ts"
+			}
+		}
+	}`)
+	if !ok {
+		t.Fatal("conditional package fixture was not extracted")
+	}
+	providerRecord := WorkspaceProjectRecord{
+		Path: "frontend/packages/users", Kind: "frontend", BuildSystem: "node", Indexed: true,
+	}
+	provider := workspaceIndexProject{
+		record: providerRecord,
+		symbols: []RichSymbolRecord{
+			{
+				ID: "esm", Name: "EsmOnly", ExportName: "EsmOnly",
+				Kind: "class", Language: "typescript", File: "src/esm.ts",
+				QualifiedName: "src/esm#EsmOnly", Module: "src/esm",
+				WorkspacePackage: "@weka/users", Analyzer: "typescript-source",
+				Confidence: ConfidenceExact, Coverage: CoverageComplete,
+			},
+			{
+				ID: "cjs", Name: "CjsOnly", ExportName: "CjsOnly",
+				Kind: "class", Language: "typescript", File: "src/cjs.ts",
+				QualifiedName: "src/cjs#CjsOnly", Module: "src/cjs",
+				WorkspacePackage: "@weka/users", Analyzer: "typescript-source",
+				Confidence: ConfidenceExact, Coverage: CoverageComplete,
+			},
+		},
+		packages: jsonRoundTrip(
+			t,
+			buildPackageGraph(WorkspaceIndex{NodePackages: []NodePackageRecord{providerPackage}}),
+		),
+	}
+	consumerRecord := WorkspaceProjectRecord{
+		Path: "frontend/apps/admin", Kind: "frontend", BuildSystem: "node", Indexed: true,
+	}
+	consumerSymbol := RichSymbolRecord{
+		ID: "app", Name: "App", ExportName: "App", Kind: "function", Language: "typescript",
+		File: "src/App.ts", QualifiedName: "src/App#App", Module: "src/App",
+		WorkspacePackage: "@weka/admin", Analyzer: "typescript-source",
+		Confidence: ConfidenceExact, Coverage: CoverageComplete,
+	}
+	consumer := workspaceIndexProject{
+		record:  consumerRecord,
+		symbols: []RichSymbolRecord{consumerSymbol},
+		relations: []RichRelationRecord{
+			{
+				ID: "esm-import", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "typescript-source", Line: 3,
+				TargetModule: "@weka/users", TargetExport: "EsmOnly",
+				Resolution: SymbolResolutionUnresolved,
+			},
+			{
+				ID: "cjs-import", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "imports_value", Language: "typescript", Analyzer: "typescript-source", Line: 4,
+				TargetModule: "@weka/users", TargetExport: "CjsOnly",
+				Resolution: SymbolResolutionUnresolved,
+			},
+			{
+				ID: "condition-unknown", From: "src/App.ts", FromSymbolID: consumerSymbol.ID,
+				Type: "calls_export", Language: "typescript", Analyzer: "typescript-source", Line: 5,
+				TargetModule: "@weka/users", TargetExport: "CjsOnly",
+				Resolution: SymbolResolutionUnresolved,
+			},
+		},
+		packages: PackageGraphRecord{Edges: []PackageEdgeRecord{{
+			From: "@weka/admin", To: "@weka/users", Type: "depends_on",
+		}}},
+	}
+	registry := workspaceSymbolRegistry(provider.record, consumer.record)
+
+	symbols, usages, err := BuildWorkspaceSymbolProjection(
+		registry,
+		[]workspaceIndexProject{consumer, provider},
+		registry.Generated,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	symbolIDByName := map[string]string{}
+	for _, symbol := range symbols.Symbols {
+		symbolIDByName[symbol.Name] = symbol.ID
+	}
+	usageByLine := map[int]CanonicalSymbolUsageRecord{}
+	for _, usage := range usages.Usages {
+		usageByLine[usage.SourceLine] = usage
+	}
+	if usageByLine[3].Resolution != SymbolResolutionExact ||
+		usageByLine[3].ProviderSymbolID != symbolIDByName["EsmOnly"] {
+		t.Fatalf("ESM workspace import = %#v", usageByLine[3])
+	}
+	for _, line := range []int{4, 5} {
+		if usageByLine[line].Resolution == SymbolResolutionExact ||
+			usageByLine[line].ProviderSymbolID != "" {
+			t.Fatalf("line %d selected an unproven conditional export: %#v", line, usageByLine[line])
+		}
+	}
+}
+
 func TestWorkspaceSymbolsUseOnlyEvidencedScriptExportsAndPreserveAliases(t *testing.T) {
 	files := []FileRecord{
 		{Path: "src/index.ts", Language: "typescript"},

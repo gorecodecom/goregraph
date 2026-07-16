@@ -633,9 +633,11 @@ func resolveWorkspaceSymbolCandidates(project workspaceIndexProject, reference R
 			}
 			return append([]CanonicalSymbolRecord(nil), candidates...), nil
 		}
-		candidates := append(
-			[]CanonicalSymbolRecord(nil),
-			lookup.scriptByWorkspacePackage[scriptWorkspacePackageKey(reference.TargetModule, reference.TargetExport)]...,
+		candidates := workspaceScriptPackageCandidates(
+			lookup,
+			reference.TargetModule,
+			reference.TargetExport,
+			reference.Type,
 		)
 		if len(candidates) == 0 {
 			return nil, nil
@@ -1012,18 +1014,23 @@ func indexWorkspaceScriptPackageExport(
 	target CanonicalSymbolRecord,
 	lookup workspaceSymbolLookup,
 ) {
-	for _, specifier := range workspaceScriptPackageSpecifiers(project.packages, workspacePackage, moduleFile) {
-		key := scriptWorkspacePackageKey(specifier, exportName)
+	for _, entry := range workspaceScriptPackageSpecifiers(project.packages, workspacePackage, moduleFile) {
+		key := scriptWorkspacePackageKey(entry.specifier, exportName, entry.condition)
 		lookup.scriptByWorkspacePackage[key] = append(lookup.scriptByWorkspacePackage[key], target)
 	}
 }
 
-func workspaceScriptPackageSpecifiers(graph PackageGraphRecord, workspacePackage, moduleFile string) []string {
+type workspaceScriptPackageSpecifierRecord struct {
+	specifier string
+	condition string
+}
+
+func workspaceScriptPackageSpecifiers(graph PackageGraphRecord, workspacePackage, moduleFile string) []workspaceScriptPackageSpecifierRecord {
 	module := workspaceScriptPhysicalModule(moduleFile)
 	if workspacePackage == "" || module == "" {
 		return nil
 	}
-	var specifiers []string
+	entries := map[string]workspaceScriptPackageSpecifierRecord{}
 	for _, node := range graph.Nodes {
 		if node.Name != workspacePackage {
 			continue
@@ -1041,17 +1048,83 @@ func workspaceScriptPackageSpecifiers(graph PackageGraphRecord, workspacePackage
 			if exportKey != "." && !strings.HasPrefix(exportKey, "./") {
 				continue
 			}
-			if workspaceScriptPackageTargetsModule(root, node.Exports[exportKey], module) {
-				specifiers = append(specifiers, workspaceScriptPackageSpecifier(node.Name, exportKey))
+			specifier := workspaceScriptPackageSpecifier(node.Name, exportKey)
+			conditions := node.ExportConditions[exportKey]
+			if len(conditions) == 0 {
+				if workspaceScriptPackageTargetsModule(root, node.Exports[exportKey], module) {
+					entry := workspaceScriptPackageSpecifierRecord{specifier: specifier}
+					entries[entry.specifier+"\x00"] = entry
+				}
+				continue
+			}
+			conditionNames := make([]string, 0, len(conditions))
+			for condition := range conditions {
+				conditionNames = append(conditionNames, condition)
+			}
+			sort.Strings(conditionNames)
+			for _, condition := range conditionNames {
+				if workspaceScriptPackageTargetsModule(root, conditions[condition], module) {
+					entry := workspaceScriptPackageSpecifierRecord{specifier: specifier, condition: condition}
+					entries[entry.specifier+"\x00"+entry.condition] = entry
+				}
 			}
 		}
 		if len(node.Exports["."]) == 0 &&
 			node.Types != "" &&
 			workspaceScriptPackageTargetsModule(root, []string{node.Types}, module) {
-			specifiers = append(specifiers, node.Name)
+			entry := workspaceScriptPackageSpecifierRecord{specifier: node.Name}
+			entries[entry.specifier+"\x00"] = entry
 		}
 	}
-	return sortedUniqueStrings(specifiers)
+	result := make([]workspaceScriptPackageSpecifierRecord, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, entry)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].specifier != result[j].specifier {
+			return result[i].specifier < result[j].specifier
+		}
+		return result[i].condition < result[j].condition
+	})
+	return result
+}
+
+func workspaceScriptPackageCandidates(
+	lookup workspaceSymbolLookup,
+	specifier string,
+	exportName string,
+	referenceType string,
+) []CanonicalSymbolRecord {
+	var candidates []CanonicalSymbolRecord
+	candidates = append(
+		candidates,
+		lookup.scriptByWorkspacePackage[scriptWorkspacePackageKey(specifier, exportName, "")]...,
+	)
+	condition := scriptReferencePackageCondition(referenceType)
+	for _, branch := range scriptPackageConditionBranches(condition) {
+		branchCandidates := lookup.scriptByWorkspacePackage[scriptWorkspacePackageKey(specifier, exportName, branch)]
+		if len(branchCandidates) == 0 {
+			continue
+		}
+		candidates = append(candidates, branchCandidates...)
+		break
+	}
+	return dedupeCanonicalWorkspaceSymbols(candidates)
+}
+
+func dedupeCanonicalWorkspaceSymbols(symbols []CanonicalSymbolRecord) []CanonicalSymbolRecord {
+	byID := make(map[string]CanonicalSymbolRecord, len(symbols))
+	for _, symbol := range symbols {
+		byID[symbol.ID] = symbol
+	}
+	result := make([]CanonicalSymbolRecord, 0, len(byID))
+	for _, symbol := range byID {
+		result = append(result, symbol)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ID < result[j].ID
+	})
+	return result
 }
 
 func workspaceScriptPackageTargetsModule(root string, targets []string, module string) bool {
@@ -1115,8 +1188,8 @@ func scriptProjectModuleKey(project, module, exportName string) string {
 	return project + "\x00" + module + "\x00" + exportName
 }
 
-func scriptWorkspacePackageKey(workspacePackage, exportName string) string {
-	return workspacePackage + "\x00" + exportName
+func scriptWorkspacePackageKey(workspacePackage, exportName, condition string) string {
+	return workspacePackage + "\x00" + exportName + "\x00" + condition
 }
 
 func isScriptLanguage(language string) bool {

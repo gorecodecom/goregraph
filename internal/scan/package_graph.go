@@ -21,13 +21,14 @@ func buildPackageGraph(workspace WorkspaceIndex) PackageGraphRecord {
 			kind = "workspace-root"
 		}
 		nodes = append(nodes, PackageNodeRecord{
-			Name:           emptyAsNone(pkg.Name),
-			Path:           pkg.Path,
-			Kind:           kind,
-			PackageManager: pkg.PackageManager,
-			Scripts:        pkg.Scripts,
-			Exports:        clonePackageExports(pkg.Exports),
-			Types:          pkg.Types,
+			Name:             emptyAsNone(pkg.Name),
+			Path:             pkg.Path,
+			Kind:             kind,
+			PackageManager:   pkg.PackageManager,
+			Scripts:          pkg.Scripts,
+			Exports:          clonePackageExports(pkg.Exports),
+			ExportConditions: clonePackageExportConditions(pkg.ExportConditions),
+			Types:            pkg.Types,
 		})
 	}
 
@@ -77,6 +78,17 @@ func clonePackageExports(exports map[string][]string) map[string][]string {
 	result := make(map[string][]string, len(exports))
 	for specifier, targets := range exports {
 		result[specifier] = append([]string(nil), targets...)
+	}
+	return result
+}
+
+func clonePackageExportConditions(conditions map[string]map[string][]string) map[string]map[string][]string {
+	if len(conditions) == 0 {
+		return nil
+	}
+	result := make(map[string]map[string][]string, len(conditions))
+	for specifier, branches := range conditions {
+		result[specifier] = clonePackageExports(branches)
 	}
 	return result
 }

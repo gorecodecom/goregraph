@@ -1853,7 +1853,11 @@ func (resolver scriptFactResolver) resolveModuleReference(reference *RichRelatio
 	if reference == nil || reference.TargetModule == "" {
 		return
 	}
-	resolved := resolver.resolveModule(reference.From, reference.TargetModule)
+	resolved := resolver.resolveModule(
+		reference.From,
+		reference.TargetModule,
+		scriptReferencePackageCondition(reference.Type),
+	)
 	if resolved.ambiguous || len(resolved.modules) != 1 {
 		if resolved.ambiguous || len(resolved.modules) > 1 {
 			reference.Resolution = SymbolResolutionAmbiguous
@@ -1927,7 +1931,11 @@ func (resolver scriptFactResolver) resolveReference(reference RichRelationRecord
 		}
 		return scriptReferenceResolution{modules: []scriptResolvedModule{{identity: reference.TargetModule, file: reference.From}}, reason: "same-module declaration not found"}
 	}
-	moduleResolution := resolver.resolveModule(reference.From, reference.TargetModule)
+	moduleResolution := resolver.resolveModule(
+		reference.From,
+		reference.TargetModule,
+		scriptReferencePackageCondition(reference.Type),
+	)
 	if len(moduleResolution.modules) == 0 {
 		return scriptReferenceResolution{reason: moduleResolution.reason, ambiguous: moduleResolution.ambiguous}
 	}
@@ -2021,7 +2029,11 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 			if required == scriptValueCapability && imported.scriptTypeOnly {
 				continue
 			}
-			targetModules := resolver.resolveModule(imported.From, imported.TargetModule)
+			targetModules := resolver.resolveModule(
+				imported.From,
+				imported.TargetModule,
+				scriptReferencePackageCondition(imported.Type),
+			)
 			ambiguous = ambiguous || targetModules.ambiguous
 			for _, targetModule := range targetModules.modules {
 				resolved := resolver.resolveExport(targetModule, imported.TargetExport, required, visited)
@@ -2056,7 +2068,11 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 		if required == scriptValueCapability && reference.scriptTypeOnly {
 			continue
 		}
-		targetModules := resolver.resolveModule(reference.From, reference.TargetModule)
+		targetModules := resolver.resolveModule(
+			reference.From,
+			reference.TargetModule,
+			scriptReferencePackageCondition(reference.Type),
+		)
 		ambiguous = ambiguous || targetModules.ambiguous
 		for _, targetModule := range targetModules.modules {
 			resolved := resolver.resolveExport(targetModule, sourceExport, required, visited)
@@ -2068,7 +2084,7 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 	return scriptExportResolution{candidates: dedupeScriptDeclarations(result), cyclic: cyclic, ambiguous: ambiguous}
 }
 
-func (resolver scriptFactResolver) resolveModule(fromFile, specifier string) scriptModuleResolution {
+func (resolver scriptFactResolver) resolveModule(fromFile, specifier, condition string) scriptModuleResolution {
 	if strings.HasPrefix(specifier, ".") {
 		modules, reason := resolver.resolveFileModules(path.Join(path.Dir(fromFile), specifier))
 		return scriptModuleResolution{modules: modules, reason: reason, ambiguous: len(modules) > 1}
@@ -2079,7 +2095,7 @@ func (resolver scriptFactResolver) resolveModule(fromFile, specifier string) scr
 		}
 		return scriptModuleResolution{modules: modules, reason: "TypeScript path alias", ambiguous: len(modules) > 1}
 	}
-	if modules, reason := resolver.resolveWorkspaceModules(fromFile, specifier); len(modules) > 0 || reason != "" {
+	if modules, reason := resolver.resolveWorkspaceModules(fromFile, specifier, condition); len(modules) > 0 || reason != "" {
 		return scriptModuleResolution{modules: modules, reason: reason, ambiguous: strings.Contains(reason, "ambiguous")}
 	}
 	return scriptModuleResolution{reason: "external or unresolved module specifier"}
@@ -2154,7 +2170,7 @@ func (resolver scriptFactResolver) resolveAliasModules(fromFile, specifier strin
 	return modules
 }
 
-func (resolver scriptFactResolver) resolveWorkspaceModules(fromFile, specifier string) ([]scriptResolvedModule, string) {
+func (resolver scriptFactResolver) resolveWorkspaceModules(fromFile, specifier, condition string) ([]scriptResolvedModule, string) {
 	providers, subpath, ok := workspacePackagesForSpecifier(specifier, resolver.packages)
 	if !ok {
 		return nil, ""
@@ -2169,13 +2185,17 @@ func (resolver scriptFactResolver) resolveWorkspaceModules(fromFile, specifier s
 	}
 	var modules []scriptResolvedModule
 	targetCount := 0
+	unselectedConditional := false
 	for _, provider := range providers {
-		targets := append([]string(nil), provider.Exports[key]...)
-		if len(targets) == 0 && key == "." && provider.Types != "" {
+		targets, conditional := scriptPackageExportTargets(provider, key, condition)
+		if conditional && condition == "" {
+			unselectedConditional = true
+		}
+		if len(targets) == 0 && key == "." && provider.Types != "" && (condition == "types" || !conditional) {
 			targets = []string{provider.Types}
 		}
 		root := path.Dir(provider.Path)
-		if len(targets) == 0 && key == "." {
+		if len(targets) == 0 && key == "." && !conditional {
 			targets = []string{"src/index", "index"}
 		}
 		targetCount += len(targets)
@@ -2186,13 +2206,51 @@ func (resolver scriptFactResolver) resolveWorkspaceModules(fromFile, specifier s
 		}
 	}
 	modules = uniqueScriptResolvedModules(modules)
-	if len(providers) > 1 || len(modules) > 1 || targetCount > 1 {
+	if unselectedConditional || len(providers) > 1 || len(modules) > 1 || targetCount > 1 {
 		return modules, "ambiguous workspace package export"
 	}
 	if len(modules) == 1 {
 		return modules, "workspace package dependency and static export"
 	}
 	return nil, "workspace package target was not found"
+}
+
+func scriptPackageExportTargets(provider NodePackageRecord, key, condition string) ([]string, bool) {
+	branches := provider.ExportConditions[key]
+	if len(branches) == 0 {
+		return append([]string(nil), provider.Exports[key]...), false
+	}
+	for _, branch := range scriptPackageConditionBranches(condition) {
+		if targets := branches[branch]; len(targets) > 0 {
+			return append([]string(nil), targets...), true
+		}
+	}
+	if condition == "" {
+		return append([]string(nil), provider.Exports[key]...), true
+	}
+	return nil, true
+}
+
+func scriptPackageConditionBranches(condition string) []string {
+	switch condition {
+	case "types":
+		return []string{"types", "import", "default"}
+	case "import":
+		return []string{"import", "default"}
+	default:
+		return nil
+	}
+}
+
+func scriptReferencePackageCondition(referenceType string) string {
+	switch referenceType {
+	case "imports_type", "reexports_type":
+		return "types"
+	case "imports_value", "imports_namespace", "imports_module", "reexports_value", "reexports_all":
+		return "import"
+	default:
+		return ""
+	}
 }
 
 func scriptFileCandidates(base string, files map[string]bool) []string {
