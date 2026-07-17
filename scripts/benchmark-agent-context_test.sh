@@ -61,8 +61,8 @@ EOF
 cat >"$temporary_directory/assisted-instruction.txt" <<'EOF'
 Call goregraph context once with the task and its default budget.
 Read only cited source needed for verification.
-If fallback_required is true, stop using GoreGraph.
-At most one narrower exact retry is allowed.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use the exact route or qualified symbol from that entrypoint; never use a call-chain value.
 EOF
 printf 'fixture\n' >"$temporary_directory/workspace/service.txt"
 chmod +x "$temporary_directory/bin/codex" "$temporary_directory/bin/goregraph"

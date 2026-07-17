@@ -211,10 +211,13 @@ Standard MCP exposes exactly one tool, `task_context`, with equivalent values.
 2. Read only cited file ranges needed to verify the result.
 3. If `fallback_required` is true, stop using GoreGraph immediately and inspect
    source.
-4. If confidence is low, or the first result does not return one exact route or
-   symbol, stop and inspect source.
-5. Only when confidence is not low and one exact route or symbol was returned,
-   allow one narrower retry using that exact value.
+4. If confidence is low, or the first result does not contain exactly one
+   reliable production entrypoint, stop and inspect source. Reliable means a
+   `route`, `symbol`, or `backend_handler` with `EXACT`, `RESOLVED`, or
+   `EXTRACTED` confidence.
+5. Only when further narrowing is necessary, allow one retry using that
+   entrypoint's exact returned route or qualified symbol. Never use a call-chain
+   value.
 6. After that retry, inspect source. There is no third Context call and no
    specialist-query fallback cascade.
 7. Run `goregraph doctor .` only when Context reports missing or stale output.

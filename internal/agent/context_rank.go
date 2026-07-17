@@ -22,7 +22,6 @@ const (
 	scoreExactConfidence      = 30
 	scoreResolvedConfidence   = 15
 	minimumContextSeedScore   = 180
-	maximumContextSeedFacts   = 3
 	maximumContextUncertainty = 3
 )
 
@@ -237,7 +236,8 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 }
 
 func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []rankedContextFact {
-	queryTokens := contextQueryTokens(query)
+	primaryQuery := contextPrimaryQuery(query)
+	queryTokens := contextQueryTokens(primaryQuery)
 	queryTerm := normalizeContextTerm(query)
 	ranked := make([]rankedContextFact, 0, len(facts))
 	for _, fact := range facts {
@@ -268,7 +268,10 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		}
 		exactClass := 0
 		score := 0
-		reason := "lexical match"
+		reason := "primary task match"
+		if normalizeContextTerm(primaryQuery) == queryTerm {
+			reason = "lexical match"
+		}
 		routeTerm := normalizeContextTerm(strings.TrimSpace(fact.HTTPMethod + " " + fact.Path))
 		qualifiedTerm := normalizeContextTerm(fact.Qualified)
 		nameTerm := normalizeContextTerm(fact.Name)
@@ -370,6 +373,27 @@ func contextQueryTokens(value string) []string {
 	return result
 }
 
+func contextPrimaryQuery(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value
+	}
+	segments := strings.FieldsFunc(value, func(current rune) bool {
+		return current == '.' || current == '?' || current == '!' || current == '\n' || current == '\r'
+	})
+	for _, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		if strings.HasSuffix(segment, ":") && len(strings.Fields(segment)) <= 3 {
+			continue
+		}
+		return segment
+	}
+	return value
+}
+
 var contextQueryTokenAliases = map[string][]string{
 	"vorschrift":         {"regulation", "regulations"},
 	"vorschriften":       {"regulation", "regulations"},
@@ -391,17 +415,54 @@ var contextQueryTokenAliases = map[string][]string{
 }
 
 func selectContextSeeds(ranked []rankedContextFact) []rankedContextFact {
-	seeds := make([]rankedContextFact, 0, maximumContextSeedFacts)
 	for _, candidate := range ranked {
 		if candidate.score < minimumContextSeedScore {
 			break
 		}
-		seeds = append(seeds, candidate)
-		if len(seeds) == maximumContextSeedFacts {
-			break
+		if reliableProductionContextSeed(candidate.fact) {
+			return []rankedContextFact{candidate}
 		}
 	}
-	return seeds
+	for _, candidate := range ranked {
+		if candidate.score < minimumContextSeedScore {
+			break
+		}
+		if strings.EqualFold(candidate.fact.Kind, "test") && candidate.exactClass > 0 {
+			return []rankedContextFact{candidate}
+		}
+	}
+	return nil
+}
+
+func reliableProductionContextSeed(fact scan.AgentContextFactRecord) bool {
+	if contextFactUsesTestSource(fact) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(fact.Kind)) {
+	case "route", "symbol", "backend_handler":
+	default:
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(fact.Confidence)) {
+	case "", "EXACT", "RESOLVED", "EXTRACTED":
+		return true
+	default:
+		return false
+	}
+}
+
+func contextFactUsesTestSource(fact scan.AgentContextFactRecord) bool {
+	path := "/" + strings.TrimPrefix(
+		strings.ToLower(strings.ReplaceAll(strings.TrimSpace(fact.File), "\\", "/")),
+		"/",
+	)
+	for _, marker := range []string{"/src/test/", "/test/", "/tests/", "/__tests__/"} {
+		if strings.Contains(path, marker) {
+			return true
+		}
+	}
+	return strings.HasSuffix(path, "_test.go") ||
+		strings.Contains(path, ".test.") || strings.Contains(path, ".spec.")
 }
 
 func contextTokens(value string) []string {
@@ -477,17 +538,28 @@ func expandContextEdges(
 	})
 	seen := map[string]bool{}
 	result := []expandedContextEdge{}
+	type contextExpansionFrontier struct {
+		factID   string
+		seedRank int
+	}
+	frontier := []contextExpansionFrontier{}
+	appendEdge := func(edge scan.AgentContextEdgeRecord, seedRank int, neighbor scan.AgentContextFactRecord) {
+		key := edge.ID
+		if key == "" {
+			key = edge.FromFactID + "\x00" + edge.ToFactID + "\x00" + edge.Kind
+		}
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		result = append(result, expandedContextEdge{
+			edge: edge, seedRank: seedRank, neighbor: neighbor,
+		})
+	}
 	for seedRank, seed := range seeds {
 		for _, edge := range sortedEdges {
 			if edge.FromFactID == edge.ToFactID ||
 				edge.FromFactID != seed.fact.ID && edge.ToFactID != seed.fact.ID {
-				continue
-			}
-			key := edge.ID
-			if key == "" {
-				key = edge.FromFactID + "\x00" + edge.ToFactID + "\x00" + edge.Kind
-			}
-			if seen[key] {
 				continue
 			}
 			neighborID := edge.ToFactID
@@ -498,10 +570,22 @@ func expandContextEdges(
 			if !ok {
 				continue
 			}
-			seen[key] = true
-			result = append(result, expandedContextEdge{
-				edge: edge, seedRank: seedRank, neighbor: neighbor,
-			})
+			appendEdge(edge, seedRank, neighbor)
+			if edge.FromFactID == seed.fact.ID && reliableProductionContextSeed(neighbor) {
+				frontier = append(frontier, contextExpansionFrontier{factID: neighbor.ID, seedRank: seedRank})
+			}
+		}
+	}
+	for _, current := range frontier {
+		for _, edge := range sortedEdges {
+			if edge.FromFactID != current.factID || edge.FromFactID == edge.ToFactID {
+				continue
+			}
+			neighbor, ok := factByID[edge.ToFactID]
+			if !ok {
+				continue
+			}
+			appendEdge(edge, current.seedRank, neighbor)
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {

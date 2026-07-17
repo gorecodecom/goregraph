@@ -34,7 +34,8 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
   human `dashboard/` projections;
 - `goregraph context` with defaults of 1,800 estimated tokens and 12 files,
   immediate `fallback_required` source inspection, and at most one narrower
-  retry using one exact route or symbol;
+  retry using the exact route or qualified symbol from one reliable production
+  entrypoint, never a call-chain value;
 - standard MCP with exactly `task_context`; explicit
   `goregraph mcp --expert-tools` retains legacy diagnostics and exploration for
   manual use only;
@@ -92,6 +93,11 @@ protocol is violated, or the required external evidence is missing, do not
 release 1.3.0. Keep the dashboard, remove the standard MCP integration from
 release documentation, and decide explicitly whether to ship dashboard-only or
 continue Context-ranking work in a later version.
+
+The latest single-run diagnostic pair (169,913 baseline, 148,657 assisted)
+saved 12.51% and therefore failed the 20% token gate. It was used to add the
+production-entrypoint ranking regression described in `BENCHMARKING.md`; it is
+not release evidence. A fresh controlled three-by-three run remains required.
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.
 

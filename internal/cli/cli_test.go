@@ -1248,8 +1248,10 @@ func TestContextHelpDocumentsBoundedAgentWorkflow(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Call Context once",
-		"one exact route or symbol",
+		"exactly one reliable production entrypoint",
+		"EXACT, RESOLVED, or EXTRACTED",
 		"one narrower retry",
+		"Never retry with a call-chain value",
 		"fallback_required",
 		"stop using GoreGraph",
 		"There is no third Context call",

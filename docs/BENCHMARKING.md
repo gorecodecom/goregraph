@@ -48,8 +48,8 @@ The assisted instruction is exactly these four lines:
 ```text
 Call goregraph context once with the task and its default budget.
 Read only cited source needed for verification.
-If fallback_required is true, stop using GoreGraph.
-At most one narrower exact retry is allowed.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use the exact route or qualified symbol from that entrypoint; never use a call-chain value.
 ```
 
 Reject the benchmark before running if an input is absent, either instruction
@@ -108,6 +108,26 @@ totals.
 
 Each assisted transcript must also show no more than two Context Pack calls and
 no specialist GoreGraph query or expert MCP fallback.
+
+## Latest diagnostic evidence
+
+A single matched-task diagnostic run recorded 169,913 baseline tokens and
+148,657 assisted tokens. The assisted run used 21,256 fewer tokens (12.51%), or
+87.49% of the baseline. It therefore missed the 80% gate: the maximum for that
+baseline was 135,930 tokens, 12,727 fewer than the assisted result.
+
+This pair is regression evidence, not release evidence. It has only one run per
+variant, and the transcripts did not load identical agent skills. The pre-fix
+Context Pack also selected three test methods as entrypoints, required an
+unhelpful symbol retry, and did not reduce source navigation.
+
+The resulting 1.3.0 ranking regression now requires one reliable production
+entrypoint, ranks the first substantive problem statement ahead of later
+analysis requirements, excludes test-source symbols from production seeds, and
+follows a bounded two-step production chain. Against the same generated index,
+the corrected local pack selects the public DELETE route and its operations
+service in 534 estimated tokens instead of the incorrect 895-token pack. This
+pack-size improvement does not replace a new three-by-three end-to-end run.
 
 ## Twelve-point quality rubric
 

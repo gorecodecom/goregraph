@@ -243,11 +243,16 @@ goregraph context . --query "<current coding task>" --budget-tokens 1800 --max-f
 ```
 
 Agents should read only the cited source ranges required to verify the result.
-If `fallback_required` is true, confidence is low, or no single exact route or
-symbol is returned, stop using GoreGraph and inspect source directly. Only a
-non-low-confidence first pack containing one exact route or symbol permits one
-narrower retry using that exact value. After that retry, continue from source;
-do not start a specialist-query cascade.
+For long task descriptions, GoreGraph ranks the first substantive problem
+statement as the primary action, selects one reliable production entrypoint,
+and follows at most two bounded production steps. Tests remain supporting
+neighbors instead of entrypoints. If `fallback_required` is true, confidence is
+low, or there is not exactly one `route`, `symbol`, or `backend_handler` with
+`EXACT`, `RESOLVED`, or `EXTRACTED` confidence, stop using GoreGraph and inspect
+source directly. If further narrowing is necessary, one retry may use that
+entrypoint's exact returned route or qualified symbol. Never retry with a
+call-chain value. After that retry, continue from source; do not start a
+specialist-query cascade.
 
 ### Update source safely before scanning
 
@@ -904,9 +909,11 @@ goregraph context <path> --query "<current coding task>" --budget-tokens 1800 --
 The result contains bounded entrypoints, relationships, tests, risks, source
 files, evidence IDs, confidence, freshness, and explicit uncertainty. If
 `fallback_required` is true, stop using GoreGraph and inspect source directly.
-Only a non-low-confidence result containing one exact route or symbol permits
-one narrower retry with that exact value. After the second Context call, continue
-from source regardless of outcome.
+Only a non-low-confidence result with exactly one reliable production
+entrypoint permits one narrower retry when further narrowing is necessary. Use
+that entrypoint's exact returned route or qualified symbol, never a call-chain
+value. After the second Context call, continue from source regardless of
+outcome.
 
 Legacy `query task-context`, workspace-delta, diagnostics, service-context, and
 other specialist queries remain available for manual compatibility. They are not

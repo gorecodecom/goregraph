@@ -960,8 +960,13 @@ Budget tokens: 256-4000. Max files: 1-20.
 Normal agent workflow:
   Call Context once for the current coding task and verify only cited source ranges.
   If fallback_required is true, stop using GoreGraph and inspect source directly.
-  If confidence is low, or there is not one exact route or symbol, inspect source.
-  Otherwise, one narrower retry with that one exact route or symbol is allowed.
+  A reliable production entrypoint is a route, symbol, or backend_handler with
+  confidence EXACT, RESOLVED, or EXTRACTED.
+  If confidence is low, or there is not exactly one reliable production entrypoint,
+  inspect source directly.
+  If further narrowing is necessary, one narrower retry with that entrypoint's
+  exact returned route or qualified symbol is allowed.
+  Never retry with a call-chain value.
   There is no third Context call and no specialist-query fallback cascade.
   Run goregraph doctor . only when Context reports missing or stale output.
 

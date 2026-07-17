@@ -282,8 +282,8 @@ fi
 expected_baseline='Do not use the goregraph CLI, MCP tools, goregraph-out, or .goregraph-workspace files.'
 expected_assisted='Call goregraph context once with the task and its default budget.
 Read only cited source needed for verification.
-If fallback_required is true, stop using GoreGraph.
-At most one narrower exact retry is allowed.'
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use the exact route or qualified symbol from that entrypoint; never use a call-chain value.'
 expected_baseline_file="$temporary_directory/expected-baseline.txt"
 expected_baseline_no_newline="$temporary_directory/expected-baseline-no-newline.txt"
 expected_assisted_file="$temporary_directory/expected-assisted.txt"

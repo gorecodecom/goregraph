@@ -11,11 +11,13 @@ goregraph context <path> --query "<current coding task>" --budget-tokens 1800 --
 
 The equivalent standard MCP tool is `task_context`. Read only the cited source
 ranges required to verify the result. If `fallback_required` is true, confidence
-is low, or the result does not contain one exact route or symbol, stop using
-GoreGraph and inspect source directly. At most one narrower retry is allowed,
-and only when the first pack is not low-confidence and contains one exact route
-or symbol; use that exact returned value. After the retry, continue from source;
-do not call specialist tools in sequence.
+is low, or the result does not contain exactly one reliable production
+entrypoint, stop using GoreGraph and inspect source directly. A reliable
+production entrypoint is a `route`, `symbol`, or `backend_handler` with
+`EXACT`, `RESOLVED`, or `EXTRACTED` confidence. At most one narrower retry is
+allowed when further narrowing is necessary; use the exact returned route or
+qualified symbol from that entrypoint, never a call-chain value. After the
+retry, continue from source; do not call specialist tools in sequence.
 
 Run `goregraph doctor <path>` only when Context reports missing or stale output.
 
@@ -434,11 +436,17 @@ goregraph context . --query "Trace GET /users/{id}" --budget-tokens 1800 --max-f
 ```
 
 Use the first Context Pack directly and read only cited source ranges needed to
-verify it. If it reports `fallback_required`, low confidence, or no single exact
-route/symbol, stop using GoreGraph and inspect source. Only a non-low-confidence
-pack with one exact returned route or symbol permits one narrower retry using
-that exact value. After the retry, inspect source; there is no third Context call
-or specialist-query fallback cascade.
+verify it. Long task descriptions are ranked by their first substantive problem
+statement; later analysis requirements do not outrank the primary action. The
+pack contains one reliable production entrypoint and follows at most two bounded
+production steps. Tests can be supporting neighbors, but never ordinary
+entrypoints. If the pack reports `fallback_required`, low confidence, or does
+not contain exactly one reliable `route`, `symbol`, or `backend_handler` with
+`EXACT`, `RESOLVED`, or `EXTRACTED` confidence, stop using GoreGraph and inspect
+source. If further narrowing is necessary, one retry may use that entrypoint's
+exact returned route or qualified symbol. Never retry with a call-chain value.
+After the retry, inspect source; there is no third Context call or
+specialist-query fallback cascade.
 
 ## `goregraph git update [path]`
 
@@ -1339,10 +1347,11 @@ goregraph mcp
 
 The standard server exposes only `task_context`. Give it the task and use its
 first Context Pack directly. If it reports `fallback_required`, low confidence,
-or no single exact route/symbol, stop using GoreGraph and inspect source. Only a
-non-low-confidence first pack with one exact returned route or symbol permits
-one narrower `task_context` call using that exact value. After that retry,
-inspect source regardless of its outcome.
+or does not contain exactly one reliable production entrypoint, stop using
+GoreGraph and inspect source. If further narrowing is necessary, one narrower
+`task_context` call may use that entrypoint's exact returned route or qualified
+symbol. Never use a call-chain value for the retry. After that retry, inspect
+source regardless of its outcome.
 
 Legacy specialist tools are manual compatibility operations. Expose them only
 with the explicit expert mode:

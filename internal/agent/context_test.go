@@ -157,7 +157,7 @@ func TestBuildContextRejectsInvalidIndexGraphs(t *testing.T) {
 	}
 }
 
-func TestBuildContextRanksExactRouteAndExpandsOneHopBothDirections(t *testing.T) {
+func TestBuildContextRanksExactRouteAndExpandsBoundedProductionChain(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Generated:     "2026-07-16T00:00:00Z",
@@ -184,11 +184,11 @@ func TestBuildContextRanksExactRouteAndExpandsOneHopBothDirections(t *testing.T)
 	if pack.FallbackRequired || len(pack.Entrypoints) == 0 || pack.Entrypoints[0].ID != "route" {
 		t.Fatalf("ranked pack = %#v", pack)
 	}
-	if len(pack.CallChain) != 2 || len(pack.Tests) != 1 || pack.Tests[0].ID != "test" {
-		t.Fatalf("one-hop expansion = %#v", pack)
+	if len(pack.CallChain) != 3 || len(pack.Tests) != 1 || pack.Tests[0].ID != "test" {
+		t.Fatalf("bounded expansion = %#v", pack)
 	}
-	if len(pack.Persistence) != 0 || contextPackHasFile(pack, "Repository.java") {
-		t.Fatalf("second hop leaked into pack: %#v", pack)
+	if len(pack.Persistence) != 1 || !contextPackHasFile(pack, "Repository.java") {
+		t.Fatalf("production second hop is missing: %#v", pack)
 	}
 	if pack.CallChain[0].From == "call" || pack.CallChain[0].To == "route" {
 		t.Fatalf("relationships should expose labels, not IDs: %#v", pack.CallChain)
@@ -266,6 +266,102 @@ func TestBuildContextPrioritizesPrimaryGermanActionOverAffectedEntity(t *testing
 	}
 	if len(pack.Entrypoints) == 0 || pack.Entrypoints[0].ID != "regulation-route" {
 		t.Fatalf("primary removal action did not win over affected tasks: %#v", pack.Entrypoints)
+	}
+}
+
+func TestBuildContextUsesProductionEntrypointsForLongAnalysisRequests(t *testing.T) {
+	query := "Im Vorschriftendienst bleiben beim Entfernen einer Vorschrift aus einem Kataster die mit dieser Vorschrift verbundenen Aufgaben bestehen. " +
+		"Analysiere repositoryübergreifend in ms-cadasterregulation, ms-cadastertask und ms-common den öffentlichen REST-Endpunkt, " +
+		"die bestehende und benötigte Aufrufkette, Aufgabenarten und Suchattribute, internen API-Vertrag, Authentifizierung/Konfiguration, " +
+		"Persistenz, Protokollierung/E-Mail/Benutzerinformationen, Produktions- und Testdateien sowie Fehlerbehandlung und Retry-Logik; keine Implementierung."
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-17T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "route", Project: "ms-cadasterregulation", Kind: "route",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+				Qualified: "CadasterRegulationController.deleteFromCadaster",
+				File:      "CadasterRegulationController.java", Line: 195, Confidence: "EXTRACTED",
+				Search: "delete remove cadaster cadasters regulation regulations",
+			},
+			{
+				ID: "controller", Project: "ms-cadasterregulation", Kind: "symbol",
+				Name: "deleteFromCadaster", Qualified: "CadasterRegulationController.deleteFromCadaster",
+				File: "CadasterRegulationController.java", Line: 196, Confidence: "EXTRACTED",
+			},
+			{
+				ID: "service", Project: "ms-cadasterregulation", Kind: "symbol",
+				Name: "deleteRegulationFromCadaster", Qualified: "CadasterRegulationOperationsService.deleteRegulationFromCadaster",
+				File: "CadasterRegulationOperationsService.java", Line: 46, Confidence: "EXTRACTED",
+			},
+			{
+				ID: "task-test", Project: "ms-cadastertask", Kind: "test",
+				Name:      "testDeleteRegChangeTask_otherResponsible_withCc_mailSent",
+				Qualified: "CadasterTaskMailTests.testDeleteRegChangeTask_otherResponsible_withCc_mailSent",
+				File:      "CadasterTaskMailTests.java", Line: 800, Confidence: "MATCHED",
+				Search: "delete regulation task responsible mail user retry test",
+			},
+			{
+				ID: "query-test", Project: "ms-cadasterregulation", Kind: "test",
+				Name:      "testGetRegulationChanges_changes_searchInComments_okay",
+				Qualified: "CadasterRegulationControllerQueryTest.testGetRegulationChanges_changes_searchInComments_okay",
+				File:      "CadasterRegulationControllerQueryTest.java", Line: 400, Confidence: "MATCHED",
+				Search: "regulation changes search comments task test persistence api retry",
+			},
+			{
+				ID: "test-class-symbol", Project: "ms-cadasterregulation", Kind: "symbol",
+				Name:       "CadasterRegulationControllerDeleteTest",
+				Qualified:  "com.weka.vd.api.cadasterregulation.controller.CadasterRegulationControllerDeleteTest",
+				File:       "src/test/java/com/weka/vd/api/cadasterregulation/controller/CadasterRegulationControllerDeleteTest.java",
+				Confidence: "EXACT",
+				Search:     "delete remove cadaster cadasters regulation regulations related tasks test",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "route-controller", FromFactID: "route", ToFactID: "controller", Kind: "call", Reason: "flow", Confidence: "EXTRACTED"},
+			{ID: "controller-service", FromFactID: "controller", ToFactID: "service", Kind: "call", Reason: "flow", Confidence: "EXTRACTED"},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "route" {
+		t.Fatalf("long analysis request did not start at the production route: %#v", pack)
+	}
+	if len(pack.CallChain) != 2 || !contextPackHasFile(pack, "CadasterRegulationOperationsService.java") {
+		t.Fatalf("long analysis request omitted the bounded production chain: %#v", pack)
+	}
+	for _, entrypoint := range pack.Entrypoints {
+		if entrypoint.Kind == "test" {
+			t.Fatalf("test leaked into production entrypoints: %#v", pack.Entrypoints)
+		}
+	}
+}
+
+func TestBuildContextFallsBackForUnreliableTestOnlyMatches(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "test", Project: "tasks", Kind: "test",
+				Name: "testDeleteRegulationTaskRetry", File: "TaskTest.java",
+				Confidence: "MATCHED", Search: "delete remove regulation regulations task retry",
+			},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "Entferne eine Vorschrift und analysiere Aufgaben sowie Retry-Logik",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pack.FallbackRequired || len(pack.Entrypoints) != 0 {
+		t.Fatalf("unreliable test-only match must require source fallback: %#v", pack)
 	}
 }
 
@@ -352,7 +448,7 @@ func TestBuildContextExpandsOnlyRetainedSeeds(t *testing.T) {
 	}
 }
 
-func TestBuildContextPreservesRankedSeedOrder(t *testing.T) {
+func TestBuildContextKeepsOnlyHighestRankedProductionSeed(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{
@@ -371,13 +467,12 @@ func TestBuildContextPreservesRankedSeedOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pack.Entrypoints) != 2 || pack.Entrypoints[0].ID != "top" ||
-		pack.Entrypoints[1].ID != "lower" {
-		t.Fatalf("entrypoint rank order was lost: %#v", pack.Entrypoints)
+	if len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "top" {
+		t.Fatalf("primary production entrypoint was not isolated: %#v", pack.Entrypoints)
 	}
-	if len(pack.CallChain) != 2 || pack.CallChain[0].From != "a-test" ||
-		len(pack.Tests) != 2 || pack.Tests[0].ID != "top-test" {
-		t.Fatalf("published relationship or source-seed category order was lost: relationships=%#v tests=%#v", pack.CallChain, pack.Tests)
+	if len(pack.CallChain) != 1 || pack.CallChain[0].From != "z-test" ||
+		len(pack.Tests) != 1 || pack.Tests[0].ID != "top-test" {
+		t.Fatalf("lower-ranked seed context leaked into the pack: relationships=%#v tests=%#v", pack.CallChain, pack.Tests)
 	}
 }
 
@@ -583,7 +678,7 @@ func TestBuildContextCompactsEvidenceAtMediumConfidenceBoundary(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{{
-			ID: "seed", Kind: "persistence", Name: "operationxxxxxxxxxxxxxx",
+			ID: "seed", Kind: "symbol", Name: "operationxxxxxxxxxxxxxx",
 			Qualified: "abcdefghijklmnop", Search: "delete users", File: "repo.go",
 			EvidenceIDs: evidenceIDs,
 		}},

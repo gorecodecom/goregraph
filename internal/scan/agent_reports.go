@@ -34,8 +34,10 @@ MCP: ` + "`task_context`" + `
 
 - Read only the cited file ranges required to verify the answer.
 - If ` + "`fallback_required`" + ` is true, stop using GoreGraph and inspect source directly.
-- If confidence is low or the result does not return one exact route or symbol, stop using GoreGraph and inspect source directly.
-- If confidence is not low and the result returns one exact route or symbol, at most one narrower retry with that exact value is allowed.
+- A reliable production entrypoint has kind ` + "`route`" + `, ` + "`symbol`" + `, or ` + "`backend_handler`" + ` and confidence ` + "`EXACT`" + `, ` + "`RESOLVED`" + `, or ` + "`EXTRACTED`" + `.
+- If confidence is low or the result does not contain exactly one reliable production entrypoint, stop using GoreGraph and inspect source directly.
+- If additional narrowing is necessary, at most one narrower retry with that entrypoint's exact returned route or qualified symbol is allowed.
+- Never retry with a call-chain value.
 - After that retry, inspect source directly; do not make a third context call.
 - Do not call coverage, diagnostics, tests, data-flow, evidence, or symbol tools in sequence.
 - Read generated AI context only from ` + "`goregraph-out/agent/`" + ` or ` + "`.goregraph-workspace/agent/`" + `.
