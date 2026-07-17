@@ -195,6 +195,80 @@ func TestBuildContextRanksExactRouteAndExpandsOneHopBothDirections(t *testing.T)
 	}
 }
 
+func TestBuildContextExpandsGermanTaskTermsForTechnicalFacts(t *testing.T) {
+	query := "Wenn eine Vorschrift aus einem Kataster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-16T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "route", Project: "regulation", Kind: "route",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+				Qualified: "CadasterRegulationController.deleteFromCadaster",
+				File:      "Controller.java", Line: 182, Confidence: "EXACT",
+				Search: "delete cadaster regulation",
+			},
+			{
+				ID: "service", Project: "regulation", Kind: "symbol",
+				Name: "removeRegulation", Qualified: "CadasterRegulationOperationsService.removeRegulation",
+				File: "OperationsService.java", Line: 45, Confidence: "EXACT",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "call", FromFactID: "route", ToFactID: "service",
+			Kind: "call", Confidence: "EXACT",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || pack.Confidence == "LOW" ||
+		len(pack.Entrypoints) == 0 || pack.Entrypoints[0].ID != "route" ||
+		len(pack.CallChain) != 1 {
+		t.Fatalf("German task did not resolve technical facts: %#v", pack)
+	}
+	if pack.Query != query {
+		t.Fatalf("reported query = %q, want original %q", pack.Query, query)
+	}
+}
+
+func TestBuildContextPrioritizesPrimaryGermanActionOverAffectedEntity(t *testing.T) {
+	query := "Wenn eine Vorschrift aus einem Kataster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-16T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "regulation-route", Project: "z-regulation", Kind: "route",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+				Qualified: "CadasterRegulationController.deleteFromCadaster",
+				File:      "CadasterRegulationController.java", Line: 182, Confidence: "EXACT",
+				Search: "delete cadasters cadaster regulations regulation",
+			},
+			{
+				ID: "task-route", Project: "a-task", Kind: "route",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}",
+				Qualified: "CadasterTaskController.deleteTask",
+				File:      "CadasterTaskController.java", Line: 80, Confidence: "EXACT",
+				Search: "delete cadasters cadaster regulations regulation tasks task",
+			},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Entrypoints) == 0 || pack.Entrypoints[0].ID != "regulation-route" {
+		t.Fatalf("primary removal action did not win over affected tasks: %#v", pack.Entrypoints)
+	}
+}
+
 func TestBuildContextIsDeterministicAcrossInputOrder(t *testing.T) {
 	index := scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,

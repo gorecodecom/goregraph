@@ -31,6 +31,7 @@ type rankedContextFact struct {
 	score        int
 	exactClass   int
 	matchedTerms int
+	routeExtras  int
 	allTerms     bool
 	reason       string
 }
@@ -236,7 +237,7 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 }
 
 func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []rankedContextFact {
-	queryTokens := contextTokens(query)
+	queryTokens := contextQueryTokens(query)
 	queryTerm := normalizeContextTerm(query)
 	ranked := make([]rankedContextFact, 0, len(facts))
 	for _, fact := range facts {
@@ -253,6 +254,17 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 			if factTokens[token] {
 				matched++
 			}
+		}
+		routeExtras := 0
+		if strings.EqualFold(fact.Kind, "route") {
+			routeTokens := contextTokenSet(strings.TrimSpace(fact.HTTPMethod + " " + fact.Path))
+			routeMatches := 0
+			for _, token := range queryTokens {
+				if routeTokens[token] {
+					routeMatches++
+				}
+			}
+			routeExtras = len(routeTokens) - routeMatches
 		}
 		exactClass := 0
 		score := 0
@@ -298,6 +310,7 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 			score:        score,
 			exactClass:   exactClass,
 			matchedTerms: matched,
+			routeExtras:  routeExtras,
 			allTerms:     allTerms,
 			reason:       reason,
 		})
@@ -312,6 +325,11 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		}
 		if left.matchedTerms != right.matchedTerms {
 			return left.matchedTerms > right.matchedTerms
+		}
+		if strings.EqualFold(left.fact.Kind, "route") &&
+			strings.EqualFold(right.fact.Kind, "route") &&
+			left.routeExtras != right.routeExtras {
+			return left.routeExtras < right.routeExtras
 		}
 		if left.fact.Project != right.fact.Project {
 			return left.fact.Project < right.fact.Project
@@ -334,6 +352,42 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		return left.fact.ID < right.fact.ID
 	})
 	return ranked
+}
+
+func contextQueryTokens(value string) []string {
+	tokens := contextTokens(value)
+	expanded := append([]string(nil), tokens...)
+	for _, token := range tokens {
+		expanded = append(expanded, contextQueryTokenAliases[token]...)
+	}
+	sort.Strings(expanded)
+	result := expanded[:0]
+	for _, token := range expanded {
+		if len(result) == 0 || result[len(result)-1] != token {
+			result = append(result, token)
+		}
+	}
+	return result
+}
+
+var contextQueryTokenAliases = map[string][]string{
+	"vorschrift":         {"regulation", "regulations"},
+	"vorschriften":       {"regulation", "regulations"},
+	"vorschriftendienst": {"regulation", "regulations"},
+	"kataster":           {"cadaster", "cadasters"},
+	"katasters":          {"cadaster", "cadasters"},
+	"entferne":           {"delete", "remove"},
+	"entfernen":          {"delete", "remove"},
+	"entfernt":           {"delete", "remove"},
+	"entfernung":         {"delete", "remove"},
+	"gelöscht":           {"delete", "remove"},
+	"loeschen":           {"delete", "remove"},
+	"löschen":            {"delete", "remove"},
+	"löscht":             {"delete", "remove"},
+	"verbunden":          {"related"},
+	"verbundene":         {"related"},
+	"verbundenen":        {"related"},
+	"verknüpft":          {"related"},
 }
 
 func selectContextSeeds(ranked []rankedContextFact) []rankedContextFact {
