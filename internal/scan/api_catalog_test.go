@@ -2,6 +2,7 @@ package scan
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,16 @@ func TestStableAPIEndpointIDNormalizesOnlyPathParameterNames(t *testing.T) {
 	constrainedDifferent := StableAPIEndpointID("services/orders", "http", "GET", `/orders/{id:[a-z]{2}}`, "OrderController.get", "src/OrderController.java", 24)
 	if constrainedLeft == constrainedDifferent {
 		t.Fatalf("path parameter constraint did not affect endpoint ID %q", constrainedLeft)
+	}
+}
+
+func TestStableAPIEndpointIDPreservesLiteralPathWhitespace(t *testing.T) {
+	base := StableAPIEndpointID("services/orders", "http", "GET", "/orders/{id}", "OrderController.get", "src/OrderController.java", 24)
+	for _, routePath := range []string{" /orders/{id}", "/orders/{id} "} {
+		candidate := StableAPIEndpointID("services/orders", "http", "GET", routePath, "OrderController.get", "src/OrderController.java", 24)
+		if candidate == base {
+			t.Fatalf("literal route path whitespace %q did not affect endpoint ID %q", routePath, base)
+		}
 	}
 }
 
@@ -254,6 +265,121 @@ func TestValidateAPICatalogRejectsNonCanonicalRecordOrdering(t *testing.T) {
 	SortAPICatalog(&catalog)
 	if err := ValidateAPICatalog(catalog); err != nil {
 		t.Fatalf("sorted catalog rejected: %v", err)
+	}
+}
+
+func TestValidateAPICatalogRejectsEveryNonCanonicalNestedOrdering(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*APICatalogRecord)
+	}{
+		{name: "parameters", change: func(catalog *APICatalogRecord) {
+			catalog.Endpoints[0].Parameters = []APIParameterRecord{{Name: "z", Location: "query"}, {Name: "a", Location: "path"}}
+		}},
+		{name: "consumes", change: func(catalog *APICatalogRecord) {
+			catalog.Endpoints[0].Consumes = []string{"text/plain", "application/json"}
+		}},
+		{name: "produces", change: func(catalog *APICatalogRecord) {
+			catalog.Endpoints[0].Produces = []string{"text/plain", "application/json"}
+		}},
+		{name: "endpoint limitations", change: func(catalog *APICatalogRecord) {
+			catalog.Endpoints[0].Limitations = []string{"z", "a"}
+		}},
+		{name: "security", change: func(catalog *APICatalogRecord) {
+			catalog.Endpoints[0].Security = []SecurityEvidenceRecord{
+				{Kind: SecurityUnknown, Summary: "unknown", Confidence: ConfidenceUnknown},
+				{Kind: SecurityBearer, Summary: "bearer", Confidence: ConfidenceExact},
+			}
+		}},
+		{name: "security limitations", change: func(catalog *APICatalogRecord) {
+			catalog.Endpoints[0].Security[0].Limitations = []string{"z", "a"}
+		}},
+		{name: "consumer limitations", change: func(catalog *APICatalogRecord) {
+			catalog.Endpoints[0].Consumers[0].Limitations = []string{"z", "a"}
+		}},
+		{name: "call auth", change: func(catalog *APICatalogRecord) {
+			catalog.Endpoints[0].Consumers[0].CallAuth = []SecurityEvidenceRecord{
+				{Kind: SecurityUnknown, Summary: "unknown", Confidence: ConfidenceUnknown},
+				{Kind: SecurityBearer, Summary: "bearer", Confidence: ConfidenceExact},
+			}
+		}},
+		{name: "call auth limitations", change: func(catalog *APICatalogRecord) {
+			catalog.Endpoints[0].Consumers[0].CallAuth[0].Limitations = []string{"z", "a"}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			catalog := validAPICatalogFixture()
+			test.change(&catalog)
+			if err := ValidateAPICatalog(catalog); err == nil || !strings.Contains(err.Error(), "canonical order") {
+				t.Fatalf("error=%v", err)
+			}
+			SortAPICatalog(&catalog)
+			if err := ValidateAPICatalog(catalog); err != nil {
+				t.Fatalf("sorted catalog rejected: %v", err)
+			}
+		})
+	}
+}
+
+func TestSortAPICatalogNormalizesMandatoryNilSlices(t *testing.T) {
+	left := APICatalogRecord{
+		SchemaVersion: SchemaVersion,
+		Endpoints: []APIEndpointRecord{{
+			ID: "endpoint:1", ProviderProject: "services/orders", Transport: "http", HTTPMethod: "GET", Path: "/orders",
+			Consumers: []APIConsumerRecord{{ID: "consumer:1", Project: "frontend/web"}},
+		}},
+	}
+	right := APICatalogRecord{
+		SchemaVersion: SchemaVersion,
+		Endpoints: []APIEndpointRecord{{
+			ID: "endpoint:1", ProviderProject: "services/orders", Transport: "http", HTTPMethod: "GET", Path: "/orders",
+			Security:  []SecurityEvidenceRecord{},
+			Consumers: []APIConsumerRecord{{ID: "consumer:1", Project: "frontend/web", CallAuth: []SecurityEvidenceRecord{}}},
+		}},
+	}
+	SortAPICatalog(&left)
+	SortAPICatalog(&right)
+	leftJSON, err := json.Marshal(left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightJSON, err := json.Marshal(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(leftJSON) != string(rightJSON) {
+		t.Fatalf("nil and empty mandatory slices differ after sorting:\n nil: %s\nempty: %s", leftJSON, rightJSON)
+	}
+	for _, want := range []string{`"security":[]`, `"consumers":[`, `"call_auth":[]`} {
+		if !strings.Contains(string(leftJSON), want) {
+			t.Fatalf("canonical JSON %s missing %s", leftJSON, want)
+		}
+	}
+
+	empty := APICatalogRecord{SchemaVersion: SchemaVersion}
+	SortAPICatalog(&empty)
+	emptyJSON, err := json.Marshal(empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEmptyJSON := `{"schema_version":` + strconv.Itoa(SchemaVersion) + `,"endpoints":[]}`
+	if string(emptyJSON) != wantEmptyJSON {
+		t.Fatalf("empty catalog JSON = %s", emptyJSON)
+	}
+}
+
+func TestSortAPICatalogWritesEmptyConsumerArray(t *testing.T) {
+	catalog := APICatalogRecord{SchemaVersion: SchemaVersion, Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:1", ProviderProject: "services/orders", Transport: "http", HTTPMethod: "GET", Path: "/orders",
+	}}}
+	SortAPICatalog(&catalog)
+	data, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"security":[],"consumers":[]`) {
+		t.Fatalf("endpoint mandatory slices are not empty arrays: %s", data)
 	}
 }
 

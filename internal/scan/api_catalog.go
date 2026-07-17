@@ -121,7 +121,7 @@ func StableAPIEndpointID(provider, transport, method, routePath, handler, file s
 		canonicalAPIIdentityPart(provider),
 		canonicalAPIIdentityPart(transport),
 		strings.ToUpper(strings.TrimSpace(method)),
-		normalizeAPIPathParameterNames(strings.TrimSpace(routePath)),
+		normalizeAPIPathParameterNames(routePath),
 		canonicalAPIIdentityPart(handler),
 		canonicalAPIIdentityPart(file),
 		strconv.Itoa(line),
@@ -135,8 +135,17 @@ func SortAPICatalog(catalog *APICatalogRecord) {
 	if catalog == nil {
 		return
 	}
+	if catalog.Endpoints == nil {
+		catalog.Endpoints = make([]APIEndpointRecord, 0)
+	}
 	for endpointIndex := range catalog.Endpoints {
 		endpoint := &catalog.Endpoints[endpointIndex]
+		if endpoint.Security == nil {
+			endpoint.Security = make([]SecurityEvidenceRecord, 0)
+		}
+		if endpoint.Consumers == nil {
+			endpoint.Consumers = make([]APIConsumerRecord, 0)
+		}
 		sort.Slice(endpoint.Parameters, func(left, right int) bool {
 			return apiParameterSortKey(endpoint.Parameters[left]) < apiParameterSortKey(endpoint.Parameters[right])
 		})
@@ -154,6 +163,9 @@ func SortAPICatalog(catalog *APICatalogRecord) {
 
 		for consumerIndex := range endpoint.Consumers {
 			consumer := &endpoint.Consumers[consumerIndex]
+			if consumer.CallAuth == nil {
+				consumer.CallAuth = make([]SecurityEvidenceRecord, 0)
+			}
 			sort.Strings(consumer.Limitations)
 			sort.Strings(consumer.EvidenceIDs)
 			for authIndex := range consumer.CallAuth {
@@ -198,10 +210,33 @@ func ValidateAPICatalog(catalog APICatalogRecord) error {
 		if err := validateAPIEvidenceIDs("endpoint "+endpoint.ID, endpoint.EvidenceIDs); err != nil {
 			return err
 		}
+		if !sort.SliceIsSorted(endpoint.Parameters, func(left, right int) bool {
+			return apiParameterSortKey(endpoint.Parameters[left]) < apiParameterSortKey(endpoint.Parameters[right])
+		}) {
+			return fmt.Errorf("endpoint %q parameters are not in canonical order", endpoint.ID)
+		}
+		if err := validateCanonicalAPIStrings("endpoint "+endpoint.ID, "consumes", endpoint.Consumes); err != nil {
+			return err
+		}
+		if err := validateCanonicalAPIStrings("endpoint "+endpoint.ID, "produces", endpoint.Produces); err != nil {
+			return err
+		}
+		if err := validateCanonicalAPIStrings("endpoint "+endpoint.ID, "limitations", endpoint.Limitations); err != nil {
+			return err
+		}
 		for securityIndex := range endpoint.Security {
-			if err := validateSecurityEvidence(endpoint.Security[securityIndex], fmt.Sprintf("endpoint %q security[%d]", endpoint.ID, securityIndex)); err != nil {
+			owner := fmt.Sprintf("endpoint %q security[%d]", endpoint.ID, securityIndex)
+			if err := validateSecurityEvidence(endpoint.Security[securityIndex], owner); err != nil {
 				return err
 			}
+			if err := validateCanonicalAPIStrings(owner, "limitations", endpoint.Security[securityIndex].Limitations); err != nil {
+				return err
+			}
+		}
+		if !sort.SliceIsSorted(endpoint.Security, func(left, right int) bool {
+			return securityEvidenceSortKey(endpoint.Security[left]) < securityEvidenceSortKey(endpoint.Security[right])
+		}) {
+			return fmt.Errorf("endpoint %q security is not in canonical order", endpoint.ID)
 		}
 		for consumerIndex := range endpoint.Consumers {
 			consumer := endpoint.Consumers[consumerIndex]
@@ -218,10 +253,22 @@ func ValidateAPICatalog(catalog APICatalogRecord) error {
 			if err := validateAPIEvidenceIDs("consumer "+consumer.ID, consumer.EvidenceIDs); err != nil {
 				return err
 			}
+			if err := validateCanonicalAPIStrings("consumer "+consumer.ID, "limitations", consumer.Limitations); err != nil {
+				return err
+			}
 			for authIndex := range consumer.CallAuth {
-				if err := validateSecurityEvidence(consumer.CallAuth[authIndex], fmt.Sprintf("consumer %q call_auth[%d]", consumer.ID, authIndex)); err != nil {
+				owner := fmt.Sprintf("consumer %q call_auth[%d]", consumer.ID, authIndex)
+				if err := validateSecurityEvidence(consumer.CallAuth[authIndex], owner); err != nil {
 					return err
 				}
+				if err := validateCanonicalAPIStrings(owner, "limitations", consumer.CallAuth[authIndex].Limitations); err != nil {
+					return err
+				}
+			}
+			if !sort.SliceIsSorted(consumer.CallAuth, func(left, right int) bool {
+				return securityEvidenceSortKey(consumer.CallAuth[left]) < securityEvidenceSortKey(consumer.CallAuth[right])
+			}) {
+				return fmt.Errorf("consumer %q call auth is not in canonical order", consumer.ID)
 			}
 		}
 		for mismatchIndex := range endpoint.Mismatches {
@@ -355,6 +402,13 @@ func validateAPIEvidenceIDs(owner string, evidenceIDs []string) error {
 			return fmt.Errorf("%s contains duplicate or unsorted evidence IDs at %q", owner, evidenceID)
 		}
 		previous = evidenceID
+	}
+	return nil
+}
+
+func validateCanonicalAPIStrings(owner, field string, values []string) error {
+	if !sort.StringsAreSorted(values) {
+		return fmt.Errorf("%s %s are not in canonical order", owner, field)
 	}
 	return nil
 }
