@@ -731,7 +731,7 @@ func workspaceProjectNamespaces(indexed []workspaceIndexProject) []WorkspaceProj
 	seen := map[string]bool{}
 	for _, project := range indexed {
 		for _, symbol := range project.symbols {
-			if isWorkspaceTestNamespacePath(symbol.File, symbol.Kind) || isLowSignalCodeFile(symbol.File) {
+			if !isWorkspaceProductionNamespacePath(project.record, symbol.File, symbol.Kind) {
 				continue
 			}
 			namespace := strings.TrimSpace(firstNonEmpty(symbol.Package, symbol.WorkspacePackage, symbol.Module))
@@ -763,6 +763,30 @@ func workspaceProjectNamespaces(indexed []workspaceIndexProject) []WorkspaceProj
 		return records[i].Language < records[j].Language
 	})
 	return records
+}
+
+func isWorkspaceProductionNamespacePath(project WorkspaceProjectRecord, file, kind string) bool {
+	if strings.TrimSpace(file) == "" || isWorkspaceTestNamespacePath(file, kind) || isLowSignalCodeFile(file) {
+		return false
+	}
+	normalized := workspaceNamespaceEvidencePath(file)
+	outputDir := workspaceNamespaceEvidencePath(project.OutputDir)
+	if outputDir != "" && (normalized == outputDir || strings.HasPrefix(normalized, outputDir+"/")) {
+		return false
+	}
+	for _, segment := range strings.Split(normalized, "/") {
+		switch segment {
+		case ".next", ".nuxt", ".svelte-kit", "target", "out", "bin", "obj":
+			return false
+		}
+	}
+	return true
+}
+
+func workspaceNamespaceEvidencePath(value string) string {
+	value = strings.ToLower(filepath.ToSlash(strings.TrimSpace(value)))
+	value = strings.TrimPrefix(value, "./")
+	return strings.Trim(value, "/")
 }
 
 func isWorkspaceTestNamespacePath(file, kind string) bool {

@@ -39,6 +39,78 @@ func TestWorkspaceProjectNamespacesUsesProductionSymbols(t *testing.T) {
 	}
 }
 
+func TestWorkspaceProductionNamespacePathExcludesOutputDirectories(t *testing.T) {
+	project := WorkspaceProjectRecord{OutputDir: "artifacts/goregraph"}
+	tests := []struct {
+		name string
+		file string
+		kind string
+		want bool
+	}{
+		{name: "production source", file: "src/domain/order.ts", kind: "class", want: true},
+		{name: "configured output", file: "artifacts/goregraph/index/symbols-full.json", kind: "class"},
+		{name: "next output", file: ".next/server/app.js", kind: "function"},
+		{name: "nuxt output", file: ".nuxt/dist/server.js", kind: "function"},
+		{name: "svelte kit output", file: ".svelte-kit/output/server.js", kind: "function"},
+		{name: "target output", file: "target/classes/Order.class", kind: "class"},
+		{name: "out output", file: "out/generated/client.ts", kind: "class"},
+		{name: "bin output", file: "bin/Debug/App.dll", kind: "class"},
+		{name: "obj output", file: "obj/Release/App.cs", kind: "class"},
+		{name: "test source", file: "src/test/java/OrderTest.java", kind: "class"},
+		{name: "go test source", file: "internal/orders_test.go", kind: "function"},
+		{name: "generated source", file: "generated/client.ts", kind: "class"},
+		{name: "vendored source", file: "vendor/example/Legacy.java", kind: "class"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isWorkspaceProductionNamespacePath(project, test.file, test.kind); got != test.want {
+				t.Fatalf("isWorkspaceProductionNamespacePath(%q) = %v, want %v", test.file, got, test.want)
+			}
+		})
+	}
+}
+
+func TestWorkspaceReconcileUsesGoModuleNamespaceFromRealBuild(t *testing.T) {
+	workspace := t.TempDir()
+	project := filepath.Join(workspace, "services", "orders")
+	writeFile(t, project, "go.mod", "module example.com/commerce/orders\n")
+	writeFile(t, project, "orders.go", "package orders\nfunc Load() {}\n")
+	projectCfg := config.Defaults()
+	projectCfg.Workspace = false
+	if _, err := RunBuild(project, projectCfg, BuildTargetDashboard); err != nil {
+		t.Fatal(err)
+	}
+
+	var symbols []RichSymbolRecord
+	projectLayout := NewProjectOutputLayout(filepath.Join(project, projectCfg.OutputDir))
+	readJSON(t, projectLayout.Index("symbols-full.json"), &symbols)
+	moduleFound := false
+	for _, symbol := range symbols {
+		if symbol.File == "orders.go" && symbol.Module == "example.com/commerce/orders" {
+			moduleFound = true
+			break
+		}
+	}
+	if !moduleFound {
+		t.Fatalf("real Go symbols do not carry go.mod module: %#v", symbols)
+	}
+
+	workspaceCfg := config.Defaults()
+	workspaceCfg.Workspace = true
+	workspaceCfg.WorkspaceRoot = workspace
+	if _, err := ReconcileWorkspaceTarget(project, workspaceCfg, BuildTargetDashboard); err != nil {
+		t.Fatal(err)
+	}
+	var serviceMap WorkspaceServiceMapRecord
+	workspaceLayout := NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace"))
+	readJSON(t, workspaceLayout.Index("workspace-service-map.json"), &serviceMap)
+	node := requireServiceMapNode(t, serviceMap, "services/orders")
+	if node.Domain != "example.com.commerce" || node.DomainSource != "production_package" {
+		t.Fatalf("Go module namespace not used for workspace layout: %#v", node)
+	}
+}
+
 func TestWorkspaceReconcileAppliesDashboardConfigAcrossRefresh(t *testing.T) {
 	workspace, projects := writeWorkspaceBuildFixture(t)
 	buildWorkspaceProjects(t, workspace, projects, BuildTargetDashboard)

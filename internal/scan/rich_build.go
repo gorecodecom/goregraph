@@ -10,16 +10,23 @@ import (
 
 func buildRichSymbols(files []FileRecord, symbols []SymbolRecord) []RichSymbolRecord {
 	languageByFile := languageMap(files)
+	goModule := modulePath(symbols)
 	rich := make([]RichSymbolRecord, 0, len(symbols))
 	for _, symbol := range symbols {
+		language := languageByFile[symbol.File]
+		module := ""
+		if language == "go" {
+			module = goModule
+		}
 		rich = append(rich, RichSymbolRecord{
 			ID:             stableID("symbol", symbol.File, symbol.Kind, symbol.Name, fmt.Sprint(symbol.Line)),
 			Name:           symbol.Name,
 			Kind:           symbol.Kind,
-			Language:       languageByFile[symbol.File],
+			Language:       language,
 			File:           symbol.File,
 			Line:           symbol.Line,
 			SourceLocation: sourceLocation(symbol.Line),
+			Module:         module,
 		})
 	}
 	sort.Slice(rich, func(i, j int) bool { return rich[i].ID < rich[j].ID })
