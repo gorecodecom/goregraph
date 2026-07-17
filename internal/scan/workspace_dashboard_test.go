@@ -288,7 +288,7 @@ func TestWorkspaceDashboardCodeExplorerRendersSemanticInventorySearchAndCounts(t
 		`symbol.language`,
 		`symbol.kind`,
 		`symbol.qualified_name||symbol.export_name`,
-		`sourceActions(symbol.project,symbol.declaration_file,symbol.declaration_line)`,
+		`sourceLocationMarkup(symbol.project,symbol.declaration_file,symbol.declaration_line)`,
 		`directCount`,
 		`apiCount`,
 		`symbol.confidence`,
@@ -298,6 +298,114 @@ func TestWorkspaceDashboardCodeExplorerRendersSemanticInventorySearchAndCounts(t
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing Code Explorer inventory contract %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardCodeExplorerSeparatesLongPathsFromActions(t *testing.T) {
+	const declarationFile = "src/main/java/org/example/catalog/persistence/ports/repositories/CatalogRepository.java"
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/Users/developer/workspaces/a-deliberately-long-workspace-root"},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, Nodes: []WorkspaceServiceNodeRecord{{
+			ID: "service:catalog", Label: "Catalog", Project: "services/catalog", Indexed: true,
+		}}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion, Symbols: []CanonicalSymbolRecord{{
+			ID: "symbol:repository", Project: "services/catalog", Name: "CatalogRepository",
+			Language: "java", Kind: "interface", QualifiedName: "org.example.catalog.persistence.CatalogRepository",
+			DeclarationFile: declarationFile, DeclarationLine: 10, Analyzer: "java",
+			Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		}}},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+
+	for _, want := range []string{
+		`function sourceLocationMarkup(project,file,line)`,
+		`return '<div class="source-location"><div class="source-path">'+escapeHtml(sourceLocation(file,line))+'</div><div class="source-actions">'+sourceActionButtons(project,file,line)+'</div></div>';`,
+		`<div class="code-symbol-source">'+sourceLocationMarkup(symbol.project,symbol.declaration_file,symbol.declaration_line)+'</div>`,
+		`+'</div>'+sourceLocationMarkup(symbol.project,symbol.declaration_file,symbol.declaration_line)+'</header>`,
+		`detailHTMLField("Source",sourceLocationMarkup(symbol.project,symbol.declaration_file,symbol.declaration_line))`,
+		`sourceLocationMarkup(step.project,step.file,step.line)`,
+		`.source-location{min-width:0}`,
+		`.source-path{min-width:0;white-space:normal;overflow-wrap:anywhere}`,
+		`.source-actions{display:flex;flex-wrap:wrap`,
+		`.code-symbol-summary{display:grid;grid-template-columns:minmax(0,1fr)`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("Code Explorer source layout missing %q", want)
+		}
+	}
+	if got := strings.Count(html, `sourceLocationMarkup(symbol.project,symbol.declaration_file,symbol.declaration_line)`); got < 3 {
+		t.Fatalf("Code Explorer source renderer used %d times, want inventory, selected summary, and details", got)
+	}
+	if strings.Contains(html, `<div>'+sourceActions(symbol.project,symbol.declaration_file,symbol.declaration_line)+'</div>`) {
+		t.Fatal("Code Explorer selected summary still concatenates its path and actions")
+	}
+}
+
+type codeExplorerSourceGeometry struct {
+	Viewport    int `json:"viewport"`
+	ScrollWidth int `json:"scrollWidth"`
+	Locations   []struct {
+		Name       string  `json:"name"`
+		PathBottom float64 `json:"pathBottom"`
+		ActionTop  float64 `json:"actionTop"`
+	} `json:"locations"`
+}
+
+func TestWorkspaceDashboardCodeExplorerSourceLayoutGeometry(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for rendered Code Explorer source geometry tests")
+	}
+	if output, err := exec.Command(node, "-e", `require.resolve("playwright")`).CombinedOutput(); err != nil {
+		t.Skipf("Playwright is not installed for rendered Code Explorer source geometry tests: %s", strings.TrimSpace(string(output)))
+	}
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/Users/developer/workspaces/a-deliberately-long-workspace-root"},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, Nodes: []WorkspaceServiceNodeRecord{{
+			ID: "service:catalog", Label: "Catalog", Project: "services/catalog", Indexed: true,
+		}}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion, Symbols: []CanonicalSymbolRecord{{
+			ID: "symbol:repository", Project: "services/catalog", Name: "CatalogRepository",
+			Language: "java", Kind: "interface", QualifiedName: "org.example.catalog.persistence.CatalogRepository",
+			DeclarationFile: "src/main/java/org/example/catalog/persistence/ports/repositories/CatalogRepository.java",
+			DeclarationLine: 10, Analyzer: "java", Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		}}},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+	encodedHTML, err := json.Marshal(html)
+	if err != nil {
+		t.Fatalf("encode Code Explorer HTML for source geometry test: %v", err)
+	}
+	source := strings.Join([]string{
+		`const {chromium}=require("playwright");`,
+		`const html=` + string(encodedHTML) + `;`,
+		`(async()=>{const browser=await chromium.launch({headless:true}),results=[];try{for(const viewport of [{width:1280,height:720},{width:1440,height:900},{width:1920,height:1080}]){const page=await browser.newPage({viewport});await page.setContent(html,{waitUntil:"load"});await page.evaluate(()=>{state.mode="code-explorer";state.codeProject="services/catalog";state.codeSymbol="symbol:repository";state.codeLoading=false;state.codeError=null;renderList();renderCanvas();});await page.waitForFunction(()=>document.querySelectorAll(".source-location").length>=3);results.push(await page.evaluate(()=>{const selectors=[["inventory",".code-symbol-source>.source-location"],["summary",".code-symbol-summary>.source-location"],["details",".details .source-location"]];return {viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,locations:selectors.map(([name,selector])=>{const location=document.querySelector(selector),path=location.querySelector(":scope>.source-path"),actions=location.querySelector(":scope>.source-actions");return {name,pathBottom:path.getBoundingClientRect().bottom,actionTop:actions.getBoundingClientRect().top};})};}));await page.close();}}finally{await browser.close();}process.stdout.write(JSON.stringify(results));})().catch(error=>{console.error(error);process.exit(1);});`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rendered Code Explorer source geometry failed: %v\n%s", err, output)
+	}
+	var geometries []codeExplorerSourceGeometry
+	if err := json.Unmarshal(output, &geometries); err != nil {
+		t.Fatalf("decode rendered Code Explorer source geometry: %v\n%s", err, output)
+	}
+	if len(geometries) != 3 {
+		t.Fatalf("Code Explorer source geometry scenarios = %d, want 3", len(geometries))
+	}
+	for _, geometry := range geometries {
+		if geometry.ScrollWidth > geometry.Viewport {
+			t.Fatalf("%dpx Code Explorer overflows horizontally: scroll width %d", geometry.Viewport, geometry.ScrollWidth)
+		}
+		if len(geometry.Locations) != 3 {
+			t.Fatalf("%dpx Code Explorer source locations = %d, want inventory, summary, and details", geometry.Viewport, len(geometry.Locations))
+		}
+		for _, location := range geometry.Locations {
+			if location.ActionTop <= location.PathBottom-1 {
+				t.Fatalf("%dpx %s source actions are not below the path: path bottom %.2f, action top %.2f", geometry.Viewport, location.Name, location.PathBottom, location.ActionTop)
+			}
 		}
 	}
 }
@@ -335,7 +443,7 @@ func TestWorkspaceDashboardCodeExplorerSeparatesUsageTabsFiltersAndEvidence(t *t
 		"Dependency / artifact evidence",
 		"Ordered API steps",
 		"Limitations",
-		`sourceActions(usage.consumer_project,usage.source_file,usage.source_line)`,
+		`sourceLocationMarkup(usage.consumer_project,usage.source_file,usage.source_line)`,
 		"No projected usage evidence exists for this symbol in indexed coverage; this is not proof that the symbol is unused.",
 		`symbolUsages.coverage`,
 	} {
