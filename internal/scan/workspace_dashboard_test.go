@@ -2506,6 +2506,7 @@ func TestWorkspaceDashboardArchitectureEditorHasModalLifecycleContracts(t *testi
 	for _, want := range []string{
 		`role="dialog"`, `aria-modal="true"`, `aria-labelledby="architecture-layout-title"`, `tabindex="-1"`,
 		`id="architecture-reload-layout"`, `architectureDirty`, `architectureBusy`, `architectureRequestVersion`,
+		`architectureBaseDraft`, `architectureDraftThreeWayMerge(`,
 		`function setArchitectureBackgroundInert(`, `function focusArchitectureLayoutControl(`,
 		`function reloadArchitectureLayout(`, `architectureResetRequiresRebuild`,
 	} {

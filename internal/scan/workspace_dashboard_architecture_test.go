@@ -529,6 +529,71 @@ func TestArchitectureLoadedConfigControlsManualFlagsAndExactPayload(t *testing.T
 	}
 }
 
+func TestArchitectureEditorThreeWayRebasePreservesUnrelatedRemoteChanges(t *testing.T) {
+	var result struct {
+		GroupOrder        []string
+		AlphaLabel        string
+		BetaLabel         string
+		AlphaServices     []string
+		BetaServices      []string
+		SerializedPayload map[string]any
+		ConflictService   struct {
+			Group string
+			Index int
+		}
+	}
+	runArchitectureModel(t, `(()=>{
+		const service=(project,manual)=>({id:"service:"+project,project:project,label:project,manual:!!manual});
+		const base={groups:[
+			{id:"alpha",label:"Alpha",manual:false,services:[service("a"),service("b")]},
+			{id:"beta",label:"Beta",manual:false,services:[service("c"),service("d")]}
+		]};
+		const local=architectureCloneDraft(base);
+		local.groups[0].label="Local Alpha";local.groups[0].manual=true;
+		local.groups=architectureMoveItem(local.groups,0,1);
+		const moved=architectureMoveServiceDraft(local,"b","alpha","beta",1);local.groups=moved.groups;
+		const latest={groups:[
+			{id:"gamma",label:"Remote Gamma",manual:true,services:[]},
+			{id:"alpha",label:"Alpha",manual:false,services:[service("d",true),service("a")]},
+			{id:"beta",label:"Remote Beta",manual:true,services:[service("c"),service("e",true)]}
+		]};
+		const merged=architectureDraftThreeWayMerge(base,local,latest);
+		const alpha=merged.groups.find(group=>group.id==="alpha"),beta=merged.groups.find(group=>group.id==="beta");
+		const conflictBase=architectureCloneDraft(base),conflictLocal=architectureMoveServiceDraft(conflictBase,"b","alpha","beta",0),conflictLatest=architectureCloneDraft(base);
+		conflictLatest.groups[0].services=architectureMoveItem(conflictLatest.groups[0].services,1,0);
+		const conflict=architectureDraftThreeWayMerge(base,conflictLocal,conflictLatest),conflictGroup=conflict.groups.find(group=>group.services.some(item=>item.project==="b"));
+		return {
+			GroupOrder:merged.groups.map(group=>group.id),
+			AlphaLabel:alpha.label,
+			BetaLabel:beta.label,
+			AlphaServices:alpha.services.map(item=>item.project),
+			BetaServices:beta.services.map(item=>item.project),
+			SerializedPayload:architectureDraftConfigValue(merged),
+			ConflictService:{Group:conflictGroup.id,Index:conflictGroup.services.findIndex(item=>item.project==="b")}
+		};
+	})()`, &result)
+	if !reflect.DeepEqual(result.GroupOrder, []string{"gamma", "beta", "alpha"}) {
+		t.Fatalf("three-way group order = %v, want remote gamma plus local beta/alpha intent", result.GroupOrder)
+	}
+	if result.AlphaLabel != "Local Alpha" || result.BetaLabel != "Remote Beta" {
+		t.Fatalf("three-way labels = alpha %q beta %q", result.AlphaLabel, result.BetaLabel)
+	}
+	if !reflect.DeepEqual(result.AlphaServices, []string{"d", "a"}) || !reflect.DeepEqual(result.BetaServices, []string{"c", "b", "e"}) {
+		t.Fatalf("three-way services = alpha %v beta %v", result.AlphaServices, result.BetaServices)
+	}
+	payload, err := json.Marshal(result.SerializedPayload)
+	if err != nil {
+		t.Fatalf("encode three-way payload: %v", err)
+	}
+	want := `{"architecture":{"groupOrder":["gamma","beta","alpha"],"groups":{"alpha":{"label":"Local Alpha"},"beta":{"label":"Remote Beta"},"gamma":{"label":"Remote Gamma"}},"services":{"b":{"group":"beta","order":1},"d":{"group":"alpha","order":0},"e":{"group":"beta","order":2}}},"schema":1}`
+	if string(payload) != want {
+		t.Fatalf("three-way serialized payload = %s, want %s", payload, want)
+	}
+	if result.ConflictService.Group != "beta" || result.ConflictService.Index != 0 {
+		t.Fatalf("same-service conflict = %#v, want local pending position to win", result.ConflictService)
+	}
+}
+
 func TestArchitectureCanvasGeometryInsetsCompactContentBelowStackedControls(t *testing.T) {
 	type geometry struct {
 		Compact         bool
