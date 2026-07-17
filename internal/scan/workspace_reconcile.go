@@ -1560,6 +1560,8 @@ func (builder *workspaceAgentContextBuilder) index(generated string) AgentContex
 		edges = append(edges, edge)
 	}
 	sortAgentContextEdges(edges)
+	edges = compactWorkspaceAgentContextEdges(edges)
+	sortAgentContextEdges(edges)
 	coverage := make([]AgentContextCoverageRecord, 0, len(builder.coverageByKey))
 	for _, record := range builder.coverageByKey {
 		coverage = append(coverage, record)
@@ -1574,6 +1576,79 @@ func (builder *workspaceAgentContextBuilder) index(generated string) AgentContex
 		Facts:         facts,
 		Edges:         edges,
 		Coverage:      coverage,
+	}
+}
+
+func compactWorkspaceAgentContextEdges(edges []AgentContextEdgeRecord) []AgentContextEdgeRecord {
+	type semanticEdgeKey struct {
+		fromFactID string
+		toFactID   string
+		kind       string
+		reason     string
+		confidence string
+	}
+	bySemantics := make(map[semanticEdgeKey]AgentContextEdgeRecord, len(edges))
+	for index := range edges {
+		edges[index].Project = ""
+		edges[index].FromLabel = ""
+		edges[index].ToLabel = ""
+		edges[index].File = ""
+		edges[index].Line = 0
+		edges[index].Reason = compactWorkspaceAgentContextReason(edges[index].Reason)
+		edges[index].EvidenceIDs = nil
+		key := semanticEdgeKey{
+			fromFactID: edges[index].FromFactID,
+			toFactID:   edges[index].ToFactID,
+			kind:       edges[index].Kind,
+			reason:     edges[index].Reason,
+			confidence: edges[index].Confidence,
+		}
+		existing, found := bySemantics[key]
+		if !found || edges[index].ID < existing.ID {
+			bySemantics[key] = edges[index]
+		}
+	}
+	result := make([]AgentContextEdgeRecord, 0, len(bySemantics))
+	for _, edge := range bySemantics {
+		result = append(result, edge)
+	}
+	return result
+}
+
+func compactWorkspaceAgentContextReason(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case "java calls method owner reference":
+		return "method"
+	case "java field type reference":
+		return "field"
+	case "extracted test HTTP request matched endpoint pattern":
+		return "HTTP match"
+	case "java parameter type reference":
+		return "parameter"
+	case "java return type reference":
+		return "return"
+	case "java extends type reference":
+		return ""
+	case "java instantiates reference":
+		return "new"
+	case "java implements type reference":
+		return ""
+	case "static module and export binding":
+		return "module"
+	case "javascript test calls resolved production symbol",
+		"typescript test calls resolved production symbol",
+		"test method calls production method":
+		return "test"
+	case "javascript static call match", "typescript static call match":
+		return "static"
+	case "javascript effect call match", "typescript effect call match":
+		return "effect"
+	case "javascript event handler call match", "typescript event handler call match":
+		return "event"
+	case "flow transition":
+		return "flow"
+	default:
+		return strings.TrimSpace(reason)
 	}
 }
 

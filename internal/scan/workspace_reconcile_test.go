@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -651,6 +652,88 @@ func TestBuildWorkspaceAgentContextIndexOmitsNonPortableFiles(t *testing.T) {
 	for _, edge := range index.Edges {
 		if filepath.IsAbs(edge.File) || strings.Contains(edge.File, "..") {
 			t.Fatalf("workspace edge retained non-portable file: %#v", edge)
+		}
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexCompactsCopiedEdgeMetadata(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/users", Indexed: true,
+	}}}
+	projectIndex := AgentContextIndexRecord{
+		Root: "services/users",
+		Facts: []AgentContextFactRecord{
+			{ID: "route", Kind: "route", Name: "GET /users", File: "src/Users.java", Line: 10},
+			{ID: "service", Kind: "symbol", Name: "findUsers", File: "src/UserService.java", Line: 20},
+			{ID: "repository", Kind: "persistence", Name: "findAll", File: "src/UserRepository.java", Line: 30},
+		},
+		Edges: []AgentContextEdgeRecord{
+			{
+				ID: "z-edge", Project: "services/users",
+				FromFactID: "route", ToFactID: "service",
+				FromLabel: "A route", ToLabel: "UserService.findUsers",
+				Kind: "call", File: "src/Users.java", Line: 12,
+				Reason: "qualified method call", Confidence: "EXACT",
+				EvidenceIDs: []string{"evidence:call"},
+			},
+			{
+				ID: "y-edge", Project: "services/users",
+				FromFactID: "route", ToFactID: "service",
+				FromLabel: "Duplicate route", ToLabel: "UserService.findUsers",
+				Kind: "call", File: "src/Users.java", Line: 13,
+				Reason: "qualified method call", Confidence: "EXACT",
+				EvidenceIDs: []string{"evidence:duplicate"},
+			},
+			{
+				ID: "a-edge", Project: "services/users",
+				FromFactID: "service", ToFactID: "repository",
+				FromLabel: "Z service", ToLabel: "UserRepository.findAll",
+				Kind: "call", File: "src/UserService.java", Line: 22,
+				Reason: "qualified repository call", Confidence: "RESOLVED",
+				EvidenceIDs: []string{"evidence:repository"},
+			},
+		},
+	}
+
+	index := BuildWorkspaceAgentContextIndex(
+		registry,
+		[]AgentContextIndexRecord{projectIndex},
+		nil,
+		nil,
+		WorkspaceEndpointTraceIndexRecord{},
+		"generated",
+	)
+
+	if len(index.Edges) != 2 {
+		t.Fatalf("workspace edges = %#v", index.Edges)
+	}
+	if !strings.HasSuffix(index.Edges[0].ID, "#a-edge") ||
+		!strings.HasSuffix(index.Edges[1].ID, "#y-edge") {
+		t.Fatalf("compact edges are not sorted by retained metadata: %#v", index.Edges)
+	}
+	for _, edge := range index.Edges {
+		if edge.ID == "" || edge.FromFactID == "" || edge.ToFactID == "" ||
+			edge.Kind != "call" || edge.Confidence == "" {
+			t.Fatalf("compact edge lost required routing metadata: %#v", edge)
+		}
+		if edge.Project != "" || edge.FromLabel != "" || edge.ToLabel != "" ||
+			edge.File != "" || edge.Line != 0 || edge.Reason == "" || len(edge.EvidenceIDs) != 0 {
+			t.Fatalf("compact edge retained fact-redundant metadata: %#v", edge)
+		}
+		body, err := json.Marshal(edge)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{
+			`"project"`, `"from_label"`, `"to_label"`, `"file"`,
+			`"line"`, `"evidence_ids"`,
+		} {
+			if strings.Contains(string(body), key) {
+				t.Fatalf("compact edge JSON retained %s: %s", key, body)
+			}
+		}
+		if !strings.Contains(string(body), `"reason"`) {
+			t.Fatalf("compact edge JSON lost relationship semantics: %s", body)
 		}
 	}
 }

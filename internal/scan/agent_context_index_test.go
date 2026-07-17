@@ -15,23 +15,34 @@ func TestBuildProjectAgentContextIndexIsCompactAndDeterministic(t *testing.T) {
 		File:    "src/CadasterRegulationController.java", Line: 182,
 		Confidence: "EXACT", EvidenceIDs: []string{"evidence:route"},
 	}}
-	symbols := []RichSymbolRecord{{
-		ID: "symbol:operations", Name: "deleteRegulationFromCadaster",
-		QualifiedName: "CadasterRegulationOperationsService.deleteRegulationFromCadaster",
-		Kind:          "method", Language: "java",
-		File: "src/CadasterRegulationOperationsService.java", Line: 45,
-		Confidence: ConfidenceExact, EvidenceIDs: []string{"evidence:symbol"},
-	}, {
-		ID: "symbol:local-helper", Name: "formatDebugMessage",
-		QualifiedName: "CadasterRegulationOperationsService.formatDebugMessage",
-		Kind:          "method", Language: "java",
-		File: "src/CadasterRegulationOperationsService.java", Line: 90,
-		Confidence: ConfidenceExact,
-	}}
+	symbols := []RichSymbolRecord{
+		{
+			ID: "symbol:controller", Name: "deleteFromCadaster",
+			QualifiedName: "CadasterRegulationController.deleteFromCadaster",
+			Kind:          "method", Language: "java",
+			File: "src/CadasterRegulationController.java", Line: 182,
+			Confidence: ConfidenceExact,
+		},
+		{
+			ID: "symbol:operations", Name: "deleteRegulationFromCadaster",
+			QualifiedName: "CadasterRegulationOperationsService.deleteRegulationFromCadaster",
+			Kind:          "method", Language: "java",
+			File: "src/CadasterRegulationOperationsService.java", Line: 45,
+			Confidence: ConfidenceExact, EvidenceIDs: []string{"evidence:symbol"},
+		},
+		{
+			ID: "symbol:local-helper", Name: "formatDebugMessage",
+			QualifiedName: "CadasterRegulationOperationsService.formatDebugMessage",
+			Kind:          "method", Language: "java",
+			File: "src/CadasterRegulationOperationsService.java", Line: 90,
+			Confidence: ConfidenceExact,
+		},
+	}
 	relations := []RichRelationRecord{{
 		ID: "relation:delete", From: "src/CadasterRegulationController.java",
 		To:   "CadasterRegulationOperationsService.deleteRegulationFromCadaster",
-		Type: "call", Line: 201, Confidence: "EXACT",
+		Type: "call", FromSymbolID: "symbol:controller", ToSymbolID: "symbol:operations",
+		Line: 201, Confidence: "EXACT",
 		Reason: "qualified method call", EvidenceIDs: []string{"evidence:call"},
 	}}
 
@@ -43,7 +54,7 @@ func TestBuildProjectAgentContextIndexIsCompactAndDeterministic(t *testing.T) {
 	if diff := cmpJSON(first, second); diff != "" {
 		t.Fatalf("context index is not deterministic: %s", diff)
 	}
-	if len(first.Facts) != 2 || len(first.Edges) != 1 {
+	if len(first.Facts) != 3 || len(first.Edges) != 1 {
 		t.Fatalf("context index = %#v", first)
 	}
 	if hasContextFact(first.Facts, "symbol", "formatDebugMessage") {
@@ -62,6 +73,100 @@ func TestBuildProjectAgentContextIndexIsCompactAndDeterministic(t *testing.T) {
 	}
 	if !slices.Equal(route.EvidenceIDs, []string{"evidence:route"}) {
 		t.Fatalf("route evidence ids = %#v", route.EvidenceIDs)
+	}
+}
+
+func TestBuildProjectAgentContextIndexDoesNotPromoteUnrelatedMethodRelations(t *testing.T) {
+	routes := []CodeRouteRecord{{
+		RouteID: "route:users", HTTPMethod: "GET", Path: "/users",
+		Handler: "UserController.list", File: "src/UserController.java", Line: 20,
+	}}
+	symbols := []RichSymbolRecord{
+		{
+			ID: "route-caller", Name: "list", QualifiedName: "UserController.list",
+			Kind: "method", Language: "java", File: "src/UserController.java", Line: 20,
+		},
+		{
+			ID: "route-target", Name: "findUsers", QualifiedName: "UserService.findUsers",
+			Kind: "method", Language: "java", File: "src/UserService.java", Line: 30,
+		},
+		{
+			ID: "unrelated-caller", Name: "refreshCache", QualifiedName: "CacheJob.refreshCache",
+			Kind: "method", Language: "java", File: "src/CacheJob.java", Line: 40,
+		},
+		{
+			ID: "unrelated-target", Name: "evictExpired", QualifiedName: "CacheService.evictExpired",
+			Kind: "method", Language: "java", File: "src/CacheService.java", Line: 50,
+		},
+	}
+	relations := []RichRelationRecord{
+		{
+			ID: "route-call", From: "src/UserController.java", To: "UserService.findUsers",
+			Type: "call", FromSymbolID: "route-caller", ToSymbolID: "route-target", Line: 25,
+		},
+		{
+			ID: "unrelated-call", From: "src/CacheJob.java", To: "CacheService.evictExpired",
+			Type: "call", FromSymbolID: "unrelated-caller", ToSymbolID: "unrelated-target", Line: 45,
+		},
+	}
+
+	first := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		routes, nil, symbols, relations, nil, nil, nil, nil)
+	reversedRelations := slices.Clone(relations)
+	slices.Reverse(reversedRelations)
+	second := BuildProjectAgentContextIndex("app", "2026-07-16T00:00:00Z",
+		routes, nil, symbols, reversedRelations, nil, nil, nil, nil)
+	if diff := cmpJSON(first, second); diff != "" {
+		t.Fatalf("relation order changed compact context: %s", diff)
+	}
+
+	if !hasContextFact(first.Facts, "symbol", "findUsers") {
+		t.Fatalf("route call target missing: %#v", first.Facts)
+	}
+	for _, name := range []string{"refreshCache", "evictExpired"} {
+		if hasContextFact(first.Facts, "symbol", name) {
+			t.Fatalf("unrelated relation symbol %q leaked: %#v", name, first.Facts)
+		}
+	}
+	if len(first.Edges) != 1 || first.Edges[0].ToLabel != "UserService.findUsers" {
+		t.Fatalf("compact relation edges = %#v", first.Edges)
+	}
+}
+
+func TestBuildProjectAgentContextIndexDoesNotTreatSourceLessHelperCallAsRouteCall(t *testing.T) {
+	routes := []CodeRouteRecord{
+		{
+			RouteID: "route:users", HTTPMethod: "GET", Path: "/users",
+			Handler: "UserController.list", File: "src/UserController.java", Line: 20,
+		},
+		{
+			RouteID: "route:user", HTTPMethod: "GET", Path: "/users/{id}",
+			Handler: "UserController.get", File: "src/UserController.java", Line: 100,
+		},
+	}
+	symbols := []RichSymbolRecord{{
+		ID: "helper-target", Name: "evictExpired", QualifiedName: "CacheService.evictExpired",
+		Kind: "method", Language: "java", File: "src/CacheService.java", Line: 50,
+	}}
+	relations := []RichRelationRecord{{
+		ID: "helper-call", From: "src/UserController.java", To: "CacheService.evictExpired",
+		Type: "call", ToSymbolID: "helper-target", Line: 70,
+	}}
+
+	index := BuildProjectAgentContextIndex(
+		"app",
+		"2026-07-16T00:00:00Z",
+		routes,
+		nil,
+		symbols,
+		relations,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	if hasContextFact(index.Facts, "symbol", "evictExpired") {
+		t.Fatalf("source-less helper call leaked into route context: %#v", index)
 	}
 }
 

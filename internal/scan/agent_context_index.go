@@ -30,8 +30,8 @@ type AgentContextEdgeRecord struct {
 	Project     string   `json:"project,omitempty"`
 	FromFactID  string   `json:"from_fact_id,omitempty"`
 	ToFactID    string   `json:"to_fact_id,omitempty"`
-	FromLabel   string   `json:"from_label"`
-	ToLabel     string   `json:"to_label"`
+	FromLabel   string   `json:"from_label,omitempty"`
+	ToLabel     string   `json:"to_label,omitempty"`
 	Kind        string   `json:"kind"`
 	File        string   `json:"file,omitempty"`
 	Line        int      `json:"line,omitempty"`
@@ -149,14 +149,23 @@ func (builder *agentContextBuilder) selectSymbols(
 	tests []TestMapRecord,
 	contracts []APIContractRecord,
 ) {
+	relationSeeds := make(map[string]bool)
+	selectRelationSeed := func(value, file string, line int, kind string) {
+		symbol, ok := builder.bestMatchingSymbol(value, file, line)
+		if !ok {
+			return
+		}
+		builder.selectSymbol(symbol, kind)
+		relationSeeds[symbol.ID] = true
+	}
 	for _, symbol := range builder.symbols {
 		if contextTypeNavigationSymbol(symbol) {
 			builder.selectSymbol(symbol, "symbol")
 		}
 	}
 	for _, route := range routes {
-		builder.selectMatchingSymbol(route.Handler, route.File, route.Line, "symbol")
-		builder.selectMatchingSymbol(contextSimpleName(route.Handler), route.File, route.Line, "symbol")
+		selectRelationSeed(route.Handler, route.File, route.Line, "symbol")
+		selectRelationSeed(contextSimpleName(route.Handler), route.File, route.Line, "symbol")
 	}
 	for _, flow := range flows {
 		for _, step := range flow.Steps {
@@ -164,23 +173,24 @@ func (builder *agentContextBuilder) selectSymbols(
 			if contextPersistenceStep(step) {
 				kind = "persistence"
 			}
-			builder.selectMatchingSymbol(qualifiedContextName(step.Owner, contextSimpleName(step.Name)), step.File, step.Line, kind)
-			builder.selectMatchingSymbol(contextSimpleName(step.Name), step.File, step.Line, kind)
+			selectRelationSeed(qualifiedContextName(step.Owner, contextSimpleName(step.Name)), step.File, step.Line, kind)
+			selectRelationSeed(contextSimpleName(step.Name), step.File, step.Line, kind)
 		}
 	}
 	for _, test := range tests {
-		builder.selectMatchingSymbol(qualifiedContextName(test.TargetClass, test.TargetMethod), test.TargetFile, 0, "symbol")
-		builder.selectMatchingSymbol(test.TargetMethod, test.TargetFile, 0, "symbol")
+		selectRelationSeed(qualifiedContextName(test.TargetClass, test.TargetMethod), test.TargetFile, 0, "symbol")
+		selectRelationSeed(test.TargetMethod, test.TargetFile, 0, "symbol")
 	}
 	for _, contract := range contracts {
-		builder.selectMatchingSymbol(contract.Caller, contract.File, contract.Line, "symbol")
-		builder.selectMatchingSymbol(contextSimpleName(contract.Caller), contract.File, contract.Line, "symbol")
+		selectRelationSeed(contract.Caller, contract.File, contract.Line, "symbol")
+		selectRelationSeed(contextSimpleName(contract.Caller), contract.File, contract.Line, "symbol")
 	}
 	for _, relation := range relations {
 		if relation.NonPromotable {
 			continue
 		}
-		if _, ok := contextSemanticRelationKind(relation.Type); !ok {
+		kind, ok := contextSemanticRelationKind(relation.Type)
+		if !ok || kind != "call" {
 			continue
 		}
 		from, hasFrom := builder.relationSymbol(relation.FromSymbolID, relation.From)
@@ -196,19 +206,10 @@ func (builder *agentContextBuilder) selectSymbols(
 		if fromFile == "" || toFile == "" || contextPathKey(fromFile) == contextPathKey(toFile) {
 			continue
 		}
-		if hasFrom {
-			builder.selectSymbol(from, "symbol")
-		}
-		if hasTo {
+		startsAtSeed := hasFrom && relationSeeds[from.ID]
+		if hasTo && startsAtSeed {
 			builder.selectSymbol(to, "symbol")
 		}
-	}
-}
-
-func (builder *agentContextBuilder) selectMatchingSymbol(value, file string, line int, kind string) {
-	symbol, ok := builder.bestMatchingSymbol(value, file, line)
-	if ok {
-		builder.selectSymbol(symbol, kind)
 	}
 }
 

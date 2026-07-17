@@ -127,6 +127,7 @@ Workspace output:
 - `internal/scan/agent_context_index.go` owns compact public index records, stable IDs, project index construction, workspace index merging, normalization, and deterministic sorting.
 - `goregraph-out/agent/context-index.json` contains one project's agent-navigation facts.
 - `.goregraph-workspace/agent/context-index.json` contains merged project facts plus workspace contracts, feature dossiers, and endpoint traces.
+- Workspace edges omit labels and locations that can be reconstructed from their fact IDs. They retain `kind`, `confidence`, and a short `reason` when it adds semantics beyond the kind, so compiled Context Packs remain understandable without duplicating project metadata.
 - `index/` contains complete machine-readable graph data and may be large. It is an internal GoreGraph data surface, not recommended AI prompt input.
 - The tree above is the `all` superset. Target-specific builds write only index components required by that target; notably, workspace symbol index/usages are omitted from an agent-only build.
 - `dashboard/` contains full human-facing Markdown/HTML projections. The workspace dashboard continues to provide Architecture, Endpoints, Feature Flow, Data Flow, Code Explorer, Diagnostics, and Coverage.
@@ -226,8 +227,8 @@ type AgentContextEdgeRecord struct {
 	Project     string   `json:"project,omitempty"`
 	FromFactID  string   `json:"from_fact_id,omitempty"`
 	ToFactID    string   `json:"to_fact_id,omitempty"`
-	FromLabel   string   `json:"from_label"`
-	ToLabel     string   `json:"to_label"`
+	FromLabel   string   `json:"from_label,omitempty"`
+	ToLabel     string   `json:"to_label,omitempty"`
 	Kind        string   `json:"kind"`
 	File        string   `json:"file,omitempty"`
 	Line        int      `json:"line,omitempty"`
