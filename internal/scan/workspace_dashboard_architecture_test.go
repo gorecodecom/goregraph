@@ -427,6 +427,108 @@ func TestArchitectureDraftReorderHelpersArePureAndMoveBetweenGroups(t *testing.T
 	}
 }
 
+func TestArchitectureEditorLifecyclePreservesDirtyAndGuardsBusy(t *testing.T) {
+	var result struct {
+		ConflictDirty      bool
+		ValidationDirty    bool
+		OfflineDirty       bool
+		CloseNeedsConfirm  bool
+		CanMutateBusy      bool
+		RequestVersion     int
+		DuplicateVersion   int
+		StaleResponseBusy  bool
+		ResetEditing       bool
+		ResetDirty         bool
+		ResetDraft         any
+		ResetRequiresBuild bool
+		RebaseRevision     string
+		RebaseDraftGroup   string
+	}
+	runArchitectureModel(t, `(()=>{
+		const dirty={architectureEditing:true,architectureDirty:true,architectureBusy:true,architectureRequestVersion:7,architectureDraft:{groups:[{id:"alpha"}]}};
+		const conflict=architectureEditorLifecycle(dirty,{type:"failure",requestVersion:7,reason:"conflict"});
+		const validation=architectureEditorLifecycle(dirty,{type:"failure",requestVersion:7,reason:"validation"});
+		const offline=architectureEditorLifecycle(dirty,{type:"failure",requestVersion:7,reason:"offline"});
+		const begun=architectureEditorLifecycle({architectureEditing:true,architectureDirty:true,architectureBusy:false,architectureRequestVersion:2,architectureDraft:{}},{type:"begin"});
+		const duplicate=architectureEditorLifecycle(begun,{type:"begin"});
+		const stale=architectureEditorLifecycle(begun,{type:"failure",requestVersion:2,reason:"offline"});
+		const reset=architectureEditorLifecycle(dirty,{type:"reset",requestVersion:7});
+		const rebased=architectureEditorRebase({revision:"revision-9",config:{schema:1,architecture:{groups:{latest:{label:"Latest"}}}}},dirty.architectureDraft);
+		return {
+			ConflictDirty:conflict.architectureDirty,
+			ValidationDirty:validation.architectureDirty,
+			OfflineDirty:offline.architectureDirty,
+			CloseNeedsConfirm:architectureEditorNeedsDiscardConfirmation(conflict),
+			CanMutateBusy:architectureEditorCanMutate(dirty),
+			RequestVersion:begun.architectureRequestVersion,
+			DuplicateVersion:duplicate.architectureRequestVersion,
+			StaleResponseBusy:stale.architectureBusy,
+			ResetEditing:reset.architectureEditing,
+			ResetDirty:reset.architectureDirty,
+			ResetDraft:reset.architectureDraft,
+			ResetRequiresBuild:reset.architectureResetRequiresRebuild,
+			RebaseRevision:rebased.architectureRevision,
+			RebaseDraftGroup:rebased.architectureDraft.groups[0].id
+		};
+	})()`, &result)
+	if !result.ConflictDirty || !result.ValidationDirty || !result.OfflineDirty || !result.CloseNeedsConfirm {
+		t.Fatalf("failed editor requests lost dirty state: %#v", result)
+	}
+	if result.CanMutateBusy || result.RequestVersion != 3 || result.DuplicateVersion != 3 || !result.StaleResponseBusy {
+		t.Fatalf("busy/request ordering guard = %#v", result)
+	}
+	if result.ResetEditing || result.ResetDirty || result.ResetDraft != nil || !result.ResetRequiresBuild {
+		t.Fatalf("reset lifecycle can resurrect stale draft: %#v", result)
+	}
+	if result.RebaseRevision != "revision-9" || result.RebaseDraftGroup != "alpha" {
+		t.Fatalf("conflict rebase did not retain and reapply draft: %#v", result)
+	}
+}
+
+func TestArchitectureLoadedConfigControlsManualFlagsAndExactPayload(t *testing.T) {
+	var result struct {
+		EmptyGroupManual    bool
+		EmptyServiceManual  bool
+		LoadedGroupManual   bool
+		LoadedServiceManual bool
+		Payload             map[string]any
+		ResetPayload        map[string]any
+	}
+	runArchitectureModel(t, `(()=>{
+		const nodes=[
+			{id:"service:a",label:"A",project:"services/a",domain:"alpha",architecture_order:0,domain_manual:true},
+			{id:"service:b",label:"B",project:"services/b",domain:"alpha",architecture_order:1,domain_manual:true}
+		],groups=[{id:"alpha",label:"Embedded stale label",order:0,manual:true}],empty={schema:1,architecture:{}},loaded={schema:1,architecture:{groupOrder:["alpha"],groups:{alpha:{label:"Loaded label"}},services:{"services/a":{group:"alpha",order:0}}}};
+		const fromEmpty=architectureDraftFromConfigData(nodes,groups,empty),fromLoaded=architectureDraftFromConfigData(nodes,groups,loaded),moved=architectureMoveServiceDraft(fromEmpty,"services/a","alpha","alpha",1);
+		return {
+			EmptyGroupManual:fromEmpty.groups[0].manual,
+			EmptyServiceManual:fromEmpty.groups[0].services[0].manual,
+			LoadedGroupManual:fromLoaded.groups[0].manual,
+			LoadedServiceManual:fromLoaded.groups[0].services.find(service=>service.project==="services/a").manual,
+			Payload:architectureDraftConfigValue(moved),
+			ResetPayload:architectureEmptyConfig()
+		};
+	})()`, &result)
+	if result.EmptyGroupManual || result.EmptyServiceManual || !result.LoadedGroupManual || !result.LoadedServiceManual {
+		t.Fatalf("loaded config is not authoritative for manual flags: %#v", result)
+	}
+	payload, err := json.Marshal(result.Payload)
+	if err != nil {
+		t.Fatalf("encode reorder payload: %v", err)
+	}
+	want := `{"architecture":{"groupOrder":["alpha"],"groups":{"alpha":{"label":"Alpha"}},"services":{"services/a":{"group":"alpha","order":1},"services/b":{"group":"alpha","order":0}}},"schema":1}`
+	if string(payload) != want {
+		t.Fatalf("reorder payload = %s, want %s", payload, want)
+	}
+	reset, err := json.Marshal(result.ResetPayload)
+	if err != nil {
+		t.Fatalf("encode reset payload: %v", err)
+	}
+	if string(reset) != `{"architecture":{"groupOrder":[],"groups":{},"services":{}},"schema":1}` {
+		t.Fatalf("reset payload = %s", reset)
+	}
+}
+
 func TestArchitectureCanvasGeometryInsetsCompactContentBelowStackedControls(t *testing.T) {
 	type geometry struct {
 		Compact         bool

@@ -60,6 +60,7 @@ const workspaceDashboardShell = `<div class="shell">
 <button type="button" data-architecture-view="selected" aria-pressed="false" disabled>Selected service</button>
 <button type="button" id="architecture-edit-layout" hidden disabled>Edit layout</button>
 </nav>
+<p id="architecture-layout-notice" class="architecture-layout-notice" aria-live="polite" tabindex="-1" hidden></p>
 <div class="canvas-tools">
 <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
 <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
@@ -91,13 +92,14 @@ const workspaceDashboardShell = `<div class="shell">
 </div>
 <div id="architecture-relationship-tooltip" class="architecture-relationship-tooltip" role="tooltip" hidden></div>
 </section>
-<section id="architecture-layout-editor" class="architecture-layout-editor" aria-label="Architecture layout editor" data-layout-mode="manual" hidden>
+<section id="architecture-layout-editor" class="architecture-layout-editor" role="dialog" aria-modal="true" aria-labelledby="architecture-layout-title" data-layout-mode="manual" tabindex="-1" hidden>
 <header class="architecture-layout-editor-header">
-<div><h1>Edit architecture layout</h1><p>Rename and reorder groups, or move services between groups. Changes are written only when you save.</p></div>
+<div><h1 id="architecture-layout-title">Edit architecture layout</h1><p>Rename and reorder groups, or move services between groups. Changes are written only when you save.</p></div>
 <div class="architecture-layout-editor-actions">
 <button type="button" id="architecture-save-layout">Save</button>
 <button type="button" id="architecture-discard-layout">Discard</button>
 <button type="button" id="architecture-reset-layout">Reset to detected</button>
+<button type="button" id="architecture-reload-layout" hidden>Reload latest and reapply draft</button>
 <button type="button" id="architecture-close-layout">Close</button>
 </div>
 <p id="architecture-layout-status" class="architecture-layout-status" aria-live="polite">Ready.</p>

@@ -2496,6 +2496,25 @@ func TestWorkspaceDashboardArchitectureEditorIsExplicitAndAccessible(t *testing.
 	}
 }
 
+func TestWorkspaceDashboardArchitectureEditorHasModalLifecycleContracts(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+	for _, want := range []string{
+		`role="dialog"`, `aria-modal="true"`, `aria-labelledby="architecture-layout-title"`, `tabindex="-1"`,
+		`id="architecture-reload-layout"`, `architectureDirty`, `architectureBusy`, `architectureRequestVersion`,
+		`function setArchitectureBackgroundInert(`, `function focusArchitectureLayoutControl(`,
+		`function reloadArchitectureLayout(`, `architectureResetRequiresRebuild`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing modal editor lifecycle contract %q", want)
+		}
+	}
+}
+
 func TestWorkspaceDashboardArchitectureEditorFetchesOnlyAfterExplicitEntry(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -2558,5 +2577,21 @@ func TestWorkspaceDashboardArchitectureEditorFetchesOnlyAfterExplicitEntry(t *te
 	config, ok := result.Requests[1].Body["config"].(map[string]any)
 	if !ok || len(config) != 2 || config["schema"] != float64(1) {
 		t.Fatalf("saved config envelope contains non-presentation fields: %#v", result.Requests[1].Body)
+	}
+	architecture, ok := config["architecture"].(map[string]any)
+	if !ok {
+		t.Fatalf("saved config is missing architecture payload: %#v", config)
+	}
+	services, ok := architecture["services"].(map[string]any)
+	if !ok || len(services) != 2 {
+		t.Fatalf("saved reorder services = %#v, want the exact affected group order", architecture["services"])
+	}
+	billing, billingOK := services["services/billing"].(map[string]any)
+	orders, ordersOK := services["services/orders"].(map[string]any)
+	if !billingOK || !ordersOK || billing["group"] != "commerce" || billing["order"] != float64(1) || orders["group"] != "commerce" || orders["order"] != float64(0) {
+		t.Fatalf("saved keyboard reorder payload = %#v", services)
+	}
+	if groups, ok := architecture["groups"].(map[string]any); !ok || len(groups) != 1 {
+		t.Fatalf("saved config persisted unrelated group presentation: %#v", architecture["groups"])
 	}
 }
