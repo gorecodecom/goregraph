@@ -12,10 +12,18 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const WorkspaceDashboardConfigName = ".goregraph-dashboard.json"
 const missingDashboardConfigRevision = "missing"
+
+const (
+	dashboardConfigLockName          = ".goregraph-dashboard.lock"
+	dashboardConfigLockRetryInterval = 10 * time.Millisecond
+	dashboardConfigLockTimeout       = 5 * time.Second
+	dashboardConfigLockStaleAfter    = 30 * time.Second
+)
 
 var ErrDashboardConfigConflict = errors.New("workspace dashboard configuration changed")
 
@@ -63,10 +71,21 @@ func LoadWorkspaceDashboardConfig(root string) (WorkspaceDashboardConfig, string
 	return config, dashboardConfigRevision(data), nil
 }
 
-func SaveWorkspaceDashboardConfig(root, expectedRevision string, config WorkspaceDashboardConfig) (string, error) {
+func SaveWorkspaceDashboardConfig(root, expectedRevision string, config WorkspaceDashboardConfig) (revision string, err error) {
 	if err := ValidateWorkspaceDashboardConfig(config); err != nil {
 		return "", err
 	}
+	release, err := acquireDashboardConfigLock(root)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if releaseErr := release(); releaseErr != nil && err == nil {
+			revision = ""
+			err = releaseErr
+		}
+	}()
+
 	path := filepath.Join(root, WorkspaceDashboardConfigName)
 	currentRevision, err := currentDashboardConfigRevision(path)
 	if err != nil {
@@ -105,6 +124,75 @@ func SaveWorkspaceDashboardConfig(root, expectedRevision string, config Workspac
 		return "", err
 	}
 	return dashboardConfigRevision(data), nil
+}
+
+func acquireDashboardConfigLock(root string) (func() error, error) {
+	lockPath := filepath.Join(root, dashboardConfigLockName)
+	deadline := time.Now().Add(dashboardConfigLockTimeout)
+	for {
+		lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			token := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+			if _, err := lock.WriteString(token); err != nil {
+				_ = lock.Close()
+				_ = os.Remove(lockPath)
+				return nil, err
+			}
+			if err := lock.Close(); err != nil {
+				_ = releaseDashboardConfigLock(lockPath, token)
+				return nil, err
+			}
+			return func() error {
+				return releaseDashboardConfigLock(lockPath, token)
+			}, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+
+		stale, err := dashboardConfigLockIsStale(lockPath)
+		if err != nil {
+			return nil, err
+		}
+		if stale {
+			if err := os.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return nil, err
+			}
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out acquiring workspace dashboard configuration lock")
+		}
+		time.Sleep(dashboardConfigLockRetryInterval)
+	}
+}
+
+func releaseDashboardConfigLock(lockPath, token string) error {
+	data, err := os.ReadFile(lockPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if string(data) != token {
+		return nil
+	}
+	if err := os.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func dashboardConfigLockIsStale(lockPath string) (bool, error) {
+	info, err := os.Stat(lockPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return time.Since(info.ModTime()) > dashboardConfigLockStaleAfter, nil
 }
 
 func ValidateWorkspaceDashboardConfig(config WorkspaceDashboardConfig) error {
