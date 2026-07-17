@@ -1,10 +1,295 @@
 package scan
 
 import (
+	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
+
+// BuildProjectAPICatalog creates the complete provider inventory for one project.
+func BuildProjectAPICatalog(project, generated string, routes []CodeRouteRecord, spring SpringIndex, contracts []APIContractRecord, capabilities []CapabilityRecord) APICatalogRecord {
+	_ = contracts // Project contracts describe outbound calls; workspace reconciliation attaches consumers later.
+	project = filepath.ToSlash(strings.TrimSpace(project))
+	coverageByLanguage := routeCoverageByLanguage(capabilities)
+	javaEvidence := springRouteEvidence(routes)
+	candidates := make([]APIEndpointRecord, 0, len(spring.Endpoints)+len(routes))
+
+	for _, endpoint := range spring.Endpoints {
+		path := canonicalProviderPath(endpoint.Path)
+		handler := endpoint.Controller + "." + endpoint.Method
+		record := APIEndpointRecord{
+			ProviderProject: project,
+			ProviderRole:    "backend",
+			Transport:       "http",
+			HTTPMethod:      strings.ToUpper(strings.TrimSpace(endpoint.HTTPMethod)),
+			Path:            path,
+			Language:        "java",
+			Framework:       "Spring",
+			Controller:      endpoint.Controller,
+			Handler:         handler,
+			File:            filepath.ToSlash(endpoint.File),
+			Line:            endpoint.Line,
+			Parameters:      springAPIParameters(endpoint.Parameters),
+			Consumes:        splitSpringMediaTypes(endpoint.Consumes),
+			RequestType:     endpoint.RequestType,
+			ResponseType:    endpoint.ReturnType,
+			Security:        unknownAPISecurity(),
+			Consumers:       []APIConsumerRecord{},
+			Confidence:      ConfidenceExact,
+			Coverage:        routeCoverage("java", coverageByLanguage),
+			EvidenceIDs:     append([]string(nil), javaEvidence[springProviderEvidenceKey(endpoint)]...),
+		}
+		if path != endpoint.Path {
+			record.RawPath = endpoint.Path
+		}
+		record.ID = StableAPIEndpointID(project, record.Transport, record.HTTPMethod, record.Path, record.Handler, record.File, record.Line)
+		candidates = append(candidates, record)
+	}
+
+	for _, route := range routes {
+		if !supportedScriptProviderRoute(route) {
+			continue
+		}
+		path := canonicalProviderPath(route.Path)
+		record := APIEndpointRecord{
+			ProviderProject: project,
+			ProviderRole:    "backend",
+			Transport:       "http",
+			HTTPMethod:      strings.ToUpper(strings.TrimSpace(route.HTTPMethod)),
+			Path:            path,
+			Language:        route.Language,
+			Framework:       route.Framework,
+			Handler:         route.Handler,
+			File:            filepath.ToSlash(route.File),
+			Line:            route.Line,
+			Security:        unknownAPISecurity(),
+			Consumers:       []APIConsumerRecord{},
+			Confidence:      apiRouteConfidence(route.Confidence),
+			Coverage:        routeCoverage(route.Language, coverageByLanguage),
+			EvidenceIDs:     append([]string(nil), route.EvidenceIDs...),
+		}
+		if path != route.Path {
+			record.RawPath = route.Path
+		}
+		record.ID = StableAPIEndpointID(project, record.Transport, record.HTTPMethod, record.Path, record.Handler, record.File, record.Line)
+		candidates = append(candidates, record)
+	}
+
+	sort.Slice(candidates, func(left, right int) bool {
+		leftKey := projectProviderIdentity(candidates[left]) + "\x00" + candidates[left].File
+		rightKey := projectProviderIdentity(candidates[right]) + "\x00" + candidates[right].File
+		if leftKey != rightKey {
+			return leftKey < rightKey
+		}
+		if candidates[left].Line != candidates[right].Line {
+			return candidates[left].Line < candidates[right].Line
+		}
+		return candidates[left].Path < candidates[right].Path
+	})
+	catalog := APICatalogRecord{SchemaVersion: SchemaVersion, Generated: generated, Root: project, Endpoints: []APIEndpointRecord{}}
+	for _, candidate := range candidates {
+		last := len(catalog.Endpoints) - 1
+		if last >= 0 && projectProviderIdentity(catalog.Endpoints[last]) == projectProviderIdentity(candidate) {
+			mergeProjectProviderEndpoint(&catalog.Endpoints[last], candidate)
+			continue
+		}
+		catalog.Endpoints = append(catalog.Endpoints, candidate)
+	}
+	SortAPICatalog(&catalog)
+	return catalog
+}
+
+func supportedScriptProviderRoute(route CodeRouteRecord) bool {
+	return (route.Language == "javascript" || route.Language == "typescript") &&
+		route.Kind == "backend" && supportedScriptProviderFramework(route.Framework) && strings.TrimSpace(route.Handler) != "" &&
+		strings.TrimSpace(route.File) != "" && route.Line > 0
+}
+
+func supportedScriptProviderFramework(framework string) bool {
+	switch strings.ToLower(strings.TrimSpace(framework)) {
+	case "express", "fastify":
+		return true
+	default:
+		return false
+	}
+}
+
+func canonicalProviderPath(value string) string {
+	value = normalizeCodeRoutePath(value)
+	return regexp.MustCompile(`(^|/):([A-Za-z_$][A-Za-z0-9_$]*)`).ReplaceAllString(value, `${1}{${2}}`)
+}
+
+func projectProviderIdentity(endpoint APIEndpointRecord) string {
+	return endpoint.ProviderProject + "\x00" + strings.ToUpper(endpoint.HTTPMethod) + "\x00" + normalizeAPIPathParameterNames(endpoint.Path) + "\x00" + endpoint.Handler
+}
+
+func mergeProjectProviderEndpoint(target *APIEndpointRecord, extra APIEndpointRecord) {
+	if len(target.Parameters) == 0 && len(extra.Parameters) > 0 {
+		target.Parameters = extra.Parameters
+	}
+	if len(target.Consumes) == 0 && len(extra.Consumes) > 0 {
+		target.Consumes = extra.Consumes
+	}
+	if target.RequestType == "" {
+		target.RequestType = extra.RequestType
+	}
+	if target.ResponseType == "" {
+		target.ResponseType = extra.ResponseType
+	}
+	target.EvidenceIDs = append(target.EvidenceIDs, extra.EvidenceIDs...)
+	target.EvidenceIDs = catalogUniqueSortedStrings(target.EvidenceIDs)
+}
+
+func springAPIParameters(parameters []JavaParameterRecord) []APIParameterRecord {
+	result := make([]APIParameterRecord, 0, len(parameters))
+	for _, parameter := range parameters {
+		result = append(result, springAPIParameter(parameter))
+	}
+	return result
+}
+
+func springAPIParameter(parameter JavaParameterRecord) APIParameterRecord {
+	record := APIParameterRecord{Name: parameter.Name, Location: "unknown", Type: parameter.Type, Source: "java_parameter", Confidence: ConfidenceUnknown}
+	for _, annotation := range parameter.Annotations {
+		location := ""
+		switch annotation.Name {
+		case "PathVariable":
+			location = "path"
+		case "RequestParam":
+			location = "query"
+		case "RequestHeader":
+			location = "header"
+		case "CookieValue":
+			location = "cookie"
+		case "RequestBody", "RequestPart":
+			location = "body"
+		}
+		if location == "" {
+			continue
+		}
+		record.Location = location
+		record.Source = "parameter_annotation"
+		record.Confidence = ConfidenceExact
+		record.Required = annotation.Attributes["required"] != "false" && annotation.Attributes["defaultValue"] == ""
+		name := firstNonEmpty(annotation.Attributes["name"], annotation.Attributes["value"])
+		if name == "" && annotation.Arguments != "" && !strings.Contains(annotation.Arguments, "=") {
+			name = trimJavaValue(annotation.Arguments)
+		}
+		if strings.TrimSpace(name) != "" {
+			record.Name = strings.Trim(strings.TrimSpace(name), `"`)
+		}
+		break
+	}
+	return record
+}
+
+func splitSpringMediaTypes(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	value = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(value), "{"), "}"))
+	parts := splitTopLevel(value, ',')
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(strings.TrimSpace(part), `"`)
+		if part != "" {
+			result = append(result, normalizeSpringMediaType(part))
+		}
+	}
+	return catalogUniqueSortedStrings(result)
+}
+
+func normalizeSpringMediaType(value string) string {
+	switch value {
+	case "MediaType.APPLICATION_JSON_VALUE":
+		return "application/json"
+	case "MediaType.APPLICATION_XML_VALUE":
+		return "application/xml"
+	case "MediaType.APPLICATION_OCTET_STREAM_VALUE":
+		return "application/octet-stream"
+	case "MediaType.APPLICATION_FORM_URLENCODED_VALUE":
+		return "application/x-www-form-urlencoded"
+	case "MediaType.MULTIPART_FORM_DATA_VALUE":
+		return "multipart/form-data"
+	case "MediaType.TEXT_HTML_VALUE":
+		return "text/html"
+	case "MediaType.TEXT_PLAIN_VALUE":
+		return "text/plain"
+	default:
+		return value
+	}
+}
+
+func springRouteEvidence(routes []CodeRouteRecord) map[string][]string {
+	result := map[string][]string{}
+	for _, route := range routes {
+		if route.Language != "java" || route.Framework != "Spring" {
+			continue
+		}
+		key := strings.ToUpper(route.HTTPMethod) + "\x00" + normalizeAPIPathParameterNames(canonicalProviderPath(route.Path)) + "\x00" + route.Handler + "\x00" + filepath.ToSlash(route.File) + "\x00" + strconv.Itoa(route.Line)
+		result[key] = append(result[key], route.EvidenceIDs...)
+		result[key] = catalogUniqueSortedStrings(result[key])
+	}
+	return result
+}
+
+func springProviderEvidenceKey(endpoint SpringEndpointRecord) string {
+	return strings.ToUpper(endpoint.HTTPMethod) + "\x00" + normalizeAPIPathParameterNames(canonicalProviderPath(endpoint.Path)) + "\x00" + endpoint.Controller + "." + endpoint.Method + "\x00" + filepath.ToSlash(endpoint.File) + "\x00" + strconv.Itoa(endpoint.Line)
+}
+
+func routeCoverageByLanguage(capabilities []CapabilityRecord) map[string]Coverage {
+	result := map[string]Coverage{}
+	for _, capability := range capabilities {
+		if capability.ID == CapabilityRoutes {
+			result[capability.Language] = capability.Coverage
+		}
+	}
+	return result
+}
+
+func routeCoverage(language string, coverage map[string]Coverage) Coverage {
+	if value := coverage[language]; value != "" {
+		return value
+	}
+	return CoveragePartial
+}
+
+func apiRouteConfidence(value string) Confidence {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "EXACT", "EXTRACTED":
+		return ConfidenceExact
+	case "RESOLVED":
+		return ConfidenceResolved
+	case "NORMALIZED":
+		return ConfidenceNormalized
+	case "INFERRED":
+		return ConfidenceInferred
+	case "WEAK", "PARTIAL":
+		return ConfidenceWeak
+	default:
+		return ConfidenceUnknown
+	}
+}
+
+func unknownAPISecurity() []SecurityEvidenceRecord {
+	return []SecurityEvidenceRecord{{Kind: SecurityUnknown, Summary: "No auth evidence detected", Confidence: ConfidenceUnknown}}
+}
+
+func catalogUniqueSortedStrings(values []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
 
 func buildSpringIndex(sources []JavaSourceRecord) SpringIndex {
 	typeByName := map[string]JavaTypeRecord{}

@@ -268,6 +268,128 @@ class CadasterDto {
 	assertHasDTOField(t, spring.DTOs, "CadasterDto", "id", false)
 }
 
+func TestBuildProjectAPICatalogIncludesEndpointsWithoutConsumers(t *testing.T) {
+	catalog := BuildProjectAPICatalog("orders", "2026-07-17T12:00:00Z", nil, SpringIndex{Endpoints: []SpringEndpointRecord{{
+		HTTPMethod:  "GET",
+		Path:        "/orders/{id}",
+		Controller:  "OrderController",
+		Method:      "get",
+		File:        "src/main/java/OrderController.java",
+		Line:        20,
+		RequestType: "OrderQuery",
+		ReturnType:  "OrderResponse",
+	}}}, nil, nil)
+
+	if len(catalog.Endpoints) != 1 || len(catalog.Endpoints[0].Consumers) != 0 {
+		t.Fatalf("catalog=%#v", catalog)
+	}
+	endpoint := catalog.Endpoints[0]
+	if endpoint.RequestType != "OrderQuery" || endpoint.ResponseType != "OrderResponse" {
+		t.Fatalf("request/response types not retained: %#v", endpoint)
+	}
+	if len(endpoint.Security) != 1 || endpoint.Security[0].Kind != SecurityUnknown {
+		t.Fatalf("missing honest unknown security evidence: %#v", endpoint.Security)
+	}
+	if err := ValidateAPICatalog(catalog); err != nil {
+		t.Fatalf("catalog validation failed: %v", err)
+	}
+}
+
+func TestBuildProjectAPICatalogMapsTypedSpringParametersAndDeduplicatesProviders(t *testing.T) {
+	spring := SpringIndex{Endpoints: []SpringEndpointRecord{
+		{
+			HTTPMethod: "POST", Path: "/orders/{orderId}", Controller: "OrderController", Method: "update",
+			File: "src/main/java/OrderController.java", Line: 20, RequestType: "UpdateOrderRequest",
+			ReturnType: "OrderResponse", Consumes: "application/json",
+			Parameters: []JavaParameterRecord{
+				{Name: "orderId", Type: "long", Annotations: []JavaAnnotationRecord{{Name: "PathVariable", Attributes: map[string]string{"value": "orderId"}}}},
+				{Name: "expand", Type: "List<String>", Annotations: []JavaAnnotationRecord{{Name: "RequestParam", Attributes: map[string]string{"name": "expand", "required": "false"}}}},
+				{Name: "traceId", Type: "String", Annotations: []JavaAnnotationRecord{{Name: "RequestHeader", Attributes: map[string]string{"value": "X-Trace-ID"}}}},
+				{Name: "session", Type: "String", Annotations: []JavaAnnotationRecord{{Name: "CookieValue", Attributes: map[string]string{"value": "SESSION", "required": "false"}}}},
+				{Name: "request", Type: "UpdateOrderRequest", Annotations: []JavaAnnotationRecord{{Name: "RequestBody"}}},
+			},
+		},
+		{
+			HTTPMethod: "POST", Path: "/orders/{id}", Controller: "OrderController", Method: "update",
+			File: "src/main/java/OrderController.java", Line: 20,
+		},
+	}}
+
+	catalog := BuildProjectAPICatalog("services/orders", "fixed", nil, spring, nil, []CapabilityRecord{{
+		ID: CapabilityRoutes, Language: "java", Coverage: CoverageComplete,
+	}})
+	if len(catalog.Endpoints) != 1 {
+		t.Fatalf("duplicate provider endpoint was not collapsed: %#v", catalog.Endpoints)
+	}
+	endpoint := catalog.Endpoints[0]
+	if endpoint.Coverage != CoverageComplete || len(endpoint.Consumes) != 1 || endpoint.Consumes[0] != "application/json" {
+		t.Fatalf("coverage/consumes not retained: %#v", endpoint)
+	}
+	want := map[string]APIParameterRecord{
+		"orderId":    {Name: "orderId", Location: "path", Type: "long", Required: true},
+		"expand":     {Name: "expand", Location: "query", Type: "List<String>"},
+		"X-Trace-ID": {Name: "X-Trace-ID", Location: "header", Type: "String", Required: true},
+		"SESSION":    {Name: "SESSION", Location: "cookie", Type: "String"},
+		"request":    {Name: "request", Location: "body", Type: "UpdateOrderRequest", Required: true},
+	}
+	if len(endpoint.Parameters) != len(want) {
+		t.Fatalf("parameters=%#v", endpoint.Parameters)
+	}
+	for _, parameter := range endpoint.Parameters {
+		expected, ok := want[parameter.Name]
+		if !ok {
+			t.Fatalf("unexpected parameter %#v", parameter)
+		}
+		if parameter.Location != expected.Location || parameter.Type != expected.Type || parameter.Required != expected.Required || parameter.Source == "" || parameter.Confidence == "" {
+			t.Fatalf("parameter=%#v, want core fields %#v", parameter, expected)
+		}
+	}
+}
+
+func TestBuildProjectAPICatalogIncludesOnlySupportedScriptProviderRoutes(t *testing.T) {
+	routes := []CodeRouteRecord{
+		{Language: "typescript", Framework: "Fastify", Kind: "backend", HTTPMethod: "GET", Path: "/orders/:id", Handler: "getOrder", File: "src/routes.ts", Line: 12, Confidence: "EXTRACTED", EvidenceIDs: []string{"evidence:route"}},
+		{Language: "typescript", Framework: "Unknown Router", Kind: "backend", HTTPMethod: "GET", Path: "/unsupported", Handler: "handler", File: "src/unknown.ts", Line: 2},
+		{Language: "javascript", Framework: "Express", Kind: "frontend", HTTPMethod: "GET", Path: "/ui", Handler: "Screen", File: "src/app.js", Line: 3},
+		{Language: "typescript", Kind: "backend", HTTPMethod: "GET", Path: "/missing-framework", Handler: "handler", File: "src/routes.ts", Line: 20},
+		{Language: "typescript", Framework: "Express", Kind: "backend", HTTPMethod: "GET", Path: "/missing-handler", File: "src/routes.ts", Line: 21},
+		{Language: "typescript", Framework: "Express", Kind: "backend", HTTPMethod: "GET", Path: "/missing-source", Handler: "handler"},
+		{Language: "go", Framework: "net/http", Kind: "backend", HTTPMethod: "GET", Path: "/go", Handler: "get", File: "main.go", Line: 8},
+	}
+
+	catalog := BuildProjectAPICatalog("orders", "fixed", routes, SpringIndex{}, nil, nil)
+	if len(catalog.Endpoints) != 1 {
+		t.Fatalf("script provider inventory=%#v", catalog.Endpoints)
+	}
+	endpoint := catalog.Endpoints[0]
+	if endpoint.Language != "typescript" || endpoint.Framework != "Fastify" || endpoint.Handler != "getOrder" || endpoint.Path != "/orders/{id}" {
+		t.Fatalf("script provider endpoint=%#v", endpoint)
+	}
+	if len(endpoint.EvidenceIDs) != 1 || endpoint.EvidenceIDs[0] != "evidence:route" {
+		t.Fatalf("script provider evidence=%#v", endpoint.EvidenceIDs)
+	}
+}
+
+func TestBuildProjectAPICatalogIsDeterministicAcrossDuplicateDiscoveryOrder(t *testing.T) {
+	endpoints := []SpringEndpointRecord{
+		{HTTPMethod: "GET", Path: "/orders/{orderId}", Controller: "OrderController", Method: "get", File: "src/OrderController.java", Line: 10, ReturnType: "OrderResponse"},
+		{HTTPMethod: "GET", Path: "/orders/{id}", Controller: "OrderController", Method: "get", File: "src/OrderController.java", Line: 10, RequestType: "OrderQuery"},
+	}
+	left := BuildProjectAPICatalog("orders", "fixed", nil, SpringIndex{Endpoints: endpoints}, nil, nil)
+	right := BuildProjectAPICatalog("orders", "fixed", nil, SpringIndex{Endpoints: []SpringEndpointRecord{endpoints[1], endpoints[0]}}, nil, nil)
+	leftJSON, err := json.Marshal(left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightJSON, err := json.Marshal(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(leftJSON) != string(rightJSON) {
+		t.Fatalf("catalog depends on discovery order:\nleft:  %s\nright: %s", leftJSON, rightJSON)
+	}
+}
+
 func TestSpringIndexKeepsMappingAfterMultilineOpenAPIOperation(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/main/java/com/example/CadasterController.java", Language: "java"}, `package com.example;
 

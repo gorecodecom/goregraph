@@ -35,6 +35,7 @@ var IndexGeneratedFiles = []string{
 	"routes.json",
 	"flows.json",
 	"api-contracts.json",
+	"api-catalog.json",
 	"architecture-capabilities.json",
 	"service-dependencies.json",
 	"frontend-usage.json",
@@ -392,6 +393,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
 	diagnosticFamilies := BuildDiagnosticFamilies(filepath.Base(root), canonicalDiagnostics)
 	finished := time.Now().UTC()
+	apiCatalog := BuildProjectAPICatalog(filepath.Base(root), finished.Format(time.RFC3339), routes, springIndex, index.Code.APIContracts, capabilities)
 	var contextIndex AgentContextIndexRecord
 	if target.IncludesAgent() {
 		contextIndex = BuildProjectAgentContextIndex(
@@ -465,6 +467,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"routes.json", routes},
 		{"flows.json", codeFlows},
 		{"api-contracts.json", index.Code.APIContracts},
+		{"api-catalog.json", apiCatalog},
 		{"architecture-capabilities.json", index.ArchitectureCapabilities},
 		{"service-dependencies.json", serviceDependencies},
 		{"frontend-usage.json", frontendUsage},

@@ -119,6 +119,56 @@ class UserController {
 	}
 }
 
+func TestProjectAPICatalogIsPublishedForEveryBuildTarget(t *testing.T) {
+	for _, target := range []BuildTarget{BuildTargetAgent, BuildTargetDashboard, BuildTargetAll} {
+		t.Run(string(target), func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, root, "src/OrderController.java", `
+@RestController
+class OrderController {
+  @GetMapping("/orders/{id}")
+  String get(@PathVariable("id") long id) { return "order"; }
+}`)
+
+			if _, err := RunBuild(root, config.Defaults(), target); err != nil {
+				t.Fatal(err)
+			}
+			var manifest Manifest
+			readJSON(t, filepath.Join(root, "goregraph-out", "manifest.json"), &manifest)
+			if !containsString(manifest.Index.Files, "index/api-catalog.json") {
+				t.Fatalf("target %s manifest index files=%#v", target, manifest.Index.Files)
+			}
+			var freshness ArtifactFreshnessIndex
+			readJSON(t, filepath.Join(root, "goregraph-out", "index", "freshness.json"), &freshness)
+			foundFreshness := false
+			for _, artifact := range freshness.Artifacts {
+				if artifact.Artifact == "index/api-catalog.json" {
+					foundFreshness = true
+					break
+				}
+			}
+			if !foundFreshness {
+				t.Fatalf("target %s freshness artifacts=%#v", target, freshness.Artifacts)
+			}
+			var catalog APICatalogRecord
+			readJSON(t, filepath.Join(root, "goregraph-out", "index", "api-catalog.json"), &catalog)
+			if len(catalog.Endpoints) != 1 || len(catalog.Endpoints[0].Consumers) != 0 {
+				t.Fatalf("target %s catalog=%#v", target, catalog)
+			}
+			endpoint := catalog.Endpoints[0]
+			if len(endpoint.Parameters) != 1 || endpoint.Parameters[0].Location != "path" || endpoint.Parameters[0].Type != "long" {
+				t.Fatalf("target %s endpoint parameters=%#v", target, endpoint.Parameters)
+			}
+			if len(endpoint.EvidenceIDs) == 0 {
+				t.Fatalf("target %s endpoint has no source evidence: %#v", target, endpoint)
+			}
+			if err := ValidateAPICatalog(catalog); err != nil {
+				t.Fatalf("target %s catalog invalid: %v", target, err)
+			}
+		})
+	}
+}
+
 func TestRunWritesOneBoundedAgentContextWorkflow(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc main(){}\n")
