@@ -241,6 +241,22 @@ func runArchitectureModel(t *testing.T, expression string, target any) {
 	}
 }
 
+func runRequiredArchitectureModel(t *testing.T, expression string, target any) {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatalf("node is required for architecture editor regression tests: %v", err)
+	}
+	source := workspaceDashboardArchitectureModelScript + "\nprocess.stdout.write(JSON.stringify(" + expression + "));"
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("architecture model failed: %v\n%s", err, output)
+	}
+	if err := json.Unmarshal(output, target); err != nil {
+		t.Fatalf("decode architecture model result: %v\n%s", err, output)
+	}
+}
+
 func TestArchitectureRelationshipSummaryCountsRelationsServicesAndRiskBuckets(t *testing.T) {
 	var result struct {
 		IncomingRelationships int
@@ -585,12 +601,65 @@ func TestArchitectureEditorThreeWayRebasePreservesUnrelatedRemoteChanges(t *test
 	if err != nil {
 		t.Fatalf("encode three-way payload: %v", err)
 	}
-	want := `{"architecture":{"groupOrder":["gamma","beta","alpha"],"groups":{"alpha":{"label":"Local Alpha"},"beta":{"label":"Remote Beta"},"gamma":{"label":"Remote Gamma"}},"services":{"b":{"group":"beta","order":1},"d":{"group":"alpha","order":0},"e":{"group":"beta","order":2}}},"schema":1}`
+	want := `{"architecture":{"groupOrder":["gamma","beta","alpha"],"groups":{"alpha":{"label":"Local Alpha"},"beta":{"label":"Remote Beta"},"gamma":{"label":"Remote Gamma"}},"services":{"a":{"group":"alpha","order":1},"b":{"group":"beta","order":1},"c":{"group":"beta","order":0},"d":{"group":"alpha","order":0},"e":{"group":"beta","order":2}}},"schema":1}`
 	if string(payload) != want {
 		t.Fatalf("three-way serialized payload = %s, want %s", payload, want)
 	}
 	if result.ConflictService.Group != "beta" || result.ConflictService.Index != 0 {
 		t.Fatalf("same-service conflict = %#v, want local pending position to win", result.ConflictService)
+	}
+}
+
+func TestArchitectureEditorThreeWayRebasePersistsCompleteTouchedGroupOrder(t *testing.T) {
+	var result struct {
+		SourceServices         []string
+		TargetServices         []string
+		SourceAllManual        bool
+		TargetAllManual        bool
+		UntouchedGroupManual   bool
+		UntouchedServiceManual bool
+		SerializedPayload      map[string]any
+	}
+	runRequiredArchitectureModel(t, `(()=>{
+		const service=(project,label)=>({id:"service:"+project,project:project,label:label,manual:false});
+		const base={groups:[
+			{id:"alpha",label:"Alpha",manual:false,services:[service("source-z","Zulu Source"),service("moved","Middle Moved"),service("source-a","Alpha Source")]},
+			{id:"beta",label:"Beta",manual:false,services:[service("target-z","Zulu Target"),service("target-a","Alpha Target")]},
+			{id:"gamma",label:"Gamma",manual:false,services:[service("untouched","Untouched")]}
+		]};
+		const local=architectureMoveServiceDraft(architectureCloneDraft(base),"moved","alpha","beta",1);
+		const latest=architectureCloneDraft(base),beta=latest.groups.find(group=>group.id==="beta");
+		beta.services.splice(1,0,service("remote-auto","Aardvark Remote"));
+		const merged=architectureDraftThreeWayMerge(base,local,latest),source=merged.groups.find(group=>group.id==="alpha"),target=merged.groups.find(group=>group.id==="beta"),untouched=merged.groups.find(group=>group.id==="gamma");
+		return {
+			SourceServices:source.services.map(item=>item.project),
+			TargetServices:target.services.map(item=>item.project),
+			SourceAllManual:source.services.every(item=>item.manual),
+			TargetAllManual:target.services.every(item=>item.manual),
+			UntouchedGroupManual:untouched.manual,
+			UntouchedServiceManual:untouched.services[0].manual,
+			SerializedPayload:architectureDraftConfigValue(merged)
+		};
+	})()`, &result)
+	if !reflect.DeepEqual(result.SourceServices, []string{"source-z", "source-a"}) {
+		t.Fatalf("merged source services = %v", result.SourceServices)
+	}
+	if !reflect.DeepEqual(result.TargetServices, []string{"target-z", "remote-auto", "moved", "target-a"}) {
+		t.Fatalf("merged target services = %v", result.TargetServices)
+	}
+	if !result.SourceAllManual || !result.TargetAllManual {
+		t.Fatalf("touched groups were not fully persisted: source=%t target=%t", result.SourceAllManual, result.TargetAllManual)
+	}
+	if result.UntouchedGroupManual || result.UntouchedServiceManual {
+		t.Fatalf("untouched group manual flags changed: group=%t service=%t", result.UntouchedGroupManual, result.UntouchedServiceManual)
+	}
+	payload, err := json.Marshal(result.SerializedPayload)
+	if err != nil {
+		t.Fatalf("encode touched-group payload: %v", err)
+	}
+	want := `{"architecture":{"groupOrder":["alpha","beta","gamma"],"groups":{"alpha":{"label":"Alpha"},"beta":{"label":"Beta"}},"services":{"moved":{"group":"beta","order":2},"remote-auto":{"group":"beta","order":1},"source-a":{"group":"alpha","order":1},"source-z":{"group":"alpha","order":0},"target-a":{"group":"beta","order":3},"target-z":{"group":"beta","order":0}}},"schema":1}`
+	if string(payload) != want {
+		t.Fatalf("touched-group serialized payload = %s, want %s", payload, want)
 	}
 }
 
