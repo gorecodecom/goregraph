@@ -1,24 +1,33 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/gorecodecom/goregraph/internal/agent"
 	"github.com/gorecodecom/goregraph/internal/config"
+	"github.com/gorecodecom/goregraph/internal/dashboardeditor"
 	"github.com/gorecodecom/goregraph/internal/doctor"
 	"github.com/gorecodecom/goregraph/internal/gitignore"
 	"github.com/gorecodecom/goregraph/internal/mcp"
 	"github.com/gorecodecom/goregraph/internal/query"
 	"github.com/gorecodecom/goregraph/internal/scan"
 	"github.com/gorecodecom/goregraph/internal/version"
+)
+
+var (
+	serveDashboardEditor   = dashboardeditor.Serve
+	openDashboardEditorURL = openGeneratedPath
 )
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -282,7 +291,7 @@ func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
-		case "path", "open":
+		case "path", "open", "edit":
 			action = arg
 		case "--workspace":
 			if i+1 >= len(args) {
@@ -292,7 +301,7 @@ func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
 			i++
 			cfg.WorkspaceRoot = args[i]
 		case "--help", "help":
-			fmt.Fprint(stdout, "Usage: goregraph workspace dashboard path|open [path] [--workspace <path>]\n\nPrints or opens the generated workspace dashboard HTML.\n")
+			printWorkspaceDashboardHelp(stdout)
 			return 0
 		default:
 			if strings.HasPrefix(arg, "-") {
@@ -313,6 +322,27 @@ func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	abs, _ := filepath.Abs(path)
+	if action == "edit" {
+		if err := requireCompleteWorkspaceDashboard(workspaceRoot, path); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		err := serveDashboardEditor(ctx, dashboardeditor.Options{
+			WorkspaceRoot: workspaceRoot,
+			DashboardPath: abs,
+			OpenURL:       openDashboardEditorURL,
+			OnReady: func(url string) {
+				fmt.Fprintf(stdout, "Dashboard editor: %s\n", url)
+			},
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "error: dashboard editor failed: %v\n", err)
+			return 1
+		}
+		return 0
+	}
 	if action == "open" {
 		if err := openGeneratedPath(abs); err != nil {
 			fmt.Fprintf(stderr, "error: opening dashboard failed: %v\n", err)
@@ -321,6 +351,35 @@ func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "%s\n", abs)
 	return 0
+}
+
+func requireCompleteWorkspaceDashboard(workspaceRoot, dashboardPath string) error {
+	manifestPath := scan.NewWorkspaceOutputLayout(filepath.Join(workspaceRoot, ".goregraph-workspace")).Manifest
+	body, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("dashboard is incomplete; run goregraph workspace build dashboard first: %w", err)
+	}
+	var manifest scan.OutputManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return fmt.Errorf("dashboard is incomplete; run goregraph workspace build dashboard first: %w", err)
+	}
+	if !manifest.Dashboard.Complete {
+		return fmt.Errorf("dashboard is incomplete; run goregraph workspace build dashboard first")
+	}
+	info, err := os.Stat(dashboardPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("dashboard is incomplete; run goregraph workspace build dashboard first")
+	}
+	return nil
+}
+
+func printWorkspaceDashboardHelp(w io.Writer) {
+	fmt.Fprint(w, `Usage: goregraph workspace dashboard path|open|edit [path] [--workspace <path>]
+
+path and open use the generated static dashboard, which remains read-only.
+edit starts an authenticated loopback editor and saves layout choices in
+.goregraph-dashboard.json. The editor stays in the foreground; press Ctrl-C to stop it.
+`)
 }
 
 func runDashboard(args []string, stdout, stderr io.Writer) int {
@@ -1383,6 +1442,7 @@ Examples:
   goregraph workspace refresh . --target agent
   goregraph workspace clean . --execute
   goregraph workspace dashboard .
+  goregraph workspace dashboard edit .
   goregraph workspace explain "GET /users/{userId}"
   goregraph workspace path --from frontend/app --to UserController.get
   goregraph workspace impact --changed-file src/api/users.ts
@@ -1408,6 +1468,11 @@ Project vs workspace builds:
   The same project, isolated-project, and full-workspace scopes apply to agent
   and all builds.
 
+Dashboard editing:
+  workspace dashboard path and open use the static read-only export. Use
+  workspace dashboard edit to start an authenticated loopback editor; it saves
+  layout choices in .goregraph-dashboard.json and runs until Ctrl-C.
+
 MCP behavior:
   standard MCP exposes only task_context. --expert-tools is for manual diagnostics
   and exploration, not the normal agent workflow.
@@ -1430,7 +1495,7 @@ Commands:
   scan-all [path]      Compatibility alias for workspace build all
   refresh [path]       Refresh workspace overlays without scanning source files
   clean [path]         Show generated workspace outputs; add --execute to remove
-  dashboard [path]     Print generated workspace dashboard path
+  dashboard [path]     Print, open, or edit the workspace dashboard
   explain <target>     Explain a route, file, symbol, contract, or feature
   path                 Show graph path between two workspace targets
   impact               Show affected features for changed files
@@ -1449,6 +1514,7 @@ Examples:
   goregraph workspace git update . --execute
   goregraph workspace clean . --execute
   goregraph workspace dashboard .
+  goregraph workspace dashboard edit .
   goregraph workspace explain "GET /users/{userId}"
   goregraph workspace path --from frontend/app --to UserController.get
   goregraph workspace impact --changed-file frontend/app/src/api/users.ts
@@ -1460,6 +1526,11 @@ Workspace detection:
   scan-all is the compatibility alias for workspace build all.
   A build or scan does not create .goregraph-workspace.yml. The generated
   .goregraph-workspace/ is removable generated output, not a persistent marker.
+
+Dashboard editing:
+  workspace dashboard path and open use the static read-only export. Use
+  workspace dashboard edit to start an authenticated loopback editor; it saves
+  layout choices in .goregraph-dashboard.json and runs until Ctrl-C.
 `)
 }
 

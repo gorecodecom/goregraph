@@ -2,13 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gorecodecom/goregraph/internal/agent"
+	"github.com/gorecodecom/goregraph/internal/dashboardeditor"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
@@ -280,6 +283,24 @@ func readCLIOutputManifest(t *testing.T, path string) scan.OutputManifest {
 		t.Fatal(err)
 	}
 	return manifest
+}
+
+func writeCompleteCLIWorkspaceDashboard(t *testing.T, workspace string) string {
+	t.Helper()
+	dashboard := filepath.Join(workspace, ".goregraph-workspace", "dashboard", "workspace-map.html")
+	writeFile(t, filepath.Dir(dashboard), filepath.Base(dashboard), "<html></html>")
+	manifest := scan.OutputManifest{Dashboard: scan.ProjectionStatus{
+		Complete: true,
+		Files:    []string{"dashboard/workspace-map.html"},
+	}}
+	body, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, ".goregraph-workspace", "manifest.json"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dashboard
 }
 
 func assertCLIProjection(t *testing.T, root, projection string, want bool) {
@@ -1080,6 +1101,123 @@ func TestRunWorkspaceDashboardPrintsDashboardPath(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDashboardHelpExplainsStaticAndEditableModes(t *testing.T) {
+	stdout, stderr := new(bytes.Buffer), new(bytes.Buffer)
+
+	if code := Run([]string{"workspace", "dashboard", "help"}, stdout, stderr); code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	for _, want := range []string{"path|open|edit", "read-only", "loopback", ".goregraph-dashboard.json", "Ctrl-C"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("help missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestRunWorkspaceDashboardEditUsesResolvedWorkspaceAndDashboard(t *testing.T) {
+	workspace := t.TempDir()
+	dashboard := writeCompleteCLIWorkspaceDashboard(t, workspace)
+	previousServe := serveDashboardEditor
+	previousOpen := openDashboardEditorURL
+	t.Cleanup(func() {
+		serveDashboardEditor = previousServe
+		openDashboardEditorURL = previousOpen
+	})
+
+	var gotRoot, gotDashboard string
+	serveDashboardEditor = func(_ context.Context, options dashboardeditor.Options) error {
+		gotRoot = options.WorkspaceRoot
+		gotDashboard = options.DashboardPath
+		options.OnReady("http://127.0.0.1:12345/#token=test")
+		if err := options.OpenURL("http://127.0.0.1:12345/#token=test"); err != nil {
+			t.Fatalf("opening editor URL: %v", err)
+		}
+		return nil
+	}
+	openDashboardEditorURL = func(string) error { return nil }
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "dashboard", "edit", "--workspace", workspace}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if gotRoot != workspace {
+		t.Fatalf("workspace root=%q, want %q", gotRoot, workspace)
+	}
+	if gotDashboard != dashboard {
+		t.Fatalf("dashboard path=%q, want %q", gotDashboard, dashboard)
+	}
+	if !strings.Contains(stdout.String(), "Dashboard editor: http://127.0.0.1:12345/#token=test") {
+		t.Fatalf("editor URL missing from stdout:\n%s", stdout.String())
+	}
+}
+
+func TestRunWorkspaceDashboardEditLeavesURLUsableWhenOpeningFails(t *testing.T) {
+	workspace := t.TempDir()
+	writeCompleteCLIWorkspaceDashboard(t, workspace)
+	previousServe := serveDashboardEditor
+	previousOpen := openDashboardEditorURL
+	t.Cleanup(func() {
+		serveDashboardEditor = previousServe
+		openDashboardEditorURL = previousOpen
+	})
+
+	serveDashboardEditor = func(_ context.Context, options dashboardeditor.Options) error {
+		options.OnReady("http://127.0.0.1:12345/#token=test")
+		if err := options.OpenURL("http://127.0.0.1:12345/#token=test"); err == nil {
+			t.Fatal("expected browser opener error")
+		}
+		return nil
+	}
+	openDashboardEditorURL = func(string) error { return errors.New("browser unavailable") }
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "dashboard", "edit", workspace}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Dashboard editor: http://127.0.0.1:12345/#token=test") {
+		t.Fatalf("editor URL missing from stdout:\n%s", stdout.String())
+	}
+}
+
+func TestRunWorkspaceDashboardEditRequiresCompleteDashboard(t *testing.T) {
+	workspace := t.TempDir()
+	writeFile(t, filepath.Join(workspace, ".goregraph-workspace", "dashboard"), "workspace-map.html", "<html></html>")
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "dashboard", "edit", "--workspace", workspace}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("exit code=%d, want 1; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "dashboard is incomplete") {
+		t.Fatalf("missing incomplete dashboard error:\n%s", stderr.String())
+	}
+}
+
+func TestRunWorkspaceDashboardEditReportsServerFailures(t *testing.T) {
+	workspace := t.TempDir()
+	writeCompleteCLIWorkspaceDashboard(t, workspace)
+	previousServe := serveDashboardEditor
+	t.Cleanup(func() { serveDashboardEditor = previousServe })
+	serveDashboardEditor = func(context.Context, dashboardeditor.Options) error {
+		return errors.New("listen failed")
+	}
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"workspace", "dashboard", "edit", workspace}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("exit code=%d, want 1; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "error: dashboard editor failed: listen failed") {
+		t.Fatalf("missing editor failure:\n%s", stderr.String())
+	}
+}
+
 func TestRunWorkspaceRefreshRebuildsWorkspaceOverlayWithoutScanningSources(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "workspace")
 	frontend := filepath.Join(workspace, "frontend", "app")
@@ -1392,7 +1530,7 @@ func TestWorkspaceUsageAndDashboardHelpMatchCanonicalActions(t *testing.T) {
 		want string
 	}{
 		{args: []string{"dashboard", "help"}, want: "Usage: goregraph dashboard path|open [path]"},
-		{args: []string{"workspace", "dashboard", "help"}, want: "Usage: goregraph workspace dashboard path|open [path] [--workspace <path>]"},
+		{args: []string{"workspace", "dashboard", "help"}, want: "Usage: goregraph workspace dashboard path|open|edit [path] [--workspace <path>]"},
 	} {
 		stdout.Reset()
 		stderr.Reset()
