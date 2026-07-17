@@ -174,6 +174,36 @@ func TestSaveWorkspaceDashboardConfigAllowsOnlyOneConcurrentWriter(t *testing.T)
 	}
 }
 
+func TestSaveWorkspaceDashboardConfigDoesNotReclaimOldForeignLock(t *testing.T) {
+	root := t.TempDir()
+	lockPath := filepath.Join(root, dashboardConfigLockName)
+	foreignToken := "another-process-token"
+	if err := os.WriteFile(lockPath, []byte(foreignToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(lockPath, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	config := WorkspaceDashboardConfig{Schema: 1, Architecture: DashboardArchitectureConfig{
+		Groups: map[string]DashboardGroupConfig{"org.example.alpha": {Label: "Alpha"}},
+	}}
+	if _, err := SaveWorkspaceDashboardConfig(root, missingDashboardConfigRevision, config); err == nil || !strings.Contains(err.Error(), "timed out acquiring workspace dashboard configuration lock") {
+		t.Fatalf("SaveWorkspaceDashboardConfig error = %v", err)
+	}
+	lockData, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(lockData) != foreignToken {
+		t.Fatalf("lock contents = %q", lockData)
+	}
+	if _, err := os.Stat(filepath.Join(root, WorkspaceDashboardConfigName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("configuration file error = %v", err)
+	}
+}
+
 func runDashboardConfigSaveWorker(t *testing.T, root string) {
 	workerID, err := strconv.Atoi(os.Getenv(dashboardConfigTestWorkerIDEnv))
 	if err != nil {

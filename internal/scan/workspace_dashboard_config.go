@@ -22,7 +22,6 @@ const (
 	dashboardConfigLockName          = ".goregraph-dashboard.lock"
 	dashboardConfigLockRetryInterval = 10 * time.Millisecond
 	dashboardConfigLockTimeout       = 5 * time.Second
-	dashboardConfigLockStaleAfter    = 30 * time.Second
 )
 
 var ErrDashboardConfigConflict = errors.New("workspace dashboard configuration changed")
@@ -149,17 +148,6 @@ func acquireDashboardConfigLock(root string) (func() error, error) {
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
-
-		stale, err := dashboardConfigLockIsStale(lockPath)
-		if err != nil {
-			return nil, err
-		}
-		if stale {
-			if err := os.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return nil, err
-			}
-			continue
-		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("timed out acquiring workspace dashboard configuration lock")
 		}
@@ -182,17 +170,6 @@ func releaseDashboardConfigLock(lockPath, token string) error {
 		return err
 	}
 	return nil
-}
-
-func dashboardConfigLockIsStale(lockPath string) (bool, error) {
-	info, err := os.Stat(lockPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return time.Since(info.ModTime()) > dashboardConfigLockStaleAfter, nil
 }
 
 func ValidateWorkspaceDashboardConfig(config WorkspaceDashboardConfig) error {
