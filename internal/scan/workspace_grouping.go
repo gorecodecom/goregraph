@@ -20,6 +20,20 @@ type workspaceNamespaceEvidence struct {
 	segments []string
 }
 
+type workspaceNamespaceEvidenceTrie struct {
+	evidence           []workspaceNamespaceEvidence
+	confidence         int
+	terminal           []workspaceNamespaceEvidence
+	terminalConfidence int
+	children           map[string]*workspaceNamespaceEvidenceTrie
+}
+
+type workspaceProjectNamespaceTrie struct {
+	projects []string
+	terminal []string
+	children map[string]*workspaceProjectNamespaceTrie
+}
+
 func BuildWorkspaceArchitectureLayout(registry WorkspaceRegistryRecord, namespaces []WorkspaceProjectNamespaceRecord, config WorkspaceDashboardConfig) WorkspaceArchitectureLayoutRecord {
 	projects := append([]WorkspaceProjectRecord(nil), registry.Projects...)
 	sort.Slice(projects, func(i, j int) bool {
@@ -199,30 +213,61 @@ func workspaceProjectNamespaceSegments(project WorkspaceProjectRecord, segments 
 }
 
 func workspaceDominantNamespaceFamily(candidates []workspaceNamespaceEvidence) ([]workspaceNamespaceEvidence, []string, bool) {
-	families := make(map[string][]workspaceNamespaceEvidence)
+	trie := &workspaceNamespaceEvidenceTrie{children: map[string]*workspaceNamespaceEvidenceTrie{}}
 	for _, candidate := range candidates {
-		key := strings.Join(candidate.segments, "\x00")
-		families[key] = append(families[key], candidate)
+		trie.insert(candidate)
 	}
-	familyNames := make([]string, 0, len(families))
-	for family := range families {
-		familyNames = append(familyNames, family)
+	return trie.dominant(nil)
+}
+
+func (trie *workspaceNamespaceEvidenceTrie) insert(candidate workspaceNamespaceEvidence) {
+	confidence := contextConfidenceRank(candidate.record.Confidence)
+	node := trie
+	node.evidence = append(node.evidence, candidate)
+	node.confidence += confidence
+	for _, segment := range candidate.segments {
+		child := node.children[segment]
+		if child == nil {
+			child = &workspaceNamespaceEvidenceTrie{children: map[string]*workspaceNamespaceEvidenceTrie{}}
+			node.children[segment] = child
+		}
+		node = child
+		node.evidence = append(node.evidence, candidate)
+		node.confidence += confidence
 	}
-	sort.Strings(familyNames)
+	node.terminal = append(node.terminal, candidate)
+	node.terminalConfidence += confidence
+}
+
+func (trie *workspaceNamespaceEvidenceTrie) dominant(prefix []string) ([]workspaceNamespaceEvidence, []string, bool) {
+	branchNames := make([]string, 0, len(trie.children))
+	for branch := range trie.children {
+		branchNames = append(branchNames, branch)
+	}
+	sort.Strings(branchNames)
+	branchCount := len(branchNames)
+	if len(trie.terminal) > 0 {
+		branchCount++
+	}
+	if branchCount == 0 {
+		return nil, nil, false
+	}
+	if branchCount == 1 {
+		if len(trie.terminal) > 0 {
+			return trie.terminal, append([]string(nil), prefix...), len(prefix) >= 2
+		}
+		branch := branchNames[0]
+		return trie.children[branch].dominant(append(prefix, branch))
+	}
 
 	winner := ""
 	bestCount := -1
 	bestConfidence := -1
 	tied := false
-	for _, family := range familyNames {
-		confidence := 0
-		for _, candidate := range families[family] {
-			confidence += contextConfidenceRank(candidate.record.Confidence)
-		}
-		count := len(families[family])
+	updateWinner := func(branch string, count, confidence int) {
 		switch {
 		case count > bestCount || count == bestCount && confidence > bestConfidence:
-			winner = family
+			winner = branch
 			bestCount = count
 			bestConfidence = confidence
 			tied = false
@@ -230,71 +275,90 @@ func workspaceDominantNamespaceFamily(candidates []workspaceNamespaceEvidence) (
 			tied = true
 		}
 	}
-	if tied || winner == "" {
-		return nil, nil, false
+	if len(trie.terminal) > 0 {
+		updateWinner("", len(trie.terminal), trie.terminalConfidence)
 	}
-	winners := families[winner]
-	return winners, workspaceCommonNamespaceSegments(winners), true
+	for _, branch := range branchNames {
+		child := trie.children[branch]
+		updateWinner(branch, len(child.evidence), child.confidence)
+	}
+	if tied {
+		if len(prefix) < 2 {
+			return nil, nil, false
+		}
+		return trie.evidence, append([]string(nil), prefix...), true
+	}
+	if winner == "" {
+		return trie.terminal, append([]string(nil), prefix...), len(prefix) >= 2
+	}
+	return trie.children[winner].dominant(append(prefix, winner))
 }
 
-func workspaceNamespaceRootFamily(segments []string) string {
-	if len(segments) == 0 {
-		return ""
+func (trie *workspaceProjectNamespaceTrie) insert(project string, segments []string) {
+	node := trie
+	node.projects = append(node.projects, project)
+	for _, segment := range segments {
+		child := node.children[segment]
+		if child == nil {
+			child = &workspaceProjectNamespaceTrie{children: map[string]*workspaceProjectNamespaceTrie{}}
+			node.children[segment] = child
+		}
+		node = child
+		node.projects = append(node.projects, project)
 	}
-	return strings.ToLower(segments[0])
+	node.terminal = append(node.terminal, project)
 }
 
-func workspaceCommonNamespaceSegments(evidence []workspaceNamespaceEvidence) []string {
-	if len(evidence) == 0 {
-		return nil
+func (trie *workspaceProjectNamespaceTrie) assignPrefixLengths(prefix []string, projects map[string]WorkspaceProjectRecord, evidence map[string]workspaceNamespaceEvidence, prefixLengths map[string]int) {
+	if len(trie.projects) == 0 {
+		return
 	}
-	prefixLength := len(evidence[0].segments)
-	for _, candidate := range evidence[1:] {
-		if len(candidate.segments) < prefixLength {
-			prefixLength = len(candidate.segments)
-		}
-		for index := 0; index < prefixLength; index++ {
-			if evidence[0].segments[index] != candidate.segments[index] {
-				prefixLength = index
-				break
-			}
-		}
+	if len(trie.projects) == 1 {
+		project := trie.projects[0]
+		prefixLengths[project] = workspaceSingletonNamespacePrefixLength(projects[project], evidence[project])
+		return
 	}
-	return append([]string(nil), evidence[0].segments[:prefixLength]...)
-}
-
-func workspaceNamespacePrefixLengths(projects []WorkspaceProjectRecord, evidence map[string]workspaceNamespaceEvidence) map[string]int {
-	projectByPath := make(map[string]WorkspaceProjectRecord, len(projects))
-	cohorts := make(map[string][]string)
-	for _, project := range projects {
-		projectByPath[project.Path] = project
-		if projectEvidence, ok := evidence[project.Path]; ok {
-			family := workspaceNamespaceRootFamily(projectEvidence.segments)
-			cohorts[family] = append(cohorts[family], project.Path)
-		}
+	branchNames := make([]string, 0, len(trie.children))
+	for branch := range trie.children {
+		branchNames = append(branchNames, branch)
 	}
-
-	prefixLengths := make(map[string]int, len(evidence))
-	for _, cohortProjects := range cohorts {
-		sort.Strings(cohortProjects)
-		if len(cohortProjects) == 1 {
-			project := projectByPath[cohortProjects[0]]
-			prefixLengths[project.Path] = workspaceSingletonNamespacePrefixLength(project, evidence[project.Path])
-			continue
+	sort.Strings(branchNames)
+	if len(prefix) < 2 {
+		for _, branch := range branchNames {
+			trie.children[branch].assignPrefixLengths(append(prefix, branch), projects, evidence, prefixLengths)
 		}
-		cohortEvidence := make([]workspaceNamespaceEvidence, 0, len(cohortProjects))
-		for _, project := range cohortProjects {
-			cohortEvidence = append(cohortEvidence, evidence[project])
+		return
+	}
+	if len(trie.terminal) > 0 || len(branchNames) == 0 {
+		for _, project := range trie.projects {
+			prefixLengths[project] = len(prefix)
 		}
-		prefixLength := len(workspaceCommonNamespaceSegments(cohortEvidence)) + 1
-		for _, project := range cohortProjects {
-			if prefixLength > len(evidence[project].segments) {
+		return
+	}
+	for _, branch := range branchNames {
+		child := trie.children[branch]
+		prefixLength := len(prefix) + 1
+		for _, project := range child.projects {
+			if len(evidence[project].segments) < prefixLength {
 				prefixLengths[project] = len(evidence[project].segments)
 				continue
 			}
 			prefixLengths[project] = prefixLength
 		}
 	}
+}
+
+func workspaceNamespacePrefixLengths(projects []WorkspaceProjectRecord, evidence map[string]workspaceNamespaceEvidence) map[string]int {
+	projectByPath := make(map[string]WorkspaceProjectRecord, len(projects))
+	trie := &workspaceProjectNamespaceTrie{children: map[string]*workspaceProjectNamespaceTrie{}}
+	for _, project := range projects {
+		projectByPath[project.Path] = project
+		if projectEvidence, ok := evidence[project.Path]; ok {
+			trie.insert(project.Path, projectEvidence.segments)
+		}
+	}
+	prefixLengths := make(map[string]int, len(evidence))
+	trie.assignPrefixLengths(nil, projectByPath, evidence, prefixLengths)
 	return prefixLengths
 }
 

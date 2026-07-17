@@ -56,6 +56,79 @@ func TestBuildWorkspaceArchitectureLayoutKeepsDifferentiationAcrossRootFamiliesA
 	}
 }
 
+func TestBuildWorkspaceArchitectureLayoutCohortsSameRootSubtreesIndependently(t *testing.T) {
+	projects := []WorkspaceProjectRecord{
+		{Path: "services/orders", Name: "orders", Kind: "backend"},
+		{Path: "services/billing", Name: "billing", Kind: "backend"},
+		{Path: "services/audit", Name: "audit", Kind: "backend"},
+	}
+	namespaces := []WorkspaceProjectNamespaceRecord{
+		{Project: "services/orders", Namespace: "org.example.commerce.orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/billing", Namespace: "org.example.finance.billing", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/audit", Namespace: "org.other.operations.audit", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+	}
+	reversedProjects := []WorkspaceProjectRecord{projects[2], projects[1], projects[0]}
+	reversedNamespaces := []WorkspaceProjectNamespaceRecord{namespaces[2], namespaces[1], namespaces[0]}
+
+	first := BuildWorkspaceArchitectureLayout(WorkspaceRegistryRecord{Projects: projects}, namespaces, WorkspaceDashboardConfig{Schema: 1})
+	second := BuildWorkspaceArchitectureLayout(WorkspaceRegistryRecord{Projects: reversedProjects}, reversedNamespaces, WorkspaceDashboardConfig{Schema: 1})
+
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("permuted layout differs:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+	if got := first.Service("services/orders").GroupID; got != "org.example.commerce" {
+		t.Fatalf("orders group = %q", got)
+	}
+	if got := first.Service("services/billing").GroupID; got != "org.example.finance" {
+		t.Fatalf("billing group = %q", got)
+	}
+	if got := first.Service("services/audit").GroupID; got != "org.other.operations" {
+		t.Fatalf("audit group = %q", got)
+	}
+}
+
+func TestBuildWorkspaceArchitectureLayoutAggregatesCoherentSiblingPackages(t *testing.T) {
+	testCases := []struct {
+		name       string
+		project    WorkspaceProjectRecord
+		namespaces []WorkspaceProjectNamespaceRecord
+		want       string
+	}{
+		{
+			name:    "java",
+			project: WorkspaceProjectRecord{Path: "services/orders", Name: "orders", Kind: "backend"},
+			namespaces: []WorkspaceProjectNamespaceRecord{
+				{Project: "services/orders", Namespace: "org.example.commerce.api", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+				{Project: "services/orders", Namespace: "org.example.commerce.domain", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+			},
+			want: "org.example.commerce",
+		},
+		{
+			name:    "typescript",
+			project: WorkspaceProjectRecord{Path: "apps/store", Name: "store", Kind: "frontend"},
+			namespaces: []WorkspaceProjectNamespaceRecord{
+				{Project: "apps/store", Namespace: "@example/commerce/api", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
+				{Project: "apps/store", Namespace: "@example/commerce/domain", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
+			},
+			want: "@example.commerce",
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			layout := BuildWorkspaceArchitectureLayout(
+				WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{testCase.project}},
+				testCase.namespaces,
+				WorkspaceDashboardConfig{Schema: 1},
+			)
+
+			service := layout.Service(testCase.project.Path)
+			if service.GroupID != testCase.want || service.Source != "production_package" || service.Confidence != "EXTRACTED" {
+				t.Fatalf("service layout = %#v", service)
+			}
+		})
+	}
+}
+
 func TestBuildWorkspaceArchitectureLayoutAggregatesDominantNamespaceFamilyRegardlessOfInputOrder(t *testing.T) {
 	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
 		{Path: "services/orders", Name: "orders", Kind: "backend"},
