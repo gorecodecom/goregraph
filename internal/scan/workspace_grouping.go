@@ -4,6 +4,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -26,7 +27,7 @@ func BuildWorkspaceArchitectureLayout(registry WorkspaceRegistryRecord, namespac
 	})
 
 	evidence := workspaceProductionNamespaceEvidence(projects, namespaces)
-	namespacePrefixLength := workspaceNamespacePrefixLength(evidence)
+	namespacePrefixLengths := workspaceNamespacePrefixLengths(projects, evidence)
 	groups := make(map[string]WorkspaceArchitectureGroupRecord, len(config.Architecture.Groups))
 	for groupID, group := range config.Architecture.Groups {
 		groups[groupID] = WorkspaceArchitectureGroupRecord{
@@ -56,7 +57,7 @@ func BuildWorkspaceArchitectureLayout(registry WorkspaceRegistryRecord, namespac
 			continue
 		}
 
-		service := workspaceInferredServiceLayout(project, evidence[project.Path], namespacePrefixLength)
+		service := workspaceInferredServiceLayout(project, evidence[project.Path], namespacePrefixLengths[project.Path])
 		services = append(services, service)
 		if _, exists := groups[service.GroupID]; !exists {
 			groups[service.GroupID] = workspaceInferredGroup(service)
@@ -120,16 +121,17 @@ func (record WorkspaceArchitectureLayoutRecord) Service(project string) Workspac
 }
 
 func workspaceProductionNamespaceEvidence(projects []WorkspaceProjectRecord, namespaces []WorkspaceProjectNamespaceRecord) map[string]workspaceNamespaceEvidence {
-	knownProjects := make(map[string]bool, len(projects))
+	knownProjects := make(map[string]WorkspaceProjectRecord, len(projects))
 	for _, project := range projects {
-		knownProjects[project.Path] = true
+		knownProjects[project.Path] = project
 	}
 	candidates := make(map[string][]workspaceNamespaceEvidence)
 	for _, namespace := range namespaces {
-		if !knownProjects[namespace.Project] || !strings.EqualFold(strings.TrimSpace(namespace.Source), "production_package") {
+		project, known := knownProjects[namespace.Project]
+		if !known || !strings.EqualFold(strings.TrimSpace(namespace.Source), "production_package") {
 			continue
 		}
-		segments := workspaceNamespaceSegments(namespace.Namespace)
+		segments := workspaceProjectNamespaceSegments(project, workspaceNamespaceSegments(namespace.Namespace))
 		if len(segments) == 0 {
 			continue
 		}
@@ -149,7 +151,28 @@ func workspaceProductionNamespaceEvidence(projects []WorkspaceProjectRecord, nam
 			}
 			return projectCandidates[i].record.Confidence < projectCandidates[j].record.Confidence
 		})
-		evidence[project] = projectCandidates[0]
+		winningCandidates, segments, resolved := workspaceDominantNamespaceFamily(projectCandidates)
+		if !resolved || len(segments) < 2 {
+			continue
+		}
+		confidence := ""
+		language := ""
+		for _, candidate := range winningCandidates {
+			confidence = strongerContextConfidence(confidence, candidate.record.Confidence)
+			if language == "" || candidate.record.Language < language {
+				language = candidate.record.Language
+			}
+		}
+		evidence[project] = workspaceNamespaceEvidence{
+			record: WorkspaceProjectNamespaceRecord{
+				Project:    project,
+				Namespace:  strings.Join(segments, "."),
+				Language:   language,
+				Source:     "production_package",
+				Confidence: confidence,
+			},
+			segments: segments,
+		}
 	}
 	return evidence
 }
@@ -160,34 +183,154 @@ func workspaceNamespaceSegments(namespace string) []string {
 	})
 }
 
-func workspaceNamespacePrefixLength(evidence map[string]workspaceNamespaceEvidence) int {
-	projects := make([]string, 0, len(evidence))
-	for project := range evidence {
-		projects = append(projects, project)
+func workspaceProjectNamespaceSegments(project WorkspaceProjectRecord, segments []string) []string {
+	identifiers := make(map[string]bool, 3)
+	for _, identifier := range []string{project.Name, project.Service, path.Base(strings.ReplaceAll(project.Path, "\\", "/"))} {
+		if normalized := workspaceNamespaceIdentifier(identifier); normalized != "" {
+			identifiers[normalized] = true
+		}
 	}
-	sort.Strings(projects)
-	if len(projects) == 0 {
-		return 0
+	for index, segment := range segments {
+		if identifiers[workspaceNamespaceIdentifier(segment)] {
+			return append([]string(nil), segments[:index+1]...)
+		}
 	}
-	prefixLength := len(evidence[projects[0]].segments)
-	for _, project := range projects[1:] {
-		segments := evidence[project].segments
-		if len(segments) < prefixLength {
-			prefixLength = len(segments)
+	return append([]string(nil), segments...)
+}
+
+func workspaceDominantNamespaceFamily(candidates []workspaceNamespaceEvidence) ([]workspaceNamespaceEvidence, []string, bool) {
+	families := make(map[string][]workspaceNamespaceEvidence)
+	for _, candidate := range candidates {
+		key := strings.Join(candidate.segments, "\x00")
+		families[key] = append(families[key], candidate)
+	}
+	familyNames := make([]string, 0, len(families))
+	for family := range families {
+		familyNames = append(familyNames, family)
+	}
+	sort.Strings(familyNames)
+
+	winner := ""
+	bestCount := -1
+	bestConfidence := -1
+	tied := false
+	for _, family := range familyNames {
+		confidence := 0
+		for _, candidate := range families[family] {
+			confidence += contextConfidenceRank(candidate.record.Confidence)
+		}
+		count := len(families[family])
+		switch {
+		case count > bestCount || count == bestCount && confidence > bestConfidence:
+			winner = family
+			bestCount = count
+			bestConfidence = confidence
+			tied = false
+		case count == bestCount && confidence == bestConfidence:
+			tied = true
+		}
+	}
+	if tied || winner == "" {
+		return nil, nil, false
+	}
+	winners := families[winner]
+	return winners, workspaceCommonNamespaceSegments(winners), true
+}
+
+func workspaceNamespaceRootFamily(segments []string) string {
+	if len(segments) == 0 {
+		return ""
+	}
+	return strings.ToLower(segments[0])
+}
+
+func workspaceCommonNamespaceSegments(evidence []workspaceNamespaceEvidence) []string {
+	if len(evidence) == 0 {
+		return nil
+	}
+	prefixLength := len(evidence[0].segments)
+	for _, candidate := range evidence[1:] {
+		if len(candidate.segments) < prefixLength {
+			prefixLength = len(candidate.segments)
 		}
 		for index := 0; index < prefixLength; index++ {
-			if evidence[projects[0]].segments[index] != segments[index] {
+			if evidence[0].segments[index] != candidate.segments[index] {
 				prefixLength = index
 				break
 			}
 		}
 	}
-	return prefixLength + 1
+	return append([]string(nil), evidence[0].segments[:prefixLength]...)
+}
+
+func workspaceNamespacePrefixLengths(projects []WorkspaceProjectRecord, evidence map[string]workspaceNamespaceEvidence) map[string]int {
+	projectByPath := make(map[string]WorkspaceProjectRecord, len(projects))
+	cohorts := make(map[string][]string)
+	for _, project := range projects {
+		projectByPath[project.Path] = project
+		if projectEvidence, ok := evidence[project.Path]; ok {
+			family := workspaceNamespaceRootFamily(projectEvidence.segments)
+			cohorts[family] = append(cohorts[family], project.Path)
+		}
+	}
+
+	prefixLengths := make(map[string]int, len(evidence))
+	for _, cohortProjects := range cohorts {
+		sort.Strings(cohortProjects)
+		if len(cohortProjects) == 1 {
+			project := projectByPath[cohortProjects[0]]
+			prefixLengths[project.Path] = workspaceSingletonNamespacePrefixLength(project, evidence[project.Path])
+			continue
+		}
+		cohortEvidence := make([]workspaceNamespaceEvidence, 0, len(cohortProjects))
+		for _, project := range cohortProjects {
+			cohortEvidence = append(cohortEvidence, evidence[project])
+		}
+		prefixLength := len(workspaceCommonNamespaceSegments(cohortEvidence)) + 1
+		for _, project := range cohortProjects {
+			if prefixLength > len(evidence[project].segments) {
+				prefixLengths[project] = len(evidence[project].segments)
+				continue
+			}
+			prefixLengths[project] = prefixLength
+		}
+	}
+	return prefixLengths
+}
+
+func workspaceSingletonNamespacePrefixLength(project WorkspaceProjectRecord, evidence workspaceNamespaceEvidence) int {
+	prefixLength := len(evidence.segments)
+	if prefixLength < 2 {
+		return 0
+	}
+	lastSegment := workspaceNamespaceIdentifier(evidence.segments[prefixLength-1])
+	for _, identifier := range []string{project.Name, project.Service, path.Base(strings.ReplaceAll(project.Path, "\\", "/"))} {
+		if lastSegment != "" && lastSegment == workspaceNamespaceIdentifier(identifier) {
+			prefixLength--
+			break
+		}
+	}
+	if prefixLength < 2 {
+		return 0
+	}
+	return prefixLength
+}
+
+func workspaceNamespaceIdentifier(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+		return -1
+	}, value)
 }
 
 func workspaceInferredServiceLayout(project WorkspaceProjectRecord, evidence workspaceNamespaceEvidence, prefixLength int) WorkspaceArchitectureServiceLayoutRecord {
 	if len(evidence.segments) > 0 {
-		if prefixLength <= 0 || prefixLength > len(evidence.segments) {
+		if prefixLength <= 0 {
+			return workspaceFallbackServiceLayout(project)
+		}
+		if prefixLength > len(evidence.segments) {
 			prefixLength = len(evidence.segments)
 		}
 		confidence := strings.TrimSpace(evidence.record.Confidence)

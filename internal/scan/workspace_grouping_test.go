@@ -1,6 +1,9 @@
 package scan
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestBuildWorkspaceArchitectureLayoutUsesFirstDifferentiatingProductionNamespace(t *testing.T) {
 	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
@@ -19,6 +22,109 @@ func TestBuildWorkspaceArchitectureLayoutUsesFirstDifferentiatingProductionNames
 	}
 	if got := layout.Service("services/billing").GroupID; got != "org.example.finance" {
 		t.Fatalf("billing group = %q", got)
+	}
+}
+
+func TestBuildWorkspaceArchitectureLayoutKeepsDifferentiationAcrossRootFamiliesAndPermutations(t *testing.T) {
+	projects := []WorkspaceProjectRecord{
+		{Path: "services/orders", Name: "orders", Kind: "backend"},
+		{Path: "services/billing", Name: "billing", Kind: "backend"},
+		{Path: "services/audit", Name: "audit", Kind: "backend"},
+	}
+	namespaces := []WorkspaceProjectNamespaceRecord{
+		{Project: "services/orders", Namespace: "org.example.commerce.orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/billing", Namespace: "org.example.finance.billing", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/audit", Namespace: "io.sample.operations.audit", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+	}
+	reversedProjects := []WorkspaceProjectRecord{projects[2], projects[1], projects[0]}
+	reversedNamespaces := []WorkspaceProjectNamespaceRecord{namespaces[2], namespaces[1], namespaces[0]}
+
+	first := BuildWorkspaceArchitectureLayout(WorkspaceRegistryRecord{Projects: projects}, namespaces, WorkspaceDashboardConfig{Schema: 1})
+	second := BuildWorkspaceArchitectureLayout(WorkspaceRegistryRecord{Projects: reversedProjects}, reversedNamespaces, WorkspaceDashboardConfig{Schema: 1})
+
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("permuted layout differs:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+	if got := first.Service("services/orders").GroupID; got != "org.example.commerce" {
+		t.Fatalf("orders group = %q", got)
+	}
+	if got := first.Service("services/billing").GroupID; got != "org.example.finance" {
+		t.Fatalf("billing group = %q", got)
+	}
+	if got := first.Service("services/audit").GroupID; got != "io.sample.operations" {
+		t.Fatalf("audit group = %q", got)
+	}
+}
+
+func TestBuildWorkspaceArchitectureLayoutAggregatesDominantNamespaceFamilyRegardlessOfInputOrder(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "services/orders", Name: "orders", Kind: "backend"},
+		{Path: "services/billing", Name: "billing", Kind: "backend"},
+	}}
+	orders := []WorkspaceProjectNamespaceRecord{
+		{Project: "services/orders", Namespace: "org.example.commerce.orders.api", Language: "java", Source: "production_package", Confidence: "NORMALIZED"},
+		{Project: "services/orders", Namespace: "org.example.commerce.orders.domain", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/orders", Namespace: "io.sample.orders", Language: "java", Source: "production_package", Confidence: "EXACT"},
+	}
+	billing := WorkspaceProjectNamespaceRecord{Project: "services/billing", Namespace: "org.example.finance.billing", Language: "java", Source: "production_package", Confidence: "EXTRACTED"}
+	forward := append(append([]WorkspaceProjectNamespaceRecord(nil), orders...), billing)
+	reversed := []WorkspaceProjectNamespaceRecord{billing, orders[2], orders[1], orders[0]}
+
+	first := BuildWorkspaceArchitectureLayout(registry, forward, WorkspaceDashboardConfig{Schema: 1})
+	second := BuildWorkspaceArchitectureLayout(registry, reversed, WorkspaceDashboardConfig{Schema: 1})
+
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("reversed evidence changed layout:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+	ordersLayout := first.Service("services/orders")
+	if ordersLayout.GroupID != "org.example.commerce" || ordersLayout.Confidence != "EXTRACTED" {
+		t.Fatalf("orders layout = %#v", ordersLayout)
+	}
+}
+
+func TestBuildWorkspaceArchitectureLayoutFindsDominantNamespaceFamilyWithinSameRoot(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{Path: "services/orders", Name: "orders", Kind: "backend"}}}
+	namespaces := []WorkspaceProjectNamespaceRecord{
+		{Project: "services/orders", Namespace: "org.example.commerce.orders.api", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/orders", Namespace: "org.other.orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/orders", Namespace: "org.example.commerce.orders.domain", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+	}
+
+	layout := BuildWorkspaceArchitectureLayout(registry, namespaces, WorkspaceDashboardConfig{Schema: 1})
+
+	service := layout.Service("services/orders")
+	if service.GroupID != "org.example.commerce" || service.Confidence != "EXTRACTED" {
+		t.Fatalf("service layout = %#v", service)
+	}
+}
+
+func TestBuildWorkspaceArchitectureLayoutUsesConfidenceToResolveEqualNamespaceFamilyFrequency(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{Path: "services/orders", Name: "orders", Kind: "backend"}}}
+	namespaces := []WorkspaceProjectNamespaceRecord{
+		{Project: "services/orders", Namespace: "io.sample.orders", Language: "java", Source: "production_package", Confidence: "INFERRED"},
+		{Project: "services/orders", Namespace: "org.example.commerce.orders", Language: "java", Source: "production_package", Confidence: "EXACT"},
+	}
+
+	layout := BuildWorkspaceArchitectureLayout(registry, namespaces, WorkspaceDashboardConfig{Schema: 1})
+
+	service := layout.Service("services/orders")
+	if service.GroupID != "org.example.commerce" || service.Confidence != "EXACT" {
+		t.Fatalf("service layout = %#v", service)
+	}
+}
+
+func TestBuildWorkspaceArchitectureLayoutFallsBackOnUnresolvedNamespaceFamilyTie(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{Path: "services/orders", Name: "orders", Kind: "backend"}}}
+	namespaces := []WorkspaceProjectNamespaceRecord{
+		{Project: "services/orders", Namespace: "org.example.commerce.orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/orders", Namespace: "io.sample.orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+	}
+
+	layout := BuildWorkspaceArchitectureLayout(registry, namespaces, WorkspaceDashboardConfig{Schema: 1})
+
+	service := layout.Service("services/orders")
+	if service.GroupID != "backend:services" || service.Source != "workspace_path" || service.Confidence != "PARTIAL" {
+		t.Fatalf("service fallback = %#v", service)
 	}
 }
 
