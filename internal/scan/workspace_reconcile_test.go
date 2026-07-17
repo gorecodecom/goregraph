@@ -2,6 +2,7 @@ package scan
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -9,6 +10,110 @@ import (
 
 	"github.com/gorecodecom/goregraph/internal/config"
 )
+
+func TestWorkspaceProjectNamespacesUsesProductionSymbols(t *testing.T) {
+	indexed := []workspaceIndexProject{{
+		record: WorkspaceProjectRecord{Path: "services/orders"},
+		symbols: []RichSymbolRecord{
+			{Language: "java", File: "src/main/java/org/example/orders/Order.java", Package: "org.example.commerce.orders", WorkspacePackage: "ignored", Module: "ignored", Confidence: ConfidenceExact},
+			{Language: "java", File: "src/main/java/org/example/orders/OrderService.java", Package: "org.example.commerce.orders", Confidence: ConfidenceExact},
+			{Language: "typescript", File: "src/domain/order.ts", WorkspacePackage: "@example/commerce/orders", Module: "ignored", Confidence: ConfidenceExact},
+			{Language: "go", File: "internal/orders.go", Module: "example.com/commerce/orders", Confidence: ConfidenceExact},
+			{Language: "java", File: "src/test/java/org/example/orders/OrderTest.java", Package: "org.example.tests.orders", Confidence: ConfidenceExact},
+			{Language: "go", File: "internal/orders_test.go", Module: "example.com/tests/orders", Confidence: ConfidenceExact},
+			{Language: "typescript", File: "generated/client.ts", WorkspacePackage: "@example/generated/orders", Confidence: ConfidenceExact},
+			{Language: "java", File: "vendor/org/example/Legacy.java", Package: "org.example.vendor.orders", Confidence: ConfidenceExact},
+			{Language: "java", File: "build/generated/Order.java", Package: "org.example.build.orders", Confidence: ConfidenceExact},
+		},
+	}}
+
+	got := workspaceProjectNamespaces(indexed)
+	want := []WorkspaceProjectNamespaceRecord{
+		{Project: "services/orders", Namespace: "@example/commerce/orders", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/orders", Namespace: "example.com/commerce/orders", Language: "go", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/orders", Namespace: "org.example.commerce.orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("workspace namespaces = %#v, want %#v", got, want)
+	}
+}
+
+func TestWorkspaceReconcileAppliesDashboardConfigAcrossRefresh(t *testing.T) {
+	workspace, projects := writeWorkspaceBuildFixture(t)
+	buildWorkspaceProjects(t, workspace, projects, BuildTargetDashboard)
+	project := projects[0]
+	projectPath := workspaceRel(workspace, project)
+	dashboardConfig := WorkspaceDashboardConfig{Schema: 1, Architecture: DashboardArchitectureConfig{
+		GroupOrder: []string{"custom"},
+		Groups:     map[string]DashboardGroupConfig{"custom": {Label: "Custom"}},
+		Services:   map[string]DashboardServiceConfig{projectPath: {Group: "custom", Order: 7}},
+	}}
+	if _, err := SaveWorkspaceDashboardConfig(workspace, missingDashboardConfigRevision, dashboardConfig); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Workspace = true
+	cfg.WorkspaceRoot = workspace
+
+	if _, err := ReconcileWorkspaceTarget(project, cfg, BuildTargetDashboard); err != nil {
+		t.Fatal(err)
+	}
+
+	var serviceMap WorkspaceServiceMapRecord
+	path := NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace")).Index("workspace-service-map.json")
+	if err := readWorkspaceJSON(path, &serviceMap); err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range serviceMap.Nodes {
+		if node.Project != projectPath {
+			continue
+		}
+		if node.Domain != "custom" || !node.DomainManual || node.ArchitectureOrder != 7 {
+			t.Fatalf("dashboard config not applied: %#v", node)
+		}
+		return
+	}
+	t.Fatalf("configured project %q missing from service map: %#v", projectPath, serviceMap.Nodes)
+}
+
+func TestWorkspaceReconcileInvalidDashboardConfigPreservesCompleteOutput(t *testing.T) {
+	workspace, projects := writeWorkspaceBuildFixture(t)
+	buildWorkspaceProjects(t, workspace, projects, BuildTargetDashboard)
+	layout := NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace"))
+	manifestBefore, err := os.ReadFile(layout.Manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	htmlBefore, err := os.ReadFile(layout.Dashboard("workspace-map.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, workspace, WorkspaceDashboardConfigName, `{"schema":1,"architecture":{"services":{"frontend/web":{"group":"missing"}}}}`)
+	cfg := config.Defaults()
+	cfg.Workspace = true
+	cfg.WorkspaceRoot = workspace
+
+	_, err = ReconcileWorkspaceTarget(projects[0], cfg, BuildTargetDashboard)
+
+	if err == nil || !strings.Contains(err.Error(), WorkspaceDashboardConfigName) {
+		t.Fatalf("ReconcileWorkspaceTarget error = %v", err)
+	}
+	manifestAfter, readErr := os.ReadFile(layout.Manifest)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	htmlAfter, readErr := os.ReadFile(layout.Dashboard("workspace-map.html"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(manifestAfter) != string(manifestBefore) {
+		t.Fatalf("invalid config changed complete manifest\nbefore=%s\nafter=%s", manifestBefore, manifestAfter)
+	}
+	if string(htmlAfter) != string(htmlBefore) {
+		t.Fatal("invalid config changed the last complete dashboard HTML")
+	}
+}
 
 func TestWorkspaceReconciliationMergesProjectAndCrossProjectContext(t *testing.T) {
 	workspace := t.TempDir()

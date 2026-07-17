@@ -314,6 +314,7 @@ func checkStaleFiles(root string, manifest scan.Manifest, result *Result) {
 
 func checkWorkspace(root string, result *Result) {
 	out := filepath.Join(root, ".goregraph-workspace")
+	dashboardConfig, dashboardConfigValid := checkWorkspaceDashboardConfig(root, result)
 	if legacyLayoutExists(out) {
 		result.fail("layout", "pre-1.3.0 flat workspace output detected")
 		result.fix("goregraph workspace clean " + root + " --execute\n  goregraph workspace build all " + root)
@@ -329,6 +330,30 @@ func checkWorkspace(root string, result *Result) {
 	checkAgentContextIndex(out, manifest, result)
 	if manifest.Dashboard.Complete {
 		checkWorkspaceSymbolProjection(root, result)
+	}
+	if dashboardConfigValid {
+		checkStaleWorkspaceDashboardServices(out, dashboardConfig, result)
+	}
+}
+
+func checkWorkspaceDashboardConfig(root string, result *Result) (scan.WorkspaceDashboardConfig, bool) {
+	dashboardConfig, _, err := scan.LoadWorkspaceDashboardConfig(root)
+	if err != nil {
+		result.fail("dashboard-config", scan.WorkspaceDashboardConfigName+": "+err.Error())
+		return scan.WorkspaceDashboardConfig{}, false
+	}
+	result.ok("dashboard-config", scan.WorkspaceDashboardConfigName+" valid")
+	return dashboardConfig, true
+}
+
+func checkStaleWorkspaceDashboardServices(out string, dashboardConfig scan.WorkspaceDashboardConfig, result *Result) {
+	var registry scan.WorkspaceRegistryRecord
+	if err := readJSON(scan.NewWorkspaceOutputLayout(out).Index("registry.json"), &registry); err != nil {
+		return
+	}
+	layout := scan.BuildWorkspaceArchitectureLayout(registry, nil, dashboardConfig)
+	for _, project := range layout.StaleServices {
+		result.warn("dashboard-config", scan.WorkspaceDashboardConfigName+" references removed service "+project)
 	}
 }
 

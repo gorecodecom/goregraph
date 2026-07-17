@@ -64,6 +64,10 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	if err != nil || !ok {
 		return nil, err
 	}
+	dashboardConfig, _, err := LoadWorkspaceDashboardConfig(workspaceRoot)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", WorkspaceDashboardConfigName, err)
+	}
 	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
 	if legacyGeneratedOutputExists(workspaceOut) {
 		return nil, fmt.Errorf("legacy pre-1.3.0 workspace output detected; run `goregraph workspace clean %s --execute` and `goregraph workspace build all %s`", currentRoot, currentRoot)
@@ -104,7 +108,8 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	dataFlows := BuildDataFlows(featureFlows)
 	featureDossiers := buildFeatureDossiers(featureFlows, matches)
 	workspaceGraph := BuildWorkspaceGraph(registry, matches, featureFlows, featureDossiers)
-	serviceMap := BuildWorkspaceServiceMap(registry, matches, featureFlows, workspaceServiceDependencies(indexed))
+	architectureLayout := BuildWorkspaceArchitectureLayout(registry, workspaceProjectNamespaces(indexed), dashboardConfig)
+	serviceMap := BuildWorkspaceServiceMapWithLayout(registry, matches, featureFlows, workspaceServiceDependencies(indexed), architectureLayout)
 	serviceMap.WorkspaceCoverage = BuildWorkspaceCoverage(context, serviceMap.ContractSummary)
 	serviceMap.ImpactSummaries = BuildImpactSummaries(featureFlows, serviceMap, serviceMap.WorkspaceCoverage, 3)
 	serviceMap.EditorURLTemplate = cfg.EditorURLTemplate
@@ -719,6 +724,62 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		result = append(result, loaded)
 	}
 	return result, nil
+}
+
+func workspaceProjectNamespaces(indexed []workspaceIndexProject) []WorkspaceProjectNamespaceRecord {
+	records := make([]WorkspaceProjectNamespaceRecord, 0)
+	seen := map[string]bool{}
+	for _, project := range indexed {
+		for _, symbol := range project.symbols {
+			if isWorkspaceTestNamespacePath(symbol.File, symbol.Kind) || isLowSignalCodeFile(symbol.File) {
+				continue
+			}
+			namespace := strings.TrimSpace(firstNonEmpty(symbol.Package, symbol.WorkspacePackage, symbol.Module))
+			if namespace == "" {
+				continue
+			}
+			record := WorkspaceProjectNamespaceRecord{
+				Project:    project.record.Path,
+				Namespace:  namespace,
+				Language:   symbol.Language,
+				Source:     "production_package",
+				Confidence: "EXTRACTED",
+			}
+			key := record.Project + "\x00" + record.Namespace + "\x00" + record.Language
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			records = append(records, record)
+		}
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Project != records[j].Project {
+			return records[i].Project < records[j].Project
+		}
+		if records[i].Namespace != records[j].Namespace {
+			return records[i].Namespace < records[j].Namespace
+		}
+		return records[i].Language < records[j].Language
+	})
+	return records
+}
+
+func isWorkspaceTestNamespacePath(file, kind string) bool {
+	if strings.EqualFold(strings.TrimSpace(kind), "test") || isJavaTestPath(file) {
+		return true
+	}
+	normalized := strings.ToLower(filepath.ToSlash(strings.TrimSpace(file)))
+	base := filepath.Base(normalized)
+	if strings.HasSuffix(base, "_test.go") || strings.Contains(base, ".test.") || strings.Contains(base, ".spec.") {
+		return true
+	}
+	for _, segment := range strings.Split(normalized, "/") {
+		if segment == "test" || segment == "tests" || segment == "__tests__" {
+			return true
+		}
+	}
+	return false
 }
 
 func loadWorkspaceAgentContextIndexes(projects []workspaceIndexProject) ([]AgentContextIndexRecord, error) {
