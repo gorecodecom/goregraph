@@ -335,6 +335,11 @@ func (trie *workspaceProjectNamespaceTrie) assignPrefixLengths(prefix []string, 
 		}
 		return
 	}
+	if len(branchNames) == 1 {
+		branch := branchNames[0]
+		trie.children[branch].assignPrefixLengths(append(prefix, branch), projects, evidence, prefixLengths)
+		return
+	}
 	for _, branch := range branchNames {
 		child := trie.children[branch]
 		prefixLength := len(prefix) + 1

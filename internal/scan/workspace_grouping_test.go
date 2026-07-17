@@ -87,6 +87,32 @@ func TestBuildWorkspaceArchitectureLayoutCohortsSameRootSubtreesIndependently(t 
 	}
 }
 
+func TestBuildWorkspaceArchitectureLayoutContinuesThroughSingleSharedNamespaceBranch(t *testing.T) {
+	projects := []WorkspaceProjectRecord{
+		{Path: "services/orders", Name: "orders", Kind: "backend"},
+		{Path: "services/billing", Name: "billing", Kind: "backend"},
+	}
+	namespaces := []WorkspaceProjectNamespaceRecord{
+		{Project: "services/orders", Namespace: "org.example.platform.commerce.orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/billing", Namespace: "org.example.platform.finance.billing", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+	}
+	reversedProjects := []WorkspaceProjectRecord{projects[1], projects[0]}
+	reversedNamespaces := []WorkspaceProjectNamespaceRecord{namespaces[1], namespaces[0]}
+
+	first := BuildWorkspaceArchitectureLayout(WorkspaceRegistryRecord{Projects: projects}, namespaces, WorkspaceDashboardConfig{Schema: 1})
+	second := BuildWorkspaceArchitectureLayout(WorkspaceRegistryRecord{Projects: reversedProjects}, reversedNamespaces, WorkspaceDashboardConfig{Schema: 1})
+
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("permuted layout differs:\nfirst:  %#v\nsecond: %#v", first, second)
+	}
+	if got := first.Service("services/orders").GroupID; got != "org.example.platform.commerce" {
+		t.Fatalf("orders group = %q", got)
+	}
+	if got := first.Service("services/billing").GroupID; got != "org.example.platform.finance" {
+		t.Fatalf("billing group = %q", got)
+	}
+}
+
 func TestBuildWorkspaceArchitectureLayoutAggregatesCoherentSiblingPackages(t *testing.T) {
 	testCases := []struct {
 		name       string
