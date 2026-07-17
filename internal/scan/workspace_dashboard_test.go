@@ -2473,3 +2473,90 @@ func TestWorkspaceDashboardLocksIssue23ResponsiveAccessibilityStyles(t *testing.
 		}
 	}
 }
+
+func TestWorkspaceDashboardArchitectureEditorIsExplicitAndAccessible(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+	for _, want := range []string{
+		`id="architecture-edit-layout"`, `id="architecture-save-layout"`, `id="architecture-discard-layout"`,
+		`id="architecture-reset-layout"`, `aria-live="polite"`, `function moveArchitectureGroup(`,
+		`function moveArchitectureService(`, `X-GoreGraph-Editor-Token`, `data-layout-mode="manual"`,
+		`function enterArchitectureEditMode(`, `function saveArchitectureLayout(`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing %q", want)
+		}
+	}
+	if strings.Contains(html, `editor_enabled":true`) || strings.Contains(html, `#token=`) {
+		t.Fatal("static dashboard must not contain editor enablement or a session token")
+	}
+}
+
+func TestWorkspaceDashboardArchitectureEditorFetchesOnlyAfterExplicitEntry(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for rendered Architecture editor tests")
+	}
+	if output, err := exec.Command(node, "-e", `require.resolve("playwright")`).CombinedOutput(); err != nil {
+		t.Skipf("Playwright is not installed for rendered Architecture editor tests: %s", strings.TrimSpace(string(output)))
+	}
+	serviceMap := denseArchitectureFixture()
+	serviceMap.ArchitectureGroups = []WorkspaceArchitectureGroupRecord{
+		{ID: "commerce", Label: "Commerce", Order: 0},
+		{ID: "experience", Label: "Experience", Order: 1},
+		{ID: "observability", Label: "Observability", Order: 2},
+		{ID: "operations", Label: "Operations", Order: 3},
+	}
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, serviceMap,
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+	bootstrap := `<script>globalThis.__goregraphEditor={"editor_enabled":true,"api_base":"/api/config"};globalThis.__requests=[];globalThis.fetch=async function(url,options){globalThis.__requests.push({url:String(url),options:options||{}});if(options&&options.method==="GET")return {ok:true,status:200,json:async()=>({revision:"revision-1",config:{schema:1,architecture:{}}})};return {ok:true,status:200,json:async()=>({revision:"revision-2",config:JSON.parse(options.body).config})};};</script>`
+	html = strings.Replace(html, "</head>", bootstrap+"</head>", 1)
+	encodedHTML, err := json.Marshal(html)
+	if err != nil {
+		t.Fatalf("encode dashboard HTML for Architecture editor test: %v", err)
+	}
+	source := strings.Join([]string{
+		`const {chromium}=require("playwright");`,
+		`const html=` + string(encodedHTML) + `;`,
+		`(async()=>{const browser=await chromium.launch({headless:true});try{const page=await browser.newPage({viewport:{width:1440,height:900}});await page.goto("about:blank#token=editor-secret");await page.setContent(html,{waitUntil:"load"});await page.click('[data-view-mode="architecture"]');const normalRequests=await page.evaluate(()=>globalThis.__requests.length);await page.click("#architecture-edit-layout");await page.waitForFunction(()=>globalThis.__requests.length===1&&!document.getElementById("architecture-layout-editor").hidden);const move=page.locator('[data-layout-service="services/billing"] [data-layout-action="later"]');await move.focus();await page.keyboard.press("Enter");await page.click("#architecture-save-layout");await page.waitForFunction(()=>globalThis.__requests.length===2);const result=await page.evaluate(normalRequests=>({normalRequests:normalRequests,hash:location.hash,requests:globalThis.__requests.map(request=>({url:request.url,method:request.options.method||"GET",token:request.options.headers&&request.options.headers["X-GoreGraph-Editor-Token"],body:request.options.body?JSON.parse(request.options.body):null})),status:document.getElementById("architecture-layout-status").textContent}),normalRequests);process.stdout.write(JSON.stringify(result));}finally{await browser.close();}})().catch(error=>{console.error(error);process.exit(1);});`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rendered Architecture editor failed: %v\n%s", err, output)
+	}
+	var result struct {
+		NormalRequests int
+		Hash           string
+		Status         string
+		Requests       []struct {
+			URL    string
+			Method string
+			Token  string
+			Body   map[string]any
+		}
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("decode rendered Architecture editor result: %v\n%s", err, output)
+	}
+	if result.NormalRequests != 0 || len(result.Requests) != 2 || result.Requests[0].Method != "GET" || result.Requests[1].Method != "PUT" {
+		t.Fatalf("editor requests = %#v, normal request count = %d", result.Requests, result.NormalRequests)
+	}
+	if result.Hash != "" || result.Requests[0].Token != "editor-secret" || result.Requests[1].Token != "editor-secret" {
+		t.Fatalf("editor token handling = hash %q requests %#v", result.Hash, result.Requests)
+	}
+	if result.Status != "Saved." {
+		t.Fatalf("editor status = %q, want Saved.", result.Status)
+	}
+	config, ok := result.Requests[1].Body["config"].(map[string]any)
+	if !ok || len(config) != 2 || config["schema"] != float64(1) {
+		t.Fatalf("saved config envelope contains non-presentation fields: %#v", result.Requests[1].Body)
+	}
+}

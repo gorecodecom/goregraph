@@ -367,6 +367,66 @@ func TestArchitectureModelDerivesDynamicDomainsAndStablePositions(t *testing.T) 
 	}
 }
 
+func TestArchitectureLayoutUsesCanonicalConfiguredOrder(t *testing.T) {
+	var result struct {
+		Domains  []string
+		Services map[string][]string
+	}
+	runArchitectureModel(t, `(()=>{
+		const nodes=[
+			{id:"service:alpha-z",label:"Zulu",project:"services/zulu",domain:"alpha",architecture_order:20},
+			{id:"service:alpha-a",label:"Alpha",project:"services/alpha",domain:"alpha",architecture_order:10},
+			{id:"service:beta-b",label:"Beta",project:"services/beta",domain:"beta",architecture_order:0},
+			{id:"service:beta-a",label:"Beta",project:"services/able",domain:"beta",architecture_order:0}
+		];
+		const groups=[{id:"alpha",label:"Alpha",order:1},{id:"beta",label:"Beta",order:0}];
+		const domains=architectureDomains(nodes,groups);
+		return {Domains:domains.map(group=>group.id),Services:Object.fromEntries(domains.map(group=>[group.id,group.nodes.map(node=>node.id)]))};
+	})()`, &result)
+	if !reflect.DeepEqual(result.Domains, []string{"beta", "alpha"}) {
+		t.Fatalf("domains = %v, want configured group order", result.Domains)
+	}
+	if !reflect.DeepEqual(result.Services["alpha"], []string{"service:alpha-a", "service:alpha-z"}) {
+		t.Fatalf("alpha services = %v, want architecture order", result.Services["alpha"])
+	}
+	if !reflect.DeepEqual(result.Services["beta"], []string{"service:beta-a", "service:beta-b"}) {
+		t.Fatalf("beta services = %v, want stable label/project/id fallback", result.Services["beta"])
+	}
+}
+
+func TestArchitectureDraftReorderHelpersArePureAndMoveBetweenGroups(t *testing.T) {
+	var result struct {
+		OriginalGroups []string
+		MovedGroups    []string
+		OriginalAlpha  []string
+		MovedAlpha     []string
+		MovedBeta      []string
+	}
+	runArchitectureModel(t, `(()=>{
+		const draft={groups:[
+			{id:"alpha",services:[{project:"services/a"},{project:"services/b"}]},
+			{id:"beta",services:[{project:"services/c"}]}
+		]};
+		const movedGroups=architectureMoveItem(draft.groups,0,1);
+		const movedServices=architectureMoveServiceDraft(draft,"services/a","alpha","beta",1);
+		return {
+			OriginalGroups:draft.groups.map(group=>group.id),
+			MovedGroups:movedGroups.map(group=>group.id),
+			OriginalAlpha:draft.groups[0].services.map(service=>service.project),
+			MovedAlpha:movedServices.groups.find(group=>group.id==="alpha").services.map(service=>service.project),
+			MovedBeta:movedServices.groups.find(group=>group.id==="beta").services.map(service=>service.project)
+		};
+	})()`, &result)
+	if !reflect.DeepEqual(result.OriginalGroups, []string{"alpha", "beta"}) || !reflect.DeepEqual(result.MovedGroups, []string{"beta", "alpha"}) {
+		t.Fatalf("group move mutated input or returned wrong order: %#v", result)
+	}
+	if !reflect.DeepEqual(result.OriginalAlpha, []string{"services/a", "services/b"}) ||
+		!reflect.DeepEqual(result.MovedAlpha, []string{"services/b"}) ||
+		!reflect.DeepEqual(result.MovedBeta, []string{"services/c", "services/a"}) {
+		t.Fatalf("service move mutated input or returned wrong groups: %#v", result)
+	}
+}
+
 func TestArchitectureCanvasGeometryInsetsCompactContentBelowStackedControls(t *testing.T) {
 	type geometry struct {
 		Compact         bool

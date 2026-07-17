@@ -58,6 +58,7 @@ const workspaceDashboardShell = `<div class="shell">
 <button type="button" data-architecture-view="flow" aria-pressed="true">Flow</button>
 <button type="button" data-architecture-view="matrix" aria-pressed="false">Matrix</button>
 <button type="button" data-architecture-view="selected" aria-pressed="false" disabled>Selected service</button>
+<button type="button" id="architecture-edit-layout" hidden disabled>Edit layout</button>
 </nav>
 <div class="canvas-tools">
 <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
@@ -89,6 +90,19 @@ const workspaceDashboardShell = `<div class="shell">
 <span><b id="architecture-summary-resolution">0 resolved · 0 unresolved · 0 mismatch</b></span>
 </div>
 <div id="architecture-relationship-tooltip" class="architecture-relationship-tooltip" role="tooltip" hidden></div>
+</section>
+<section id="architecture-layout-editor" class="architecture-layout-editor" aria-label="Architecture layout editor" data-layout-mode="manual" hidden>
+<header class="architecture-layout-editor-header">
+<div><h1>Edit architecture layout</h1><p>Rename and reorder groups, or move services between groups. Changes are written only when you save.</p></div>
+<div class="architecture-layout-editor-actions">
+<button type="button" id="architecture-save-layout">Save</button>
+<button type="button" id="architecture-discard-layout">Discard</button>
+<button type="button" id="architecture-reset-layout">Reset to detected</button>
+<button type="button" id="architecture-close-layout">Close</button>
+</div>
+<p id="architecture-layout-status" class="architecture-layout-status" aria-live="polite">Ready.</p>
+</header>
+<div id="architecture-layout-groups" class="architecture-layout-groups"></div>
 </section>
 <svg id="workspace-graph" role="group" aria-label="Directed workspace relationship map"><defs><marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8fa2ae"></path></marker><marker id="arrow-focus" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#0b6b79"></path></marker><marker id="arrow-outgoing" markerWidth="13" markerHeight="11" refX="11" refY="5.5" orient="auto"><path d="M0,0 L13,5.5 L0,11 z" fill="#0b6b79"></path></marker><marker id="arrow-incoming" markerWidth="13" markerHeight="11" refX="11" refY="5.5" orient="auto"><path d="M0,0 L13,5.5 L0,11 z" fill="#a56a00"></path></marker></defs><g id="graph-layer"></g></svg>
 <section id="workspace-workbench" class="workspace-workbench" hidden aria-label="Workspace data workbench"></section>
