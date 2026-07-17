@@ -220,13 +220,13 @@ func TestBuildWorkspaceServiceMapKeepsAllFrontendProjectsVisible(t *testing.T) {
 		if node.Role != "frontend" {
 			t.Fatalf("node %s role = %q, want frontend", project, node.Role)
 		}
-		if node.Domain != "frontend" {
-			t.Fatalf("node %s domain = %q, want frontend", project, node.Domain)
+		if node.Domain != "frontend:frontend" || node.DomainSource != "workspace_path" || node.DomainConfidence != "PARTIAL" {
+			t.Fatalf("node %s architecture fallback = %#v", project, node)
 		}
 	}
 }
 
-func TestBuildWorkspaceServiceMapDerivesArchitectureDomains(t *testing.T) {
+func TestBuildWorkspaceServiceMapUsesGenericArchitectureFallbacks(t *testing.T) {
 	registry := WorkspaceRegistryRecord{
 		Root: "/workspace",
 		Projects: []WorkspaceProjectRecord{
@@ -239,17 +239,17 @@ func TestBuildWorkspaceServiceMapDerivesArchitectureDomains(t *testing.T) {
 
 	serviceMap := BuildWorkspaceServiceMap(registry, nil, nil, nil)
 
-	if node := requireServiceMapNode(t, serviceMap, "microservices/ms-documenttopic"); node.Domain != "document" {
-		t.Fatalf("document service domain = %q", node.Domain)
+	if node := requireServiceMapNode(t, serviceMap, "microservices/ms-documenttopic"); node.Domain != "backend:microservices" {
+		t.Fatalf("document service fallback = %q", node.Domain)
 	}
-	if node := requireServiceMapNode(t, serviceMap, "microservices/ms-cadaster"); node.Domain != "cadaster" {
-		t.Fatalf("cadaster service domain = %q", node.Domain)
+	if node := requireServiceMapNode(t, serviceMap, "microservices/ms-cadaster"); node.Domain != "backend:microservices" {
+		t.Fatalf("cadaster service fallback = %q", node.Domain)
 	}
-	if node := requireServiceMapNode(t, serviceMap, "microservices/ms-userservice"); node.Domain != "identity" {
-		t.Fatalf("identity service domain = %q", node.Domain)
+	if node := requireServiceMapNode(t, serviceMap, "microservices/ms-userservice"); node.Domain != "backend:microservices" {
+		t.Fatalf("user service fallback = %q", node.Domain)
 	}
-	if node := requireServiceMapNode(t, serviceMap, "tools/importer"); node.Domain != "platform" {
-		t.Fatalf("platform fallback domain = %q", node.Domain)
+	if node := requireServiceMapNode(t, serviceMap, "tools/importer"); node.Domain != "backend:tools" {
+		t.Fatalf("tools service fallback = %q", node.Domain)
 	}
 }
 

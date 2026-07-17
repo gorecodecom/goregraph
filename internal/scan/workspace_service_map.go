@@ -7,22 +7,36 @@ import (
 )
 
 func BuildWorkspaceServiceMap(registry WorkspaceRegistryRecord, matches []WorkspaceContractMatchRecord, flows []WorkspaceFeatureFlowRecord, dependencies []WorkspaceServiceDependencyRecord) WorkspaceServiceMapRecord {
+	layout := BuildWorkspaceArchitectureLayout(registry, nil, WorkspaceDashboardConfig{Schema: 1})
+	return BuildWorkspaceServiceMapWithLayout(registry, matches, flows, dependencies, layout)
+}
+
+func BuildWorkspaceServiceMapWithLayout(registry WorkspaceRegistryRecord, matches []WorkspaceContractMatchRecord, flows []WorkspaceFeatureFlowRecord, dependencies []WorkspaceServiceDependencyRecord, layout WorkspaceArchitectureLayoutRecord) WorkspaceServiceMapRecord {
 	builder := workspaceServiceMapBuilder{
-		nodes: map[string]WorkspaceServiceNodeRecord{},
-		edges: map[string]*WorkspaceServiceEdgeRecord{},
+		nodes:              map[string]WorkspaceServiceNodeRecord{},
+		edges:              map[string]*WorkspaceServiceEdgeRecord{},
+		architectureGroups: append([]WorkspaceArchitectureGroupRecord(nil), layout.Groups...),
 	}
 	for _, project := range registry.Projects {
 		nodeID := StableWorkspaceID("service", project.Path)
+		architecture := layout.Service(project.Path)
+		if architecture.Project == "" {
+			architecture = workspaceFallbackServiceLayout(project)
+		}
 		builder.nodes[nodeID] = WorkspaceServiceNodeRecord{
-			ID:      nodeID,
-			Label:   firstNonEmpty(project.Service, project.Name, project.Path),
-			Project: project.Path,
-			Kind:    project.Kind,
-			Role:    workspaceServiceRole(project),
-			Domain:  workspaceServiceDomain(project),
-			Service: project.Service,
-			Indexed: project.Indexed,
-			Status:  project.Status,
+			ID:                nodeID,
+			Label:             firstNonEmpty(project.Service, project.Name, project.Path),
+			Project:           project.Path,
+			Kind:              project.Kind,
+			Role:              workspaceServiceRole(project),
+			Domain:            architecture.GroupID,
+			ArchitectureOrder: architecture.Order,
+			DomainSource:      architecture.Source,
+			DomainConfidence:  architecture.Confidence,
+			DomainManual:      architecture.Manual,
+			Service:           project.Service,
+			Indexed:           project.Indexed,
+			Status:            project.Status,
 		}
 	}
 	serviceProjects := workspaceServiceProjectLookup(registry)
@@ -86,8 +100,9 @@ func BuildWorkspaceContractSummary(matches []WorkspaceContractMatchRecord) Works
 }
 
 type workspaceServiceMapBuilder struct {
-	nodes map[string]WorkspaceServiceNodeRecord
-	edges map[string]*WorkspaceServiceEdgeRecord
+	nodes              map[string]WorkspaceServiceNodeRecord
+	edges              map[string]*WorkspaceServiceEdgeRecord
+	architectureGroups []WorkspaceArchitectureGroupRecord
 }
 
 func (b *workspaceServiceMapBuilder) addEdge(fromProject, toProject, method, path, confidence, issue, evidence string) {
@@ -173,15 +188,19 @@ func (b *workspaceServiceMapBuilder) ensureNode(id, project string) {
 	if _, ok := b.nodes[id]; ok {
 		return
 	}
+	projectRecord := WorkspaceProjectRecord{Path: project, Name: project}
+	architecture := workspaceFallbackServiceLayout(projectRecord)
 	b.nodes[id] = WorkspaceServiceNodeRecord{
-		ID:      id,
-		Label:   project,
-		Project: project,
-		Kind:    "project",
-		Role:    workspaceServiceRole(WorkspaceProjectRecord{Path: project, Name: project}),
-		Domain:  workspaceServiceDomain(WorkspaceProjectRecord{Path: project, Name: project}),
-		Indexed: false,
-		Status:  "referenced",
+		ID:               id,
+		Label:            project,
+		Project:          project,
+		Kind:             "project",
+		Role:             workspaceServiceRole(projectRecord),
+		Domain:           architecture.GroupID,
+		DomainSource:     architecture.Source,
+		DomainConfidence: architecture.Confidence,
+		Indexed:          false,
+		Status:           "referenced",
 	}
 }
 
@@ -199,7 +218,16 @@ func (b *workspaceServiceMapBuilder) record(root string) WorkspaceServiceMapReco
 		nodes = append(nodes, node)
 	}
 	sort.Slice(nodes, func(i, j int) bool {
-		return nodes[i].Project < nodes[j].Project
+		if nodes[i].ArchitectureOrder != nodes[j].ArchitectureOrder {
+			return nodes[i].ArchitectureOrder < nodes[j].ArchitectureOrder
+		}
+		if nodes[i].Label != nodes[j].Label {
+			return nodes[i].Label < nodes[j].Label
+		}
+		if nodes[i].Project != nodes[j].Project {
+			return nodes[i].Project < nodes[j].Project
+		}
+		return nodes[i].ID < nodes[j].ID
 	})
 	edges := make([]WorkspaceServiceEdgeRecord, 0, len(b.edges))
 	for _, edge := range b.edges {
@@ -221,6 +249,7 @@ func (b *workspaceServiceMapBuilder) record(root string) WorkspaceServiceMapReco
 			"nodes": len(nodes),
 			"edges": len(edges),
 		},
+		ArchitectureGroups: append([]WorkspaceArchitectureGroupRecord(nil), b.architectureGroups...),
 	}
 }
 
@@ -320,6 +349,10 @@ func normalizeServiceName(value string) string {
 }
 
 func workspaceServiceRole(project WorkspaceProjectRecord) string {
+	kind := strings.ToLower(strings.TrimSpace(project.Kind))
+	if kind == "frontend" || kind == "backend" {
+		return kind
+	}
 	text := strings.ToLower(strings.Join([]string{project.Kind, project.Path, project.Name, project.Service}, " "))
 	switch {
 	case strings.Contains(text, "frontend/") || strings.Contains(text, "frontend") || strings.Contains(text, "playwright"):
@@ -328,24 +361,5 @@ func workspaceServiceRole(project WorkspaceProjectRecord) string {
 		return "backend"
 	default:
 		return "internal"
-	}
-}
-
-func workspaceServiceDomain(project WorkspaceProjectRecord) string {
-	if workspaceServiceRole(project) == "frontend" {
-		return "frontend"
-	}
-	text := strings.ToLower(strings.Join([]string{project.Path, project.Name, project.Service}, " "))
-	switch {
-	case strings.Contains(text, "document"), strings.Contains(text, "container"), strings.Contains(text, "topic"):
-		return "document"
-	case strings.Contains(text, "cadaster"), strings.Contains(text, "regulation"):
-		return "cadaster"
-	case strings.Contains(text, "user"), strings.Contains(text, "license"), strings.Contains(text, "product"), strings.Contains(text, "invoice"), strings.Contains(text, "shop"):
-		return "identity"
-	case strings.Contains(text, "task"), strings.Contains(text, "search"), strings.Contains(text, "portal"), strings.Contains(text, "pdf"), strings.Contains(text, "mail"), strings.Contains(text, "sync"), strings.Contains(text, "import"), strings.Contains(text, "update"):
-		return "platform"
-	default:
-		return "platform"
 	}
 }

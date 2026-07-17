@@ -865,21 +865,54 @@ type WorkspaceImpactRecord struct {
 }
 
 type WorkspaceServiceMapRecord struct {
-	SchemaVersion      int                            `json:"schema_version"`
-	Generated          string                         `json:"generated,omitempty"`
-	Root               string                         `json:"root,omitempty"`
-	EditorURLTemplate  string                         `json:"editor_url_template,omitempty"`
-	Nodes              []WorkspaceServiceNodeRecord   `json:"nodes"`
-	Edges              []WorkspaceServiceEdgeRecord   `json:"edges"`
-	Stats              map[string]int                 `json:"stats,omitempty"`
-	Capabilities       []CapabilityRecord             `json:"capabilities,omitempty"`
-	Diagnostics        []CanonicalDiagnosticRecord    `json:"diagnostics,omitempty"`
-	DiagnosticFamilies []DiagnosticFamilyRecord       `json:"diagnostic_families,omitempty"`
-	ContractSummary    WorkspaceContractSummaryRecord `json:"contract_summary"`
-	WorkspaceCoverage  WorkspaceCoverageSummaryRecord `json:"workspace_coverage"`
-	ImpactSummaries    []ImpactSummaryRecord          `json:"impact_summaries,omitempty"`
-	FeatureFlows       []WorkspaceFeatureFlowRecord   `json:"feature_flows,omitempty"`
-	DataFlows          []DataFlowRecord               `json:"data_flows,omitempty"`
+	SchemaVersion      int                                `json:"schema_version"`
+	Generated          string                             `json:"generated,omitempty"`
+	Root               string                             `json:"root,omitempty"`
+	EditorURLTemplate  string                             `json:"editor_url_template,omitempty"`
+	Nodes              []WorkspaceServiceNodeRecord       `json:"nodes"`
+	Edges              []WorkspaceServiceEdgeRecord       `json:"edges"`
+	Stats              map[string]int                     `json:"stats,omitempty"`
+	Capabilities       []CapabilityRecord                 `json:"capabilities,omitempty"`
+	Diagnostics        []CanonicalDiagnosticRecord        `json:"diagnostics,omitempty"`
+	DiagnosticFamilies []DiagnosticFamilyRecord           `json:"diagnostic_families,omitempty"`
+	ContractSummary    WorkspaceContractSummaryRecord     `json:"contract_summary"`
+	WorkspaceCoverage  WorkspaceCoverageSummaryRecord     `json:"workspace_coverage"`
+	ImpactSummaries    []ImpactSummaryRecord              `json:"impact_summaries,omitempty"`
+	FeatureFlows       []WorkspaceFeatureFlowRecord       `json:"feature_flows,omitempty"`
+	DataFlows          []DataFlowRecord                   `json:"data_flows,omitempty"`
+	ArchitectureGroups []WorkspaceArchitectureGroupRecord `json:"architecture_groups,omitempty"`
+}
+
+type WorkspaceArchitectureGroupRecord struct {
+	ID         string `json:"id"`
+	Label      string `json:"label"`
+	Order      int    `json:"order"`
+	Source     string `json:"source,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+	Manual     bool   `json:"manual,omitempty"`
+}
+
+type WorkspaceProjectNamespaceRecord struct {
+	Project    string `json:"project"`
+	Namespace  string `json:"namespace"`
+	Language   string `json:"language"`
+	Source     string `json:"source"`
+	Confidence string `json:"confidence"`
+}
+
+type WorkspaceArchitectureServiceLayoutRecord struct {
+	Project    string `json:"project"`
+	GroupID    string `json:"group_id"`
+	Order      int    `json:"order"`
+	Source     string `json:"source"`
+	Confidence string `json:"confidence"`
+	Manual     bool   `json:"manual"`
+}
+
+type WorkspaceArchitectureLayoutRecord struct {
+	Groups        []WorkspaceArchitectureGroupRecord         `json:"groups"`
+	Services      []WorkspaceArchitectureServiceLayoutRecord `json:"services"`
+	StaleServices []string                                   `json:"stale_services"`
 }
 
 type WorkspaceContractSummaryRecord struct {
@@ -903,17 +936,21 @@ type WorkspaceServiceDependencyRecord struct {
 }
 
 type WorkspaceServiceNodeRecord struct {
-	ID       string `json:"id"`
-	Label    string `json:"label"`
-	Project  string `json:"project"`
-	Kind     string `json:"kind,omitempty"`
-	Role     string `json:"role,omitempty"`
-	Domain   string `json:"domain,omitempty"`
-	Service  string `json:"service,omitempty"`
-	Indexed  bool   `json:"indexed"`
-	Status   string `json:"status,omitempty"`
-	Incoming int    `json:"incoming,omitempty"`
-	Outgoing int    `json:"outgoing,omitempty"`
+	ID                string `json:"id"`
+	Label             string `json:"label"`
+	Project           string `json:"project"`
+	Kind              string `json:"kind,omitempty"`
+	Role              string `json:"role,omitempty"`
+	Domain            string `json:"domain,omitempty"`
+	ArchitectureOrder int    `json:"architecture_order,omitempty"`
+	DomainSource      string `json:"domain_source,omitempty"`
+	DomainConfidence  string `json:"domain_confidence,omitempty"`
+	DomainManual      bool   `json:"domain_manual,omitempty"`
+	Service           string `json:"service,omitempty"`
+	Indexed           bool   `json:"indexed"`
+	Status            string `json:"status,omitempty"`
+	Incoming          int    `json:"incoming,omitempty"`
+	Outgoing          int    `json:"outgoing,omitempty"`
 }
 
 type WorkspaceServiceEdgeRecord struct {
