@@ -213,6 +213,21 @@ Choose the integration depth and projection for the consumer that needs it:
 `goregraph scan .` remains a compatibility alias for `goregraph build all .`.
 A single-project build needs no workspace marker.
 
+### Project or workspace build?
+
+Choose the command by scan scope, not only by output type:
+
+| Scope | Command | What is scanned | Dashboard output |
+|---|---|---|---|
+| Current project with workspace refresh | `goregraph build dashboard .` | Only the selected project; sibling projects are not scanned | Project reports in `goregraph-out/dashboard/`; a detected workspace overlay is refreshed from existing sibling indexes |
+| Current project only | `goregraph build dashboard . --no-workspace` | Only the selected project | Project reports in `goregraph-out/dashboard/`; workspace discovery and reconciliation are skipped |
+| Complete workspace | `goregraph workspace build dashboard .` | Every discovered workspace project | Project reports plus the interactive dashboard in `.goregraph-workspace/dashboard/` |
+
+A project dashboard consists of human-readable reports. The full interactive
+Code Explorer and cross-service dashboard belong to the workspace dashboard.
+The same scan scopes apply when `dashboard` is replaced with `agent` or `all`.
+`all` creates agent and dashboard projections from one source extraction.
+
 For human exploration:
 
 ```bash
@@ -335,6 +350,10 @@ goregraph workspace build all .
 Workspace builds scan each discovered project once, then reconcile the workspace
 once after all project indexes exist. `workspace build agent` and
 `workspace build dashboard` select one projection without rebuilding the other.
+In contrast, `goregraph build <target> .` scans only the selected project. It
+may refresh a detected workspace overlay from existing sibling indexes, but it
+never scans those sibling projects; add `--no-workspace` to skip that overlay
+refresh as well.
 
 Workspace-wide commands recognize common group layouts such as `frontend/`,
 `microservices/`, `services/`, and `backends/`. A flat directory containing

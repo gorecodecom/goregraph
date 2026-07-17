@@ -25,6 +25,29 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestRunHelpExplainsProjectAndWorkspaceBuildScopes(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"help"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Project vs workspace builds:",
+		"goregraph build dashboard .",
+		"Does not scan sibling projects.",
+		"goregraph build dashboard . --no-workspace",
+		"Skips workspace discovery and reconciliation.",
+		"goregraph workspace build dashboard .",
+		"Scans every discovered workspace project.",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("help output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunBuildCommandsWriteSelectedProjection(t *testing.T) {
 	for _, target := range []string{"agent", "dashboard", "all"} {
 		t.Run(target, func(t *testing.T) {

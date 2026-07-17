@@ -211,6 +211,22 @@ goregraph build all .
 Options are `--no-update-gitignore` and `--no-workspace`. Missing or unknown
 targets are usage errors.
 
+Project build scope:
+
+- `goregraph build dashboard .` scans only the selected project and writes its
+  human-readable reports under `goregraph-out/dashboard/`. It does not scan
+  sibling projects. If GoreGraph detects a workspace, it refreshes that
+  workspace overlay from the sibling indexes that already exist.
+- `goregraph build dashboard . --no-workspace` scans the selected project and
+  skips workspace discovery and reconciliation entirely.
+- `goregraph workspace build dashboard .` is the full-workspace form: it scans
+  every discovered project and writes the interactive cross-service dashboard
+  under `.goregraph-workspace/dashboard/`.
+
+The same project, isolated-project, and full-workspace scopes apply to `agent`
+and `all`. A project `dashboard` build produces reports; the interactive Code
+Explorer is a workspace dashboard feature.
+
 ## `goregraph scan <path>`
 
 Compatibility alias for `goregraph build all <path>`.
@@ -1047,6 +1063,12 @@ Targets:
 - `dashboard` builds the full human-facing workspace reports and interactive
   Code Explorer under `.goregraph-workspace/dashboard/`.
 - `all` builds `index/`, `agent/`, and `dashboard/` in one pass.
+
+Unlike `goregraph build <target> .`, this command scans every discovered
+workspace project before reconciliation. A project build scans only its selected
+project and may reuse existing sibling indexes for an overlay refresh; it never
+rescans those siblings. Use `--no-workspace` on a project build when no workspace
+overlay should be discovered or refreshed.
 
 Options:
 

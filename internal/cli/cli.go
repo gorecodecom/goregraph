@@ -1390,6 +1390,19 @@ Build behavior:
   source once; all writes agent and dashboard projections from that extraction.
   scan is the compatibility alias for build all.
 
+Project vs workspace builds:
+  goregraph build dashboard .
+    Scans only the selected project and writes goregraph-out/dashboard/.
+    Does not scan sibling projects. If a workspace is detected, GoreGraph
+    refreshes its overlay from existing sibling indexes.
+  goregraph build dashboard . --no-workspace
+    Scans only the selected project. Skips workspace discovery and reconciliation.
+  goregraph workspace build dashboard .
+    Scans every discovered workspace project. Writes the interactive dashboard
+    under .goregraph-workspace/dashboard/.
+  The same project, isolated-project, and full-workspace scopes apply to agent
+  and all builds.
+
 MCP behavior:
   standard MCP exposes only task_context. --expert-tools is for manual diagnostics
   and exploration, not the normal agent workflow.
