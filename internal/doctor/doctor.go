@@ -68,6 +68,7 @@ func checkProject(root string, cfg config.Config, result *Result) {
 	checkAgentContextIndex(out, manifest, result)
 	checkFreshnessIntegrity(out, result)
 	checkEvidenceIntegrity(out, result)
+	checkAPICatalog(out, manifest, nil, result)
 	checkCanonicalFeatureFlows(out, result)
 	checkStaleFiles(root, manifest, result)
 	if result.Failures > 0 || result.Warnings > 0 {
@@ -327,6 +328,10 @@ func checkWorkspace(root string, result *Result) {
 	}
 	checkGeneratedFiles(out, manifest, result)
 	checkWorkspaceJSONFiles(out, manifest.Index.Files, result)
+	var registry scan.WorkspaceRegistryRecord
+	if err := readJSON(scan.NewWorkspaceOutputLayout(out).Index("registry.json"), &registry); err == nil {
+		checkAPICatalog(out, manifest, &registry, result)
+	}
 	checkAgentContextIndex(out, manifest, result)
 	if manifest.Dashboard.Complete {
 		checkWorkspaceSymbolProjection(root, result)
@@ -334,6 +339,118 @@ func checkWorkspace(root string, result *Result) {
 	if dashboardConfigValid {
 		checkStaleWorkspaceDashboardServices(out, dashboardConfig, result)
 	}
+}
+
+func checkAPICatalog(out string, manifest scan.Manifest, registry *scan.WorkspaceRegistryRecord, result *Result) {
+	const catalogManifestFile = "index/api-catalog.json"
+	if !manifestListsFile(manifest.Index.Files, catalogManifestFile) {
+		return
+	}
+
+	path := scan.NewProjectOutputLayout(out).Index("api-catalog.json")
+	var catalog scan.APICatalogRecord
+	if err := readJSON(path, &catalog); err != nil {
+		result.fail("api-catalog", "api-catalog.json invalid: "+err.Error())
+		return
+	}
+	if catalog.SchemaVersion != scan.SchemaVersion {
+		result.fail("api-catalog", fmt.Sprintf("api-catalog.json schema %d unsupported, want %d", catalog.SchemaVersion, scan.SchemaVersion))
+		return
+	}
+	if err := scan.ValidateAPICatalog(catalog); err != nil {
+		result.fail("api-catalog", err.Error())
+		return
+	}
+	if evidenceIDs, available := catalogEvidenceIDs(out); available {
+		if message, dangling := catalogDanglingEvidence(catalog, evidenceIDs); dangling {
+			result.fail("api-catalog", message)
+			return
+		}
+	}
+	if registry != nil {
+		if message, unknown := catalogUnknownProjects(catalog, *registry); unknown {
+			result.fail("api-catalog", message)
+			return
+		}
+	}
+	result.ok("api-catalog", "api-catalog.json valid")
+}
+
+func manifestListsFile(files []string, want string) bool {
+	for _, file := range files {
+		if filepath.ToSlash(file) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func catalogEvidenceIDs(out string) (map[string]bool, bool) {
+	var evidence []scan.EvidenceRecord
+	if err := readJSON(scan.NewProjectOutputLayout(out).Index("evidence.json"), &evidence); err != nil {
+		return nil, false
+	}
+	known := make(map[string]bool, len(evidence))
+	for _, record := range evidence {
+		known[record.ID] = true
+	}
+	return known, true
+}
+
+func catalogDanglingEvidence(catalog scan.APICatalogRecord, known map[string]bool) (string, bool) {
+	for _, endpoint := range catalog.Endpoints {
+		if id, dangling := firstDanglingEvidence(endpoint.EvidenceIDs, known); dangling {
+			return fmt.Sprintf("endpoint %q contains dangling evidence reference %q", endpoint.ID, id), true
+		}
+		for _, security := range endpoint.Security {
+			if id, dangling := firstDanglingEvidence(security.EvidenceIDs, known); dangling {
+				return fmt.Sprintf("endpoint %q security contains dangling evidence reference %q", endpoint.ID, id), true
+			}
+		}
+		for _, consumer := range endpoint.Consumers {
+			if id, dangling := firstDanglingEvidence(consumer.EvidenceIDs, known); dangling {
+				return fmt.Sprintf("consumer %q contains dangling evidence reference %q", consumer.ID, id), true
+			}
+			for _, auth := range consumer.CallAuth {
+				if id, dangling := firstDanglingEvidence(auth.EvidenceIDs, known); dangling {
+					return fmt.Sprintf("consumer %q call auth contains dangling evidence reference %q", consumer.ID, id), true
+				}
+			}
+		}
+		for _, mismatch := range endpoint.Mismatches {
+			if id, dangling := firstDanglingEvidence(mismatch.EvidenceIDs, known); dangling {
+				return fmt.Sprintf("endpoint %q mismatch %q contains dangling evidence reference %q", endpoint.ID, mismatch.ID, id), true
+			}
+		}
+	}
+	return "", false
+}
+
+func firstDanglingEvidence(ids []string, known map[string]bool) (string, bool) {
+	for _, id := range ids {
+		if !known[id] {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+func catalogUnknownProjects(catalog scan.APICatalogRecord, registry scan.WorkspaceRegistryRecord) (string, bool) {
+	projects := make(map[string]bool, len(registry.Projects))
+	for _, project := range registry.Projects {
+		projects[filepath.ToSlash(project.Path)] = true
+	}
+	for _, endpoint := range catalog.Endpoints {
+		if !projects[filepath.ToSlash(endpoint.ProviderProject)] {
+			return fmt.Sprintf("endpoint %q references unknown provider project %q", endpoint.ID, endpoint.ProviderProject), true
+		}
+		for _, consumer := range endpoint.Consumers {
+			if !projects[filepath.ToSlash(consumer.Project)] {
+				return fmt.Sprintf("consumer %q references unknown project %q", consumer.ID, consumer.Project), true
+			}
+		}
+	}
+	return "", false
 }
 
 func checkWorkspaceDashboardConfig(root string, result *Result) (scan.WorkspaceDashboardConfig, bool) {
