@@ -61,12 +61,12 @@ func TestWorkspaceDashboardAPICatalogWorkbenchRendersSemanticExpandableInventory
 		`class="api-catalog-inventory"`,
 		`<details class="api-catalog-endpoint"`,
 		`class="api-catalog-endpoint-summary"`,
-		`data-cell-label="Endpoint"`,
-		`data-cell-label="Handler"`,
-		`data-cell-label="Endpoint security"`,
-		`data-cell-label="Consumers"`,
-		`data-cell-label="Consumer call authentication"`,
-		`data-cell-label="Evidence status"`,
+		`apiCatalogCell("Endpoint"`,
+		`apiCatalogCell("Handler"`,
+		`apiCatalogCell("Endpoint security"`,
+		`apiCatalogCell("Consumers"`,
+		`apiCatalogCell("Consumer call authentication"`,
+		`apiCatalogCell("Coverage and resolution"`,
 		`No canonical endpoints were recorded.`,
 		`No endpoints match the current filters.`,
 	} {
@@ -116,10 +116,10 @@ func TestWorkspaceDashboardAPICatalogFilterRuntime(t *testing.T) {
 		t.Fatalf("encode API Catalog filter fixture: %v", err)
 	}
 	source := strings.Join([]string{
-		`const apiCatalog=` + string(encodedFixture) + `;`,
-		`const state={apiCatalogService:"services/orders",apiCatalogQuery:"order",apiCatalogMethods:new Set(["GET"]),apiCatalogSecurity:new Set(["Bearer"]),apiCatalogConsumers:new Set(["Storefront"]),apiCatalogStatuses:new Set(["Complete"]),apiCatalogExpanded:new Set()};`,
-		section("function apiCatalogSecurityKindLabel(kind)", "function apiCatalogEndpointHTML(endpoint)"),
-		`const first=filteredAPICatalogEndpoints();state.apiCatalogService="";state.apiCatalogQuery="";state.apiCatalogMethods.clear();state.apiCatalogSecurity.clear();state.apiCatalogConsumers.clear();state.apiCatalogStatuses=new Set(["Mismatch"]);const second=filteredAPICatalogEndpoints();process.stdout.write(JSON.stringify({first:first.map(endpoint=>endpoint.id),second:second.map(endpoint=>endpoint.id),unknown:apiCatalogSecurityLabel(apiCatalog.endpoints[1]),consumer:apiCatalogConsumerSummary(apiCatalog.endpoints[0])}));`,
+		`const apiCatalog=` + string(encodedFixture) + `,serviceNodes=[];`,
+		`const state={apiCatalogService:apiCatalogProviderKey("","services/orders"),apiCatalogQuery:"order",apiCatalogMethods:new Set(["GET"]),apiCatalogSecurity:new Set(["Bearer"]),apiCatalogConsumers:new Set(["Storefront"]),apiCatalogStatuses:new Set(["Coverage: COMPLETE"]),apiCatalogExpanded:new Set()};`,
+		section("function apiCatalogProviderKey(service,project)", "function apiCatalogEndpointHTML(endpoint)"),
+		`const first=filteredAPICatalogEndpoints();state.apiCatalogService="";state.apiCatalogQuery="";state.apiCatalogMethods.clear();state.apiCatalogSecurity.clear();state.apiCatalogConsumers.clear();state.apiCatalogStatuses=new Set(["Coverage: PARTIAL"]);const second=filteredAPICatalogEndpoints();process.stdout.write(JSON.stringify({first:first.map(endpoint=>endpoint.id),second:second.map(endpoint=>endpoint.id),unknown:apiCatalogSecurityLabel(apiCatalog.endpoints[1]),consumer:apiCatalogConsumerSummary(apiCatalog.endpoints[0])}));`,
 	}, "\n")
 	output, err := exec.Command(node, "-e", source).CombinedOutput()
 	if err != nil {
@@ -193,38 +193,223 @@ func TestWorkspaceDashboardAPICatalogDetailsRuntimeRendersOneDisclosurePerVisibl
 		return workspaceDashboardScript[from : from+to]
 	}
 	fixture := APICatalogRecord{SchemaVersion: SchemaVersion, Endpoints: []APIEndpointRecord{
-		{ID: "endpoint:get", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/orders/{id}", Handler: "OrderController.get", Security: []SecurityEvidenceRecord{}, Consumers: []APIConsumerRecord{}, Confidence: ConfidenceExact, Coverage: CoverageComplete},
-		{ID: "endpoint:post", ProviderProject: "services/orders", HTTPMethod: "POST", Path: "/orders", Handler: "OrderController.create", Security: []SecurityEvidenceRecord{}, Consumers: []APIConsumerRecord{}, Confidence: ConfidenceExact, Coverage: CoveragePartial},
+		{ID: "endpoint:get", ProviderProject: "services/orders", ProviderService: "orders", HTTPMethod: "GET", Path: "/orders/{id}", Handler: "OrderController.get", Security: []SecurityEvidenceRecord{{Kind: SecurityBearer}}, Consumers: []APIConsumerRecord{{Project: "web/store", Service: "Storefront", Path: "/proxy/orders/{id}", Resolution: "MATCHED", EvidenceIDs: []string{"match:orders"}, CallAuth: []SecurityEvidenceRecord{{Kind: SecurityBearer}}}}, Confidence: ConfidenceExact, Coverage: CoverageComplete},
+		{ID: "endpoint:post", ProviderProject: "services/orders", ProviderService: "orders", HTTPMethod: "POST", Path: "/orders", Handler: "OrderController.create", Security: []SecurityEvidenceRecord{}, Consumers: []APIConsumerRecord{}, Confidence: ConfidenceExact, Coverage: CoveragePartial},
+		{ID: "endpoint:billing", ProviderProject: "services/billing", ProviderService: "billing", HTTPMethod: "GET", Path: "/invoices", Handler: "InvoiceController.list", Security: []SecurityEvidenceRecord{}, Consumers: []APIConsumerRecord{}, Confidence: ConfidenceExact, Coverage: CoverageComplete},
 	}}
+	services := []WorkspaceServiceNodeRecord{{ID: "service:orders", Project: "services/orders", Service: "orders", Indexed: true}, {ID: "service:billing", Project: "services/billing", Service: "billing", Indexed: true}}
+	tracesFixture := []WorkspaceEndpointTraceRecord{{ID: "match:orders", Route: "GET /proxy/orders/{id}", FromProject: "web/store", ToProject: "services/orders"}}
 	encodedFixture, err := json.Marshal(fixture)
 	if err != nil {
 		t.Fatalf("encode API Catalog details fixture: %v", err)
 	}
+	encodedServices, _ := json.Marshal(services)
+	encodedTraces, _ := json.Marshal(tracesFixture)
 	source := strings.Join([]string{
-		`const apiCatalog=` + string(encodedFixture) + `,traces=[],traceById=new Map();`,
-		`const state={apiCatalogService:"services/orders",apiCatalogQuery:"",apiCatalogMethods:new Set(),apiCatalogSecurity:new Set(),apiCatalogConsumers:new Set(),apiCatalogStatuses:new Set(),apiCatalogExpanded:new Set(["endpoint:get"])};`,
-		`function escapeHtml(value){return String(value||"").replace(/[&<>"']/g,character=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);}function escapeAttr(value){return escapeHtml(value);}function sourceLocationMarkup(project,file,line){return '<span class="source-test">'+escapeHtml(file||"No source location recorded")+'</span>';}function wireSourceActions(){}function setMode(){}function selectItem(){}`,
-		`const controls=new Map();function control(id){return {id:id,innerHTML:"",textContent:"",value:"",querySelectorAll:function(){return [];}};}["workspace-workbench","api-catalog-provider-filter","api-catalog-security-filter","api-catalog-consumer-filter","api-catalog-status-filter","api-catalog-search","api-catalog-filter-summary"].forEach(id=>controls.set(id,control(id)));const document={getElementById:id=>controls.get(id),querySelectorAll:()=>[]};function setSelectOptions(id,values){document.getElementById(id).innerHTML=values.join(",");}`,
-		section("function apiCatalogSecurityKindLabel(kind)", "function renderEndpoints()"),
-		`renderAPICatalog();const all=document.getElementById("workspace-workbench").innerHTML;state.apiCatalogMethods.add("GET");renderAPICatalog();const filtered=document.getElementById("workspace-workbench").innerHTML;const count=html=>(html.match(/<details class="api-catalog-endpoint"/g)||[]).length;process.stdout.write(JSON.stringify({all:count(all),filtered:count(filtered),open:all.includes('data-api-catalog-endpoint-id="endpoint:get" open'),unknown:all.includes("Unknown — no endpoint security evidence was recorded."),consumerHeading:all.includes("Consumer call authentication"),summary:document.getElementById("api-catalog-filter-summary").textContent}));`,
+		`const apiCatalog=` + string(encodedFixture) + `,serviceNodes=` + string(encodedServices) + `,traces=` + string(encodedTraces) + `,traceById=new Map(traces.map(trace=>[trace.id,trace])),apiCatalogTraceByEvidenceID=new Map(traces.map(trace=>[trace.id,trace]));`,
+		`const state={mode:"api-catalog",selected:null,apiCatalogService:"",apiCatalogQuery:"",apiCatalogMethods:new Set(),apiCatalogSecurity:new Set(),apiCatalogConsumers:new Set(),apiCatalogStatuses:new Set(),apiCatalogExpanded:new Set()};`,
+		`function escapeHtml(value){return String(value||"").replace(/[&<>"']/g,character=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);}function escapeAttr(value){return escapeHtml(value);}function sourceLocationMarkup(project,file,line){return '<span class="source-test">'+escapeHtml(file||"No source location recorded")+'</span>';}function wireSourceActions(){}function setMode(mode){state.mode=mode;}function selectItem(id){state.selected=id;}`,
+		`function element(id){return {id:id,innerHTML:"",textContent:"",value:"",selectedOptions:[],dataset:{},open:false,listeners:{},classList:{toggle:function(){},remove:function(){}},setAttribute:function(){},focus:function(){},setSelectionRange:function(){},addEventListener:function(type,handler){this.listeners[type]=handler;},dispatch:function(type){this.listeners[type]({target:this});},querySelectorAll:function(){return [];},querySelector:function(){return {focus:function(){}};}};}const controls=new Map(),methodButtons=[element("method-get"),element("method-post")];methodButtons[0].dataset.apiCatalogMethod="GET";methodButtons[1].dataset.apiCatalogMethod="POST";["api-catalog-provider-filter","api-catalog-security-filter","api-catalog-consumer-filter","api-catalog-status-filter","api-catalog-search","api-catalog-filter-summary","clear-api-catalog-filters"].forEach(id=>controls.set(id,element(id)));let detailNodes=[],traceNodes=[];const workbench=element("workspace-workbench");Object.defineProperty(workbench,"innerHTML",{get:function(){return this._html||"";},set:function(value){this._html=value;detailNodes=[];traceNodes=[];for(const match of value.matchAll(/<details class="api-catalog-endpoint" data-api-catalog-endpoint-id="([^"]+)"([^>]*)>/g)){const details=element("details");details.dataset.apiCatalogEndpointId=match[1];details.open=match[2].includes(" open");detailNodes.push(details);}for(const match of value.matchAll(/data-api-catalog-trace="([^"]+)"/g)){const button=element("trace");button.dataset.apiCatalogTrace=match[1];traceNodes.push(button);}}});workbench.querySelectorAll=function(selector){if(selector==="[data-api-catalog-endpoint-id]")return detailNodes;if(selector==="[data-api-catalog-trace]")return traceNodes;return [];};controls.set("workspace-workbench",workbench);const document={getElementById:id=>controls.get(id),querySelectorAll:selector=>selector==="[data-api-catalog-method]"?methodButtons:[]};function setSelectOptions(id,values,selected){controls.get(id).innerHTML=values.join(",");controls.get(id).selectedOptions=Array.from(selected||[]).map(value=>({value:value}));}function selectedValues(id){return new Set(controls.get(id).selectedOptions.map(option=>option.value));}`,
+		section("function apiCatalogProviderKey(service,project)", "function renderEndpoints()"),
+		section("function clearAPICatalogFilters()", "wireAPICatalogFilterControls();"),
+		`wireAPICatalogFilterControls();renderAPICatalog();const count=()=>detailNodes.length,initial=count(),collapsed=!workbench.innerHTML.includes("Parameters by location");const provider=controls.get("api-catalog-provider-filter");provider.value=apiCatalogProviderKey("orders","services/orders");provider.dispatch("change");const afterProvider=count();const query=controls.get("api-catalog-search");query.value="OrderController.get";query.dispatch("input");const afterQuery=count();query.value="";query.dispatch("input");methodButtons[0].dispatch("click");const afterMethod=count();const status=controls.get("api-catalog-status-filter");status.selectedOptions=[{value:"Coverage: COMPLETE"},{value:"Resolution: Resolved"}];status.dispatch("change");const afterStatus=count();const details=detailNodes.find(node=>node.dataset.apiCatalogEndpointId==="endpoint:get");details.open=true;details.dispatch("toggle");const expanded=workbench.innerHTML.includes("Parameters by location")&&workbench.innerHTML.includes("Storefront: Bearer")&&workbench.innerHTML.includes('data-api-catalog-endpoint-id="endpoint:get" open');renderAPICatalog();const preserved=workbench.innerHTML.includes('data-api-catalog-endpoint-id="endpoint:get" open');controls.get("clear-api-catalog-filters").dispatch("click");const afterClear=count(),traceButton=traceNodes.find(button=>button.dataset.apiCatalogTrace==="match:orders");traceButton.dispatch("click");process.stdout.write(JSON.stringify({initial,collapsed,afterProvider,afterQuery,afterMethod,afterStatus,expanded,preserved,afterClear,mode:state.mode,selected:state.selected,summary:controls.get("api-catalog-filter-summary").textContent}));`,
 	}, "\n")
 	output, err := exec.Command(node, "-e", source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("API Catalog details runtime failed: %v\n%s", err, output)
 	}
 	var result struct {
-		All             int    `json:"all"`
-		Filtered        int    `json:"filtered"`
-		Open            bool   `json:"open"`
-		Unknown         bool   `json:"unknown"`
-		ConsumerHeading bool   `json:"consumerHeading"`
-		Summary         string `json:"summary"`
+		Initial       int    `json:"initial"`
+		Collapsed     bool   `json:"collapsed"`
+		AfterProvider int    `json:"afterProvider"`
+		AfterQuery    int    `json:"afterQuery"`
+		AfterMethod   int    `json:"afterMethod"`
+		AfterStatus   int    `json:"afterStatus"`
+		Expanded      bool   `json:"expanded"`
+		Preserved     bool   `json:"preserved"`
+		AfterClear    int    `json:"afterClear"`
+		Mode          string `json:"mode"`
+		Selected      string `json:"selected"`
+		Summary       string `json:"summary"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("decode API Catalog details runtime result: %v\n%s", err, output)
 	}
-	if result.All != 2 || result.Filtered != 1 || !result.Open || !result.Unknown || !result.ConsumerHeading || result.Summary != "1 of 2 canonical endpoints shown." {
+	if result.Initial != 3 || !result.Collapsed || result.AfterProvider != 2 || result.AfterQuery != 1 || result.AfterMethod != 1 || result.AfterStatus != 1 || !result.Expanded || !result.Preserved || result.AfterClear != 3 || result.Mode != "endpoints" || result.Selected != "match:orders" || result.Summary != "3 of 3 canonical endpoints shown." {
 		t.Fatalf("API Catalog disclosure runtime = %#v", result)
+	}
+}
+
+func TestWorkspaceDashboardAPICatalogReviewFixContracts(t *testing.T) {
+	html := renderWorkspaceDashboardHTML(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, APICatalogRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion}, WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion}, nil,
+	)
+	for _, want := range []string{
+		`const apiCatalogTraceByEvidenceID=new Map(traces.map(function(trace){return [trace.id,trace];}));`,
+		`function apiCatalogProviderOptions()`,
+		`function apiCatalogCoverage(endpoint)`,
+		`function apiCatalogResolution(endpoint)`,
+		`function apiCatalogEndpointDetailsHTML(endpoint)`,
+		`function wireAPICatalogFilterControls()`,
+		`class="api-catalog-cell-label visually-hidden"`,
+		`aria-label="Endpoint details for `,
+		`Service not analyzed`,
+		`No endpoints were discovered for this analyzed service.`,
+		`Analysis is partial for this service.`,
+		`Filters removed all endpoints for this service.`,
+		`.api-catalog-cell-label{position:absolute`,
+		`.api-catalog-trace-action,.api-catalog-details .source-actions button,.api-catalog-details .source-actions a{min-height:44px;display:inline-flex`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("API Catalog review fix missing contract %q", want)
+		}
+	}
+	if strings.Contains(html, `function apiCatalogEndpointTrace(endpoint)`) || strings.Contains(html, `return traces.find(function(trace)`) {
+		t.Fatal("API Catalog still performs route-based per-row trace lookup")
+	}
+}
+
+func TestWorkspaceDashboardAPICatalogProviderCoverageAndTraceModelRuntime(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatalf("node is required for API Catalog provider model tests: %v", err)
+	}
+	section := func(start, end string) string {
+		t.Helper()
+		from := strings.Index(workspaceDashboardScript, start)
+		if from < 0 {
+			t.Fatalf("dashboard script missing section start %q", start)
+		}
+		to := strings.Index(workspaceDashboardScript[from:], end)
+		if to < 0 {
+			t.Fatalf("dashboard script missing section end %q", end)
+		}
+		return workspaceDashboardScript[from : from+to]
+	}
+	fixture := APICatalogRecord{SchemaVersion: SchemaVersion, Endpoints: []APIEndpointRecord{
+		{ID: "endpoint:a", ProviderProject: "services/orders-a", ProviderService: "orders", HTTPMethod: "GET", Path: "/backend/orders", Coverage: CoverageComplete, Consumers: []APIConsumerRecord{{Project: "web", Service: "Store", Path: "/proxy/orders", Resolution: "MATCHED", EvidenceIDs: []string{"match:orders-a"}}}},
+		{ID: "endpoint:b", ProviderProject: "services/orders-b", ProviderService: "orders", HTTPMethod: "POST", Path: "/orders", Coverage: CoverageFailed, Consumers: []APIConsumerRecord{{Project: "admin", Resolution: "ambiguous_route_match"}}},
+	}}
+	services := []WorkspaceServiceNodeRecord{
+		{ID: "service:a", Label: "Orders A", Project: "services/orders-a", Service: "orders", Indexed: true, Status: "indexed"},
+		{ID: "service:b", Label: "Orders B", Project: "services/orders-b", Service: "orders", Indexed: true, Status: "indexed"},
+		{ID: "service:inventory", Label: "Inventory", Project: "services/inventory", Service: "inventory", Indexed: true, Status: "indexed"},
+		{ID: "service:legacy", Label: "Legacy", Project: "services/legacy", Service: "legacy", Indexed: false, Status: "not_indexed"},
+	}
+	tracesFixture := []WorkspaceEndpointTraceRecord{{ID: "match:orders-a", Route: "GET /proxy/orders", FromProject: "web", ToProject: "services/orders-a"}}
+	encodedFixture, _ := json.Marshal(fixture)
+	encodedServices, _ := json.Marshal(services)
+	encodedTraces, _ := json.Marshal(tracesFixture)
+	source := strings.Join([]string{
+		`const apiCatalog=` + string(encodedFixture) + `,serviceNodes=` + string(encodedServices) + `,traces=` + string(encodedTraces) + `;`,
+		`const apiCatalogTraceByEvidenceID=new Map(traces.map(function(trace){return [trace.id,trace];}));`,
+		`const state={apiCatalogService:"",apiCatalogQuery:"",apiCatalogMethods:new Set(),apiCatalogSecurity:new Set(),apiCatalogConsumers:new Set(),apiCatalogStatuses:new Set(),apiCatalogExpanded:new Set()};`,
+		section("function apiCatalogProviderKey(service,project)", "function apiCatalogEndpointHTML(endpoint)"),
+		`const providers=apiCatalogProviderOptions();const a=apiCatalog.endpoints[0],b=apiCatalog.endpoints[1];state.apiCatalogService=apiCatalogProviderKey("orders","services/orders-a");state.apiCatalogStatuses=new Set(["Coverage: COMPLETE","Resolution: Resolved"]);const visible=filteredAPICatalogEndpoints();process.stdout.write(JSON.stringify({providers:providers.map(provider=>({key:provider.key,label:provider.label,project:provider.project,indexed:provider.indexed,count:provider.endpointCount})),fallback:apiCatalogProviderKey("","services/plain"),coverage:[apiCatalogCoverage(a),apiCatalogCoverage(b)],resolution:[apiCatalogResolution(a),apiCatalogResolution(b)],visible:visible.map(endpoint=>endpoint.id),trace:apiCatalogConsumerTrace(a.consumers[0]).id}));`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("API Catalog provider model runtime failed: %v\n%s", err, output)
+	}
+	var result struct {
+		Providers []struct {
+			Key     string `json:"key"`
+			Label   string `json:"label"`
+			Project string `json:"project"`
+			Indexed bool   `json:"indexed"`
+			Count   int    `json:"count"`
+		} `json:"providers"`
+		Fallback   string   `json:"fallback"`
+		Coverage   []string `json:"coverage"`
+		Resolution []string `json:"resolution"`
+		Visible    []string `json:"visible"`
+		Trace      string   `json:"trace"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("decode API Catalog provider model runtime: %v\n%s", err, output)
+	}
+	if len(result.Providers) != 4 {
+		t.Fatalf("provider options = %#v, want endpoint and zero-endpoint service-map providers", result.Providers)
+	}
+	providerByProject := map[string]struct {
+		Key     string
+		Label   string
+		Indexed bool
+		Count   int
+	}{}
+	for _, provider := range result.Providers {
+		providerByProject[provider.Project] = struct {
+			Key     string
+			Label   string
+			Indexed bool
+			Count   int
+		}{provider.Key, provider.Label, provider.Indexed, provider.Count}
+	}
+	if providerByProject["services/orders-a"].Key != "service:orders|project:services/orders-a" || providerByProject["services/orders-a"].Label != "orders — services/orders-a" || providerByProject["services/orders-b"].Label != "orders — services/orders-b" {
+		t.Fatalf("duplicate provider service labels are not deterministic: %#v", providerByProject)
+	}
+	if providerByProject["services/inventory"].Count != 0 || !providerByProject["services/inventory"].Indexed || providerByProject["services/legacy"].Indexed {
+		t.Fatalf("zero-endpoint provider state = %#v", providerByProject)
+	}
+	if result.Fallback != "project:services/plain" || strings.Join(result.Coverage, ",") != "COMPLETE,FAILED" || strings.Join(result.Resolution, ",") != "Resolved,Ambiguous" || strings.Join(result.Visible, ",") != "endpoint:a" || result.Trace != "match:orders-a" {
+		t.Fatalf("coverage/resolution/trace model = %#v", result)
+	}
+}
+
+func TestWorkspaceDashboardAPICatalogResponsiveGeometry(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for rendered API Catalog geometry tests")
+	}
+	if output, err := exec.Command(node, "-e", `require.resolve("playwright")`).CombinedOutput(); err != nil {
+		t.Skipf("Playwright is not installed for rendered API Catalog geometry tests: %s", strings.TrimSpace(string(output)))
+	}
+	catalog := APICatalogRecord{SchemaVersion: SchemaVersion, Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders", ProviderService: "orders", HTTPMethod: "GET", Path: "/orders/{customerIdentifier}/line-items/{lineItemIdentifier}", Handler: "OrderController.getLineItem",
+		File: "src/main/java/example/orders/OrderController.java", Line: 42, Coverage: CoveragePartial, Confidence: ConfidenceExact,
+		Security: []SecurityEvidenceRecord{{Kind: SecurityBearer}}, Consumers: []APIConsumerRecord{{ID: "consumer:store", Project: "web/store", Service: "Storefront", File: "src/api/orders.ts", Line: 18, Resolution: "MATCHED", EvidenceIDs: []string{"match:orders"}, CallAuth: []SecurityEvidenceRecord{{Kind: SecurityBearer}}}},
+	}}}
+	html := renderWorkspaceDashboardHTML(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: "/workspace"},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion, Nodes: []WorkspaceServiceNodeRecord{{ID: "service:orders", Project: "services/orders", Service: "orders", Indexed: true}}},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion, Traces: []WorkspaceEndpointTraceRecord{{ID: "match:orders", Route: "GET /proxy/orders/{customerIdentifier}/line-items/{lineItemIdentifier}", FromProject: "web/store", ToProject: "services/orders"}}},
+		catalog, WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion}, WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion}, nil,
+	)
+	encodedHTML, _ := json.Marshal(html)
+	source := strings.Join([]string{
+		`const {chromium}=require("playwright"),html=` + string(encodedHTML) + `;`,
+		`(async()=>{const browser=await chromium.launch({headless:true}),results=[];try{for(const viewport of [{width:760,height:900},{width:1280,height:720},{width:1440,height:900},{width:1920,height:1080}]){const page=await browser.newPage({viewport});await page.setContent(html,{waitUntil:"load"});await page.click('[data-view-mode="api-catalog"]');await page.selectOption("#api-catalog-provider-filter","service:orders|project:services/orders");await page.click(".api-catalog-endpoint summary");await page.waitForSelector(".api-catalog-details");results.push(await page.evaluate(()=>{const cells=Array.from(document.querySelectorAll(".api-catalog-endpoint-summary>span")),actions=Array.from(document.querySelectorAll(".api-catalog-trace-action,.api-catalog-details .source-actions button,.api-catalog-details .source-actions a"));return {viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,details:document.querySelectorAll(".api-catalog-endpoint[open] .api-catalog-details").length,stacked:cells.length<2||Math.abs(cells[0].getBoundingClientRect().left-cells[1].getBoundingClientRect().left)<1,actionHeights:actions.map(action=>action.getBoundingClientRect().height)};}));await page.close();}}finally{await browser.close();}process.stdout.write(JSON.stringify(results));})().catch(error=>{console.error(error);process.exit(1);});`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rendered API Catalog geometry failed: %v\n%s", err, output)
+	}
+	var results []struct {
+		Viewport      int       `json:"viewport"`
+		ScrollWidth   int       `json:"scrollWidth"`
+		Details       int       `json:"details"`
+		Stacked       bool      `json:"stacked"`
+		ActionHeights []float64 `json:"actionHeights"`
+	}
+	if err := json.Unmarshal(output, &results); err != nil {
+		t.Fatalf("decode rendered API Catalog geometry: %v\n%s", err, output)
+	}
+	for _, result := range results {
+		if result.ScrollWidth > result.Viewport || result.Details != 1 {
+			t.Fatalf("%dpx API Catalog geometry = %#v", result.Viewport, result)
+		}
+		if result.Viewport <= 820 {
+			if !result.Stacked {
+				t.Fatalf("%dpx API Catalog cells are not stacked", result.Viewport)
+			}
+			for _, height := range result.ActionHeights {
+				if height < 44 {
+					t.Fatalf("%dpx API Catalog action height %.2f, want at least 44", result.Viewport, height)
+				}
+			}
+		}
 	}
 }
 
@@ -252,9 +437,9 @@ func TestWorkspaceDashboardAPICatalogModeRuntimeDoesNotFallThroughDiagnostics(t 
 		`const document={getElementById:function(id){if(!controls.has(id))controls.set(id,control(id,false));return controls.get(id);},querySelectorAll:function(selector){if(selector==="[data-view-mode]")return modeButtons;if(selector==="[data-kind-filter]")return [];return [];}};`,
 		`const traceById=new Map();let diagnosticRenders=0;`,
 		`const state={mode:"endpoints",selections:{architecture:null,"api-catalog":null,endpoints:null},selected:null,codeProject:null,codeSymbol:null,codeUsage:null,codeLoading:false,codeError:"",codeReturn:"services",isolation:false,architectureFocused:false,savedFullArchitectureViewport:null,filter:"all",viewports:new Map()};`,
-		`const apiCatalog={endpoints:[]};function escapeHtml(value){return String(value);}function filteredAPICatalogEndpoints(){return [];}function syncAPICatalogFilterControls(){}function wireSourceActions(){}`,
+		`const apiCatalog={endpoints:[]};function escapeHtml(value){return String(value);}function filteredAPICatalogEndpoints(){return [];}function apiCatalogSelectedProvider(){return null;}function apiCatalogProviderEndpoints(){return [];}function apiCatalogServiceNotices(){return [];}function syncAPICatalogFilterControls(){}function wireSourceActions(){}`,
 		`function saveViewport(){}function indexSymbolUsageRecords(){}function clearDetailsForMode(){}function renderList(){}function restoreViewport(){}function syncModeButtons(){}function setCanvasPresentation(){}function syncArchitectureViewControls(){}function renderArchitectureSummary(){}function renderArchitectureMatrix(){}function renderArchitectureMap(){}function renderEndpoints(){}function renderFeatureFlow(){}function renderDataFlow(){}function renderCoverage(){}function renderCodeExplorerLanding(){}function renderCodeExplorerLoading(){}function renderCodeExplorer(){}function renderDiagnostics(){diagnosticRenders++;}`,
-		section("function renderAPICatalog()", "function renderEndpoints()"),
+		section("function renderAPICatalog(focusEndpointID)", "function renderEndpoints()"),
 		section("function renderCanvas()", "function zoomAtPoint(factor,x,y)"),
 		section("function modeHelpText(mode)", "function syncModeButtons(mode)"),
 		section("function syncModeChrome(mode)", "function setMode(mode)"),
