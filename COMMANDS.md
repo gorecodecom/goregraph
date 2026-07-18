@@ -6,7 +6,7 @@ This file lists every user-facing GoreGraph command, what it does, and common va
 
 ```bash
 goregraph build agent <path>
-goregraph context <path> --query "<current coding task>" --budget-tokens 1800 --max-files 12
+goregraph context <path> --query "<current coding task>" --budget-tokens 4000 --max-files 12
 ```
 
 The equivalent standard MCP tool is `task_context`. Read only the cited source
@@ -429,7 +429,7 @@ goregraph dashboard open .
 `dashboard/report.md` entry point. Project dashboards are Markdown reports;
 the interactive Code Explorer is part of the workspace dashboard.
 
-## `goregraph context <path> --query <task> [--budget-tokens 1800] [--max-files 12]`
+## `goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12]`
 
 Returns the bounded Context Pack for the normal AI workflow. It reads only the
 generated `agent/context-index.json` projection and never asks an assistant to
@@ -439,7 +439,7 @@ Example:
 
 ```bash
 goregraph build agent .
-goregraph context . --query "Trace GET /users/{id}" --budget-tokens 1800 --max-files 12
+goregraph context . --query "Trace GET /users/{id}" --budget-tokens 4000 --max-files 12
 ```
 
 Use the first Context Pack directly and read only cited source ranges needed to
@@ -456,7 +456,7 @@ After the retry, inspect source; there is no third Context call or
 specialist-query fallback cascade.
 
 Endpoint tasks select at most one endpoint and eight consumer call sites, with
-an explicit omitted count when more consumers exist. The 1800-token default is
+an explicit omitted count when more consumers exist. The 4000-token default is
 unchanged. Context reads the compact `agent/context-index.json`; it does not send
 the complete `index/api-catalog.json`, dashboard payload, or
 `.goregraph-dashboard.json` to the assistant.

@@ -237,7 +237,7 @@ func TestDefaultMCPTaskContextSchemaAndInstructions(t *testing.T) {
 			"properties": map[string]any{
 				"root":          map[string]any{"type": "string"},
 				"query":         map[string]any{"type": "string", "minLength": 1},
-				"budget_tokens": map[string]any{"type": "integer", "minimum": 256, "maximum": 4000, "default": 1800},
+				"budget_tokens": map[string]any{"type": "integer", "minimum": 256, "maximum": 6000, "default": 4000},
 				"max_files":     map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "default": 12},
 			},
 		},
@@ -434,7 +434,7 @@ func TestMCPTaskContextValidatesArgumentsStrictly(t *testing.T) {
 		{name: "unknown property", mutate: func(args map[string]any) { args["detail"] = "full" }},
 		{name: "zero budget", mutate: func(args map[string]any) { args["budget_tokens"] = float64(0) }},
 		{name: "low budget", mutate: func(args map[string]any) { args["budget_tokens"] = float64(255) }},
-		{name: "high budget", mutate: func(args map[string]any) { args["budget_tokens"] = float64(4001) }},
+		{name: "high budget", mutate: func(args map[string]any) { args["budget_tokens"] = float64(6001) }},
 		{name: "fractional budget", mutate: func(args map[string]any) { args["budget_tokens"] = 700.5 }},
 		{name: "string budget", mutate: func(args map[string]any) { args["budget_tokens"] = "700" }},
 		{name: "nan budget", mutate: func(args map[string]any) { args["budget_tokens"] = math.NaN() }},
@@ -466,7 +466,7 @@ func TestMCPTaskContextAcceptsExactBounds(t *testing.T) {
 		files  float64
 	}{
 		{budget: 256, files: 1},
-		{budget: 4000, files: 20},
+		{budget: 6000, files: 20},
 	} {
 		text, err := callTool(Options{}, "task_context", map[string]any{
 			"root": root, "query": "DELETE /users/{id}",

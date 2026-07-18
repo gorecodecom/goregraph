@@ -10,11 +10,14 @@ import (
 )
 
 const (
-	DefaultContextBudgetTokens = 1800
-	MinContextBudgetTokens     = 256
-	MaxContextBudgetTokens     = 4000
-	DefaultContextMaxFiles     = 12
-	MaxContextMaxFiles         = 20
+	DefaultContextBudgetTokens         = 4000
+	MinContextBudgetTokens             = 256
+	MaxContextBudgetTokens             = 6000
+	DefaultContextMetadataBudgetTokens = 1100
+	DefaultContextMaxBytes             = 16000
+	MaxContextBytes                    = 24000
+	DefaultContextMaxFiles             = 12
+	MaxContextMaxFiles                 = 20
 )
 
 type ContextRequest struct {
@@ -112,7 +115,29 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	if err != nil {
 		return ContextPack{}, err
 	}
-	return compileContextPack(index, request)
+	metadataRequest := request
+	metadataRequest.BudgetTokens = contextMetadataBudget(request.BudgetTokens)
+	pack, err := compileContextPack(index, metadataRequest)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	pack.BudgetTokens = request.BudgetTokens
+	return finalizeContextEstimate(pack)
+}
+
+func contextMetadataBudget(total int) int {
+	if total < DefaultContextMetadataBudgetTokens {
+		return total
+	}
+	return DefaultContextMetadataBudgetTokens
+}
+
+func contextByteBudget(tokens int) int {
+	bytes := tokens * 4
+	if bytes > MaxContextBytes {
+		return MaxContextBytes
+	}
+	return bytes
 }
 
 func normalizeContextRequest(request ContextRequest) (ContextRequest, error) {

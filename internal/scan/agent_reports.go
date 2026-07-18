@@ -27,7 +27,7 @@ func renderAgentGuideEntry() string {
 
 Use GoreGraph once to obtain a small navigation pack, then verify the cited source.
 
-` + "```bash\n" + `goregraph context . --query "<current coding task>" --budget-tokens 1800 --max-files 12
+` + "```bash\n" + `goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-files 12
 ` + "```" + `
 
 MCP: ` + "`task_context`" + `

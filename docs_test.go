@@ -145,7 +145,7 @@ func TestDocumentationCoversEditableDashboardAndAPIContext(t *testing.T) {
 			"No auth evidence detected",
 			"index/api-catalog.json",
 			"agent/context-index.json",
-			"1800",
+			"4000",
 			"unreleased 1.3.0",
 		},
 		"COMMANDS.md": {
@@ -160,7 +160,7 @@ func TestDocumentationCoversEditableDashboardAndAPIContext(t *testing.T) {
 			"No auth evidence detected",
 			"index/api-catalog.json",
 			"agent/context-index.json",
-			"1800",
+			"4000",
 		},
 		"docs/OUTPUTS.md": {
 			"goregraph workspace dashboard edit .",

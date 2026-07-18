@@ -1012,10 +1012,10 @@ func emptyCLI(value string) string {
 
 func runContext(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, `Usage: goregraph context <path> --query <task> [--budget-tokens 1800] [--max-files 12] [--format markdown|json]
+		fmt.Fprint(stdout, `Usage: goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12] [--format markdown|json]
 
 Builds one deterministic, budgeted Context Pack from existing generated output.
-Budget tokens: 256-4000. Max files: 1-20.
+Budget tokens: 256-6000. Max files: 1-20.
 
 Normal agent workflow:
   Call Context once for the current coding task and verify only cited source ranges.
@@ -1106,7 +1106,7 @@ Canonical symbol operations are:
   symbol-explain         Explain a stable symbol or usage ID
 
 Task options: --query <value> --format <json|text|markdown> --detail <summary|standard|full> --limit <1-100> --continue <token>
-task-context options: --budget-tokens <256-4000> --max-files <1-20>. Explicit --max-files wins; otherwise --limit maps to max files capped at 20.
+task-context options: --budget-tokens <256-6000> --max-files <1-20>. Explicit --max-files wins; otherwise --limit maps to max files capped at 20.
 Known output aliases such as graph-full, symbol-index, symbol-usages-json, workspace-context, and audit print that generated file directly.
 `)
 		return 0

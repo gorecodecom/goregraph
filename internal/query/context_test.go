@@ -244,7 +244,7 @@ func TestRunContextDefaultsToDeterministicMarkdown(t *testing.T) {
 	if first != second || first != explicit {
 		t.Fatalf("markdown is not deterministic/default-equivalent:\nfirst=%s\nsecond=%s\nexplicit=%s", first, second, explicit)
 	}
-	if !strings.Contains(first, "Budget tokens: ") || !strings.Contains(first, " / 1800") {
+	if !strings.Contains(first, "Budget tokens: ") || !strings.Contains(first, " / 4000") {
 		t.Fatalf("default budget missing:\n%s", first)
 	}
 }

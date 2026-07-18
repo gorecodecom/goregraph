@@ -1384,10 +1384,10 @@ func TestContextCLIHelpAndGlobalOrdering(t *testing.T) {
 	for _, want := range []string{
 		"Usage: goregraph context <path>",
 		"--query <task>",
-		"--budget-tokens 1800",
+		"--budget-tokens 4000",
 		"--max-files 12",
 		"--format markdown|json",
-		"256-4000",
+		"256-6000",
 		"1-20",
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -1672,7 +1672,7 @@ func TestContextCLIRejectsUsageErrors(t *testing.T) {
 		{name: "unknown option", args: []string{"context", root, "--unknown", "value"}, want: "unknown context option"},
 		{name: "noninteger budget", args: []string{"context", root, "--query", "route", "--budget-tokens", "many"}, want: "must be an integer"},
 		{name: "noninteger max files", args: []string{"context", root, "--query", "route", "--max-files", "many"}, want: "must be an integer"},
-		{name: "explicit zero budget", args: []string{"context", root, "--query", "route", "--budget-tokens", "0"}, want: "between 256 and 4000"},
+		{name: "explicit zero budget", args: []string{"context", root, "--query", "route", "--budget-tokens", "0"}, want: "between 256 and 6000"},
 		{name: "explicit zero max files", args: []string{"context", root, "--query", "route", "--max-files", "0"}, want: "between 1 and 20"},
 	}
 	for _, test := range tests {
@@ -1694,7 +1694,7 @@ func TestRunQueryRejectsExplicitZeroValuesAsUsage(t *testing.T) {
 		option string
 		want   string
 	}{
-		{option: "--budget-tokens", want: "between 256 and 4000"},
+		{option: "--budget-tokens", want: "between 256 and 6000"},
 		{option: "--max-files", want: "between 1 and 20"},
 		{option: "--limit", want: "between 1 and 100"},
 	} {
@@ -1722,9 +1722,9 @@ func TestRunQueryTaskContextMapsLimitAndMaxFilesBeforeServiceDefaults(t *testing
 		wantFiles  int
 		wantBudget int
 	}{
-		{name: "default remains twelve", wantFiles: 12, wantBudget: 1800},
-		{name: "explicit limit", options: []string{"--limit", "5"}, wantFiles: 5, wantBudget: 1800},
-		{name: "limit is capped", options: []string{"--limit", "25"}, wantFiles: 20, wantBudget: 1800},
+		{name: "default remains twelve", wantFiles: 12, wantBudget: 4000},
+		{name: "explicit limit", options: []string{"--limit", "5"}, wantFiles: 5, wantBudget: 4000},
+		{name: "limit is capped", options: []string{"--limit", "25"}, wantFiles: 20, wantBudget: 4000},
 		{name: "max files wins after limit", options: []string{"--limit", "20", "--max-files", "6", "--budget-tokens", "900"}, wantFiles: 6, wantBudget: 900},
 		{name: "max files wins before limit", options: []string{"--max-files", "6", "--limit", "20", "--budget-tokens", "900"}, wantFiles: 6, wantBudget: 900},
 	}

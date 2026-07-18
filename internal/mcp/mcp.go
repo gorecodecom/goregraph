@@ -121,7 +121,7 @@ func taskContextTool() map[string]any {
 			"properties": map[string]any{
 				"root":          map[string]any{"type": "string"},
 				"query":         map[string]any{"type": "string", "minLength": 1},
-				"budget_tokens": map[string]any{"type": "integer", "minimum": 256, "maximum": 4000, "default": 1800},
+				"budget_tokens": map[string]any{"type": "integer", "minimum": 256, "maximum": 6000, "default": 4000},
 				"max_files":     map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "default": 12},
 			},
 		},
@@ -258,7 +258,7 @@ func callTaskContext(args map[string]any) (string, error) {
 	if !ok || strings.TrimSpace(query) == "" {
 		return "", fmt.Errorf("task_context query must be a non-empty string")
 	}
-	budgetTokens, err := boundedIntegerArg(args, "budget_tokens", 256, 4000)
+	budgetTokens, err := boundedIntegerArg(args, "budget_tokens", 256, 6000)
 	if err != nil {
 		return "", err
 	}

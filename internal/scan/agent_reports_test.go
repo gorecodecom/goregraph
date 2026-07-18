@@ -33,7 +33,7 @@ func TestPrimaryDashboardReportsDoNotPromoteAgentQueryCascades(t *testing.T) {
 
 func assertAgentGuideContract(t *testing.T, guide string) {
 	t.Helper()
-	command := `goregraph context . --query "<current coding task>" --budget-tokens 1800 --max-files 12`
+	command := `goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-files 12`
 	if count := strings.Count(guide, command); count != 1 {
 		t.Fatalf("bounded context command occurs %d times, want exactly once:\n%s", count, guide)
 	}

@@ -268,7 +268,7 @@ For an AI coding task:
 
 ```bash
 goregraph build agent .
-goregraph context . --query "<current coding task>" --budget-tokens 1800 --max-files 12
+goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-files 12
 ```
 
 Agents should read only the cited source ranges required to verify the result.
@@ -530,7 +530,7 @@ authenticated loopback editor and saves layout choices to the workspace-root
 `.goregraph-dashboard.json`.
 
 ```bash
-goregraph context <path> --query <task> [--budget-tokens 1800] [--max-files 12]
+goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12]
 ```
 
 Compile one bounded Context Pack from `agent/context-index.json`. This is the
@@ -966,7 +966,7 @@ goregraph explain . src/main.go
 Use the direct command for normal agent work:
 
 ```bash
-goregraph context <path> --query "<current coding task>" --budget-tokens 1800 --max-files 12
+goregraph context <path> --query "<current coding task>" --budget-tokens 4000 --max-files 12
 ```
 
 The result contains bounded entrypoints, relationships, tests, risks, source
@@ -980,7 +980,7 @@ outcome.
 
 For an endpoint task, the compact projection keeps at most one selected endpoint
 and eight consumer call sites with an explicit omitted count. It preserves the
-1800-token default budget and does not include the full `index/api-catalog.json`,
+4000-token default budget and does not include the full `index/api-catalog.json`,
 dashboard payload, or `.goregraph-dashboard.json`.
 
 Legacy `query task-context`, workspace-delta, diagnostics, service-context, and

@@ -49,10 +49,11 @@ func TestDefaultContextPackStaysWithinTokenAndByteBudgets(t *testing.T) {
 			DefaultContextBudgetTokens,
 		)
 	}
-	if len(body) > 7200 {
+	if len(body) > DefaultContextMaxBytes {
 		t.Fatalf(
-			"serialized context = %d bytes, want at most 7200 (runes=%d estimated=%d files=%d entrypoints=%d relationships=%d contracts=%d persistence=%d tests=%d uncertainties=%d)",
+			"serialized context = %d bytes, want at most %d (runes=%d estimated=%d files=%d entrypoints=%d relationships=%d contracts=%d persistence=%d tests=%d uncertainties=%d)",
 			len(body),
+			DefaultContextMaxBytes,
 			utf8.RuneCount(body),
 			pack.EstimatedTokens,
 			len(pack.Files),
@@ -63,6 +64,9 @@ func TestDefaultContextPackStaysWithinTokenAndByteBudgets(t *testing.T) {
 			len(pack.Tests),
 			len(pack.Uncertainties),
 		)
+	}
+	if len(body) > DefaultContextMetadataBudgetTokens*4 {
+		t.Fatalf("serialized metadata = %d bytes, want at most %d to reserve source capacity", len(body), DefaultContextMetadataBudgetTokens*4)
 	}
 	if len(pack.Files) > DefaultContextMaxFiles || len(pack.Uncertainties) > 3 {
 		t.Fatalf("pack bounds = %#v", pack)
@@ -128,7 +132,7 @@ func TestBuildContextEndpointBlockPreservesExistingHardCeilings(t *testing.T) {
 		pack.Endpoints[0].OmittedConsumers == 0 {
 		t.Fatalf("endpoint block bounds = %#v", pack.Endpoints)
 	}
-	if pack.EstimatedTokens > DefaultContextBudgetTokens || len(pack.Files) > DefaultContextMaxFiles || len(body) > 7200 {
+	if pack.EstimatedTokens > DefaultContextBudgetTokens || len(pack.Files) > DefaultContextMaxFiles || len(body) > DefaultContextMaxBytes {
 		t.Fatalf("hard ceilings exceeded: bytes=%d tokens=%d files=%d", len(body), pack.EstimatedTokens, len(pack.Files))
 	}
 }
