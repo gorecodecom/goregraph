@@ -83,9 +83,15 @@ func TestNormalizeSecurityEvidenceClassifiesOnlyExactAuthorizationExpressions(t 
 		expression string
 		want       string
 	}{
-		{name: "permit all", expression: "permitAll()", want: SecurityPublic},
-		{name: "authenticated", expression: "isAuthenticated()", want: SecurityAuthenticated},
+		{name: "permit all field", expression: "permitAll", want: SecurityPublic},
+		{name: "permit all call", expression: "permitAll()", want: SecurityPublic},
+		{name: "unsupported authenticated call", expression: "authenticated()", want: SecurityUnknown},
+		{name: "is authenticated call", expression: "isAuthenticated()", want: SecurityAuthenticated},
+		{name: "empty role", expression: "hasRole()", want: SecurityUnknown},
+		{name: "empty any role", expression: "hasAnyRole( )", want: SecurityUnknown},
+		{name: "concatenated role", expression: "hasRole('ADMIN' + 'USER')", want: SecurityUnknown},
 		{name: "role", expression: "hasRole('ADMIN')", want: SecurityRole},
+		{name: "empty authority", expression: "hasAuthority()", want: SecurityUnknown},
 		{name: "authority", expression: "hasAnyAuthority('read', 'write')", want: SecurityRole},
 		{name: "negated public", expression: "!permitAll()", want: SecurityUnknown},
 		{name: "negated authenticated", expression: "!isAuthenticated()", want: SecurityUnknown},

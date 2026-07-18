@@ -263,6 +263,29 @@ class Controller {
 	}
 }
 
+func TestSpringIndexPluralOpenAPISecurityRequirementsOverrideClassSecurity(t *testing.T) {
+	definitions := extractJavaSource(FileRecord{Path: "src/OpenAPIConfig.java", Language: "java"}, `
+@SecurityScheme(name = "apiKeyAuth", type = SecuritySchemeType.APIKEY, in = SecuritySchemeIn.HEADER)
+@SecurityScheme(name = "bearerAuth", type = SecuritySchemeType.HTTP, scheme = "bearer")
+class OpenAPIConfig {}
+`)
+	controller := extractJavaSource(FileRecord{Path: "src/Controller.java", Language: "java"}, `@RestController
+@SecurityRequirement(name = "bearerAuth")
+class Controller {
+  @SecurityRequirements({
+      @SecurityRequirement(scopes = {"@SecurityRequirement(name = \"bearerAuth\")"}, name = "apiKeyAuth")
+  })
+  @GetMapping("/method")
+  String methodOverride() { return "ok"; }
+}`)
+
+	index := buildSpringIndex([]JavaSourceRecord{definitions, controller})
+	method, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/method")
+	if !ok || !hasAuthKind(method.Auth, "api_key") || hasAuthKind(method.Auth, "bearer") {
+		t.Fatalf("plural method security did not replace class security: %#v", method)
+	}
+}
+
 func hasAuthKind(records []AuthRecord, kind string) bool {
 	for _, record := range records {
 		if record.Kind == kind {

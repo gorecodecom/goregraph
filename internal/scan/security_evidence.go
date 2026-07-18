@@ -75,32 +75,74 @@ func normalizedProviderSecurityKind(record AuthRecord) (string, string) {
 
 func normalizedAuthorizationExpression(expression string) (string, string) {
 	switch {
-	case exactAuthorizationCall(expression, "permitAll"):
+	case strings.TrimSpace(expression) == "permitAll", exactNoArgumentAuthorizationCall(expression, "permitAll"):
 		return SecurityPublic, "Explicitly public authorization expression"
-	case exactAuthorizationCall(expression, "hasRole", "hasAnyRole", "hasAuthority", "hasAnyAuthority"):
+	case exactAuthorizationCallWithSupportedArguments(expression, "hasRole", "hasAnyRole", "hasAuthority", "hasAnyAuthority"):
 		return SecurityRole, "Role or authority requirement"
-	case exactAuthorizationCall(expression, "isAuthenticated", "authenticated"):
+	case exactNoArgumentAuthorizationCall(expression, "isAuthenticated"):
 		return SecurityAuthenticated, "Authenticated access required"
 	default:
 		return SecurityUnknown, "Unclassified authorization expression"
 	}
 }
 
-func exactAuthorizationCall(expression string, names ...string) bool {
+func exactAuthorizationCallArguments(expression, name string) (string, bool) {
 	expression = strings.TrimSpace(expression)
+	if !strings.HasPrefix(expression, name) {
+		return "", false
+	}
+	remainder := strings.TrimSpace(expression[len(name):])
+	if remainder == "" || remainder[0] != '(' || matchingJavaParen(remainder, 0) != len(remainder)-1 {
+		return "", false
+	}
+	return remainder[1 : len(remainder)-1], true
+}
+
+func exactNoArgumentAuthorizationCall(expression, name string) bool {
+	arguments, ok := exactAuthorizationCallArguments(expression, name)
+	return ok && strings.TrimSpace(arguments) == ""
+}
+
+func exactAuthorizationCallWithSupportedArguments(expression string, names ...string) bool {
 	for _, name := range names {
-		if !strings.HasPrefix(expression, name) {
+		arguments, ok := exactAuthorizationCallArguments(expression, name)
+		if !ok {
 			continue
 		}
-		remainder := strings.TrimSpace(expression[len(name):])
-		if remainder == "" || remainder[0] != '(' {
-			continue
+		parts := splitTopLevel(arguments, ',')
+		if len(parts) == 0 {
+			return false
 		}
-		if matchingJavaParen(remainder, 0) == len(remainder)-1 {
-			return true
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if !supportedAuthorizationStringArgument(part) {
+				return false
+			}
 		}
+		return true
 	}
 	return false
+}
+
+func supportedAuthorizationStringArgument(value string) bool {
+	if len(value) < 3 || (value[0] != '\'' && value[0] != '"') || value[len(value)-1] != value[0] || strings.TrimSpace(value[1:len(value)-1]) == "" {
+		return false
+	}
+	escaped := false
+	for index := 1; index < len(value)-1; index++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if value[index] == '\\' {
+			escaped = true
+			continue
+		}
+		if value[index] == value[0] {
+			return false
+		}
+	}
+	return !escaped
 }
 
 func markConflictingProviderSecurity(records []SecurityEvidenceRecord) {

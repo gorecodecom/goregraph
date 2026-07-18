@@ -804,7 +804,7 @@ func springOpenAPIAuthRecords(annotations []JavaAnnotationRecord, file string, s
 
 func hasMethodOpenAPISecurityOverride(annotations []JavaAnnotationRecord) bool {
 	for _, annotation := range annotations {
-		if annotation.Name == "SecurityRequirement" {
+		if annotation.Name == "SecurityRequirement" || annotation.Name == "SecurityRequirements" {
 			return true
 		}
 		if annotation.Name == "Operation" {
@@ -819,6 +819,9 @@ func hasMethodOpenAPISecurityOverride(annotations []JavaAnnotationRecord) bool {
 func explicitEmptyOpenAPISecurity(annotation JavaAnnotationRecord) bool {
 	if annotation.Name == "SecurityRequirement" {
 		return strings.TrimSpace(annotation.Attributes["name"]) == ""
+	}
+	if annotation.Name == "SecurityRequirements" {
+		return strings.Trim(strings.TrimSpace(annotation.Arguments), "{} \t\r\n") == ""
 	}
 	if annotation.Name != "Operation" {
 		return false
@@ -885,12 +888,40 @@ func openAPISecurityRequirementNames(annotation JavaAnnotationRecord) []string {
 		}
 		return nil
 	}
-	matches := regexp.MustCompile(`@SecurityRequirement\s*\(\s*name\s*=\s*"([^"]+)"`).FindAllStringSubmatch(annotation.Arguments, -1)
-	result := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if len(match) == 2 {
-			result = append(result, match[1])
+	var result []string
+	arguments := annotation.Arguments
+	for offset := 0; offset < len(arguments); {
+		at := strings.IndexByte(arguments[offset:], '@')
+		if at < 0 {
+			break
 		}
+		at += offset
+		nameEnd := at + 1
+		for nameEnd < len(arguments) {
+			char := arguments[nameEnd]
+			if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_' || char == '.' {
+				nameEnd++
+				continue
+			}
+			break
+		}
+		open := nameEnd
+		for open < len(arguments) && (arguments[open] == ' ' || arguments[open] == '\t' || arguments[open] == '\r' || arguments[open] == '\n') {
+			open++
+		}
+		if shortJavaName(arguments[at+1:nameEnd]) != "SecurityRequirement" || open >= len(arguments) || arguments[open] != '(' {
+			offset = nameEnd
+			continue
+		}
+		close := matchingJavaParen(arguments, open)
+		if close < 0 {
+			break
+		}
+		attributes := parseJavaAnnotationAttributes(arguments[open+1 : close])
+		if name := strings.TrimSpace(attributes["name"]); name != "" {
+			result = append(result, name)
+		}
+		offset = close + 1
 	}
 	return result
 }
