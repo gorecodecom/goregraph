@@ -440,6 +440,7 @@ type jsLexicalModel struct {
 	bindings            []jsBinding
 	bindingKeys         map[string]bool
 	bindingsByScopeName map[int]map[string][]int
+	oauthHelpers        []string
 }
 
 type interceptorAuthEvidence struct {
@@ -507,6 +508,7 @@ func buildJSLexicalModelFromScan(lexical jsLexicalSource) jsLexicalModel {
 	model.addLocalBindings()
 	model.addVariablePatternBindings()
 	model.buildBindingIndex()
+	model.indexOAuthHelpers()
 	for i := range model.bindings {
 		binding := &model.bindings[i]
 		if binding.createSource == "" {
@@ -634,6 +636,13 @@ func jsArrowParameterSpan(code string, arrow int) (int, int, bool) {
 	if end == 0 {
 		return 0, 0, false
 	}
+	if close := jsAnnotatedArrowParameterClose(code, end); close >= 0 {
+		open := matchingScriptDelimiterBackward(code, close, '(', ')')
+		if open < 0 {
+			return 0, 0, false
+		}
+		return open + 1, close, true
+	}
 	if code[end-1] == ')' {
 		open := matchingScriptDelimiterBackward(code, end-1, '(', ')')
 		if open < 0 {
@@ -649,6 +658,52 @@ func jsArrowParameterSpan(code string, arrow int) (int, int, bool) {
 		return 0, 0, false
 	}
 	return start, end, true
+}
+
+func jsAnnotatedArrowParameterClose(code string, end int) int {
+	round, square, curly, angle := 0, 0, 0, 0
+	for index := end - 1; index >= 0; index-- {
+		switch code[index] {
+		case ')':
+			round++
+		case '(':
+			if round > 0 {
+				round--
+			}
+		case ']':
+			square++
+		case '[':
+			if square > 0 {
+				square--
+			}
+		case '}':
+			curly++
+		case '{':
+			if curly > 0 {
+				curly--
+			}
+		case '>':
+			if index == 0 || code[index-1] != '=' {
+				angle++
+			}
+		case '<':
+			if angle > 0 {
+				angle--
+			}
+		case ':':
+			if round != 0 || square != 0 || curly != 0 || angle != 0 {
+				continue
+			}
+			close := index - 1
+			for close >= 0 && isJSSpace(code[close]) {
+				close--
+			}
+			if close >= 0 && code[close] == ')' {
+				return close
+			}
+		}
+	}
+	return -1
 }
 
 func (model *jsLexicalModel) addParameterBindings(params string, scopeStart int) {
@@ -810,6 +865,17 @@ func (model *jsLexicalModel) buildBindingIndex() {
 			byName[name] = indices
 		}
 	}
+}
+
+func (model *jsLexicalModel) indexOAuthHelpers() {
+	seen := map[string]bool{}
+	for _, binding := range model.bindings {
+		if binding.kind == jsBindingOAuthImport && !seen[binding.name] {
+			seen[binding.name] = true
+			model.oauthHelpers = append(model.oauthHelpers, binding.name)
+		}
+	}
+	sort.Strings(model.oauthHelpers)
 }
 
 func conciseArrowExpressionEnd(source string, start int) int {
@@ -1015,7 +1081,7 @@ func httpCallConfigExpressionCode(source, code string, callStart, callEnd int) (
 func (analysis *jsAPIAnalysis) indexRequestInterceptorAuth() {
 	interceptorRE := regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\.interceptors\.request\.use\s*\(`)
 	for _, match := range interceptorRE.FindAllStringSubmatchIndex(analysis.lexical.code, -1) {
-		if len(match) != 4 {
+		if len(match) != 4 || !isCompleteJSReceiverCode(analysis.lexical.code, match[0]) {
 			continue
 		}
 		binding, ok := analysis.model.resolveHTTPClient(analysis.source[match[2]:match[3]], match[0])
@@ -1139,7 +1205,7 @@ func extractDirectHTTPCallAuth(expression string, expressionStart, line int, con
 	if anyValueMatches(credentials, `(?i)^\s*["'](?:include|same-origin)["']\s*$`) || anyValueMatches(withCredentials, `(?i)^\s*true\s*$`) {
 		records = appendUniqueAuth(records, newHTTPAuthRecord("session", "", source, confidence, line))
 	}
-	for _, helper := range model.oauthHelperNames() {
+	for _, helper := range model.oauthHelpers {
 		if !oauthHelperUsesImportedBinding(model, expression, expressionStart, helper, oauthCredentialValues) {
 			continue
 		}
@@ -1302,19 +1368,6 @@ func jsAssignmentValueEnd(code string, start int) int {
 	return len(code)
 }
 
-func (model jsLexicalModel) oauthHelperNames() []string {
-	seen := map[string]bool{}
-	var names []string
-	for _, binding := range model.bindings {
-		if binding.kind == jsBindingOAuthImport && !seen[binding.name] {
-			seen[binding.name] = true
-			names = append(names, binding.name)
-		}
-	}
-	sort.Strings(names)
-	return names
-}
-
 func oauthHelperUsesImportedBinding(model jsLexicalModel, expression string, expressionStart int, helper string, credentialValues []string) bool {
 	code := scanJSLexicalSource(expression).code
 	helperRE := regexp.MustCompile(`\b` + regexp.QuoteMeta(helper) + `\s*\(`)
@@ -1326,6 +1379,9 @@ func oauthHelperUsesImportedBinding(model jsLexicalModel, expression string, exp
 			}
 			valueOffset := search + relative
 			for _, match := range helperRE.FindAllStringIndex(code[valueOffset:valueOffset+len(value)], -1) {
+				if !isCompleteJSReceiverCode(code, valueOffset+match[0]) {
+					continue
+				}
 				binding, ok := model.resolveBinding(helper, expressionStart+valueOffset+match[0])
 				if ok && model.bindings[binding].kind == jsBindingOAuthImport {
 					return true

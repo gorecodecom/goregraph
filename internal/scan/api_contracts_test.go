@@ -497,8 +497,71 @@ func TestAPIContractsSemanticAuthMatchingIgnoresLiteralAndCommentText(t *testing
 	assertNoContractAuthKind(t, literalHelper.Auth, "oauth2")
 }
 
+func TestAPIContractsInterceptorRequiresCompleteReceiver(t *testing.T) {
+	source := `import axios from 'axios';
+const client = axios.create();
+namespace.client.interceptors.request.use((config) => {
+  config.headers.Authorization = 'Bearer ' + namespaceToken;
+  return config;
+});
+export const load = () => client.get('/orders');`
+	contracts := extractTestAPIContracts(t, source)
+
+	if len(contracts[0].Auth) != 0 {
+		t.Fatalf("suffix interceptor attached to root client: %#v", contracts[0].Auth)
+	}
+}
+
+func TestAPIContractsOAuthHelperRequiresCompleteBareCall(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+export const memberHelpers = () => axios.get('/member-helpers', { headers: {
+  Authorization: 'Bearer ' + provider.getAccessTokenSilently(),
+  authorization: 'Bearer ' + provider?.getAccessTokenSilently(),
+  'Authorization': 'Bearer ' + provider.#getAccessTokenSilently(),
+  'authorization': 'Bearer ' + prefixgetAccessTokenSilently(),
+  AUTHORIZATION: 'Bearer ' + $getAccessTokenSilently(),
+} });
+
+export const bareHelper = () => axios.get('/bare-helper', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});`
+	contracts := extractTestAPIContractsAll(source)
+
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/member-helpers").Auth, "oauth2")
+	assertContractAuth(t, contractByPath(t, contracts, "/bare-helper").Auth, "oauth2", "EXTRACTED", "oauth_helper", "getAccessTokenSilently")
+}
+
+func TestAPIContractsAnnotatedConciseArrowParametersShadowImports(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+export const axiosShadow = (
+  axios: Client,
+): Promise<Result<Map<string, Token>>> => axios.get('/annotated-axios-shadow');
+
+export const oauthShadow = (
+  getAccessTokenSilently: TokenFactory,
+): Promise<Result<() => Token>> => axios.get('/annotated-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});
+
+export const real = () => axios.get('/real');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 2 {
+		t.Fatalf("annotated arrow parameter shadows produced contracts: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/annotated-oauth-shadow").Auth, "oauth2")
+	if contractByPath(t, contracts, "/real").Path != "/real" {
+		t.Fatal("unshadowed axios contract missing")
+	}
+}
+
 func TestAPIContractsPrecomputeBoundedFileAnalysisIndexes(t *testing.T) {
 	source := `import axios from 'axios';
+import { getAccessTokenSilently as zeta, acquireTokenSilent as alpha } from '@example/oauth-client';
 const client = axios.create();
 client.interceptors.request.use((config) => {
   config.headers.Authorization = 'Bearer ' + token;
@@ -515,6 +578,9 @@ export const load = () => client.get('/orders');`
 	}
 	if len(analysis.model.bindingsByScopeName) == 0 {
 		t.Fatal("scope/name binding index was not precomputed")
+	}
+	if want := []string{"alpha", "zeta"}; !reflect.DeepEqual(analysis.model.oauthHelpers, want) {
+		t.Fatalf("precomputed OAuth helpers=%#v, want %#v", analysis.model.oauthHelpers, want)
 	}
 	callStart := strings.Index(source, "client.get")
 	binding, ok := analysis.model.resolveHTTPClient("client", callStart)
