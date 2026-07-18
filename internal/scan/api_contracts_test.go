@@ -621,6 +621,31 @@ export const real = () => axios.get('/real');`
 	}
 }
 
+func TestAPIContractsCurriedAndGenericArrowParametersShadowImports(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+const curriedAxios = outer => axios => axios.get('/curried-axios-shadow');
+const curriedOAuth = outer => getAccessTokenSilently => axios.get('/curried-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});
+const genericAxios = <T,>(axios: Client) => axios.get('/generic-axios-shadow');
+const genericOAuth = <T extends Foo<U>>(getAccessTokenSilently: TokenFactory) => axios.get('/generic-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});
+export const real = () => axios.get('/real');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 3 {
+		t.Fatalf("curried or generic arrow parameters resolved through imports: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/curried-oauth-shadow").Auth, "oauth2")
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/generic-oauth-shadow").Auth, "oauth2")
+	if contractByPath(t, contracts, "/real").Path != "/real" {
+		t.Fatal("unshadowed axios contract missing")
+	}
+}
+
 func TestAPIContractsPrecomputeBoundedFileAnalysisIndexes(t *testing.T) {
 	source := `import axios from 'axios';
 import { getAccessTokenSilently as zeta, acquireTokenSilent as alpha } from '@example/oauth-client';

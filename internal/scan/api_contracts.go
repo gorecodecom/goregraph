@@ -637,6 +637,16 @@ func jsArrowParameterSpan(code string, arrow int) (int, int, bool) {
 	if start >= arrow {
 		return 0, 0, false
 	}
+	if code[start] == '<' {
+		typeParametersEnd := jsArrowTypeParametersEnd(code, start, arrow)
+		if typeParametersEnd < 0 {
+			return 0, 0, false
+		}
+		start = nextScriptNonSpace(code, typeParametersEnd+1)
+		if start >= arrow {
+			return 0, 0, false
+		}
+	}
 	if code[start] == '(' {
 		close := matchingScriptDelimiter(code, start, '(', ')')
 		if close < 0 || close >= arrow || !isJSArrowReturnTail(code, close+1, arrow) {
@@ -652,6 +662,28 @@ func jsArrowParameterSpan(code string, arrow int) (int, int, bool) {
 		return 0, 0, false
 	}
 	return start, end, true
+}
+
+func jsArrowTypeParametersEnd(code string, start, arrow int) int {
+	depth := 0
+	for index := start; index < arrow; index++ {
+		switch code[index] {
+		case '<':
+			depth++
+		case '>':
+			if index > 0 && code[index-1] == '=' {
+				continue
+			}
+			depth--
+			if depth == 0 {
+				return index
+			}
+			if depth < 0 {
+				return -1
+			}
+		}
+	}
+	return -1
 }
 
 func jsArrowExpressionStart(code string, arrow int) int {
@@ -680,9 +712,13 @@ func jsArrowExpressionStart(code string, arrow int) int {
 			}
 			curly--
 		case '>':
-			if index == 0 || code[index-1] != '=' {
-				angle++
+			if index > 0 && code[index-1] == '=' {
+				if round == 0 && square == 0 && curly == 0 && angle == 0 {
+					return index + 1
+				}
+				continue
 			}
+			angle++
 		case '<':
 			if angle > 0 {
 				angle--
