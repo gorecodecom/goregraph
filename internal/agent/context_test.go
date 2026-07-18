@@ -322,6 +322,34 @@ func TestBuildContextDisambiguatesSamePathEndpointProvider(t *testing.T) {
 	}
 }
 
+func TestBuildContextDisambiguatesEndpointByCompactProviderService(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "orders", Project: "workspace/a", Kind: "api_endpoint", Name: "GET /orders/{id}",
+				HTTPMethod: "GET", Path: "/orders/{id}", File: "workspace/a/src/Orders.java",
+				Summary: "provider ordering-api; security bearer", Search: "GET /orders/{id} ordering-api bearer",
+				Confidence: "EXACT",
+			},
+			{
+				ID: "archive", Project: "workspace/b", Kind: "api_endpoint", Name: "GET /orders/{id}",
+				HTTPMethod: "GET", Path: "/orders/{id}", File: "workspace/b/src/Archive.java",
+				Summary: "provider archive-api; security public", Search: "GET /orders/{id} archive-api public",
+				Confidence: "EXACT",
+			},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "show GET /orders/{id} from archive-api"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 1 || pack.Endpoints[0].Provider != "workspace/b" {
+		t.Fatalf("compact provider service did not disambiguate endpoint: %#v", pack.Endpoints)
+	}
+}
+
 func TestBuildContextRequiresProviderEvidenceForSamePathEndpointCollision(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
@@ -337,6 +365,34 @@ func TestBuildContextRequiresProviderEvidenceForSamePathEndpointCollision(t *tes
 	}
 	if len(pack.Endpoints) != 0 {
 		t.Fatalf("ambiguous endpoint was selected: %#v", pack.Endpoints)
+	}
+}
+
+func TestBuildContextConsidersBelowThresholdProviderInEndpointCollision(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "orders", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders",
+				HTTPMethod: "GET", Path: "/orders", File: "services/orders/src/Orders.java",
+				Summary: "provider orders; security bearer", Search: "orders authentication",
+				Confidence: "EXACT",
+			},
+			{
+				ID: "archive", Project: "services/archive", Kind: "api_endpoint", Name: "GET /orders",
+				HTTPMethod: "GET", Path: "/orders", File: "services/archive/src/Orders.java",
+				Summary: "provider archive", Search: "archive",
+				Confidence: "EXACT",
+			},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "orders authentication"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 0 {
+		t.Fatalf("below-threshold provider was ignored during collision detection: %#v", pack.Endpoints)
 	}
 }
 
@@ -415,6 +471,110 @@ func TestBuildContextEndpointSelectionIsDeterministicAndOmitsGeneratedFiles(t *t
 		if strings.Contains(file.Path, ".goregraph-dashboard.json") || strings.Contains(file.Path, "api-catalog.json") {
 			t.Fatalf("generated metadata file leaked into context: %#v", forward.Files)
 		}
+	}
+}
+
+func TestBuildContextExcludesGeneratedMetadataConsumers(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{{
+		ID: "endpoint", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders",
+		HTTPMethod: "GET", Path: "/orders", File: "services/orders/src/Orders.java",
+		Summary: "provider orders; security bearer", Search: "GET /orders services orders bearer",
+		Confidence: "EXACT",
+	}}
+	edges := make([]scan.AgentContextEdgeRecord, 0, 9)
+	for index := 0; index < 7; index++ {
+		id := fmt.Sprintf("consumer:%d", index)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Project: "frontend/web", Kind: "api_consumer", Name: id,
+			File: fmt.Sprintf("frontend/web/src/api-%d.ts", index), Line: index + 1,
+			Summary: "consumer service web; auth bearer",
+		})
+		edges = append(edges, scan.AgentContextEdgeRecord{
+			ID: "edge:" + id, FromFactID: id, ToFactID: "endpoint", Kind: "consumes_endpoint",
+		})
+	}
+	for _, metadata := range []struct {
+		id   string
+		file string
+	}{
+		{id: "catalog", file: ".goregraph-workspace/agent/api-catalog.json"},
+		{id: "dashboard", file: ".goregraph-dashboard.json"},
+	} {
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: metadata.id, Project: "frontend/web", Kind: "api_consumer", Name: metadata.id,
+			File: metadata.file, Line: 1, Summary: "consumer service web; auth unknown",
+		})
+		edges = append(edges, scan.AgentContextEdgeRecord{
+			ID: "edge:" + metadata.id, FromFactID: metadata.id, ToFactID: "endpoint", Kind: "consumes_endpoint",
+		})
+	}
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion, Facts: facts, Edges: edges,
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /orders"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 1 || len(pack.Endpoints[0].Consumers) != 7 || pack.Endpoints[0].OmittedConsumers != 0 {
+		t.Fatalf("generated consumers affected endpoint bounds: %#v", pack.Endpoints)
+	}
+	for _, consumer := range pack.Endpoints[0].Consumers {
+		if strings.Contains(consumer.File, "api-catalog.json") || strings.Contains(consumer.File, ".goregraph-dashboard.json") {
+			t.Fatalf("generated metadata consumer leaked: %#v", pack.Endpoints[0].Consumers)
+		}
+	}
+}
+
+func TestBuildContextEndpointSecurityDoesNotInferFromProjectOrSearch(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "endpoint", Project: "services/session", Kind: "api_endpoint", Name: "GET /health",
+			HTTPMethod: "GET", Path: "/health", File: "services/session/src/Health.java",
+			Summary: "provider session", Search: "GET /health services session",
+			Confidence: "EXACT",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /health"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 1 || pack.Endpoints[0].Security != "No auth evidence detected" {
+		t.Fatalf("project or search aliases inferred endpoint security: %#v", pack.Endpoints)
+	}
+}
+
+func TestBuildContextEndpointSecurityConfidenceRequiresExactRoute(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "orders", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders",
+				HTTPMethod: "GET", Path: "/orders", File: "services/orders/src/Orders.java",
+				Summary: "provider orders", Search: "GET /orders services orders", Confidence: "EXACT",
+			},
+			{
+				ID: "orders-detail", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders/{id}",
+				HTTPMethod: "GET", Path: "/orders/{id}", File: "services/orders/src/Orders.java",
+				Summary: "provider orders; security bearer", Search: "GET /orders/{id} services orders bearer",
+				Confidence: "EXACT",
+			},
+			{
+				ID: "detail-security", Project: "services/orders", Kind: "endpoint_security", Name: "bearer",
+				Qualified: "GET /orders/{id} bearer", Confidence: "EXACT",
+			},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /orders"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 1 || pack.Endpoints[0].Path != "/orders" ||
+		pack.Endpoints[0].Security != "No auth evidence detected" || pack.Endpoints[0].SecurityConfidence != "" {
+		t.Fatalf("detail security leaked into collection endpoint: %#v", pack.Endpoints)
 	}
 }
 

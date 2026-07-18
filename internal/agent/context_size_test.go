@@ -133,6 +133,30 @@ func TestBuildContextEndpointBlockPreservesExistingHardCeilings(t *testing.T) {
 	}
 }
 
+func TestBuildContextEndpointTopFactFitsMinimumBudgetWithoutGenericEntrypoint(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "endpoint", Project: "orders", Kind: "api_endpoint", Name: "GET /orders",
+			HTTPMethod: "GET", Path: "/orders", Summary: "provider orders; security unknown",
+			Search: "GET /orders", Confidence: "EXACT",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "GET /orders", BudgetTokens: MinContextBudgetTokens,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Endpoints) != 1 || len(pack.Entrypoints) != 0 {
+		t.Fatalf("minimum-budget endpoint pack = %#v", pack)
+	}
+	if pack.EstimatedTokens > MinContextBudgetTokens {
+		t.Fatalf("minimum budget exceeded: %#v", pack)
+	}
+}
+
 func writeDenseContextIndexFixture(t *testing.T, factCount int) string {
 	t.Helper()
 	if factCount < 2 {

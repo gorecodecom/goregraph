@@ -76,16 +76,22 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	acceptedEdgeIDs := map[string]bool{}
 	retainedSeeds := make([]rankedContextFact, 0, len(seeds))
 
-	pack, added, err := tryAddContextLocation(
-		pack,
-		request,
-		top.fact,
-		top.reason,
-		"entrypoint",
-		func(candidate *ContextPack, location ContextLocation) {
-			candidate.Entrypoints = append(candidate.Entrypoints, location)
-		},
-	)
+	topIsEndpoint := hasEndpoint && top.fact.ID == endpointSeed.fact.ID
+	added := false
+	if topIsEndpoint {
+		pack, added, err = tryAddContextEndpoint(pack, request, endpointSeed.fact, index)
+	} else {
+		pack, added, err = tryAddContextLocation(
+			pack,
+			request,
+			top.fact,
+			top.reason,
+			"entrypoint",
+			func(candidate *ContextPack, location ContextLocation) {
+				candidate.Entrypoints = append(candidate.Entrypoints, location)
+			},
+		)
+	}
 	if err != nil {
 		return ContextPack{}, err
 	}
@@ -94,7 +100,7 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	}
 	includedFactIDs[top.fact.ID] = true
 	retainedSeeds = append(retainedSeeds, top)
-	if hasEndpoint {
+	if hasEndpoint && !topIsEndpoint {
 		var endpointAdded bool
 		pack, endpointAdded, err = tryAddContextEndpoint(pack, request, endpointSeed.fact, index)
 		if err != nil {
@@ -378,9 +384,7 @@ func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedCont
 	candidates := make([]rankedContextFact, 0)
 	for _, candidate := range ranked {
 		if candidate.score < minimumContextSeedScore ||
-			!strings.EqualFold(candidate.fact.Kind, "api_endpoint") ||
-			strings.TrimSpace(candidate.fact.HTTPMethod) == "" || strings.TrimSpace(candidate.fact.Path) == "" ||
-			contextFactUsesTestSource(candidate.fact) || contextFactUsesGeneratedMetadata(candidate.fact) ||
+			!eligibleContextEndpoint(candidate.fact) ||
 			!contextEndpointRouteMatchesQuery(candidate.fact, query) {
 			continue
 		}
@@ -393,9 +397,10 @@ func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedCont
 	top := candidates[0]
 	routeKey := contextEndpointRouteKey(top.fact)
 	providers := map[string][]rankedContextFact{}
-	for _, candidate := range candidates {
-		if contextEndpointRouteKey(candidate.fact) == routeKey {
-			providers[candidate.fact.Project] = append(providers[candidate.fact.Project], candidate)
+	for _, candidate := range ranked {
+		if eligibleContextEndpoint(candidate.fact) && contextEndpointRouteKey(candidate.fact) == routeKey {
+			providerKey := candidate.fact.Project + "\x00" + contextSummaryField(candidate.fact.Summary, "provider")
+			providers[providerKey] = append(providers[providerKey], candidate)
 		}
 	}
 	if len(providers) <= 1 {
@@ -408,12 +413,12 @@ func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedCont
 	bestScore := 0
 	bestProvider := ""
 	tied := false
-	for provider := range providers {
-		score := contextEndpointProviderQueryScore(provider, top.fact, query)
+	for providerKey, providerCandidates := range providers {
+		score := contextEndpointProviderQueryScore(providerCandidates[0].fact, query)
 		switch {
 		case score > bestScore:
 			bestScore = score
-			bestProvider = provider
+			bestProvider = providerKey
 			tied = false
 		case score == bestScore && score > 0:
 			tied = true
@@ -423,6 +428,12 @@ func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedCont
 		return rankedContextFact{}, false
 	}
 	return providers[bestProvider][0], true
+}
+
+func eligibleContextEndpoint(fact scan.AgentContextFactRecord) bool {
+	return strings.EqualFold(fact.Kind, "api_endpoint") &&
+		strings.TrimSpace(fact.HTTPMethod) != "" && strings.TrimSpace(fact.Path) != "" &&
+		!contextFactUsesTestSource(fact) && !contextFactUsesGeneratedMetadata(fact)
 }
 
 func contextEndpointRouteKey(fact scan.AgentContextFactRecord) string {
@@ -452,18 +463,21 @@ func contextEndpointMethodAndPathMatchQuery(fact scan.AgentContextFactRecord, qu
 	return false
 }
 
-func contextEndpointProviderQueryScore(provider string, endpoint scan.AgentContextFactRecord, query string) int {
+func contextEndpointProviderQueryScore(endpoint scan.AgentContextFactRecord, query string) int {
 	queryTerm := normalizeContextTerm(query)
-	providerTerm := normalizeContextTerm(provider)
+	providerValues := []string{endpoint.Project, contextSummaryField(endpoint.Summary, "provider")}
 	score := 0
-	if providerTerm != "" && strings.Contains(queryTerm, providerTerm) {
-		score += 100
-	}
 	queryTokens := contextTokenSet(query)
 	routeTokens := contextTokenSet(strings.TrimSpace(endpoint.HTTPMethod + " " + endpoint.Path))
-	for token := range contextTokenSet(provider) {
-		if !routeTokens[token] && queryTokens[token] {
-			score++
+	for _, provider := range providerValues {
+		providerTerm := normalizeContextTerm(provider)
+		if providerTerm != "" && strings.Contains(queryTerm, providerTerm) {
+			score += 100
+		}
+		for token := range contextTokenSet(provider) {
+			if !routeTokens[token] && queryTokens[token] {
+				score++
+			}
 		}
 	}
 	return score
@@ -861,9 +875,14 @@ func contextEndpointForFact(
 	facts []scan.AgentContextFactRecord,
 	edges []scan.AgentContextEdgeRecord,
 ) ContextEndpoint {
+	securityFacts := contextEndpointSecurityFacts(fact, facts, edges)
 	security := contextSummaryField(fact.Summary, "security")
 	if security == "" {
-		security = contextAuthenticationLabel(fact.Summary, fact.Search)
+		securityLabels := make([]string, 0, len(securityFacts))
+		for _, securityFact := range securityFacts {
+			securityLabels = append(securityLabels, securityFact.Name)
+		}
+		security = contextAuthenticationLabel(securityLabels...)
 	} else {
 		security = contextAuthenticationLabel(security)
 	}
@@ -877,7 +896,7 @@ func contextEndpointForFact(
 		RequestType:        contextSummaryField(fact.Summary, "request"),
 		ResponseType:       contextSummaryField(fact.Summary, "response"),
 		Security:           security,
-		SecurityConfidence: contextEndpointSecurityConfidence(fact, facts, edges),
+		SecurityConfidence: contextEndpointSecurityConfidence(securityFacts),
 	}
 }
 
@@ -896,7 +915,7 @@ func contextEndpointConsumers(
 			continue
 		}
 		fact, ok := factByID[edge.FromFactID]
-		if !ok || fact.Kind != "api_consumer" {
+		if !ok || fact.Kind != "api_consumer" || contextFactUsesGeneratedMetadata(fact) {
 			continue
 		}
 		candidate := contextEndpointConsumerCandidate{fact: fact, edge: edge}
@@ -914,11 +933,6 @@ func contextEndpointConsumers(
 		rightTest := contextFactUsesTestSource(result[j].fact)
 		if leftTest != rightTest {
 			return !leftTest
-		}
-		leftGenerated := contextFactUsesGeneratedMetadata(result[i].fact)
-		rightGenerated := contextFactUsesGeneratedMetadata(result[j].fact)
-		if leftGenerated != rightGenerated {
-			return !leftGenerated
 		}
 		left, right := result[i].fact, result[j].fact
 		if left.Project != right.Project {
@@ -991,29 +1005,53 @@ func contextAuthenticationLabel(values ...string) string {
 	return strings.Join(labels, ", ")
 }
 
-func contextEndpointSecurityConfidence(
+func contextEndpointSecurityFacts(
 	endpoint scan.AgentContextFactRecord,
 	facts []scan.AgentContextFactRecord,
 	edges []scan.AgentContextEdgeRecord,
-) string {
+) []scan.AgentContextFactRecord {
 	securityFactIDs := map[string]bool{}
 	for _, edge := range edges {
 		if edge.FromFactID == endpoint.ID && edge.Kind == "requires_auth" {
 			securityFactIDs[edge.ToFactID] = true
 		}
 	}
-	prefix := strings.ToLower(strings.TrimSpace(endpoint.HTTPMethod + " " + endpoint.Path + " "))
+	prefix := strings.ToLower(strings.TrimSpace(endpoint.HTTPMethod+" "+endpoint.Path)) + " "
+	result := make([]scan.AgentContextFactRecord, 0)
+	for _, fact := range facts {
+		if fact.Kind != "endpoint_security" {
+			continue
+		}
+		direct := securityFactIDs[fact.ID]
+		qualified := strings.ToLower(strings.TrimSpace(fact.Qualified))
+		routeMatch := fact.Project == endpoint.Project && strings.HasPrefix(qualified, prefix) &&
+			contextKnownSecurityKind(strings.TrimSpace(strings.TrimPrefix(qualified, prefix)))
+		if !direct && !routeMatch {
+			continue
+		}
+		result = append(result, fact)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func contextEndpointSecurityConfidence(facts []scan.AgentContextFactRecord) string {
 	confidence := ""
 	for _, fact := range facts {
-		if fact.Kind != "endpoint_security" || fact.Project != endpoint.Project {
-			continue
-		}
-		if !securityFactIDs[fact.ID] && !strings.HasPrefix(strings.ToLower(fact.Qualified), prefix) {
-			continue
-		}
 		confidence = strongerContextConfidence(confidence, fact.Confidence)
 	}
 	return confidence
+}
+
+func contextKnownSecurityKind(kind string) bool {
+	switch kind {
+	case scan.SecurityBasic, scan.SecurityBearer, scan.SecurityOAuth2, scan.SecurityAPIKey,
+		scan.SecuritySession, scan.SecurityMTLS, scan.SecurityRole, scan.SecurityAuthenticated,
+		scan.SecurityPublic, scan.SecurityUnknown:
+		return true
+	default:
+		return false
+	}
 }
 
 func contextEndpointIndexedOmittedConsumers(summary string) int {
