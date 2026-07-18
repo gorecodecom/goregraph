@@ -12,6 +12,7 @@ var (
 	codeHelperStartRE = regexp.MustCompile(`\b(Get|Post|Put|Patch|Delete)Helper(?:WithStatus)?\s*\(`)
 	codeFetchAPIRE    = regexp.MustCompile("\\bfetch\\s*\\(\\s*(?:\"([^\"]+)\"|'([^']+)'|`([^`]+)`)")
 	codeWekaRequestRE = regexp.MustCompile(`\bweka\.request\s*\(`)
+	codeHTTPClientRE  = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\.(get|post|put|patch|delete)\s*\(\s*(?:"([^"]+)"|'([^']+)'|` + "`([^`]+)`" + `)`)
 	codeHTTPMethodRE  = regexp.MustCompile(`^\s*["'](GET|POST|PUT|PATCH|DELETE)["']\s*,\s*(.*)$`)
 	codeAnyLiteralRE  = regexp.MustCompile(`["']([^"']+)["']|` + "`" + `([^` + "`" + `]+)` + "`")
 	codeMethodRE      = regexp.MustCompile(`\bmethod\s*:\s*["']([A-Za-z]+)["']`)
@@ -31,29 +32,51 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 		return nil
 	}
 
+	source := strings.Join(lines, "\n")
+	lineOffsets := sourceLineOffsets(lines)
 	var records []APIContractRecord
 	for i, line := range lines {
 		if match := codeHelperStartRE.FindStringSubmatch(line); len(match) == 2 {
 			callText := collectCallText(lines, i, 5)
 			if path, ok := firstPathLiteral(callText); ok {
-				records = append(records, apiContract(file, helperHTTPMethod(match[1]), path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(lines, functions, i+1, path), responseFieldsForLine(lines, functions, i+1), i+1, "helper-call-argument"))
+				record := apiContract(file, helperHTTPMethod(match[1]), path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(lines, functions, i+1, path), responseFieldsForLine(lines, functions, i+1), i+1, "helper-call-argument")
+				start := lineOffsets[i] + codeHelperStartRE.FindStringIndex(line)[0]
+				record.Auth = httpCallAuthForFile(source, start, matchingCallEnd(source, start), file.Path)
+				records = append(records, record)
 			}
 			continue
 		}
 		if codeWekaRequestRE.MatchString(line) {
 			callText := collectCallText(lines, i, 8)
 			if method, path, ok := wekaRequestMethodPath(callText); ok {
-				records = append(records, apiContract(file, method, path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(lines, functions, i+1, path), responseFieldsForLine(lines, functions, i+1), i+1, "weka-request-call"))
+				record := apiContract(file, method, path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(lines, functions, i+1, path), responseFieldsForLine(lines, functions, i+1), i+1, "weka-request-call")
+				start := lineOffsets[i] + codeWekaRequestRE.FindStringIndex(line)[0]
+				record.Auth = httpCallAuthForFile(source, start, matchingCallEnd(source, start), file.Path)
+				records = append(records, record)
 			}
 			continue
 		}
 		if match := codeFetchAPIRE.FindStringSubmatch(line); len(match) == 4 {
+			matchIndex := codeFetchAPIRE.FindStringIndex(line)
+			start := lineOffsets[i] + matchIndex[0]
+			end := matchingCallEnd(source, start)
 			method := "GET"
-			if methodMatch := codeMethodRE.FindStringSubmatch(line); len(methodMatch) == 2 {
+			if methodMatch := codeMethodRE.FindStringSubmatch(source[start:end]); len(methodMatch) == 2 {
 				method = strings.ToUpper(methodMatch[1])
 			}
 			path := firstNonEmpty(match[1], match[2], match[3])
-			records = append(records, apiContract(file, method, path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(lines, functions, i+1, path), responseFieldsForLine(lines, functions, i+1), i+1, "fetch-call"))
+			record := apiContract(file, method, path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(lines, functions, i+1, path), responseFieldsForLine(lines, functions, i+1), i+1, "fetch-call")
+			record.Auth = httpCallAuthForFile(source, start, end, file.Path)
+			records = append(records, record)
+			continue
+		}
+		if match := codeHTTPClientRE.FindStringSubmatch(line); len(match) == 6 && isSupportedHTTPClient(source, match[1]) {
+			matchIndex := codeHTTPClientRE.FindStringIndex(line)
+			start := lineOffsets[i] + matchIndex[0]
+			path := firstNonEmpty(match[3], match[4], match[5])
+			record := apiContract(file, strings.ToUpper(match[2]), path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(lines, functions, i+1, path), responseFieldsForLine(lines, functions, i+1), i+1, "http-client-call")
+			record.Auth = httpCallAuthForFile(source, start, matchingCallEnd(source, start), file.Path)
+			records = append(records, record)
 		}
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -65,6 +88,360 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 		}
 		return records[i].Path < records[j].Path
 	})
+	return records
+}
+
+func sourceLineOffsets(lines []string) []int {
+	offsets := make([]int, len(lines))
+	offset := 0
+	for i, line := range lines {
+		offsets[i] = offset
+		offset += len(line) + 1
+	}
+	return offsets
+}
+
+func matchingCallEnd(source string, callStart int) int {
+	if callStart < 0 || callStart >= len(source) {
+		return callStart
+	}
+	open := strings.IndexByte(source[callStart:], '(')
+	if open < 0 {
+		return callStart
+	}
+	open += callStart
+	depth := 0
+	quote := byte(0)
+	escaped := false
+	for i := open; i < len(source); i++ {
+		char := source[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if char == '\\' {
+				escaped = true
+				continue
+			}
+			if char == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch char {
+		case '\'', '"', '`':
+			quote = char
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return len(source)
+}
+
+func isSupportedHTTPClient(source, receiver string) bool {
+	if receiver == "axios" {
+		return true
+	}
+	axiosImports := regexp.MustCompile(`(?m)\bimport\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s+["']axios["']`).FindAllStringSubmatch(source, -1)
+	for _, match := range axiosImports {
+		if len(match) != 2 {
+			continue
+		}
+		if receiver == match[1] {
+			return true
+		}
+		declaration := regexp.MustCompile(`\b(?:const|let|var)\s+` + regexp.QuoteMeta(receiver) + `\s*=\s*` + regexp.QuoteMeta(match[1]) + `\.create\s*\(`)
+		if declaration.MatchString(source) {
+			return true
+		}
+	}
+	declaration := regexp.MustCompile(`\b(?:const|let|var)\s+` + regexp.QuoteMeta(receiver) + `\s*=\s*axios\.create\s*\(`)
+	return declaration.MatchString(source)
+}
+
+func httpCallAuthForFile(source string, callStart, callEnd int, file string) []AuthRecord {
+	records := extractHTTPCallAuth(source, callStart, callEnd)
+	for i := range records {
+		records[i].File = file
+	}
+	return records
+}
+
+// extractHTTPCallAuth returns authentication evidence statically associated with one HTTP call.
+func extractHTTPCallAuth(source string, callStart, callEnd int) []AuthRecord {
+	if callStart < 0 || callEnd <= callStart || callStart >= len(source) {
+		return nil
+	}
+	if callEnd > len(source) {
+		callEnd = len(source)
+	}
+	call := source[callStart:callEnd]
+	line := 1 + strings.Count(source[:callStart], "\n")
+	records := extractDirectHTTPCallAuth(source, call, line, "EXTRACTED", "http_call_config")
+	receiver := httpCallReceiver(call)
+	if receiver == "" {
+		return records
+	}
+	for _, interceptor := range associatedRequestInterceptors(source[:callStart], receiver) {
+		interceptorLine := 1 + strings.Count(source[:interceptor.start], "\n")
+		partial := extractDirectHTTPCallAuth(source, interceptor.expression, interceptorLine, "PARTIAL", "http_client_interceptor")
+		records = appendUniqueAuth(records, partial...)
+	}
+	return records
+}
+
+type requestInterceptorExpression struct {
+	start      int
+	expression string
+}
+
+func associatedRequestInterceptors(source, receiver string) []requestInterceptorExpression {
+	startRE := regexp.MustCompile(`\b` + regexp.QuoteMeta(receiver) + `\.interceptors\.request\.use\s*\(`)
+	indices := startRE.FindAllStringIndex(source, -1)
+	result := make([]requestInterceptorExpression, 0, len(indices))
+	for _, index := range indices {
+		end := matchingCallEnd(source, index[0])
+		if end <= index[0] {
+			continue
+		}
+		result = append(result, requestInterceptorExpression{start: index[0], expression: source[index[0]:end]})
+	}
+	return result
+}
+
+func httpCallReceiver(call string) string {
+	match := regexp.MustCompile(`^\s*([A-Za-z_$][A-Za-z0-9_$]*)\.(?:get|post|put|patch|delete)\s*\(`).FindStringSubmatch(call)
+	if len(match) != 2 {
+		return ""
+	}
+	return match[1]
+}
+
+func extractDirectHTTPCallAuth(fullSource, expression string, line int, confidence, source string) []AuthRecord {
+	var records []AuthRecord
+	for _, headerBlock := range namedObjectBodies(expression, "headers") {
+		for _, value := range propertyValues(headerBlock, `authorization`) {
+			lower := strings.ToLower(value)
+			switch {
+			case strings.Contains(lower, "bearer"):
+				records = appendUniqueAuth(records, newHTTPAuthRecord("bearer", sanitizedCredentialExpression(value), source, confidence, line))
+			case strings.Contains(lower, "basic"):
+				records = appendUniqueAuth(records, newHTTPAuthRecord("basic", sanitizedCredentialExpression(value), source, confidence, line))
+			}
+		}
+		for _, value := range apiKeyPropertyValues(headerBlock) {
+			records = appendUniqueAuth(records, newHTTPAuthRecord("api_key", sanitizedCredentialExpression(value), source, confidence, line))
+		}
+	}
+	for _, value := range regexp.MustCompile(`(?is)\.headers\.authorization\s*=\s*([^,;\n]+)`).FindAllStringSubmatch(expression, -1) {
+		if len(value) != 2 {
+			continue
+		}
+		lower := strings.ToLower(value[1])
+		if strings.Contains(lower, "bearer") {
+			records = appendUniqueAuth(records, newHTTPAuthRecord("bearer", sanitizedCredentialExpression(value[1]), source, confidence, line))
+		} else if strings.Contains(lower, "basic") {
+			records = appendUniqueAuth(records, newHTTPAuthRecord("basic", sanitizedCredentialExpression(value[1]), source, confidence, line))
+		}
+	}
+	for _, authBlock := range namedObjectBodies(expression, "auth") {
+		user := firstSanitizedPropertyValue(authBlock, "username")
+		password := firstSanitizedPropertyValue(authBlock, "password")
+		if user == "" && password == "" {
+			continue
+		}
+		basicExpression := strings.Trim(strings.Join([]string{user, password}, ","), ",")
+		records = appendUniqueAuth(records, newHTTPAuthRecord("basic", basicExpression, source, confidence, line))
+	}
+	for _, blockName := range []string{"params", "query"} {
+		for _, block := range namedObjectBodies(expression, blockName) {
+			for _, value := range apiKeyPropertyValues(block) {
+				records = appendUniqueAuth(records, newHTTPAuthRecord("api_key", sanitizedCredentialExpression(value), source, confidence, line))
+			}
+		}
+	}
+	if regexp.MustCompile(`(?i)\bcredentials\s*:\s*["'](?:include|same-origin)["']`).MatchString(expression) ||
+		regexp.MustCompile(`(?i)\bwithCredentials\s*:\s*true\b`).MatchString(expression) {
+		records = appendUniqueAuth(records, newHTTPAuthRecord("session", "", source, confidence, line))
+	}
+	for helper := range importedOAuthHelpers(fullSource) {
+		if !regexp.MustCompile(`\b` + regexp.QuoteMeta(helper) + `\s*\(`).MatchString(expression) {
+			continue
+		}
+		records = appendUniqueAuth(records, AuthRecord{Kind: "oauth2", Expression: helper, Source: oauthRecordSource(source), Confidence: confidence, Line: line})
+	}
+	return records
+}
+
+func newHTTPAuthRecord(kind, expression, source, confidence string, line int) AuthRecord {
+	return AuthRecord{Kind: kind, Expression: expression, Source: source, Confidence: confidence, Line: line}
+}
+
+func oauthRecordSource(source string) string {
+	if source == "http_call_config" {
+		return "oauth_helper"
+	}
+	return source
+}
+
+func namedObjectBodies(expression, name string) []string {
+	startRE := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(name) + `\s*:\s*\{`)
+	var bodies []string
+	for _, index := range startRE.FindAllStringIndex(expression, -1) {
+		open := index[1] - 1
+		if close := matchingBraceEnd(expression, open); close > open {
+			bodies = append(bodies, expression[open+1:close-1])
+		}
+	}
+	return bodies
+}
+
+func matchingBraceEnd(source string, open int) int {
+	depth := 0
+	quote := byte(0)
+	escaped := false
+	for i := open; i < len(source); i++ {
+		char := source[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if char == '\\' {
+				escaped = true
+				continue
+			}
+			if char == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch char {
+		case '\'', '"', '`':
+			quote = char
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+func propertyValues(objectBody, property string) []string {
+	propertyRE := regexp.MustCompile(`(?is)(?:["']` + regexp.QuoteMeta(property) + `["']|\b` + regexp.QuoteMeta(property) + `\b)\s*:\s*([^,}\n]+)`)
+	var values []string
+	for _, match := range propertyRE.FindAllStringSubmatch(objectBody, -1) {
+		if len(match) == 2 {
+			values = append(values, strings.TrimSpace(match[1]))
+		}
+	}
+	return values
+}
+
+func apiKeyPropertyValues(objectBody string) []string {
+	propertyRE := regexp.MustCompile(`(?is)(?:["'](?:x-api-key|api-key|api_key|apikey|ocp-apim-subscription-key)["']|\b(?:api_key|apiKey|apikey)\b)\s*:\s*([^,}\n]+)`)
+	var values []string
+	for _, match := range propertyRE.FindAllStringSubmatch(objectBody, -1) {
+		if len(match) == 2 {
+			values = append(values, strings.TrimSpace(match[1]))
+		}
+	}
+	return values
+}
+
+func firstSanitizedPropertyValue(objectBody, property string) string {
+	values := propertyValues(objectBody, property)
+	if len(values) == 0 {
+		return ""
+	}
+	return sanitizedCredentialExpression(values[0])
+}
+
+func sanitizedCredentialExpression(value string) string {
+	for _, match := range regexp.MustCompile(`\$\{\s*([^}]+)\s*\}`).FindAllStringSubmatch(value, -1) {
+		if len(match) == 2 {
+			if candidate := firstCredentialIdentifier(match[1]); candidate != "" {
+				return candidate
+			}
+		}
+	}
+	withoutStrings := regexp.MustCompile(`"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`+"`[^`]*`"+``).ReplaceAllString(value, " ")
+	return firstCredentialIdentifier(withoutStrings)
+}
+
+func firstCredentialIdentifier(value string) string {
+	ignored := map[string]bool{
+		"basic": true, "bearer": true, "true": true, "false": true, "null": true, "undefined": true,
+	}
+	identifierRE := regexp.MustCompile(`[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*`)
+	for _, candidate := range identifierRE.FindAllString(value, -1) {
+		if !ignored[strings.ToLower(candidate)] {
+			return strings.TrimSpace(candidate)
+		}
+	}
+	return ""
+}
+
+func importedOAuthHelpers(source string) map[string]bool {
+	supported := map[string]bool{
+		"getAccessToken": true, "getAccessTokenSilently": true, "getTokenSilently": true, "acquireTokenSilent": true,
+	}
+	result := map[string]bool{}
+	importRE := regexp.MustCompile(`(?s)\bimport\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']`)
+	for _, match := range importRE.FindAllStringSubmatch(source, -1) {
+		if len(match) != 3 || !isOAuthModule(match[2]) {
+			continue
+		}
+		for _, item := range strings.Split(match[1], ",") {
+			parts := regexp.MustCompile(`\s+as\s+`).Split(strings.TrimSpace(item), 2)
+			if len(parts) == 0 || !supported[parts[0]] {
+				continue
+			}
+			localName := parts[0]
+			if len(parts) == 2 {
+				localName = strings.TrimSpace(parts[1])
+			}
+			if regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`).MatchString(localName) {
+				result[localName] = true
+			}
+		}
+	}
+	return result
+}
+
+func isOAuthModule(module string) bool {
+	lower := strings.ToLower(module)
+	for _, marker := range []string{"auth0", "oauth", "oidc", "msal", "keycloak"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func appendUniqueAuth(records []AuthRecord, additions ...AuthRecord) []AuthRecord {
+	for _, addition := range additions {
+		duplicate := false
+		for _, record := range records {
+			if record.Kind == addition.Kind && record.Expression == addition.Expression && record.Source == addition.Source && record.Confidence == addition.Confidence {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			records = append(records, addition)
+		}
+	}
 	return records
 }
 

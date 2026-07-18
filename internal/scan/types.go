@@ -355,6 +355,7 @@ type APIContractRecord struct {
 	RawPath                   string             `json:"raw_path,omitempty"`
 	Query                     string             `json:"query,omitempty"`
 	QueryParams               []QueryParamRecord `json:"query_params,omitempty"`
+	Auth                      []AuthRecord       `json:"auth,omitempty"`
 	ResponseFields            []string           `json:"response_fields,omitempty"`
 	ServiceCandidate          string             `json:"service_candidate,omitempty"`
 	UnsafeDynamic             bool               `json:"unsafe_dynamic,omitempty"`
