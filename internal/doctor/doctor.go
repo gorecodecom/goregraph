@@ -503,7 +503,7 @@ func catalogDanglingEvidence(catalog scan.APICatalogRecord, known map[string]boo
 
 func firstDanglingEvidence(ids []string, known map[string]bool) (string, bool) {
 	for _, id := range ids {
-		if !known[id] {
+		if strings.HasPrefix(id, "evidence:") && !known[id] {
 			return id, true
 		}
 	}
@@ -522,6 +522,11 @@ func catalogUnknownProjects(catalog scan.APICatalogRecord, registry scan.Workspa
 		for _, consumer := range endpoint.Consumers {
 			if !projects[filepath.ToSlash(consumer.Project)] {
 				return fmt.Sprintf("consumer %q references unknown project %q", consumer.ID, consumer.Project), true
+			}
+		}
+		for _, mismatch := range endpoint.Mismatches {
+			if mismatch.ConsumerProject != "" && !projects[filepath.ToSlash(mismatch.ConsumerProject)] {
+				return fmt.Sprintf("mismatch %q references unknown project %q", mismatch.ID, mismatch.ConsumerProject), true
 			}
 		}
 	}

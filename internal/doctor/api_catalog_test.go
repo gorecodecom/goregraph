@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,23 +101,38 @@ func TestDoctorValidatesManifestListedWorkspaceAPICatalogProjectReferences(t *te
 	}
 }
 
+func TestDoctorAcceptsGeneratedWorkspaceAPICatalog(t *testing.T) {
+	workspace, _ := workspaceCatalogFixture(t)
+
+	result, err := Run(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Failures != 0 {
+		t.Fatalf("generated workspace API catalog failed Doctor: %v", result.Lines)
+	}
+	if !containsLine(result.Lines, "OK   api-catalog: api-catalog.json valid") {
+		t.Fatalf("Doctor did not report the generated API catalog as valid: %v", result.Lines)
+	}
+}
+
 func TestDoctorRejectsWorkspaceAPICatalogDanglingEvidence(t *testing.T) {
 	tests := []struct {
 		name    string
-		corrupt func(*scan.APICatalogRecord) string
+		corrupt func(*scan.APICatalogRecord) (string, string)
 	}{
 		{
 			name: "endpoint evidence",
-			corrupt: func(catalog *scan.APICatalogRecord) string {
+			corrupt: func(catalog *scan.APICatalogRecord) (string, string) {
 				catalog.Endpoints[0].EvidenceIDs = []string{"evidence:missing"}
-				return catalog.Endpoints[0].ID
+				return "endpoint", catalog.Endpoints[0].ID
 			},
 		},
 		{
 			name: "consumer evidence",
-			corrupt: func(catalog *scan.APICatalogRecord) string {
+			corrupt: func(catalog *scan.APICatalogRecord) (string, string) {
 				catalog.Endpoints[0].Consumers[0].EvidenceIDs = []string{"evidence:missing"}
-				return catalog.Endpoints[0].Consumers[0].ID
+				return "consumer", catalog.Endpoints[0].Consumers[0].ID
 			},
 		},
 	}
@@ -126,16 +142,41 @@ func TestDoctorRejectsWorkspaceAPICatalogDanglingEvidence(t *testing.T) {
 			workspace, catalogPath := workspaceCatalogFixture(t)
 			var catalog scan.APICatalogRecord
 			readTestJSON(t, catalogPath, &catalog)
-			wantID := test.corrupt(&catalog)
+			owner, wantID := test.corrupt(&catalog)
 			writeTestJSON(t, catalogPath, catalog)
 
 			result, err := Run(workspace)
 			if err != nil {
 				t.Fatal(err)
 			}
-			requireAPICatalogFailure(t, result, wantID)
+			requireExactAPICatalogFailure(t, result, fmt.Sprintf("FAIL api-catalog: %s %q contains dangling evidence reference %q", owner, wantID, "evidence:missing"))
 		})
 	}
+}
+
+func TestDoctorRejectsWorkspaceAPICatalogMismatchUnknownProject(t *testing.T) {
+	workspace, catalogPath := workspaceCatalogFixture(t)
+	var catalog scan.APICatalogRecord
+	readTestJSON(t, catalogPath, &catalog)
+	endpoint := &catalog.Endpoints[0]
+	endpoint.Consumers = []scan.APIConsumerRecord{}
+	endpoint.Mismatches = []scan.APIMismatchRecord{{
+		ID:              "mismatch:unknown-consumer",
+		Kind:            "ambiguous_route_match",
+		Severity:        "WARNING",
+		Reason:          "Consumer scope references an unknown project.",
+		ConsumerProject: "frontend/missing",
+		ConsumerID:      "consumer:missing",
+		Confidence:      scan.ConfidenceInferred,
+	}}
+	scan.SortAPICatalog(&catalog)
+	writeTestJSON(t, catalogPath, catalog)
+
+	result, err := Run(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireExactAPICatalogFailure(t, result, `FAIL api-catalog: mismatch "mismatch:unknown-consumer" references unknown project "frontend/missing"`)
 }
 
 func TestDoctorIgnoresUnmanifestedWorkspaceProjectEvidence(t *testing.T) {
@@ -377,4 +418,14 @@ func requireAPICatalogFailureContaining(t *testing.T, result Result, wants ...st
 		}
 	}
 	t.Fatalf("Doctor did not report an API catalog failure containing %q: %v", wants, result.Lines)
+}
+
+func requireExactAPICatalogFailure(t *testing.T, result Result, want string) {
+	t.Helper()
+	for _, line := range result.Lines {
+		if line == want {
+			return
+		}
+	}
+	t.Fatalf("Doctor did not report exact API catalog failure %q: %v", want, result.Lines)
 }
