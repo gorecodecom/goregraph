@@ -1396,6 +1396,7 @@ func TestCLIEndpointContextSerialization(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &pack); err != nil {
 		t.Fatal(err)
 	}
+	assertCLIEndpointContextWireKeys(t, stdout.Bytes())
 	if !reflect.DeepEqual(pack.Endpoints, expected.Endpoints) {
 		t.Fatalf("CLI endpoints = %#v, want %#v", pack.Endpoints, expected.Endpoints)
 	}
@@ -2035,6 +2036,54 @@ func writeCLIEndpointContextFixture(t *testing.T) string {
 	}
 	writeFile(t, root, "goregraph-out/agent/context-index.json", string(body))
 	return root
+}
+
+func assertCLIEndpointContextWireKeys(t *testing.T, body []byte) {
+	t.Helper()
+	var contextObject map[string]json.RawMessage
+	if err := json.Unmarshal(body, &contextObject); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"endpoints", "budget_tokens", "fallback_required"} {
+		if _, ok := contextObject[key]; !ok {
+			t.Fatalf("CLI context JSON missing public key %q: %s", key, body)
+		}
+	}
+	for _, alias := range []string{"endpoint", "Endpoints", "budgetTokens", "BudgetTokens", "fallbackRequired", "FallbackRequired"} {
+		if _, ok := contextObject[alias]; ok {
+			t.Fatalf("CLI context JSON contains alias key %q: %s", alias, body)
+		}
+	}
+
+	var endpoints []map[string]json.RawMessage
+	if err := json.Unmarshal(contextObject["endpoints"], &endpoints); err != nil || len(endpoints) != 1 {
+		t.Fatalf("CLI endpoints JSON = %s, error = %v", contextObject["endpoints"], err)
+	}
+	endpoint := endpoints[0]
+	for _, key := range []string{"http_method", "omitted_consumers"} {
+		if _, ok := endpoint[key]; !ok {
+			t.Fatalf("CLI endpoint JSON missing public key %q: %s", key, contextObject["endpoints"])
+		}
+	}
+	for _, alias := range []string{"method", "httpMethod", "HTTPMethod", "omittedConsumers", "OmittedConsumers"} {
+		if _, ok := endpoint[alias]; ok {
+			t.Fatalf("CLI endpoint JSON contains alias key %q: %s", alias, contextObject["endpoints"])
+		}
+	}
+
+	var consumers []map[string]json.RawMessage
+	if err := json.Unmarshal(endpoint["consumers"], &consumers); err != nil || len(consumers) == 0 {
+		t.Fatalf("CLI consumers JSON = %s, error = %v", endpoint["consumers"], err)
+	}
+	if _, ok := consumers[0]["authentication"]; !ok {
+		t.Fatalf("CLI consumer JSON missing public key %q: %s", "authentication", endpoint["consumers"])
+	}
+	if _, ok := consumers[0]["auth"]; ok {
+		t.Fatalf("CLI consumer JSON contains alias key %q: %s", "auth", endpoint["consumers"])
+	}
+	if _, ok := consumers[0]["Authentication"]; ok {
+		t.Fatalf("CLI consumer JSON contains alias key %q: %s", "Authentication", endpoint["consumers"])
+	}
 }
 
 func cliTestOutputPath(path string) string {

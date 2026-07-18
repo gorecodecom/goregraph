@@ -242,10 +242,11 @@ func TestServiceEndpointTaskContextSerialization(t *testing.T) {
 		t.Fatalf("service context bounds/fallback = %#v", pack)
 	}
 
-	body, err := json.Marshal(pack)
+	body, err := json.Marshal(result.Items[0].Data["context"])
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertServiceEndpointContextWireKeys(t, body)
 	var roundTrip ContextPack
 	if err := json.Unmarshal(body, &roundTrip); err != nil {
 		t.Fatal(err)
@@ -607,6 +608,54 @@ func writeServiceEndpointContextFixture(t *testing.T) string {
 	root := t.TempDir()
 	writeContextIndexAt(t, filepath.Join(root, "goregraph-out", "agent", "context-index.json"), endpointContextIndexFixture())
 	return root
+}
+
+func assertServiceEndpointContextWireKeys(t *testing.T, body []byte) {
+	t.Helper()
+	var contextObject map[string]json.RawMessage
+	if err := json.Unmarshal(body, &contextObject); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"endpoints", "budget_tokens", "fallback_required"} {
+		if _, ok := contextObject[key]; !ok {
+			t.Fatalf("service context JSON missing public key %q: %s", key, body)
+		}
+	}
+	for _, alias := range []string{"endpoint", "Endpoints", "budgetTokens", "BudgetTokens", "fallbackRequired", "FallbackRequired"} {
+		if _, ok := contextObject[alias]; ok {
+			t.Fatalf("service context JSON contains alias key %q: %s", alias, body)
+		}
+	}
+
+	var endpoints []map[string]json.RawMessage
+	if err := json.Unmarshal(contextObject["endpoints"], &endpoints); err != nil || len(endpoints) != 1 {
+		t.Fatalf("service endpoints JSON = %s, error = %v", contextObject["endpoints"], err)
+	}
+	endpoint := endpoints[0]
+	for _, key := range []string{"http_method", "omitted_consumers"} {
+		if _, ok := endpoint[key]; !ok {
+			t.Fatalf("service endpoint JSON missing public key %q: %s", key, contextObject["endpoints"])
+		}
+	}
+	for _, alias := range []string{"method", "httpMethod", "HTTPMethod", "omittedConsumers", "OmittedConsumers"} {
+		if _, ok := endpoint[alias]; ok {
+			t.Fatalf("service endpoint JSON contains alias key %q: %s", alias, contextObject["endpoints"])
+		}
+	}
+
+	var consumers []map[string]json.RawMessage
+	if err := json.Unmarshal(endpoint["consumers"], &consumers); err != nil || len(consumers) == 0 {
+		t.Fatalf("service consumers JSON = %s, error = %v", endpoint["consumers"], err)
+	}
+	if _, ok := consumers[0]["authentication"]; !ok {
+		t.Fatalf("service consumer JSON missing public key %q: %s", "authentication", endpoint["consumers"])
+	}
+	if _, ok := consumers[0]["auth"]; ok {
+		t.Fatalf("service consumer JSON contains alias key %q: %s", "auth", endpoint["consumers"])
+	}
+	if _, ok := consumers[0]["Authentication"]; ok {
+		t.Fatalf("service consumer JSON contains alias key %q: %s", "Authentication", endpoint["consumers"])
+	}
 }
 
 func endpointContextIndexFixture() scan.AgentContextIndexRecord {
