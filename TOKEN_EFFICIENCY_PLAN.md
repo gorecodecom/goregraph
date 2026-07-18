@@ -238,7 +238,7 @@ git commit -m "Guide agents to reuse context source" -m "- Add deterministic ini
 
 ### Task 2: Reserve the response budget for source
 
-**Files:** `internal/agent/context.go`, `internal/agent/context_rank.go`, `internal/agent/context_test.go`, `internal/agent/context_size_test.go`, `internal/mcp/mcp.go`, `internal/mcp/mcp_test.go`
+**Files:** `internal/agent/context.go`, `internal/agent/context_rank.go`, `internal/agent/context_test.go`, `internal/agent/context_size_test.go`, `internal/mcp/mcp.go`, `internal/mcp/mcp_test.go`, `internal/cli/cli.go`, `internal/cli/cli_test.go`, `internal/scan/agent_reports.go`, `internal/scan/agent_reports_test.go`, `README.md`, `COMMANDS.md`, `docs_test.go`
 
 **Produces:** `contextMetadataBudget(total int) int`, `contextByteBudget(tokens int) int`, updated bounds, one retained evidence ID per selected location, and metadata that leaves source capacity.
 
@@ -290,6 +290,8 @@ func contextByteBudget(tokens int) int {
 
 Serialized checks use `len(json.Marshal(pack))`, not rune count.
 
+Update every CLI schema/help bound and the generated Agent Guide default to `4000` with maximum `6000`. Update README, COMMANDS, and their documentation assertions only for these numeric bounds in this task; Task 8 owns the later source-reuse wording.
+
 - [ ] **Step 4: Retain one evidence ID without backfilling spare space**
 
 Add a focused test with a selected fact containing three evidence IDs. Require the resulting entrypoint to retain exactly the first indexed ID:
@@ -320,6 +322,8 @@ pack.BudgetTokens = request.BudgetTokens
 return finalizeContextEstimate(pack)
 ```
 
+Keep `contextPackFitsBudget(pack, metadataRequest.BudgetTokens)` unchanged for metadata assembly: its `budget*4` byte check deliberately limits the default metadata portion to 4,400 serialized bytes. Source attachment uses the separate total `contextByteBudget(request.BudgetTokens)` ceiling. Add a test that proves dense metadata cannot consume the reserved source capacity.
+
 - [ ] **Step 6: Update the size test**
 
 Require `EstimatedTokens <= 4000`, serialized bytes `<= 16000`, unchanged semantic fields, and byte-identical repeated output. Remove the old 7,200-byte ceiling.
@@ -331,7 +335,7 @@ Run: `go test ./internal/agent ./internal/mcp -count=1`
 Expected: `PASS`; the metadata pack retains useful facts but leaves most of the total budget unused.
 
 ```bash
-git add internal/agent/context.go internal/agent/context_rank.go internal/agent/context_test.go internal/agent/context_size_test.go internal/mcp/mcp.go internal/mcp/mcp_test.go
+git add internal/agent/context.go internal/agent/context_rank.go internal/agent/context_test.go internal/agent/context_size_test.go internal/mcp/mcp.go internal/mcp/mcp_test.go internal/cli/cli.go internal/cli/cli_test.go internal/scan/agent_reports.go internal/scan/agent_reports_test.go README.md COMMANDS.md docs_test.go
 git commit -m "Reserve context capacity for source" -m "- Raise and split the total and metadata response budgets.
 - Retain one original evidence ID per selected location without backfilling."
 ```
@@ -571,7 +575,23 @@ Update `cloneContextPack` with:
 pack.selectedSourceFactIDs = append([]string(nil), pack.selectedSourceFactIDs...)
 ```
 
-`contextSourceCandidates` looks up these exact IDs in the index. It assigns `entrypoint` to facts represented by `Entrypoints` or the selected `Endpoint`, preserves `contract`, `persistence`, and explicitly requested `test` roles, and assigns remaining production selections to `call_chain`. Ignore facts with empty or generated-metadata file paths. Sort and deduplicate using:
+`contextSourceCandidates` looks up these exact IDs in the index. It assigns `entrypoint` to facts represented by `Entrypoints`. For `api_endpoint`, require an exact match against the selected endpoint's provider, HTTP method, path, handler, file, and line before assigning `entrypoint`; this preserves the endpoint fact ID even when a separately ranked route exists. Preserve `contract` and `persistence` roles, and assign remaining production selections to `call_chain`.
+
+Include a `test` candidate only when this deterministic predicate returns true:
+
+```go
+func contextQueryRequestsTests(query string) bool {
+	tokens := contextTokenSet(query)
+	for _, token := range []string{"test", "tests", "testing", "junit", "jest", "playwright"} {
+		if tokens[token] {
+			return true
+		}
+	}
+	return false
+}
+```
+
+Selected test facts excluded by this predicate do not count toward `source_coverage` or `source_unrepresented`; they remain metadata locations only. Ignore facts with empty or generated-metadata file paths. Sort and deduplicate using:
 
 ```go
 var contextSourceRolePriority = map[string]int{
@@ -583,7 +603,7 @@ var contextSourceRolePriority = map[string]int{
 }
 ```
 
-Then project, path, start line, end line, fact ID. Merge overlapping ranges in one file and retain the stronger role plus the stronger candidate's `Kind`, `Name`, and `Qualified`. Add a regression test where two selected facts in one file were merged into one `ContextFile`; both exact selected fact IDs must still participate in deterministic candidate construction.
+Then project, path, start line, end line, fact ID. Merge overlapping ranges in one file and retain the stronger role plus the stronger candidate's `Kind`, `Name`, and `Qualified`. Add regressions for merged `ContextFile` ranges, production queries with selected test metadata, explicit test queries, and an API endpoint plus independently selected route sharing one HTTP path.
 
 - [ ] **Step 5: Attach with graceful fallback**
 
@@ -745,7 +765,7 @@ git commit -m "Lock the source-backed MCP contract" -m "- Verify compact source-
 
 ### Task 8: Update guidance and benchmark instructions
 
-**Files:** `README.md`, `COMMANDS.md`, `docs/OUTPUTS.md`, `docs/BENCHMARKING.md`, `docs/RELEASE.md`, `docs_test.go`, `release_files_test.go`, `scripts/benchmark-agent-context.sh`, `scripts/benchmark-agent-context_test.sh`
+**Files:** `README.md`, `COMMANDS.md`, `docs/OUTPUTS.md`, `docs/BENCHMARKING.md`, `docs/RELEASE.md`, `docs_test.go`, `release_files_test.go`, `internal/cli/cli.go`, `internal/cli/cli_test.go`, `internal/scan/agent_reports.go`, `internal/scan/agent_reports_test.go`, `scripts/benchmark-agent-context.sh`, `scripts/benchmark-agent-context_test.sh`
 
 - [ ] **Step 1: Replace the assisted instruction everywhere**
 
@@ -759,7 +779,7 @@ At most one narrower retry may use an exact route, qualified symbol, or file ret
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
 
-The harness rejects content differences while tolerating one final newline.
+The harness rejects content differences while tolerating one final newline. Replace every repeated workflow copy in README, COMMANDS, CLI help, and the generated Agent Guide; no metadata-only instruction may remain in a 1.3.0 user-facing surface.
 
 - [ ] **Step 2: Update the harness unit test**
 
@@ -788,7 +808,7 @@ Run: `go test ./...`
 Expected: `PASS` for packages and documentation contract tests.
 
 ```bash
-git add README.md COMMANDS.md docs/OUTPUTS.md docs/BENCHMARKING.md docs/RELEASE.md docs_test.go release_files_test.go scripts/benchmark-agent-context.sh scripts/benchmark-agent-context_test.sh
+git add README.md COMMANDS.md docs/OUTPUTS.md docs/BENCHMARKING.md docs/RELEASE.md docs_test.go release_files_test.go internal/cli/cli.go internal/cli/cli_test.go internal/scan/agent_reports.go internal/scan/agent_reports_test.go scripts/benchmark-agent-context.sh scripts/benchmark-agent-context_test.sh
 git commit -m "Define the source-backed agent workflow" -m "- Align user guidance and benchmark instructions with source coverage.
 - Document when uncovered source may be read after task_context."
 ```
