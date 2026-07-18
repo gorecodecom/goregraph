@@ -628,11 +628,13 @@ source files. Use `--target agent|dashboard|all`; omitted target defaults to
 goregraph workspace dashboard [path]
 goregraph workspace dashboard path [path]
 goregraph workspace dashboard open [path]
+goregraph workspace dashboard edit [path]
 ```
 
-Print or open
-`.goregraph-workspace/dashboard/workspace-map.html`. The form without
-an action remains a compatibility path command.
+The bare compatibility form and `path` print the static read-only
+`.goregraph-workspace/dashboard/workspace-map.html`; `open` opens that file.
+Only `edit` starts an authenticated loopback editor and persists saved layout
+choices in the workspace-root `.goregraph-dashboard.json`.
 
 ```bash
 goregraph workspace clean <path>

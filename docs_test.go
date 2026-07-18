@@ -242,3 +242,30 @@ func TestDashboardDocumentationDoesNotUseStaleViewCount(t *testing.T) {
 		}
 	}
 }
+
+func TestREADMELaterWorkspaceDashboardReferenceDocumentsEditMode(t *testing.T) {
+	content, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	start := strings.LastIndex(text, "```bash\ngoregraph workspace dashboard [path]")
+	if start < 0 {
+		t.Fatal("README later workspace dashboard reference is missing")
+	}
+	endOffset := strings.Index(text[start:], "```bash\ngoregraph workspace clean <path>")
+	if endOffset < 0 {
+		t.Fatal("README later workspace dashboard reference boundary is missing")
+	}
+	section := text[start : start+endOffset]
+	for _, want := range []string{
+		"goregraph workspace dashboard edit [path]",
+		"static read-only",
+		"Only `edit` starts an authenticated loopback editor",
+		".goregraph-dashboard.json",
+	} {
+		if !strings.Contains(section, want) {
+			t.Fatalf("README later workspace dashboard reference missing %q:\n%s", want, section)
+		}
+	}
+}
