@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ const (
 	dashboardConfigTestWorkerRootEnv     = "GOREGRAPH_DASHBOARD_CONFIG_TEST_ROOT"
 	dashboardConfigTestWorkerRevisionEnv = "GOREGRAPH_DASHBOARD_CONFIG_TEST_REVISION"
 	dashboardConfigTestWorkerIDEnv       = "GOREGRAPH_DASHBOARD_CONFIG_TEST_WORKER_ID"
+	dashboardConfigTestLockOwnerEnv      = "GOREGRAPH_DASHBOARD_CONFIG_TEST_LOCK_OWNER"
 )
 
 func TestWorkspaceDashboardConfigRoundTripAndConflict(t *testing.T) {
@@ -169,38 +171,114 @@ func TestSaveWorkspaceDashboardConfigAllowsOnlyOneConcurrentWriter(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name() != WorkspaceDashboardConfigName {
+	workspaceFiles := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		workspaceFiles[entry.Name()] = true
+	}
+	if len(entries) != 2 || !workspaceFiles[WorkspaceDashboardConfigName] || !workspaceFiles[dashboardConfigLockName] {
 		t.Fatalf("workspace files = %#v", entries)
 	}
 }
 
-func TestSaveWorkspaceDashboardConfigDoesNotReclaimOldForeignLock(t *testing.T) {
+func TestSaveWorkspaceDashboardConfigRecoversLockAfterOwnerIsKilled(t *testing.T) {
+	if runDashboardConfigLockOwnerIfRequested(t) {
+		return
+	}
+
 	root := t.TempDir()
-	lockPath := filepath.Join(root, dashboardConfigLockName)
-	foreignToken := "another-process-token"
-	if err := os.WriteFile(lockPath, []byte(foreignToken), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	oldTime := time.Now().Add(-time.Hour)
-	if err := os.Chtimes(lockPath, oldTime, oldTime); err != nil {
-		t.Fatal(err)
-	}
+	owner := startDashboardConfigLockOwner(t, root, "TestSaveWorkspaceDashboardConfigRecoversLockAfterOwnerIsKilled")
+	killDashboardConfigLockOwner(t, owner)
 
 	config := WorkspaceDashboardConfig{Schema: 1, Architecture: DashboardArchitectureConfig{
 		Groups: map[string]DashboardGroupConfig{"org.example.alpha": {Label: "Alpha"}},
 	}}
-	if _, err := SaveWorkspaceDashboardConfig(root, missingDashboardConfigRevision, config); err == nil || !strings.Contains(err.Error(), "timed out acquiring workspace dashboard configuration lock") {
-		t.Fatalf("SaveWorkspaceDashboardConfig error = %v", err)
+	if _, err := SaveWorkspaceDashboardConfig(root, missingDashboardConfigRevision, config); err != nil {
+		t.Fatalf("SaveWorkspaceDashboardConfig after killed owner: %v", err)
 	}
-	lockData, err := os.ReadFile(lockPath)
+}
+
+func TestSaveWorkspaceDashboardConfigDoesNotBypassLiveOwnerLock(t *testing.T) {
+	if runDashboardConfigLockOwnerIfRequested(t) {
+		return
+	}
+
+	root := t.TempDir()
+	owner := startDashboardConfigLockOwner(t, root, "TestSaveWorkspaceDashboardConfigDoesNotBypassLiveOwnerLock")
+	result := make(chan error, 1)
+	go func() {
+		config := WorkspaceDashboardConfig{Schema: 1, Architecture: DashboardArchitectureConfig{
+			Groups: map[string]DashboardGroupConfig{"org.example.alpha": {Label: "Alpha"}},
+		}}
+		_, err := SaveWorkspaceDashboardConfig(root, missingDashboardConfigRevision, config)
+		result <- err
+	}()
+
+	select {
+	case err := <-result:
+		t.Fatalf("SaveWorkspaceDashboardConfig returned while owner was live: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	killDashboardConfigLockOwner(t, owner)
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("SaveWorkspaceDashboardConfig after killed owner: %v", err)
+		}
+	case <-time.After(dashboardConfigLockTimeout + time.Second):
+		t.Fatal("SaveWorkspaceDashboardConfig remained blocked after owner was killed")
+	}
+}
+
+func runDashboardConfigLockOwnerIfRequested(t *testing.T) bool {
+	root := os.Getenv(dashboardConfigTestLockOwnerEnv)
+	if root == "" {
+		return false
+	}
+	release, err := acquireDashboardConfigLock(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(lockData) != foreignToken {
-		t.Fatalf("lock contents = %q", lockData)
+	defer release()
+	fmt.Fprintln(os.Stdout, "lock-ready")
+	for {
+		time.Sleep(time.Hour)
 	}
-	if _, err := os.Stat(filepath.Join(root, WorkspaceDashboardConfigName)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("configuration file error = %v", err)
+}
+
+func startDashboardConfigLockOwner(t *testing.T, root, testName string) *exec.Cmd {
+	t.Helper()
+	command := exec.Command(os.Args[0], "-test.run=^"+testName+"$")
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	command.Env = append(os.Environ(), dashboardConfigTestLockOwnerEnv+"="+root)
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if command.ProcessState == nil {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		}
+	})
+	line, err := bufio.NewReader(stdout).ReadString('\n')
+	if err != nil || line != "lock-ready\n" {
+		t.Fatalf("lock owner did not become ready: line=%q err=%v stderr=%s", line, err, stderr.String())
+	}
+	return command
+}
+
+func killDashboardConfigLockOwner(t *testing.T, owner *exec.Cmd) {
+	t.Helper()
+	if err := owner.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Wait(); err == nil {
+		t.Fatal("killed lock owner exited successfully")
 	}
 }
 

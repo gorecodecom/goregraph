@@ -127,49 +127,49 @@ func SaveWorkspaceDashboardConfig(root, expectedRevision string, config Workspac
 
 func acquireDashboardConfigLock(root string) (func() error, error) {
 	lockPath := filepath.Join(root, dashboardConfigLockName)
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
 	deadline := time.Now().Add(dashboardConfigLockTimeout)
 	for {
-		lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
+		acquired, err := tryLockDashboardConfigFile(lock)
+		if err != nil {
+			_ = lock.Close()
+			return nil, err
+		}
+		if acquired {
 			token := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
-			if _, err := lock.WriteString(token); err != nil {
+			if err := lock.Truncate(0); err != nil {
+				_ = unlockDashboardConfigFile(lock)
 				_ = lock.Close()
-				_ = os.Remove(lockPath)
 				return nil, err
 			}
-			if err := lock.Close(); err != nil {
-				_ = releaseDashboardConfigLock(lockPath, token)
+			if _, err := lock.Seek(0, io.SeekStart); err != nil {
+				_ = unlockDashboardConfigFile(lock)
+				_ = lock.Close()
+				return nil, err
+			}
+			if _, err := lock.WriteString(token); err != nil {
+				_ = unlockDashboardConfigFile(lock)
+				_ = lock.Close()
 				return nil, err
 			}
 			return func() error {
-				return releaseDashboardConfigLock(lockPath, token)
+				unlockErr := unlockDashboardConfigFile(lock)
+				closeErr := lock.Close()
+				if unlockErr != nil {
+					return unlockErr
+				}
+				return closeErr
 			}, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
-			return nil, err
-		}
 		if time.Now().After(deadline) {
+			_ = lock.Close()
 			return nil, fmt.Errorf("timed out acquiring workspace dashboard configuration lock")
 		}
 		time.Sleep(dashboardConfigLockRetryInterval)
 	}
-}
-
-func releaseDashboardConfigLock(lockPath, token string) error {
-	data, err := os.ReadFile(lockPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if string(data) != token {
-		return nil
-	}
-	if err := os.Remove(lockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
 }
 
 func ValidateWorkspaceDashboardConfig(config WorkspaceDashboardConfig) error {
