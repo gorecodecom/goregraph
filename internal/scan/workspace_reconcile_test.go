@@ -187,6 +187,76 @@ func TestWorkspaceReconcileInvalidDashboardConfigPreservesCompleteOutput(t *test
 	}
 }
 
+func TestWorkspaceReconcileWritesCatalogManifestsAndFreshnessForEveryTarget(t *testing.T) {
+	for _, target := range []BuildTarget{BuildTargetAgent, BuildTargetDashboard, BuildTargetAll} {
+		t.Run(string(target), func(t *testing.T) {
+			workspace := t.TempDir()
+			frontend := filepath.Join(workspace, "frontend", "web")
+			backend := filepath.Join(workspace, "services", "orders")
+			writeFile(t, frontend, "package.json", `{"name":"web"}`)
+			writeFile(t, frontend, "src/api.ts", "export async function loadOrder(id: string) { return fetch(`/orders/${id}`); }\n")
+			writeFile(t, backend, "pom.xml", `<project><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>orders</artifactId><version>1</version></project>`)
+			writeFile(t, backend, "src/main/java/example/OrderController.java", `package example;
+@RestController
+class OrderController {
+  @GetMapping("/orders/{id}")
+  String get(@PathVariable String id) { return id; }
+}`)
+			for _, project := range []string{frontend, backend} {
+				cfg := config.Defaults()
+				cfg.Workspace = false
+				if _, err := RunBuild(project, cfg, target); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg := config.Defaults()
+			cfg.Workspace = true
+			cfg.WorkspaceRoot = workspace
+			registry, err := ReconcileWorkspaceTarget(frontend, cfg, target)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			workspaceLayout := NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace"))
+			var workspaceCatalog APICatalogRecord
+			readJSON(t, workspaceLayout.Index("api-catalog.json"), &workspaceCatalog)
+			if len(workspaceCatalog.Endpoints) != 1 || len(workspaceCatalog.Endpoints[0].Consumers) != 1 {
+				var matches []WorkspaceContractMatchRecord
+				readJSON(t, workspaceLayout.Index("contract-matches.json"), &matches)
+				t.Fatalf("workspace catalog=%#v matches=%#v", workspaceCatalog, matches)
+			}
+			assertCatalogManifestAndFreshness(t, workspaceLayout, registry.Generated)
+
+			for _, project := range []string{frontend, backend} {
+				projectLayout := NewProjectOutputLayout(filepath.Join(project, cfg.OutputDir))
+				var projectCatalog APICatalogRecord
+				readJSON(t, projectLayout.Index("api-catalog.json"), &projectCatalog)
+				if len(projectCatalog.Endpoints) != 1 || len(projectCatalog.Endpoints[0].Consumers) != 1 {
+					t.Fatalf("project %s catalog=%#v", project, projectCatalog)
+				}
+				assertCatalogManifestAndFreshness(t, projectLayout, registry.Generated)
+			}
+		})
+	}
+}
+
+func assertCatalogManifestAndFreshness(t *testing.T, layout OutputLayout, generated string) {
+	t.Helper()
+	var manifest OutputManifest
+	readJSON(t, layout.Manifest, &manifest)
+	if !containsString(manifest.Index.Files, "index/api-catalog.json") {
+		t.Fatalf("catalog missing from manifest: %#v", manifest.Index.Files)
+	}
+	var freshness ArtifactFreshnessIndex
+	readJSON(t, layout.Index("freshness.json"), &freshness)
+	for _, artifact := range freshness.Artifacts {
+		if artifact.Artifact == "index/api-catalog.json" && artifact.GeneratedAt == generated && !artifact.Stale {
+			return
+		}
+	}
+	t.Fatalf("fresh catalog artifact missing at %q: %#v", generated, freshness.Artifacts)
+}
+
 func TestWorkspaceReconciliationMergesProjectAndCrossProjectContext(t *testing.T) {
 	workspace := t.TempDir()
 	frontend := filepath.Join(workspace, "frontend", "app")

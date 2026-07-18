@@ -300,6 +300,297 @@ func ValidateAPICatalog(catalog APICatalogRecord) error {
 	return nil
 }
 
+// BuildWorkspaceAPICatalog merges complete provider inventories with canonically resolved consumers.
+func BuildWorkspaceAPICatalog(registry WorkspaceRegistryRecord, projects []workspaceIndexProject, matches []WorkspaceContractMatchRecord, flows []WorkspaceFeatureFlowRecord, generated string) (APICatalogRecord, error) {
+	projectsByPath := make(map[string]workspaceIndexProject, len(projects))
+	registryByPath := make(map[string]WorkspaceProjectRecord, len(registry.Projects))
+	for _, project := range registry.Projects {
+		registryByPath[filepath.ToSlash(project.Path)] = project
+	}
+
+	catalog := APICatalogRecord{SchemaVersion: SchemaVersion, Generated: generated, Root: filepath.ToSlash(registry.Root), Endpoints: []APIEndpointRecord{}}
+	for _, project := range projects {
+		projectPath := filepath.ToSlash(project.record.Path)
+		if projectPath == "" {
+			return APICatalogRecord{}, fmt.Errorf("workspace API catalog contains project with empty path")
+		}
+		if _, exists := projectsByPath[projectPath]; exists {
+			return APICatalogRecord{}, fmt.Errorf("workspace API catalog contains duplicate project path %q", projectPath)
+		}
+		projectsByPath[projectPath] = project
+		projectCatalog := BuildProjectAPICatalog(projectPath, generated, project.routes, SpringIndex{Endpoints: project.endpoints}, nil, project.capabilities)
+		metadata := project.record
+		if registered, ok := registryByPath[projectPath]; ok {
+			metadata = registered
+		}
+		for _, endpoint := range projectCatalog.Endpoints {
+			endpoint.ProviderProject = projectPath
+			endpoint.ProviderService = metadata.Service
+			endpoint.ProviderRole = firstNonEmpty(metadata.Kind, endpoint.ProviderRole)
+			applyWorkspaceFlowTypes(&endpoint, flows)
+			catalog.Endpoints = append(catalog.Endpoints, endpoint)
+		}
+	}
+
+	for _, match := range matches {
+		candidateIndexes := workspaceCatalogEndpointCandidates(catalog.Endpoints, match)
+		if !resolvedWorkspaceCatalogMatch(match) {
+			if ambiguousWorkspaceCatalogMatch(match) {
+				for _, endpointIndex := range candidateIndexes {
+					addWorkspaceCatalogMismatch(&catalog.Endpoints[endpointIndex], APIConsumerRecord{}, "ambiguous_route_match", "WARNING", "Canonical route evidence is ambiguous; the consumer was preserved as an unresolved candidate and was not assigned to a provider endpoint.", ConfidenceInferred, workspaceCatalogEvidenceIDs(catalog.Endpoints[endpointIndex], match.ID))
+				}
+			}
+			continue
+		}
+		if len(candidateIndexes) != 1 {
+			if len(candidateIndexes) > 1 {
+				for _, endpointIndex := range candidateIndexes {
+					addWorkspaceCatalogMismatch(&catalog.Endpoints[endpointIndex], APIConsumerRecord{}, "ambiguous_route_match", "WARNING", "Canonical match metadata resolves to multiple provider endpoints; the consumer was not assigned.", ConfidenceInferred, workspaceCatalogEvidenceIDs(catalog.Endpoints[endpointIndex], match.ID))
+				}
+			}
+			continue
+		}
+
+		endpoint := &catalog.Endpoints[candidateIndexes[0]]
+		consumerProject, hasConsumerProject := projectsByPath[filepath.ToSlash(match.APIProject)]
+		contract, hasContract := exactWorkspaceCatalogContract(consumerProject.contracts, match)
+		consumerMetadata := consumerProject.record
+		if registered, ok := registryByPath[filepath.ToSlash(match.APIProject)]; ok {
+			consumerMetadata = registered
+		}
+		consumer := APIConsumerRecord{
+			ID:          StableWorkspaceID("api-consumer", match.ID, match.APIProject, match.APIHTTPMethod, match.APIPath, match.APIFile, strconv.Itoa(match.APILine)),
+			Project:     filepath.ToSlash(match.APIProject),
+			Service:     consumerMetadata.Service,
+			Role:        consumerMetadata.Kind,
+			Caller:      match.APICaller,
+			File:        filepath.ToSlash(match.APIFile),
+			Line:        match.APILine,
+			HTTPMethod:  strings.ToUpper(strings.TrimSpace(match.APIHTTPMethod)),
+			Path:        match.APIPath,
+			Resolution:  strings.ToUpper(match.Issue),
+			Confidence:  apiRouteConfidence(match.Confidence),
+			EvidenceIDs: catalogUniqueSortedStrings([]string{match.ID}),
+		}
+		if hasConsumerProject && hasContract {
+			consumer.Caller = firstNonEmpty(match.APICaller, contract.Caller)
+			consumer.CallAuth = normalizeConsumerCallAuth(contract.Auth)
+		} else {
+			consumer.CallAuth = []SecurityEvidenceRecord{}
+			consumer.Limitations = []string{"Outbound contract authentication evidence was unavailable for this canonical match."}
+		}
+		endpoint.Consumers = append(endpoint.Consumers, consumer)
+		addWorkspaceSecurityMismatches(endpoint, consumer, match.ID, hasContract && len(contract.Auth) > 0)
+	}
+
+	for endpointIndex := range catalog.Endpoints {
+		addWorkspaceProviderConflictMismatch(&catalog.Endpoints[endpointIndex])
+	}
+	SortAPICatalog(&catalog)
+	if err := ValidateAPICatalog(catalog); err != nil {
+		return APICatalogRecord{}, err
+	}
+	return catalog, nil
+}
+
+func resolvedWorkspaceCatalogMatch(match WorkspaceContractMatchRecord) bool {
+	return match.Issue == contractIssueMatched && strings.EqualFold(match.Confidence, "RESOLVED") && strings.TrimSpace(match.BackendProject) != ""
+}
+
+func ambiguousWorkspaceCatalogMatch(match WorkspaceContractMatchRecord) bool {
+	return strings.Contains(strings.ToLower(match.Issue), "ambiguous") || strings.Contains(strings.ToLower(match.Confidence), "ambiguous")
+}
+
+func workspaceCatalogEndpointCandidates(endpoints []APIEndpointRecord, match WorkspaceContractMatchRecord) []int {
+	var candidates []int
+	for index, endpoint := range endpoints {
+		if match.BackendProject != "" && filepath.ToSlash(match.BackendProject) != endpoint.ProviderProject {
+			continue
+		}
+		if match.BackendHTTPMethod != "" && !strings.EqualFold(match.BackendHTTPMethod, endpoint.HTTPMethod) {
+			continue
+		}
+		if match.BackendPath != "" && normalizeAPIPathParameterNames(canonicalProviderPath(match.BackendPath)) != normalizeAPIPathParameterNames(endpoint.Path) {
+			continue
+		}
+		if match.BackendHandler != "" && match.BackendHandler != endpoint.Handler {
+			continue
+		}
+		if match.BackendFile != "" && filepath.ToSlash(match.BackendFile) != endpoint.File {
+			continue
+		}
+		if match.BackendLine > 0 && match.BackendLine != endpoint.Line {
+			continue
+		}
+		candidates = append(candidates, index)
+	}
+	return candidates
+}
+
+func exactWorkspaceCatalogContract(contracts []APIContractRecord, match WorkspaceContractMatchRecord) (APIContractRecord, bool) {
+	var candidates []APIContractRecord
+	for _, contract := range contracts {
+		if !strings.EqualFold(contract.HTTPMethod, match.APIHTTPMethod) || contract.Path != match.APIPath || filepath.ToSlash(contract.File) != filepath.ToSlash(match.APIFile) || contract.Line != match.APILine {
+			continue
+		}
+		if match.APICaller != "" && contract.Caller != match.APICaller {
+			continue
+		}
+		candidates = append(candidates, contract)
+	}
+	if len(candidates) != 1 {
+		return APIContractRecord{}, false
+	}
+	return candidates[0], true
+}
+
+func normalizeConsumerCallAuth(records []AuthRecord) []SecurityEvidenceRecord {
+	if len(records) == 0 {
+		return []SecurityEvidenceRecord{}
+	}
+	return NormalizeSecurityEvidence(records)
+}
+
+func applyWorkspaceFlowTypes(endpoint *APIEndpointRecord, flows []WorkspaceFeatureFlowRecord) {
+	requestTypes := map[string]bool{}
+	responseTypes := map[string]bool{}
+	for _, flow := range flows {
+		if filepath.ToSlash(flow.BackendProject) != endpoint.ProviderProject || !strings.EqualFold(flow.HTTPMethod, endpoint.HTTPMethod) || !pathsCompatibleWithKnownBasePrefixes(flow.Path, endpoint.Path) {
+			continue
+		}
+		flowHandler := qualifiedName(flow.BackendController, flow.BackendMethod)
+		if flowHandler == "" || flowHandler != endpoint.Handler {
+			continue
+		}
+		if flow.BackendRequestType != "" {
+			requestTypes[flow.BackendRequestType] = true
+		}
+		if flow.BackendReturnType != "" {
+			responseTypes[flow.BackendReturnType] = true
+		}
+	}
+	mergeWorkspaceFlowType(&endpoint.RequestType, requestTypes, "request_type", &endpoint.Limitations)
+	mergeWorkspaceFlowType(&endpoint.ResponseType, responseTypes, "response_type", &endpoint.Limitations)
+}
+
+func mergeWorkspaceFlowType(target *string, candidates map[string]bool, field string, limitations *[]string) {
+	if *target != "" || len(candidates) == 0 {
+		return
+	}
+	values := make([]string, 0, len(candidates))
+	for value := range candidates {
+		values = append(values, value)
+	}
+	sort.Strings(values)
+	if len(values) == 1 {
+		*target = values[0]
+		return
+	}
+	*limitations = append(*limitations, "workspace_flow_"+field+"_conflict: "+strings.Join(values, " | "))
+}
+
+func addWorkspaceSecurityMismatches(endpoint *APIEndpointRecord, consumer APIConsumerRecord, matchID string, hasCallAuthEvidence bool) {
+	providerKinds := workspaceSecurityKinds(endpoint.Security)
+	consumerKinds := workspaceSecurityKinds(consumer.CallAuth)
+	evidenceIDs := workspaceCatalogEvidenceIDs(*endpoint, matchID, consumer.ID)
+	if providerKinds[SecurityPublic] && workspaceHasCredentialKind(consumerKinds) {
+		addWorkspaceCatalogMismatch(endpoint, consumer, "credentials_on_public_endpoint", "INFO", "Consumer credentials are sent to an explicitly public provider endpoint.", ConfidenceExact, evidenceIDs)
+		return
+	}
+	if workspaceProviderRequiresAuthentication(providerKinds) && !hasCallAuthEvidence {
+		addWorkspaceCatalogMismatch(endpoint, consumer, "missing_call_auth_evidence", "WARNING", "Call authentication evidence is absent; this is incomplete static evidence, not a proven authentication failure.", ConfidenceInferred, evidenceIDs)
+		return
+	}
+	if workspaceProviderRequiresAuthentication(providerKinds) && hasCallAuthEvidence && !workspaceSecurityCompatible(providerKinds, consumerKinds) {
+		addWorkspaceCatalogMismatch(endpoint, consumer, "auth_scheme_mismatch", "WARNING", "Provider authentication kinds "+strings.Join(sortedSecurityKinds(providerKinds), ", ")+" do not match consumer call authentication kinds "+strings.Join(sortedSecurityKinds(consumerKinds), ", ")+".", ConfidenceInferred, evidenceIDs)
+	}
+}
+
+func addWorkspaceProviderConflictMismatch(endpoint *APIEndpointRecord) {
+	for _, security := range endpoint.Security {
+		if !security.Conflicting {
+			continue
+		}
+		addWorkspaceCatalogMismatch(endpoint, APIConsumerRecord{}, "conflicting_provider_security", "WARNING", "Provider security evidence contains conflicting public and authenticated rules; effective runtime access cannot be proven statically.", ConfidenceInferred, workspaceCatalogEvidenceIDs(*endpoint))
+		return
+	}
+}
+
+func workspaceSecurityKinds(records []SecurityEvidenceRecord) map[string]bool {
+	result := map[string]bool{}
+	for _, record := range records {
+		if record.Kind != SecurityUnknown {
+			result[record.Kind] = true
+		}
+	}
+	return result
+}
+
+func workspaceHasCredentialKind(kinds map[string]bool) bool {
+	for kind := range kinds {
+		if kind != SecurityPublic && kind != SecurityUnknown {
+			return true
+		}
+	}
+	return false
+}
+
+func workspaceProviderRequiresAuthentication(kinds map[string]bool) bool {
+	for kind := range kinds {
+		if kind != SecurityPublic && kind != SecurityUnknown {
+			return true
+		}
+	}
+	return false
+}
+
+func workspaceSecurityCompatible(provider, consumer map[string]bool) bool {
+	if provider[SecurityAuthenticated] || provider[SecurityRole] {
+		return workspaceHasCredentialKind(consumer)
+	}
+	for kind := range provider {
+		if consumer[kind] || (kind == SecurityBearer && consumer[SecurityOAuth2]) || (kind == SecurityOAuth2 && consumer[SecurityBearer]) {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedSecurityKinds(kinds map[string]bool) []string {
+	result := make([]string, 0, len(kinds))
+	for kind := range kinds {
+		result = append(result, kind)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func addWorkspaceCatalogMismatch(endpoint *APIEndpointRecord, consumer APIConsumerRecord, kind, severity, reason string, confidence Confidence, evidenceIDs []string) {
+	consumerIdentity := consumer.ID
+	if consumerIdentity == "" {
+		consumerIdentity = "provider"
+	}
+	record := APIMismatchRecord{
+		ID: StableWorkspaceID("api-mismatch", endpoint.ID, consumerIdentity, kind), Kind: kind, Severity: severity,
+		Reason: reason, Confidence: confidence, EvidenceIDs: catalogUniqueSortedStrings(evidenceIDs),
+	}
+	for _, existing := range endpoint.Mismatches {
+		if existing.ID == record.ID {
+			return
+		}
+	}
+	endpoint.Mismatches = append(endpoint.Mismatches, record)
+}
+
+func workspaceCatalogEvidenceIDs(endpoint APIEndpointRecord, extra ...string) []string {
+	ids := append([]string(nil), endpoint.EvidenceIDs...)
+	ids = append(ids, extra...)
+	if len(catalogUniqueSortedStrings(ids)) == 0 {
+		ids = append(ids, endpoint.ID)
+	}
+	return catalogUniqueSortedStrings(ids)
+}
+
 func canonicalAPIIdentityPart(value string) string {
 	return strings.TrimSpace(strings.ReplaceAll(filepath.ToSlash(value), `\`, "/"))
 }

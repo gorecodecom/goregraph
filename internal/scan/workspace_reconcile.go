@@ -103,6 +103,10 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	context := buildWorkspaceContext(registry, indexed)
 	matches := buildWorkspaceContractMatches(indexed)
 	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
+	apiCatalog, err := BuildWorkspaceAPICatalog(registry, indexed, matches, featureFlows, registry.Generated)
+	if err != nil {
+		return nil, err
+	}
 	var symbolIndex WorkspaceSymbolIndexRecord
 	var symbolUsageIndex WorkspaceSymbolUsageIndexRecord
 	dataFlows := BuildDataFlows(featureFlows)
@@ -147,7 +151,7 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 		}
 	}
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
-	workspaceFreshness := BuildWorkspaceFreshness(indexed, registry.Generated)
+	workspaceFreshness := withReconciledAPICatalogFreshness(BuildWorkspaceFreshness(indexed, registry.Generated), registry.Generated)
 	var dashboardFiles []string
 	var dashboardArtifacts workspaceDashboardArtifacts
 	if target.IncludesDashboard() {
@@ -209,6 +213,9 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 		return nil, err
 	}
 	if err := writeJSON(layout.Index("feature-flows.json"), featureFlows); err != nil {
+		return nil, err
+	}
+	if err := writeJSON(layout.Index("api-catalog.json"), apiCatalog); err != nil {
 		return nil, err
 	}
 	if err := writeJSON(layout.Index("data-flows.json"), dataFlows); err != nil {
@@ -295,6 +302,13 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 		if err := writeJSON(projectLayout.Index("workspace-contract-matches.json"), projectMatches); err != nil {
 			return nil, err
 		}
+		projectCatalog := filterWorkspaceAPICatalog(project.record.Path, apiCatalog)
+		if err := writeJSON(projectLayout.Index("api-catalog.json"), projectCatalog); err != nil {
+			return nil, err
+		}
+		if err := refreshProjectAPICatalogFreshness(projectLayout, registry.Generated); err != nil {
+			return nil, err
+		}
 		projectFeatureFlows := filterWorkspaceFeatureFlows(project.record.Path, featureFlows)
 		if err := writeJSON(projectLayout.Index("workspace-feature-flows.json"), projectFeatureFlows); err != nil {
 			return nil, err
@@ -375,6 +389,60 @@ func republishReconciledProjectManifest(layout OutputLayout, writeDashboard bool
 		manifest.Dashboard = validProjectionStatus(layout.Root, manifest.Dashboard)
 	}
 	return writeOutputManifestAtomic(layout.Manifest, manifest)
+}
+
+func filterWorkspaceAPICatalog(projectPath string, catalog APICatalogRecord) APICatalogRecord {
+	filtered := APICatalogRecord{SchemaVersion: catalog.SchemaVersion, Generated: catalog.Generated, Root: filepath.ToSlash(projectPath), Endpoints: []APIEndpointRecord{}}
+	for _, endpoint := range catalog.Endpoints {
+		if endpoint.ProviderProject == projectPath {
+			filtered.Endpoints = append(filtered.Endpoints, endpoint)
+			continue
+		}
+		projectEndpoint := endpoint
+		projectEndpoint.Consumers = nil
+		for _, consumer := range endpoint.Consumers {
+			if consumer.Project == projectPath {
+				projectEndpoint.Consumers = append(projectEndpoint.Consumers, consumer)
+			}
+		}
+		if len(projectEndpoint.Consumers) > 0 {
+			filtered.Endpoints = append(filtered.Endpoints, projectEndpoint)
+		}
+	}
+	SortAPICatalog(&filtered)
+	return filtered
+}
+
+func withReconciledAPICatalogFreshness(freshness ArtifactFreshnessIndex, generated string) ArtifactFreshnessIndex {
+	record := ArtifactFreshnessRecord{
+		Artifact: "index/api-catalog.json", GeneratedAt: generated, GoreGraphVersion: freshness.GoreGraphVersion,
+		Schema: SchemaVersion, SourceFingerprint: freshness.SourceFingerprint, Stale: false,
+		Reason: "generated from reconciled workspace provider and consumer indexes",
+	}
+	replaced := false
+	for index := range freshness.Artifacts {
+		if freshness.Artifacts[index].Artifact == record.Artifact {
+			freshness.Artifacts[index] = record
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		freshness.Artifacts = append(freshness.Artifacts, record)
+	}
+	sort.Slice(freshness.Artifacts, func(left, right int) bool {
+		return freshness.Artifacts[left].Artifact < freshness.Artifacts[right].Artifact
+	})
+	return freshness
+}
+
+func refreshProjectAPICatalogFreshness(layout OutputLayout, generated string) error {
+	var freshness ArtifactFreshnessIndex
+	if err := readWorkspaceJSON(layout.Index("freshness.json"), &freshness); err != nil {
+		return err
+	}
+	freshness = withReconciledAPICatalogFreshness(freshness, generated)
+	return writeJSON(layout.Index("freshness.json"), freshness)
 }
 
 // WorkspaceRoot returns the workspace root that would be used for a project.
@@ -1833,19 +1901,20 @@ func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspace
 func buildWorkspaceContractMatches(projects []workspaceIndexProject) []WorkspaceContractMatchRecord {
 	var backendRoutes []workspaceBackendRoute
 	knownServices := map[string]bool{}
+	seenBackendRoutes := map[string]bool{}
 	for _, project := range projects {
 		for _, route := range project.routes {
 			if route.Kind != "backend" {
 				continue
 			}
-			backendRoutes = append(backendRoutes, workspaceBackendRoute{project: project.record, route: route})
-			service := project.record.Service
-			if service == "" {
-				service = serviceCandidateForPath(route.Path)
+			appendWorkspaceBackendRoute(&backendRoutes, seenBackendRoutes, knownServices, workspaceBackendRoute{project: project.record, route: route})
+		}
+		for _, endpoint := range project.endpoints {
+			route := CodeRouteRecord{
+				Language: "java", Framework: "Spring", Kind: "backend", FrameworkBound: true,
+				HTTPMethod: endpoint.HTTPMethod, Path: endpoint.Path, Handler: qualifiedName(endpoint.Controller, endpoint.Method), File: endpoint.File, Line: endpoint.Line,
 			}
-			if service != "" {
-				knownServices[service] = true
-			}
+			appendWorkspaceBackendRoute(&backendRoutes, seenBackendRoutes, knownServices, workspaceBackendRoute{project: project.record, route: route})
 		}
 	}
 
@@ -1868,6 +1937,21 @@ func buildWorkspaceContractMatches(projects []workspaceIndexProject) []Workspace
 		return records[i].APIPath < records[j].APIPath
 	})
 	return records
+}
+
+func appendWorkspaceBackendRoute(routes *[]workspaceBackendRoute, seen, knownServices map[string]bool, candidate workspaceBackendRoute) {
+	key := filepath.ToSlash(candidate.project.Path) + "\x00" + strings.ToUpper(candidate.route.HTTPMethod) + "\x00" + normalizeAPIPathParameterNames(canonicalProviderPath(candidate.route.Path)) + "\x00" + candidate.route.Handler + "\x00" + filepath.ToSlash(candidate.route.File) + "\x00" + fmt.Sprint(candidate.route.Line)
+	if !seen[key] {
+		seen[key] = true
+		*routes = append(*routes, candidate)
+	}
+	service := candidate.project.Service
+	if service == "" {
+		service = serviceCandidateForPath(candidate.route.Path)
+	}
+	if service != "" {
+		knownServices[service] = true
+	}
 }
 
 func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContractRecord, routes []workspaceBackendRoute, knownServices map[string]bool) WorkspaceContractMatchRecord {
@@ -3337,6 +3421,7 @@ func workspaceIndexFiles(target BuildTarget) []string {
 		"context.json",
 		"contract-matches.json",
 		"feature-flows.json",
+		"api-catalog.json",
 		"data-flows.json",
 		"feature-dossiers.json",
 		"workspace-graph.json",

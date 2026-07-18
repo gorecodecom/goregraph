@@ -383,6 +383,169 @@ func TestSortAPICatalogWritesEmptyConsumerArray(t *testing.T) {
 	}
 }
 
+func TestBuildWorkspaceAPICatalogKeepsProviderInventoryAndAttachesConsumers(t *testing.T) {
+	provider := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "services/orders", Service: "orders", Kind: "backend"}, endpoints: []SpringEndpointRecord{
+		{HTTPMethod: "GET", Path: "/orders/{id}", Controller: "OrderController", Method: "get", File: "OrderController.java", Line: 10},
+		{HTTPMethod: "POST", Path: "/orders", Controller: "OrderController", Method: "create", File: "OrderController.java", Line: 20},
+	}}
+	consumer := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "frontend/web", Service: "web", Kind: "frontend"}, contracts: []APIContractRecord{{HTTPMethod: "GET", Path: "/orders/42", Caller: "loadOrder", File: "src/api.ts", Line: 7}}}
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{provider.record, consumer.record}}
+	matches := []WorkspaceContractMatchRecord{{
+		ID: "match:orders", APIProject: "frontend/web", APIHTTPMethod: "GET", APIPath: "/orders/42", APIFile: "src/api.ts", APILine: 7, APICaller: "loadOrder",
+		BackendProject: "services/orders", BackendService: "orders", BackendHTTPMethod: "GET", BackendPath: "/orders/{id}",
+		BackendHandler: "OrderController.get", BackendFile: "OrderController.java", BackendLine: 10,
+		Issue: contractIssueMatched, Confidence: "RESOLVED",
+	}}
+	flows := []WorkspaceFeatureFlowRecord{
+		{ID: "wrong-handler", FrontendProject: "frontend/web", FrontendFile: "src/api.ts", HTTPMethod: "GET", Path: "/orders/{id}", BackendProject: "services/orders", BackendController: "OrderController", BackendMethod: "list", BackendRequestType: "WrongRequest", BackendReturnType: "WrongResponse"},
+		{ID: "exact-handler", FrontendProject: "frontend/web", FrontendFile: "src/api.ts", HTTPMethod: "GET", Path: "/orders/{id}", BackendProject: "services/orders", BackendController: "OrderController", BackendMethod: "get", BackendRequestType: "OrderQuery", BackendReturnType: "Order"},
+	}
+
+	catalog, err := BuildWorkspaceAPICatalog(registry, []workspaceIndexProject{provider, consumer}, matches, flows, "fixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.Endpoints) != 2 {
+		t.Fatalf("catalog=%#v", catalog)
+	}
+	if len(catalog.Endpoints[0].Consumers) != 1 || catalog.Endpoints[0].Consumers[0].Project != "frontend/web" {
+		t.Fatalf("matched endpoint consumers=%#v", catalog.Endpoints[0].Consumers)
+	}
+	if catalog.Endpoints[0].RequestType != "OrderQuery" || catalog.Endpoints[0].ResponseType != "Order" {
+		t.Fatalf("matched endpoint types=%q/%q", catalog.Endpoints[0].RequestType, catalog.Endpoints[0].ResponseType)
+	}
+	if len(catalog.Endpoints[1].Consumers) != 0 {
+		t.Fatalf("zero-consumer endpoint was assigned consumers: %#v", catalog.Endpoints[1])
+	}
+}
+
+func TestBuildWorkspaceAPICatalogReportsSecurityMismatches(t *testing.T) {
+	tests := []struct {
+		name           string
+		providerAuth   []AuthRecord
+		consumerAuth   []AuthRecord
+		wantKind       string
+		wantSeverity   string
+		wantReason     string
+		unwantedReason string
+	}{
+		{
+			name: "basic versus bearer", providerAuth: []AuthRecord{{Kind: "http_basic", Confidence: "EXACT"}},
+			consumerAuth: []AuthRecord{{Kind: "bearer", Confidence: "EXTRACTED"}}, wantKind: "auth_scheme_mismatch", wantSeverity: "WARNING", wantReason: "basic",
+		},
+		{
+			name: "authenticated with no call evidence", providerAuth: []AuthRecord{{Kind: "authenticated", Confidence: "EXACT"}},
+			wantKind: "missing_call_auth_evidence", wantSeverity: "WARNING", wantReason: "incomplete static evidence", unwantedReason: "is a proven authentication failure",
+		},
+		{
+			name: "credentials sent to explicit public endpoint", providerAuth: []AuthRecord{{Kind: "permit_all", Confidence: "EXACT"}},
+			consumerAuth: []AuthRecord{{Kind: "basic", Confidence: "EXTRACTED"}}, wantKind: "credentials_on_public_endpoint", wantSeverity: "INFO", wantReason: "explicitly public",
+		},
+		{
+			name: "conflicting provider rules", providerAuth: []AuthRecord{{Kind: "permit_all", Confidence: "EXACT"}, {Kind: "authenticated", Confidence: "EXACT"}},
+			wantKind: "conflicting_provider_security", wantSeverity: "WARNING", wantReason: "conflicting",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "services/orders"}, endpoints: []SpringEndpointRecord{{
+				HTTPMethod: "GET", Path: "/orders/{id}", Controller: "OrderController", Method: "get", File: "OrderController.java", Line: 10, Auth: test.providerAuth,
+			}}}
+			consumer := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "frontend/web"}, contracts: []APIContractRecord{{
+				HTTPMethod: "GET", Path: "/orders/42", File: "src/api.ts", Line: 7, Auth: test.consumerAuth,
+			}}}
+			match := WorkspaceContractMatchRecord{
+				ID: "match:orders", APIProject: "frontend/web", APIHTTPMethod: "GET", APIPath: "/orders/42", APIFile: "src/api.ts", APILine: 7,
+				BackendProject: "services/orders", BackendHTTPMethod: "GET", BackendPath: "/orders/{id}", BackendHandler: "OrderController.get", BackendFile: "OrderController.java", BackendLine: 10,
+				Issue: contractIssueMatched, Confidence: "RESOLVED",
+			}
+			catalog, err := BuildWorkspaceAPICatalog(WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{provider.record, consumer.record}}, []workspaceIndexProject{provider, consumer}, []WorkspaceContractMatchRecord{match}, nil, "fixed")
+			if err != nil {
+				t.Fatal(err)
+			}
+			mismatch := requireAPIMismatch(t, catalog.Endpoints[0].Mismatches, test.wantKind)
+			if mismatch.Severity != test.wantSeverity || !strings.Contains(strings.ToLower(mismatch.Reason), test.wantReason) {
+				t.Fatalf("mismatch=%#v", mismatch)
+			}
+			if test.unwantedReason != "" && strings.Contains(strings.ToLower(mismatch.Reason), test.unwantedReason) {
+				t.Fatalf("mismatch overstates static evidence: %#v", mismatch)
+			}
+			if len(mismatch.EvidenceIDs) == 0 {
+				t.Fatalf("mismatch has no evidence IDs: %#v", mismatch)
+			}
+		})
+	}
+}
+
+func TestBuildWorkspaceAPICatalogPreservesAmbiguousRouteWithoutAssigningConsumer(t *testing.T) {
+	provider := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "services/orders"}, endpoints: []SpringEndpointRecord{
+		{HTTPMethod: "GET", Path: "/orders/{id}", Controller: "OrderController", Method: "get", File: "OrderController.java", Line: 10},
+		{HTTPMethod: "GET", Path: "/orders/{id}", Controller: "LegacyOrderController", Method: "get", File: "LegacyOrderController.java", Line: 20},
+	}}
+	consumer := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "frontend/web"}, contracts: []APIContractRecord{{HTTPMethod: "GET", Path: "/orders/42", File: "src/api.ts", Line: 7}}}
+	match := WorkspaceContractMatchRecord{
+		ID: "match:ambiguous", APIProject: "frontend/web", APIHTTPMethod: "GET", APIPath: "/orders/42", APIFile: "src/api.ts", APILine: 7,
+		BackendProject: "services/orders", BackendHTTPMethod: "GET", BackendPath: "/orders/{id}", Issue: "ambiguous_route", Confidence: "AMBIGUOUS",
+		EquivalentRouteCandidates: []string{"GET /orders/{id}"},
+	}
+
+	catalog, err := BuildWorkspaceAPICatalog(WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{provider.record, consumer.record}}, []workspaceIndexProject{provider, consumer}, []WorkspaceContractMatchRecord{match}, nil, "fixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, endpoint := range catalog.Endpoints {
+		if len(endpoint.Consumers) != 0 {
+			t.Fatalf("ambiguous route assigned consumer: %#v", endpoint)
+		}
+		requireAPIMismatch(t, endpoint.Mismatches, "ambiguous_route_match")
+	}
+}
+
+func TestBuildWorkspaceAPICatalogIsDeterministicAcrossDiscoveryOrder(t *testing.T) {
+	provider := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "services/orders", Service: "orders"}, endpoints: []SpringEndpointRecord{
+		{HTTPMethod: "POST", Path: "/orders", Controller: "OrderController", Method: "create", File: "OrderController.java", Line: 20},
+		{HTTPMethod: "GET", Path: "/orders/{id}", Controller: "OrderController", Method: "get", File: "OrderController.java", Line: 10, Auth: []AuthRecord{{Kind: "authenticated", Confidence: "EXACT"}}},
+	}}
+	consumer := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "frontend/web", Service: "web"}, contracts: []APIContractRecord{
+		{HTTPMethod: "GET", Path: "/orders/42", Caller: "load", File: "src/z.ts", Line: 7},
+		{HTTPMethod: "GET", Path: "/orders/7", Caller: "refresh", File: "src/a.ts", Line: 3, Auth: []AuthRecord{{Kind: "bearer", Confidence: "EXTRACTED"}}},
+	}}
+	matches := []WorkspaceContractMatchRecord{
+		{ID: "match:z", APIProject: "frontend/web", APIHTTPMethod: "GET", APIPath: "/orders/42", APIFile: "src/z.ts", APILine: 7, APICaller: "load", BackendProject: "services/orders", BackendService: "orders", BackendHTTPMethod: "GET", BackendPath: "/orders/{id}", BackendHandler: "OrderController.get", BackendFile: "OrderController.java", BackendLine: 10, Issue: contractIssueMatched, Confidence: "RESOLVED"},
+		{ID: "match:a", APIProject: "frontend/web", APIHTTPMethod: "GET", APIPath: "/orders/7", APIFile: "src/a.ts", APILine: 3, APICaller: "refresh", BackendProject: "services/orders", BackendService: "orders", BackendHTTPMethod: "GET", BackendPath: "/orders/{id}", BackendHandler: "OrderController.get", BackendFile: "OrderController.java", BackendLine: 10, Issue: contractIssueMatched, Confidence: "RESOLVED"},
+	}
+	registry := WorkspaceRegistryRecord{Root: "workspace", Projects: []WorkspaceProjectRecord{provider.record, consumer.record}}
+	forward, err := BuildWorkspaceAPICatalog(registry, []workspaceIndexProject{provider, consumer}, matches, nil, "fixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverseSlice(provider.endpoints)
+	reverseSlice(consumer.contracts)
+	reverseSlice(matches)
+	reverseSlice(registry.Projects)
+	reverse, err := BuildWorkspaceAPICatalog(registry, []workspaceIndexProject{consumer, provider}, matches, nil, "fixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forwardJSON, _ := json.Marshal(forward)
+	reverseJSON, _ := json.Marshal(reverse)
+	if string(forwardJSON) != string(reverseJSON) {
+		t.Fatalf("discovery order changed catalog JSON:\nforward: %s\nreverse: %s", forwardJSON, reverseJSON)
+	}
+}
+
+func requireAPIMismatch(t *testing.T, mismatches []APIMismatchRecord, kind string) APIMismatchRecord {
+	t.Helper()
+	for _, mismatch := range mismatches {
+		if mismatch.Kind == kind {
+			return mismatch
+		}
+	}
+	t.Fatalf("missing mismatch %q in %#v", kind, mismatches)
+	return APIMismatchRecord{}
+}
+
 func validAPICatalogFixture() APICatalogRecord {
 	return APICatalogRecord{
 		SchemaVersion: SchemaVersion,
