@@ -286,6 +286,30 @@ class Controller {
 	}
 }
 
+func TestSpringIndexNamedEmptyOpenAPISecurityRequirementsOverrideIsPublic(t *testing.T) {
+	definitions := extractJavaSource(FileRecord{Path: "src/OpenAPIConfig.java", Language: "java"}, `
+@SecurityScheme(name = "bearerAuth", type = SecuritySchemeType.HTTP, scheme = "bearer")
+class OpenAPIConfig {}
+`)
+	controller := extractJavaSource(FileRecord{Path: "src/Controller.java", Language: "java"}, `@RestController
+@SecurityRequirement(name = "bearerAuth")
+class Controller {
+  @SecurityRequirements(value = {})
+  @GetMapping("/public")
+  String publicOverride() { return "ok"; }
+}`)
+
+	index := buildSpringIndex([]JavaSourceRecord{definitions, controller})
+	endpoint, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/public")
+	if !ok || !hasAuthKind(endpoint.Auth, "permit_all") || hasAuthKind(endpoint.Auth, "bearer") {
+		t.Fatalf("named empty plural override not retained as explicit public: %#v", endpoint)
+	}
+	catalog := BuildProjectAPICatalog("orders", "fixed", nil, index, nil, nil)
+	if len(catalog.Endpoints) != 1 || len(catalog.Endpoints[0].Security) != 1 || catalog.Endpoints[0].Security[0].Kind != SecurityPublic {
+		t.Fatalf("named empty plural override did not normalize to public: %#v", catalog.Endpoints)
+	}
+}
+
 func hasAuthKind(records []AuthRecord, kind string) bool {
 	for _, record := range records {
 		if record.Kind == kind {
