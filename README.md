@@ -28,8 +28,9 @@ The tool is intentionally conservative:
 - Builds a workspace map across repositories or services, including confidence, diagnostics, and source evidence.
 - Produces human-readable reports, machine-readable JSON, and an offline workspace dashboard.
 
-The workspace dashboard answers seven separate questions without mixing their
-evidence models: Architecture maps services, Endpoints follows calls, Feature Flow
+The workspace dashboard answers eight separate questions without mixing their
+evidence models: Architecture maps services, API Catalog inventories provider
+endpoints, Endpoints follows consumer-to-provider relationships, Feature Flow
 shows an implementation chain, Data Flow follows fields, Code Explorer inspects
 exact classes and symbols, Diagnostics explains uncertainty, and Coverage
 distinguishes indexing completeness from analyzer support. Source locations,
@@ -231,9 +232,37 @@ The same scan scopes apply when `dashboard` is replaced with `agent` or `all`.
 For human exploration:
 
 ```bash
-goregraph build dashboard .
-goregraph dashboard path .
+goregraph workspace build dashboard .
+goregraph workspace dashboard path .
+goregraph workspace dashboard open .
 ```
+
+`path` prints and `open` opens the generated static dashboard. That export is
+offline and read-only; neither command starts a server. To organize the
+Architecture view, run the local editor explicitly:
+
+```bash
+goregraph workspace dashboard edit .
+```
+
+Only `edit` starts an authenticated loopback server. Automatic groups come from
+production package/module evidence. In the editor, group labels and group order
+can be changed, and services can be reordered or moved between groups by
+drag-and-drop or keyboard controls. Saving persists those choices in the
+workspace-root `.goregraph-dashboard.json`; Discard abandons the current draft,
+and Reset to detected removes saved architecture overrides after confirmation.
+Rebuilds retain valid manual choices, place newly discovered services into
+detected groups, and leave removed-service overrides in the config so Doctor can
+report them as stale.
+
+**API Catalog** appears before **Endpoints**. API Catalog is the complete
+provider inventory, including endpoints with no detected consumer. Endpoints is
+the relationship and implementation-trace view for consumer-to-provider calls.
+Endpoint security describes static evidence about what the provider requires;
+consumer call authentication describes evidence about what one caller sends.
+Missing evidence is `unknown`, displayed as `No auth evidence detected`, never
+implicitly `public`. Runtime enforcement and production authorization are
+outside the scope of static analysis.
 
 For an AI coding task:
 
@@ -642,6 +671,19 @@ or persistence capabilities.
 
 Full adapters also cover messaging/RPC and request-to-response data-flow evidence. Markdown, JSON, YAML, Maven, Node, and Composer are indexed as documents, metadata, or workspace context rather than source-language adapters.
 
+### API integration depth
+
+This table describes the API Catalog, dashboard, and compact agent projection;
+it does not turn missing static evidence into a runtime claim.
+
+| Language / framework | Endpoint inventory | Consumers | Security/auth | Request/response types | Dashboard | Agent context |
+| --- | --- | --- | --- | --- | --- | --- |
+| Java / Spring | Provider endpoints | Reconciled callers | Endpoint security | Statically extracted DTO identities | Full API Catalog and Endpoints | Relevant endpoint facts |
+| JavaScript / TypeScript / Node.js / React | Supported Node provider routes | HTTP client call sites | Consumer call authentication; supported provider evidence | Statically supported handler/type evidence | Full API Catalog and Endpoints | Relevant endpoint and consumer facts |
+
+For both rows, `unknown` means evidence was not detected. It does not mean an
+endpoint is public or that authentication is absent at runtime.
+
 ## Output Files
 
 Project output has three owned subtrees:
@@ -650,6 +692,7 @@ Project output has three owned subtrees:
 goregraph-out/
   manifest.json
   index/                  # canonical machine index used by GoreGraph
+    api-catalog.json      # complete project provider inventory
   agent/
     context-index.json    # only generated index recommended for AI context
     agent-guide.md
@@ -664,6 +707,7 @@ Workspace output uses the same ownership split:
 .goregraph-workspace/
   manifest.json
   index/                  # registry, canonical graphs, symbols, usages, flows
+    api-catalog.json      # complete workspace provider inventory
   agent/
     context-index.json
     agent-guide.md
@@ -678,6 +722,11 @@ direct prompt ingestion. `agent/` and bounded Context Packs are the only
 recommended AI input. `dashboard/` is the full human exploration surface;
 Code Explorer remains there. Project dashboard builds produce Markdown reports,
 while the interactive dashboard remains workspace-only in 1.3.0.
+
+The user-owned `.goregraph-dashboard.json` sits at the workspace root, outside
+generated output. It stores stable group order, labels, and service placement;
+dashboard rebuilds read it but do not overwrite it. The complete
+`index/api-catalog.json` is machine/dashboard input, not prompt input.
 
 The JSON files described below live under `index/`; human-readable Markdown
 files live under `dashboard/` unless stated otherwise.
@@ -915,6 +964,11 @@ that entrypoint's exact returned route or qualified symbol, never a call-chain
 value. After the second Context call, continue from source regardless of
 outcome.
 
+For an endpoint task, the compact projection keeps at most one selected endpoint
+and eight consumer call sites with an explicit omitted count. It preserves the
+1800-token default budget and does not include the full `index/api-catalog.json`,
+dashboard payload, or `.goregraph-dashboard.json`.
+
 Legacy `query task-context`, workspace-delta, diagnostics, service-context, and
 other specialist queries remain available for manual compatibility. They are not
 part of the normal AI workflow. Workspace-root Context Packs remain neutral and
@@ -963,6 +1017,11 @@ GoreGraph does:
 - fetch `origin` and safely switch or fast-forward eligible repositories only
   when a Git update command with `--execute` is explicitly requested
 - optionally update project and workspace root `.gitignore` files for generated GoreGraph output
+
+API security and authentication results are static source evidence. Endpoint
+security and consumer call authentication remain separate, `unknown` is shown
+as `No auth evidence detected` rather than `public`, and GoreGraph does not
+claim to validate runtime enforcement or production authorization.
 
 ## License
 

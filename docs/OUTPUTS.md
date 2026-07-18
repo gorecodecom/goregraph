@@ -67,7 +67,9 @@ The ownership rules are strict:
   dashboard Markdown, HTML, assets, or `index/symbol-usages.json` as prompt
   context.
 - A project dashboard build writes human-readable Markdown reports. The
-  interactive seven-view dashboard is workspace-only in 1.3.0.
+  interactive eight-view dashboard is workspace-only in 1.3.0.
+- `.goregraph-dashboard.json` is user-owned workspace configuration, not
+  generated output. Dashboard rebuilds read it; clean commands preserve it.
 
 ## Exact Project Tree
 
@@ -91,6 +93,7 @@ goregraph-out/
 │   ├── routes.json
 │   ├── flows.json
 │   ├── api-contracts.json
+│   ├── api-catalog.json
 │   ├── architecture-capabilities.json
 │   ├── service-dependencies.json
 │   ├── frontend-usage.json
@@ -176,7 +179,8 @@ The complete workspace layout for `workspace build all` is:
 │   ├── directed-traces.json
 │   ├── freshness.json
 │   ├── symbol-index.json
-│   └── symbol-usages.json
+│   ├── symbol-usages.json
+│   └── api-catalog.json
 ├── agent/
 │   ├── agent-guide.md
 │   └── context-index.json
@@ -229,14 +233,24 @@ are not part of the normal agent workflow. `goregraph mcp --expert-tools`
 exposes legacy diagnostic and exploration tools for explicit manual use; they
 are not substitutes for a third Context call.
 
+For an API task, the agent compiler selects at most one relevant endpoint and
+eight consumer call sites, with an explicit omitted count. The default budget
+remains 1800 tokens. `agent/context-index.json` contains compact searchable
+facts; Context output never includes the full `index/api-catalog.json`, the
+dashboard payload, or `.goregraph-dashboard.json` merely because an agent uses
+GoreGraph.
+
 ## Human Dashboard
 
 `.goregraph-workspace/dashboard/workspace-map.html` is the Schema 3 standalone
-offline dashboard. It contains Architecture, Endpoints, Feature Flow, Data
-Flow, Code Explorer, Diagnostics, and Coverage views.
+offline dashboard. It contains Architecture, API Catalog, Endpoints, Feature
+Flow, Data Flow, Code Explorer, Diagnostics, and Coverage views.
 
 - Architecture derives dynamic domain lanes, keeps stable card coordinates,
   and distinguishes statically detected relationships from runtime traffic.
+- API Catalog is the complete provider endpoint inventory, including endpoints
+  without known consumers. It reads `index/api-catalog.json` and appears before
+  Endpoints.
 - Endpoints links callers, providers, symbols, files, and lines to source.
 - Feature Flow presents route-to-component-to-API-to-backend-to-persistence-to-
   test chains.
@@ -249,6 +263,38 @@ Flow, Code Explorer, Diagnostics, and Coverage views.
 
 Dashboard output is the complete human exploration surface. It is not Context
 Pack input.
+
+`goregraph workspace dashboard path .` prints the generated static file and
+`goregraph workspace dashboard open .` opens the same offline, read-only file.
+Only `goregraph workspace dashboard edit .` starts an authenticated loopback
+server. The editor supports group rename/reorder and service drag-and-drop or
+keyboard movement. Save persists stable group labels, order, and service
+placement in the workspace-root `.goregraph-dashboard.json`; Discard restores
+the saved draft, and Reset to detected removes architecture overrides after
+confirmation. Rebuilds preserve valid manual choices, auto-place new services
+from production package/module evidence, and retain stale removed-service
+overrides so Doctor can report them.
+
+Endpoint security and consumer call authentication are separate static
+evidence. Missing evidence remains `unknown` and is displayed as
+`No auth evidence detected`; it is not treated as `public`. Runtime enforcement,
+traffic, and production authorization are outside the output contract.
+
+## API Catalog and Dashboard Configuration Schemas
+
+Project `goregraph-out/index/api-catalog.json` and workspace
+`.goregraph-workspace/index/api-catalog.json` use the same Schema 3 canonical
+model. Each endpoint records a stable ID, provider project, HTTP method/path,
+handler/source, supported request and response identities, provider security,
+consumers, confidence, coverage, limitations, and evidence IDs. Each consumer
+keeps its project, caller/source, resolution, call authentication, limitations,
+and evidence. An empty consumer list does not mean the endpoint is unused.
+
+`.goregraph-dashboard.json` uses its own versioned configuration schema. Schema
+1 contains an `architecture` object with `groupOrder`, stable `groups` keyed by
+machine ID and editable `label`, plus `services` keyed by project-relative path
+with `group` and `order`. Unknown fields are rejected. Labels are presentation
+only; stable IDs let renamed groups survive later scans.
 
 ## Exact Symbol and Usage Semantics
 

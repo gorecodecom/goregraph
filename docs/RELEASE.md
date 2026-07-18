@@ -32,6 +32,9 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
 - compact generated AI input in `goregraph-out/agent/` and
   `.goregraph-workspace/agent/`, separate from the shared machine `index/` and
   human `dashboard/` projections;
+- compact `agent/context-index.json` endpoint projection with at most one
+  selected endpoint and eight consumers plus an explicit omitted count; the
+  1,800-token default and existing fallback behavior remain unchanged;
 - `goregraph context` with defaults of 1,800 estimated tokens and 12 files,
   immediate `fallback_required` source inspection, and at most one narrower
   retry using the exact route or qualified symbol from one reliable production
@@ -48,6 +51,18 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
 - deterministic background relationship trunks and direct card-port fan-out;
 - a persistent relationship summary with domain, direction, risk, and reset controls;
 - keyboard-accessible static-call badges whose details remain separate from runtime traffic claims;
+- `goregraph workspace dashboard edit .` for an authenticated loopback editor,
+  while dashboard `path` and `open` remain static and read-only;
+- generic production package/module grouping with group rename/reorder and
+  service drag-and-drop or keyboard movement persisted in the user-owned
+  `.goregraph-dashboard.json`; rebuilds keep valid overrides, auto-place new
+  services, and report stale removed-service overrides through Doctor;
+- API Catalog before Endpoints, backed by project and workspace
+  `index/api-catalog.json`, with complete provider inventory separated from
+  relationship traces;
+- separate Endpoint security and consumer call authentication evidence;
+  missing evidence is `unknown` / `No auth evidence detected`, never inferred as
+  `public`, and runtime enforcement remains out of scope;
 - canonical Java / Spring and JavaScript / TypeScript / Node.js / React
   declarations in `.goregraph-workspace/index/symbol-index.json`;
 - exact direct, ambiguous, unresolved, and HTTP-reachable symbol usages in
@@ -63,7 +78,7 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
   Java/Spring HTTP provider reachability, and JavaScript/TypeScript/Node.js/React
   HTTP consumer plus provider reachability;
 - a project Markdown dashboard under `goregraph-out/dashboard/` and the
-  interactive seven-view workspace dashboard under
+  interactive eight-view workspace dashboard under
   `.goregraph-workspace/dashboard/`;
 - a matched-prompt Context benchmark with three independent baseline and three
   independent assisted runs in alternating order, identical neutral prompt,

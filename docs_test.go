@@ -130,3 +130,73 @@ func TestDocumentationCoversExactCodeExplorer(t *testing.T) {
 		}
 	}
 }
+
+func TestDocumentationCoversEditableDashboardAndAPIContext(t *testing.T) {
+	files := []string{"README.md", "COMMANDS.md", "docs/OUTPUTS.md", "SCHEMA.md", "docs/RELEASE.md"}
+	var combined strings.Builder
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		combined.Write(content)
+		combined.WriteByte('\n')
+	}
+	text := combined.String()
+	for _, want := range []string{
+		"goregraph workspace dashboard edit .",
+		".goregraph-dashboard.json",
+		"API Catalog",
+		"Endpoint security",
+		"consumer call authentication",
+		"No auth evidence detected",
+		"index/api-catalog.json",
+		"agent/context-index.json",
+		"1800",
+		"unreleased 1.3.0",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("editable dashboard/API documentation missing %q", want)
+		}
+	}
+}
+
+func TestREADMESeparatesAPIIntegrationDepthByLanguage(t *testing.T) {
+	content, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	start := strings.Index(text, "### API integration depth")
+	end := strings.Index(text, "## Output Files")
+	if start < 0 || end <= start {
+		t.Fatal("README API integration depth table is missing")
+	}
+	section := text[start:end]
+	for _, want := range []string{
+		"Endpoint inventory",
+		"Consumers",
+		"Security/auth",
+		"Request/response types",
+		"Dashboard",
+		"Agent context",
+		"| Java / Spring |",
+		"| JavaScript / TypeScript / Node.js / React |",
+	} {
+		if !strings.Contains(section, want) {
+			t.Fatalf("README API integration depth table missing %q", want)
+		}
+	}
+}
+
+func TestDashboardDocumentationDoesNotUseStaleViewCount(t *testing.T) {
+	for _, file := range []string{"README.md", "COMMANDS.md"} {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(strings.ToLower(string(content)), "seven views") {
+			t.Fatalf("%s contains stale seven views wording", file)
+		}
+	}
+}

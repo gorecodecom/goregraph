@@ -1109,9 +1109,35 @@ func TestWorkspaceDashboardHelpExplainsStaticAndEditableModes(t *testing.T) {
 	if code := Run([]string{"workspace", "dashboard", "help"}, stdout, stderr); code != 0 {
 		t.Fatalf("code=%d stderr=%s", code, stderr)
 	}
-	for _, want := range []string{"path|open|edit", "read-only", "loopback", ".goregraph-dashboard.json", "Ctrl-C"} {
+	for _, want := range []string{
+		"path|open|edit",
+		"path prints the generated static dashboard file",
+		"open opens that static read-only file",
+		"Only edit starts an authenticated loopback server",
+		".goregraph-dashboard.json",
+		"Ctrl-C",
+	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("help missing %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestHelpDistinguishesWorkspaceDashboardPathOpenAndEdit(t *testing.T) {
+	for _, args := range [][]string{{"help"}, {"workspace", "help"}} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", args, code, stderr.String())
+		}
+		for _, want := range []string{
+			"workspace dashboard path",
+			"workspace dashboard open",
+			"workspace dashboard edit",
+			"Only edit starts an authenticated loopback server",
+		} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("%v help missing %q:\n%s", args, want, stdout.String())
+			}
 		}
 	}
 }

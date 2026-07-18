@@ -376,8 +376,9 @@ func requireCompleteWorkspaceDashboard(workspaceRoot, dashboardPath string) erro
 func printWorkspaceDashboardHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage: goregraph workspace dashboard path|open|edit [path] [--workspace <path>]
 
-path and open use the generated static dashboard, which remains read-only.
-edit starts an authenticated loopback editor and saves layout choices in
+path prints the generated static dashboard file.
+open opens that static read-only file in the configured browser.
+Only edit starts an authenticated loopback server. It saves layout choices in
 .goregraph-dashboard.json. The editor stays in the foreground; press Ctrl-C to stop it.
 `)
 }
@@ -1442,6 +1443,8 @@ Examples:
   goregraph workspace refresh . --target agent
   goregraph workspace clean . --execute
   goregraph workspace dashboard .
+  goregraph workspace dashboard path .
+  goregraph workspace dashboard open .
   goregraph workspace dashboard edit .
   goregraph workspace explain "GET /users/{userId}"
   goregraph workspace path --from frontend/app --to UserController.get
@@ -1469,9 +1472,11 @@ Project vs workspace builds:
   and all builds.
 
 Dashboard editing:
-  workspace dashboard path and open use the static read-only export. Use
-  workspace dashboard edit to start an authenticated loopback editor; it saves
-  layout choices in .goregraph-dashboard.json and runs until Ctrl-C.
+  workspace dashboard path prints the generated static dashboard file.
+  workspace dashboard open opens that static read-only file.
+  workspace dashboard edit changes layout and grouping configuration.
+  Only edit starts an authenticated loopback server; it saves layout choices in
+  .goregraph-dashboard.json and runs until Ctrl-C.
 
 MCP behavior:
   standard MCP exposes only task_context. --expert-tools is for manual diagnostics
@@ -1514,6 +1519,8 @@ Examples:
   goregraph workspace git update . --execute
   goregraph workspace clean . --execute
   goregraph workspace dashboard .
+  goregraph workspace dashboard path .
+  goregraph workspace dashboard open .
   goregraph workspace dashboard edit .
   goregraph workspace explain "GET /users/{userId}"
   goregraph workspace path --from frontend/app --to UserController.get
@@ -1528,9 +1535,11 @@ Workspace detection:
   .goregraph-workspace/ is removable generated output, not a persistent marker.
 
 Dashboard editing:
-  workspace dashboard path and open use the static read-only export. Use
-  workspace dashboard edit to start an authenticated loopback editor; it saves
-  layout choices in .goregraph-dashboard.json and runs until Ctrl-C.
+  workspace dashboard path prints the generated static dashboard file.
+  workspace dashboard open opens that static read-only file.
+  workspace dashboard edit changes layout and grouping configuration.
+  Only edit starts an authenticated loopback server; it saves layout choices in
+  .goregraph-dashboard.json and runs until Ctrl-C.
 `)
 }
 

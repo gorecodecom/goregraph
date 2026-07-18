@@ -131,6 +131,26 @@ func TestReleaseFilesKeep130Unreleased(t *testing.T) {
 	}
 }
 
+func TestReleaseNotesDescribeEditableDashboardWithoutPublishing130(t *testing.T) {
+	body, err := os.ReadFile("docs/RELEASE.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"unreleased 1.3.0",
+		"goregraph workspace dashboard edit .",
+		".goregraph-dashboard.json",
+		"API Catalog",
+		"No auth evidence detected",
+		"agent/context-index.json",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("release notes missing %q", want)
+		}
+	}
+}
+
 func TestContextIndexOutputIsPartOfReleaseContract(t *testing.T) {
 	if !slices.Contains(scan.AgentGeneratedFiles, "context-index.json") {
 		t.Fatal("agent/context-index.json is not registered as agent output")

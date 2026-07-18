@@ -7,7 +7,7 @@ GoreGraph output is designed to be deterministic and safe for humans, CLI comman
 Current schema version:
 
 ```text
-2
+3
 ```
 
 The schema version is written to:
@@ -21,21 +21,29 @@ Example:
 ```json
 {
   "tool": "goregraph",
-  "schema": 2,
+  "schema": 3,
   "output_dir": "goregraph-out"
 }
 ```
 
 ## Compatibility Rule
 
-Schema 2 is the stable 1.0 contract. Schema 1 indexes are not rewritten in place because mixed-generation workspaces could otherwise combine incompatible assumptions. Install the new binary, preview `goregraph workspace clean .`, execute only the listed generated output cleanup with `--execute`, and run `goregraph workspace scan-all .`. Doctor rejects stale Schema 1 manifests with this rescan guidance.
+Schema 3 is the current unreleased 1.3.0 source contract. Older Schema 1 and
+Schema 2 indexes are not rewritten in place because mixed-generation workspaces
+could otherwise combine incompatible assumptions. Install the new binary,
+preview `goregraph workspace clean .`, execute only the listed generated output
+cleanup with `--execute`, and run `goregraph workspace build all .`. Doctor
+rejects stale manifests with this rescan guidance.
 
-Within Schema 2, existing fields and enum meanings are frozen. Compatible releases may add optional fields and new output files; they do not silently change existing field, evidence, coverage, confidence, resolution, severity, Query-task, or MCP-tool meanings.
+Within Schema 3, existing fields and enum meanings are frozen. Compatible
+releases may add optional fields and new output files; they do not silently
+change existing field, evidence, coverage, confidence, resolution, severity,
+Query-task, or MCP-tool meanings.
 
-GoreGraph 1.2.0 follows that additive rule. Canonical feature-flow records,
-workspace coverage priorities, test links, verification commands, impact
-summaries, and the six-view dashboard extend Schema 2 without changing existing
-facts or requiring Schema 3.
+Schema 3 adds explicit `index/`, `agent/`, and `dashboard/` ownership,
+`index/api-catalog.json`, compact endpoint facts in `agent/context-index.json`,
+and the eight-view dashboard without changing the meanings of retained facts.
+Schema 2 remains the historical stable 1.0/1.2 contract.
 
 GoreGraph commands only support the current schema version.
 
@@ -62,7 +70,7 @@ Rules:
 
 ## Generated Files
 
-Schema version 1 expects:
+Schema 3 canonical index and report names include:
 
 - `manifest.json`
 - `files.json`
@@ -78,6 +86,7 @@ Schema version 1 expects:
 - `routes.json`
 - `flows.json`
 - `api-contracts.json`
+- `api-catalog.json`
 - `architecture-capabilities.json`
 - `frontend-usage.json`
 - `contract-matches.json`
@@ -117,9 +126,37 @@ Schema version 1 expects:
 
 ## File Contracts
 
+Schema 3 output ownership is explicit. Project output uses
+`goregraph-out/index/`, `goregraph-out/agent/`, and
+`goregraph-out/dashboard/`; workspace output mirrors those directories under
+`.goregraph-workspace/`. `manifest.json` remains at each output root. Complete
+machine indexes are not direct prompt input.
+
 `manifest.json` describes the generated output set.
 
-`freshness.json` records artifact generation time, GoreGraph version, Schema 2, a deterministic source fingerprint, stale state, and an explicit reason. Source fingerprints use sorted source paths and hashes; wall-clock generation metadata is excluded. Workspace reconciliation writes the same record shape to `.goregraph-workspace/freshness.json`, with project-relative artifact names. Missing freshness is uncertainty and requires a rescan before absence can be trusted.
+`freshness.json` records artifact generation time, GoreGraph version, Schema 3, a deterministic source fingerprint, stale state, and an explicit reason. Source fingerprints use sorted source paths and hashes; wall-clock generation metadata is excluded. Workspace reconciliation writes the same record shape to `.goregraph-workspace/index/freshness.json`, with project-relative artifact names. Missing freshness is uncertainty and requires a rescan before absence can be trusted.
+
+`api-catalog.json` is written to project `goregraph-out/index/` and workspace
+`.goregraph-workspace/index/`. It contains the complete provider inventory.
+Endpoint records include stable provider/method/path identity, source and
+handler, supported request/response types, Endpoint security, consumers,
+coverage, confidence, limitations, and evidence. Consumer records keep
+consumer call authentication separate. `unknown` is displayed as
+`No auth evidence detected`; it is not equivalent to `public`, and neither fact
+claims runtime enforcement.
+
+`agent/context-index.json` is the compact searchable agent projection. For an
+endpoint task, Context emits at most one selected endpoint and eight consumers
+with an explicit omitted count under the unchanged 1800-token default. It does
+not expose the complete API catalog or dashboard configuration as prompt input.
+
+Workspace-root `.goregraph-dashboard.json` is user-owned configuration, not a
+generated Schema 3 artifact. Its configuration schema version is 1. The
+`architecture` object stores `groupOrder`, stable group IDs with editable
+labels, and project-relative service keys with group/order overrides. Rebuilds
+merge automatic production package/module grouping with valid overrides,
+auto-place new services, and preserve stale removed-service overrides for
+Doctor warnings.
 
 `files.json` lists indexed files with path, language, size, hash, and kind.
 
@@ -159,7 +196,7 @@ Schema version 1 expects:
 
 Workspace files are additive generated outputs. When a workspace is detected, `.goregraph-workspace/registry.json` stores discovered projects with `current`, `indexed`, or `not_indexed` status. `.goregraph-workspace/context.json` stores loaded indexes, known backend services, referenced but missing services, and `missing_service_details` entries with service name, referenced contract count, matching workspace project path, and project status when available. `.goregraph-workspace/contract-matches.json` stores cross-project API contract matches between already indexed projects and may include `api_caller` from the originating API contract. `.goregraph-workspace/feature-flows.json` stores resolved end-to-end feature flows from frontend route/component/API call to backend endpoint flow and matching tests. `.goregraph-workspace/next-actions.md` summarizes workspace coverage, suggested scans for high-value missing services, weak workspace matches, and resolved flows without linked tests. Feature-flow records may include `frontend_route_id`, `frontend_route_path`, `frontend_route_file`, `frontend_route_line`, `frontend_component`, `frontend_caller`, `frontend_steps`, `frontend_confidence`, and `frontend_reason`; `frontend_caller` can come from either the resolved route flow or the API contract caller when route context remains weak. `frontend_steps` can include lightweight JavaScript/TypeScript callgraph steps such as route handlers, function calls, JSX child component hops, React effect calls, and local event handler calls that connect a rendered component to an API caller.
 
-Schema 2 feature-flow records may also contain the additive canonical projection `model_version`, `nodes`, and `edges`. Model version 1 gives each route, component, API call, endpoint, backend step, repository step, and linked test a deterministic node ID. Typed edges reference those IDs and retain confidence, reason, evidence IDs, and source analyzer. Existing flat fields remain unchanged for older consumers. Missing canonical fields identify a legacy Schema 2 record, not corruption; when canonical fields are present, Doctor validates node identities and rejects duplicate or dangling edge references.
+Schema 3 feature-flow records contain the canonical projection `model_version`, `nodes`, and `edges`. Model version 1 gives each route, component, API call, endpoint, backend step, repository step, and linked test a deterministic node ID. Typed edges reference those IDs and retain confidence, reason, evidence IDs, and source analyzer. Existing flat fields remain readable for older consumers; when canonical fields are present, Doctor validates node identities and rejects duplicate or dangling edge references.
 
 Existing indexed siblings receive `workspace-context.md`, `workspace-contract-matches.md`, `workspace-feature-flows.json`, `workspace-feature-flows.md`, `workspace-next-actions.md`, and `frontend-consumers.md` overlay reports in their configured output directories. The readable workspace reports show API caller names in contract matches, frontend consumers, and backend endpoint consumers when available; `workspace-context.md` prioritizes missing services by contract count and suggests scan commands for discovered unindexed service projects. Workspace reconciliation may also update `diagnostics.json`, `diagnostics.md`, and `endpoints.md` with workspace-resolved contracts and frontend consumers. These overlays are regenerated from existing scan output and do not imply sibling projects were rescanned.
 
@@ -189,6 +226,6 @@ GoreGraph confidence values are static-analysis labels, not runtime proof:
 
 ## Language Records
 
-Schema version 1 may contain language-specific symbols and relations. Current symbol kinds include packages, modules, classes, interfaces, traits, functions, methods, tests, scripts, headings, namespaces, autoload hints, types, and entrypoints.
+Schema version 3 may contain language-specific symbols and relations. Current symbol kinds include packages, modules, classes, interfaces, traits, functions, methods, tests, scripts, headings, namespaces, autoload hints, types, and entrypoints.
 
 Current relation types include imports, imports_internal, imports_external, includes, sources, calls, and tests. Local Go, Python, PHP, Shell, and Java relations are resolved to root-relative files where GoreGraph can do so deterministically.

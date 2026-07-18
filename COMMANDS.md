@@ -83,11 +83,12 @@ uses the equivalent `limit` and `continuation` fields.
 
 ## Dashboard questions
 
-The offline workspace dashboard is the full human exploration surface. Its seven
-views are Architecture, Endpoints, Feature Flow, Data Flow, Code Explorer,
-Diagnostics, and Coverage. Inventory views use normal browser-scale HTML; zoom
-controls are reserved for spatial graphs and implementation traces. Dashboard
-files are not recommended AI prompt input.
+The offline workspace dashboard is the full human exploration surface. Its
+eight views are Architecture, API Catalog, Endpoints, Feature Flow, Data Flow,
+Code Explorer, Diagnostics, and Coverage. API Catalog is the provider inventory;
+Endpoints is the relationship and implementation-trace view. Inventory views
+use normal browser-scale HTML; zoom controls are reserved for spatial graphs and
+implementation traces. Dashboard files are not recommended AI prompt input.
 
 ## Workspace context scope
 
@@ -147,6 +148,7 @@ Project output uses this ownership split:
 <path>/goregraph-out/
   manifest.json
   index/                  # complete shared machine index; not prompt input
+    api-catalog.json      # complete project provider inventory
   agent/
     context-index.json    # only generated index recommended for AI context
     agent-guide.md
@@ -161,6 +163,7 @@ Workspace output mirrors it:
 <workspace>/.goregraph-workspace/
   manifest.json
   index/                  # registry, graphs, symbols, usages, flows
+    api-catalog.json      # complete workspace provider inventory
   agent/
     context-index.json
     agent-guide.md
@@ -175,6 +178,10 @@ Workspace output mirrors it:
 GoreGraph's internal canonical data and should not be added directly to prompts.
 If `goregraph.yml` configures another project output directory, the same three
 subtrees live below that directory.
+
+The editable dashboard config is user-owned at
+`<workspace>/.goregraph-dashboard.json`, outside generated output. Rebuilds read
+and merge it; clean operations do not treat it as generated output.
 
 ## `goregraph help`
 
@@ -447,6 +454,12 @@ source. If further narrowing is necessary, one retry may use that entrypoint's
 exact returned route or qualified symbol. Never retry with a call-chain value.
 After the retry, inspect source; there is no third Context call or
 specialist-query fallback cascade.
+
+Endpoint tasks select at most one endpoint and eight consumer call sites, with
+an explicit omitted count when more consumers exist. The 1800-token default is
+unchanged. Context reads the compact `agent/context-index.json`; it does not send
+the complete `index/api-catalog.json`, dashboard payload, or
+`.goregraph-dashboard.json` to the assistant.
 
 ## `goregraph git update [path]`
 
@@ -1194,14 +1207,15 @@ Important behavior:
 - must not replace `workspace clean . --execute` followed by
   `workspace build all .` during release acceptance
 
-## `goregraph workspace dashboard [path]|path [path]|open [path]`
+## `goregraph workspace dashboard [path]|path [path]|open [path]|edit [path]`
 
 Compatibility form that prints the path to the generated standalone workspace
-dashboard. Prefer the explicit `path` or `open` action:
+dashboard. Prefer the explicit action:
 
 ```bash
 goregraph workspace dashboard path .
 goregraph workspace dashboard open .
+goregraph workspace dashboard edit .
 goregraph workspace dashboard .
 ```
 
@@ -1213,9 +1227,10 @@ The dashboard is normally generated at:
 <workspace>/.goregraph-workspace/dashboard/workspace-map.html
 ```
 
-The 1.3.0 dashboard is organized around seven views:
+The 1.3.0 dashboard is organized around eight views:
 
 - **Architecture** is the first and default view. Dynamic domain lanes come from service-map metadata. Service selection keeps stable card positions while highlighting all direct incoming and outgoing relationships and dimming unrelated context. Background relationships share bundled trunks; selected relationships fan out to explicit card ports. A persistent summary reports relationship, neighboring-service, resolved, unresolved, and mismatch counts and filters by direction or risk. `N calls` means statically detected relationships, not runtime request frequency.
+- **API Catalog** is the complete provider inventory and remains before Endpoints. It includes endpoints without known consumers and expands static parameters, media types, request/response identities, provider security, and per-consumer evidence from `index/api-catalog.json`.
 - **Endpoints** shows a normal-scale, scrollable caller -> endpoint -> provider inventory and opens a directed implementation trace for a selected endpoint. Long routes wrap instead of shrinking the view. **Back to endpoint inventory** restores service, filters, and scroll position.
 - **Feature Flow** shows the evidence-backed route-to-component-to-API-to-backend-to-persistence implementation chain, linked tests, and safe verification commands.
 - **Data Flow** uses a sidebar master list and renders one selected request/field/persistence/response chain at normal scale, with unknown mappings displayed in place as explicit gaps.
@@ -1239,13 +1254,30 @@ is unused.
 Important behavior:
 
 - `path` and the no-action compatibility form print the existing dashboard path
-- `open` launches the generated dashboard in the configured browser
+- `open` launches the generated static read-only dashboard in the configured browser
+- only `edit` starts an authenticated loopback server; it stays in the foreground until Ctrl-C
 - does not scan source files
 - requires a dashboard projection generated by `workspace build dashboard`,
   `workspace build all`, the `scan-all` alias, or a dashboard-targeted refresh
 - the dashboard is self-contained and works offline
 - Endpoints, Feature Flow, Data Flow, and Coverage are HTML workbenches; Architecture and implementation traces are spatial SVG graphs with zoom controls
 - long implementation traces start with readable cards at 100%; drag or wheel navigation explores the path, while **Fit** shows the complete overview
+
+The editor derives automatic Architecture groups from production package/module
+evidence. It supports drag-and-drop plus keyboard controls for group order,
+service order, and service placement, and allows group labels to be renamed.
+Save writes intentional overrides to the workspace-root
+`.goregraph-dashboard.json`; Discard restores the saved layout, and Reset to
+detected removes architecture overrides after confirmation. Rebuilds merge that
+file with current discovery: valid manual choices survive, new services are
+auto-placed, and removed-service overrides remain visible as stale Doctor
+warnings instead of being silently deleted.
+
+Endpoint security and consumer call authentication are distinct static facts.
+Provider requirements do not prove what a caller sends, and caller headers do
+not prove provider enforcement. Missing evidence is `unknown`, displayed as
+`No auth evidence detected`, never inferred as `public`; runtime authorization
+and enforcement remain out of scope.
 
 ## `goregraph workspace explain <target>`
 
