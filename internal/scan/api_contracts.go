@@ -629,60 +629,56 @@ func (model *jsLexicalModel) addFunctionParameters() {
 }
 
 func jsArrowParameterSpan(code string, arrow int) (int, int, bool) {
-	end := arrow
-	for end > 0 && isJSSpace(code[end-1]) {
-		end--
-	}
-	if end == 0 {
+	start := nextScriptNonSpace(code, jsArrowExpressionStart(code, arrow))
+	if start >= arrow {
 		return 0, 0, false
 	}
-	if code[end-1] == ')' {
-		open := matchingScriptDelimiterBackward(code, end-1, '(', ')')
-		if open < 0 {
+	start = jsArrowPropertyValueStart(code, start, arrow)
+	if start >= arrow {
+		return 0, 0, false
+	}
+	if code[start] == '(' {
+		close := matchingScriptDelimiter(code, start, '(', ')')
+		if close < 0 || close >= arrow || !isJSArrowReturnTail(code, close+1, arrow) {
 			return 0, 0, false
 		}
-		return open + 1, end - 1, true
+		return start + 1, close, true
 	}
-	if close := jsAnnotatedArrowParameterClose(code, end); close >= 0 {
-		open := matchingScriptDelimiterBackward(code, close, '(', ')')
-		if open < 0 {
-			return 0, 0, false
-		}
-		return open + 1, close, true
+	end := start
+	for end < arrow && isScriptIdentifierByte(code[end]) {
+		end++
 	}
-	start := end - 1
-	for start > 0 && isScriptIdentifierByte(code[start-1]) {
-		start--
-	}
-	if start == end || !isScriptIdentifierByte(code[start]) {
+	if end == start || !isJSArrowReturnTail(code, end, arrow) {
 		return 0, 0, false
 	}
 	return start, end, true
 }
 
-func jsAnnotatedArrowParameterClose(code string, end int) int {
+func jsArrowExpressionStart(code string, arrow int) int {
 	round, square, curly, angle := 0, 0, 0, 0
-	statementStart := scriptStatementStart([]byte(code), end)
-	for index := end - 1; index >= statementStart; index-- {
+	for index := arrow - 1; index >= 0; index-- {
 		switch code[index] {
 		case ')':
 			round++
 		case '(':
-			if round > 0 {
-				round--
+			if round == 0 {
+				return index + 1
 			}
+			round--
 		case ']':
 			square++
 		case '[':
-			if square > 0 {
-				square--
+			if square == 0 {
+				return index + 1
 			}
+			square--
 		case '}':
 			curly++
 		case '{':
-			if curly > 0 {
-				curly--
+			if curly == 0 {
+				return index + 1
 			}
+			curly--
 		case '>':
 			if index == 0 || code[index-1] != '=' {
 				angle++
@@ -691,20 +687,72 @@ func jsAnnotatedArrowParameterClose(code string, end int) int {
 			if angle > 0 {
 				angle--
 			}
-		case ':':
-			if round != 0 || square != 0 || curly != 0 || angle != 0 {
-				continue
+		case ',', ';':
+			if round == 0 && square == 0 && curly == 0 && angle == 0 {
+				return index + 1
 			}
-			close := index - 1
-			for close >= 0 && isJSSpace(code[close]) {
-				close--
-			}
-			if close >= 0 && code[close] == ')' {
-				return close
+		case '=':
+			if round == 0 && square == 0 && curly == 0 && angle == 0 &&
+				(index+1 >= arrow || (code[index+1] != '=' && code[index+1] != '>')) &&
+				(index == 0 || !strings.ContainsRune("=!<>", rune(code[index-1]))) {
+				return index + 1
 			}
 		}
 	}
-	return -1
+	return 0
+}
+
+func jsArrowPropertyValueStart(code string, start, arrow int) int {
+	nameEnd := start
+	for nameEnd < arrow && isScriptIdentifierByte(code[nameEnd]) {
+		nameEnd++
+	}
+	colon := nextScriptNonSpace(code, nameEnd)
+	if nameEnd > start && colon < arrow && code[colon] == ':' {
+		return nextScriptNonSpace(code, colon+1)
+	}
+	return start
+}
+
+func isJSArrowReturnTail(code string, start, arrow int) bool {
+	start = nextScriptNonSpace(code, start)
+	if start == arrow {
+		return true
+	}
+	if start >= arrow || code[start] != ':' {
+		return false
+	}
+	start = nextScriptNonSpace(code, start+1)
+	if start >= arrow {
+		return false
+	}
+	round, square, curly, angle := 0, 0, 0, 0
+	for index := start; index < arrow; index++ {
+		switch code[index] {
+		case '(':
+			round++
+		case ')':
+			round--
+		case '[':
+			square++
+		case ']':
+			square--
+		case '{':
+			curly++
+		case '}':
+			curly--
+		case '<':
+			angle++
+		case '>':
+			if index == 0 || code[index-1] != '=' {
+				angle--
+			}
+		}
+		if round < 0 || square < 0 || curly < 0 || angle < 0 {
+			return false
+		}
+	}
+	return round == 0 && square == 0 && curly == 0 && angle == 0
 }
 
 func (model *jsLexicalModel) addParameterBindings(params string, scopeStart int) {

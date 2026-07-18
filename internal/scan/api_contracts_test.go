@@ -601,6 +601,26 @@ export const real = () => axios.get('/real');`
 	}
 }
 
+func TestAPIContractsStructuralArrowParametersHandleBareAndParenthesizedReturnTypes(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+const annotated = (value: Input): Result<Map<string, Token>> => transform(value), bareAxios = axios => axios.get('/bare-axios-shadow'), bareOAuth = getAccessTokenSilently => axios.get('/bare-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});
+const parenthesizedReturn = (axios: Client): (() => Token) => axios.get('/parenthesized-return-shadow');
+export const real = () => axios.get('/real');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 2 {
+		t.Fatalf("structural arrow parameters resolved through imports: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/bare-oauth-shadow").Auth, "oauth2")
+	if contractByPath(t, contracts, "/real").Path != "/real" {
+		t.Fatal("unshadowed axios contract missing")
+	}
+}
+
 func TestAPIContractsPrecomputeBoundedFileAnalysisIndexes(t *testing.T) {
 	source := `import axios from 'axios';
 import { getAccessTokenSilently as zeta, acquireTokenSilent as alpha } from '@example/oauth-client';
