@@ -47,6 +47,187 @@ func TestWorkspaceDashboardAPICatalogNavigationHasDistinctFilterShellAndHelp(t *
 	}
 }
 
+func TestWorkspaceDashboardAPICatalogWorkbenchRendersSemanticExpandableInventory(t *testing.T) {
+	html := renderWorkspaceDashboardHTML(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, APICatalogRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion}, WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion}, nil,
+	)
+
+	for _, want := range []string{
+		`function filteredAPICatalogEndpoints()`,
+		`function apiCatalogSecurityLabel(endpoint)`,
+		`function apiCatalogConsumerSummary(endpoint)`,
+		`class="api-catalog-inventory"`,
+		`<details class="api-catalog-endpoint"`,
+		`class="api-catalog-endpoint-summary"`,
+		`data-cell-label="Endpoint"`,
+		`data-cell-label="Handler"`,
+		`data-cell-label="Endpoint security"`,
+		`data-cell-label="Consumers"`,
+		`data-cell-label="Consumer call authentication"`,
+		`data-cell-label="Evidence status"`,
+		`No canonical endpoints were recorded.`,
+		`No endpoints match the current filters.`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("API Catalog workbench missing semantic inventory contract %q", want)
+		}
+	}
+	for _, unwanted := range []string{"Assumed public", "Guessed public", "Probably public"} {
+		if strings.Contains(html, unwanted) {
+			t.Fatalf("API Catalog must not label missing security evidence as public: found %q", unwanted)
+		}
+	}
+}
+
+func TestWorkspaceDashboardAPICatalogFilterRuntime(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatalf("node is required for API Catalog filter behavior tests: %v", err)
+	}
+	section := func(start, end string) string {
+		t.Helper()
+		from := strings.Index(workspaceDashboardScript, start)
+		if from < 0 {
+			t.Fatalf("dashboard script missing section start %q", start)
+		}
+		to := strings.Index(workspaceDashboardScript[from:], end)
+		if to < 0 {
+			t.Fatalf("dashboard script missing section end %q", end)
+		}
+		return workspaceDashboardScript[from : from+to]
+	}
+	fixture := APICatalogRecord{SchemaVersion: SchemaVersion, Endpoints: []APIEndpointRecord{
+		{
+			ID: "endpoint:orders", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/orders/{id}", Handler: "OrderController.get",
+			Security:   []SecurityEvidenceRecord{{Kind: SecurityBearer, Summary: "Bearer token", Confidence: ConfidenceExact}},
+			Consumers:  []APIConsumerRecord{{Project: "web/store", Service: "Storefront", CallAuth: []SecurityEvidenceRecord{{Kind: SecurityBearer, Summary: "Authorization header"}}}},
+			Confidence: ConfidenceExact, Coverage: CoverageComplete,
+		},
+		{
+			ID: "endpoint:invoice", ProviderProject: "services/billing", HTTPMethod: "POST", Path: "/invoices", Handler: "InvoiceController.create",
+			Security: []SecurityEvidenceRecord{}, Consumers: []APIConsumerRecord{}, Mismatches: []APIMismatchRecord{{ID: "mismatch:method", Kind: "method", Reason: "Consumer calls GET"}},
+			Confidence: ConfidenceInferred, Coverage: CoveragePartial, Limitations: []string{"Request type is incomplete."},
+		},
+	}}
+	encodedFixture, err := json.Marshal(fixture)
+	if err != nil {
+		t.Fatalf("encode API Catalog filter fixture: %v", err)
+	}
+	source := strings.Join([]string{
+		`const apiCatalog=` + string(encodedFixture) + `;`,
+		`const state={apiCatalogService:"services/orders",apiCatalogQuery:"order",apiCatalogMethods:new Set(["GET"]),apiCatalogSecurity:new Set(["Bearer"]),apiCatalogConsumers:new Set(["Storefront"]),apiCatalogStatuses:new Set(["Complete"]),apiCatalogExpanded:new Set()};`,
+		section("function apiCatalogSecurityKindLabel(kind)", "function apiCatalogEndpointHTML(endpoint)"),
+		`const first=filteredAPICatalogEndpoints();state.apiCatalogService="";state.apiCatalogQuery="";state.apiCatalogMethods.clear();state.apiCatalogSecurity.clear();state.apiCatalogConsumers.clear();state.apiCatalogStatuses=new Set(["Mismatch"]);const second=filteredAPICatalogEndpoints();process.stdout.write(JSON.stringify({first:first.map(endpoint=>endpoint.id),second:second.map(endpoint=>endpoint.id),unknown:apiCatalogSecurityLabel(apiCatalog.endpoints[1]),consumer:apiCatalogConsumerSummary(apiCatalog.endpoints[0])}));`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("API Catalog filter runtime failed: %v\n%s", err, output)
+	}
+	var result struct {
+		First    []string `json:"first"`
+		Second   []string `json:"second"`
+		Unknown  string   `json:"unknown"`
+		Consumer struct {
+			Count string `json:"count"`
+			Names string `json:"names"`
+			Auth  string `json:"auth"`
+		} `json:"consumer"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("decode API Catalog filter runtime result: %v\n%s", err, output)
+	}
+	if strings.Join(result.First, ",") != "endpoint:orders" || strings.Join(result.Second, ",") != "endpoint:invoice" {
+		t.Fatalf("API Catalog filters returned %#v", result)
+	}
+	if result.Unknown != "Unknown" {
+		t.Fatalf("missing security evidence label = %q, want Unknown", result.Unknown)
+	}
+	if result.Consumer.Count != "1 consumer" || result.Consumer.Names != "Storefront" || !strings.Contains(result.Consumer.Auth, "Bearer") {
+		t.Fatalf("consumer summary = %#v", result.Consumer)
+	}
+}
+
+func TestWorkspaceDashboardAPICatalogDetailsExposeProviderAndConsumerEvidence(t *testing.T) {
+	html := renderWorkspaceDashboardHTML(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, APICatalogRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion}, WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion}, nil,
+	)
+	for _, want := range []string{
+		`<h3>Parameters by location</h3>`,
+		`<h3>Media types</h3>`,
+		`<h3>Request and response</h3>`,
+		`<h3>Handler and source</h3>`,
+		`<h3>Endpoint security</h3>`,
+		`<h3>Individual consumers</h3>`,
+		`Consumer call authentication`,
+		`<h3>Mismatches</h3>`,
+		`<h3>Coverage limitations</h3>`,
+		`sourceLocationMarkup(endpoint.provider_project,endpoint.file,endpoint.line)`,
+		`data-api-catalog-endpoint-id`,
+		`setMode("endpoints");selectItem(trace.id)`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("API Catalog details missing evidence contract %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardAPICatalogDetailsRuntimeRendersOneDisclosurePerVisibleEndpoint(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatalf("node is required for API Catalog details behavior tests: %v", err)
+	}
+	section := func(start, end string) string {
+		t.Helper()
+		from := strings.Index(workspaceDashboardScript, start)
+		if from < 0 {
+			t.Fatalf("dashboard script missing section start %q", start)
+		}
+		to := strings.Index(workspaceDashboardScript[from:], end)
+		if to < 0 {
+			t.Fatalf("dashboard script missing section end %q", end)
+		}
+		return workspaceDashboardScript[from : from+to]
+	}
+	fixture := APICatalogRecord{SchemaVersion: SchemaVersion, Endpoints: []APIEndpointRecord{
+		{ID: "endpoint:get", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/orders/{id}", Handler: "OrderController.get", Security: []SecurityEvidenceRecord{}, Consumers: []APIConsumerRecord{}, Confidence: ConfidenceExact, Coverage: CoverageComplete},
+		{ID: "endpoint:post", ProviderProject: "services/orders", HTTPMethod: "POST", Path: "/orders", Handler: "OrderController.create", Security: []SecurityEvidenceRecord{}, Consumers: []APIConsumerRecord{}, Confidence: ConfidenceExact, Coverage: CoveragePartial},
+	}}
+	encodedFixture, err := json.Marshal(fixture)
+	if err != nil {
+		t.Fatalf("encode API Catalog details fixture: %v", err)
+	}
+	source := strings.Join([]string{
+		`const apiCatalog=` + string(encodedFixture) + `,traces=[],traceById=new Map();`,
+		`const state={apiCatalogService:"services/orders",apiCatalogQuery:"",apiCatalogMethods:new Set(),apiCatalogSecurity:new Set(),apiCatalogConsumers:new Set(),apiCatalogStatuses:new Set(),apiCatalogExpanded:new Set(["endpoint:get"])};`,
+		`function escapeHtml(value){return String(value||"").replace(/[&<>"']/g,character=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);}function escapeAttr(value){return escapeHtml(value);}function sourceLocationMarkup(project,file,line){return '<span class="source-test">'+escapeHtml(file||"No source location recorded")+'</span>';}function wireSourceActions(){}function setMode(){}function selectItem(){}`,
+		`const controls=new Map();function control(id){return {id:id,innerHTML:"",textContent:"",value:"",querySelectorAll:function(){return [];}};}["workspace-workbench","api-catalog-provider-filter","api-catalog-security-filter","api-catalog-consumer-filter","api-catalog-status-filter","api-catalog-search","api-catalog-filter-summary"].forEach(id=>controls.set(id,control(id)));const document={getElementById:id=>controls.get(id),querySelectorAll:()=>[]};function setSelectOptions(id,values){document.getElementById(id).innerHTML=values.join(",");}`,
+		section("function apiCatalogSecurityKindLabel(kind)", "function renderEndpoints()"),
+		`renderAPICatalog();const all=document.getElementById("workspace-workbench").innerHTML;state.apiCatalogMethods.add("GET");renderAPICatalog();const filtered=document.getElementById("workspace-workbench").innerHTML;const count=html=>(html.match(/<details class="api-catalog-endpoint"/g)||[]).length;process.stdout.write(JSON.stringify({all:count(all),filtered:count(filtered),open:all.includes('data-api-catalog-endpoint-id="endpoint:get" open'),unknown:all.includes("Unknown — no endpoint security evidence was recorded."),consumerHeading:all.includes("Consumer call authentication"),summary:document.getElementById("api-catalog-filter-summary").textContent}));`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("API Catalog details runtime failed: %v\n%s", err, output)
+	}
+	var result struct {
+		All             int    `json:"all"`
+		Filtered        int    `json:"filtered"`
+		Open            bool   `json:"open"`
+		Unknown         bool   `json:"unknown"`
+		ConsumerHeading bool   `json:"consumerHeading"`
+		Summary         string `json:"summary"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("decode API Catalog details runtime result: %v\n%s", err, output)
+	}
+	if result.All != 2 || result.Filtered != 1 || !result.Open || !result.Unknown || !result.ConsumerHeading || result.Summary != "1 of 2 canonical endpoints shown." {
+		t.Fatalf("API Catalog disclosure runtime = %#v", result)
+	}
+}
+
 func TestWorkspaceDashboardAPICatalogModeRuntimeDoesNotFallThroughDiagnostics(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -65,13 +246,13 @@ func TestWorkspaceDashboardAPICatalogModeRuntimeDoesNotFallThroughDiagnostics(t 
 		return workspaceDashboardScript[from : from+to]
 	}
 	source := strings.Join([]string{
-		`function control(id,hidden){return {id:id,hidden:!!hidden,textContent:"",innerHTML:"",placeholder:"",style:{},dataset:{},classList:{toggle:function(){}},setAttribute:function(){},listeners:{},addEventListener:function(type,handler){this.listeners[type]=handler;},click:function(){this.listeners.click();}};}`,
+		`function control(id,hidden){return {id:id,hidden:!!hidden,textContent:"",innerHTML:"",placeholder:"",style:{},dataset:{},classList:{toggle:function(){}},setAttribute:function(){},listeners:{},addEventListener:function(type,handler){this.listeners[type]=handler;},click:function(){this.listeners.click();},querySelectorAll:function(){return [];}};}`,
 		`const controls=new Map(),catalogFilters=control("api-catalog-filters",true),endpointFilters=control("endpoint-filters",false),modeHelp=control("mode-help",false);controls.set(catalogFilters.id,catalogFilters);controls.set(endpointFilters.id,endpointFilters);controls.set(modeHelp.id,modeHelp);["workspace-kind-controls","workspace-search","isolate-neighborhood","show-full-architecture","focus-selected","back-to-full-architecture"].forEach(function(id){controls.set(id,control(id,false));});`,
 		`const modeButtons=["architecture","api-catalog","endpoints"].map(function(mode){const button=control(mode,false);button.dataset.viewMode=mode;return button;});`,
 		`const document={getElementById:function(id){if(!controls.has(id))controls.set(id,control(id,false));return controls.get(id);},querySelectorAll:function(selector){if(selector==="[data-view-mode]")return modeButtons;if(selector==="[data-kind-filter]")return [];return [];}};`,
 		`const traceById=new Map();let diagnosticRenders=0;`,
 		`const state={mode:"endpoints",selections:{architecture:null,"api-catalog":null,endpoints:null},selected:null,codeProject:null,codeSymbol:null,codeUsage:null,codeLoading:false,codeError:"",codeReturn:"services",isolation:false,architectureFocused:false,savedFullArchitectureViewport:null,filter:"all",viewports:new Map()};`,
-		`const apiCatalog={endpoints:[]};function escapeHtml(value){return String(value);}`,
+		`const apiCatalog={endpoints:[]};function escapeHtml(value){return String(value);}function filteredAPICatalogEndpoints(){return [];}function syncAPICatalogFilterControls(){}function wireSourceActions(){}`,
 		`function saveViewport(){}function indexSymbolUsageRecords(){}function clearDetailsForMode(){}function renderList(){}function restoreViewport(){}function syncModeButtons(){}function setCanvasPresentation(){}function syncArchitectureViewControls(){}function renderArchitectureSummary(){}function renderArchitectureMatrix(){}function renderArchitectureMap(){}function renderEndpoints(){}function renderFeatureFlow(){}function renderDataFlow(){}function renderCoverage(){}function renderCodeExplorerLanding(){}function renderCodeExplorerLoading(){}function renderCodeExplorer(){}function renderDiagnostics(){diagnosticRenders++;}`,
 		section("function renderAPICatalog()", "function renderEndpoints()"),
 		section("function renderCanvas()", "function zoomAtPoint(factor,x,y)"),
