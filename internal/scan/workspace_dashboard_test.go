@@ -263,6 +263,7 @@ func TestWorkspaceDashboardAPICatalogReviewFixContracts(t *testing.T) {
 		`Analysis coverage is unknown for this service.`,
 		`Filters removed all endpoints for this service.`,
 		`.api-catalog-cell-label{position:absolute`,
+		`@media (min-width:1241px) and (max-width:1679px){.api-catalog-inventory-header{display:none}.api-catalog-endpoint-summary{grid-template-columns:repeat(2,minmax(0,1fr))}`,
 		`.api-catalog-trace-action,.api-catalog-details .source-actions button,.api-catalog-details .source-actions a{min-height:44px;display:inline-flex`,
 	} {
 		if !strings.Contains(html, want) {
