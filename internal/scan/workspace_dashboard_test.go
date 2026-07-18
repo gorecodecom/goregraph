@@ -212,7 +212,7 @@ func TestWorkspaceDashboardAPICatalogDetailsRuntimeRendersOneDisclosurePerVisibl
 		`function element(id){return {id:id,innerHTML:"",textContent:"",value:"",selectedOptions:[],dataset:{},open:false,listeners:{},classList:{toggle:function(){},remove:function(){}},setAttribute:function(){},focus:function(){},setSelectionRange:function(){},addEventListener:function(type,handler){this.listeners[type]=handler;},dispatch:function(type){this.listeners[type]({target:this});},querySelectorAll:function(){return [];},querySelector:function(){return {focus:function(){}};}};}const controls=new Map(),methodButtons=[element("method-get"),element("method-post")];methodButtons[0].dataset.apiCatalogMethod="GET";methodButtons[1].dataset.apiCatalogMethod="POST";["api-catalog-provider-filter","api-catalog-security-filter","api-catalog-consumer-filter","api-catalog-status-filter","api-catalog-search","api-catalog-filter-summary","clear-api-catalog-filters"].forEach(id=>controls.set(id,element(id)));let detailNodes=[],traceNodes=[];const workbench=element("workspace-workbench");Object.defineProperty(workbench,"innerHTML",{get:function(){return this._html||"";},set:function(value){this._html=value;detailNodes=[];traceNodes=[];for(const match of value.matchAll(/<details class="api-catalog-endpoint" data-api-catalog-endpoint-id="([^"]+)"([^>]*)>/g)){const details=element("details");details.dataset.apiCatalogEndpointId=match[1];details.open=match[2].includes(" open");detailNodes.push(details);}for(const match of value.matchAll(/data-api-catalog-trace="([^"]+)"/g)){const button=element("trace");button.dataset.apiCatalogTrace=match[1];traceNodes.push(button);}}});workbench.querySelectorAll=function(selector){if(selector==="[data-api-catalog-endpoint-id]")return detailNodes;if(selector==="[data-api-catalog-trace]")return traceNodes;return [];};controls.set("workspace-workbench",workbench);const document={getElementById:id=>controls.get(id),querySelectorAll:selector=>selector==="[data-api-catalog-method]"?methodButtons:[]};function setSelectOptions(id,values,selected){controls.get(id).innerHTML=values.join(",");controls.get(id).selectedOptions=Array.from(selected||[]).map(value=>({value:value}));}function selectedValues(id){return new Set(controls.get(id).selectedOptions.map(option=>option.value));}`,
 		section("function apiCatalogProviderKey(service,project)", "function renderEndpoints()"),
 		section("function clearAPICatalogFilters()", "wireAPICatalogFilterControls();"),
-		`wireAPICatalogFilterControls();renderAPICatalog();const count=()=>detailNodes.length,initial=count(),collapsed=!workbench.innerHTML.includes("Parameters by location");const provider=controls.get("api-catalog-provider-filter");provider.value=apiCatalogProviderKey("orders","services/orders");provider.dispatch("change");const afterProvider=count();const query=controls.get("api-catalog-search");query.value="OrderController.get";query.dispatch("input");const afterQuery=count();query.value="";query.dispatch("input");methodButtons[0].dispatch("click");const afterMethod=count();const status=controls.get("api-catalog-status-filter");status.selectedOptions=[{value:"Coverage: COMPLETE"},{value:"Resolution: Resolved"}];status.dispatch("change");const afterStatus=count();const details=detailNodes.find(node=>node.dataset.apiCatalogEndpointId==="endpoint:get");details.open=true;details.dispatch("toggle");const expanded=workbench.innerHTML.includes("Parameters by location")&&workbench.innerHTML.includes("Storefront: Bearer")&&workbench.innerHTML.includes('data-api-catalog-endpoint-id="endpoint:get" open');renderAPICatalog();const preserved=workbench.innerHTML.includes('data-api-catalog-endpoint-id="endpoint:get" open');controls.get("clear-api-catalog-filters").dispatch("click");const afterClear=count(),traceButton=traceNodes.find(button=>button.dataset.apiCatalogTrace==="match:orders");traceButton.dispatch("click");process.stdout.write(JSON.stringify({initial,collapsed,afterProvider,afterQuery,afterMethod,afterStatus,expanded,preserved,afterClear,mode:state.mode,selected:state.selected,summary:controls.get("api-catalog-filter-summary").textContent}));`,
+		`wireAPICatalogFilterControls();renderAPICatalog();const count=()=>detailNodes.length,initial=count(),collapsed=!workbench.innerHTML.includes("Parameters by location");const provider=controls.get("api-catalog-provider-filter");provider.value=apiCatalogProviderKey("orders","services/orders");provider.dispatch("change");const afterProvider=count();const query=controls.get("api-catalog-search");query.value="OrderController.get";query.dispatch("input");const afterQuery=count();query.value="";query.dispatch("input");const status=controls.get("api-catalog-status-filter");status.selectedOptions=[{value:"Coverage: COMPLETE"},{value:"Resolution: Resolved"}];status.dispatch("change");const afterStatus=count();methodButtons[0].dispatch("click");const afterMethod=count();const details=detailNodes.find(node=>node.dataset.apiCatalogEndpointId==="endpoint:get");details.open=true;details.dispatch("toggle");const expanded=workbench.innerHTML.includes("Parameters by location")&&workbench.innerHTML.includes("Storefront: Bearer")&&workbench.innerHTML.includes('data-api-catalog-endpoint-id="endpoint:get" open');renderAPICatalog();const preserved=workbench.innerHTML.includes('data-api-catalog-endpoint-id="endpoint:get" open');controls.get("clear-api-catalog-filters").dispatch("click");const afterClear=count(),traceButton=traceNodes.find(button=>button.dataset.apiCatalogTrace==="match:orders");traceButton.dispatch("click");process.stdout.write(JSON.stringify({initial,collapsed,afterProvider,afterQuery,afterMethod,afterStatus,expanded,preserved,afterClear,mode:state.mode,selected:state.selected,summary:controls.get("api-catalog-filter-summary").textContent}));`,
 	}, "\n")
 	output, err := exec.Command(node, "-e", source).CombinedOutput()
 	if err != nil {
@@ -254,10 +254,13 @@ func TestWorkspaceDashboardAPICatalogReviewFixContracts(t *testing.T) {
 		`function apiCatalogEndpointDetailsHTML(endpoint)`,
 		`function wireAPICatalogFilterControls()`,
 		`class="api-catalog-cell-label visually-hidden"`,
-		`aria-label="Endpoint details for `,
+		`function compareStableText(left,right)`,
 		`Service not analyzed`,
 		`No endpoints were discovered for this analyzed service.`,
 		`Analysis is partial for this service.`,
+		`Analysis failed for this service.`,
+		`Analysis is unavailable for this service.`,
+		`Analysis coverage is unknown for this service.`,
 		`Filters removed all endpoints for this service.`,
 		`.api-catalog-cell-label{position:absolute`,
 		`.api-catalog-trace-action,.api-catalog-details .source-actions button,.api-catalog-details .source-actions a{min-height:44px;display:inline-flex`,
@@ -268,6 +271,45 @@ func TestWorkspaceDashboardAPICatalogReviewFixContracts(t *testing.T) {
 	}
 	if strings.Contains(html, `function apiCatalogEndpointTrace(endpoint)`) || strings.Contains(html, `return traces.find(function(trace)`) {
 		t.Fatal("API Catalog still performs route-based per-row trace lookup")
+	}
+	if strings.Contains(html, `aria-label="Endpoint details for `) {
+		t.Fatal("API Catalog summary aria-label overrides the labeled cell content")
+	}
+}
+
+func TestWorkspaceDashboardAPICatalogServiceNoticesPreserveCoverageState(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatalf("node is required for API Catalog service notice tests: %v", err)
+	}
+	from := strings.Index(workspaceDashboardScript, "function apiCatalogServiceNotices(provider,providerEndpoints,visibleCount)")
+	to := strings.Index(workspaceDashboardScript[from:], "function syncAPICatalogFilterControls(endpoints,visibleCount)")
+	if from < 0 || to < 0 {
+		t.Fatal("dashboard script is missing the API Catalog service notice section")
+	}
+	source := strings.Join([]string{
+		`function escapeHtml(value){return String(value);}`,
+		`function apiCatalogCoverage(endpoint){return endpoint.coverage||"UNKNOWN";}`,
+		workspaceDashboardScript[from : from+to],
+		`const provider={project:"services/orders",indexed:true};const notice=coverage=>apiCatalogServiceNotices(provider,[{coverage}],1).join(" ");process.stdout.write(JSON.stringify({partial:notice("PARTIAL"),failed:notice("FAILED"),unavailable:notice("UNAVAILABLE"),unknown:notice("UNKNOWN")}));`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("API Catalog service notice runtime failed: %v\n%s", err, output)
+	}
+	var notices map[string]string
+	if err := json.Unmarshal(output, &notices); err != nil {
+		t.Fatalf("decode API Catalog service notices: %v\n%s", err, output)
+	}
+	for coverage, want := range map[string]string{
+		"partial":     "Analysis is partial for this service.",
+		"failed":      "Analysis failed for this service.",
+		"unavailable": "Analysis is unavailable for this service.",
+		"unknown":     "Analysis coverage is unknown for this service.",
+	} {
+		if !strings.Contains(notices[coverage], want) {
+			t.Fatalf("%s notice = %q, want %q", coverage, notices[coverage], want)
+		}
 	}
 }
 
