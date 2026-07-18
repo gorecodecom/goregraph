@@ -1213,6 +1213,7 @@ Compatibility form that prints the path to the generated standalone workspace
 dashboard. Prefer the explicit action:
 
 ```bash
+goregraph workspace dashboard edit [path]
 goregraph workspace dashboard path .
 goregraph workspace dashboard open .
 goregraph workspace dashboard edit .

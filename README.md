@@ -518,6 +518,18 @@ Print the project `goregraph-out/dashboard/` path, or open its primary
 `dashboard/report.md`. This does not create an interactive project dashboard.
 
 ```bash
+goregraph workspace dashboard [path]
+goregraph workspace dashboard path [path]
+goregraph workspace dashboard open [path]
+goregraph workspace dashboard edit [path]
+```
+
+The bare compatibility form and `path` print the generated static workspace
+dashboard; `open` opens that static read-only file. Only `edit` starts an
+authenticated loopback editor and saves layout choices to the workspace-root
+`.goregraph-dashboard.json`.
+
+```bash
 goregraph context <path> --query <task> [--budget-tokens 1800] [--max-files 12]
 ```
 
@@ -679,7 +691,7 @@ it does not turn missing static evidence into a runtime claim.
 | Language / framework | Endpoint inventory | Consumers | Security/auth | Request/response types | Dashboard | Agent context |
 | --- | --- | --- | --- | --- | --- | --- |
 | Java / Spring | Provider endpoints | Reconciled callers | Endpoint security | Statically extracted DTO identities | Full API Catalog and Endpoints | Relevant endpoint facts |
-| JavaScript / TypeScript / Node.js / React | Supported Node provider routes | HTTP client call sites | Consumer call authentication; supported provider evidence | Statically supported handler/type evidence | Full API Catalog and Endpoints | Relevant endpoint and consumer facts |
+| JavaScript / TypeScript / Node.js / React | Supported Node provider routes | HTTP client call sites | Consumer call authentication; provider security unknown | Handler identity; request/response types unknown | Full API Catalog and Endpoints | Relevant endpoint and consumer facts |
 
 For both rows, `unknown` means evidence was not detected. It does not mean an
 endpoint is public or that authentication is absent at runtime.

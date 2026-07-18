@@ -132,31 +132,71 @@ func TestDocumentationCoversExactCodeExplorer(t *testing.T) {
 }
 
 func TestDocumentationCoversEditableDashboardAndAPIContext(t *testing.T) {
-	files := []string{"README.md", "COMMANDS.md", "docs/OUTPUTS.md", "SCHEMA.md", "docs/RELEASE.md"}
-	var combined strings.Builder
-	for _, file := range files {
+	required := map[string][]string{
+		"README.md": {
+			"goregraph workspace dashboard edit [path]",
+			"goregraph workspace dashboard path .",
+			"goregraph workspace dashboard open .",
+			"Only `edit` starts an authenticated loopback server",
+			".goregraph-dashboard.json",
+			"API Catalog",
+			"Endpoint security",
+			"consumer call authentication",
+			"No auth evidence detected",
+			"index/api-catalog.json",
+			"agent/context-index.json",
+			"1800",
+			"unreleased 1.3.0",
+		},
+		"COMMANDS.md": {
+			"goregraph workspace dashboard edit [path]",
+			"goregraph workspace dashboard path .",
+			"goregraph workspace dashboard open .",
+			"only `edit` starts an authenticated loopback server",
+			".goregraph-dashboard.json",
+			"API Catalog",
+			"Endpoint security",
+			"consumer call authentication",
+			"No auth evidence detected",
+			"index/api-catalog.json",
+			"agent/context-index.json",
+			"1800",
+		},
+		"docs/OUTPUTS.md": {
+			"goregraph workspace dashboard edit .",
+			".goregraph-dashboard.json",
+			"API Catalog",
+			"No auth evidence detected",
+			"index/api-catalog.json",
+			"agent/context-index.json",
+		},
+		"SCHEMA.md": {
+			".goregraph-dashboard.json",
+			"Endpoint security",
+			"consumer call authentication",
+			"No auth evidence detected",
+			"index/api-catalog.json",
+			"agent/context-index.json",
+		},
+		"docs/RELEASE.md": {
+			"goregraph workspace dashboard edit .",
+			".goregraph-dashboard.json",
+			"API Catalog",
+			"No auth evidence detected",
+			"agent/context-index.json",
+			"unreleased 1.3.0",
+		},
+	}
+	for file, wants := range required {
 		content, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
 		}
-		combined.Write(content)
-		combined.WriteByte('\n')
-	}
-	text := combined.String()
-	for _, want := range []string{
-		"goregraph workspace dashboard edit .",
-		".goregraph-dashboard.json",
-		"API Catalog",
-		"Endpoint security",
-		"consumer call authentication",
-		"No auth evidence detected",
-		"index/api-catalog.json",
-		"agent/context-index.json",
-		"1800",
-		"unreleased 1.3.0",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("editable dashboard/API documentation missing %q", want)
+		text := string(content)
+		for _, want := range wants {
+			if !strings.Contains(text, want) {
+				t.Fatalf("%s missing editable dashboard/API contract %q", file, want)
+			}
 		}
 	}
 }
@@ -182,6 +222,8 @@ func TestREADMESeparatesAPIIntegrationDepthByLanguage(t *testing.T) {
 		"Agent context",
 		"| Java / Spring |",
 		"| JavaScript / TypeScript / Node.js / React |",
+		"Consumer call authentication; provider security unknown",
+		"Handler identity; request/response types unknown",
 	} {
 		if !strings.Contains(section, want) {
 			t.Fatalf("README API integration depth table missing %q", want)
