@@ -1018,6 +1018,7 @@ func (builder *workspaceAgentContextBuilder) addCatalogSecurityFacts(
 			ID: StableWorkspaceID(
 				"agent-context-fact", "endpoint_security", endpoint.ID, kind,
 				compactCatalogValue(evidence.Source), file, fmt.Sprint(evidence.Line),
+				fmt.Sprint(evidence.Conflicting),
 			),
 			Project: project, Kind: "endpoint_security", Name: kind,
 			Qualified: strings.TrimSpace(method + " " + endpointPath + " " + kind),
@@ -1027,10 +1028,12 @@ func (builder *workspaceAgentContextBuilder) addCatalogSecurityFacts(
 				method, endpointPath, kind, compactCatalogValue(evidence.Source),
 			),
 		})
-		builder.addEdge(AgentContextEdgeRecord{
-			FromFactID: endpointID, ToFactID: securityID, Kind: "requires_auth",
-			Reason: "catalog security", Confidence: string(evidence.Confidence),
-		})
+		if compactCatalogSecurityRequiresAuth(kind) {
+			builder.addEdge(AgentContextEdgeRecord{
+				FromFactID: endpointID, ToFactID: securityID, Kind: "requires_auth",
+				Reason: "catalog security", Confidence: string(evidence.Confidence),
+			})
+		}
 	}
 }
 
@@ -1044,6 +1047,8 @@ func (builder *workspaceAgentContextBuilder) addCatalogConsumerFacts(
 	for _, selected := range consumers {
 		consumer := selected.consumer
 		name := compactCatalogValue(firstNonEmpty(consumer.Caller, selected.service, contextFileStem(consumer.File)))
+		authLabels := compactCatalogConsumerAuthLabels(consumer.CallAuth)
+		authSummary := strings.Join(authLabels, ", ")
 		consumerID := builder.addFact(AgentContextFactRecord{
 			ID: StableWorkspaceID(
 				"agent-context-fact", "api_consumer", consumer.ID, consumer.Project,
@@ -1054,15 +1059,15 @@ func (builder *workspaceAgentContextBuilder) addCatalogConsumerFacts(
 			HTTPMethod: compactCatalogValue(firstNonEmpty(consumer.HTTPMethod, method)),
 			Path:       compactCatalogValue(firstNonEmpty(consumer.Path, endpointPath)),
 			File:       consumer.File, Line: consumer.Line,
-			Summary:    "consumer service " + selected.service,
+			Summary:    "consumer service " + selected.service + "; auth " + authSummary,
 			Confidence: string(consumer.Confidence), EvidenceIDs: consumer.EvidenceIDs,
 			Search: compactContextSearch(
-				consumer.Project, selected.service, name, consumer.File, method, endpointPath,
+				consumer.Project, selected.service, name, consumer.File, method, endpointPath, authSummary,
 			),
 		})
 		builder.addEdge(AgentContextEdgeRecord{
 			FromFactID: consumerID, ToFactID: endpointID, Kind: "consumes_endpoint",
-			Reason: "catalog consumer", Confidence: string(consumer.Confidence),
+			Reason: "catalog consumer auth " + authSummary, Confidence: string(consumer.Confidence),
 		})
 	}
 }
@@ -1800,7 +1805,7 @@ func (builder *workspaceAgentContextBuilder) findFactWithPathMode(
 func (builder *workspaceAgentContextBuilder) addFact(fact AgentContextFactRecord) string {
 	fact.Project = contextPathKey(fact.Project)
 	fact.File = contextPathKey(fact.File)
-	fact.EvidenceIDs = compactContextStrings(fact.EvidenceIDs)
+	fact.EvidenceIDs = compactCatalogFactEvidenceIDs(fact.Kind, fact.EvidenceIDs)
 	if fact.ID == "" {
 		fact.ID = StableWorkspaceID(
 			"agent-context-fact",
@@ -1815,7 +1820,10 @@ func (builder *workspaceAgentContextBuilder) addFact(fact AgentContextFactRecord
 		)
 	}
 	if existing, ok := builder.factsByID[fact.ID]; ok {
-		existing.EvidenceIDs = compactContextStrings(append(existing.EvidenceIDs, fact.EvidenceIDs...))
+		existing.EvidenceIDs = compactCatalogFactEvidenceIDs(
+			existing.Kind,
+			append(existing.EvidenceIDs, fact.EvidenceIDs...),
+		)
 		existing.Search = mergeContextSearch(existing.Search, fact.Search)
 		existing.Confidence = strongerContextConfidence(existing.Confidence, fact.Confidence)
 		existing.Summary = deterministicContextText(existing.Summary, fact.Summary)

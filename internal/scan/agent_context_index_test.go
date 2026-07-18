@@ -708,6 +708,220 @@ func TestBuildWorkspaceAgentContextIndexCompactCatalogIsDeterministic(t *testing
 	}
 }
 
+func TestBuildWorkspaceAgentContextIndexIncludesCompactConsumerCallAuth(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "services/orders", Indexed: true},
+		{Path: "frontend/web", Indexed: true},
+	}}
+	catalog := APICatalogRecord{Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/orders/{id}",
+		Consumers: []APIConsumerRecord{{
+			ID: "consumer:web", Project: "frontend/web", Service: "web", Caller: "loadOrder",
+			File: "frontend/web/src/api.ts", Line: 7,
+			CallAuth: []SecurityEvidenceRecord{
+				{Kind: SecurityOAuth2, Summary: "expanded-auth-summary", Expression: "secret-expression"},
+				{Kind: SecurityBearer, Summary: "authorization-secret"},
+				{Kind: SecurityBearer, Expression: "duplicate-secret"},
+			},
+		}},
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+	)
+	consumer := findContextFact(index.Facts, "api_consumer", "loadOrder")
+	if consumer.Summary != "consumer service web; auth bearer, oauth2" {
+		t.Fatalf("consumer auth summary = %q", consumer.Summary)
+	}
+	for _, kind := range []string{SecurityBearer, SecurityOAuth2} {
+		if !strings.Contains(consumer.Search, kind) {
+			t.Fatalf("consumer search %q missing auth kind %q", consumer.Search, kind)
+		}
+	}
+	edge := findContextEdge(index.Edges, "consumes_endpoint")
+	if edge.Reason != "catalog consumer auth bearer, oauth2" {
+		t.Fatalf("consumer edge reason = %q", edge.Reason)
+	}
+	for _, forbidden := range []string{
+		"expanded-auth-summary", "secret-expression", "authorization-secret", "duplicate-secret",
+	} {
+		if contextIndexContains(index, forbidden) {
+			t.Fatalf("consumer auth detail %q leaked into context", forbidden)
+		}
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexUsesUnknownForMissingConsumerCallAuth(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "services/orders", Indexed: true},
+		{Path: "frontend/web", Indexed: true},
+	}}
+	catalog := APICatalogRecord{Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/orders/{id}",
+		Consumers: []APIConsumerRecord{{
+			ID: "consumer:web", Project: "frontend/web", Service: "web", Caller: "loadOrder",
+			File: "frontend/web/src/api.ts", Line: 7, CallAuth: []SecurityEvidenceRecord{},
+		}},
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+	)
+	consumer := findContextFact(index.Facts, "api_consumer", "loadOrder")
+	edge := findContextEdge(index.Edges, "consumes_endpoint")
+	for _, value := range []string{consumer.Summary, consumer.Search, edge.Reason} {
+		if !strings.Contains(value, SecurityUnknown) || strings.Contains(value, SecurityPublic) {
+			t.Fatalf("missing call auth was not represented as unknown: fact=%#v edge=%#v", consumer, edge)
+		}
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexRequiresAuthOnlyForCredentialKinds(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/orders", Indexed: true,
+	}}}
+	kinds := []string{
+		SecurityBasic, SecurityBearer, SecurityOAuth2, SecurityAPIKey, SecuritySession,
+		SecurityMTLS, SecurityRole, SecurityAuthenticated, SecurityPublic, SecurityUnknown,
+	}
+	security := make([]SecurityEvidenceRecord, 0, len(kinds))
+	for _, kind := range kinds {
+		security = append(security, SecurityEvidenceRecord{Kind: kind, Source: "test"})
+	}
+	catalog := APICatalogRecord{Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/orders/{id}",
+		Security: security,
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+	)
+	endpoint := findContextFact(index.Facts, "api_endpoint", "GET /orders/{id}")
+	for _, kind := range kinds {
+		securityFact := findContextFact(index.Facts, "endpoint_security", kind)
+		if securityFact.ID == "" {
+			t.Fatalf("security fact %q missing: %#v", kind, index.Facts)
+		}
+		wantEdge := kind != SecurityPublic && kind != SecurityUnknown
+		if got := hasContextEdge(index.Edges, endpoint.ID, securityFact.ID, "requires_auth"); got != wantEdge {
+			t.Fatalf("requires_auth for %q = %v, want %v: %#v", kind, got, wantEdge, index.Edges)
+		}
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexLimitsConsumersPerProjectAndService(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "services/orders", Indexed: true},
+		{Path: "frontend/a", Indexed: true},
+		{Path: "frontend/b", Indexed: true},
+	}}
+	consumers := make([]APIConsumerRecord, 0, 12)
+	for _, project := range []string{"frontend/a", "frontend/b"} {
+		for index := 0; index < 6; index++ {
+			consumers = append(consumers, APIConsumerRecord{
+				ID: fmt.Sprintf("%s:%d", project, index), Project: project, Service: "web",
+				Caller: fmt.Sprintf("loadOrder%d", index), File: project + "/src/api.ts", Line: index + 1,
+			})
+		}
+	}
+	catalog := APICatalogRecord{Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders",
+		HTTPMethod: "GET", Path: "/orders/{id}", Consumers: consumers,
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+	)
+	for _, project := range []string{"frontend/a", "frontend/b"} {
+		if got := countContextFactsForProject(index.Facts, "api_consumer", project); got != 5 {
+			t.Fatalf("consumer facts for %q = %d, want 5: %#v", project, got, index.Facts)
+		}
+	}
+	if got := countContextEdges(index.Edges, "consumes_endpoint"); got != 10 {
+		t.Fatalf("consumer edges = %d, want 10: %#v", got, index.Edges)
+	}
+	endpoint := findContextFact(index.Facts, "api_endpoint", "GET /orders/{id}")
+	if !strings.Contains(endpoint.Summary, "2 consumer call sites omitted") {
+		t.Fatalf("endpoint omitted count = %#v", endpoint)
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexKeepsConflictingSecurityAsDistinctFact(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/orders", Indexed: true,
+	}}}
+	catalog := APICatalogRecord{Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/orders/{id}",
+		Security: []SecurityEvidenceRecord{
+			{Kind: SecurityBearer, Source: "security_config", File: "services/orders/Security.java", Line: 10},
+			{Kind: SecurityBearer, Source: "security_config", File: "services/orders/Security.java", Line: 10, Conflicting: true},
+		},
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+	)
+	if got := countNamedContextFacts(index.Facts, "endpoint_security", SecurityBearer); got != 2 {
+		t.Fatalf("bearer security facts = %d, want 2: %#v", got, index.Facts)
+	}
+	conflicting := 0
+	for _, fact := range index.Facts {
+		if fact.Kind == "endpoint_security" && strings.Contains(fact.Summary, "conflicting evidence") {
+			conflicting++
+		}
+	}
+	if conflicting != 1 {
+		t.Fatalf("conflicting security facts = %d, want 1: %#v", conflicting, index.Facts)
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexBoundsCatalogFactEvidenceIDsDeterministically(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "services/orders", Indexed: true},
+		{Path: "frontend/web", Indexed: true},
+	}}
+	evidenceIDs := make([]string, 20)
+	for index := range evidenceIDs {
+		evidenceIDs[index] = fmt.Sprintf("evidence:%02d", index)
+	}
+	build := func(ids []string) AgentContextIndexRecord {
+		t.Helper()
+		return BuildWorkspaceAgentContextIndex(
+			registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{},
+			APICatalogRecord{Endpoints: []APIEndpointRecord{{
+				ID: "endpoint:orders", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/orders/{id}",
+				EvidenceIDs: slices.Clone(ids),
+				Security: []SecurityEvidenceRecord{{
+					Kind: SecurityBearer, Source: "test", EvidenceIDs: slices.Clone(ids),
+				}},
+				Consumers: []APIConsumerRecord{{
+					ID: "consumer:web", Project: "frontend/web", Service: "web", Caller: "loadOrder",
+					File: "frontend/web/src/api.ts", Line: 7, EvidenceIDs: slices.Clone(ids),
+				}},
+			}}},
+			"fixed",
+		)
+	}
+	reversedIDs := slices.Clone(evidenceIDs)
+	slices.Reverse(reversedIDs)
+	forward := build(evidenceIDs)
+	backward := build(reversedIDs)
+	if diff := cmpJSON(forward, backward); diff != "" {
+		t.Fatalf("evidence ID input order changed compact context: %s", diff)
+	}
+	for _, fact := range forward.Facts {
+		if fact.Kind != "api_endpoint" && fact.Kind != "endpoint_security" && fact.Kind != "api_consumer" {
+			continue
+		}
+		if len(fact.EvidenceIDs) != 8 {
+			t.Fatalf("%s evidence IDs = %d, want 8: %#v", fact.Kind, len(fact.EvidenceIDs), fact)
+		}
+		if !slices.Equal(fact.EvidenceIDs, evidenceIDs[:8]) {
+			t.Fatalf("%s evidence IDs = %#v, want %#v", fact.Kind, fact.EvidenceIDs, evidenceIDs[:8])
+		}
+	}
+}
+
 func cmpJSON(left, right any) string {
 	leftBody, _ := json.Marshal(left)
 	rightBody, _ := json.Marshal(right)
@@ -726,6 +940,35 @@ func countContextEdges(edges []AgentContextEdgeRecord, kind string) int {
 	count := 0
 	for _, edge := range edges {
 		if edge.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
+func findContextEdge(edges []AgentContextEdgeRecord, kind string) AgentContextEdgeRecord {
+	for _, edge := range edges {
+		if edge.Kind == kind {
+			return edge
+		}
+	}
+	return AgentContextEdgeRecord{}
+}
+
+func countContextFactsForProject(facts []AgentContextFactRecord, kind, project string) int {
+	count := 0
+	for _, fact := range facts {
+		if fact.Kind == kind && fact.Project == project {
+			count++
+		}
+	}
+	return count
+}
+
+func countNamedContextFacts(facts []AgentContextFactRecord, kind, name string) int {
+	count := 0
+	for _, fact := range facts {
+		if fact.Kind == kind && fact.Name == name {
 			count++
 		}
 	}

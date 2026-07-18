@@ -59,6 +59,7 @@ type AgentContextIndexRecord struct {
 const (
 	maxCatalogConsumersPerService = 5
 	maxCatalogContextValueRunes   = 160
+	maxCatalogFactEvidenceIDs     = 8
 )
 
 type compactCatalogConsumerSelection struct {
@@ -127,6 +128,53 @@ func compactCatalogSecurityLabels(security []SecurityEvidenceRecord) []string {
 	return orderedContextStrings(labels)
 }
 
+func compactCatalogConsumerAuthLabels(security []SecurityEvidenceRecord) []string {
+	labels := make([]string, 0, len(security))
+	for _, evidence := range security {
+		kind := strings.ToLower(strings.TrimSpace(evidence.Kind))
+		if compactCatalogConsumerAuthKind(kind) {
+			labels = append(labels, kind)
+		}
+	}
+	sort.Strings(labels)
+	labels = orderedContextStrings(labels)
+	if len(labels) == 0 {
+		return []string{SecurityUnknown}
+	}
+	return labels
+}
+
+func compactCatalogConsumerAuthKind(kind string) bool {
+	switch kind {
+	case SecurityBasic, SecurityBearer, SecurityOAuth2, SecurityAPIKey, SecuritySession,
+		SecurityMTLS, SecurityRole, SecurityAuthenticated, SecurityUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func compactCatalogSecurityRequiresAuth(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case SecurityBasic, SecurityBearer, SecurityOAuth2, SecurityAPIKey, SecuritySession,
+		SecurityMTLS, SecurityRole, SecurityAuthenticated:
+		return true
+	default:
+		return false
+	}
+}
+
+func compactCatalogFactEvidenceIDs(kind string, evidenceIDs []string) []string {
+	evidenceIDs = compactContextStrings(evidenceIDs)
+	switch kind {
+	case "api_endpoint", "endpoint_security", "api_consumer":
+		if len(evidenceIDs) > maxCatalogFactEvidenceIDs {
+			return evidenceIDs[:maxCatalogFactEvidenceIDs]
+		}
+	}
+	return evidenceIDs
+}
+
 func usefulCompactCatalogSecurity(security SecurityEvidenceRecord) bool {
 	kind := strings.ToLower(strings.TrimSpace(security.Kind))
 	return security.Conflicting || kind != "" && kind != SecurityUnknown ||
@@ -138,6 +186,7 @@ func selectCompactCatalogConsumers(
 	indexedProjects map[string]bool,
 ) ([]compactCatalogConsumerSelection, int) {
 	groups := map[string][]APIConsumerRecord{}
+	serviceLabels := map[string]string{}
 	total := 0
 	for _, consumer := range consumers {
 		project := contextPathKey(consumer.Project)
@@ -147,19 +196,21 @@ func selectCompactCatalogConsumers(
 		}
 		consumer.Project = project
 		consumer.File = file
-		service := compactCatalogValue(firstNonEmpty(consumer.Service, project))
-		groups[service] = append(groups[service], consumer)
+		service := firstNonEmpty(strings.TrimSpace(consumer.Service), project)
+		groupKey := project + "\x00" + service
+		groups[groupKey] = append(groups[groupKey], consumer)
+		serviceLabels[groupKey] = compactCatalogValue(service)
 		total++
 	}
 
-	services := make([]string, 0, len(groups))
-	for service := range groups {
-		services = append(services, service)
+	groupKeys := make([]string, 0, len(groups))
+	for groupKey := range groups {
+		groupKeys = append(groupKeys, groupKey)
 	}
-	sort.Strings(services)
+	sort.Strings(groupKeys)
 	selected := make([]compactCatalogConsumerSelection, 0, total)
-	for _, service := range services {
-		group := groups[service]
+	for _, groupKey := range groupKeys {
+		group := groups[groupKey]
 		sort.Slice(group, func(i, j int) bool {
 			return compactCatalogConsumerKey(group[i]) < compactCatalogConsumerKey(group[j])
 		})
@@ -169,7 +220,7 @@ func selectCompactCatalogConsumers(
 		for _, consumer := range group {
 			selected = append(selected, compactCatalogConsumerSelection{
 				consumer: consumer,
-				service:  service,
+				service:  serviceLabels[groupKey],
 			})
 		}
 	}

@@ -29,6 +29,7 @@ func TestBuildContextPreservesWorkspaceRelationshipReason(t *testing.T) {
 		nil,
 		nil,
 		scan.WorkspaceEndpointTraceIndexRecord{},
+		scan.APICatalogRecord{},
 		"2026-07-16T00:00:00Z",
 	)
 	root := writeContextIndexFixture(t, workspaceIndex)
