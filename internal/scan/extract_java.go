@@ -473,6 +473,9 @@ func parseJavaMethodWithSource(line, sourceLine, file, owner string, lineNo int,
 		return JavaMethodRecord{}, false
 	}
 	if params, visibility, ok := parseJavaConstructorSignature(line, owner); ok {
+		if sourceParams, sourceOK := javaSourceParameters(line, sourceLine); sourceOK {
+			params = sourceParams
+		}
 		return JavaMethodRecord{
 			Name:        owner,
 			File:        file,
@@ -485,6 +488,9 @@ func parseJavaMethodWithSource(line, sourceLine, file, owner string, lineNo int,
 		}, true
 	}
 	if name, returnType, params, visibility, typeParameters, ok := parseJavaMethodSignatureWithTypeParameters(line); ok {
+		if sourceParams, sourceOK := javaSourceParameters(line, sourceLine); sourceOK {
+			params = sourceParams
+		}
 		return JavaMethodRecord{
 			Name:           name,
 			File:           file,
@@ -501,6 +507,10 @@ func parseJavaMethodWithSource(line, sourceLine, file, owner string, lineNo int,
 	}
 	match := javaMethodLineRE.FindStringSubmatch(line)
 	if len(match) == 5 {
+		params := match[4]
+		if sourceParams, sourceOK := javaSourceParameters(line, sourceLine); sourceOK {
+			params = sourceParams
+		}
 		return JavaMethodRecord{
 			Name:         match[3],
 			File:         file,
@@ -508,13 +518,22 @@ func parseJavaMethodWithSource(line, sourceLine, file, owner string, lineNo int,
 			Owner:        owner,
 			Visibility:   strings.TrimSpace(match[1]),
 			ReturnType:   cleanJavaType(match[2]),
-			Parameters:   parseJavaParameters(match[4]),
+			Parameters:   parseJavaParameters(params),
 			Annotations:  annotations,
 			Calls:        extractJavaCallsWithSource(line, sourceLine, lineNo),
 			HTTPRequests: extractJavaHTTPRequestsWithSource(line, sourceLine, lineNo, nil),
 		}, true
 	}
 	return JavaMethodRecord{}, false
+}
+
+func javaSourceParameters(line, sourceLine string) (string, bool) {
+	open := javaMethodParameterOpen(line)
+	close := matchingJavaParen(line, open)
+	if open < 0 || close < open || close > len(sourceLine) {
+		return "", false
+	}
+	return sourceLine[open+1 : close], true
 }
 
 func parseJavaConstructorSignature(line, owner string) (params, visibility string, ok bool) {

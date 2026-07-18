@@ -479,6 +479,57 @@ func TestBuildProjectAPICatalogMergesDuplicateMetadataDeterministically(t *testi
 	}
 }
 
+func TestBuildProjectAPICatalogMergesScriptConfidenceAndCoverageDeterministically(t *testing.T) {
+	confidenceRoutes := []CodeRouteRecord{
+		{Language: "typescript", Framework: "Express", FrameworkBound: true, Kind: "backend", HTTPMethod: "GET", Path: "/orders/:id", Handler: "getOrder", File: "src/routes.ts", Line: 12, Confidence: "WEAK", EvidenceIDs: []string{"evidence:route"}},
+		{Language: "typescript", Framework: "Express", FrameworkBound: true, Kind: "backend", HTTPMethod: "GET", Path: "/orders/:id", Handler: "getOrder", File: "src/routes.ts", Line: 12, Confidence: "EXTRACTED", EvidenceIDs: []string{"evidence:route"}},
+	}
+	left := BuildProjectAPICatalog("orders", "fixed", confidenceRoutes, SpringIndex{}, nil, nil)
+	right := BuildProjectAPICatalog("orders", "fixed", []CodeRouteRecord{confidenceRoutes[1], confidenceRoutes[0]}, SpringIndex{}, nil, nil)
+	leftJSON, err := json.Marshal(left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightJSON, err := json.Marshal(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(leftJSON) != string(rightJSON) {
+		t.Fatalf("script catalog depends on discovery order:\nleft:  %s\nright: %s", leftJSON, rightJSON)
+	}
+	if len(left.Endpoints) != 1 || left.Endpoints[0].Confidence != ConfidenceExact {
+		t.Fatalf("strongest confidence not retained: %#v", left.Endpoints)
+	}
+
+	coverageRoutes := []CodeRouteRecord{
+		{Language: "javascript", Framework: "Express", FrameworkBound: true, Kind: "backend", HTTPMethod: "GET", Path: "/orders/:id", Handler: "getOrder", File: "src/routes", Line: 12, Confidence: "WEAK"},
+		{Language: "typescript", Framework: "Express", FrameworkBound: true, Kind: "backend", HTTPMethod: "GET", Path: "/orders/:id", Handler: "getOrder", File: "src/routes", Line: 12, Confidence: "EXTRACTED"},
+	}
+	capabilities := []CapabilityRecord{
+		{ID: CapabilityRoutes, Language: "javascript", Coverage: CoverageComplete},
+		{ID: CapabilityRoutes, Language: "typescript", Coverage: CoveragePartial},
+	}
+	left = BuildProjectAPICatalog("orders", "fixed", coverageRoutes, SpringIndex{}, nil, capabilities)
+	right = BuildProjectAPICatalog("orders", "fixed", []CodeRouteRecord{coverageRoutes[1], coverageRoutes[0]}, SpringIndex{}, nil, capabilities)
+	leftJSON, err = json.Marshal(left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightJSON, err = json.Marshal(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(leftJSON) != string(rightJSON) {
+		t.Fatalf("coverage merge depends on discovery order:\nleft:  %s\nright: %s", leftJSON, rightJSON)
+	}
+	if len(left.Endpoints) != 1 || left.Endpoints[0].Confidence != ConfidenceExact || left.Endpoints[0].Coverage != CoveragePartial {
+		t.Fatalf("semantic confidence/coverage merge not retained: %#v", left.Endpoints)
+	}
+	if !strings.Contains(strings.Join(left.Endpoints[0].Limitations, "\n"), "coverage_conflict: COMPLETE | PARTIAL") {
+		t.Fatalf("coverage conflict limitation missing: %#v", left.Endpoints[0].Limitations)
+	}
+}
+
 func TestBuildProjectAPICatalogTreatsExplicitEmptySpringDefaultsAsOptional(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/DefaultController.java", Language: "java"}, `import org.springframework.web.bind.annotation.*;
 
@@ -508,6 +559,56 @@ class DefaultController {
 	}
 	if !requiredByName["requiredQuery"] {
 		t.Fatalf("DEFAULT_NONE parameter should remain required: %#v", catalog.Endpoints[0].Parameters)
+	}
+}
+
+func TestBuildProjectAPICatalogDistinguishesQuotedSpringDefaultNoneValues(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/DefaultController.java", Language: "java"}, `import org.springframework.web.bind.annotation.*;
+
+@RestController
+class DefaultController {
+  @GetMapping("/defaults")
+  String get(@RequestParam(defaultValue = "DEFAULT_NONE") String namedDefault,
+      @RequestParam(defaultValue = "custom.DEFAULT_NONE") String qualifiedNamedDefault,
+      @RequestParam(defaultValue = custom.DEFAULT_NONE) String unrelatedConstant,
+      @RequestParam(defaultValue = DEFAULT_NONE) String staticSentinel,
+      @RequestParam(defaultValue = ValueConstants.DEFAULT_NONE) String sentinel,
+      @RequestParam(defaultValue = org.springframework.web.bind.annotation.ValueConstants.DEFAULT_NONE) String qualifiedSentinel) {
+    return "ok";
+  }
+}
+`)
+	rawArgumentsByName := map[string]string{}
+	for _, parameter := range source.Methods[0].Parameters {
+		if len(parameter.Annotations) > 0 {
+			rawArgumentsByName[parameter.Name] = parameter.Annotations[0].Arguments
+		}
+	}
+	for name, want := range map[string]string{
+		"namedDefault":          `defaultValue = "DEFAULT_NONE"`,
+		"qualifiedNamedDefault": `defaultValue = "custom.DEFAULT_NONE"`,
+	} {
+		if rawArgumentsByName[name] != want {
+			t.Fatalf("raw default expression for %q = %q, want %q", name, rawArgumentsByName[name], want)
+		}
+	}
+	catalog := BuildProjectAPICatalog("defaults", "fixed", nil, buildSpringIndex([]JavaSourceRecord{source}), nil, nil)
+	if len(catalog.Endpoints) != 1 {
+		t.Fatalf("endpoints = %#v", catalog.Endpoints)
+	}
+	requiredByName := map[string]bool{}
+	for _, parameter := range catalog.Endpoints[0].Parameters {
+		requiredByName[parameter.Name] = parameter.Required
+	}
+	for _, optional := range []string{"namedDefault", "qualifiedNamedDefault", "unrelatedConstant"} {
+		if requiredByName[optional] {
+			t.Fatalf("parameter %q should be optional: %#v", optional, catalog.Endpoints[0].Parameters)
+		}
+	}
+	for _, required := range []string{"staticSentinel", "sentinel", "qualifiedSentinel"} {
+		if !requiredByName[required] {
+			t.Fatalf("parameter %q should remain required: %#v", required, catalog.Endpoints[0].Parameters)
+		}
 	}
 }
 

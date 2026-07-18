@@ -138,6 +138,8 @@ func projectProviderCandidateSortKey(endpoint APIEndpointRecord) string {
 		endpoint.Controller,
 		endpoint.RequestType,
 		endpoint.ResponseType,
+		string(endpoint.Confidence),
+		string(endpoint.Coverage),
 		strings.Join(catalogUniqueSortedStrings(endpoint.Consumes), "\x01"),
 		strings.Join(catalogUniqueSortedStrings(endpoint.Produces), "\x01"),
 		strings.Join(parameterKeys, "\x01"),
@@ -152,6 +154,8 @@ func mergeProjectProviderEndpoint(target *APIEndpointRecord, extra APIEndpointRe
 	target.Produces = catalogUniqueSortedStrings(append(target.Produces, extra.Produces...))
 	mergeProjectProviderType(&target.RequestType, extra.RequestType, "request_type", &target.Limitations)
 	mergeProjectProviderType(&target.ResponseType, extra.ResponseType, "response_type", &target.Limitations)
+	target.Confidence = strongerAPIConfidence(target.Confidence, extra.Confidence)
+	mergeProjectProviderCoverage(&target.Coverage, extra.Coverage, &target.Limitations)
 	target.Limitations = catalogUniqueSortedStrings(append(target.Limitations, extra.Limitations...))
 	target.EvidenceIDs = catalogUniqueSortedStrings(append(target.EvidenceIDs, extra.EvidenceIDs...))
 }
@@ -211,6 +215,54 @@ func apiConfidenceRank(confidence Confidence) int {
 		return 2
 	default:
 		return 1
+	}
+}
+
+func strongerAPIConfidence(left, right Confidence) Confidence {
+	if left == "" {
+		return right
+	}
+	if right == "" {
+		return left
+	}
+	leftRank := apiConfidenceRank(left)
+	rightRank := apiConfidenceRank(right)
+	if rightRank > leftRank || (rightRank == leftRank && right < left) {
+		return right
+	}
+	return left
+}
+
+func mergeProjectProviderCoverage(target *Coverage, extra Coverage, limitations *[]string) {
+	if extra == "" {
+		return
+	}
+	if *target == "" {
+		*target = extra
+		return
+	}
+	if *target == extra {
+		return
+	}
+	values := catalogUniqueSortedStrings([]string{string(*target), string(extra)})
+	*limitations = append(*limitations, "coverage_conflict: "+strings.Join(values, " | "))
+	if apiCoverageRank(extra) < apiCoverageRank(*target) || (apiCoverageRank(extra) == apiCoverageRank(*target) && extra < *target) {
+		*target = extra
+	}
+}
+
+func apiCoverageRank(coverage Coverage) int {
+	switch coverage {
+	case CoverageComplete:
+		return 4
+	case CoveragePartial:
+		return 3
+	case CoverageUnavailable:
+		return 2
+	case CoverageFailed:
+		return 1
+	default:
+		return 0
 	}
 }
 
@@ -276,12 +328,30 @@ func springAPIParameter(parameter JavaParameterRecord) APIParameterRecord {
 }
 
 func springParameterHasDefault(annotation JavaAnnotationRecord) bool {
-	value, present := annotation.Attributes["defaultValue"]
+	value, present := springParameterDefaultExpression(annotation)
 	if !present {
 		return false
 	}
 	value = strings.TrimSpace(value)
-	return value != "DEFAULT_NONE" && !strings.HasSuffix(value, ".DEFAULT_NONE")
+	if strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+		return true
+	}
+	return !springDefaultNoneExpression(value)
+}
+
+func springParameterDefaultExpression(annotation JavaAnnotationRecord) (string, bool) {
+	for _, part := range splitTopLevel(annotation.Arguments, ',') {
+		keyValue := strings.SplitN(part, "=", 2)
+		if len(keyValue) == 2 && strings.TrimSpace(keyValue[0]) == "defaultValue" {
+			return strings.TrimSpace(keyValue[1]), true
+		}
+	}
+	value, present := annotation.Attributes["defaultValue"]
+	return value, present
+}
+
+func springDefaultNoneExpression(value string) bool {
+	return value == "DEFAULT_NONE" || value == "ValueConstants.DEFAULT_NONE" || strings.HasSuffix(value, ".ValueConstants.DEFAULT_NONE")
 }
 
 func splitSpringMediaTypes(value string) []string {
