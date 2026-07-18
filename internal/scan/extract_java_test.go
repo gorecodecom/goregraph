@@ -153,12 +153,78 @@ class Controller {
 		t.Fatalf("class method/OpenAPI security not inherited independently: %#v", inherited)
 	}
 	methodPublic, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/method-public")
-	if !ok || !hasAuthKind(methodPublic.Auth, "permit_all") || hasAuthKind(methodPublic.Auth, "pre_authorize") || !hasAuthKind(methodPublic.Auth, "bearer") {
+	if !ok || !hasAuthKind(methodPublic.Auth, "permit_all") || !hasAuthKind(methodPublic.Auth, "pre_authorize") || !hasAuthKind(methodPublic.Auth, "bearer") {
 		t.Fatalf("method security override affected the wrong security model: %#v", methodPublic)
 	}
 	openAPIPublic, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/openapi-public")
 	if !ok || !hasAuthKind(openAPIPublic.Auth, "pre_authorize") || !hasAuthKind(openAPIPublic.Auth, "permit_all") || hasAuthKind(openAPIPublic.Auth, "bearer") {
 		t.Fatalf("OpenAPI security override affected method security inheritance: %#v", openAPIPublic)
+	}
+}
+
+func TestSpringIndexOverridesClassMethodSecurityPerAnnotationTypeAndFamily(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/Controller.java", Language: "java"}, `@RestController
+@PreAuthorize("hasRole('CLASS_PRE')")
+@PostAuthorize("hasRole('CLASS_POST')")
+@Secured("ROLE_CLASS")
+@RolesAllowed("CLASS_JSR")
+class Controller {
+  @PreAuthorize("hasRole('METHOD_PRE')")
+  @GetMapping("/pre")
+  String pre() { return "ok"; }
+
+  @PostAuthorize("hasRole('METHOD_POST')")
+  @GetMapping("/post")
+  String post() { return "ok"; }
+
+  @Secured("ROLE_METHOD")
+  @GetMapping("/secured")
+  String secured() { return "ok"; }
+
+  @PermitAll
+  @GetMapping("/public")
+  String publicEndpoint() { return "ok"; }
+}`)
+
+	index := buildSpringIndex([]JavaSourceRecord{source})
+	pre, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/pre")
+	if !ok || len(pre.Auth) != 4 ||
+		!hasAuthEvidenceForTest(pre.Auth, "pre_authorize", "hasRole('METHOD_PRE')", "method_annotation") ||
+		hasAuthEvidenceForTest(pre.Auth, "pre_authorize", "hasRole('CLASS_PRE')", "class_annotation") ||
+		!hasAuthEvidenceForTest(pre.Auth, "post_authorize", "hasRole('CLASS_POST')", "class_annotation") ||
+		!hasAuthEvidenceForTest(pre.Auth, "secured", "ROLE_CLASS", "class_annotation") ||
+		!hasAuthEvidenceForTest(pre.Auth, "roles_allowed", "CLASS_JSR", "class_annotation") {
+		t.Fatalf("PreAuthorize override did not retain other class security: %#v", pre.Auth)
+	}
+
+	post, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/post")
+	if !ok || len(post.Auth) != 4 ||
+		!hasAuthEvidenceForTest(post.Auth, "pre_authorize", "hasRole('CLASS_PRE')", "class_annotation") ||
+		!hasAuthEvidenceForTest(post.Auth, "post_authorize", "hasRole('METHOD_POST')", "method_annotation") ||
+		hasAuthEvidenceForTest(post.Auth, "post_authorize", "hasRole('CLASS_POST')", "class_annotation") ||
+		!hasAuthEvidenceForTest(post.Auth, "secured", "ROLE_CLASS", "class_annotation") ||
+		!hasAuthEvidenceForTest(post.Auth, "roles_allowed", "CLASS_JSR", "class_annotation") {
+		t.Fatalf("PostAuthorize override did not retain other class security: %#v", post.Auth)
+	}
+
+	secured, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/secured")
+	if !ok || len(secured.Auth) != 4 ||
+		!hasAuthEvidenceForTest(secured.Auth, "pre_authorize", "hasRole('CLASS_PRE')", "class_annotation") ||
+		!hasAuthEvidenceForTest(secured.Auth, "post_authorize", "hasRole('CLASS_POST')", "class_annotation") ||
+		!hasAuthEvidenceForTest(secured.Auth, "secured", "ROLE_METHOD", "method_annotation") ||
+		hasAuthEvidenceForTest(secured.Auth, "secured", "ROLE_CLASS", "class_annotation") ||
+		!hasAuthEvidenceForTest(secured.Auth, "roles_allowed", "CLASS_JSR", "class_annotation") {
+		t.Fatalf("Secured override did not retain other class security: %#v", secured.Auth)
+	}
+
+	public, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/public")
+	if !ok || len(public.Auth) != 4 ||
+		!hasAuthEvidenceForTest(public.Auth, "pre_authorize", "hasRole('CLASS_PRE')", "class_annotation") ||
+		!hasAuthEvidenceForTest(public.Auth, "post_authorize", "hasRole('CLASS_POST')", "class_annotation") ||
+		!hasAuthEvidenceForTest(public.Auth, "secured", "ROLE_CLASS", "class_annotation") ||
+		!hasAuthEvidenceForTest(public.Auth, "permit_all", "", "method_annotation") ||
+		hasAuthEvidenceForTest(public.Auth, "roles_allowed", "CLASS_JSR", "class_annotation") {
+		t.Fatalf("JSR-250 override did not retain other class security: %#v", public.Auth)
 	}
 }
 
@@ -433,6 +499,15 @@ class Controller {
 func hasAuthKind(records []AuthRecord, kind string) bool {
 	for _, record := range records {
 		if record.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAuthEvidenceForTest(records []AuthRecord, kind, expression, source string) bool {
+	for _, record := range records {
+		if record.Kind == kind && record.Expression == expression && record.Source == source {
 			return true
 		}
 	}

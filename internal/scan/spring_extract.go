@@ -735,13 +735,21 @@ func fieldSource(annotations []JavaAnnotationRecord) string {
 }
 
 func springAuthRecords(classAnnotations, methodAnnotations []JavaAnnotationRecord, file string, securitySchemes map[string][]AuthRecord) []AuthRecord {
-	securityAnnotations := classAnnotations
-	securitySource := "class_annotation"
-	if hasSpringMethodSecurityAnnotation(methodAnnotations) {
-		securityAnnotations = methodAnnotations
-		securitySource = "method_annotation"
+	overriddenFamilies := map[string]bool{}
+	for _, annotation := range methodAnnotations {
+		if family := springMethodSecurityFamily(annotation.Name); family != "" {
+			overriddenFamilies[family] = true
+		}
 	}
-	records := springMethodSecurityAuthRecords(securityAnnotations, file, securitySource)
+	classSecurityAnnotations := make([]JavaAnnotationRecord, 0, len(classAnnotations))
+	for _, annotation := range classAnnotations {
+		family := springMethodSecurityFamily(annotation.Name)
+		if family != "" && !overriddenFamilies[family] {
+			classSecurityAnnotations = append(classSecurityAnnotations, annotation)
+		}
+	}
+	records := springMethodSecurityAuthRecords(classSecurityAnnotations, file, "class_annotation")
+	records = append(records, springMethodSecurityAuthRecords(methodAnnotations, file, "method_annotation")...)
 
 	openAPIAnnotations := classAnnotations
 	if hasMethodOpenAPISecurityOverride(methodAnnotations) {
@@ -754,14 +762,19 @@ func springAuthRecords(classAnnotations, methodAnnotations []JavaAnnotationRecor
 	return records
 }
 
-func hasSpringMethodSecurityAnnotation(annotations []JavaAnnotationRecord) bool {
-	for _, annotation := range annotations {
-		switch annotation.Name {
-		case "PermitAll", "DenyAll", "PreAuthorize", "PostAuthorize", "Secured", "RolesAllowed":
-			return true
-		}
+func springMethodSecurityFamily(annotation string) string {
+	switch annotation {
+	case "PreAuthorize":
+		return "pre_authorize"
+	case "PostAuthorize":
+		return "post_authorize"
+	case "Secured":
+		return "secured"
+	case "PermitAll", "DenyAll", "RolesAllowed":
+		return "jsr_250"
+	default:
+		return ""
 	}
-	return false
 }
 
 func springMethodSecurityAuthRecords(annotations []JavaAnnotationRecord, file, source string) []AuthRecord {
