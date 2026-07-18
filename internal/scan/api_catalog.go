@@ -107,12 +107,14 @@ type APIConsumerRecord struct {
 
 // APIMismatchRecord describes one evidence-backed provider-consumer discrepancy.
 type APIMismatchRecord struct {
-	ID          string     `json:"id"`
-	Kind        string     `json:"kind"`
-	Severity    string     `json:"severity"`
-	Reason      string     `json:"reason"`
-	Confidence  Confidence `json:"confidence"`
-	EvidenceIDs []string   `json:"evidence_ids,omitempty"`
+	ID              string     `json:"id"`
+	Kind            string     `json:"kind"`
+	Severity        string     `json:"severity"`
+	Reason          string     `json:"reason"`
+	ConsumerProject string     `json:"consumer_project,omitempty"`
+	ConsumerID      string     `json:"consumer_id,omitempty"`
+	Confidence      Confidence `json:"confidence"`
+	EvidenceIDs     []string   `json:"evidence_ids,omitempty"`
 }
 
 // StableAPIEndpointID returns an order-independent identity for one provider route.
@@ -273,6 +275,9 @@ func ValidateAPICatalog(catalog APICatalogRecord) error {
 		}
 		for mismatchIndex := range endpoint.Mismatches {
 			mismatch := endpoint.Mismatches[mismatchIndex]
+			if (mismatch.ConsumerProject == "") != (mismatch.ConsumerID == "") {
+				return fmt.Errorf("mismatch %q contains incomplete consumer scope", mismatch.ID)
+			}
 			if err := validateAPIEvidenceIDs("mismatch "+mismatch.ID, mismatch.EvidenceIDs); err != nil {
 				return err
 			}
@@ -336,16 +341,18 @@ func BuildWorkspaceAPICatalog(registry WorkspaceRegistryRecord, projects []works
 		candidateIndexes := workspaceCatalogEndpointCandidates(catalog.Endpoints, match)
 		if !resolvedWorkspaceCatalogMatch(match) {
 			if ambiguousWorkspaceCatalogMatch(match) {
+				unresolvedConsumer := workspaceUnresolvedAPIConsumer(match)
 				for _, endpointIndex := range candidateIndexes {
-					addWorkspaceCatalogMismatch(&catalog.Endpoints[endpointIndex], APIConsumerRecord{}, "ambiguous_route_match", "WARNING", "Canonical route evidence is ambiguous; the consumer was preserved as an unresolved candidate and was not assigned to a provider endpoint.", ConfidenceInferred, workspaceCatalogEvidenceIDs(catalog.Endpoints[endpointIndex], match.ID))
+					addWorkspaceCatalogMismatch(&catalog.Endpoints[endpointIndex], unresolvedConsumer, "ambiguous_route_match", "WARNING", "Canonical route evidence is ambiguous; the consumer was preserved as an unresolved candidate and was not assigned to a provider endpoint.", ConfidenceInferred, workspaceCatalogEvidenceIDs(catalog.Endpoints[endpointIndex], match.ID))
 				}
 			}
 			continue
 		}
 		if len(candidateIndexes) != 1 {
 			if len(candidateIndexes) > 1 {
+				unresolvedConsumer := workspaceUnresolvedAPIConsumer(match)
 				for _, endpointIndex := range candidateIndexes {
-					addWorkspaceCatalogMismatch(&catalog.Endpoints[endpointIndex], APIConsumerRecord{}, "ambiguous_route_match", "WARNING", "Canonical match metadata resolves to multiple provider endpoints; the consumer was not assigned.", ConfidenceInferred, workspaceCatalogEvidenceIDs(catalog.Endpoints[endpointIndex], match.ID))
+					addWorkspaceCatalogMismatch(&catalog.Endpoints[endpointIndex], unresolvedConsumer, "ambiguous_route_match", "WARNING", "Canonical match metadata resolves to multiple provider endpoints; the consumer was not assigned.", ConfidenceInferred, workspaceCatalogEvidenceIDs(catalog.Endpoints[endpointIndex], match.ID))
 				}
 			}
 			continue
@@ -399,6 +406,13 @@ func resolvedWorkspaceCatalogMatch(match WorkspaceContractMatchRecord) bool {
 
 func ambiguousWorkspaceCatalogMatch(match WorkspaceContractMatchRecord) bool {
 	return strings.Contains(strings.ToLower(match.Issue), "ambiguous") || strings.Contains(strings.ToLower(match.Confidence), "ambiguous")
+}
+
+func workspaceUnresolvedAPIConsumer(match WorkspaceContractMatchRecord) APIConsumerRecord {
+	return APIConsumerRecord{
+		ID:      StableWorkspaceID("api-unresolved-consumer", match.ID, match.APIProject, match.APIHTTPMethod, match.APIPath, match.APIFile, strconv.Itoa(match.APILine)),
+		Project: filepath.ToSlash(match.APIProject),
+	}
 }
 
 func workspaceCatalogEndpointCandidates(endpoints []APIEndpointRecord, match WorkspaceContractMatchRecord) []int {
@@ -571,8 +585,8 @@ func addWorkspaceCatalogMismatch(endpoint *APIEndpointRecord, consumer APIConsum
 		consumerIdentity = "provider"
 	}
 	record := APIMismatchRecord{
-		ID: StableWorkspaceID("api-mismatch", endpoint.ID, consumerIdentity, kind), Kind: kind, Severity: severity,
-		Reason: reason, Confidence: confidence, EvidenceIDs: catalogUniqueSortedStrings(evidenceIDs),
+		ID: StableWorkspaceID("api-mismatch", endpoint.ID, consumerIdentity, kind), Kind: kind, Severity: severity, Reason: reason,
+		ConsumerProject: consumer.Project, ConsumerID: consumer.ID, Confidence: confidence, EvidenceIDs: catalogUniqueSortedStrings(evidenceIDs),
 	}
 	for _, existing := range endpoint.Mismatches {
 		if existing.ID == record.ID {
@@ -726,7 +740,7 @@ func apiConsumerSortKey(record APIConsumerRecord) string {
 }
 
 func apiMismatchSortKey(record APIMismatchRecord) string {
-	return joinAPISortKey(record.Kind, record.Severity, record.Reason, record.ID, string(record.Confidence), strings.Join(record.EvidenceIDs, "\x01"))
+	return joinAPISortKey(record.ConsumerProject, record.ConsumerID, record.Kind, record.Severity, record.Reason, record.ID, string(record.Confidence), strings.Join(record.EvidenceIDs, "\x01"))
 }
 
 func joinAPISortKey(parts ...string) string {

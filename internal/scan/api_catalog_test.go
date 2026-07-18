@@ -535,6 +535,142 @@ func TestBuildWorkspaceAPICatalogIsDeterministicAcrossDiscoveryOrder(t *testing.
 	}
 }
 
+func TestFilterWorkspaceAPICatalogKeepsOnlyProjectScopedConsumerMismatches(t *testing.T) {
+	catalog := APICatalogRecord{SchemaVersion: SchemaVersion, Generated: "fixed", Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders", Transport: "http", HTTPMethod: "GET", Path: "/orders/{id}",
+		Security: []SecurityEvidenceRecord{},
+		Consumers: []APIConsumerRecord{
+			{ID: "consumer:a", Project: "frontend/a", File: "src/a.ts", Line: 1, CallAuth: []SecurityEvidenceRecord{}, Resolution: "MATCHED", Confidence: ConfidenceResolved, EvidenceIDs: []string{"match:a"}},
+			{ID: "consumer:b", Project: "frontend/b", File: "src/b.ts", Line: 2, CallAuth: []SecurityEvidenceRecord{}, Resolution: "MATCHED", Confidence: ConfidenceResolved, EvidenceIDs: []string{"match:b"}},
+		},
+		Mismatches: []APIMismatchRecord{
+			{ID: "mismatch:provider", Kind: "conflicting_provider_security", Severity: "WARNING", Reason: "provider conflict", Confidence: ConfidenceInferred, EvidenceIDs: []string{"provider:evidence"}},
+			{ID: "mismatch:a", Kind: "missing_call_auth_evidence", Severity: "WARNING", Reason: "a", ConsumerProject: "frontend/a", ConsumerID: "consumer:a", Confidence: ConfidenceInferred, EvidenceIDs: []string{"match:a"}},
+			{ID: "mismatch:b", Kind: "auth_scheme_mismatch", Severity: "WARNING", Reason: "b", ConsumerProject: "frontend/b", ConsumerID: "consumer:b", Confidence: ConfidenceInferred, EvidenceIDs: []string{"match:b"}},
+		},
+		Confidence: ConfidenceExact, Coverage: CoverageComplete,
+	}}}
+	SortAPICatalog(&catalog)
+
+	consumerCatalog := filterWorkspaceAPICatalog("frontend/a", catalog)
+	if len(consumerCatalog.Endpoints) != 1 || len(consumerCatalog.Endpoints[0].Consumers) != 1 || consumerCatalog.Endpoints[0].Consumers[0].Project != "frontend/a" {
+		t.Fatalf("consumer catalog=%#v", consumerCatalog)
+	}
+	if got := consumerCatalog.Endpoints[0].Mismatches; len(got) != 2 || !hasAPIMismatchID(got, "mismatch:provider") || !hasAPIMismatchID(got, "mismatch:a") {
+		t.Fatalf("consumer mismatches=%#v", got)
+	}
+	consumerJSON, err := json.Marshal(consumerCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(consumerJSON), "consumer:b") || strings.Contains(string(consumerJSON), "match:b") || strings.Contains(string(consumerJSON), "frontend/b") {
+		t.Fatalf("consumer catalog leaked another consumer's scope or evidence: %s", consumerJSON)
+	}
+
+	providerCatalog := filterWorkspaceAPICatalog("services/orders", catalog)
+	if len(providerCatalog.Endpoints) != 1 || len(providerCatalog.Endpoints[0].Consumers) != 2 || len(providerCatalog.Endpoints[0].Mismatches) != 3 {
+		t.Fatalf("provider catalog lost consumer or provider-wide details: %#v", providerCatalog)
+	}
+}
+
+func TestBuildWorkspaceAPICatalogKeepsMultipleAmbiguousCallSitesDeterministically(t *testing.T) {
+	spring := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "services/orders-java", Service: "orders"},
+		endpoints: []SpringEndpointRecord{{HTTPMethod: "GET", Path: "/orders/{id}", Controller: "OrderController", Method: "get", File: "OrderController.java", Line: 10}},
+	}
+	script := workspaceIndexProject{
+		record: WorkspaceProjectRecord{Path: "services/orders-js", Service: "orders"},
+		routes: []CodeRouteRecord{{Language: "typescript", Framework: "Express", Kind: "backend", FrameworkBound: true, HTTPMethod: "GET", Path: "/orders/:id", Handler: "getOrder", File: "src/server.ts", Line: 4}},
+	}
+	consumerA := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "frontend/a"},
+		contracts: []APIContractRecord{{HTTPMethod: "GET", Path: "/orders/{id}", File: "src/a.ts", Line: 7, Caller: "loadA"}},
+	}
+	consumerB := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "frontend/b"},
+		contracts: []APIContractRecord{{HTTPMethod: "GET", Path: "/orders/{id}", File: "src/b.ts", Line: 9, Caller: "loadB"}},
+	}
+	projects := []workspaceIndexProject{consumerA, spring, consumerB, script}
+	registry := WorkspaceRegistryRecord{Root: "workspace", Projects: []WorkspaceProjectRecord{consumerA.record, spring.record, consumerB.record, script.record}}
+	matches := buildWorkspaceContractMatches(projects)
+	if len(matches) != 2 || matches[0].Issue != "ambiguous_route" || matches[1].Issue != "ambiguous_route" {
+		t.Fatalf("matches=%#v", matches)
+	}
+
+	forward, err := BuildWorkspaceAPICatalog(registry, projects, matches, nil, "fixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, endpoint := range forward.Endpoints {
+		if len(endpoint.Consumers) != 0 || len(endpoint.Mismatches) != 2 {
+			t.Fatalf("ambiguous call sites collapsed or attached on %#v", endpoint)
+		}
+		if endpoint.Mismatches[0].ID == endpoint.Mismatches[1].ID {
+			t.Fatalf("ambiguous call sites share mismatch ID: %#v", endpoint.Mismatches)
+		}
+		for _, mismatch := range endpoint.Mismatches {
+			matchID := ambiguousMatchIDForProject(t, matches, mismatch.ConsumerProject)
+			if mismatch.ConsumerID == "" || !containsString(mismatch.EvidenceIDs, matchID) {
+				t.Fatalf("ambiguous mismatch lost scope/evidence: %#v", mismatch)
+			}
+			for _, other := range matches {
+				if other.ID != matchID && containsString(mismatch.EvidenceIDs, other.ID) {
+					t.Fatalf("ambiguous mismatch shared another call site's evidence: %#v", mismatch)
+				}
+			}
+		}
+	}
+	consumerACatalog := filterWorkspaceAPICatalog("frontend/a", forward)
+	if len(consumerACatalog.Endpoints) != 2 {
+		t.Fatalf("ambiguous consumer scope did not retain candidate endpoints: %#v", consumerACatalog)
+	}
+	for _, endpoint := range consumerACatalog.Endpoints {
+		if len(endpoint.Consumers) != 0 || len(endpoint.Mismatches) != 1 || endpoint.Mismatches[0].ConsumerProject != "frontend/a" {
+			t.Fatalf("ambiguous project catalog leaked or lost call-site scope: %#v", endpoint)
+		}
+		if containsString(endpoint.Mismatches[0].EvidenceIDs, ambiguousMatchIDForProject(t, matches, "frontend/b")) {
+			t.Fatalf("ambiguous project catalog leaked other call-site evidence: %#v", endpoint.Mismatches[0])
+		}
+	}
+
+	reverseProjects := append([]workspaceIndexProject(nil), projects...)
+	reverseSlice(reverseProjects)
+	reverseMatches := append([]WorkspaceContractMatchRecord(nil), matches...)
+	reverseSlice(reverseMatches)
+	reverseRegistry := registry
+	reverseRegistry.Projects = append([]WorkspaceProjectRecord(nil), registry.Projects...)
+	reverseSlice(reverseRegistry.Projects)
+	reverse, err := BuildWorkspaceAPICatalog(reverseRegistry, reverseProjects, reverseMatches, nil, "fixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forwardJSON, _ := json.Marshal(forward)
+	reverseJSON, _ := json.Marshal(reverse)
+	if string(forwardJSON) != string(reverseJSON) {
+		t.Fatalf("ambiguous call-site order changed catalog JSON:\nforward: %s\nreverse: %s", forwardJSON, reverseJSON)
+	}
+}
+
+func ambiguousMatchIDForProject(t *testing.T, matches []WorkspaceContractMatchRecord, project string) string {
+	t.Helper()
+	for _, match := range matches {
+		if match.APIProject == project {
+			return match.ID
+		}
+	}
+	t.Fatalf("missing ambiguous match for %q in %#v", project, matches)
+	return ""
+}
+
+func hasAPIMismatchID(records []APIMismatchRecord, id string) bool {
+	for _, record := range records {
+		if record.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func requireAPIMismatch(t *testing.T, mismatches []APIMismatchRecord, kind string) APIMismatchRecord {
 	t.Helper()
 	for _, mismatch := range mismatches {

@@ -400,12 +400,26 @@ func filterWorkspaceAPICatalog(projectPath string, catalog APICatalogRecord) API
 		}
 		projectEndpoint := endpoint
 		projectEndpoint.Consumers = nil
+		projectEndpoint.Mismatches = nil
+		projectRelevant := false
 		for _, consumer := range endpoint.Consumers {
 			if consumer.Project == projectPath {
 				projectEndpoint.Consumers = append(projectEndpoint.Consumers, consumer)
+				projectRelevant = true
 			}
 		}
-		if len(projectEndpoint.Consumers) > 0 {
+		for _, mismatch := range endpoint.Mismatches {
+			if mismatch.ConsumerProject == projectPath {
+				projectEndpoint.Mismatches = append(projectEndpoint.Mismatches, mismatch)
+				projectRelevant = true
+			}
+		}
+		if projectRelevant {
+			for _, mismatch := range endpoint.Mismatches {
+				if mismatch.ConsumerProject == "" {
+					projectEndpoint.Mismatches = append(projectEndpoint.Mismatches, mismatch)
+				}
+			}
 			filtered.Endpoints = append(filtered.Endpoints, projectEndpoint)
 		}
 	}
@@ -1940,6 +1954,7 @@ func buildWorkspaceContractMatches(projects []workspaceIndexProject) []Workspace
 }
 
 func appendWorkspaceBackendRoute(routes *[]workspaceBackendRoute, seen, knownServices map[string]bool, candidate workspaceBackendRoute) {
+	candidate.route.Path = canonicalProviderPath(candidate.route.Path)
 	key := filepath.ToSlash(candidate.project.Path) + "\x00" + strings.ToUpper(candidate.route.HTTPMethod) + "\x00" + normalizeAPIPathParameterNames(canonicalProviderPath(candidate.route.Path)) + "\x00" + candidate.route.Handler + "\x00" + filepath.ToSlash(candidate.route.File) + "\x00" + fmt.Sprint(candidate.route.Line)
 	if !seen[key] {
 		seen[key] = true
@@ -1973,8 +1988,25 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		base.Reason = "frontend-internal API route; not matched against backend services"
 		return base
 	}
-	if route, ok := exactWorkspaceRoute(contract, routes); ok {
-		return workspaceContractIssue(base, route, contractIssueMatched, "RESOLVED", 0.9, "http method and path pattern match backend route")
+	exactRoutes := exactWorkspaceRoutes(contract, routes)
+	if len(exactRoutes) == 1 {
+		return workspaceContractIssue(base, exactRoutes[0], contractIssueMatched, "RESOLVED", 0.9, "http method and path pattern match backend route")
+	}
+	if len(exactRoutes) > 1 {
+		base.BackendHTTPMethod = strings.ToUpper(contract.HTTPMethod)
+		base.BackendPath = displayRoutePath(contract.Path)
+		base.Issue = "ambiguous_route"
+		base.Confidence = "AMBIGUOUS"
+		base.ConfidenceScore = 0.5
+		base.Reason = "multiple indexed provider routes exactly match the frontend API contract"
+		base.LikelyOwner = "multiple_backends"
+		base.ResolutionHint = "select the intended backend provider using service ownership or gateway evidence"
+		base.ResolutionClass = "ambiguous_route"
+		for _, route := range exactRoutes {
+			base.EquivalentRouteCandidates = append(base.EquivalentRouteCandidates, workspaceBackendRouteCandidate(route))
+		}
+		sort.Strings(base.EquivalentRouteCandidates)
+		return base
 	}
 	if route, ok := pathCompatibleWorkspaceRoute(contract, routes); ok {
 		record := workspaceContractIssue(base, route, contractIssueMethodMismatch, "MISMATCH", 0.45, "path pattern exists but http method differs")
@@ -2068,13 +2100,25 @@ func workspaceContractIssue(base WorkspaceContractMatchRecord, route workspaceBa
 	return base
 }
 
-func exactWorkspaceRoute(contract APIContractRecord, routes []workspaceBackendRoute) (workspaceBackendRoute, bool) {
+func exactWorkspaceRoutes(contract APIContractRecord, routes []workspaceBackendRoute) []workspaceBackendRoute {
+	var matches []workspaceBackendRoute
 	for _, route := range routes {
 		if strings.EqualFold(contract.HTTPMethod, route.route.HTTPMethod) && pathsCompatibleWithKnownBasePrefixes(contract.Path, route.route.Path) {
-			return route, true
+			matches = append(matches, route)
 		}
 	}
-	return workspaceBackendRoute{}, false
+	sort.Slice(matches, func(left, right int) bool {
+		return workspaceBackendRouteCandidate(matches[left]) < workspaceBackendRouteCandidate(matches[right])
+	})
+	return matches
+}
+
+func workspaceBackendRouteCandidate(route workspaceBackendRoute) string {
+	handler := route.route.Handler
+	if handler == "" {
+		handler = "unknown-handler"
+	}
+	return fmt.Sprintf("%s %s %s -> %s (%s:%d)", filepath.ToSlash(route.project.Path), strings.ToUpper(route.route.HTTPMethod), displayRoutePath(route.route.Path), handler, filepath.ToSlash(route.route.File), route.route.Line)
 }
 
 func pathCompatibleWorkspaceRoute(contract APIContractRecord, routes []workspaceBackendRoute) (workspaceBackendRoute, bool) {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -237,6 +238,41 @@ class OrderController {
 				assertCatalogManifestAndFreshness(t, projectLayout, registry.Generated)
 			}
 		})
+	}
+}
+
+func TestBuildWorkspaceContractMatchesPreservesAmbiguousProvidersDeterministically(t *testing.T) {
+	consumer := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "frontend/web"},
+		contracts: []APIContractRecord{{HTTPMethod: "GET", Path: "/orders/{id}", File: "src/api.ts", Line: 7, Caller: "loadOrder"}},
+	}
+	spring := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "services/orders-java", Service: "orders"},
+		endpoints: []SpringEndpointRecord{{HTTPMethod: "GET", Path: "/orders/{id}", Controller: "OrderController", Method: "get", File: "OrderController.java", Line: 10}},
+	}
+	script := workspaceIndexProject{
+		record: WorkspaceProjectRecord{Path: "services/orders-js", Service: "orders"},
+		routes: []CodeRouteRecord{{Language: "typescript", Framework: "Express", Kind: "backend", FrameworkBound: true, HTTPMethod: "GET", Path: "/orders/:id", Handler: "getOrder", File: "src/server.ts", Line: 4}},
+	}
+
+	forward := buildWorkspaceContractMatches([]workspaceIndexProject{consumer, spring, script})
+	reverse := buildWorkspaceContractMatches([]workspaceIndexProject{script, spring, consumer})
+	if len(forward) != 1 || forward[0].Issue != "ambiguous_route" || forward[0].Confidence != "AMBIGUOUS" {
+		t.Fatalf("ambiguous providers were resolved by discovery order: %#v", forward)
+	}
+	if len(forward[0].EquivalentRouteCandidates) != 2 || !sort.StringsAreSorted(forward[0].EquivalentRouteCandidates) {
+		t.Fatalf("ambiguous candidates are incomplete or unsorted: %#v", forward[0].EquivalentRouteCandidates)
+	}
+	forwardJSON, err := json.Marshal(forward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverseJSON, err := json.Marshal(reverse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(forwardJSON) != string(reverseJSON) {
+		t.Fatalf("provider discovery order changed ambiguous matches:\nforward: %s\nreverse: %s", forwardJSON, reverseJSON)
 	}
 }
 
