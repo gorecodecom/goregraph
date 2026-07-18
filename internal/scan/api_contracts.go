@@ -829,7 +829,7 @@ func jsReturnTypeGroupStart(code string, open int) bool {
 		return false
 	}
 	if code[previous] == ':' {
-		return true
+		return jsArrowReturnTypeColon(code, previous)
 	}
 	if code[previous] != '>' || previous == 0 || code[previous-1] != '=' {
 		return false
@@ -840,6 +840,26 @@ func jsReturnTypeGroupStart(code string, open int) bool {
 	}
 	_, _, executable := jsArrowParameterSpan(code, typeArrow)
 	return !executable
+}
+
+func jsArrowReturnTypeColon(code string, colon int) bool {
+	start := nextScriptNonSpace(code, jsArrowExpressionStart(code, colon))
+	if start >= colon {
+		return false
+	}
+	start = jsArrowPropertyValueStart(code, start, colon)
+	if start < colon && code[start] == '<' {
+		typeParametersEnd := jsArrowTypeParametersEnd(code, start, colon)
+		if typeParametersEnd < 0 {
+			return false
+		}
+		start = nextScriptNonSpace(code, typeParametersEnd+1)
+	}
+	if start >= colon || code[start] != '(' {
+		return false
+	}
+	close := matchingScriptDelimiter(code, start, '(', ')')
+	return close >= 0 && close < colon && nextScriptNonSpace(code, close+1) == colon
 }
 
 func jsArrowHasReturnType(code string, arrow int) bool {

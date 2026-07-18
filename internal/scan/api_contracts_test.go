@@ -720,6 +720,33 @@ export const real = () => axios.get('/real');`
 	}
 }
 
+func TestAPIContractsColonBeforeParenthesizedArrowIsNotReturnType(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+const handlers = {
+  load: (axios => axios.get('/object-property-axios-shadow')),
+  authorize: (getAccessTokenSilently => axios.get('/object-property-oauth-shadow', {
+    headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+  })),
+};
+const ternaryAxios = condition ? fallback : (axios => axios.get('/ternary-axios-shadow'));
+const ternaryOAuth = condition ? fallback : (getAccessTokenSilently => axios.get('/ternary-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+}));
+export const real = () => axios.get('/real');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 3 {
+		t.Fatalf("object or ternary colon was treated as an arrow return type: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/object-property-oauth-shadow").Auth, "oauth2")
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/ternary-oauth-shadow").Auth, "oauth2")
+	if contractByPath(t, contracts, "/real").Path != "/real" {
+		t.Fatal("unshadowed axios contract missing")
+	}
+}
+
 func TestAPIContractsPrecomputeBoundedFileAnalysisIndexes(t *testing.T) {
 	source := `import axios from 'axios';
 import { getAccessTokenSilently as zeta, acquireTokenSilent as alpha } from '@example/oauth-client';
