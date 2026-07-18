@@ -636,19 +636,19 @@ func jsArrowParameterSpan(code string, arrow int) (int, int, bool) {
 	if end == 0 {
 		return 0, 0, false
 	}
-	if close := jsAnnotatedArrowParameterClose(code, end); close >= 0 {
-		open := matchingScriptDelimiterBackward(code, close, '(', ')')
-		if open < 0 {
-			return 0, 0, false
-		}
-		return open + 1, close, true
-	}
 	if code[end-1] == ')' {
 		open := matchingScriptDelimiterBackward(code, end-1, '(', ')')
 		if open < 0 {
 			return 0, 0, false
 		}
 		return open + 1, end - 1, true
+	}
+	if close := jsAnnotatedArrowParameterClose(code, end); close >= 0 {
+		open := matchingScriptDelimiterBackward(code, close, '(', ')')
+		if open < 0 {
+			return 0, 0, false
+		}
+		return open + 1, close, true
 	}
 	start := end - 1
 	for start > 0 && isScriptIdentifierByte(code[start-1]) {

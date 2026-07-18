@@ -580,6 +580,27 @@ export const real = () => axios.get('/real');`
 	}
 }
 
+func TestAPIContractsSameStatementArrowsDoNotReuseEarlierReturnAnnotation(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+const annotated = (value: Input): Result<Map<string, Token>> => transform(value), axiosShadow = (axios: Client) => axios.get('/declarator-axios-shadow');
+const arrows = [(value: Input): Result<Map<string, Token>> => transform(value), (axios: Client) => axios.get('/array-axios-shadow')];
+const arrowObject = { annotated: (value: Input): Result<Map<string, Token>> => transform(value), oauth: (getAccessTokenSilently: TokenFactory) => axios.get('/object-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+}) };
+export const real = () => axios.get('/real');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 2 {
+		t.Fatalf("same-statement arrow reused earlier return annotation: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/object-oauth-shadow").Auth, "oauth2")
+	if contractByPath(t, contracts, "/real").Path != "/real" {
+		t.Fatal("unshadowed axios contract missing")
+	}
+}
+
 func TestAPIContractsPrecomputeBoundedFileAnalysisIndexes(t *testing.T) {
 	source := `import axios from 'axios';
 import { getAccessTokenSilently as zeta, acquireTokenSilent as alpha } from '@example/oauth-client';
