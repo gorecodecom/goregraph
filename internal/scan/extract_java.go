@@ -651,8 +651,27 @@ func matchingJavaParen(value string, open int) int {
 		return -1
 	}
 	depth := 0
+	quote := byte(0)
+	escaped := false
 	for index := open; index < len(value); index++ {
-		switch value[index] {
+		char := value[index]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if char == '\\' {
+				escaped = true
+				continue
+			}
+			if char == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch char {
+		case '\'', '"':
+			quote = char
 		case '(':
 			depth++
 		case ')':
@@ -864,20 +883,7 @@ func consumeJavaParameterAnnotation(part string) (JavaAnnotationRecord, string, 
 	rest := strings.TrimSpace(part[nameEnd:])
 	args := ""
 	if strings.HasPrefix(rest, "(") {
-		depth := 0
-		close := -1
-		for index, r := range rest {
-			switch r {
-			case '(':
-				depth++
-			case ')':
-				depth--
-				if depth == 0 {
-					close = index
-					break
-				}
-			}
-		}
+		close := matchingJavaParen(rest, 0)
 		if close < 0 {
 			return JavaAnnotationRecord{}, part, false
 		}
@@ -1204,8 +1210,26 @@ func splitTopLevel(value string, sep rune) []string {
 	var parts []string
 	depth := 0
 	start := 0
+	quote := rune(0)
+	escaped := false
 	for index, r := range value {
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			if r == quote {
+				quote = 0
+			}
+			continue
+		}
 		switch r {
+		case '\'', '"':
+			quote = r
 		case '(', '{', '[', '<':
 			depth++
 		case ')', '}', ']', '>':

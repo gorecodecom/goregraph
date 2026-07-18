@@ -612,6 +612,90 @@ class DefaultController {
 	}
 }
 
+func TestExtractJavaQuotedDefaultDelimitersInMethod(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/DelimiterController.java", Language: "java"}, `import org.springframework.web.bind.annotation.*;
+
+@RestController
+class DelimiterController {
+  @GetMapping("/defaults")
+  String get(@RequestParam(defaultValue = "(") String open,
+      @RequestHeader(defaultValue = ")") String close,
+      @CookieValue(defaultValue = ",") String comma,
+      @RequestParam(defaultValue = "quote\"slash\\") String escaped) {
+    return "ok";
+  }
+}
+`)
+	var method JavaMethodRecord
+	found := false
+	for _, candidate := range source.Methods {
+		if candidate.Name == "get" {
+			method = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("quoted-default method was skipped: %#v", source.Methods)
+	}
+	assertQuotedDefaultDelimiterParameters(t, method.Parameters)
+
+	catalog := BuildProjectAPICatalog("defaults", "fixed", nil, buildSpringIndex([]JavaSourceRecord{source}), nil, nil)
+	if len(catalog.Endpoints) != 1 || len(catalog.Endpoints[0].Parameters) != 4 {
+		t.Fatalf("catalog parameters = %#v", catalog.Endpoints)
+	}
+	for _, parameter := range catalog.Endpoints[0].Parameters {
+		if parameter.Required {
+			t.Fatalf("quoted default parameter should be optional: %#v", parameter)
+		}
+	}
+}
+
+func TestExtractJavaQuotedDefaultDelimitersInConstructor(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/DelimiterController.java", Language: "java"}, `import org.springframework.web.bind.annotation.*;
+
+class DelimiterController {
+  DelimiterController(@RequestParam(defaultValue = "(") String open,
+      @RequestHeader(defaultValue = ")") String close,
+      @CookieValue(defaultValue = ",") String comma,
+      @RequestParam(defaultValue = "quote\"slash\\") String escaped) {
+  }
+}
+`)
+	var constructor JavaMethodRecord
+	found := false
+	for _, candidate := range source.Methods {
+		if candidate.Name == "DelimiterController" {
+			constructor = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("quoted-default constructor was skipped: %#v", source.Methods)
+	}
+	assertQuotedDefaultDelimiterParameters(t, constructor.Parameters)
+}
+
+func assertQuotedDefaultDelimiterParameters(t *testing.T, parameters []JavaParameterRecord) {
+	t.Helper()
+	wantArguments := map[string]string{
+		"open":    `defaultValue = "("`,
+		"close":   `defaultValue = ")"`,
+		"comma":   `defaultValue = ","`,
+		"escaped": `defaultValue = "quote\"slash\\"`,
+	}
+	if len(parameters) != len(wantArguments) {
+		t.Fatalf("parameters = %#v, want %d", parameters, len(wantArguments))
+	}
+	for _, parameter := range parameters {
+		want, ok := wantArguments[parameter.Name]
+		if !ok || len(parameter.Annotations) != 1 || parameter.Annotations[0].Arguments != want {
+			t.Fatalf("parameter = %#v, want raw arguments %q", parameter, want)
+		}
+	}
+}
+
 func TestBuildProjectAPICatalogMapsSpringProduces(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/OrderController.java", Language: "java"}, `import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
