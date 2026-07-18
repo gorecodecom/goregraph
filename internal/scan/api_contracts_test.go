@@ -2,12 +2,14 @@ package scan
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
 
 func TestAPIContractsExtractExplicitConsumerAuthentication(t *testing.T) {
-	source := `export const load = () => axios.get('/orders', { headers: { Authorization: 'Bearer ' + token, 'X-API-Key': apiKey } });`
+	source := `import axios from 'axios';
+export const load = () => axios.get('/orders', { headers: { Authorization: 'Bearer ' + token, 'X-API-Key': apiKey } });`
 	contracts := extractTestAPIContracts(t, source)
 
 	assertContractAuth(t, contracts[0].Auth, "bearer", "EXTRACTED", "http_call_config", "token")
@@ -15,7 +17,8 @@ func TestAPIContractsExtractExplicitConsumerAuthentication(t *testing.T) {
 }
 
 func TestAPIContractsExtractExplicitBasicConsumerAuthentication(t *testing.T) {
-	source := `export const create = () => axios.post('/orders', {}, { auth: { username: accountName, password: accountPassword } });`
+	source := `import axios from 'axios';
+export const create = () => axios.post('/orders', {}, { auth: { username: accountName, password: accountPassword } });`
 	contracts := extractTestAPIContracts(t, source)
 
 	assertContractAuth(t, contracts[0].Auth, "basic", "EXTRACTED", "http_call_config", "accountName,accountPassword")
@@ -29,14 +32,15 @@ func TestAPIContractsExtractConsumerSessionAuthentication(t *testing.T) {
 }
 
 func TestAPIContractsExtractConsumerOAuthHelperAuthentication(t *testing.T) {
-	source := `import { getAccessTokenSilently } from '@auth0/auth0-react';
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
 export const load = () => axios.get('/orders', { headers: { Authorization: 'Bearer ' + getAccessTokenSilently() } });`
 	contracts := extractTestAPIContracts(t, source)
 
 	assertContractAuth(t, contracts[0].Auth, "bearer", "EXTRACTED", "http_call_config", "getAccessTokenSilently")
 	assertContractAuth(t, contracts[0].Auth, "oauth2", "EXTRACTED", "oauth_helper", "getAccessTokenSilently")
-	if contracts[0].Auth[0].Line != 2 || contracts[0].Auth[0].File != "src/api/orders.ts" {
-		t.Fatalf("auth source location = %s:%d, want src/api/orders.ts:2", contracts[0].Auth[0].File, contracts[0].Auth[0].Line)
+	if contracts[0].Auth[0].Line != 3 || contracts[0].Auth[0].File != "src/api/orders.ts" {
+		t.Fatalf("auth source location = %s:%d, want src/api/orders.ts:3", contracts[0].Auth[0].File, contracts[0].Auth[0].Line)
 	}
 }
 
@@ -56,7 +60,8 @@ export const load = () => ordersClient.get('/orders');`
 }
 
 func TestAPIContractsExtractConsumerAPIKeyQueryAuthentication(t *testing.T) {
-	source := `export const load = () => axios.get('/orders', { params: { api_key: serviceKey } });`
+	source := `import axios from 'axios';
+export const load = () => axios.get('/orders', { params: { api_key: serviceKey } });`
 	contracts := extractTestAPIContracts(t, source)
 
 	assertContractAuth(t, contracts[0].Auth, "api_key", "EXTRACTED", "http_call_config", "serviceKey")
@@ -85,7 +90,8 @@ export const load = () => publicClient.get('/orders');`
 }
 
 func TestAPIContractsConsumerAuthenticationOmitsCredentialValues(t *testing.T) {
-	source := `export const load = () => axios.get('/orders', { headers: { Authorization: 'Bearer sample-token-123', 'X-API-Key': 'sample-api-key-456' } });`
+	source := `import axios from 'axios';
+export const load = () => axios.get('/orders', { headers: { Authorization: 'Bearer sample-token-123', 'X-API-Key': 'sample-api-key-456' } });`
 	contracts := extractTestAPIContracts(t, source)
 
 	assertContractAuth(t, contracts[0].Auth, "bearer", "EXTRACTED", "http_call_config", "")
@@ -102,17 +108,192 @@ func TestAPIContractsConsumerAuthenticationOmitsCredentialValues(t *testing.T) {
 	}
 }
 
+func TestAPIContractsInspectOnlyTopLevelAxiosConfigArgument(t *testing.T) {
+	source := `import axios from 'axios';
+export const create = () => axios.post(
+  '/orders',
+  { headers: { Authorization: 'Bearer ' + bodyToken } },
+  { headers: { 'X-API-Key': requestKey } },
+);`
+	contracts := extractTestAPIContracts(t, source)
+
+	assertContractAuth(t, contracts[0].Auth, "api_key", "EXTRACTED", "http_call_config", "requestKey")
+	assertNoContractAuthKind(t, contracts[0].Auth, "bearer")
+}
+
+func TestAPIContractsInspectOnlyTopLevelFetchConfigArgument(t *testing.T) {
+	source := `export const create = () => fetch(
+  '/orders',
+  {
+    method: 'POST',
+    body: JSON.stringify({ headers: { Authorization: 'Bearer ' + bodyToken } }),
+  },
+);`
+	contracts := extractTestAPIContracts(t, source)
+
+	if len(contracts[0].Auth) != 0 {
+		t.Fatalf("fetch body was treated as request config auth: %#v", contracts[0].Auth)
+	}
+}
+
+func TestAPIContractsRequireUnshadowedAxiosImport(t *testing.T) {
+	source := `import axios from 'axios';
+function loadShadowed(axios: Client) {
+  return axios.get('/shadowed', { headers: { Authorization: 'Bearer ' + shadowToken } });
+}
+const loadArrowShadowed = (axios: Client) => axios.get('/arrow-shadowed');
+export const load = () => axios.get('/orders');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 1 || contracts[0].Path != "/orders" {
+		t.Fatalf("shadowed axios produced contracts: %#v", contracts)
+	}
+}
+
+func TestAPIContractsKeepSameNameClientInterceptorsInLexicalScope(t *testing.T) {
+	source := `import axios from 'axios';
+const client = axios.create();
+client.interceptors.request.use((config) => {
+  config.headers.Authorization = 'Bearer ' + rootToken;
+  return config;
+});
+export const loadRoot = () => client.get('/root');
+
+export function loadNested() {
+  const client = axios.create();
+  client.interceptors.request.use((config) => {
+    config.headers['X-API-Key'] = nestedKey;
+    return config;
+  });
+  return client.get('/nested');
+}`
+	contracts := extractTestAPIContractsAll(source)
+	if len(contracts) != 2 {
+		t.Fatalf("contracts=%#v, want two scoped client calls", contracts)
+	}
+
+	root := contractByPath(t, contracts, "/root")
+	assertContractAuth(t, root.Auth, "bearer", "PARTIAL", "http_client_interceptor", "rootToken")
+	assertNoContractAuthKind(t, root.Auth, "api_key")
+
+	nested := contractByPath(t, contracts, "/nested")
+	assertContractAuth(t, nested.Auth, "api_key", "PARTIAL", "http_client_interceptor", "nestedKey")
+	assertNoContractAuthKind(t, nested.Auth, "bearer")
+}
+
+func TestAPIContractsMaskCommentsBeforeCallAndAuthScanning(t *testing.T) {
+	source := `// axios.get('/line-comment', { headers: { Authorization: 'Bearer line-secret' } });
+/*
+axios.get('/block-comment', { headers: { 'X-API-Key': 'block-secret' } });
+*/
+export const load = () => fetch(
+  '/orders',
+  {
+    // headers: { Authorization: 'Bearer commented-secret' },
+    transformResponse: [(value) => ({ value /* ) } fake delimiters */ })],
+  },
+);`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 1 || contracts[0].Path != "/orders" {
+		t.Fatalf("commented calls or delimiters affected extraction: %#v", contracts)
+	}
+	if len(contracts[0].Auth) != 0 {
+		t.Fatalf("commented auth was extracted: %#v", contracts[0].Auth)
+	}
+}
+
+func TestAPIContractsDiscoverMultilineAxiosAndFetchCalls(t *testing.T) {
+	source := `import axios from 'axios';
+export const loadAxios = () => axios
+  .get(
+    '/axios-orders',
+    {
+      transformResponse: [(value) => ({ value })],
+      headers: { Authorization: 'Bearer ' + axiosToken },
+    },
+  );
+
+export const loadFetch = () => fetch(
+  '/fetch-orders',
+  {
+    method: 'POST',
+    transform: () => callback(() => ({ nested: true })),
+    credentials: 'include',
+  },
+);`
+	contracts := extractTestAPIContractsAll(source)
+	if len(contracts) != 2 {
+		t.Fatalf("multiline contracts=%#v, want two", contracts)
+	}
+
+	axiosContract := contractByPath(t, contracts, "/axios-orders")
+	if axiosContract.HTTPMethod != "GET" {
+		t.Fatalf("axios method=%q, want GET", axiosContract.HTTPMethod)
+	}
+	assertContractAuth(t, axiosContract.Auth, "bearer", "EXTRACTED", "http_call_config", "axiosToken")
+
+	fetchContract := contractByPath(t, contracts, "/fetch-orders")
+	if fetchContract.HTTPMethod != "POST" {
+		t.Fatalf("fetch method=%q, want POST", fetchContract.HTTPMethod)
+	}
+	assertContractAuth(t, fetchContract.Auth, "session", "EXTRACTED", "http_call_config", "")
+}
+
+func TestAPIContractsSortOAuthHelpersAcrossImportPermutations(t *testing.T) {
+	imports := []string{
+		"getAccessToken as delta",
+		"getAccessTokenSilently as alpha",
+		"getTokenSilently as charlie",
+		"acquireTokenSilent as bravo",
+	}
+	want := []string{"alpha", "bravo", "charlie", "delta"}
+	for permutation := 0; permutation < len(imports); permutation++ {
+		rotated := append(append([]string(nil), imports[permutation:]...), imports[:permutation]...)
+		source := `import axios from 'axios';
+import { ` + strings.Join(rotated, ", ") + ` } from '@example/oauth-client';
+export const load = () => axios.get('/orders', { headers: {
+  Authorization: 'Bearer ' + delta(),
+  authorization: 'Bearer ' + alpha(),
+  'Authorization': 'Bearer ' + charlie(),
+  'authorization': 'Bearer ' + bravo(),
+} });`
+		for attempt := 0; attempt < 16; attempt++ {
+			contracts := extractTestAPIContracts(t, source)
+			got := authExpressions(contracts[0].Auth, "oauth2")
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("permutation %d attempt %d oauth order=%#v, want %#v", permutation, attempt, got, want)
+			}
+		}
+	}
+}
+
 func extractTestAPIContracts(t *testing.T, source string) []APIContractRecord {
 	t.Helper()
-	contracts := extractAPIContracts(
-		FileRecord{Path: "src/api/orders.ts", Language: "typescript"},
-		strings.Split(source, "\n"),
-		nil,
-	)
+	contracts := extractTestAPIContractsAll(source)
 	if len(contracts) != 1 {
 		t.Fatalf("contracts=%#v, want exactly one", contracts)
 	}
 	return contracts
+}
+
+func extractTestAPIContractsAll(source string) []APIContractRecord {
+	return extractAPIContracts(
+		FileRecord{Path: "src/api/orders.ts", Language: "typescript"},
+		strings.Split(source, "\n"),
+		nil,
+	)
+}
+
+func contractByPath(t *testing.T, contracts []APIContractRecord, path string) APIContractRecord {
+	t.Helper()
+	for _, contract := range contracts {
+		if contract.Path == path {
+			return contract
+		}
+	}
+	t.Fatalf("contract path %q missing from %#v", path, contracts)
+	return APIContractRecord{}
 }
 
 func assertContractAuth(t *testing.T, records []AuthRecord, kind, confidence, source, expression string) {
@@ -127,4 +308,23 @@ func assertContractAuth(t *testing.T, records []AuthRecord, kind, confidence, so
 		return
 	}
 	t.Fatalf("auth kind %q missing from %#v", kind, records)
+}
+
+func assertNoContractAuthKind(t *testing.T, records []AuthRecord, kind string) {
+	t.Helper()
+	for _, record := range records {
+		if record.Kind == kind {
+			t.Fatalf("unexpected auth kind %q in %#v", kind, records)
+		}
+	}
+}
+
+func authExpressions(records []AuthRecord, kind string) []string {
+	var expressions []string
+	for _, record := range records {
+		if record.Kind == kind {
+			expressions = append(expressions, record.Expression)
+		}
+	}
+	return expressions
 }
