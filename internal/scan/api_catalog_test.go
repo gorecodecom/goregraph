@@ -2,6 +2,7 @@ package scan
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -417,6 +418,97 @@ func TestBuildWorkspaceAPICatalogKeepsProviderInventoryAndAttachesConsumers(t *t
 	if len(catalog.Endpoints[1].Consumers) != 0 {
 		t.Fatalf("zero-consumer endpoint was assigned consumers: %#v", catalog.Endpoints[1])
 	}
+}
+
+func TestBuildWorkspaceAPICatalogGrowthIsSubquadratic(t *testing.T) {
+	small := benchmarkWorkspaceAPICatalogBuild(160)
+	large := benchmarkWorkspaceAPICatalogBuild(320)
+	growth := float64(large.NsPerOp()) / float64(small.NsPerOp())
+	t.Logf("catalog build growth: %.2fx (small=%s large=%s)", growth, small, large)
+	if growth >= 3.25 {
+		t.Fatalf("doubling catalog input grew build time %.2fx; want less than 3.25x (small=%s large=%s)", growth, small, large)
+	}
+}
+
+func TestWorkspaceCatalogCompatiblePathKeysMirrorRouteMatcher(t *testing.T) {
+	paths := []string{
+		"/orders/{id}",
+		"/orders/{orderId}",
+		"/orders/42",
+		"/regulations/{type}",
+		"/regulations/new",
+		"/regulations/archived",
+		"/userservice/users/{id}",
+		"/users/{id}",
+		"/${service.base_path}/users/{id}",
+		"/ORDERS/{id}",
+		`RegulationChangeBaseController.PATH_BASE + "RegulationChangeBaseController.PATH_FRAGMENT_CHANGES_NEW"`,
+	}
+	for _, left := range paths {
+		for _, right := range paths {
+			want := pathsCompatibleWithKnownBasePrefixes(left, right)
+			got := workspaceCatalogPathKeysIntersect(
+				workspaceCatalogCompatiblePathKeys(left),
+				workspaceCatalogCompatiblePathKeys(right),
+			)
+			if got != want {
+				t.Fatalf("indexed compatibility for %q and %q = %t, want %t", left, right, got, want)
+			}
+		}
+	}
+}
+
+func workspaceCatalogPathKeysIntersect(left, right []string) bool {
+	leftKeys := make(map[string]bool, len(left))
+	for _, key := range left {
+		leftKeys[key] = true
+	}
+	for _, key := range right {
+		if leftKeys[key] {
+			return true
+		}
+	}
+	return false
+}
+
+func benchmarkWorkspaceAPICatalogBuild(size int) testing.BenchmarkResult {
+	provider := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "services/orders"}}
+	consumer := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "frontend/web"}}
+	flows := make([]WorkspaceFeatureFlowRecord, 0, size)
+	matches := make([]WorkspaceContractMatchRecord, 0, size)
+	for index := 0; index < size; index++ {
+		route := fmt.Sprintf("/orders/%d/{id}", index)
+		consumerRoute := fmt.Sprintf("/orders/%d/42", index)
+		handler := fmt.Sprintf("OrderController.get%d", index)
+		file := fmt.Sprintf("src/api/%d.ts", index)
+		provider.endpoints = append(provider.endpoints, SpringEndpointRecord{
+			HTTPMethod: "GET", Path: route, Controller: "OrderController", Method: fmt.Sprintf("get%d", index), File: "OrderController.java", Line: index + 1,
+		})
+		consumer.contracts = append(consumer.contracts, APIContractRecord{
+			HTTPMethod: "GET", Path: consumerRoute, Caller: handler, File: file, Line: index + 1,
+		})
+		flows = append(flows, WorkspaceFeatureFlowRecord{
+			HTTPMethod: "GET", Path: route, BackendProject: "services/orders", BackendController: "OrderController", BackendMethod: fmt.Sprintf("get%d", index), BackendReturnType: "Order",
+		})
+		matches = append(matches, WorkspaceContractMatchRecord{
+			ID: fmt.Sprintf("match:%d", index), APIProject: "frontend/web", APIHTTPMethod: "GET", APIPath: consumerRoute, APIFile: file, APILine: index + 1, APICaller: handler,
+			BackendProject: "services/orders", BackendHTTPMethod: "GET", BackendPath: route, BackendHandler: handler, BackendFile: "OrderController.java", BackendLine: index + 1,
+			Issue: contractIssueMatched, Confidence: "RESOLVED",
+		})
+	}
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{provider.record, consumer.record}}
+	projects := []workspaceIndexProject{provider, consumer}
+	return testing.Benchmark(func(b *testing.B) {
+		for iteration := 0; iteration < b.N; iteration++ {
+			catalog, err := BuildWorkspaceAPICatalog(registry, projects, matches, flows, "fixed")
+			if err != nil {
+				b.Fatal(err)
+			}
+			if len(catalog.Endpoints) != size {
+				b.Fatalf("endpoints=%d, want %d", len(catalog.Endpoints), size)
+			}
+		}
+	})
 }
 
 func TestBuildWorkspaceAPICatalogReportsSecurityMismatches(t *testing.T) {

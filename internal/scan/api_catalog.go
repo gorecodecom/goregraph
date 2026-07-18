@@ -308,10 +308,12 @@ func ValidateAPICatalog(catalog APICatalogRecord) error {
 // BuildWorkspaceAPICatalog merges complete provider inventories with canonically resolved consumers.
 func BuildWorkspaceAPICatalog(registry WorkspaceRegistryRecord, projects []workspaceIndexProject, matches []WorkspaceContractMatchRecord, flows []WorkspaceFeatureFlowRecord, generated string) (APICatalogRecord, error) {
 	projectsByPath := make(map[string]workspaceIndexProject, len(projects))
+	contractsByProject := make(map[string]workspaceCatalogContractIndex, len(projects))
 	registryByPath := make(map[string]WorkspaceProjectRecord, len(registry.Projects))
 	for _, project := range registry.Projects {
 		registryByPath[filepath.ToSlash(project.Path)] = project
 	}
+	flowIndex := newWorkspaceCatalogFlowIndex(flows)
 
 	catalog := APICatalogRecord{SchemaVersion: SchemaVersion, Generated: generated, Root: filepath.ToSlash(registry.Root), Endpoints: []APIEndpointRecord{}}
 	for _, project := range projects {
@@ -323,6 +325,7 @@ func BuildWorkspaceAPICatalog(registry WorkspaceRegistryRecord, projects []works
 			return APICatalogRecord{}, fmt.Errorf("workspace API catalog contains duplicate project path %q", projectPath)
 		}
 		projectsByPath[projectPath] = project
+		contractsByProject[projectPath] = newWorkspaceCatalogContractIndex(project.contracts)
 		projectCatalog := BuildProjectAPICatalog(projectPath, generated, project.routes, SpringIndex{Endpoints: project.endpoints}, nil, project.capabilities)
 		metadata := project.record
 		if registered, ok := registryByPath[projectPath]; ok {
@@ -332,13 +335,14 @@ func BuildWorkspaceAPICatalog(registry WorkspaceRegistryRecord, projects []works
 			endpoint.ProviderProject = projectPath
 			endpoint.ProviderService = metadata.Service
 			endpoint.ProviderRole = firstNonEmpty(metadata.Kind, endpoint.ProviderRole)
-			applyWorkspaceFlowTypes(&endpoint, flows)
+			applyWorkspaceFlowTypes(&endpoint, flowIndex)
 			catalog.Endpoints = append(catalog.Endpoints, endpoint)
 		}
 	}
 
+	endpointIndex := newWorkspaceCatalogEndpointIndex(catalog.Endpoints)
 	for _, match := range matches {
-		candidateIndexes := workspaceCatalogEndpointCandidates(catalog.Endpoints, match)
+		candidateIndexes := endpointIndex.candidates(match)
 		if !resolvedWorkspaceCatalogMatch(match) {
 			if ambiguousWorkspaceCatalogMatch(match) {
 				unresolvedConsumer := workspaceUnresolvedAPIConsumer(match)
@@ -360,7 +364,7 @@ func BuildWorkspaceAPICatalog(registry WorkspaceRegistryRecord, projects []works
 
 		endpoint := &catalog.Endpoints[candidateIndexes[0]]
 		consumerProject, hasConsumerProject := projectsByPath[filepath.ToSlash(match.APIProject)]
-		contract, hasContract := exactWorkspaceCatalogContract(consumerProject.contracts, match)
+		contract, hasContract := contractsByProject[filepath.ToSlash(match.APIProject)].exact(match)
 		consumerMetadata := consumerProject.record
 		if registered, ok := registryByPath[filepath.ToSlash(match.APIProject)]; ok {
 			consumerMetadata = registered
@@ -415,47 +419,134 @@ func workspaceUnresolvedAPIConsumer(match WorkspaceContractMatchRecord) APIConsu
 	}
 }
 
-func workspaceCatalogEndpointCandidates(endpoints []APIEndpointRecord, match WorkspaceContractMatchRecord) []int {
-	var candidates []int
-	for index, endpoint := range endpoints {
-		if match.BackendProject != "" && filepath.ToSlash(match.BackendProject) != endpoint.ProviderProject {
-			continue
-		}
-		if match.BackendHTTPMethod != "" && !strings.EqualFold(match.BackendHTTPMethod, endpoint.HTTPMethod) {
-			continue
-		}
-		if match.BackendPath != "" && !pathsCompatibleWithKnownBasePrefixes(canonicalProviderPath(match.BackendPath), endpoint.Path) {
-			continue
-		}
-		if match.BackendHandler != "" && match.BackendHandler != endpoint.Handler {
-			continue
-		}
-		if match.BackendFile != "" && filepath.ToSlash(match.BackendFile) != endpoint.File {
-			continue
-		}
-		if match.BackendLine > 0 && match.BackendLine != endpoint.Line {
-			continue
-		}
-		candidates = append(candidates, index)
-	}
-	return candidates
+type workspaceCatalogEndpointIndex struct {
+	endpoints []APIEndpointRecord
+	all       []int
+	byProject map[string][]int
+	byMethod  map[string][]int
+	byPath    map[string][]int
+	byHandler map[string][]int
+	byFile    map[string][]int
+	byLine    map[int][]int
 }
 
-func exactWorkspaceCatalogContract(contracts []APIContractRecord, match WorkspaceContractMatchRecord) (APIContractRecord, bool) {
-	var candidates []APIContractRecord
-	for _, contract := range contracts {
-		if !strings.EqualFold(contract.HTTPMethod, match.APIHTTPMethod) || contract.Path != match.APIPath || filepath.ToSlash(contract.File) != filepath.ToSlash(match.APIFile) || contract.Line != match.APILine {
-			continue
-		}
-		if match.APICaller != "" && contract.Caller != match.APICaller {
-			continue
-		}
-		candidates = append(candidates, contract)
+func newWorkspaceCatalogEndpointIndex(endpoints []APIEndpointRecord) workspaceCatalogEndpointIndex {
+	index := workspaceCatalogEndpointIndex{
+		endpoints: endpoints,
+		all:       make([]int, 0, len(endpoints)),
+		byProject: make(map[string][]int),
+		byMethod:  make(map[string][]int),
+		byPath:    make(map[string][]int),
+		byHandler: make(map[string][]int),
+		byFile:    make(map[string][]int),
+		byLine:    make(map[int][]int),
 	}
+	for endpointIndex, endpoint := range endpoints {
+		index.all = append(index.all, endpointIndex)
+		index.byProject[endpoint.ProviderProject] = append(index.byProject[endpoint.ProviderProject], endpointIndex)
+		index.byMethod[strings.ToUpper(endpoint.HTTPMethod)] = append(index.byMethod[strings.ToUpper(endpoint.HTTPMethod)], endpointIndex)
+		for _, pathKey := range workspaceCatalogCompatiblePathKeys(endpoint.Path) {
+			index.byPath[pathKey] = append(index.byPath[pathKey], endpointIndex)
+		}
+		index.byHandler[endpoint.Handler] = append(index.byHandler[endpoint.Handler], endpointIndex)
+		index.byFile[endpoint.File] = append(index.byFile[endpoint.File], endpointIndex)
+		index.byLine[endpoint.Line] = append(index.byLine[endpoint.Line], endpointIndex)
+	}
+	return index
+}
+
+func (index workspaceCatalogEndpointIndex) candidates(match WorkspaceContractMatchRecord) []int {
+	indexedCandidates := make([][]int, 0, 6)
+	if match.BackendProject != "" {
+		indexedCandidates = append(indexedCandidates, index.byProject[filepath.ToSlash(match.BackendProject)])
+	}
+	if match.BackendHTTPMethod != "" {
+		indexedCandidates = append(indexedCandidates, index.byMethod[strings.ToUpper(match.BackendHTTPMethod)])
+	}
+	if match.BackendPath != "" {
+		pathCandidates := make(map[int]bool)
+		for _, pathKey := range workspaceCatalogCompatiblePathKeys(canonicalProviderPath(match.BackendPath)) {
+			for _, endpointIndex := range index.byPath[pathKey] {
+				pathCandidates[endpointIndex] = true
+			}
+		}
+		candidates := make([]int, 0, len(pathCandidates))
+		for endpointIndex := range pathCandidates {
+			candidates = append(candidates, endpointIndex)
+		}
+		sort.Ints(candidates)
+		indexedCandidates = append(indexedCandidates, candidates)
+	}
+	if match.BackendHandler != "" {
+		indexedCandidates = append(indexedCandidates, index.byHandler[match.BackendHandler])
+	}
+	if match.BackendFile != "" {
+		indexedCandidates = append(indexedCandidates, index.byFile[filepath.ToSlash(match.BackendFile)])
+	}
+	if match.BackendLine > 0 {
+		indexedCandidates = append(indexedCandidates, index.byLine[match.BackendLine])
+	}
+
+	candidates := index.all
+	for _, indexed := range indexedCandidates {
+		if len(indexed) < len(candidates) {
+			candidates = indexed
+		}
+	}
+	result := make([]int, 0, len(candidates))
+	for _, endpointIndex := range candidates {
+		if workspaceCatalogEndpointMatches(index.endpoints[endpointIndex], match) {
+			result = append(result, endpointIndex)
+		}
+	}
+	return result
+}
+
+func workspaceCatalogEndpointMatches(endpoint APIEndpointRecord, match WorkspaceContractMatchRecord) bool {
+	if match.BackendProject != "" && filepath.ToSlash(match.BackendProject) != endpoint.ProviderProject {
+		return false
+	}
+	if match.BackendHTTPMethod != "" && !strings.EqualFold(match.BackendHTTPMethod, endpoint.HTTPMethod) {
+		return false
+	}
+	if match.BackendPath != "" && !pathsCompatibleWithKnownBasePrefixes(canonicalProviderPath(match.BackendPath), endpoint.Path) {
+		return false
+	}
+	if match.BackendHandler != "" && match.BackendHandler != endpoint.Handler {
+		return false
+	}
+	if match.BackendFile != "" && filepath.ToSlash(match.BackendFile) != endpoint.File {
+		return false
+	}
+	return match.BackendLine <= 0 || match.BackendLine == endpoint.Line
+}
+
+type workspaceCatalogContractIndex map[string][]APIContractRecord
+
+func newWorkspaceCatalogContractIndex(contracts []APIContractRecord) workspaceCatalogContractIndex {
+	index := make(workspaceCatalogContractIndex)
+	for _, contract := range contracts {
+		exactKey := workspaceCatalogContractKey(contract.HTTPMethod, contract.Path, contract.File, contract.Line, contract.Caller)
+		index[exactKey] = append(index[exactKey], contract)
+		if contract.Caller != "" {
+			keyWithoutCaller := workspaceCatalogContractKey(contract.HTTPMethod, contract.Path, contract.File, contract.Line, "")
+			index[keyWithoutCaller] = append(index[keyWithoutCaller], contract)
+		}
+	}
+	return index
+}
+
+func (index workspaceCatalogContractIndex) exact(match WorkspaceContractMatchRecord) (APIContractRecord, bool) {
+	key := workspaceCatalogContractKey(match.APIHTTPMethod, match.APIPath, match.APIFile, match.APILine, match.APICaller)
+	candidates := index[key]
 	if len(candidates) != 1 {
 		return APIContractRecord{}, false
 	}
 	return candidates[0], true
+}
+
+func workspaceCatalogContractKey(method, routePath, file string, line int, caller string) string {
+	return joinAPISortKey(strings.ToUpper(method), routePath, filepath.ToSlash(file), strconv.Itoa(line), caller)
 }
 
 func normalizeConsumerCallAuth(records []AuthRecord) []SecurityEvidenceRecord {
@@ -465,10 +556,86 @@ func normalizeConsumerCallAuth(records []AuthRecord) []SecurityEvidenceRecord {
 	return NormalizeSecurityEvidence(records)
 }
 
-func applyWorkspaceFlowTypes(endpoint *APIEndpointRecord, flows []WorkspaceFeatureFlowRecord) {
+type workspaceCatalogFlowIndex struct {
+	flows []WorkspaceFeatureFlowRecord
+	byKey map[string][]int
+}
+
+func newWorkspaceCatalogFlowIndex(flows []WorkspaceFeatureFlowRecord) workspaceCatalogFlowIndex {
+	index := workspaceCatalogFlowIndex{flows: flows, byKey: make(map[string][]int)}
+	for flowIndex, flow := range flows {
+		handler := qualifiedName(flow.BackendController, flow.BackendMethod)
+		if handler == "" {
+			continue
+		}
+		for _, pathKey := range workspaceCatalogCompatiblePathKeys(flow.Path) {
+			key := workspaceCatalogFlowKey(flow.BackendProject, flow.HTTPMethod, pathKey, handler)
+			index.byKey[key] = append(index.byKey[key], flowIndex)
+		}
+	}
+	return index
+}
+
+func (index workspaceCatalogFlowIndex) candidates(endpoint APIEndpointRecord) []WorkspaceFeatureFlowRecord {
+	seen := make(map[int]bool)
+	result := make([]WorkspaceFeatureFlowRecord, 0)
+	for _, pathKey := range workspaceCatalogCompatiblePathKeys(endpoint.Path) {
+		key := workspaceCatalogFlowKey(endpoint.ProviderProject, endpoint.HTTPMethod, pathKey, endpoint.Handler)
+		for _, flowIndex := range index.byKey[key] {
+			if seen[flowIndex] {
+				continue
+			}
+			seen[flowIndex] = true
+			result = append(result, index.flows[flowIndex])
+		}
+	}
+	return result
+}
+
+func workspaceCatalogFlowKey(project, method, pathKey, handler string) string {
+	return joinAPISortKey(filepath.ToSlash(project), strings.ToUpper(method), pathKey, handler)
+}
+
+func workspaceCatalogCompatiblePathKeys(routePath string) []string {
+	keys := make(map[string]bool)
+	for _, variant := range knownBasePrefixPathVariants(routePath) {
+		workspaceCatalogAddPathKeys(keys, routeParts(variant), 0)
+	}
+	result := make([]string, 0, len(keys))
+	for key := range keys {
+		result = append(result, key)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func workspaceCatalogAddPathKeys(keys map[string]bool, parts []string, partIndex int) {
+	if partIndex == len(parts) {
+		keys[strings.Join(parts, "/")] = true
+		return
+	}
+	part := parts[partIndex]
+	if isPlaceholder(part) {
+		parts[partIndex] = "{}"
+		workspaceCatalogAddPathKeys(keys, parts, partIndex+1)
+		if strings.EqualFold(strings.Trim(part, "{}"), "type") {
+			for _, value := range []string{"new", "changed", "guidance"} {
+				parts[partIndex] = value
+				workspaceCatalogAddPathKeys(keys, parts, partIndex+1)
+			}
+		}
+		parts[partIndex] = part
+		return
+	}
+	parts[partIndex] = strings.ToLower(part)
+	workspaceCatalogAddPathKeys(keys, parts, partIndex+1)
+	parts[partIndex] = part
+}
+
+func applyWorkspaceFlowTypes(endpoint *APIEndpointRecord, index workspaceCatalogFlowIndex) {
 	requestTypes := map[string]bool{}
 	responseTypes := map[string]bool{}
-	for _, flow := range flows {
+	for _, flow := range index.candidates(*endpoint) {
 		if filepath.ToSlash(flow.BackendProject) != endpoint.ProviderProject || !strings.EqualFold(flow.HTTPMethod, endpoint.HTTPMethod) || !pathsCompatibleWithKnownBasePrefixes(flow.Path, endpoint.Path) {
 			continue
 		}
