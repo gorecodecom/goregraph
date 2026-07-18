@@ -12,10 +12,9 @@ import (
 
 func TestDoctorValidatesManifestListedProjectAPICatalog(t *testing.T) {
 	tests := []struct {
-		name      string
-		corrupt   func(*scan.APICatalogRecord)
-		wantID    string
-		wantValid bool
+		name    string
+		corrupt func(*scan.APICatalogRecord)
+		wantID  string
 	}{
 		{
 			name: "duplicate endpoint ID",
@@ -101,6 +100,113 @@ func TestDoctorValidatesManifestListedWorkspaceAPICatalogProjectReferences(t *te
 	}
 }
 
+func TestDoctorRejectsWorkspaceAPICatalogDanglingEvidence(t *testing.T) {
+	tests := []struct {
+		name    string
+		corrupt func(*scan.APICatalogRecord) string
+	}{
+		{
+			name: "endpoint evidence",
+			corrupt: func(catalog *scan.APICatalogRecord) string {
+				catalog.Endpoints[0].EvidenceIDs = []string{"evidence:missing"}
+				return catalog.Endpoints[0].ID
+			},
+		},
+		{
+			name: "consumer evidence",
+			corrupt: func(catalog *scan.APICatalogRecord) string {
+				catalog.Endpoints[0].Consumers[0].EvidenceIDs = []string{"evidence:missing"}
+				return catalog.Endpoints[0].Consumers[0].ID
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			workspace, catalogPath := workspaceCatalogFixture(t)
+			var catalog scan.APICatalogRecord
+			readTestJSON(t, catalogPath, &catalog)
+			wantID := test.corrupt(&catalog)
+			writeTestJSON(t, catalogPath, catalog)
+
+			result, err := Run(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireAPICatalogFailure(t, result, wantID)
+		})
+	}
+}
+
+func TestDoctorIgnoresUnmanifestedWorkspaceProjectEvidence(t *testing.T) {
+	workspace, catalogPath := workspaceCatalogFixture(t)
+	var catalog scan.APICatalogRecord
+	readTestJSON(t, catalogPath, &catalog)
+	endpoint := &catalog.Endpoints[0]
+	endpoint.EvidenceIDs = []string{"evidence:unmanifested"}
+	writeTestJSON(t, catalogPath, catalog)
+
+	projectOut := workspaceProjectOutputForTest(t, workspace, endpoint.ProviderProject)
+	evidencePath := filepath.Join(projectOut, "index", "evidence.json")
+	var evidence []scan.EvidenceRecord
+	readTestJSON(t, evidencePath, &evidence)
+	evidence = append(evidence, scan.EvidenceRecord{ID: "evidence:unmanifested"})
+	writeTestJSON(t, evidencePath, evidence)
+
+	manifestPath := filepath.Join(projectOut, "manifest.json")
+	var manifest scan.Manifest
+	readTestJSON(t, manifestPath, &manifest)
+	manifest.Index.Files = withoutManifestFile(manifest.Index.Files, "index/evidence.json")
+	writeTestJSON(t, manifestPath, manifest)
+
+	result, err := Run(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireAPICatalogFailure(t, result, endpoint.ID)
+}
+
+func TestDoctorRejectsUnsafeWorkspaceAPICatalogEvidencePaths(t *testing.T) {
+	tests := []struct {
+		name      string
+		outputDir func(*testing.T) string
+		want      string
+	}{
+		{
+			name: "traversal",
+			outputDir: func(*testing.T) string {
+				return "../outside"
+			},
+			want: "escapes the workspace",
+		},
+		{
+			name: "absolute",
+			outputDir: func(t *testing.T) string {
+				return t.TempDir()
+			},
+			want: "must be workspace-relative",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			workspace, _ := workspaceCatalogFixture(t)
+			registryPath := scan.NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace")).Index("registry.json")
+			var registry scan.WorkspaceRegistryRecord
+			readTestJSON(t, registryPath, &registry)
+			project := registry.Projects[0]
+			registry.Projects[0].OutputDir = test.outputDir(t)
+			writeTestJSON(t, registryPath, registry)
+
+			result, err := Run(workspace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireAPICatalogFailureContaining(t, result, project.Path, test.want)
+		})
+	}
+}
+
 func TestDoctorSkipsUnmanifestedAPICatalog(t *testing.T) {
 	root, catalogPath := projectCatalogFixture(t)
 	manifestPath := filepath.Join(root, "goregraph-out", "manifest.json")
@@ -172,6 +278,20 @@ func writeWorkspaceProjectFile(t *testing.T, root, name, contents string) {
 	}
 }
 
+func workspaceProjectOutputForTest(t *testing.T, workspace, projectPath string) string {
+	t.Helper()
+	registryPath := scan.NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace")).Index("registry.json")
+	var registry scan.WorkspaceRegistryRecord
+	readTestJSON(t, registryPath, &registry)
+	for _, project := range registry.Projects {
+		if project.Path == projectPath {
+			return filepath.Join(workspace, filepath.FromSlash(project.Path), filepath.FromSlash(project.OutputDir))
+		}
+	}
+	t.Fatalf("workspace registry does not contain project %q", projectPath)
+	return ""
+}
+
 func writeCatalogEvidenceFixture(t *testing.T, path string) {
 	t.Helper()
 	var evidence []scan.EvidenceRecord
@@ -237,4 +357,24 @@ func requireAPICatalogFailure(t *testing.T, result Result, wantID string) {
 		}
 	}
 	t.Fatalf("Doctor did not report an API catalog failure for %q: %v", wantID, result.Lines)
+}
+
+func requireAPICatalogFailureContaining(t *testing.T, result Result, wants ...string) {
+	t.Helper()
+	for _, line := range result.Lines {
+		if !strings.HasPrefix(line, "FAIL api-catalog:") {
+			continue
+		}
+		matches := true
+		for _, want := range wants {
+			if !strings.Contains(line, want) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return
+		}
+	}
+	t.Fatalf("Doctor did not report an API catalog failure containing %q: %v", wants, result.Lines)
 }

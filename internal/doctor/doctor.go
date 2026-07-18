@@ -361,14 +361,24 @@ func checkAPICatalog(out string, manifest scan.Manifest, registry *scan.Workspac
 		result.fail("api-catalog", err.Error())
 		return
 	}
-	if evidenceIDs, available := catalogEvidenceIDs(out); available {
-		if message, dangling := catalogDanglingEvidence(catalog, evidenceIDs); dangling {
+	if registry != nil {
+		if message, unknown := catalogUnknownProjects(catalog, *registry); unknown {
 			result.fail("api-catalog", message)
 			return
 		}
 	}
+	evidenceIDs, evidenceAvailable := catalogEvidenceIDs(out)
 	if registry != nil {
-		if message, unknown := catalogUnknownProjects(catalog, *registry); unknown {
+		var err error
+		evidenceIDs, err = workspaceCatalogEvidenceIDs(filepath.Dir(out), *registry)
+		if err != nil {
+			result.fail("api-catalog", err.Error())
+			return
+		}
+		evidenceAvailable = true
+	}
+	if evidenceAvailable {
+		if message, dangling := catalogDanglingEvidence(catalog, evidenceIDs); dangling {
 			result.fail("api-catalog", message)
 			return
 		}
@@ -395,6 +405,71 @@ func catalogEvidenceIDs(out string) (map[string]bool, bool) {
 		known[record.ID] = true
 	}
 	return known, true
+}
+
+func workspaceCatalogEvidenceIDs(workspaceRoot string, registry scan.WorkspaceRegistryRecord) (map[string]bool, error) {
+	known := map[string]bool{}
+	for _, project := range registry.Projects {
+		if !project.Indexed {
+			continue
+		}
+		outputDir := project.OutputDir
+		if outputDir == "" {
+			outputDir = "goregraph-out"
+		}
+		evidencePath, err := workspaceProjectEvidencePath(workspaceRoot, project.Path, outputDir)
+		if err != nil {
+			return nil, fmt.Errorf("workspace project %q evidence path is invalid: %w", project.Path, err)
+		}
+		projectOut := filepath.Dir(filepath.Dir(evidencePath))
+		var manifest scan.Manifest
+		if err := readJSON(filepath.Join(projectOut, "manifest.json"), &manifest); err != nil {
+			return nil, fmt.Errorf("workspace project %q manifest.json invalid: %w", project.Path, err)
+		}
+		if err := validateWorkspaceCatalogEvidenceManifest(outputDir, manifest); err != nil {
+			return nil, fmt.Errorf("workspace project %q manifest.json invalid: %w", project.Path, err)
+		}
+		if !manifestListsFile(manifest.Index.Files, "index/evidence.json") {
+			continue
+		}
+		var evidence []scan.EvidenceRecord
+		if err := readJSON(evidencePath, &evidence); err != nil {
+			return nil, fmt.Errorf("workspace project %q evidence.json invalid: %w", project.Path, err)
+		}
+		for _, record := range evidence {
+			if record.ID != "" {
+				known[record.ID] = true
+			}
+		}
+	}
+	return known, nil
+}
+
+func validateWorkspaceCatalogEvidenceManifest(outputDir string, manifest scan.Manifest) error {
+	if manifest.Tool != scan.ToolName {
+		return fmt.Errorf("tool is %q, want %q", manifest.Tool, scan.ToolName)
+	}
+	if manifest.Schema != scan.SchemaVersion {
+		return fmt.Errorf("schema is %d, want %d", manifest.Schema, scan.SchemaVersion)
+	}
+	if manifest.Scope != "project" {
+		return fmt.Errorf("scope is %q, want project", manifest.Scope)
+	}
+	if !manifest.Index.Complete {
+		return fmt.Errorf("canonical index projection is incomplete")
+	}
+	registeredOutput, err := cleanWorkspaceRelativePath(outputDir)
+	if err != nil {
+		return err
+	}
+	manifestOutput, err := cleanWorkspaceRelativePath(manifest.OutputDir)
+	if err != nil {
+		return err
+	}
+	if registeredOutput != manifestOutput {
+		return fmt.Errorf("output_dir is %q, want %q", manifest.OutputDir, outputDir)
+	}
+	return nil
 }
 
 func catalogDanglingEvidence(catalog scan.APICatalogRecord, known map[string]bool) (string, bool) {
