@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1379,6 +1381,42 @@ func TestContextCLIHelpAndGlobalOrdering(t *testing.T) {
 	}
 }
 
+func TestCLIEndpointContextSerialization(t *testing.T) {
+	root := writeCLIEndpointContextFixture(t)
+	query := "GET /orders authentication"
+	expected, err := agent.BuildContext(agent.ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"context", root, "--query", query, "--format", "json"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("context exit code = %d, stderr=%s", code, stderr.String())
+	}
+	var pack agent.ContextPack
+	if err := json.Unmarshal(stdout.Bytes(), &pack); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(pack.Endpoints, expected.Endpoints) {
+		t.Fatalf("CLI endpoints = %#v, want %#v", pack.Endpoints, expected.Endpoints)
+	}
+	if len(pack.Endpoints) != 1 {
+		t.Fatalf("CLI endpoints = %#v", pack.Endpoints)
+	}
+	endpoint := pack.Endpoints[0]
+	if endpoint.Provider != "services/orders" || endpoint.HTTPMethod != "GET" || endpoint.Path != "/orders/{id}" ||
+		endpoint.Security != "bearer" || len(endpoint.Consumers) != 8 || endpoint.OmittedConsumers != 5 {
+		t.Fatalf("CLI endpoint details = %#v", endpoint)
+	}
+	if pack.BudgetTokens != agent.DefaultContextBudgetTokens || pack.FallbackRequired {
+		t.Fatalf("CLI context bounds/fallback = %#v", pack)
+	}
+	for _, forbidden := range []string{"api-catalog.json", ".goregraph-dashboard.json", "/invoices"} {
+		if strings.Contains(stdout.String(), forbidden) {
+			t.Fatalf("CLI context contains %q: %s", forbidden, stdout.String())
+		}
+	}
+}
+
 func TestContextHelpDocumentsBoundedAgentWorkflow(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := Run([]string{"context", "help"}, &stdout, &stderr); code != 0 {
@@ -1941,6 +1979,62 @@ func writeFile(t *testing.T, root, rel, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeCLIEndpointContextFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "generated",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "endpoint:orders", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders/{id}",
+				Qualified: "OrderController.get", HTTPMethod: "GET", Path: "/orders/{id}",
+				File: "services/orders/src/OrderController.java", Line: 20,
+				Summary: "provider orders; security bearer; request OrderRequest; response OrderResponse; 3 consumer call sites omitted",
+				Search:  "GET /orders/{id} authentication bearer services orders", Confidence: "EXACT",
+			},
+			{
+				ID: "endpoint:billing", Project: "services/billing", Kind: "api_endpoint", Name: "GET /invoices",
+				HTTPMethod: "GET", Path: "/invoices", File: "services/billing/src/InvoiceController.java", Line: 12,
+				Summary: "provider billing; security public", Search: "GET /invoices billing public", Confidence: "EXACT",
+			},
+		},
+	}
+	for number := 0; number < 10; number++ {
+		id := fmt.Sprintf("consumer:%02d", number)
+		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+			ID: id, Project: fmt.Sprintf("frontend/web-%02d", number), Kind: "api_consumer", Name: id,
+			File: fmt.Sprintf("frontend/web-%02d/src/api.ts", number), Line: 7,
+			Summary: "consumer service web; auth bearer", Confidence: "RESOLVED",
+		})
+		index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+			ID: "edge:" + id, FromFactID: id, ToFactID: "endpoint:orders",
+			Kind: "consumes_endpoint", Reason: "catalog consumer auth bearer", Confidence: "RESOLVED",
+		})
+	}
+	for _, metadata := range []struct {
+		id   string
+		file string
+	}{
+		{id: "consumer:catalog", file: ".goregraph-workspace/agent/api-catalog.json"},
+		{id: "consumer:dashboard", file: ".goregraph-dashboard.json"},
+	} {
+		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+			ID: metadata.id, Project: "frontend/metadata", Kind: "api_consumer", Name: metadata.id,
+			File: metadata.file, Line: 1, Summary: "consumer service metadata; auth unknown",
+		})
+		index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+			ID: "edge:" + metadata.id, FromFactID: metadata.id, ToFactID: "endpoint:orders", Kind: "consumes_endpoint",
+		})
+	}
+	body, err := json.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "goregraph-out/agent/context-index.json", string(body))
+	return root
 }
 
 func cliTestOutputPath(path string) string {

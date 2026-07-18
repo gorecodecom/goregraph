@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -206,6 +207,55 @@ func TestServiceBuildsBoundedTaskContext(t *testing.T) {
 	} {
 		if _, exists := result.Items[0].Data[legacy]; exists {
 			t.Fatalf("legacy task-context key %q remains: %#v", legacy, result.Items[0].Data)
+		}
+	}
+}
+
+func TestServiceEndpointTaskContextSerialization(t *testing.T) {
+	root := writeServiceEndpointContextFixture(t)
+	query := "GET /orders authentication"
+	expected, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (Service{}).Run(Request{Root: root, Task: "task-context", Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack, ok := result.Items[0].Data["context"].(ContextPack)
+	if !ok {
+		t.Fatalf("service context type = %T, want ContextPack", result.Items[0].Data["context"])
+	}
+	if !reflect.DeepEqual(pack.Endpoints, expected.Endpoints) {
+		t.Fatalf("service endpoints = %#v, want %#v", pack.Endpoints, expected.Endpoints)
+	}
+	if len(pack.Endpoints) != 1 {
+		t.Fatalf("service endpoints = %#v", pack.Endpoints)
+	}
+	endpoint := pack.Endpoints[0]
+	if endpoint.Provider != "services/orders" || endpoint.HTTPMethod != "GET" || endpoint.Path != "/orders/{id}" ||
+		endpoint.Security != "bearer" || len(endpoint.Consumers) != 8 || endpoint.OmittedConsumers != 5 {
+		t.Fatalf("service endpoint details = %#v", endpoint)
+	}
+	if pack.BudgetTokens != DefaultContextBudgetTokens || pack.FallbackRequired {
+		t.Fatalf("service context bounds/fallback = %#v", pack)
+	}
+
+	body, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roundTrip ContextPack
+	if err := json.Unmarshal(body, &roundTrip); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(roundTrip.Endpoints, expected.Endpoints) {
+		t.Fatalf("serialized service endpoints = %#v, want %#v", roundTrip.Endpoints, expected.Endpoints)
+	}
+	for _, forbidden := range []string{"api-catalog.json", ".goregraph-dashboard.json", "/invoices"} {
+		if bytes := string(body); strings.Contains(bytes, forbidden) {
+			t.Fatalf("service context contains %q: %s", forbidden, bytes)
 		}
 	}
 }
@@ -550,4 +600,60 @@ func writeTaskContextJSON(t *testing.T, root, name string, value any) {
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeServiceEndpointContextFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeContextIndexAt(t, filepath.Join(root, "goregraph-out", "agent", "context-index.json"), endpointContextIndexFixture())
+	return root
+}
+
+func endpointContextIndexFixture() scan.AgentContextIndexRecord {
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "generated",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "endpoint:orders", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders/{id}",
+				Qualified: "OrderController.get", HTTPMethod: "GET", Path: "/orders/{id}",
+				File: "services/orders/src/OrderController.java", Line: 20,
+				Summary: "provider orders; security bearer; request OrderRequest; response OrderResponse; 3 consumer call sites omitted",
+				Search:  "GET /orders/{id} authentication bearer services orders", Confidence: "EXACT",
+			},
+			{
+				ID: "endpoint:billing", Project: "services/billing", Kind: "api_endpoint", Name: "GET /invoices",
+				HTTPMethod: "GET", Path: "/invoices", File: "services/billing/src/InvoiceController.java", Line: 12,
+				Summary: "provider billing; security public", Search: "GET /invoices billing public", Confidence: "EXACT",
+			},
+		},
+	}
+	for number := 0; number < 10; number++ {
+		id := fmt.Sprintf("consumer:%02d", number)
+		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+			ID: id, Project: fmt.Sprintf("frontend/web-%02d", number), Kind: "api_consumer", Name: id,
+			File: fmt.Sprintf("frontend/web-%02d/src/api.ts", number), Line: 7,
+			Summary: "consumer service web; auth bearer", Confidence: "RESOLVED",
+		})
+		index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+			ID: "edge:" + id, FromFactID: id, ToFactID: "endpoint:orders",
+			Kind: "consumes_endpoint", Reason: "catalog consumer auth bearer", Confidence: "RESOLVED",
+		})
+	}
+	for _, metadata := range []struct {
+		id   string
+		file string
+	}{
+		{id: "consumer:catalog", file: ".goregraph-workspace/agent/api-catalog.json"},
+		{id: "consumer:dashboard", file: ".goregraph-dashboard.json"},
+	} {
+		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+			ID: metadata.id, Project: "frontend/metadata", Kind: "api_consumer", Name: metadata.id,
+			File: metadata.file, Line: 1, Summary: "consumer service metadata; auth unknown",
+		})
+		index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+			ID: "edge:" + metadata.id, FromFactID: metadata.id, ToFactID: "endpoint:orders", Kind: "consumes_endpoint",
+		})
+	}
+	return index
 }
