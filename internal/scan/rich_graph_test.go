@@ -348,7 +348,7 @@ func TestBuildProjectAPICatalogMapsTypedSpringParametersAndDeduplicatesProviders
 
 func TestBuildProjectAPICatalogIncludesOnlySupportedScriptProviderRoutes(t *testing.T) {
 	routes := []CodeRouteRecord{
-		{Language: "typescript", Framework: "Fastify", Kind: "backend", HTTPMethod: "GET", Path: "/orders/:id", Handler: "getOrder", File: "src/routes.ts", Line: 12, Confidence: "EXTRACTED", EvidenceIDs: []string{"evidence:route"}},
+		{Language: "typescript", Framework: "Fastify", FrameworkBound: true, Kind: "backend", HTTPMethod: "GET", Path: "/orders/:id", Handler: "getOrder", File: "src/routes.ts", Line: 12, Confidence: "EXTRACTED", EvidenceIDs: []string{"evidence:route"}},
 		{Language: "typescript", Framework: "Unknown Router", Kind: "backend", HTTPMethod: "GET", Path: "/unsupported", Handler: "handler", File: "src/unknown.ts", Line: 2},
 		{Language: "javascript", Framework: "Express", Kind: "frontend", HTTPMethod: "GET", Path: "/ui", Handler: "Screen", File: "src/app.js", Line: 3},
 		{Language: "typescript", Kind: "backend", HTTPMethod: "GET", Path: "/missing-framework", Handler: "handler", File: "src/routes.ts", Line: 20},
@@ -387,6 +387,153 @@ func TestBuildProjectAPICatalogIsDeterministicAcrossDuplicateDiscoveryOrder(t *t
 	}
 	if string(leftJSON) != string(rightJSON) {
 		t.Fatalf("catalog depends on discovery order:\nleft:  %s\nright: %s", leftJSON, rightJSON)
+	}
+}
+
+func TestExtractCodeRoutesRequiresExplicitScriptFrameworkBinding(t *testing.T) {
+	record := extractCodeIntelligence(FileRecord{Path: "src/routes.ts", Language: "typescript"}, `import buildExpress from "express";
+import { fastify as buildFastify } from "fastify";
+
+const application = buildExpress();
+const api = buildExpress.Router();
+const service = buildFastify();
+const router = unrelatedRouter();
+
+application.get("/express-app", getExpressApp);
+api.post("/express-router", createExpressResource);
+service.patch("/fastify", updateFastifyResource);
+router.get("/unrelated", unrelatedHandler);
+`)
+
+	if len(record.Routes) != 3 {
+		t.Fatalf("script routes = %#v, want three proven framework routes", record.Routes)
+	}
+	wantFrameworks := map[string]string{
+		"/express-app":    "Express",
+		"/express-router": "Express",
+		"/fastify":        "Fastify",
+	}
+	for _, route := range record.Routes {
+		framework, ok := wantFrameworks[route.Path]
+		if !ok {
+			t.Fatalf("unproven script route was included: %#v", route)
+		}
+		if route.Framework != framework || !route.FrameworkBound {
+			t.Fatalf("route binding evidence = %#v, want framework %q", route, framework)
+		}
+	}
+}
+
+func TestBuildProjectAPICatalogMergesDuplicateMetadataDeterministically(t *testing.T) {
+	endpoints := []SpringEndpointRecord{
+		{
+			HTTPMethod: "POST", Path: "/orders/{orderId}", Controller: "OrderController", Method: "update",
+			File: "src/OrderController.java", Line: 10, RequestType: "OrderRequest", ReturnType: "OrderResponse",
+			Consumes: "application/json",
+			Parameters: []JavaParameterRecord{{
+				Name: "orderId", Type: "long", Annotations: []JavaAnnotationRecord{{Name: "PathVariable"}},
+			}},
+		},
+		{
+			HTTPMethod: "POST", Path: "/orders/{id}", Controller: "OrderController", Method: "update",
+			File: "src/OrderController.java", Line: 10, RequestType: "DetailedOrderRequest", ReturnType: "DetailedOrderResponse",
+			Consumes: "application/xml",
+			Parameters: []JavaParameterRecord{{
+				Name: "traceId", Type: "String", Annotations: []JavaAnnotationRecord{{Name: "RequestHeader", Attributes: map[string]string{"value": "X-Trace-ID"}}},
+			}},
+		},
+	}
+	routes := []CodeRouteRecord{
+		{Language: "java", Framework: "Spring", HTTPMethod: "POST", Path: "/orders/{orderId}", Handler: "OrderController.update", File: "src/OrderController.java", Line: 10, EvidenceIDs: []string{"evidence:one"}},
+		{Language: "java", Framework: "Spring", HTTPMethod: "POST", Path: "/orders/{id}", Handler: "OrderController.update", File: "src/OrderController.java", Line: 10, EvidenceIDs: []string{"evidence:two"}},
+	}
+
+	left := BuildProjectAPICatalog("orders", "fixed", routes, SpringIndex{Endpoints: endpoints}, nil, nil)
+	right := BuildProjectAPICatalog("orders", "fixed", []CodeRouteRecord{routes[1], routes[0]}, SpringIndex{Endpoints: []SpringEndpointRecord{endpoints[1], endpoints[0]}}, nil, nil)
+	leftJSON, err := json.Marshal(left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightJSON, err := json.Marshal(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(leftJSON) != string(rightJSON) {
+		t.Fatalf("merged catalog depends on discovery order:\nleft:  %s\nright: %s", leftJSON, rightJSON)
+	}
+	if len(left.Endpoints) != 1 {
+		t.Fatalf("endpoints = %#v", left.Endpoints)
+	}
+	endpoint := left.Endpoints[0]
+	if endpoint.RequestType != "DetailedOrderRequest" || endpoint.ResponseType != "DetailedOrderResponse" {
+		t.Fatalf("richest scalar metadata not retained: %#v", endpoint)
+	}
+	if len(endpoint.Parameters) != 2 || len(endpoint.Consumes) != 2 || len(endpoint.EvidenceIDs) != 2 {
+		t.Fatalf("set metadata not merged: %#v", endpoint)
+	}
+	limitations := strings.Join(endpoint.Limitations, "\n")
+	for _, want := range []string{"request_type_conflict", "OrderRequest", "DetailedOrderRequest", "response_type_conflict", "OrderResponse", "DetailedOrderResponse"} {
+		if !strings.Contains(limitations, want) {
+			t.Fatalf("limitations = %#v, want %q", endpoint.Limitations, want)
+		}
+	}
+}
+
+func TestBuildProjectAPICatalogTreatsExplicitEmptySpringDefaultsAsOptional(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/DefaultController.java", Language: "java"}, `import org.springframework.web.bind.annotation.*;
+
+@RestController
+class DefaultController {
+  @GetMapping("/defaults")
+  String get(@RequestParam(defaultValue = "") String query,
+      @RequestHeader(defaultValue = "") String header,
+      @CookieValue(defaultValue = "") String cookie,
+      @RequestParam(defaultValue = ValueConstants.DEFAULT_NONE) String requiredQuery) {
+    return "ok";
+  }
+}
+`)
+	catalog := BuildProjectAPICatalog("defaults", "fixed", nil, buildSpringIndex([]JavaSourceRecord{source}), nil, nil)
+	if len(catalog.Endpoints) != 1 {
+		t.Fatalf("endpoints = %#v", catalog.Endpoints)
+	}
+	requiredByName := map[string]bool{}
+	for _, parameter := range catalog.Endpoints[0].Parameters {
+		requiredByName[parameter.Name] = parameter.Required
+	}
+	for _, optional := range []string{"query", "header", "cookie"} {
+		if requiredByName[optional] {
+			t.Fatalf("parameter %q should be optional: %#v", optional, catalog.Endpoints[0].Parameters)
+		}
+	}
+	if !requiredByName["requiredQuery"] {
+		t.Fatalf("DEFAULT_NONE parameter should remain required: %#v", catalog.Endpoints[0].Parameters)
+	}
+}
+
+func TestBuildProjectAPICatalogMapsSpringProduces(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/OrderController.java", Language: "java"}, `import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+class OrderController {
+  @PostMapping(path = "/orders", consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = {MediaType.APPLICATION_JSON_VALUE, "application/problem+json"})
+  String create(@RequestBody String request) {
+    return request;
+  }
+}
+`)
+	spring := buildSpringIndex([]JavaSourceRecord{source})
+	catalog := BuildProjectAPICatalog("orders", "fixed", nil, spring, nil, nil)
+	want := []string{"application/json", "application/problem+json"}
+	if len(catalog.Endpoints) != 1 || len(catalog.Endpoints[0].Produces) != len(want) {
+		t.Fatalf("catalog produces = %#v, want %#v", catalog.Endpoints, want)
+	}
+	for index := range want {
+		if catalog.Endpoints[0].Produces[index] != want[index] {
+			t.Fatalf("catalog produces = %#v, want %#v", catalog.Endpoints[0].Produces, want)
+		}
 	}
 }
 

@@ -22,7 +22,11 @@ var (
 	codeGoHTTPRouteRE         = regexp.MustCompile(`\b(?:http\.)?HandleFunc\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_][A-Za-z0-9_]*)`)
 	codeGoRouterRouteRE       = regexp.MustCompile(`\.\s*(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_][A-Za-z0-9_]*)`)
 	codePHPRouteRE            = regexp.MustCompile(`Route::(get|post|put|delete|patch|options|any)\s*\(\s*['"]([^'"]+)['"]\s*,\s*\[?\s*([A-Za-z_][A-Za-z0-9_]*)::class\s*,\s*['"]([^'"]+)['"]`)
-	codeScriptRouteRE         = regexp.MustCompile(`\b(?:app|router|server|fastify)\s*\.\s*(get|post|put|delete|patch|options|head)\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)`)
+	codeScriptRouteRE         = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*(get|post|put|delete|patch|options|head)\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_$][A-Za-z0-9_$]*)`)
+	codeScriptDefaultImportRE = regexp.MustCompile(`^\s*import\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s+["'](express|fastify)["']`)
+	codeScriptNamedImportRE   = regexp.MustCompile(`^\s*import\s*\{([^}]*)\}\s*from\s*["'](express|fastify)["']`)
+	codeScriptRequireRE       = regexp.MustCompile(`^\s*(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\s*\(\s*["'](express|fastify)["']\s*\)`)
+	codeScriptInitRE          = regexp.MustCompile(`^\s*(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([A-Za-z_$][A-Za-z0-9_$]*)(?:\s*\.\s*(Router))?\s*\(`)
 	codeReactJSXRouteRE       = regexp.MustCompile(`<Route\b[^>]*\bpath=["']([^"']+)["'][^>]*\belement=\{\s*<([A-Za-z_$][A-Za-z0-9_$]*)`)
 	codeReactComponentRouteRE = regexp.MustCompile(`<Route\b[^>]*\bpath=["']([^"']+)["'][^>]*\bcomponent=\{?\s*([A-Za-z_$][A-Za-z0-9_$]*)`)
 	codeReactRenderRouteRE    = regexp.MustCompile(`<Route\b[^>]*\bpath=["']([^"']+)["'][^>]*\brender=\{[^<]*<([A-Za-z_$][A-Za-z0-9_$]*)`)
@@ -228,6 +232,7 @@ func extractCodeRoutes(file FileRecord, lines []string) []CodeRouteRecord {
 	var routes []CodeRouteRecord
 	var pendingPythonRoute *CodeRouteRecord
 	var pendingRustRoute *CodeRouteRecord
+	scriptBindings := scriptFrameworkBindings(file.Language, lines)
 	for i, line := range lines {
 		lineNo := i + 1
 		if isRouteCommentLine(file.Language, line) {
@@ -246,8 +251,12 @@ func extractCodeRoutes(file FileRecord, lines []string) []CodeRouteRecord {
 				routes = append(routes, codeRoute(file, "Laravel", "backend", strings.ToUpper(match[1]), match[2], match[3]+"."+match[4], lineNo))
 			}
 		case "javascript", "typescript":
-			if match := codeScriptRouteRE.FindStringSubmatch(line); len(match) == 4 {
-				routes = append(routes, codeRoute(file, scriptRouteFramework(line), "backend", strings.ToUpper(match[1]), match[2], match[3], lineNo))
+			if match := codeScriptRouteRE.FindStringSubmatch(line); len(match) == 5 {
+				if framework := scriptBindings[match[1]]; framework != "" {
+					route := codeRoute(file, framework, "backend", strings.ToUpper(match[2]), match[3], match[4], lineNo)
+					route.FrameworkBound = true
+					routes = append(routes, route)
+				}
 			}
 			if match := codeReactJSXRouteRE.FindStringSubmatch(line); len(match) == 3 {
 				routes = append(routes, codeRoute(file, "React Router", "frontend", "ROUTE", match[1], match[2], lineNo))
@@ -550,8 +559,50 @@ func isLikelyReactComponent(name, path string) bool {
 	return first >= 'A' && first <= 'Z' && (strings.HasSuffix(path, ".tsx") || strings.HasSuffix(path, ".jsx") || strings.Contains(path, "components/") || strings.Contains(path, "pages/"))
 }
 
-func scriptRouteFramework(line string) string {
-	if strings.Contains(line, "fastify") {
+func scriptFrameworkBindings(language string, lines []string) map[string]string {
+	bindings := map[string]string{}
+	if language != "javascript" && language != "typescript" {
+		return bindings
+	}
+
+	factories := map[string]string{}
+	for _, line := range lines {
+		line = stripCodeLineComment(language, line)
+		if match := codeScriptDefaultImportRE.FindStringSubmatch(line); len(match) == 3 {
+			factories[match[1]] = scriptFrameworkName(match[2])
+		}
+		if match := codeScriptNamedImportRE.FindStringSubmatch(line); len(match) == 3 {
+			for _, imported := range strings.Split(match[1], ",") {
+				parts := strings.Fields(strings.TrimSpace(imported))
+				if len(parts) == 1 {
+					factories[parts[0]] = scriptFrameworkName(match[2])
+				} else if len(parts) == 3 && parts[1] == "as" {
+					factories[parts[2]] = scriptFrameworkName(match[2])
+				}
+			}
+		}
+		if match := codeScriptRequireRE.FindStringSubmatch(line); len(match) == 3 {
+			factories[match[1]] = scriptFrameworkName(match[2])
+		}
+	}
+
+	for _, line := range lines {
+		line = stripCodeLineComment(language, line)
+		match := codeScriptInitRE.FindStringSubmatch(line)
+		if len(match) != 4 {
+			continue
+		}
+		framework := factories[match[2]]
+		if framework == "" || (match[3] != "" && framework != "Express") {
+			continue
+		}
+		bindings[match[1]] = framework
+	}
+	return bindings
+}
+
+func scriptFrameworkName(module string) string {
+	if module == "fastify" {
 		return "Fastify"
 	}
 	return "Express"

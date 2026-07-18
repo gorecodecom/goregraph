@@ -33,6 +33,7 @@ func BuildProjectAPICatalog(project, generated string, routes []CodeRouteRecord,
 			Line:            endpoint.Line,
 			Parameters:      springAPIParameters(endpoint.Parameters),
 			Consumes:        splitSpringMediaTypes(endpoint.Consumes),
+			Produces:        splitSpringMediaTypes(endpoint.Produces),
 			RequestType:     endpoint.RequestType,
 			ResponseType:    endpoint.ReturnType,
 			Security:        unknownAPISecurity(),
@@ -78,15 +79,7 @@ func BuildProjectAPICatalog(project, generated string, routes []CodeRouteRecord,
 	}
 
 	sort.Slice(candidates, func(left, right int) bool {
-		leftKey := projectProviderIdentity(candidates[left]) + "\x00" + candidates[left].File
-		rightKey := projectProviderIdentity(candidates[right]) + "\x00" + candidates[right].File
-		if leftKey != rightKey {
-			return leftKey < rightKey
-		}
-		if candidates[left].Line != candidates[right].Line {
-			return candidates[left].Line < candidates[right].Line
-		}
-		return candidates[left].Path < candidates[right].Path
+		return projectProviderCandidateSortKey(candidates[left]) < projectProviderCandidateSortKey(candidates[right])
 	})
 	catalog := APICatalogRecord{SchemaVersion: SchemaVersion, Generated: generated, Root: project, Endpoints: []APIEndpointRecord{}}
 	for _, candidate := range candidates {
@@ -103,7 +96,7 @@ func BuildProjectAPICatalog(project, generated string, routes []CodeRouteRecord,
 
 func supportedScriptProviderRoute(route CodeRouteRecord) bool {
 	return (route.Language == "javascript" || route.Language == "typescript") &&
-		route.Kind == "backend" && supportedScriptProviderFramework(route.Framework) && strings.TrimSpace(route.Handler) != "" &&
+		route.Kind == "backend" && route.FrameworkBound && supportedScriptProviderFramework(route.Framework) && strings.TrimSpace(route.Handler) != "" &&
 		strings.TrimSpace(route.File) != "" && route.Line > 0
 }
 
@@ -125,21 +118,118 @@ func projectProviderIdentity(endpoint APIEndpointRecord) string {
 	return endpoint.ProviderProject + "\x00" + strings.ToUpper(endpoint.HTTPMethod) + "\x00" + normalizeAPIPathParameterNames(endpoint.Path) + "\x00" + endpoint.Handler
 }
 
+func projectProviderCandidateSortKey(endpoint APIEndpointRecord) string {
+	parameters := append([]APIParameterRecord(nil), endpoint.Parameters...)
+	sort.Slice(parameters, func(left, right int) bool {
+		return apiParameterSortKey(parameters[left]) < apiParameterSortKey(parameters[right])
+	})
+	parameterKeys := make([]string, 0, len(parameters))
+	for _, parameter := range parameters {
+		parameterKeys = append(parameterKeys, apiParameterSortKey(parameter))
+	}
+	return strings.Join([]string{
+		projectProviderIdentity(endpoint),
+		endpoint.File,
+		strconv.Itoa(endpoint.Line),
+		endpoint.Path,
+		endpoint.RawPath,
+		endpoint.Language,
+		endpoint.Framework,
+		endpoint.Controller,
+		endpoint.RequestType,
+		endpoint.ResponseType,
+		strings.Join(catalogUniqueSortedStrings(endpoint.Consumes), "\x01"),
+		strings.Join(catalogUniqueSortedStrings(endpoint.Produces), "\x01"),
+		strings.Join(parameterKeys, "\x01"),
+		strings.Join(catalogUniqueSortedStrings(endpoint.Limitations), "\x01"),
+		strings.Join(catalogUniqueSortedStrings(endpoint.EvidenceIDs), "\x01"),
+	}, "\x00")
+}
+
 func mergeProjectProviderEndpoint(target *APIEndpointRecord, extra APIEndpointRecord) {
-	if len(target.Parameters) == 0 && len(extra.Parameters) > 0 {
-		target.Parameters = extra.Parameters
+	target.Parameters = mergeProjectProviderParameters(target.Parameters, extra.Parameters)
+	target.Consumes = catalogUniqueSortedStrings(append(target.Consumes, extra.Consumes...))
+	target.Produces = catalogUniqueSortedStrings(append(target.Produces, extra.Produces...))
+	mergeProjectProviderType(&target.RequestType, extra.RequestType, "request_type", &target.Limitations)
+	mergeProjectProviderType(&target.ResponseType, extra.ResponseType, "response_type", &target.Limitations)
+	target.Limitations = catalogUniqueSortedStrings(append(target.Limitations, extra.Limitations...))
+	target.EvidenceIDs = catalogUniqueSortedStrings(append(target.EvidenceIDs, extra.EvidenceIDs...))
+}
+
+func mergeProjectProviderParameters(target, extra []APIParameterRecord) []APIParameterRecord {
+	merged := append([]APIParameterRecord(nil), target...)
+	indexByIdentity := map[string]int{}
+	for index, parameter := range merged {
+		indexByIdentity[parameter.Location+"\x00"+parameter.Name] = index
 	}
-	if len(target.Consumes) == 0 && len(extra.Consumes) > 0 {
-		target.Consumes = extra.Consumes
+	for _, parameter := range extra {
+		identity := parameter.Location + "\x00" + parameter.Name
+		if index, ok := indexByIdentity[identity]; ok {
+			merged[index] = richerProjectProviderParameter(merged[index], parameter)
+			continue
+		}
+		indexByIdentity[identity] = len(merged)
+		merged = append(merged, parameter)
 	}
-	if target.RequestType == "" {
-		target.RequestType = extra.RequestType
+	sort.Slice(merged, func(left, right int) bool {
+		return apiParameterSortKey(merged[left]) < apiParameterSortKey(merged[right])
+	})
+	return merged
+}
+
+func richerProjectProviderParameter(left, right APIParameterRecord) APIParameterRecord {
+	leftScore := projectProviderParameterRichness(left)
+	rightScore := projectProviderParameterRichness(right)
+	if rightScore > leftScore || (rightScore == leftScore && apiParameterSortKey(right) < apiParameterSortKey(left)) {
+		return right
 	}
-	if target.ResponseType == "" {
-		target.ResponseType = extra.ResponseType
+	return left
+}
+
+func projectProviderParameterRichness(parameter APIParameterRecord) int {
+	score := apiConfidenceRank(parameter.Confidence) * 1000
+	if parameter.Type != "" {
+		score += 100 + len(parameter.Type)
 	}
-	target.EvidenceIDs = append(target.EvidenceIDs, extra.EvidenceIDs...)
-	target.EvidenceIDs = catalogUniqueSortedStrings(target.EvidenceIDs)
+	if parameter.Source != "" {
+		score += 10
+	}
+	return score
+}
+
+func apiConfidenceRank(confidence Confidence) int {
+	switch confidence {
+	case ConfidenceExact:
+		return 6
+	case ConfidenceResolved:
+		return 5
+	case ConfidenceNormalized:
+		return 4
+	case ConfidenceInferred:
+		return 3
+	case ConfidenceWeak:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func mergeProjectProviderType(target *string, extra, field string, limitations *[]string) {
+	if extra == "" {
+		return
+	}
+	if *target == "" {
+		*target = extra
+		return
+	}
+	if *target == extra {
+		return
+	}
+	values := catalogUniqueSortedStrings([]string{*target, extra})
+	*limitations = append(*limitations, field+"_conflict: "+strings.Join(values, " | "))
+	if len(extra) > len(*target) || (len(extra) == len(*target) && extra < *target) {
+		*target = extra
+	}
 }
 
 func springAPIParameters(parameters []JavaParameterRecord) []APIParameterRecord {
@@ -172,7 +262,7 @@ func springAPIParameter(parameter JavaParameterRecord) APIParameterRecord {
 		record.Location = location
 		record.Source = "parameter_annotation"
 		record.Confidence = ConfidenceExact
-		record.Required = annotation.Attributes["required"] != "false" && annotation.Attributes["defaultValue"] == ""
+		record.Required = annotation.Attributes["required"] != "false" && !springParameterHasDefault(annotation)
 		name := firstNonEmpty(annotation.Attributes["name"], annotation.Attributes["value"])
 		if name == "" && annotation.Arguments != "" && !strings.Contains(annotation.Arguments, "=") {
 			name = trimJavaValue(annotation.Arguments)
@@ -183,6 +273,15 @@ func springAPIParameter(parameter JavaParameterRecord) APIParameterRecord {
 		break
 	}
 	return record
+}
+
+func springParameterHasDefault(annotation JavaAnnotationRecord) bool {
+	value, present := annotation.Attributes["defaultValue"]
+	if !present {
+		return false
+	}
+	value = strings.TrimSpace(value)
+	return value != "DEFAULT_NONE" && !strings.HasSuffix(value, ".DEFAULT_NONE")
 }
 
 func splitSpringMediaTypes(value string) []string {
@@ -433,6 +532,7 @@ func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, 
 				RequestType: requestType,
 				RequestKind: requestKind,
 				Consumes:    springConsumes(annotation, constants),
+				Produces:    springProduces(annotation, constants),
 				ReturnType:  returnType,
 				Parameters:  method.Parameters,
 				Auth:        springAuthRecords(method.Annotations, method.File),
@@ -720,7 +820,15 @@ func requestMetadata(params []JavaParameterRecord) (string, string) {
 }
 
 func springConsumes(annotation JavaAnnotationRecord, constants map[string]string) string {
-	value := annotation.Attributes["consumes"]
+	return springMappingMediaTypes(annotation, "consumes", constants)
+}
+
+func springProduces(annotation JavaAnnotationRecord, constants map[string]string) string {
+	return springMappingMediaTypes(annotation, "produces", constants)
+}
+
+func springMappingMediaTypes(annotation JavaAnnotationRecord, attribute string, constants map[string]string) string {
+	value := annotation.Attributes[attribute]
 	if value == "" {
 		return ""
 	}

@@ -284,6 +284,7 @@ type CodeCallRecord struct {
 type CodeRouteRecord struct {
 	Language           string   `json:"language"`
 	Framework          string   `json:"framework"`
+	FrameworkBound     bool     `json:"framework_bound,omitempty"`
 	Kind               string   `json:"kind"`
 	App                string   `json:"app,omitempty"`
 	Package            string   `json:"package,omitempty"`
@@ -1038,6 +1039,7 @@ type SpringEndpointRecord struct {
 	RequestType string                `json:"request_type,omitempty"`
 	RequestKind string                `json:"request_kind,omitempty"`
 	Consumes    string                `json:"consumes,omitempty"`
+	Produces    string                `json:"produces,omitempty"`
 	ReturnType  string                `json:"return_type,omitempty"`
 	Parameters  []JavaParameterRecord `json:"parameters,omitempty"`
 	Auth        []AuthRecord          `json:"auth,omitempty"`
