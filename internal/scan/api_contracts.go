@@ -634,34 +634,51 @@ func jsArrowParameterSpan(code string, arrow int) (int, int, bool) {
 		return 0, 0, false
 	}
 	start = jsArrowPropertyValueStart(code, start, arrow)
-	if start >= arrow {
-		return 0, 0, false
-	}
-	if code[start] == '<' {
-		typeParametersEnd := jsArrowTypeParametersEnd(code, start, arrow)
-		if typeParametersEnd < 0 {
+	for start < arrow {
+		if code[start] == '<' {
+			typeParametersEnd := jsArrowTypeParametersEnd(code, start, arrow)
+			if typeParametersEnd < 0 {
+				return 0, 0, false
+			}
+			start = nextScriptNonSpace(code, typeParametersEnd+1)
+			if start >= arrow {
+				return 0, 0, false
+			}
+		}
+
+		paramsStart, paramsEnd, tail := start, start, start
+		if code[start] == '(' {
+			close := matchingScriptDelimiter(code, start, '(', ')')
+			if close < 0 || close >= arrow {
+				return 0, 0, false
+			}
+			paramsStart, paramsEnd, tail = start+1, close, close+1
+		} else {
+			for paramsEnd < arrow && isScriptIdentifierByte(code[paramsEnd]) {
+				paramsEnd++
+			}
+			if paramsEnd == start {
+				return 0, 0, false
+			}
+			tail = paramsEnd
+		}
+
+		candidateArrow := nextScriptNonSpace(code, tail)
+		if candidateArrow < arrow && code[candidateArrow] == ':' {
+			candidateArrow = jsArrowAfterReturnType(code, candidateArrow+1, arrow)
+		}
+		if candidateArrow < 0 || candidateArrow+1 >= len(code) || code[candidateArrow:candidateArrow+2] != "=>" {
 			return 0, 0, false
 		}
-		start = nextScriptNonSpace(code, typeParametersEnd+1)
-		if start >= arrow {
+		if candidateArrow == arrow {
+			return paramsStart, paramsEnd, true
+		}
+		if candidateArrow > arrow {
 			return 0, 0, false
 		}
+		start = nextScriptNonSpace(code, candidateArrow+2)
 	}
-	if code[start] == '(' {
-		close := matchingScriptDelimiter(code, start, '(', ')')
-		if close < 0 || close >= arrow || !isJSArrowReturnTail(code, close+1, arrow) {
-			return 0, 0, false
-		}
-		return start + 1, close, true
-	}
-	end := start
-	for end < arrow && isScriptIdentifierByte(code[end]) {
-		end++
-	}
-	if end == start || !isJSArrowReturnTail(code, end, arrow) {
-		return 0, 0, false
-	}
-	return start, end, true
+	return 0, 0, false
 }
 
 func jsArrowTypeParametersEnd(code string, start, arrow int) int {
@@ -686,6 +703,71 @@ func jsArrowTypeParametersEnd(code string, start, arrow int) int {
 	return -1
 }
 
+func jsArrowAfterReturnType(code string, start, limit int) int {
+	start = nextScriptNonSpace(code, start)
+	for start < limit {
+		arrow := nextTopLevelTypeArrow(code, start, limit)
+		if arrow < 0 || !jsFunctionTypePrefix(code, start, arrow) {
+			return arrow
+		}
+		start = nextScriptNonSpace(code, arrow+2)
+	}
+	return -1
+}
+
+func nextTopLevelTypeArrow(code string, start, limit int) int {
+	round, square, curly, angle := 0, 0, 0, 0
+	for index := start; index <= limit && index+1 < len(code); index++ {
+		if code[index] == '=' && code[index+1] == '>' && round == 0 && square == 0 && curly == 0 && angle == 0 {
+			return index
+		}
+		switch code[index] {
+		case '(':
+			round++
+		case ')':
+			round--
+		case '[':
+			square++
+		case ']':
+			square--
+		case '{':
+			curly++
+		case '}':
+			curly--
+		case '<':
+			angle++
+		case '>':
+			if index == 0 || code[index-1] != '=' {
+				angle--
+			}
+		}
+		if round < 0 || square < 0 || curly < 0 || angle < 0 {
+			return -1
+		}
+	}
+	return -1
+}
+
+func jsFunctionTypePrefix(code string, start, arrow int) bool {
+	start = nextScriptNonSpace(code, start)
+	if start < arrow && code[start] == '<' {
+		typeParametersEnd := jsArrowTypeParametersEnd(code, start, arrow)
+		if typeParametersEnd < 0 {
+			return false
+		}
+		start = nextScriptNonSpace(code, typeParametersEnd+1)
+	}
+	if start >= arrow || code[start] != '(' {
+		return false
+	}
+	close := matchingScriptDelimiter(code, start, '(', ')')
+	if close < 0 || nextScriptNonSpace(code, close+1) != arrow {
+		return false
+	}
+	params := strings.TrimSpace(code[start+1 : close])
+	return params == "" || len(jsParameterBindingNames(params)) > 0
+}
+
 func jsArrowExpressionStart(code string, arrow int) int {
 	round, square, curly, angle := 0, 0, 0, 0
 	for index := arrow - 1; index >= 0; index-- {
@@ -694,6 +776,9 @@ func jsArrowExpressionStart(code string, arrow int) int {
 			round++
 		case '(':
 			if round == 0 {
+				if jsReturnTypeGroupStart(code, index) {
+					continue
+				}
 				return index + 1
 			}
 			round--
@@ -713,9 +798,6 @@ func jsArrowExpressionStart(code string, arrow int) int {
 			curly--
 		case '>':
 			if index > 0 && code[index-1] == '=' {
-				if round == 0 && square == 0 && curly == 0 && angle == 0 {
-					return index + 1
-				}
 				continue
 			}
 			angle++
@@ -738,6 +820,15 @@ func jsArrowExpressionStart(code string, arrow int) int {
 	return 0
 }
 
+func jsReturnTypeGroupStart(code string, open int) bool {
+	previous := open - 1
+	for previous >= 0 && isScriptWhitespace(code[previous]) {
+		previous--
+	}
+	return previous >= 0 && (code[previous] == ':' ||
+		(code[previous] == '>' && previous > 0 && code[previous-1] == '='))
+}
+
 func jsArrowPropertyValueStart(code string, start, arrow int) int {
 	nameEnd := start
 	for nameEnd < arrow && isScriptIdentifierByte(code[nameEnd]) {
@@ -748,47 +839,6 @@ func jsArrowPropertyValueStart(code string, start, arrow int) int {
 		return nextScriptNonSpace(code, colon+1)
 	}
 	return start
-}
-
-func isJSArrowReturnTail(code string, start, arrow int) bool {
-	start = nextScriptNonSpace(code, start)
-	if start == arrow {
-		return true
-	}
-	if start >= arrow || code[start] != ':' {
-		return false
-	}
-	start = nextScriptNonSpace(code, start+1)
-	if start >= arrow {
-		return false
-	}
-	round, square, curly, angle := 0, 0, 0, 0
-	for index := start; index < arrow; index++ {
-		switch code[index] {
-		case '(':
-			round++
-		case ')':
-			round--
-		case '[':
-			square++
-		case ']':
-			square--
-		case '{':
-			curly++
-		case '}':
-			curly--
-		case '<':
-			angle++
-		case '>':
-			if index == 0 || code[index-1] != '=' {
-				angle--
-			}
-		}
-		if round < 0 || square < 0 || curly < 0 || angle < 0 {
-			return false
-		}
-	}
-	return round == 0 && square == 0 && curly == 0 && angle == 0
 }
 
 func (model *jsLexicalModel) addParameterBindings(params string, scopeStart int) {

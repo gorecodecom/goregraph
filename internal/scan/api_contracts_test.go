@@ -646,6 +646,60 @@ export const real = () => axios.get('/real');`
 	}
 }
 
+func TestAPIContractsFunctionReturnTypeArrowsDoNotHideParameters(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		code   string
+		params string
+	}{
+		{name: "axios", code: `(axios: Client): () => Token => axios.get('/shadow')`, params: "axios: Client"},
+		{name: "oauth", code: `(getAccessTokenSilently: TokenFactory): () => Token => getAccessTokenSilently()`, params: "getAccessTokenSilently: TokenFactory"},
+		{name: "nested axios", code: `(axios: Client): () => (() => Promise<Token>) => axios.get('/shadow')`, params: "axios: Client"},
+		{name: "nested oauth", code: `(getAccessTokenSilently: TokenFactory): (input: Input) => (() => Promise<Token>) => getAccessTokenSilently()`, params: "getAccessTokenSilently: TokenFactory"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			expressionArrow := strings.LastIndex(test.code, "=>")
+			for search := strings.Index(test.code, "=>"); search >= 0 && search < expressionArrow; {
+				if start, end, ok := jsArrowParameterSpan(test.code, search); ok {
+					t.Fatalf("return-type arrow parsed parameters %q", test.code[start:end])
+				}
+				next := strings.Index(test.code[search+2:], "=>")
+				if next < 0 {
+					break
+				}
+				search += next + 2
+			}
+			start, end, ok := jsArrowParameterSpan(test.code, expressionArrow)
+			if !ok || test.code[start:end] != test.params {
+				t.Fatalf("expression arrow parameters=%q, ok=%v, want %q", test.code[start:end], ok, test.params)
+			}
+		})
+	}
+
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+const axiosShadow = (axios: Client): () => Token => axios.get('/function-return-axios-shadow');
+const oauthShadow = (getAccessTokenSilently: TokenFactory): () => Token => axios.get('/function-return-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});
+const nestedAxiosShadow = (axios: Client): () => (() => Promise<Token>) => axios.get('/nested-function-return-axios-shadow');
+const nestedOAuthShadow = (getAccessTokenSilently: TokenFactory): (input: Input) => (() => Promise<Token>) => axios.get('/nested-function-return-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});
+export const real = () => axios.get('/real');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 3 {
+		t.Fatalf("function return-type arrows resolved through imports: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/function-return-oauth-shadow").Auth, "oauth2")
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/nested-function-return-oauth-shadow").Auth, "oauth2")
+	if contractByPath(t, contracts, "/real").Path != "/real" {
+		t.Fatal("unshadowed axios contract missing")
+	}
+}
+
 func TestAPIContractsPrecomputeBoundedFileAnalysisIndexes(t *testing.T) {
 	source := `import axios from 'axios';
 import { getAccessTokenSilently as zeta, acquireTokenSilent as alpha } from '@example/oauth-client';
