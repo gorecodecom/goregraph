@@ -76,6 +76,7 @@ func handle(req request, options Options) response {
 	case "initialize":
 		return okResponse(req.ID, map[string]any{
 			"protocolVersion": "2024-11-05",
+			"instructions":    serverInstructions(),
 			"serverInfo": map[string]any{
 				"name":    "goregraph",
 				"version": "dev",
@@ -112,7 +113,7 @@ func tools(options Options) []map[string]any {
 func taskContextTool() map[string]any {
 	return map[string]any{
 		"name":        "task_context",
-		"description": "Return one compact, budgeted Context Pack for a coding task. If fallback_required is true, stop using GoreGraph and inspect source directly. Call at most twice per task.",
+		"description": "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Treat source_sections as already read. When source_coverage is absent, partial, or none, inspect only relevant uncovered ranges. If fallback_required is true, inspect source directly. Call at most twice per task.",
 		"inputSchema": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -125,6 +126,15 @@ func taskContextTool() map[string]any {
 			},
 		},
 	}
+}
+
+func serverInstructions() string {
+	return "Call task_context before Read or Grep for indexed code questions. " +
+		"Treat source_sections as current source already read. " +
+		"Do not re-read or grep included ranges. " +
+		"If source_coverage is absent, partial, or none, inspect only relevant uncovered ranges from source_omissions or files. " +
+		"If fallback_required is true, stop using GoreGraph and inspect source directly. " +
+		"At most one narrower task_context retry may use an exact route, qualified symbol, or file returned by the first call."
 }
 
 func legacyTools() []map[string]any {

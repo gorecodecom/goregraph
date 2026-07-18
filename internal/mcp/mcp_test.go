@@ -218,7 +218,7 @@ func TestDefaultMCPListsOnlyTaskContext(t *testing.T) {
 	if !bytes.Equal(first, second) {
 		t.Fatalf("default tool list is not deterministic:\n%s\n%s", first, second)
 	}
-	for _, forbidden := range []string{"coverage", "query_code_map", "symbol_resolve"} {
+	for _, forbidden := range []string{`"name":"coverage"`, `"name":"query_code_map"`, `"name":"symbol_resolve"`} {
 		if bytes.Contains(first, []byte(forbidden)) {
 			t.Fatalf("default tool list contains legacy tool %q: %s", forbidden, first)
 		}
@@ -229,7 +229,7 @@ func TestDefaultMCPTaskContextSchemaAndInstructions(t *testing.T) {
 	listed := tools(Options{})
 	want := map[string]any{
 		"name":        "task_context",
-		"description": "Return one compact, budgeted Context Pack for a coding task. If fallback_required is true, stop using GoreGraph and inspect source directly. Call at most twice per task.",
+		"description": "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Treat source_sections as already read. When source_coverage is absent, partial, or none, inspect only relevant uncovered ranges. If fallback_required is true, inspect source directly. Call at most twice per task.",
 		"inputSchema": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -244,6 +244,26 @@ func TestDefaultMCPTaskContextSchemaAndInstructions(t *testing.T) {
 	}
 	if len(listed) != 1 || !reflect.DeepEqual(listed[0], want) {
 		t.Fatalf("task_context schema = %#v, want %#v", listed, want)
+	}
+}
+
+func TestInitializeInstructsAgentsToReuseIncludedSource(t *testing.T) {
+	result := handle(request{JSONRPC: "2.0", ID: 1, Method: "initialize"}, Options{})
+	body, err := json.Marshal(result.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(body)
+	for _, want := range []string{
+		"Call task_context before Read or Grep",
+		"Treat source_sections as current source already read",
+		"Do not re-read or grep included ranges",
+		"If source_coverage is absent, partial, or none, inspect only relevant uncovered ranges from source_omissions or files",
+		"At most one narrower task_context retry",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("initialize instructions missing %q: %s", want, text)
+		}
 	}
 }
 
