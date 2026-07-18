@@ -76,3 +76,36 @@ func TestNormalizeSecurityEvidenceMarksBroaderConfigurationAndConflicts(t *testi
 		t.Fatalf("conflicting kinds=%#v", records)
 	}
 }
+
+func TestNormalizeSecurityEvidenceClassifiesOnlyExactAuthorizationExpressions(t *testing.T) {
+	tests := []struct {
+		name       string
+		expression string
+		want       string
+	}{
+		{name: "permit all", expression: "permitAll()", want: SecurityPublic},
+		{name: "authenticated", expression: "isAuthenticated()", want: SecurityAuthenticated},
+		{name: "role", expression: "hasRole('ADMIN')", want: SecurityRole},
+		{name: "authority", expression: "hasAnyAuthority('read', 'write')", want: SecurityRole},
+		{name: "negated public", expression: "!permitAll()", want: SecurityUnknown},
+		{name: "negated authenticated", expression: "!isAuthenticated()", want: SecurityUnknown},
+		{name: "negated role", expression: "!hasRole('ADMIN')", want: SecurityUnknown},
+		{name: "compound public role", expression: "permitAll() && hasRole('ADMIN')", want: SecurityUnknown},
+		{name: "compound authenticated public", expression: "isAuthenticated() || permitAll()", want: SecurityUnknown},
+		{name: "name inside string", expression: "customCheck('permitAll()')", want: SecurityUnknown},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			records := NormalizeSecurityEvidence([]AuthRecord{{
+				Kind: "pre_authorize", Expression: test.expression, Source: "method_annotation", Confidence: "EXTRACTED", File: "Controller.java", Line: 9,
+			}})
+			if len(records) != 1 || records[0].Kind != test.want {
+				t.Fatalf("expression=%q records=%#v, want kind=%q", test.expression, records, test.want)
+			}
+			if records[0].Expression != test.expression || records[0].Source != "method_annotation" || records[0].File != "Controller.java" || records[0].Line != 9 {
+				t.Fatalf("provenance not retained: %#v", records[0])
+			}
+		})
+	}
+}

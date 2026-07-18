@@ -320,6 +320,47 @@ func TestBuildProjectAPICatalogNormalizesSpringSecurityEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildProjectAPICatalogMergesDuplicateSecurityEvidenceDeterministically(t *testing.T) {
+	endpoints := []SpringEndpointRecord{
+		{
+			HTTPMethod: "GET", Path: "/orders", Controller: "OrderController", Method: "list", File: "src/OrderController.java", Line: 20,
+		},
+		{
+			HTTPMethod: "GET", Path: "/orders", Controller: "OrderController", Method: "list", File: "src/OrderController.java", Line: 21,
+			Auth: []AuthRecord{{Kind: "permit_all", Source: "method_annotation", Confidence: "EXTRACTED", File: "src/OrderController.java", Line: 18}},
+		},
+		{
+			HTTPMethod: "GET", Path: "/orders", Controller: "OrderController", Method: "list", File: "src/OrderController.java", Line: 22,
+			Auth: []AuthRecord{{Kind: "authenticated", Source: "security_config_call", Confidence: "EXTRACTED", File: "src/SecurityConfig.java", Line: 12}},
+		},
+	}
+
+	left := BuildProjectAPICatalog("orders", "fixed", nil, SpringIndex{Endpoints: endpoints}, nil, nil)
+	right := BuildProjectAPICatalog("orders", "fixed", nil, SpringIndex{Endpoints: []SpringEndpointRecord{endpoints[2], endpoints[0], endpoints[1]}}, nil, nil)
+	leftJSON, err := json.Marshal(left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightJSON, err := json.Marshal(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(leftJSON) != string(rightJSON) {
+		t.Fatalf("catalog security is order-dependent:\nleft=%s\nright=%s", leftJSON, rightJSON)
+	}
+	if len(left.Endpoints) != 1 || len(left.Endpoints[0].Security) != 2 {
+		t.Fatalf("merged security=%#v", left.Endpoints)
+	}
+	for _, record := range left.Endpoints[0].Security {
+		if record.Kind == SecurityUnknown || !record.Conflicting || record.File == "" || record.Line == 0 {
+			t.Fatalf("placeholder/provenance/conflict handling failed: %#v", left.Endpoints[0].Security)
+		}
+	}
+	if err := ValidateAPICatalog(left); err != nil {
+		t.Fatalf("catalog validation failed: %v", err)
+	}
+}
+
 func TestBuildProjectAPICatalogMapsTypedSpringParametersAndDeduplicatesProviders(t *testing.T) {
 	spring := SpringIndex{Endpoints: []SpringEndpointRecord{
 		{

@@ -74,17 +74,33 @@ func normalizedProviderSecurityKind(record AuthRecord) (string, string) {
 }
 
 func normalizedAuthorizationExpression(expression string) (string, string) {
-	lower := strings.ToLower(expression)
 	switch {
-	case strings.Contains(lower, "permitall"):
+	case exactAuthorizationCall(expression, "permitAll"):
 		return SecurityPublic, "Explicitly public authorization expression"
-	case strings.Contains(lower, "hasrole"), strings.Contains(lower, "hasanyrole"), strings.Contains(lower, "hasauthority"), strings.Contains(lower, "hasanyauthority"):
+	case exactAuthorizationCall(expression, "hasRole", "hasAnyRole", "hasAuthority", "hasAnyAuthority"):
 		return SecurityRole, "Role or authority requirement"
-	case strings.Contains(lower, "isauthenticated"), strings.Contains(lower, "authenticated"):
+	case exactAuthorizationCall(expression, "isAuthenticated", "authenticated"):
 		return SecurityAuthenticated, "Authenticated access required"
 	default:
 		return SecurityUnknown, "Unclassified authorization expression"
 	}
+}
+
+func exactAuthorizationCall(expression string, names ...string) bool {
+	expression = strings.TrimSpace(expression)
+	for _, name := range names {
+		if !strings.HasPrefix(expression, name) {
+			continue
+		}
+		remainder := strings.TrimSpace(expression[len(name):])
+		if remainder == "" || remainder[0] != '(' {
+			continue
+		}
+		if matchingJavaParen(remainder, 0) == len(remainder)-1 {
+			return true
+		}
+	}
+	return false
 }
 
 func markConflictingProviderSecurity(records []SecurityEvidenceRecord) {

@@ -1,6 +1,9 @@
 package scan
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestExtractJavaSecurityEvidenceCalls(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/Security.java", Language: "java"}, `class Security {
@@ -115,7 +118,10 @@ class Controller {
 }
 
 func TestSpringIndexRetainsConflictingMethodAndGlobalSecurityAuth(t *testing.T) {
-	source := extractJavaSource(FileRecord{Path: "src/Application.java", Language: "java"}, `@RestController
+	source := extractJavaSource(FileRecord{Path: "src/Application.java", Language: "java"}, `import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+
+@RestController
 class Controller {
   @PermitAll
   @GetMapping("/health")
@@ -124,8 +130,9 @@ class Controller {
 
 @Configuration
 class Security {
-  void configure() {
+	SecurityFilterChain configure(HttpSecurity http) {
     routes.authenticated();
+	return null;
   }
 }`)
 
@@ -133,6 +140,126 @@ class Security {
 	endpoint, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/health")
 	if !ok || !hasAuthKind(endpoint.Auth, "permit_all") || !hasAuthKind(endpoint.Auth, "authenticated") {
 		t.Fatalf("conflicting method/global auth not retained: %#v", endpoint)
+	}
+}
+
+func TestSpringGlobalSecurityAuthRequiresProductionSpringSecurityMethodContext(t *testing.T) {
+	ordinary := extractJavaSource(FileRecord{Path: "src/main/java/OrderService.java", Language: "java"}, `class OrderService {
+  void update() {
+    routes.authenticated();
+  }
+}`)
+	impostor := extractJavaSource(FileRecord{Path: "src/main/java/ImpostorSecurity.java", Language: "java"}, `import org.springframework.security.access.prepost.PreAuthorize;
+class ImpostorSecurity {
+  void configure(HttpSecurity http) {
+    routes.oauth2Login();
+  }
+}`)
+	testConfig := extractJavaSource(FileRecord{Path: "src/test/java/SecurityTest.java", Language: "java"}, `import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+class SecurityTest {
+  SecurityFilterChain configure(HttpSecurity http) {
+    routes.permitAll();
+    return null;
+  }
+}`)
+	securityConfig := extractJavaSource(FileRecord{Path: "src/main/java/SecurityConfig.java", Language: "java"}, `import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+class SecurityConfig {
+  SecurityFilterChain configure(HttpSecurity http) {
+    routes.hasRole("ADMIN");
+    return null;
+  }
+}`)
+
+	records := springGlobalAuthRecords([]JavaSourceRecord{ordinary, impostor, testConfig, securityConfig})
+	if len(records) != 1 || records[0].Kind != "has_role" || records[0].File != "src/main/java/SecurityConfig.java" {
+		t.Fatalf("global auth=%#v", records)
+	}
+}
+
+func TestSpringGlobalSecurityAuthRetainsFullProvenanceInCanonicalOrder(t *testing.T) {
+	first := extractJavaSource(FileRecord{Path: "src/main/java/AConfig.java", Language: "java"}, `import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+class AConfig {
+  void configure(HttpSecurity http) {
+    routes.authenticated();
+  }
+}`)
+	second := extractJavaSource(FileRecord{Path: "src/main/java/BConfig.java", Language: "java"}, `import org.springframework.security.web.SecurityFilterChain;
+class BConfig {
+  SecurityFilterChain configure() {
+    routes.authenticated();
+    return null;
+  }
+}`)
+
+	left := springGlobalAuthRecords([]JavaSourceRecord{second, first})
+	right := springGlobalAuthRecords([]JavaSourceRecord{first, second})
+	if len(left) != 2 || !reflect.DeepEqual(left, right) {
+		t.Fatalf("global auth is lossy or order-dependent: left=%#v right=%#v", left, right)
+	}
+	if left[0].File != "src/main/java/AConfig.java" || left[1].File != "src/main/java/BConfig.java" {
+		t.Fatalf("global auth not canonically ordered: %#v", left)
+	}
+}
+
+func TestSpringIndexAppliesClassOpenAPISecurityWithMethodOverrideSemantics(t *testing.T) {
+	definitions := extractJavaSource(FileRecord{Path: "src/OpenAPIConfig.java", Language: "java"}, `
+@SecurityScheme(name = "apiKeyAuth", type = SecuritySchemeType.APIKEY, in = SecuritySchemeIn.HEADER)
+@SecurityScheme(name = "bearerAuth", type = SecuritySchemeType.HTTP, scheme = "bearer")
+class OpenAPIConfig {}
+`)
+	controller := extractJavaSource(FileRecord{Path: "src/Controller.java", Language: "java"}, `@RestController
+@SecurityRequirement(name = "bearerAuth")
+class Controller {
+  @GetMapping("/inherited")
+  String inherited() { return "ok"; }
+
+  @SecurityRequirement(name = "apiKeyAuth")
+  @GetMapping("/method")
+  String methodOverride() { return "ok"; }
+
+  @Operation(security = {})
+  @GetMapping("/public")
+  String publicOverride() { return "ok"; }
+}`)
+
+	index := buildSpringIndex([]JavaSourceRecord{definitions, controller})
+	inherited, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/inherited")
+	if !ok || !hasAuthKind(inherited.Auth, "bearer") {
+		t.Fatalf("class security not inherited: %#v", inherited)
+	}
+	method, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/method")
+	if !ok || !hasAuthKind(method.Auth, "api_key") || hasAuthKind(method.Auth, "bearer") {
+		t.Fatalf("method security did not replace class security: %#v", method)
+	}
+	public, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/public")
+	if !ok || !hasAuthKind(public.Auth, "permit_all") || hasAuthKind(public.Auth, "bearer") {
+		t.Fatalf("empty method security override not retained honestly: %#v", public)
+	}
+}
+
+func TestSpringIndexRetainsDuplicateOpenAPISchemeDefinitionsCanonically(t *testing.T) {
+	basic := extractJavaSource(FileRecord{Path: "src/BasicScheme.java", Language: "java"}, `@SecurityScheme(name = "sharedAuth", type = SecuritySchemeType.HTTP, scheme = "basic")
+class BasicScheme {}`)
+	bearer := extractJavaSource(FileRecord{Path: "src/BearerScheme.java", Language: "java"}, `@SecurityScheme(name = "sharedAuth", type = SecuritySchemeType.HTTP, scheme = "bearer")
+class BearerScheme {}`)
+	controller := extractJavaSource(FileRecord{Path: "src/Controller.java", Language: "java"}, `@RestController
+class Controller {
+  @SecurityRequirement(name = "sharedAuth")
+  @GetMapping("/shared")
+  String shared() { return "ok"; }
+}`)
+
+	left := buildSpringIndex([]JavaSourceRecord{bearer, controller, basic})
+	right := buildSpringIndex([]JavaSourceRecord{basic, controller, bearer})
+	leftEndpoint, leftOK := findSpringEndpointForTest(left.Endpoints, "GET", "/shared")
+	rightEndpoint, rightOK := findSpringEndpointForTest(right.Endpoints, "GET", "/shared")
+	if !leftOK || !rightOK || len(leftEndpoint.Auth) != 2 || !reflect.DeepEqual(leftEndpoint.Auth, rightEndpoint.Auth) {
+		t.Fatalf("duplicate schemes lost or order-dependent: left=%#v right=%#v", leftEndpoint.Auth, rightEndpoint.Auth)
+	}
+	if !hasAuthKind(leftEndpoint.Auth, "http_basic") || !hasAuthKind(leftEndpoint.Auth, "bearer") {
+		t.Fatalf("duplicate scheme kinds not retained: %#v", leftEndpoint.Auth)
 	}
 }
 

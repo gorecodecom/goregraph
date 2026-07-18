@@ -152,12 +152,54 @@ func mergeProjectProviderEndpoint(target *APIEndpointRecord, extra APIEndpointRe
 	target.Parameters = mergeProjectProviderParameters(target.Parameters, extra.Parameters)
 	target.Consumes = catalogUniqueSortedStrings(append(target.Consumes, extra.Consumes...))
 	target.Produces = catalogUniqueSortedStrings(append(target.Produces, extra.Produces...))
+	target.Security = mergeProjectProviderSecurity(target.Security, extra.Security)
 	mergeProjectProviderType(&target.RequestType, extra.RequestType, "request_type", &target.Limitations)
 	mergeProjectProviderType(&target.ResponseType, extra.ResponseType, "response_type", &target.Limitations)
 	target.Confidence = strongerAPIConfidence(target.Confidence, extra.Confidence)
 	mergeProjectProviderCoverage(&target.Coverage, extra.Coverage, &target.Limitations)
 	target.Limitations = catalogUniqueSortedStrings(append(target.Limitations, extra.Limitations...))
 	target.EvidenceIDs = catalogUniqueSortedStrings(append(target.EvidenceIDs, extra.EvidenceIDs...))
+}
+
+func mergeProjectProviderSecurity(target, extra []SecurityEvidenceRecord) []SecurityEvidenceRecord {
+	merged := append(append([]SecurityEvidenceRecord(nil), target...), extra...)
+	hasExplicit := false
+	for _, record := range merged {
+		if !placeholderUnknownSecurity(record) {
+			hasExplicit = true
+			break
+		}
+	}
+	if hasExplicit {
+		filtered := merged[:0]
+		for _, record := range merged {
+			if !placeholderUnknownSecurity(record) {
+				filtered = append(filtered, record)
+			}
+		}
+		merged = filtered
+	}
+	markConflictingProviderSecurity(merged)
+
+	seen := map[string]bool{}
+	unique := make([]SecurityEvidenceRecord, 0, len(merged))
+	for _, record := range merged {
+		sortSecurityEvidenceRecord(&record)
+		key := securityEvidenceSortKey(record)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		unique = append(unique, record)
+	}
+	sort.Slice(unique, func(left, right int) bool {
+		return securityEvidenceSortKey(unique[left]) < securityEvidenceSortKey(unique[right])
+	})
+	return unique
+}
+
+func placeholderUnknownSecurity(record SecurityEvidenceRecord) bool {
+	return record.Kind == SecurityUnknown && record.Summary == "No auth evidence detected" && record.Expression == "" && record.Source == "" && record.File == "" && record.Line == 0
 }
 
 func mergeProjectProviderParameters(target, extra []APIParameterRecord) []APIParameterRecord {
@@ -563,13 +605,15 @@ func springComponentKind(annotations []JavaAnnotationRecord) string {
 	}
 }
 
-func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, constants map[string]string, securitySchemes map[string]AuthRecord) []SpringEndpointRecord {
+func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, constants map[string]string, securitySchemes map[string][]AuthRecord) []SpringEndpointRecord {
 	controller := ""
 	classPath := ""
+	var controllerAnnotations []JavaAnnotationRecord
 	for _, typ := range source.Types {
 		if typ.Name == method.Owner && hasAnnotation(typ.Annotations, "RestController") {
 			controller = typ.Name
 			classPath = resolveSpringPath(firstMappingAnnotation(typ.Annotations), constants)
+			controllerAnnotations = typ.Annotations
 			break
 		}
 	}
@@ -606,7 +650,7 @@ func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, 
 				Produces:    springProduces(annotation, constants),
 				ReturnType:  returnType,
 				Parameters:  method.Parameters,
-				Auth:        springAuthRecords(method.Annotations, method.File, securitySchemes),
+				Auth:        springAuthRecords(controllerAnnotations, method.Annotations, method.File, securitySchemes),
 			})
 		}
 	}
@@ -690,9 +734,9 @@ func fieldSource(annotations []JavaAnnotationRecord) string {
 	return "field"
 }
 
-func springAuthRecords(annotations []JavaAnnotationRecord, file string, securitySchemes map[string]AuthRecord) []AuthRecord {
+func springAuthRecords(classAnnotations, methodAnnotations []JavaAnnotationRecord, file string, securitySchemes map[string][]AuthRecord) []AuthRecord {
 	var records []AuthRecord
-	for _, annotation := range annotations {
+	for _, annotation := range methodAnnotations {
 		switch annotation.Name {
 		case "PermitAll", "DenyAll":
 			records = append(records, AuthRecord{
@@ -721,15 +765,34 @@ func springAuthRecords(annotations []JavaAnnotationRecord, file string, security
 				Line:       annotation.Line,
 			})
 		}
-		for _, name := range openAPISecurityRequirementNames(annotation) {
-			scheme, ok := securitySchemes[name]
-			if !ok {
-				continue
+	}
+
+	openAPIAnnotations := classAnnotations
+	if hasMethodOpenAPISecurityOverride(methodAnnotations) {
+		openAPIAnnotations = methodAnnotations
+	}
+	records = append(records, springOpenAPIAuthRecords(openAPIAnnotations, file, securitySchemes)...)
+	sort.Slice(records, func(left, right int) bool {
+		return authRecordSortKey(records[left]) < authRecordSortKey(records[right])
+	})
+	return records
+}
+
+func springOpenAPIAuthRecords(annotations []JavaAnnotationRecord, file string, securitySchemes map[string][]AuthRecord) []AuthRecord {
+	var records []AuthRecord
+	for _, annotation := range annotations {
+		names := openAPISecurityRequirementNames(annotation)
+		for _, name := range names {
+			for _, scheme := range securitySchemes[name] {
+				scheme.Expression = name
+				records = append(records, scheme)
 			}
+		}
+		if len(names) == 0 && explicitEmptyOpenAPISecurity(annotation) {
 			records = append(records, AuthRecord{
-				Kind:       scheme.Kind,
-				Expression: name,
-				Source:     "openapi_security_requirement",
+				Kind:       "permit_all",
+				Expression: strings.TrimSpace(annotation.Arguments),
+				Source:     "openapi_security_override",
 				Confidence: "EXTRACTED",
 				File:       file,
 				Line:       annotation.Line,
@@ -739,8 +802,37 @@ func springAuthRecords(annotations []JavaAnnotationRecord, file string, security
 	return records
 }
 
-func openAPISecuritySchemes(sources []JavaSourceRecord) map[string]AuthRecord {
-	schemes := map[string]AuthRecord{}
+func hasMethodOpenAPISecurityOverride(annotations []JavaAnnotationRecord) bool {
+	for _, annotation := range annotations {
+		if annotation.Name == "SecurityRequirement" {
+			return true
+		}
+		if annotation.Name == "Operation" {
+			if _, ok := annotation.Attributes["security"]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func explicitEmptyOpenAPISecurity(annotation JavaAnnotationRecord) bool {
+	if annotation.Name == "SecurityRequirement" {
+		return strings.TrimSpace(annotation.Attributes["name"]) == ""
+	}
+	if annotation.Name != "Operation" {
+		return false
+	}
+	security, ok := annotation.Attributes["security"]
+	if !ok {
+		return false
+	}
+	security = strings.TrimSpace(security)
+	return security == "" || security == "@SecurityRequirement()" || security == "@SecurityRequirement"
+}
+
+func openAPISecuritySchemes(sources []JavaSourceRecord) map[string][]AuthRecord {
+	schemes := map[string][]AuthRecord{}
 	for _, source := range sources {
 		for _, annotation := range source.Annotations {
 			if annotation.Name != "SecurityScheme" {
@@ -751,8 +843,14 @@ func openAPISecuritySchemes(sources []JavaSourceRecord) map[string]AuthRecord {
 			if name == "" || kind == "" {
 				continue
 			}
-			schemes[name] = AuthRecord{Kind: kind, Expression: name, Source: "openapi_security_scheme", Confidence: "EXTRACTED", File: source.File, Line: annotation.Line}
+			record := AuthRecord{Kind: kind, Expression: name, Source: "openapi_security_scheme", Confidence: "EXTRACTED", File: source.File, Line: annotation.Line}
+			schemes[name] = append(schemes[name], record)
 		}
+	}
+	for name := range schemes {
+		sort.Slice(schemes[name], func(left, right int) bool {
+			return authRecordSortKey(schemes[name][left]) < authRecordSortKey(schemes[name][right])
+		})
 	}
 	return schemes
 }
@@ -801,9 +899,15 @@ func springGlobalAuthRecords(sources []JavaSourceRecord) []AuthRecord {
 	seen := map[string]bool{}
 	var records []AuthRecord
 	for _, source := range sources {
+		if !springSecurityProductionSource(source) {
+			continue
+		}
 		for _, method := range source.Methods {
+			if !springSecurityConfigurationMethod(source, method) {
+				continue
+			}
 			for _, auth := range method.Auth {
-				key := auth.Kind + ":" + auth.Expression
+				key := authRecordSortKey(auth)
 				if seen[key] {
 					continue
 				}
@@ -812,13 +916,41 @@ func springGlobalAuthRecords(sources []JavaSourceRecord) []AuthRecord {
 			}
 		}
 	}
-	sort.Slice(records, func(i, j int) bool {
-		if records[i].Kind != records[j].Kind {
-			return records[i].Kind < records[j].Kind
-		}
-		return records[i].Expression < records[j].Expression
+	sort.Slice(records, func(left, right int) bool {
+		return authRecordSortKey(records[left]) < authRecordSortKey(records[right])
 	})
 	return records
+}
+
+func springSecurityProductionSource(source JavaSourceRecord) bool {
+	file := "/" + strings.TrimPrefix(filepath.ToSlash(source.File), "/")
+	return !strings.Contains(file, "/src/test/")
+}
+
+func springSecurityConfigurationMethod(source JavaSourceRecord, method JavaMethodRecord) bool {
+	if shortJavaName(method.ReturnType) == "SecurityFilterChain" && importsJavaType(source, "org.springframework.security.web.SecurityFilterChain") {
+		return true
+	}
+	for _, parameter := range method.Parameters {
+		if shortJavaName(parameter.Type) == "HttpSecurity" && importsJavaType(source, "org.springframework.security.config.annotation.web.builders.HttpSecurity") {
+			return true
+		}
+	}
+	return false
+}
+
+func importsJavaType(source JavaSourceRecord, qualifiedName string) bool {
+	packageName := qualifiedName[:strings.LastIndex(qualifiedName, ".")]
+	for _, imported := range source.Imports {
+		if imported.Name == qualifiedName || imported.Name == packageName+".*" {
+			return true
+		}
+	}
+	return false
+}
+
+func authRecordSortKey(record AuthRecord) string {
+	return strings.Join([]string{record.Kind, record.Expression, record.Source, record.Confidence, filepath.ToSlash(record.File), strconv.Itoa(record.Line)}, "\x00")
 }
 
 func applyGlobalSpringAuth(index *SpringIndex, global []AuthRecord) {
@@ -827,6 +959,9 @@ func applyGlobalSpringAuth(index *SpringIndex, global []AuthRecord) {
 	}
 	for i := range index.Endpoints {
 		index.Endpoints[i].Auth = append(index.Endpoints[i].Auth, global...)
+		sort.Slice(index.Endpoints[i].Auth, func(left, right int) bool {
+			return authRecordSortKey(index.Endpoints[i].Auth[left]) < authRecordSortKey(index.Endpoints[i].Auth[right])
+		})
 	}
 }
 
@@ -1070,6 +1205,11 @@ func typeHasAnnotation(sources []JavaSourceRecord, typeName, annotationName stri
 }
 
 func sortSpringIndex(index *SpringIndex) {
+	for endpointIndex := range index.Endpoints {
+		sort.Slice(index.Endpoints[endpointIndex].Auth, func(left, right int) bool {
+			return authRecordSortKey(index.Endpoints[endpointIndex].Auth[left]) < authRecordSortKey(index.Endpoints[endpointIndex].Auth[right])
+		})
+	}
 	sort.Slice(index.Applications, func(i, j int) bool { return index.Applications[i].Name < index.Applications[j].Name })
 	sort.Slice(index.Components, func(i, j int) bool { return index.Components[i].Name < index.Components[j].Name })
 	sort.Slice(index.Endpoints, func(i, j int) bool {
