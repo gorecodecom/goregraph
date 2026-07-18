@@ -384,6 +384,148 @@ func TestAPIContractsLexerHandlesRegexLiteralsAndTemplateInterpolation(t *testin
 	assertContractAuth(t, contractByPath(t, contracts, "/orders").Auth, "session", "EXTRACTED", "http_call_config", "")
 }
 
+func TestAPIContractsCredentialInterpolationPrivacyHandlesNestedSyntax(t *testing.T) {
+	source := "import axios from 'axios';\n" +
+		"export const load = () => axios.get('/orders', {\n" +
+		"  headers: {\n" +
+		"    Authorization: `Bearer ${\"alphaBearer}escaped\\\"Secret\"}`,\n" +
+		"    'X-API-Key': `${'betaApi}escaped\\'Secret'}`,\n" +
+		"  },\n" +
+		"  auth: {\n" +
+		"    username: `${resolveUser({ nested: { value: \"gammaUser}escaped\\\"Secret\" } })}`,\n" +
+		"    password: `${\"deltaPassword}escaped\\\"Secret\"}`,\n" +
+		"  },\n" +
+		"});"
+	contracts := extractTestAPIContracts(t, source)
+
+	assertContractAuth(t, contracts[0].Auth, "bearer", "EXTRACTED", "http_call_config", "")
+	assertContractAuth(t, contracts[0].Auth, "api_key", "EXTRACTED", "http_call_config", "")
+	assertContractAuth(t, contracts[0].Auth, "basic", "EXTRACTED", "http_call_config", "resolveUser")
+	assertSerializedContractsOmit(t, contracts,
+		"alphaBearer", "betaApi", "gammaUser", "deltaPassword", "escaped", "Secret",
+	)
+}
+
+func TestAPIContractsDeclarationNamesShadowImportedBindings(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+export function axiosFunctionShadow() {
+  function axios() {}
+  return axios.get('/axios-function-shadow');
+}
+
+export function axiosClassShadow() {
+  class axios {}
+  return axios.get('/axios-class-shadow');
+}
+
+export function oauthFunctionShadow() {
+  function getAccessTokenSilently() { return 'local'; }
+  return axios.get('/oauth-function-shadow', {
+    headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+  });
+}
+
+export function oauthClassShadow() {
+  class getAccessTokenSilently {}
+  return axios.get('/oauth-class-shadow', {
+    headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+  });
+}
+
+export const real = () => axios.get('/real', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 3 {
+		t.Fatalf("declaration shadows produced contracts: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/oauth-function-shadow").Auth, "oauth2")
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/oauth-class-shadow").Auth, "oauth2")
+	assertContractAuth(t, contractByPath(t, contracts, "/real").Auth, "oauth2", "EXTRACTED", "oauth_helper", "getAccessTokenSilently")
+}
+
+func TestAPIContractsNestedArrowParametersShadowImportedBindings(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+export const axiosShadow = (
+  axios: Client<() => { get(): Result }> = makeClient(() => ({ headers: {} })),
+) => axios.get('/arrow-axios-shadow');
+
+export const oauthShadow = (
+  getAccessTokenSilently: TokenFactory<() => Promise<Token>> = factory(() => ({ token: 'local' })),
+) => axios.get('/arrow-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});
+
+export const real = () => axios.get('/real');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 2 {
+		t.Fatalf("nested arrow parameter shadows produced contracts: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/arrow-oauth-shadow").Auth, "oauth2")
+	if contractByPath(t, contracts, "/real").Path != "/real" {
+		t.Fatal("unshadowed axios contract missing")
+	}
+}
+
+func TestAPIContractsSemanticAuthMatchingIgnoresLiteralAndCommentText(t *testing.T) {
+	source := "import axios from 'axios';\n" +
+		"import { getAccessTokenSilently } from '@auth0/auth0-react';\n" +
+		"const client = axios.create();\n" +
+		"client.interceptors.request.use((config) => {\n" +
+		"  const docs = \"config.headers.Authorization = 'Bearer ' + getAccessTokenSilently()\";\n" +
+		"  const example = `config.headers['X-API-Key'] = documentedKey`;\n" +
+		"  // config.headers.Authorization = 'Bearer ' + commentedToken;\n" +
+		"  return config;\n" +
+		"});\n" +
+		"export const interceptor = () => client.get('/interceptor');\n" +
+		"export const literalHelper = () => axios.get('/literal-helper', {\n" +
+		"  headers: { Authorization: 'Bearer getAccessTokenSilently()' },\n" +
+		"});"
+	contracts := extractTestAPIContractsAll(source)
+
+	if auth := contractByPath(t, contracts, "/interceptor").Auth; len(auth) != 0 {
+		t.Fatalf("literal or comment interceptor text produced auth: %#v", auth)
+	}
+	literalHelper := contractByPath(t, contracts, "/literal-helper")
+	assertContractAuth(t, literalHelper.Auth, "bearer", "EXTRACTED", "http_call_config", "")
+	assertNoContractAuthKind(t, literalHelper.Auth, "oauth2")
+}
+
+func TestAPIContractsPrecomputeBoundedFileAnalysisIndexes(t *testing.T) {
+	source := `import axios from 'axios';
+const client = axios.create();
+client.interceptors.request.use((config) => {
+  config.headers.Authorization = 'Bearer ' + token;
+  return config;
+});
+export const load = () => client.get('/orders');`
+	analysis := buildJSAPIAnalysis(source)
+
+	if len(analysis.lineStarts) != strings.Count(source, "\n")+1 {
+		t.Fatalf("line-start index length=%d", len(analysis.lineStarts))
+	}
+	if len(analysis.model.scopeAtOffsets) != len(source)+1 {
+		t.Fatalf("scope-offset index length=%d, want %d", len(analysis.model.scopeAtOffsets), len(source)+1)
+	}
+	if len(analysis.model.bindingsByScopeName) == 0 {
+		t.Fatal("scope/name binding index was not precomputed")
+	}
+	callStart := strings.Index(source, "client.get")
+	binding, ok := analysis.model.resolveHTTPClient("client", callStart)
+	if !ok {
+		t.Fatal("precomputed client binding missing")
+	}
+	if evidence := analysis.interceptorAuthByBinding[binding]; len(evidence) != 1 {
+		t.Fatalf("interceptor evidence=%#v, want one precomputed entry", evidence)
+	}
+}
+
 func extractTestAPIContracts(t *testing.T, source string) []APIContractRecord {
 	t.Helper()
 	contracts := extractTestAPIContractsAll(source)
