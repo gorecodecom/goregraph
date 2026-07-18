@@ -21,6 +21,7 @@ type workspaceDashboardPayload struct {
 	Graph           WorkspaceGraphRecord              `json:"graph"`
 	ServiceMap      WorkspaceServiceMapRecord         `json:"service_map"`
 	EndpointTraces  WorkspaceEndpointTraceIndexRecord `json:"endpoint_traces"`
+	APICatalog      APICatalogRecord                  `json:"api_catalog"`
 	SymbolIndex     WorkspaceSymbolIndexRecord        `json:"symbol_index"`
 	SymbolUsages    WorkspaceSymbolUsageIndexRecord   `json:"symbol_usages"`
 	CodeUsageAssets map[string]string                 `json:"code_usage_assets,omitempty"`
@@ -46,25 +47,26 @@ func RenderWorkspaceDashboardHTMLWithModels(graph WorkspaceGraphRecord, serviceM
 
 // RenderWorkspaceDashboardHTMLWithCodeExplorer renders the offline workspace dashboard with canonical symbol projections.
 func RenderWorkspaceDashboardHTMLWithCodeExplorer(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord) string {
-	return renderWorkspaceDashboardHTML(graph, serviceMap, endpointTraces, symbolIndex, symbolUsages, nil)
+	return renderWorkspaceDashboardHTML(graph, serviceMap, endpointTraces, APICatalogRecord{SchemaVersion: SchemaVersion}, symbolIndex, symbolUsages, nil)
 }
 
-func buildWorkspaceDashboardArtifacts(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord) workspaceDashboardArtifacts {
+func buildWorkspaceDashboardArtifacts(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, apiCatalog APICatalogRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord) workspaceDashboardArtifacts {
 	assets, assetByProject := buildWorkspaceDashboardUsageAssets(symbolIndex, symbolUsages)
 	deferredUsages := symbolUsages
 	deferredUsages.Usages = nil
 	return workspaceDashboardArtifacts{
-		HTML:           renderWorkspaceDashboardHTML(graph, serviceMap, endpointTraces, symbolIndex, deferredUsages, assetByProject),
+		HTML:           renderWorkspaceDashboardHTML(graph, serviceMap, endpointTraces, apiCatalog, symbolIndex, deferredUsages, assetByProject),
 		Assets:         assets,
 		AssetByProject: assetByProject,
 	}
 }
 
-func renderWorkspaceDashboardHTML(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord, codeUsageAssets map[string]string) string {
+func renderWorkspaceDashboardHTML(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, apiCatalog APICatalogRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord, codeUsageAssets map[string]string) string {
 	payloadValue := workspaceDashboardPayload{
 		Graph:           graph,
 		ServiceMap:      serviceMap,
 		EndpointTraces:  endpointTraces,
+		APICatalog:      apiCatalog,
 		SymbolIndex:     symbolIndex,
 		SymbolUsages:    symbolUsages,
 		CodeUsageAssets: codeUsageAssets,

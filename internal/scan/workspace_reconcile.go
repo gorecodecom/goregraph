@@ -155,7 +155,7 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 	var dashboardFiles []string
 	var dashboardArtifacts workspaceDashboardArtifacts
 	if target.IncludesDashboard() {
-		dashboardArtifacts = buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, symbolIndex, symbolUsageIndex)
+		dashboardArtifacts = buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, apiCatalog, symbolIndex, symbolUsageIndex)
 		dashboardFiles = workspaceDashboardFiles(dashboardArtifacts.Assets)
 	}
 

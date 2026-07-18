@@ -12,6 +12,7 @@ const workspaceDashboardShell = `<div class="shell">
 <h2>View</h2>
 <div class="modes">
 <button data-view-mode="architecture" class="active" aria-pressed="true">Architecture</button>
+<button data-view-mode="api-catalog" data-mode-help="Browse the canonical API inventory by provider without changing endpoint trace filters." aria-pressed="false">API Catalog</button>
 <button data-view-mode="endpoints" aria-pressed="false">Endpoints</button>
 <button data-view-mode="feature-flow" aria-pressed="false">Feature Flow</button>
 <button data-view-mode="data-flow" aria-pressed="false">Data Flow</button>
@@ -33,6 +34,17 @@ const workspaceDashboardShell = `<div class="shell">
 </section>
 <div class="filters" style="margin-top:8px"><button id="isolate-neighborhood" type="button" hidden>Isolate neighborhood</button><button id="show-full-architecture" type="button" hidden>Show full architecture</button></div>
 <div class="filters" style="margin-top:8px"><button id="focus-selected" type="button" hidden>Focus selected</button><button id="back-to-full-architecture" type="button" hidden>Back to full architecture</button></div>
+<section id="api-catalog-filters" class="endpoint-filters" hidden aria-label="API Catalog filters">
+<h2>API Catalog</h2>
+<p class="help">Browse the canonical API inventory by provider without changing endpoint trace filters.</p>
+<label class="filter-label" for="api-catalog-provider-filter">Provider service</label><select id="api-catalog-provider-filter" aria-label="Filter API Catalog provider service"></select>
+<label class="filter-label" for="api-catalog-search">Endpoint text</label><input id="api-catalog-search" type="search" aria-label="Filter API Catalog endpoint text" placeholder="Search path, handler, or source">
+<div class="filters api-catalog-methods" aria-label="API Catalog HTTP methods"><button type="button" data-api-catalog-method="GET" aria-pressed="false">GET</button><button type="button" data-api-catalog-method="POST" aria-pressed="false">POST</button><button type="button" data-api-catalog-method="PUT" aria-pressed="false">PUT</button><button type="button" data-api-catalog-method="PATCH" aria-pressed="false">PATCH</button><button type="button" data-api-catalog-method="DELETE" aria-pressed="false">DELETE</button><button type="button" data-api-catalog-method="OTHER" aria-pressed="false">Other</button></div>
+<label class="filter-label" for="api-catalog-security-filter">Endpoint security</label><select id="api-catalog-security-filter" multiple aria-label="Filter API Catalog endpoint security"></select>
+<label class="filter-label" for="api-catalog-consumer-filter">Consumers</label><select id="api-catalog-consumer-filter" multiple aria-label="Filter API Catalog consumers"></select>
+<label class="filter-label" for="api-catalog-status-filter">Status</label><select id="api-catalog-status-filter" multiple aria-label="Filter API Catalog status"></select>
+<button id="clear-api-catalog-filters" type="button">Clear filters</button><p id="api-catalog-filter-summary" aria-live="polite"></p>
+</section>
 <section id="endpoint-filters" class="endpoint-filters" hidden aria-label="Endpoint debugging filters">
 <h2>Endpoint debugging</h2>
 <div class="filters endpoint-methods" aria-label="HTTP methods"><button type="button" data-endpoint-method="GET" aria-pressed="false">GET</button><button type="button" data-endpoint-method="POST" aria-pressed="false">POST</button><button type="button" data-endpoint-method="PUT" aria-pressed="false">PUT</button><button type="button" data-endpoint-method="PATCH" aria-pressed="false">PATCH</button><button type="button" data-endpoint-method="DELETE" aria-pressed="false">DELETE</button><button type="button" data-endpoint-method="OTHER" aria-pressed="false">Other</button></div>

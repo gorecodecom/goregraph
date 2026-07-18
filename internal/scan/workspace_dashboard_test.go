@@ -7,6 +7,46 @@ import (
 	"testing"
 )
 
+func TestWorkspaceDashboardEmbedsCompleteAPICatalogAndKeepsEndpoints(t *testing.T) {
+	catalogFixture := APICatalogRecord{SchemaVersion: SchemaVersion, Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders", Transport: "http", HTTPMethod: "POST", Path: "/orders",
+		Security: []SecurityEvidenceRecord{{Kind: SecurityUnknown, Summary: "No auth evidence detected"}},
+	}}}
+	html := renderWorkspaceDashboardHTML(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, catalogFixture,
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion}, WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion}, nil,
+	)
+	architecture := strings.Index(html, `data-view-mode="architecture"`)
+	catalog := strings.Index(html, `data-view-mode="api-catalog"`)
+	endpoints := strings.Index(html, `data-view-mode="endpoints"`)
+	if !(architecture < catalog && catalog < endpoints) {
+		t.Fatal("navigation order incorrect")
+	}
+	for _, want := range []string{`"api_catalog"`, `POST`, `/orders`, `No auth evidence detected`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("payload missing %q", want)
+		}
+	}
+}
+
+func TestWorkspaceDashboardAPICatalogNavigationHasDistinctFilterShellAndHelp(t *testing.T) {
+	html := renderWorkspaceDashboardHTML(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, APICatalogRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion}, WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion}, nil,
+	)
+	for _, want := range []string{
+		`id="api-catalog-filters"`,
+		`id="api-catalog-provider-filter"`,
+		`data-mode-help="Browse the canonical API inventory by provider without changing endpoint trace filters."`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("API Catalog navigation missing distinct shell contract %q", want)
+		}
+	}
+}
+
 func TestBuildWorkspaceDashboardArtifactsDefersUsagePayloadsByProject(t *testing.T) {
 	symbols := WorkspaceSymbolIndexRecord{
 		SchemaVersion: SchemaVersion,
@@ -29,6 +69,7 @@ func TestBuildWorkspaceDashboardArtifactsDefersUsagePayloadsByProject(t *testing
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
 		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		APICatalogRecord{SchemaVersion: SchemaVersion},
 		symbols,
 		usages,
 	)
