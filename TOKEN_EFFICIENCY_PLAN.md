@@ -238,7 +238,7 @@ git commit -m "Guide agents to reuse context source" -m "- Add deterministic ini
 
 ### Task 2: Reserve the response budget for source
 
-**Files:** `internal/agent/context.go`, `internal/agent/context_rank.go`, `internal/agent/context_test.go`, `internal/agent/context_size_test.go`, `internal/mcp/mcp.go`, `internal/mcp/mcp_test.go`, `internal/cli/cli.go`, `internal/cli/cli_test.go`, `internal/scan/agent_reports.go`, `internal/scan/agent_reports_test.go`, `README.md`, `COMMANDS.md`, `docs_test.go`
+**Files:** `internal/agent/context.go`, `internal/agent/context_rank.go`, `internal/agent/context_test.go`, `internal/agent/context_size_test.go`, `internal/mcp/mcp.go`, `internal/mcp/mcp_test.go`, `internal/cli/cli.go`, `internal/cli/cli_test.go`, `internal/query/context_test.go`, `internal/scan/agent_reports.go`, `internal/scan/agent_reports_test.go`, `README.md`, `COMMANDS.md`, `docs_test.go`
 
 **Produces:** `contextMetadataBudget(total int) int`, `contextByteBudget(tokens int) int`, updated bounds, one retained evidence ID per selected location, and metadata that leaves source capacity.
 
@@ -335,7 +335,7 @@ Run: `go test ./internal/agent ./internal/mcp -count=1`
 Expected: `PASS`; the metadata pack retains useful facts but leaves most of the total budget unused.
 
 ```bash
-git add internal/agent/context.go internal/agent/context_rank.go internal/agent/context_test.go internal/agent/context_size_test.go internal/mcp/mcp.go internal/mcp/mcp_test.go internal/cli/cli.go internal/cli/cli_test.go internal/scan/agent_reports.go internal/scan/agent_reports_test.go README.md COMMANDS.md docs_test.go
+git add internal/agent/context.go internal/agent/context_rank.go internal/agent/context_test.go internal/agent/context_size_test.go internal/mcp/mcp.go internal/mcp/mcp_test.go internal/cli/cli.go internal/cli/cli_test.go internal/query/context_test.go internal/scan/agent_reports.go internal/scan/agent_reports_test.go README.md COMMANDS.md docs_test.go
 git commit -m "Reserve context capacity for source" -m "- Raise and split the total and metadata response budgets.
 - Retain one original evidence ID per selected location without backfilling."
 ```
