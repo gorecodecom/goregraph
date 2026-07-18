@@ -700,6 +700,26 @@ export const real = () => axios.get('/real');`
 	}
 }
 
+func TestAPIContractsParenthesizedNestedArrowParametersShadowImports(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+const axiosShadow = outer => (axios => axios.get('/parenthesized-nested-axios-shadow'));
+const oauthShadow = outer => (getAccessTokenSilently => axios.get('/parenthesized-nested-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+}));
+export const real = () => axios.get('/real');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 2 {
+		t.Fatalf("parenthesized nested arrow parameters resolved through imports: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/parenthesized-nested-oauth-shadow").Auth, "oauth2")
+	if contractByPath(t, contracts, "/real").Path != "/real" {
+		t.Fatal("unshadowed axios contract missing")
+	}
+}
+
 func TestAPIContractsPrecomputeBoundedFileAnalysisIndexes(t *testing.T) {
 	source := `import axios from 'axios';
 import { getAccessTokenSilently as zeta, acquireTokenSilent as alpha } from '@example/oauth-client';

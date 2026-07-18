@@ -825,8 +825,30 @@ func jsReturnTypeGroupStart(code string, open int) bool {
 	for previous >= 0 && isScriptWhitespace(code[previous]) {
 		previous--
 	}
-	return previous >= 0 && (code[previous] == ':' ||
-		(code[previous] == '>' && previous > 0 && code[previous-1] == '='))
+	if previous < 0 {
+		return false
+	}
+	if code[previous] == ':' {
+		return true
+	}
+	if code[previous] != '>' || previous == 0 || code[previous-1] != '=' {
+		return false
+	}
+	typeArrow := previous - 1
+	if !jsArrowHasReturnType(code, typeArrow) {
+		return false
+	}
+	_, _, executable := jsArrowParameterSpan(code, typeArrow)
+	return !executable
+}
+
+func jsArrowHasReturnType(code string, arrow int) bool {
+	start := nextScriptNonSpace(code, jsArrowExpressionStart(code, arrow))
+	if start >= arrow {
+		return false
+	}
+	start = jsArrowPropertyValueStart(code, start, arrow)
+	return start < arrow && findJSParameterTopLevel(code[start:arrow], ':') >= 0
 }
 
 func jsArrowPropertyValueStart(code string, start, arrow int) int {
