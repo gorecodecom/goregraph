@@ -341,7 +341,7 @@ git commit -m "Reserve context capacity for source" -m "- Raise and split the to
 Complete this checkpoint after Task 2 and before creating `internal/agent/context_source.go`. Task 9 consumes this control; it must not attempt to reconstruct it after source attachment exists.
 
 - [ ] Record the Task 2 GoreGraph commit, binary digest, GoreGraph version, Codex version, model, reasoning, sandbox, approval policy, indexed-workspace commit, index digest, task-prompt digest, and the exact metadata-only assisted instruction.
-- [ ] Run three metadata-only assisted trials against one unchanged indexed workspace snapshot. The instruction must tell the agent to call `task_context` once before source reads and then use the returned `files` and ranges as navigation metadata. Do not mention `source_sections`, because the control binary cannot return them.
+- [ ] Run three metadata-only assisted trials against one unchanged indexed workspace snapshot. Use one integration surface consistently for control and treatment: the existing harness uses `goregraph context`, while an MCP-specific run may use `task_context` only when both variants provision the same MCP configuration. The instruction must tell the agent to call the chosen context surface once before source reads and then use the returned `files` and ranges as navigation metadata. Do not mention `source_sections`, because the control binary cannot return them.
 - [ ] Store raw transcripts, token totals, the median, and the twelve-point rubric outside the repository. Record only non-proprietary digests and aggregate results in any repository documentation.
 - [ ] Do not start Task 3 until all three control runs and their signed rubric are present.
 
@@ -745,7 +745,7 @@ git commit -m "Lock the source-backed MCP contract" -m "- Verify compact source-
 
 ### Task 8: Update guidance and benchmark instructions
 
-**Files:** `README.md`, `COMMANDS.md`, `docs/OUTPUTS.md`, `docs/BENCHMARKING.md`, `scripts/benchmark-agent-context.sh`, `scripts/benchmark-agent-context_test.sh`
+**Files:** `README.md`, `COMMANDS.md`, `docs/OUTPUTS.md`, `docs/BENCHMARKING.md`, `docs/RELEASE.md`, `docs_test.go`, `release_files_test.go`, `scripts/benchmark-agent-context.sh`, `scripts/benchmark-agent-context_test.sh`
 
 - [ ] **Step 1: Replace the assisted instruction everywhere**
 
@@ -779,7 +779,7 @@ Expected final line: `PASS: benchmark-agent-context harness`.
 
 - [ ] **Step 4: Document behavior**
 
-State that source sections replace reads of included ranges; `source_coverage` is authoritative; omissions are the normal reason to read afterward; `source_unrepresented` reports bounded omission detail; uncovered entries in `files` remain navigation metadata when coverage is partial or none; complete-session tokens are the target; and GoreGraph remains offline, explicit, dependency-free, and watcher-free.
+State that source sections replace reads of included ranges; `source_coverage` is authoritative; omissions are the normal reason to read afterward; `source_unrepresented` reports bounded omission detail; uncovered entries in `files` remain navigation metadata when coverage is partial or none; complete-session tokens are the target; and GoreGraph remains offline, explicit, dependency-free, and watcher-free. Update the 1.3.0 release contract and its documentation tests while preserving every statement that the tag, GitHub Release, Homebrew, Scoop, and Winget publication remain pending.
 
 - [ ] **Step 5: Verify and commit**
 
@@ -788,7 +788,7 @@ Run: `go test ./...`
 Expected: `PASS` for packages and documentation contract tests.
 
 ```bash
-git add README.md COMMANDS.md docs/OUTPUTS.md docs/BENCHMARKING.md scripts/benchmark-agent-context.sh scripts/benchmark-agent-context_test.sh
+git add README.md COMMANDS.md docs/OUTPUTS.md docs/BENCHMARKING.md docs/RELEASE.md docs_test.go release_files_test.go scripts/benchmark-agent-context.sh scripts/benchmark-agent-context_test.sh
 git commit -m "Define the source-backed agent workflow" -m "- Align user guidance and benchmark instructions with source coverage.
 - Document when uncovered source may be read after task_context."
 ```
