@@ -662,7 +662,8 @@ func jsArrowParameterSpan(code string, arrow int) (int, int, bool) {
 
 func jsAnnotatedArrowParameterClose(code string, end int) int {
 	round, square, curly, angle := 0, 0, 0, 0
-	for index := end - 1; index >= 0; index-- {
+	statementStart := scriptStatementStart([]byte(code), end)
+	for index := end - 1; index >= statementStart; index-- {
 		switch code[index] {
 		case ')':
 			round++

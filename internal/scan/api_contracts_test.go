@@ -559,6 +559,27 @@ export const real = () => axios.get('/real');`
 	}
 }
 
+func TestAPIContractsNormalConciseArrowDoesNotReuseEarlierReturnAnnotation(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+export const annotated = (value: Input): Result<Map<string, Token>> => transform(value);
+export const axiosShadow = (axios: Client) => axios.get('/normal-axios-shadow');
+export const oauthShadow = (getAccessTokenSilently: TokenFactory) => axios.get('/normal-oauth-shadow', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});
+export const real = () => axios.get('/real');`
+	contracts := extractTestAPIContractsAll(source)
+
+	if len(contracts) != 2 {
+		t.Fatalf("normal arrow reused earlier return annotation: %#v", contracts)
+	}
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/normal-oauth-shadow").Auth, "oauth2")
+	if contractByPath(t, contracts, "/real").Path != "/real" {
+		t.Fatal("unshadowed axios contract missing")
+	}
+}
+
 func TestAPIContractsPrecomputeBoundedFileAnalysisIndexes(t *testing.T) {
 	source := `import axios from 'axios';
 import { getAccessTokenSilently as zeta, acquireTokenSilent as alpha } from '@example/oauth-client';
