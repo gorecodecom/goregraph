@@ -47,6 +47,67 @@ func TestWorkspaceDashboardAPICatalogNavigationHasDistinctFilterShellAndHelp(t *
 	}
 }
 
+func TestWorkspaceDashboardAPICatalogModeRuntimeDoesNotFallThroughDiagnostics(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatalf("node is required for API Catalog mode regression tests: %v", err)
+	}
+	section := func(start, end string) string {
+		t.Helper()
+		from := strings.Index(workspaceDashboardScript, start)
+		if from < 0 {
+			t.Fatalf("dashboard script missing section start %q", start)
+		}
+		to := strings.Index(workspaceDashboardScript[from:], end)
+		if to < 0 {
+			t.Fatalf("dashboard script missing section end %q", end)
+		}
+		return workspaceDashboardScript[from : from+to]
+	}
+	source := strings.Join([]string{
+		`function control(id,hidden){return {id:id,hidden:!!hidden,textContent:"",innerHTML:"",placeholder:"",style:{},dataset:{},classList:{toggle:function(){}},setAttribute:function(){},listeners:{},addEventListener:function(type,handler){this.listeners[type]=handler;},click:function(){this.listeners.click();}};}`,
+		`const controls=new Map(),catalogFilters=control("api-catalog-filters",true),endpointFilters=control("endpoint-filters",false),modeHelp=control("mode-help",false);controls.set(catalogFilters.id,catalogFilters);controls.set(endpointFilters.id,endpointFilters);controls.set(modeHelp.id,modeHelp);["workspace-kind-controls","workspace-search","isolate-neighborhood","show-full-architecture","focus-selected","back-to-full-architecture"].forEach(function(id){controls.set(id,control(id,false));});`,
+		`const modeButtons=["architecture","api-catalog","endpoints"].map(function(mode){const button=control(mode,false);button.dataset.viewMode=mode;return button;});`,
+		`const document={getElementById:function(id){if(!controls.has(id))controls.set(id,control(id,false));return controls.get(id);},querySelectorAll:function(selector){if(selector==="[data-view-mode]")return modeButtons;if(selector==="[data-kind-filter]")return [];return [];}};`,
+		`const traceById=new Map();let diagnosticRenders=0;`,
+		`const state={mode:"endpoints",selections:{architecture:null,"api-catalog":null,endpoints:null},selected:null,codeProject:null,codeSymbol:null,codeUsage:null,codeLoading:false,codeError:"",codeReturn:"services",isolation:false,architectureFocused:false,savedFullArchitectureViewport:null,filter:"all",viewports:new Map()};`,
+		`const apiCatalog={endpoints:[]};function escapeHtml(value){return String(value);}`,
+		`function saveViewport(){}function indexSymbolUsageRecords(){}function clearDetailsForMode(){}function renderList(){}function restoreViewport(){}function syncModeButtons(){}function setCanvasPresentation(){}function syncArchitectureViewControls(){}function renderArchitectureSummary(){}function renderArchitectureMatrix(){}function renderArchitectureMap(){}function renderEndpoints(){}function renderFeatureFlow(){}function renderDataFlow(){}function renderCoverage(){}function renderCodeExplorerLanding(){}function renderCodeExplorerLoading(){}function renderCodeExplorer(){}function renderDiagnostics(){diagnosticRenders++;}`,
+		section("function renderAPICatalog()", "function renderEndpoints()"),
+		section("function renderCanvas()", "function zoomAtPoint(factor,x,y)"),
+		section("function modeHelpText(mode)", "function syncModeButtons(mode)"),
+		section("function syncModeChrome(mode)", "function setMode(mode)"),
+		section("function setMode(mode)", `document.getElementById("workspace-search")`),
+		section(`document.querySelectorAll("[data-view-mode]").forEach(function(btn){btn.addEventListener("click"`, `document.querySelectorAll("[data-kind-filter]").forEach`),
+		`modeButtons.find(function(button){return button.dataset.viewMode==="api-catalog";}).click();`,
+		`process.stdout.write(JSON.stringify({mode:state.mode,catalogHidden:catalogFilters.hidden,endpointHidden:endpointFilters.hidden,help:modeHelp.textContent,catalogRendered:document.getElementById("workspace-workbench").innerHTML.includes("api-catalog-workbench"),diagnosticRenders:diagnosticRenders}));`,
+	}, "\n")
+	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	if err != nil {
+		t.Fatalf("API Catalog mode runtime failed: %v\n%s", err, output)
+	}
+	var result struct {
+		Mode              string `json:"mode"`
+		CatalogHidden     bool   `json:"catalogHidden"`
+		EndpointHidden    bool   `json:"endpointHidden"`
+		Help              string `json:"help"`
+		CatalogRendered   bool   `json:"catalogRendered"`
+		DiagnosticRenders int    `json:"diagnosticRenders"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("decode API Catalog mode result: %v\n%s", err, output)
+	}
+	if result.Mode != "api-catalog" || result.CatalogHidden || !result.EndpointHidden {
+		t.Fatalf("API Catalog mode/filter visibility = %#v", result)
+	}
+	if result.Help != "Browse the canonical API inventory by provider without changing endpoint trace filters." {
+		t.Fatalf("API Catalog mode help = %q", result.Help)
+	}
+	if !result.CatalogRendered || result.DiagnosticRenders != 0 {
+		t.Fatalf("API Catalog render dispatch = %#v", result)
+	}
+}
+
 func TestBuildWorkspaceDashboardArtifactsDefersUsagePayloadsByProject(t *testing.T) {
 	symbols := WorkspaceSymbolIndexRecord{
 		SchemaVersion: SchemaVersion,
@@ -1957,7 +2018,7 @@ func TestDashboardSwitchesBetweenGraphAndReadableWorkbench(t *testing.T) {
 		`setElementHidden(document.getElementById("workspace-graph"),workbench)`,
 		`setElementHidden(document.getElementById("workspace-workbench"),!workbench)`,
 		`setElementHidden(document.querySelector(".canvas-tools"),workbench)`,
-		`workbenchModes=new Set(["endpoints","feature-flow","data-flow","diagnostics","coverage"])`,
+		`workbenchModes=new Set(["api-catalog","endpoints","feature-flow","data-flow","diagnostics","coverage"])`,
 		`setCanvasPresentation(workbench?"workbench":"graph",state.mode)`,
 	} {
 		if !strings.Contains(html, want) {
