@@ -376,7 +376,7 @@ func TestBuildWorkspaceAgentContextIndexReusesDossierPersistenceAndTestFacts(t *
 		}},
 	}}
 
-	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, WorkspaceEndpointTraceIndexRecord{}, "generated")
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, "generated")
 
 	if got := countContextFacts(index.Facts, "persistence"); got != 1 {
 		t.Fatalf("persistence facts = %d, want copied fact reuse: %#v", got, index.Facts)
@@ -407,7 +407,7 @@ func TestBuildWorkspaceAgentContextIndexEnrichesCopiedPersistenceFact(t *testing
 		}},
 	}}
 
-	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, WorkspaceEndpointTraceIndexRecord{}, "generated")
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, "generated")
 
 	if got := countContextFacts(index.Facts, "persistence"); got != 1 {
 		t.Fatalf("persistence facts = %d, want copied fact reuse: %#v", got, index.Facts)
@@ -474,7 +474,7 @@ func TestBuildWorkspaceAgentContextIndexReusesCopiedHandlerSymbolAcrossDossierAn
 		}},
 	}}}
 
-	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, traces, "generated")
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, traces, APICatalogRecord{}, "generated")
 
 	if got := countContextFacts(index.Facts, "backend_handler"); got != 0 {
 		t.Fatalf("synthetic handler facts = %d, want copied symbol reuse: %#v", got, index.Facts)
@@ -531,7 +531,7 @@ func TestBuildWorkspaceAgentContextIndexPrefersHandlerSymbolNearSpringRouteLine(
 		}},
 	}}}
 
-	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, traces, "generated")
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, dossiers, traces, APICatalogRecord{}, "generated")
 
 	if got := countContextFacts(index.Facts, "backend_handler"); got != 0 {
 		t.Fatalf("synthetic handler facts = %d, want nearby copied symbol reuse: %#v", got, index.Facts)
@@ -577,7 +577,7 @@ func TestBuildWorkspaceAgentContextIndexRequiresContractDiscriminators(t *testin
 		Issue: contractIssueMatched, Confidence: "RESOLVED",
 	}}
 
-	index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, matches, nil, WorkspaceEndpointTraceIndexRecord{}, "generated")
+	index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, matches, nil, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, "generated")
 
 	for _, edge := range index.Edges {
 		if edge.Kind == "http_contract" {
@@ -640,7 +640,7 @@ func TestBuildWorkspaceAgentContextIndexRejectsContractIdentityPrefixCollisions(
 				Issue: contractIssueMatched, Confidence: "RESOLVED",
 			}}
 
-			index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, matches, nil, WorkspaceEndpointTraceIndexRecord{}, "generated")
+			index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, matches, nil, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, "generated")
 
 			for _, edge := range index.Edges {
 				if edge.Kind == "http_contract" {
@@ -693,7 +693,7 @@ func TestBuildWorkspaceAgentContextIndexUsesTraceStepEndpointIdentities(t *testi
 			}},
 		}}}
 
-		index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, nil, nil, traces, "generated")
+		index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, nil, nil, traces, APICatalogRecord{}, "generated")
 
 		if !hasContextEdge(index.Edges, "frontend/app#api", "services/users#route", "api_contract_to_backend_route") {
 			t.Fatalf("method-mismatch trace did not use copied GET route: %#v", index.Edges)
@@ -732,7 +732,7 @@ func TestBuildWorkspaceAgentContextIndexUsesTraceStepEndpointIdentities(t *testi
 			}},
 		}}}
 
-		index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, nil, nil, traces, "generated")
+		index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, nil, nil, traces, APICatalogRecord{}, "generated")
 
 		if got := countContextFacts(index.Facts, "route"); got != 0 {
 			t.Fatalf("gateway trace synthesized %d backend routes: %#v", got, index.Facts)
@@ -769,7 +769,7 @@ func TestBuildWorkspaceAgentContextIndexUsesTraceStepEndpointIdentities(t *testi
 			}},
 		}}}
 
-		index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, nil, nil, traces, "generated")
+		index := BuildWorkspaceAgentContextIndex(registry, projectIndexes, nil, nil, traces, APICatalogRecord{}, "generated")
 
 		if got := countContextFacts(index.Facts, "api_contract"); got != 0 {
 			t.Fatalf("trace synthesized %d API facts: %#v", got, index.Facts)
@@ -799,13 +799,31 @@ func TestBuildWorkspaceAgentContextIndexKeepsDistinctPersistenceTargets(t *testi
 		},
 	}}
 
-	index := BuildWorkspaceAgentContextIndex(registry, nil, nil, dossiers, WorkspaceEndpointTraceIndexRecord{}, "generated")
+	index := BuildWorkspaceAgentContextIndex(registry, nil, nil, dossiers, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, "generated")
 
 	if got := countContextFacts(index.Facts, "persistence"); got != 2 {
 		t.Fatalf("persistence facts = %d, want distinct entity/table targets: %#v", got, index.Facts)
 	}
 	if index.Facts[0].ID == index.Facts[1].ID {
 		t.Fatalf("persistence targets share ID %q: %#v", index.Facts[0].ID, index.Facts)
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexUsesProvidedCatalog(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
+		Path: "services/orders", Indexed: true,
+	}}}
+	catalog := APICatalogRecord{Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders",
+		HTTPMethod: "GET", Path: "/orders/{id}",
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "generated",
+	)
+
+	if !hasContextFact(index.Facts, "api_endpoint", "GET /orders/{id}") {
+		t.Fatalf("provided catalog was not indexed: %#v", index.Facts)
 	}
 }
 
@@ -833,6 +851,7 @@ func TestBuildWorkspaceAgentContextIndexKeepsDistinctPersistenceTargetsAcrossInp
 				PersistencePath: path,
 			}},
 			WorkspaceEndpointTraceIndexRecord{},
+			APICatalogRecord{},
 			"generated",
 		)
 	}
@@ -880,6 +899,7 @@ func TestBuildWorkspaceAgentContextIndexAssignsCopiedPersistenceFactAcrossInputO
 				PersistencePath: path,
 			}},
 			WorkspaceEndpointTraceIndexRecord{},
+			APICatalogRecord{},
 			"generated",
 		)
 	}
@@ -925,7 +945,7 @@ func TestBuildWorkspaceAgentContextIndexOmitsNonPortableFiles(t *testing.T) {
 		}},
 	}
 
-	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, nil, WorkspaceEndpointTraceIndexRecord{}, "generated")
+	index := BuildWorkspaceAgentContextIndex(registry, []AgentContextIndexRecord{projectIndex}, nil, nil, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, "generated")
 
 	for _, fact := range index.Facts {
 		if filepath.IsAbs(fact.File) || strings.Contains(fact.File, "..") {
@@ -984,6 +1004,7 @@ func TestBuildWorkspaceAgentContextIndexCompactsCopiedEdgeMetadata(t *testing.T)
 		nil,
 		nil,
 		WorkspaceEndpointTraceIndexRecord{},
+		APICatalogRecord{},
 		"generated",
 	)
 

@@ -56,6 +56,126 @@ type AgentContextIndexRecord struct {
 	Coverage      []AgentContextCoverageRecord `json:"coverage,omitempty"`
 }
 
+const (
+	maxCatalogConsumersPerService = 5
+	maxCatalogContextValueRunes   = 160
+)
+
+type compactCatalogConsumerSelection struct {
+	consumer APIConsumerRecord
+	service  string
+}
+
+func compactCatalogEndpointKey(endpoint APIEndpointRecord) string {
+	return strings.Join([]string{
+		strings.TrimSpace(endpoint.ID),
+		contextPathKey(endpoint.ProviderProject),
+		strings.ToUpper(strings.TrimSpace(endpoint.HTTPMethod)),
+		strings.TrimSpace(endpoint.Path),
+		contextPathKey(endpoint.File),
+		fmt.Sprint(endpoint.Line),
+	}, "\x00")
+}
+
+func compactCatalogSecurityKey(security SecurityEvidenceRecord) string {
+	return strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(security.Kind)),
+		strings.TrimSpace(security.Source),
+		contextPathKey(security.File),
+		fmt.Sprint(security.Line),
+		fmt.Sprint(security.Conflicting),
+		string(security.Confidence),
+	}, "\x00")
+}
+
+func compactCatalogConsumerKey(consumer APIConsumerRecord) string {
+	return strings.Join([]string{
+		contextPathKey(consumer.Project),
+		strings.TrimSpace(consumer.Service),
+		contextPathKey(consumer.File),
+		fmt.Sprint(consumer.Line),
+		strings.TrimSpace(consumer.Caller),
+		strings.TrimSpace(consumer.ID),
+	}, "\x00")
+}
+
+func compactCatalogValue(value string) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) <= maxCatalogContextValueRunes {
+		return value
+	}
+	return string(runes[:maxCatalogContextValueRunes-3]) + "..."
+}
+
+func compactCatalogSecurityLabels(security []SecurityEvidenceRecord) []string {
+	labels := make([]string, 0, len(security))
+	for _, evidence := range security {
+		label := strings.ToLower(strings.TrimSpace(evidence.Kind))
+		if label != "" {
+			labels = append(labels, compactCatalogValue(label))
+		}
+	}
+	sort.Slice(labels, func(i, j int) bool {
+		left := strings.ToLower(labels[i])
+		right := strings.ToLower(labels[j])
+		if left != right {
+			return left < right
+		}
+		return labels[i] < labels[j]
+	})
+	return orderedContextStrings(labels)
+}
+
+func usefulCompactCatalogSecurity(security SecurityEvidenceRecord) bool {
+	kind := strings.ToLower(strings.TrimSpace(security.Kind))
+	return security.Conflicting || kind != "" && kind != SecurityUnknown ||
+		strings.TrimSpace(security.Source) != "" || contextPathKey(security.File) != "" || security.Line > 0
+}
+
+func selectCompactCatalogConsumers(
+	consumers []APIConsumerRecord,
+	indexedProjects map[string]bool,
+) ([]compactCatalogConsumerSelection, int) {
+	groups := map[string][]APIConsumerRecord{}
+	total := 0
+	for _, consumer := range consumers {
+		project := contextPathKey(consumer.Project)
+		file := workspaceAgentFile(project, consumer.File)
+		if !indexedProjects[project] || file == "" || consumer.Line <= 0 {
+			continue
+		}
+		consumer.Project = project
+		consumer.File = file
+		service := compactCatalogValue(firstNonEmpty(consumer.Service, project))
+		groups[service] = append(groups[service], consumer)
+		total++
+	}
+
+	services := make([]string, 0, len(groups))
+	for service := range groups {
+		services = append(services, service)
+	}
+	sort.Strings(services)
+	selected := make([]compactCatalogConsumerSelection, 0, total)
+	for _, service := range services {
+		group := groups[service]
+		sort.Slice(group, func(i, j int) bool {
+			return compactCatalogConsumerKey(group[i]) < compactCatalogConsumerKey(group[j])
+		})
+		if len(group) > maxCatalogConsumersPerService {
+			group = group[:maxCatalogConsumersPerService]
+		}
+		for _, consumer := range group {
+			selected = append(selected, compactCatalogConsumerSelection{
+				consumer: consumer,
+				service:  service,
+			})
+		}
+	}
+	return selected, total - len(selected)
+}
+
 type agentContextBuilder struct {
 	project              string
 	evidenceByLocation   map[string][]string

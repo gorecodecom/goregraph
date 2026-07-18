@@ -2,6 +2,7 @@ package scan
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -573,6 +574,140 @@ func TestBuildProjectAgentContextIndexFiltersNonSemanticEdges(t *testing.T) {
 	}
 }
 
+func TestBuildWorkspaceAgentContextIndexAddsCompactCatalogFacts(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "services/orders", Indexed: true},
+		{Path: "frontend/web", Indexed: true},
+	}}
+	catalog := APICatalogRecord{SchemaVersion: SchemaVersion, Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders", ProviderService: "orders",
+		HTTPMethod: "GET", Path: "/orders/{id}", Handler: "OrderController.get",
+		File: "services/orders/src/OrderController.java", Line: 20,
+		RequestType: "OrderRequest", ResponseType: "OrderResponse", Confidence: ConfidenceExact,
+		Parameters: []APIParameterRecord{{Name: ".goregraph-dashboard.json", Source: "expanded-parameter-evidence"}},
+		Security: []SecurityEvidenceRecord{{
+			Kind: SecurityBearer, Summary: "expanded-security-evidence", Confidence: ConfidenceNormalized,
+		}},
+		Consumers: []APIConsumerRecord{{
+			ID: "consumer:web", Project: "frontend/web", Service: "web", Caller: "loadOrder",
+			File: "frontend/web/src/api.ts", Line: 7, Confidence: ConfidenceNormalized,
+			Limitations: []string{"expanded-consumer-evidence"},
+		}},
+		Limitations: []string{"expanded-endpoint-evidence"},
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+	)
+	endpoint := findContextFact(index.Facts, "api_endpoint", "GET /orders/{id}")
+	if endpoint.ID == "" {
+		t.Fatalf("endpoint fact missing: %#v", index.Facts)
+	}
+	for _, value := range []string{
+		"services/orders", "OrderController.get", "bearer", "OrderRequest", "OrderResponse",
+	} {
+		if !strings.Contains(endpoint.Summary+" "+endpoint.Search, value) {
+			t.Fatalf("endpoint context %q missing %q", endpoint.Summary+" "+endpoint.Search, value)
+		}
+	}
+	security := findContextFact(index.Facts, "endpoint_security", SecurityBearer)
+	consumer := findContextFact(index.Facts, "api_consumer", "loadOrder")
+	if security.ID == "" || consumer.ID == "" {
+		t.Fatalf("catalog detail facts missing: %#v", index.Facts)
+	}
+	if !hasContextEdge(index.Edges, endpoint.ID, security.ID, "requires_auth") ||
+		!hasContextEdge(index.Edges, consumer.ID, endpoint.ID, "consumes_endpoint") {
+		t.Fatalf("catalog edges missing: %#v", index.Edges)
+	}
+	for _, forbidden := range []string{
+		".goregraph-dashboard.json",
+		"expanded-parameter-evidence",
+		"expanded-security-evidence",
+		"expanded-consumer-evidence",
+		"expanded-endpoint-evidence",
+	} {
+		if contextIndexContains(index, forbidden) {
+			t.Fatalf("expanded catalog data %q leaked into context", forbidden)
+		}
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexBoundsCompactCatalogConsumers(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "services/orders", Indexed: true},
+		{Path: "frontend/web", Indexed: true},
+	}}
+	consumers := make([]APIConsumerRecord, 100)
+	for index := range consumers {
+		consumers[index] = APIConsumerRecord{
+			ID: fmt.Sprintf("consumer:%03d", index), Project: "frontend/web", Service: "web",
+			Caller: fmt.Sprintf("loadOrder%03d", index), File: "frontend/web/src/api.ts", Line: index + 1,
+			Confidence: ConfidenceNormalized, Limitations: []string{"expanded-consumer-evidence"},
+		}
+	}
+	catalog := APICatalogRecord{Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:orders", ProviderProject: "services/orders",
+		HTTPMethod: "GET", Path: "/orders/{id}", Consumers: consumers,
+	}}}
+
+	index := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+	)
+	if got := countContextFacts(index.Facts, "api_consumer"); got != 5 {
+		t.Fatalf("consumer facts = %d, want 5: %#v", got, index.Facts)
+	}
+	if got := countContextEdges(index.Edges, "consumes_endpoint"); got != 5 {
+		t.Fatalf("consumer edges = %d, want 5: %#v", got, index.Edges)
+	}
+	endpoint := findContextFact(index.Facts, "api_endpoint", "GET /orders/{id}")
+	if !strings.Contains(endpoint.Summary, "95") || !strings.Contains(endpoint.Summary, "omitted") {
+		t.Fatalf("endpoint summary does not preserve omitted consumer count: %#v", endpoint)
+	}
+	if contextIndexContains(index, "expanded-consumer-evidence") {
+		t.Fatal("expanded consumer evidence leaked into bounded context")
+	}
+}
+
+func TestBuildWorkspaceAgentContextIndexCompactCatalogIsDeterministic(t *testing.T) {
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "services/orders", Indexed: true},
+		{Path: "frontend/web", Indexed: true},
+	}}
+	catalog := APICatalogRecord{Endpoints: []APIEndpointRecord{
+		{
+			ID: "endpoint:orders", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/orders/{id}",
+			Security: []SecurityEvidenceRecord{
+				{Kind: SecurityRole, Expression: "admin", Confidence: ConfidenceNormalized},
+				{Kind: SecurityBearer, Confidence: ConfidenceNormalized},
+			},
+			Consumers: []APIConsumerRecord{
+				{ID: "consumer:b", Project: "frontend/web", Service: "web", Caller: "loadB", File: "frontend/web/src/b.ts", Line: 2},
+				{ID: "consumer:a", Project: "frontend/web", Service: "web", Caller: "loadA", File: "frontend/web/src/a.ts", Line: 1},
+			},
+		},
+		{ID: "endpoint:health", ProviderProject: "services/orders", HTTPMethod: "GET", Path: "/health"},
+	}}
+	reversed := catalog
+	reversed.Endpoints = slices.Clone(catalog.Endpoints)
+	for index := range reversed.Endpoints {
+		reversed.Endpoints[index].Security = slices.Clone(reversed.Endpoints[index].Security)
+		slices.Reverse(reversed.Endpoints[index].Security)
+		reversed.Endpoints[index].Consumers = slices.Clone(reversed.Endpoints[index].Consumers)
+		slices.Reverse(reversed.Endpoints[index].Consumers)
+	}
+	slices.Reverse(reversed.Endpoints)
+
+	forward := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+	)
+	backward := BuildWorkspaceAgentContextIndex(
+		registry, nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, reversed, "fixed",
+	)
+	if diff := cmpJSON(forward, backward); diff != "" {
+		t.Fatalf("catalog input order changed compact context: %s", diff)
+	}
+}
+
 func cmpJSON(left, right any) string {
 	leftBody, _ := json.Marshal(left)
 	rightBody, _ := json.Marshal(right)
@@ -580,6 +715,21 @@ func cmpJSON(left, right any) string {
 		return ""
 	}
 	return string(leftBody) + " != " + string(rightBody)
+}
+
+func contextIndexContains(index AgentContextIndexRecord, value string) bool {
+	body, _ := json.Marshal(index)
+	return strings.Contains(string(body), value)
+}
+
+func countContextEdges(edges []AgentContextEdgeRecord, kind string) int {
+	count := 0
+	for _, edge := range edges {
+		if edge.Kind == kind {
+			count++
+		}
+	}
+	return count
 }
 
 func hasContextFact(facts []AgentContextFactRecord, kind, name string) bool {

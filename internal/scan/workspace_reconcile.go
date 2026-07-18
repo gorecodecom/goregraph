@@ -134,6 +134,7 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 			matches,
 			featureDossiers,
 			endpointTraces,
+			apiCatalog,
 			registry.Generated,
 		)
 	}
@@ -913,17 +914,157 @@ func BuildWorkspaceAgentContextIndex(
 	matches []WorkspaceContractMatchRecord,
 	dossiers []FeatureDossierRecord,
 	traces WorkspaceEndpointTraceIndexRecord,
+	catalog APICatalogRecord,
 	generated string,
 ) AgentContextIndexRecord {
 	builder := newWorkspaceAgentContextBuilder(registry)
 	for _, index := range projectIndexes {
 		builder.mergeProjectIndex(index)
 	}
+	builder.addCatalogFacts(catalog)
 	builder.indexTraceHandlerLocations(traces)
 	builder.addContractEdges(matches)
 	builder.addDossierFacts(dossiers)
 	builder.addTraceTransitions(traces)
 	return builder.index(generated)
+}
+
+func (builder *workspaceAgentContextBuilder) addCatalogFacts(catalog APICatalogRecord) {
+	endpoints := append([]APIEndpointRecord(nil), catalog.Endpoints...)
+	sort.Slice(endpoints, func(i, j int) bool {
+		return compactCatalogEndpointKey(endpoints[i]) < compactCatalogEndpointKey(endpoints[j])
+	})
+	for _, endpoint := range endpoints {
+		project := contextPathKey(endpoint.ProviderProject)
+		if !builder.projects[project] {
+			continue
+		}
+		method := strings.ToUpper(compactCatalogValue(endpoint.HTTPMethod))
+		endpointPath := compactCatalogValue(endpoint.Path)
+		name := strings.TrimSpace(method + " " + endpointPath)
+		file := workspaceAgentFile(project, endpoint.File)
+		securityLabels := compactCatalogSecurityLabels(endpoint.Security)
+		consumers, omittedConsumers := selectCompactCatalogConsumers(endpoint.Consumers, builder.projects)
+
+		summaryParts := []string{
+			"provider " + compactCatalogValue(firstNonEmpty(endpoint.ProviderService, project)),
+		}
+		if handler := compactCatalogValue(endpoint.Handler); handler != "" {
+			summaryParts = append(summaryParts, "handler "+handler)
+		}
+		if len(securityLabels) > 0 {
+			summaryParts = append(summaryParts, "security "+strings.Join(securityLabels, ", "))
+		}
+		if requestType := compactCatalogValue(endpoint.RequestType); requestType != "" {
+			summaryParts = append(summaryParts, "request "+requestType)
+		}
+		if responseType := compactCatalogValue(endpoint.ResponseType); responseType != "" {
+			summaryParts = append(summaryParts, "response "+responseType)
+		}
+		if omittedConsumers > 0 {
+			summaryParts = append(summaryParts, fmt.Sprintf("%d consumer call sites omitted", omittedConsumers))
+		}
+
+		endpointID := builder.addFact(AgentContextFactRecord{
+			ID: StableWorkspaceID(
+				"agent-context-fact", "api_endpoint", endpoint.ID, project, method, endpointPath,
+			),
+			Project: project, Kind: "api_endpoint", Name: name,
+			Qualified: compactCatalogValue(endpoint.Handler), HTTPMethod: method, Path: endpointPath,
+			File: file, Line: endpoint.Line, Summary: strings.Join(summaryParts, "; "),
+			Confidence: string(endpoint.Confidence), EvidenceIDs: endpoint.EvidenceIDs,
+			Search: compactContextSearch(
+				project,
+				compactCatalogValue(endpoint.ProviderService),
+				method,
+				endpointPath,
+				compactCatalogValue(endpoint.Handler),
+				file,
+				strings.Join(securityLabels, " "),
+				compactCatalogValue(endpoint.RequestType),
+				compactCatalogValue(endpoint.ResponseType),
+			),
+		})
+		builder.addCatalogSecurityFacts(endpointID, endpoint, project, method, endpointPath)
+		builder.addCatalogConsumerFacts(endpointID, endpoint, consumers, method, endpointPath)
+	}
+}
+
+func (builder *workspaceAgentContextBuilder) addCatalogSecurityFacts(
+	endpointID string,
+	endpoint APIEndpointRecord,
+	project string,
+	method string,
+	endpointPath string,
+) {
+	security := append([]SecurityEvidenceRecord(nil), endpoint.Security...)
+	sort.Slice(security, func(i, j int) bool {
+		return compactCatalogSecurityKey(security[i]) < compactCatalogSecurityKey(security[j])
+	})
+	for _, evidence := range security {
+		if !usefulCompactCatalogSecurity(evidence) {
+			continue
+		}
+		kind := compactCatalogValue(strings.ToLower(strings.TrimSpace(evidence.Kind)))
+		if kind == "" {
+			kind = SecurityUnknown
+		}
+		file := workspaceAgentFile(project, evidence.File)
+		summary := kind + " security"
+		if evidence.Conflicting {
+			summary += "; conflicting evidence"
+		}
+		securityID := builder.addFact(AgentContextFactRecord{
+			ID: StableWorkspaceID(
+				"agent-context-fact", "endpoint_security", endpoint.ID, kind,
+				compactCatalogValue(evidence.Source), file, fmt.Sprint(evidence.Line),
+			),
+			Project: project, Kind: "endpoint_security", Name: kind,
+			Qualified: strings.TrimSpace(method + " " + endpointPath + " " + kind),
+			File:      file, Line: evidence.Line, Summary: summary,
+			Confidence: string(evidence.Confidence), EvidenceIDs: evidence.EvidenceIDs,
+			Search: compactContextSearch(
+				method, endpointPath, kind, compactCatalogValue(evidence.Source),
+			),
+		})
+		builder.addEdge(AgentContextEdgeRecord{
+			FromFactID: endpointID, ToFactID: securityID, Kind: "requires_auth",
+			Reason: "catalog security", Confidence: string(evidence.Confidence),
+		})
+	}
+}
+
+func (builder *workspaceAgentContextBuilder) addCatalogConsumerFacts(
+	endpointID string,
+	endpoint APIEndpointRecord,
+	consumers []compactCatalogConsumerSelection,
+	method string,
+	endpointPath string,
+) {
+	for _, selected := range consumers {
+		consumer := selected.consumer
+		name := compactCatalogValue(firstNonEmpty(consumer.Caller, selected.service, contextFileStem(consumer.File)))
+		consumerID := builder.addFact(AgentContextFactRecord{
+			ID: StableWorkspaceID(
+				"agent-context-fact", "api_consumer", consumer.ID, consumer.Project,
+				consumer.File, fmt.Sprint(consumer.Line),
+			),
+			Project: consumer.Project, Kind: "api_consumer", Name: name,
+			Qualified:  compactCatalogValue(firstNonEmpty(consumer.Caller, selected.service)),
+			HTTPMethod: compactCatalogValue(firstNonEmpty(consumer.HTTPMethod, method)),
+			Path:       compactCatalogValue(firstNonEmpty(consumer.Path, endpointPath)),
+			File:       consumer.File, Line: consumer.Line,
+			Summary:    "consumer service " + selected.service,
+			Confidence: string(consumer.Confidence), EvidenceIDs: consumer.EvidenceIDs,
+			Search: compactContextSearch(
+				consumer.Project, selected.service, name, consumer.File, method, endpointPath,
+			),
+		})
+		builder.addEdge(AgentContextEdgeRecord{
+			FromFactID: consumerID, ToFactID: endpointID, Kind: "consumes_endpoint",
+			Reason: "catalog consumer", Confidence: string(consumer.Confidence),
+		})
+	}
 }
 
 type workspaceAgentContextBuilder struct {
