@@ -735,37 +735,13 @@ func fieldSource(annotations []JavaAnnotationRecord) string {
 }
 
 func springAuthRecords(classAnnotations, methodAnnotations []JavaAnnotationRecord, file string, securitySchemes map[string][]AuthRecord) []AuthRecord {
-	var records []AuthRecord
-	for _, annotation := range methodAnnotations {
-		switch annotation.Name {
-		case "PermitAll", "DenyAll":
-			records = append(records, AuthRecord{
-				Kind:       toSnake(annotation.Name),
-				Source:     "method_annotation",
-				Confidence: "EXTRACTED",
-				File:       file,
-				Line:       annotation.Line,
-			})
-		case "PreAuthorize", "PostAuthorize":
-			records = append(records, AuthRecord{
-				Kind:       toSnake(annotation.Name),
-				Expression: firstNonEmpty(annotation.Attributes["value"], annotation.Arguments),
-				Source:     "method_annotation",
-				Confidence: "EXTRACTED",
-				File:       file,
-				Line:       annotation.Line,
-			})
-		case "Secured", "RolesAllowed":
-			records = append(records, AuthRecord{
-				Kind:       toSnake(annotation.Name),
-				Expression: firstNonEmpty(annotation.Attributes["value"], annotation.Arguments),
-				Source:     "method_annotation",
-				Confidence: "EXTRACTED",
-				File:       file,
-				Line:       annotation.Line,
-			})
-		}
+	securityAnnotations := classAnnotations
+	securitySource := "class_annotation"
+	if hasSpringMethodSecurityAnnotation(methodAnnotations) {
+		securityAnnotations = methodAnnotations
+		securitySource = "method_annotation"
 	}
+	records := springMethodSecurityAuthRecords(securityAnnotations, file, securitySource)
 
 	openAPIAnnotations := classAnnotations
 	if hasMethodOpenAPISecurityOverride(methodAnnotations) {
@@ -775,6 +751,51 @@ func springAuthRecords(classAnnotations, methodAnnotations []JavaAnnotationRecor
 	sort.Slice(records, func(left, right int) bool {
 		return authRecordSortKey(records[left]) < authRecordSortKey(records[right])
 	})
+	return records
+}
+
+func hasSpringMethodSecurityAnnotation(annotations []JavaAnnotationRecord) bool {
+	for _, annotation := range annotations {
+		switch annotation.Name {
+		case "PermitAll", "DenyAll", "PreAuthorize", "PostAuthorize", "Secured", "RolesAllowed":
+			return true
+		}
+	}
+	return false
+}
+
+func springMethodSecurityAuthRecords(annotations []JavaAnnotationRecord, file, source string) []AuthRecord {
+	var records []AuthRecord
+	for _, annotation := range annotations {
+		switch annotation.Name {
+		case "PermitAll", "DenyAll":
+			records = append(records, AuthRecord{
+				Kind:       toSnake(annotation.Name),
+				Source:     source,
+				Confidence: "EXTRACTED",
+				File:       file,
+				Line:       annotation.Line,
+			})
+		case "PreAuthorize", "PostAuthorize":
+			records = append(records, AuthRecord{
+				Kind:       toSnake(annotation.Name),
+				Expression: firstNonEmpty(annotation.Attributes["value"], annotation.Arguments),
+				Source:     source,
+				Confidence: "EXTRACTED",
+				File:       file,
+				Line:       annotation.Line,
+			})
+		case "Secured", "RolesAllowed":
+			records = append(records, AuthRecord{
+				Kind:       toSnake(annotation.Name),
+				Expression: firstNonEmpty(annotation.Attributes["value"], annotation.Arguments),
+				Source:     source,
+				Confidence: "EXTRACTED",
+				File:       file,
+				Line:       annotation.Line,
+			})
+		}
+	}
 	return records
 }
 

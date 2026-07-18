@@ -2,6 +2,7 @@ package scan
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -78,6 +79,125 @@ class Controller {
 		if !ok || !hasAuthKind(endpoint.Auth, kind) {
 			t.Fatalf("path=%q kind=%q endpoint=%#v endpoints=%#v", path, kind, endpoint, index.Endpoints)
 		}
+	}
+}
+
+func TestSpringIndexInheritsSupportedClassMethodSecurityAnnotations(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/Controllers.java", Language: "java"}, `@RestController
+@PreAuthorize("hasRole('ADMIN')")
+class PreAuthorizedController {
+  @GetMapping("/pre-authorized")
+  String get() { return "ok"; }
+}
+
+@RestController
+@Secured({"ROLE_ADMIN", "ROLE_USER"})
+class SecuredController {
+  @GetMapping("/secured")
+  String get() { return "ok"; }
+}
+
+@RestController
+@RolesAllowed("ADMIN")
+class RolesAllowedController {
+  @GetMapping("/roles-allowed")
+  String get() { return "ok"; }
+}
+
+@RestController
+@PermitAll
+class PublicController {
+  @GetMapping("/public")
+  String get() { return "ok"; }
+}`)
+
+	index := buildSpringIndex([]JavaSourceRecord{source})
+	want := map[string]string{
+		"/pre-authorized": "pre_authorize",
+		"/secured":        "secured",
+		"/roles-allowed":  "roles_allowed",
+		"/public":         "permit_all",
+	}
+	for path, kind := range want {
+		endpoint, ok := findSpringEndpointForTest(index.Endpoints, "GET", path)
+		if !ok || len(endpoint.Auth) != 1 || endpoint.Auth[0].Kind != kind || endpoint.Auth[0].Source != "class_annotation" {
+			t.Fatalf("path=%q kind=%q endpoint=%#v endpoints=%#v", path, kind, endpoint, index.Endpoints)
+		}
+	}
+}
+
+func TestSpringIndexKeepsMethodSecurityOverridesIndependentFromOpenAPI(t *testing.T) {
+	definitions := extractJavaSource(FileRecord{Path: "src/main/java/OpenAPIConfig.java", Language: "java"}, `
+@SecurityScheme(name = "bearerAuth", type = SecuritySchemeType.HTTP, scheme = "bearer")
+class OpenAPIConfig {}
+`)
+	controller := extractJavaSource(FileRecord{Path: "src/main/java/Controller.java", Language: "java"}, `@RestController
+@PreAuthorize("hasRole('ADMIN')")
+@SecurityRequirement(name = "bearerAuth")
+class Controller {
+  @GetMapping("/inherited")
+  String inherited() { return "ok"; }
+
+  @PermitAll
+  @GetMapping("/method-public")
+  String methodPublic() { return "ok"; }
+
+  @Operation(security = {})
+  @GetMapping("/openapi-public")
+  String openAPIPublic() { return "ok"; }
+}`)
+
+	index := buildSpringIndex([]JavaSourceRecord{definitions, controller})
+	inherited, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/inherited")
+	if !ok || !hasAuthKind(inherited.Auth, "pre_authorize") || !hasAuthKind(inherited.Auth, "bearer") {
+		t.Fatalf("class method/OpenAPI security not inherited independently: %#v", inherited)
+	}
+	methodPublic, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/method-public")
+	if !ok || !hasAuthKind(methodPublic.Auth, "permit_all") || hasAuthKind(methodPublic.Auth, "pre_authorize") || !hasAuthKind(methodPublic.Auth, "bearer") {
+		t.Fatalf("method security override affected the wrong security model: %#v", methodPublic)
+	}
+	openAPIPublic, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/openapi-public")
+	if !ok || !hasAuthKind(openAPIPublic.Auth, "pre_authorize") || !hasAuthKind(openAPIPublic.Auth, "permit_all") || hasAuthKind(openAPIPublic.Auth, "bearer") {
+		t.Fatalf("OpenAPI security override affected method security inheritance: %#v", openAPIPublic)
+	}
+}
+
+func TestClassMethodSecurityReachesCatalogDashboardAndAgentContext(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/OrderController.java", Language: "java"}, `@RestController
+@RolesAllowed("ADMIN")
+class OrderController {
+  @GetMapping("/orders/{id}")
+  String getOrder() { return "ok"; }
+}`)
+	index := buildSpringIndex([]JavaSourceRecord{source})
+	catalog := BuildProjectAPICatalog("services/orders", "fixed", nil, index, nil, nil)
+	if len(catalog.Endpoints) != 1 || len(catalog.Endpoints[0].Security) != 1 {
+		t.Fatalf("catalog security evidence missing: %#v", catalog.Endpoints)
+	}
+	security := catalog.Endpoints[0].Security[0]
+	if security.Kind != SecurityRole || security.Source != "class_annotation" || security.File != source.File || security.Line == 0 {
+		t.Fatalf("class security provenance not preserved in catalog: %#v", security)
+	}
+
+	html := renderWorkspaceDashboardHTML(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, catalog,
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion}, WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion}, nil,
+	)
+	for _, want := range []string{`"kind":"role"`, `"source":"class_annotation"`, `/orders/{id}`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard payload missing class security evidence %q", want)
+		}
+	}
+
+	agentIndex := BuildWorkspaceAgentContextIndex(
+		WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{Path: "services/orders", Indexed: true}}},
+		nil, nil, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+	)
+	endpointFact := findContextFact(agentIndex.Facts, "api_endpoint", "GET /orders/{id}")
+	securityFact := findContextFact(agentIndex.Facts, "endpoint_security", SecurityRole)
+	if endpointFact.ID == "" || securityFact.ID == "" || !hasContextEdge(agentIndex.Edges, endpointFact.ID, securityFact.ID, "requires_auth") {
+		t.Fatalf("class security evidence missing from agent context: facts=%#v edges=%#v", agentIndex.Facts, agentIndex.Edges)
 	}
 }
 
