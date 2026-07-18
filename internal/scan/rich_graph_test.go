@@ -295,6 +295,31 @@ func TestBuildProjectAPICatalogIncludesEndpointsWithoutConsumers(t *testing.T) {
 	}
 }
 
+func TestBuildProjectAPICatalogNormalizesSpringSecurityEvidence(t *testing.T) {
+	catalog := BuildProjectAPICatalog("orders", "fixed", nil, SpringIndex{Endpoints: []SpringEndpointRecord{{
+		HTTPMethod: "GET",
+		Path:       "/orders",
+		Controller: "OrderController",
+		Method:     "list",
+		File:       "src/OrderController.java",
+		Line:       20,
+		Auth: []AuthRecord{{
+			Kind: "http_basic", Expression: "httpBasic", Source: "security_config_call", Confidence: "EXTRACTED", File: "src/Security.java", Line: 8,
+		}},
+	}}}, nil, nil)
+
+	if len(catalog.Endpoints) != 1 || len(catalog.Endpoints[0].Security) != 1 {
+		t.Fatalf("catalog=%#v", catalog)
+	}
+	security := catalog.Endpoints[0].Security[0]
+	if security.Kind != SecurityBasic || security.Source != "security_config_call" || security.File != "src/Security.java" || security.Line != 8 {
+		t.Fatalf("security=%#v", security)
+	}
+	if err := ValidateAPICatalog(catalog); err != nil {
+		t.Fatalf("catalog validation failed: %v", err)
+	}
+}
+
 func TestBuildProjectAPICatalogMapsTypedSpringParametersAndDeduplicatesProviders(t *testing.T) {
 	spring := SpringIndex{Endpoints: []SpringEndpointRecord{
 		{

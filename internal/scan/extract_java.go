@@ -23,7 +23,7 @@ var (
 	javaHTTPChainURIRE        = regexp.MustCompile(`^\s*\.uri\s*\((.+)\)\s*$`)
 	javaStringLiteralRE       = regexp.MustCompile(`"([^"]*)"`)
 	javaStringVarLineRE       = regexp.MustCompile(`^\s*(?:final\s+)?String\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);\s*$`)
-	javaSecurityCallRE        = regexp.MustCompile(`\.(hasRole|hasAuthority|hasAnyRole|hasAnyAuthority|authenticated)\s*\(([^)]*)\)`)
+	javaSecurityCallRE        = regexp.MustCompile(`\.(permitAll|authenticated|hasRole|hasAnyRole|hasAuthority|hasAnyAuthority|httpBasic|oauth2ResourceServer|oauth2Login|formLogin|x509)\s*\(([^)]*)\)`)
 	javaParameterDeclaratorRE = regexp.MustCompile(`^(.+?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*((?:\[\s*\])*)$`)
 	javaTypeParameterNameRE   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )

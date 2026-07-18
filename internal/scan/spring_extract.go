@@ -36,7 +36,7 @@ func BuildProjectAPICatalog(project, generated string, routes []CodeRouteRecord,
 			Produces:        splitSpringMediaTypes(endpoint.Produces),
 			RequestType:     endpoint.RequestType,
 			ResponseType:    endpoint.ReturnType,
-			Security:        unknownAPISecurity(),
+			Security:        NormalizeSecurityEvidence(endpoint.Auth),
 			Consumers:       []APIConsumerRecord{},
 			Confidence:      ConfidenceExact,
 			Coverage:        routeCoverage("java", coverageByLanguage),
@@ -464,6 +464,7 @@ func buildSpringIndex(sources []JavaSourceRecord) SpringIndex {
 	typeByName := map[string]JavaTypeRecord{}
 	fileByType := map[string]string{}
 	constants := map[string]string{}
+	securitySchemes := openAPISecuritySchemes(sources)
 	for _, source := range sources {
 		for name, value := range source.Constants {
 			constants[name] = value
@@ -517,7 +518,7 @@ func buildSpringIndex(sources []JavaSourceRecord) SpringIndex {
 			if hasAnnotation(method.Annotations, "Bean") {
 				index.Beans = append(index.Beans, SpringBeanRecord{Name: beanName(method), Type: method.ReturnType, Config: method.Owner, File: method.File, Line: method.Line, MethodName: method.Name})
 			}
-			index.Endpoints = append(index.Endpoints, springEndpointsForMethod(source, method, constants)...)
+			index.Endpoints = append(index.Endpoints, springEndpointsForMethod(source, method, constants, securitySchemes)...)
 		}
 
 		for _, field := range source.Fields {
@@ -562,7 +563,7 @@ func springComponentKind(annotations []JavaAnnotationRecord) string {
 	}
 }
 
-func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, constants map[string]string) []SpringEndpointRecord {
+func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, constants map[string]string, securitySchemes map[string]AuthRecord) []SpringEndpointRecord {
 	controller := ""
 	classPath := ""
 	for _, typ := range source.Types {
@@ -605,7 +606,7 @@ func springEndpointsForMethod(source JavaSourceRecord, method JavaMethodRecord, 
 				Produces:    springProduces(annotation, constants),
 				ReturnType:  returnType,
 				Parameters:  method.Parameters,
-				Auth:        springAuthRecords(method.Annotations, method.File),
+				Auth:        springAuthRecords(method.Annotations, method.File, securitySchemes),
 			})
 		}
 	}
@@ -689,10 +690,18 @@ func fieldSource(annotations []JavaAnnotationRecord) string {
 	return "field"
 }
 
-func springAuthRecords(annotations []JavaAnnotationRecord, file string) []AuthRecord {
+func springAuthRecords(annotations []JavaAnnotationRecord, file string, securitySchemes map[string]AuthRecord) []AuthRecord {
 	var records []AuthRecord
 	for _, annotation := range annotations {
 		switch annotation.Name {
+		case "PermitAll", "DenyAll":
+			records = append(records, AuthRecord{
+				Kind:       toSnake(annotation.Name),
+				Source:     "method_annotation",
+				Confidence: "EXTRACTED",
+				File:       file,
+				Line:       annotation.Line,
+			})
 		case "PreAuthorize", "PostAuthorize":
 			records = append(records, AuthRecord{
 				Kind:       toSnake(annotation.Name),
@@ -712,8 +721,80 @@ func springAuthRecords(annotations []JavaAnnotationRecord, file string) []AuthRe
 				Line:       annotation.Line,
 			})
 		}
+		for _, name := range openAPISecurityRequirementNames(annotation) {
+			scheme, ok := securitySchemes[name]
+			if !ok {
+				continue
+			}
+			records = append(records, AuthRecord{
+				Kind:       scheme.Kind,
+				Expression: name,
+				Source:     "openapi_security_requirement",
+				Confidence: "EXTRACTED",
+				File:       file,
+				Line:       annotation.Line,
+			})
+		}
 	}
 	return records
+}
+
+func openAPISecuritySchemes(sources []JavaSourceRecord) map[string]AuthRecord {
+	schemes := map[string]AuthRecord{}
+	for _, source := range sources {
+		for _, annotation := range source.Annotations {
+			if annotation.Name != "SecurityScheme" {
+				continue
+			}
+			name := strings.TrimSpace(annotation.Attributes["name"])
+			kind := explicitOpenAPISecurityKind(annotation)
+			if name == "" || kind == "" {
+				continue
+			}
+			schemes[name] = AuthRecord{Kind: kind, Expression: name, Source: "openapi_security_scheme", Confidence: "EXTRACTED", File: source.File, Line: annotation.Line}
+		}
+	}
+	return schemes
+}
+
+func explicitOpenAPISecurityKind(annotation JavaAnnotationRecord) string {
+	typeName := strings.ToUpper(shortJavaName(annotation.Attributes["type"]))
+	scheme := strings.ToLower(strings.TrimSpace(annotation.Attributes["scheme"]))
+	switch typeName {
+	case "APIKEY":
+		return "api_key"
+	case "OAUTH2":
+		return "oauth2"
+	case "OPENIDCONNECT":
+		return "openid_connect"
+	case "MUTUALTLS":
+		return "mutual_tls"
+	case "HTTP":
+		switch scheme {
+		case "basic":
+			return "http_basic"
+		case "bearer":
+			return "bearer"
+		}
+	}
+	return ""
+}
+
+func openAPISecurityRequirementNames(annotation JavaAnnotationRecord) []string {
+	if annotation.Name == "SecurityRequirement" {
+		if name := strings.TrimSpace(annotation.Attributes["name"]); name != "" {
+			return []string{name}
+		}
+		return nil
+	}
+	matches := regexp.MustCompile(`@SecurityRequirement\s*\(\s*name\s*=\s*"([^"]+)"`).FindAllStringSubmatch(annotation.Arguments, -1)
+	result := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) == 2 {
+			result = append(result, match[1])
+		}
+	}
+	return result
 }
 
 func springGlobalAuthRecords(sources []JavaSourceRecord) []AuthRecord {
@@ -745,9 +826,7 @@ func applyGlobalSpringAuth(index *SpringIndex, global []AuthRecord) {
 		return
 	}
 	for i := range index.Endpoints {
-		if len(index.Endpoints[i].Auth) == 0 {
-			index.Endpoints[i].Auth = append([]AuthRecord(nil), global...)
-		}
+		index.Endpoints[i].Auth = append(index.Endpoints[i].Auth, global...)
 	}
 }
 
