@@ -72,7 +72,7 @@ function architectureDomains(nodes,groupRecords){
   }).sort(function(a,b){if(a.hasOrder!==b.hasOrder)return a.hasOrder?-1:1;if(a.hasOrder&&a.order!==b.order)return a.order-b.order;return architectureStringCompare(a.label,b.label)||architectureStringCompare(a.id,b.id);});
 }
 function architectureCanvasGeometry(width,focusHeight){
-  const compact=(width||0)<=1000,presentationTop=12,legendTop=compact?56:12,toolsTop=compact?100:12,focusTop=compact?144:96,resolvedFocusHeight=Math.max(44,focusHeight||0),focusBottom=focusTop+resolvedFocusHeight,wideFocusHeight=46,wideTitleClearance=16,wideContentInset=resolvedFocusHeight>wideFocusHeight?resolvedFocusHeight-wideFocusHeight+wideTitleClearance:0;
+  const compact=(width||0)<=1124,presentationTop=12,legendTop=compact?56:12,toolsTop=compact?100:12,focusTop=compact?144:96,resolvedFocusHeight=Math.max(44,focusHeight||0),focusBottom=focusTop+resolvedFocusHeight,wideFocusHeight=46,wideTitleClearance=16,wideContentInset=resolvedFocusHeight>wideFocusHeight?resolvedFocusHeight-wideFocusHeight+wideTitleClearance:0;
   return {compact:compact,presentationTop:presentationTop,legendTop:legendTop,toolsTop:toolsTop,focusTop:focusTop,focusBottom:focusBottom,contentInset:compact?focusBottom+24:wideContentInset};
 }
 function architectureLayout(nodes,width,groupRecords){

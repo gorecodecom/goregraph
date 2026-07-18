@@ -2044,13 +2044,32 @@ func TestDashboardArchitectureCompactGeometryIsWiredToProduction(t *testing.T) {
 	)
 	for _, want := range []string{
 		`main{grid-area:main;container-type:inline-size`,
-		`@container (max-width:1000px)`,
+		`@container (max-width:1124px)`,
 		`main[data-active-view="architecture"].graph-view .architecture-focus-panel{top:144px}`,
 		`architectureCanvasGeometry(width,focusPanel.getBoundingClientRect().height)`,
 		`svg.style.paddingTop=canvasGeometry.contentInset?canvasGeometry.contentInset+"px":""`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard compact Architecture geometry is not wired to production: missing %q", want)
+		}
+	}
+}
+
+func TestDashboardArchitectureWideHeaderReservesEditorTabWidth(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithModels(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		nil,
+		nil,
+	)
+	for _, want := range []string{
+		`main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:463px}`,
+		`@container (max-width:1124px)`,
+		`const compact=(width||0)<=1124`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard wide Architecture header does not reserve the editor tab width: missing %q", want)
 		}
 	}
 }
@@ -2304,7 +2323,7 @@ func TestWorkspaceDashboardUsesMockupArchitectureViews(t *testing.T) {
 		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
 		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion}, nil, nil,
 	)
-	for _, want := range []string{`data-architecture-view="flow"`, `data-architecture-view="matrix"`, `data-architecture-view="selected"`, `main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:350px}`, "architecture-lane-layer", "architecture-edge-layer", "architecture-node-layer", "architecture-label-layer", "architectureDomains", "architectureDomainColor", "layout.domains", "architecture-call-pill", "architecture-legend", "setViewBox(layout.width,layout.height)", "otherPosition.x-gutter/2", "otherPosition.y+otherPosition.h/2", "y:190+index*90", "architectureBundleGeometry", "svg{height:100vh}"} {
+	for _, want := range []string{`data-architecture-view="flow"`, `data-architecture-view="matrix"`, `data-architecture-view="selected"`, `main[data-active-view="architecture"].graph-view .canvas-tools{top:12px;left:463px}`, "architecture-lane-layer", "architecture-edge-layer", "architecture-node-layer", "architecture-label-layer", "architectureDomains", "architectureDomainColor", "layout.domains", "architecture-call-pill", "architecture-legend", "setViewBox(layout.width,layout.height)", "otherPosition.x-gutter/2", "otherPosition.y+otherPosition.h/2", "y:190+index*90", "architectureBundleGeometry", "svg{height:100vh}"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("dashboard missing mockup architecture contract %q", want)
 		}
