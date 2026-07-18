@@ -268,6 +268,122 @@ export const load = () => axios.get('/orders', { headers: {
 	}
 }
 
+func TestAPIContractsCredentialTemplateLiteralsNeverSerializeValues(t *testing.T) {
+	source := "import axios from 'axios';\n" +
+		"export const load = () => axios.get('/orders', {\n" +
+		"  headers: { Authorization: `Bearer ${'s3cr3tToken'}`, 'X-API-Key': `${\"s3cr3tKey\"}` },\n" +
+		"  auth: { username: `${'s3cr3tUser'}`, password: `${\"s3cr3tPassword\"}` },\n" +
+		"});"
+	contracts := extractTestAPIContracts(t, source)
+
+	assertContractAuth(t, contracts[0].Auth, "bearer", "EXTRACTED", "http_call_config", "")
+	assertContractAuth(t, contracts[0].Auth, "api_key", "EXTRACTED", "http_call_config", "")
+	assertContractAuth(t, contracts[0].Auth, "basic", "EXTRACTED", "http_call_config", "")
+	assertSerializedContractsOmit(t, contracts, "s3cr3tToken", "s3cr3tKey", "s3cr3tUser", "s3cr3tPassword")
+}
+
+func TestAPIContractsOAuthHelpersRequireUnshadowedImportedBinding(t *testing.T) {
+	source := `import axios from 'axios';
+import { getAccessTokenSilently } from '@auth0/auth0-react';
+
+export const load = () => axios.get('/real', {
+  headers: { Authorization: 'Bearer ' + getAccessTokenSilently() },
+});
+
+export function loadParameter(getAccessTokenSilently: TokenFactory) {
+  return axios.get('/parameter', { headers: { Authorization: 'Bearer ' + getAccessTokenSilently() } });
+}
+
+export function loadLocal() {
+  const getAccessTokenSilently = () => 'local-value';
+  return axios.get('/local', { headers: { Authorization: 'Bearer ' + getAccessTokenSilently() } });
+}`
+	contracts := extractTestAPIContractsAll(source)
+	if len(contracts) != 3 {
+		t.Fatalf("contracts=%#v, want three calls", contracts)
+	}
+	assertContractAuth(t, contractByPath(t, contracts, "/real").Auth, "oauth2", "EXTRACTED", "oauth_helper", "getAccessTokenSilently")
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/parameter").Auth, "oauth2")
+	assertNoContractAuthKind(t, contractByPath(t, contracts, "/local").Auth, "oauth2")
+}
+
+func TestAPIContractsRequireCompleteUnshadowedAxiosReceiver(t *testing.T) {
+	source := `import axios from 'axios';
+namespace.axios.get('/namespace-suffix');
+
+function destructured({ axios }: Clients) {
+  return axios.get('/destructured');
+}
+
+try {
+  throw new Error('client');
+} catch (axios) {
+  axios.get('/catch');
+}
+
+class Loader {
+  load(axios: Client) {
+    return axios.get('/method');
+  }
+}
+
+function local() {
+  const axios = fakeClient;
+  return axios.get('/local');
+}
+
+export const load = () => axios.get('/orders');`
+	contracts := extractTestAPIContractsAll(source)
+	if len(contracts) != 1 || contracts[0].Path != "/orders" {
+		t.Fatalf("incomplete or shadowed axios receiver produced contracts: %#v", contracts)
+	}
+}
+
+func TestAPIContractsIgnoreNestedRequestConfigHeaderAssignments(t *testing.T) {
+	source := `import axios from 'axios';
+export const save = () => axios.post('/orders', {}, {
+  transformRequest: [(payload) => {
+    payload.headers.Authorization = 'Bearer ' + payloadToken;
+    payload.headers['X-API-Key'] = payloadKey;
+    return payload;
+  }],
+});`
+	contracts := extractTestAPIContracts(t, source)
+	if len(contracts[0].Auth) != 0 {
+		t.Fatalf("nested transform payload assignment produced auth: %#v", contracts[0].Auth)
+	}
+}
+
+func TestAPIContractsInterceptorAssignmentsRequireResolvedConfigParameter(t *testing.T) {
+	source := `import axios from 'axios';
+const client = axios.create();
+client.interceptors.request.use((requestConfig) => {
+  const payload = { headers: {} };
+  payload.headers.Authorization = 'Bearer ' + payloadToken;
+  requestConfig.headers.Authorization = 'Bearer ' + interceptorToken;
+  requestConfig.headers['X-API-Key'] = interceptorKey;
+  return requestConfig;
+});
+export const load = () => client.get('/orders');`
+	contracts := extractTestAPIContracts(t, source)
+
+	assertContractAuth(t, contracts[0].Auth, "bearer", "PARTIAL", "http_client_interceptor", "interceptorToken")
+	assertContractAuth(t, contracts[0].Auth, "api_key", "PARTIAL", "http_client_interceptor", "interceptorKey")
+	assertNoContractAuthExpression(t, contracts[0].Auth, "payloadToken")
+}
+
+func TestAPIContractsLexerHandlesRegexLiteralsAndTemplateInterpolation(t *testing.T) {
+	source := "const syntax = /[\\\"'`{}()]/g;\n" +
+		"export const interpolated = `${enabled ? fetch('/interpolated', { credentials: 'include' }) : ''}`;\n" +
+		"export const load = () => fetch('/orders', { credentials: 'include' });"
+	contracts := extractTestAPIContractsAll(source)
+	if len(contracts) != 2 {
+		t.Fatalf("regex or template interpolation corrupted call discovery: %#v", contracts)
+	}
+	assertContractAuth(t, contractByPath(t, contracts, "/interpolated").Auth, "session", "EXTRACTED", "http_call_config", "")
+	assertContractAuth(t, contractByPath(t, contracts, "/orders").Auth, "session", "EXTRACTED", "http_call_config", "")
+}
+
 func extractTestAPIContracts(t *testing.T, source string) []APIContractRecord {
 	t.Helper()
 	contracts := extractTestAPIContractsAll(source)
@@ -327,4 +443,27 @@ func authExpressions(records []AuthRecord, kind string) []string {
 		}
 	}
 	return expressions
+}
+
+func assertSerializedContractsOmit(t *testing.T, contracts []APIContractRecord, values ...string) {
+	t.Helper()
+	data, err := json.Marshal(contracts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(data)
+	for _, value := range values {
+		if strings.Contains(serialized, value) {
+			t.Fatalf("serialized contracts contain credential value %q: %s", value, serialized)
+		}
+	}
+}
+
+func assertNoContractAuthExpression(t *testing.T, records []AuthRecord, expression string) {
+	t.Helper()
+	for _, record := range records {
+		if record.Expression == expression {
+			t.Fatalf("unexpected auth expression %q in %#v", expression, records)
+		}
+	}
 }

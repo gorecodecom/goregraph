@@ -33,18 +33,21 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 	}
 
 	source := strings.Join(lines, "\n")
-	masked := maskJSSourceComments(source)
+	lexical := scanJSLexicalSource(source)
+	masked := lexical.comments
+	code := lexical.code
 	maskedLines := strings.Split(masked, "\n")
+	codeLines := strings.Split(code, "\n")
 	lineOffsets := sourceLineOffsets(maskedLines)
-	model := buildJSLexicalModel(masked)
+	model := buildJSLexicalModelFromScan(lexical)
 	var records []APIContractRecord
-	for i, line := range maskedLines {
+	for i, line := range codeLines {
 		if match := codeHelperStartRE.FindStringSubmatch(line); len(match) == 2 {
 			callText := collectCallText(maskedLines, i, 5)
 			if path, ok := firstPathLiteral(callText); ok {
 				record := apiContract(file, helperHTTPMethod(match[1]), path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(maskedLines, functions, i+1, path), responseFieldsForLine(maskedLines, functions, i+1), i+1, "helper-call-argument")
 				start := lineOffsets[i] + codeHelperStartRE.FindStringIndex(line)[0]
-				record.Auth = httpCallAuthForFile(source, start, matchingCallEnd(masked, start), file.Path)
+				record.Auth = httpCallAuthForFileContext(source, lexical, start, matchingCallEndCode(code, start), file.Path, model)
 				records = append(records, record)
 			}
 			continue
@@ -54,17 +57,14 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 			if method, path, ok := wekaRequestMethodPath(callText); ok {
 				record := apiContract(file, method, path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(maskedLines, functions, i+1, path), responseFieldsForLine(maskedLines, functions, i+1), i+1, "weka-request-call")
 				start := lineOffsets[i] + codeWekaRequestRE.FindStringIndex(line)[0]
-				record.Auth = httpCallAuthForFile(source, start, matchingCallEnd(masked, start), file.Path)
+				record.Auth = httpCallAuthForFileContext(source, lexical, start, matchingCallEndCode(code, start), file.Path, model)
 				records = append(records, record)
 			}
 		}
 	}
-	for _, match := range codeFetchAPIRE.FindAllStringIndex(masked, -1) {
-		if !isJSCodeOffset(masked, match[0]) {
-			continue
-		}
-		end := matchingCallEnd(masked, match[0])
-		args := topLevelCallArguments(masked, match[0], end)
+	for _, match := range codeFetchAPIRE.FindAllStringIndex(code, -1) {
+		end := matchingCallEndCode(code, match[0])
+		args := topLevelCallArgumentsCode(masked, code, match[0], end)
 		if len(args) == 0 {
 			continue
 		}
@@ -80,19 +80,19 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 			}
 		}
 		record := apiContract(file, method, path, apiContractCaller(functions, line), dynamicEndpointCandidatesForLine(maskedLines, functions, line, path), responseFieldsForLine(maskedLines, functions, line), line, "fetch-call")
-		record.Auth = httpCallAuthForFile(source, match[0], end, file.Path)
+		record.Auth = httpCallAuthForFileContext(source, lexical, match[0], end, file.Path, model)
 		records = append(records, record)
 	}
-	for _, match := range codeHTTPClientRE.FindAllStringSubmatchIndex(masked, -1) {
-		if len(match) != 6 || !isJSCodeOffset(masked, match[0]) {
+	for _, match := range codeHTTPClientRE.FindAllStringSubmatchIndex(code, -1) {
+		if len(match) != 6 || !isCompleteJSReceiverCode(code, match[0]) {
 			continue
 		}
-		receiver := masked[match[2]:match[3]]
+		receiver := code[match[2]:match[3]]
 		if _, ok := model.resolveHTTPClient(receiver, match[0]); !ok {
 			continue
 		}
-		end := matchingCallEnd(masked, match[0])
-		args := topLevelCallArguments(masked, match[0], end)
+		end := matchingCallEndCode(code, match[0])
+		args := topLevelCallArgumentsCode(masked, code, match[0], end)
 		if len(args) == 0 {
 			continue
 		}
@@ -101,9 +101,9 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 			continue
 		}
 		line := sourceLineForOffset(masked, match[0])
-		method := strings.ToUpper(masked[match[4]:match[5]])
+		method := strings.ToUpper(code[match[4]:match[5]])
 		record := apiContract(file, method, path, apiContractCaller(functions, line), dynamicEndpointCandidatesForLine(maskedLines, functions, line, path), responseFieldsForLine(maskedLines, functions, line), line, "http-client-call")
-		record.Auth = httpCallAuthForFile(source, match[0], end, file.Path)
+		record.Auth = httpCallAuthForFileContext(source, lexical, match[0], end, file.Path, model)
 		records = append(records, record)
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -118,6 +118,28 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 	return records
 }
 
+func isCompleteJSReceiver(source string, receiverStart int) bool {
+	return isCompleteJSReceiverCode(scanJSLexicalSource(source).code, receiverStart)
+}
+
+func isCompleteJSReceiverCode(code string, receiverStart int) bool {
+	immediate := receiverStart - 1
+	if immediate < 0 {
+		return true
+	}
+	if !isJSSpace(code[immediate]) {
+		return code[immediate] != '.' && code[immediate] != '#' && !isScriptIdentifierByte(code[immediate])
+	}
+	previous := immediate
+	for previous >= 0 && isJSSpace(code[previous]) {
+		previous--
+	}
+	if previous < 0 {
+		return true
+	}
+	return code[previous] != '.' && code[previous] != '#'
+}
+
 func sourceLineOffsets(lines []string) []int {
 	offsets := make([]int, len(lines))
 	offset := 0
@@ -129,36 +151,21 @@ func sourceLineOffsets(lines []string) []int {
 }
 
 func matchingCallEnd(source string, callStart int) int {
-	if callStart < 0 || callStart >= len(source) {
+	return matchingCallEndCode(scanJSLexicalSource(source).code, callStart)
+}
+
+func matchingCallEndCode(code string, callStart int) int {
+	if callStart < 0 || callStart >= len(code) {
 		return callStart
 	}
-	open := strings.IndexByte(source[callStart:], '(')
+	open := strings.IndexByte(code[callStart:], '(')
 	if open < 0 {
 		return callStart
 	}
 	open += callStart
 	depth := 0
-	quote := byte(0)
-	escaped := false
-	for i := open; i < len(source); i++ {
-		char := source[i]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if char == '\\' {
-				escaped = true
-				continue
-			}
-			if char == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch char {
-		case '\'', '"', '`':
-			quote = char
+	for i := open; i < len(code); i++ {
+		switch code[i] {
 		case '(':
 			depth++
 		case ')':
@@ -168,7 +175,7 @@ func matchingCallEnd(source string, callStart int) int {
 			}
 		}
 	}
-	return len(source)
+	return len(code)
 }
 
 type sourceSpan struct {
@@ -186,110 +193,188 @@ func sourceLineForOffset(source string, offset int) int {
 	return 1 + strings.Count(source[:offset], "\n")
 }
 
-func maskJSSourceComments(source string) string {
-	masked := []byte(source)
-	quote := byte(0)
-	escaped := false
-	for i := 0; i < len(masked); i++ {
-		char := masked[i]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if char == '\\' {
-				escaped = true
-				continue
-			}
-			if char == quote {
-				quote = 0
-			}
-			continue
-		}
-		if char == '\'' || char == '"' || char == '`' {
-			quote = char
-			continue
-		}
-		if i+1 >= len(masked) || char != '/' {
-			continue
-		}
-		switch masked[i+1] {
-		case '/':
-			for masked[i] != '\n' {
-				masked[i] = ' '
-				i++
-				if i >= len(masked) {
-					return string(masked)
-				}
-			}
-			i--
-		case '*':
-			masked[i], masked[i+1] = ' ', ' '
-			i += 2
-			for i < len(masked) {
-				if i+1 < len(masked) && masked[i] == '*' && masked[i+1] == '/' {
-					masked[i], masked[i+1] = ' ', ' '
-					i++
-					break
-				}
-				if masked[i] != '\n' {
-					masked[i] = ' '
-				}
-				i++
+type jsLexicalSource struct {
+	comments string
+	code     string
+}
+
+func scanJSLexicalSource(source string) jsLexicalSource {
+	comments := []byte(source)
+	code := []byte(source)
+	maskCode := func(start, end int) {
+		for i := start; i < end && i < len(code); i++ {
+			if code[i] != '\n' {
+				code[i] = ' '
 			}
 		}
 	}
-	return string(masked)
+	maskComment := func(start, end int) {
+		for i := start; i < end && i < len(comments); i++ {
+			if comments[i] != '\n' {
+				comments[i] = ' '
+			}
+		}
+		maskCode(start, end)
+	}
+	var scanCode func(int, bool) int
+	var scanTemplate func(int) int
+	scanQuoted := func(start int, quote byte) int {
+		i := start + 1
+		for i < len(source) {
+			if source[i] == '\\' {
+				i += 2
+				continue
+			}
+			i++
+			if source[i-1] == quote {
+				break
+			}
+		}
+		maskCode(start, i)
+		return i
+	}
+	scanRegex := func(start int) int {
+		i := start + 1
+		inClass := false
+		for i < len(source) {
+			if source[i] == '\\' {
+				i += 2
+				continue
+			}
+			switch source[i] {
+			case '[':
+				inClass = true
+			case ']':
+				inClass = false
+			case '/':
+				if !inClass {
+					i++
+					for i < len(source) && isScriptIdentifierByte(source[i]) {
+						i++
+					}
+					maskCode(start, i)
+					return i
+				}
+			}
+			i++
+		}
+		maskCode(start, i)
+		return i
+	}
+	scanTemplate = func(start int) int {
+		maskCode(start, start+1)
+		for i := start + 1; i < len(source); {
+			switch {
+			case source[i] == '\\':
+				maskCode(i, minAPIInt(i+2, len(source)))
+				i += 2
+			case source[i] == '`':
+				maskCode(i, i+1)
+				return i + 1
+			case i+1 < len(source) && source[i] == '$' && source[i+1] == '{':
+				maskCode(i, i+2)
+				i = scanCode(i+2, true)
+			default:
+				maskCode(i, i+1)
+				i++
+			}
+		}
+		return len(source)
+	}
+	scanCode = func(start int, templateInterpolation bool) int {
+		braceDepth := 0
+		for i := start; i < len(source); {
+			if templateInterpolation && source[i] == '}' && braceDepth == 0 {
+				maskCode(i, i+1)
+				return i + 1
+			}
+			switch {
+			case i+1 < len(source) && source[i] == '/' && source[i+1] == '/':
+				end := i + 2
+				for end < len(source) && source[end] != '\n' {
+					end++
+				}
+				maskComment(i, end)
+				i = end
+			case i+1 < len(source) && source[i] == '/' && source[i+1] == '*':
+				end := i + 2
+				for end+1 < len(source) && !(source[end] == '*' && source[end+1] == '/') {
+					end++
+				}
+				if end+1 < len(source) {
+					end += 2
+				}
+				maskComment(i, end)
+				i = end
+			case source[i] == '\'' || source[i] == '"':
+				i = scanQuoted(i, source[i])
+			case source[i] == '`':
+				i = scanTemplate(i)
+			case source[i] == '/' && isScriptRegexStart(code, i):
+				i = scanRegex(i)
+			default:
+				if templateInterpolation {
+					if source[i] == '{' {
+						braceDepth++
+					} else if source[i] == '}' && braceDepth > 0 {
+						braceDepth--
+					}
+				}
+				i++
+			}
+		}
+		return len(source)
+	}
+	scanCode(0, false)
+	return jsLexicalSource{comments: string(comments), code: string(code)}
+}
+
+func minAPIInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
+}
+
+func maskJSSourceComments(source string) string {
+	return scanJSLexicalSource(source).comments
 }
 
 func isJSCodeOffset(source string, offset int) bool {
-	quote := byte(0)
-	escaped := false
-	for i := 0; i < len(source) && i < offset; i++ {
-		char := source[i]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if char == '\\' {
-				escaped = true
-				continue
-			}
-			if char == quote {
-				quote = 0
-			}
-			continue
-		}
-		if char == '\'' || char == '"' || char == '`' {
-			quote = char
-		}
+	if offset < 0 || offset >= len(source) {
+		return false
 	}
-	return quote == 0
+	return !isJSSpace(scanJSLexicalSource(source).code[offset])
 }
 
 func topLevelCallArguments(source string, callStart, callEnd int) []sourceSpan {
-	if callStart < 0 || callEnd <= callStart || callEnd > len(source) {
+	return topLevelCallArgumentsCode(source, scanJSLexicalSource(source).code, callStart, callEnd)
+}
+
+func topLevelCallArgumentsCode(source, code string, callStart, callEnd int) []sourceSpan {
+	if callStart < 0 || callEnd <= callStart || callEnd > len(code) {
 		return nil
 	}
-	open := strings.IndexByte(source[callStart:callEnd], '(')
+	open := strings.IndexByte(code[callStart:callEnd], '(')
 	if open < 0 {
 		return nil
 	}
 	open += callStart
 	close := callEnd - 1
-	if close <= open || source[close] != ')' {
+	if close <= open || code[close] != ')' {
 		return nil
 	}
-	return splitTopLevelSourceSpans(source, open+1, close)
+	return splitTopLevelCodeSpans(source, code, open+1, close)
 }
 
 func splitTopLevelSourceSpans(source string, start, end int) []sourceSpan {
+	return splitTopLevelCodeSpans(source, scanJSLexicalSource(source).code, start, end)
+}
+
+func splitTopLevelCodeSpans(source, code string, start, end int) []sourceSpan {
 	var spans []sourceSpan
 	segmentStart := start
 	parenDepth, braceDepth, bracketDepth := 0, 0, 0
-	quote := byte(0)
-	escaped := false
 	appendSegment := func(segmentEnd int) {
 		left, right := segmentStart, segmentEnd
 		for left < right && isJSSpace(source[left]) {
@@ -303,24 +388,7 @@ func splitTopLevelSourceSpans(source string, start, end int) []sourceSpan {
 		}
 	}
 	for i := start; i < end; i++ {
-		char := source[i]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if char == '\\' {
-				escaped = true
-				continue
-			}
-			if char == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch char {
-		case '\'', '"', '`':
-			quote = char
+		switch code[i] {
 		case '(':
 			parenDepth++
 		case ')':
@@ -365,6 +433,7 @@ type jsBinding struct {
 
 type jsLexicalModel struct {
 	source   string
+	code     string
 	scopes   []jsScope
 	bindings []jsBinding
 }
@@ -373,35 +442,21 @@ const (
 	jsBindingOther       = "other"
 	jsBindingAxiosImport = "axios_import"
 	jsBindingAxiosClient = "axios_client"
+	jsBindingOAuthImport = "oauth_import"
 )
 
 func buildJSLexicalModel(source string) jsLexicalModel {
-	model := jsLexicalModel{source: source, scopes: []jsScope{{start: 0, end: len(source), parent: -1}}}
+	return buildJSLexicalModelFromScan(scanJSLexicalSource(source))
+}
+
+func buildJSLexicalModelFromScan(lexical jsLexicalSource) jsLexicalModel {
+	model := jsLexicalModel{source: lexical.comments, code: lexical.code, scopes: []jsScope{{start: 0, end: len(lexical.comments), parent: -1}}}
 	stack := []int{0}
-	quote := byte(0)
-	escaped := false
-	for i := 0; i < len(source); i++ {
-		char := source[i]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if char == '\\' {
-				escaped = true
-				continue
-			}
-			if char == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch char {
-		case '\'', '"', '`':
-			quote = char
+	for i := 0; i < len(model.code); i++ {
+		switch model.code[i] {
 		case '{':
 			parent := stack[len(stack)-1]
-			model.scopes = append(model.scopes, jsScope{start: i, end: len(source), parent: parent})
+			model.scopes = append(model.scopes, jsScope{start: i, end: len(model.code), parent: parent})
 			stack = append(stack, len(model.scopes)-1)
 		case '}':
 			if len(stack) > 1 {
@@ -412,8 +467,12 @@ func buildJSLexicalModel(source string) jsLexicalModel {
 		}
 	}
 	model.addAxiosImports()
+	model.addOAuthImports()
 	model.addFunctionParameters()
+	model.addMethodParameters()
+	model.addCatchBindings()
 	model.addLocalBindings()
+	model.addVariablePatternBindings()
 	for i := range model.bindings {
 		binding := &model.bindings[i]
 		if binding.createSource == "" {
@@ -429,24 +488,47 @@ func buildJSLexicalModel(source string) jsLexicalModel {
 func (model *jsLexicalModel) addAxiosImports() {
 	importRE := regexp.MustCompile(`(?m)\bimport\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s+["']axios["']`)
 	for _, match := range importRE.FindAllStringSubmatchIndex(model.source, -1) {
-		if len(match) != 4 || !isJSCodeOffset(model.source, match[0]) {
+		if len(match) != 4 || isJSSpace(model.code[match[0]]) {
 			continue
 		}
 		model.bindings = append(model.bindings, jsBinding{name: model.source[match[2]:match[3]], kind: jsBindingAxiosImport, scope: 0, start: match[0]})
 	}
 }
 
+func (model *jsLexicalModel) addOAuthImports() {
+	supported := supportedOAuthHelperNames()
+	importRE := regexp.MustCompile(`(?s)\bimport\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']`)
+	for _, match := range importRE.FindAllStringSubmatchIndex(model.source, -1) {
+		if len(match) != 6 || isJSSpace(model.code[match[0]]) || !isOAuthModule(model.source[match[4]:match[5]]) {
+			continue
+		}
+		for _, item := range strings.Split(model.source[match[2]:match[3]], ",") {
+			parts := regexp.MustCompile(`\s+as\s+`).Split(strings.TrimSpace(item), 2)
+			if len(parts) == 0 || !supported[parts[0]] {
+				continue
+			}
+			localName := parts[0]
+			if len(parts) == 2 {
+				localName = strings.TrimSpace(parts[1])
+			}
+			if regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`).MatchString(localName) {
+				model.bindings = append(model.bindings, jsBinding{name: localName, kind: jsBindingOAuthImport, scope: 0, start: match[0]})
+			}
+		}
+	}
+}
+
 func (model *jsLexicalModel) addFunctionParameters() {
 	functionRE := regexp.MustCompile(`(?s)\bfunction\s*[A-Za-z_$0-9]*\s*\(([^)]*)\)\s*\{`)
-	for _, match := range functionRE.FindAllStringSubmatchIndex(model.source, -1) {
-		if len(match) != 4 || !isJSCodeOffset(model.source, match[0]) {
+	for _, match := range functionRE.FindAllStringSubmatchIndex(model.code, -1) {
+		if len(match) != 4 {
 			continue
 		}
 		model.addParameterBindings(model.source[match[2]:match[3]], match[1]-1)
 	}
-	arrowRE := regexp.MustCompile(`(?s)(?:\(([^)]*)\)|([A-Za-z_$][A-Za-z0-9_$]*))\s*=>\s*(\{)?`)
-	for _, match := range arrowRE.FindAllStringSubmatchIndex(model.source, -1) {
-		if len(match) != 8 || !isJSCodeOffset(model.source, match[0]) {
+	arrowRE := regexp.MustCompile(`(?s)(?:\(([^()]*)\)|([A-Za-z_$][A-Za-z0-9_$]*))\s*=>\s*(\{)?`)
+	for _, match := range arrowRE.FindAllStringSubmatchIndex(model.code, -1) {
+		if len(match) != 8 {
 			continue
 		}
 		params := ""
@@ -459,7 +541,7 @@ func (model *jsLexicalModel) addFunctionParameters() {
 			model.addParameterBindings(params, match[6])
 			continue
 		}
-		model.addConciseArrowParameterBindings(params, match[0], conciseArrowExpressionEnd(model.source, match[1]))
+		model.addConciseArrowParameterBindings(params, match[0], conciseArrowExpressionEnd(model.code, match[1]))
 	}
 }
 
@@ -468,32 +550,72 @@ func (model *jsLexicalModel) addParameterBindings(params string, scopeStart int)
 	if scope < 0 {
 		return
 	}
-	identifierRE := regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
-	for _, param := range strings.Split(params, ",") {
-		name := simpleJSParameterName(param)
-		if identifierRE.MatchString(name) {
-			model.bindings = append(model.bindings, jsBinding{name: name, kind: jsBindingOther, scope: scope, start: scopeStart})
-		}
+	for _, name := range jsParameterBindingNames(params) {
+		model.addBinding(jsBinding{name: name, kind: jsBindingOther, scope: scope, start: scopeStart})
 	}
 }
 
 func (model *jsLexicalModel) addConciseArrowParameterBindings(params string, start, end int) {
-	identifierRE := regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 	scope := model.scopeAt(start)
-	for _, param := range strings.Split(params, ",") {
-		name := simpleJSParameterName(param)
-		if identifierRE.MatchString(name) {
-			model.bindings = append(model.bindings, jsBinding{name: name, kind: jsBindingOther, scope: scope, start: start, end: end})
+	for _, name := range jsParameterBindingNames(params) {
+		model.addBinding(jsBinding{name: name, kind: jsBindingOther, scope: scope, start: start, end: end})
+	}
+}
+
+func jsParameterBindingNames(params string) []string {
+	seen := map[string]bool{}
+	var names []string
+	for _, parameter := range splitScriptTopLevel(params, ',') {
+		pattern := strings.TrimSpace(parameter)
+		if colon := findScriptTopLevel(pattern, ':'); colon >= 0 {
+			pattern = strings.TrimSpace(pattern[:colon])
+		}
+		pattern = strings.TrimSuffix(pattern, "?")
+		for name := range scriptBindingPatternNames(pattern) {
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (model *jsLexicalModel) addMethodParameters() {
+	for open := strings.IndexByte(model.code, '('); open >= 0; {
+		close := matchingScriptDelimiter(model.code, open, '(', ')')
+		if close < 0 {
+			break
+		}
+		bodyStart := scriptParameterBlockBodyStart(model.code, close)
+		if bodyStart >= 0 && isScriptFunctionParameterScopePrefix(model.code, open, close, bodyStart) {
+			model.addParameterBindings(model.source[open+1:close], bodyStart)
+		}
+		relative := strings.IndexByte(model.code[close+1:], '(')
+		if relative < 0 {
+			break
+		}
+		open = close + 1 + relative
+	}
+}
+
+func (model *jsLexicalModel) addCatchBindings() {
+	catchRE := regexp.MustCompile(`(?s)\bcatch\s*\(([^)]*)\)\s*\{`)
+	for _, match := range catchRE.FindAllStringSubmatchIndex(model.code, -1) {
+		if len(match) == 4 {
+			model.addParameterBindings(model.source[match[2]:match[3]], match[1]-1)
 		}
 	}
 }
 
-func simpleJSParameterName(parameter string) string {
-	name := strings.TrimSpace(strings.SplitN(parameter, "=", 2)[0])
-	if colon := strings.IndexByte(name, ':'); colon >= 0 {
-		name = name[:colon]
+func (model *jsLexicalModel) addBinding(binding jsBinding) {
+	for _, existing := range model.bindings {
+		if existing.name == binding.name && existing.scope == binding.scope && existing.start == binding.start && existing.end == binding.end {
+			return
+		}
 	}
-	return strings.TrimSpace(strings.TrimSuffix(name, "?"))
+	model.bindings = append(model.bindings, binding)
 }
 
 func conciseArrowExpressionEnd(source string, start int) int {
@@ -551,15 +673,34 @@ func conciseArrowExpressionEnd(source string, start int) int {
 
 func (model *jsLexicalModel) addLocalBindings() {
 	declarationRE := regexp.MustCompile(`\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)(?:\s*=\s*([A-Za-z_$][A-Za-z0-9_$]*)\.create\s*\()?`)
-	for _, match := range declarationRE.FindAllStringSubmatchIndex(model.source, -1) {
-		if len(match) != 6 || !isJSCodeOffset(model.source, match[0]) {
+	for _, match := range declarationRE.FindAllStringSubmatchIndex(model.code, -1) {
+		if len(match) != 6 {
 			continue
 		}
 		binding := jsBinding{name: model.source[match[2]:match[3]], kind: jsBindingOther, scope: model.scopeAt(match[0]), start: match[0]}
 		if match[4] >= 0 {
 			binding.createSource = model.source[match[4]:match[5]]
 		}
-		model.bindings = append(model.bindings, binding)
+		model.addBinding(binding)
+	}
+}
+
+func (model *jsLexicalModel) addVariablePatternBindings() {
+	for _, location := range scriptVariableBindingRE.FindAllStringIndex(model.code, -1) {
+		statementStart := nextScriptNonSpace(model.code, location[1])
+		statementEnd := scriptVariableStatementEnd(model.code, statementStart)
+		if statementStart >= statementEnd {
+			continue
+		}
+		for _, declarator := range splitScriptTopLevel(model.code[statementStart:statementEnd], ',') {
+			pattern := declarator
+			if equals := findScriptTopLevel(pattern, '='); equals >= 0 {
+				pattern = pattern[:equals]
+			}
+			for name := range scriptBindingPatternNames(pattern) {
+				model.addBinding(jsBinding{name: name, kind: jsBindingOther, scope: model.scopeAt(location[0]), start: location[0]})
+			}
+		}
 	}
 }
 
@@ -611,7 +752,16 @@ func (model jsLexicalModel) resolveHTTPClient(receiver string, offset int) (int,
 }
 
 func httpCallAuthForFile(source string, callStart, callEnd int, file string) []AuthRecord {
-	records := extractHTTPCallAuth(source, callStart, callEnd)
+	lexical := scanJSLexicalSource(source)
+	records := extractHTTPCallAuthContext(source, lexical, callStart, callEnd, buildJSLexicalModelFromScan(lexical))
+	for i := range records {
+		records[i].File = file
+	}
+	return records
+}
+
+func httpCallAuthForFileContext(source string, lexical jsLexicalSource, callStart, callEnd int, file string, model jsLexicalModel) []AuthRecord {
+	records := extractHTTPCallAuthContext(source, lexical, callStart, callEnd, model)
 	for i := range records {
 		records[i].File = file
 	}
@@ -620,44 +770,53 @@ func httpCallAuthForFile(source string, callStart, callEnd int, file string) []A
 
 // extractHTTPCallAuth returns authentication evidence statically associated with one HTTP call.
 func extractHTTPCallAuth(source string, callStart, callEnd int) []AuthRecord {
+	lexical := scanJSLexicalSource(source)
+	return extractHTTPCallAuthContext(source, lexical, callStart, callEnd, buildJSLexicalModelFromScan(lexical))
+}
+
+func extractHTTPCallAuthContext(source string, lexical jsLexicalSource, callStart, callEnd int, model jsLexicalModel) []AuthRecord {
 	if callStart < 0 || callEnd <= callStart || callStart >= len(source) {
 		return nil
 	}
 	if callEnd > len(source) {
 		callEnd = len(source)
 	}
-	masked := maskJSSourceComments(source)
+	masked := lexical.comments
+	code := lexical.code
 	call := masked[callStart:callEnd]
 	line := 1 + strings.Count(source[:callStart], "\n")
-	config := httpCallConfigExpression(masked, callStart, callEnd)
-	records := extractDirectHTTPCallAuth(masked, config, line, "EXTRACTED", "http_call_config")
+	config, configStart := httpCallConfigExpressionCode(masked, code, callStart, callEnd)
+	records := extractDirectHTTPCallAuth(config, configStart, line, "EXTRACTED", "http_call_config", model)
 	receiver := httpCallReceiver(call)
 	if receiver == "" {
 		return records
 	}
-	model := buildJSLexicalModel(masked)
 	binding, ok := model.resolveHTTPClient(receiver, callStart)
 	if !ok {
 		return records
 	}
-	for _, interceptor := range associatedRequestInterceptors(masked, receiver, callStart, model, binding) {
+	for _, interceptor := range associatedRequestInterceptors(masked, code, receiver, callStart, model, binding) {
 		interceptorLine := 1 + strings.Count(masked[:interceptor.start], "\n")
-		partial := extractDirectHTTPCallAuth(masked, interceptor.expression, interceptorLine, "PARTIAL", "http_client_interceptor")
+		partial := extractDirectHTTPCallAuth(interceptor.expression, interceptor.start, interceptorLine, "PARTIAL", "http_client_interceptor", model)
 		records = appendUniqueAuth(records, partial...)
 	}
 	return records
 }
 
-func httpCallConfigExpression(source string, callStart, callEnd int) string {
-	args := topLevelCallArguments(source, callStart, callEnd)
+func httpCallConfigExpression(source string, callStart, callEnd int) (string, int) {
+	return httpCallConfigExpressionCode(source, scanJSLexicalSource(source).code, callStart, callEnd)
+}
+
+func httpCallConfigExpressionCode(source, code string, callStart, callEnd int) (string, int) {
+	args := topLevelCallArgumentsCode(source, code, callStart, callEnd)
 	if len(args) == 0 {
-		return ""
+		return "", callStart
 	}
-	prefixEnd := strings.IndexByte(source[callStart:callEnd], '(')
+	prefixEnd := strings.IndexByte(code[callStart:callEnd], '(')
 	if prefixEnd < 0 {
-		return ""
+		return "", callStart
 	}
-	prefix := strings.TrimSpace(source[callStart : callStart+prefixEnd])
+	prefix := strings.TrimSpace(code[callStart : callStart+prefixEnd])
 	configIndex := -1
 	switch {
 	case regexp.MustCompile(`^fetch$`).MatchString(prefix):
@@ -667,12 +826,12 @@ func httpCallConfigExpression(source string, callStart, callEnd int) string {
 	case regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*\s*\.\s*(?:post|put|patch)$`).MatchString(prefix):
 		configIndex = 2
 	default:
-		return source[callStart:callEnd]
+		return source[callStart:callEnd], callStart
 	}
 	if configIndex < 0 || configIndex >= len(args) {
-		return ""
+		return "", callStart
 	}
-	return source[args[configIndex].start:args[configIndex].end]
+	return source[args[configIndex].start:args[configIndex].end], args[configIndex].start
 }
 
 type requestInterceptorExpression struct {
@@ -680,19 +839,16 @@ type requestInterceptorExpression struct {
 	expression string
 }
 
-func associatedRequestInterceptors(source, receiver string, callStart int, model jsLexicalModel, callBinding int) []requestInterceptorExpression {
+func associatedRequestInterceptors(source, code, receiver string, callStart int, model jsLexicalModel, callBinding int) []requestInterceptorExpression {
 	startRE := regexp.MustCompile(`\b` + regexp.QuoteMeta(receiver) + `\.interceptors\.request\.use\s*\(`)
-	indices := startRE.FindAllStringIndex(source[:callStart], -1)
+	indices := startRE.FindAllStringIndex(code[:callStart], -1)
 	result := make([]requestInterceptorExpression, 0, len(indices))
 	for _, index := range indices {
-		if !isJSCodeOffset(source, index[0]) {
-			continue
-		}
 		binding, ok := model.resolveHTTPClient(receiver, index[0])
 		if !ok || binding != callBinding {
 			continue
 		}
-		end := matchingCallEnd(source, index[0])
+		end := matchingCallEndCode(code, index[0])
 		if end <= index[0] {
 			continue
 		}
@@ -709,7 +865,7 @@ func httpCallReceiver(call string) string {
 	return match[1]
 }
 
-func extractDirectHTTPCallAuth(fullSource, expression string, line int, confidence, source string) []AuthRecord {
+func extractDirectHTTPCallAuth(expression string, expressionStart, line int, confidence, source string, model jsLexicalModel) []AuthRecord {
 	var records []AuthRecord
 	var oauthCredentialValues []string
 	properties := topLevelObjectProperties(expression)
@@ -730,23 +886,37 @@ func extractDirectHTTPCallAuth(fullSource, expression string, line int, confiden
 			}
 		}
 	}
-	assignmentRE := regexp.MustCompile(`(?is)\.headers(?:\.authorization|\[\s*["']authorization["']\s*\])\s*=\s*([^,;\n]+)`)
-	for _, value := range assignmentRE.FindAllStringSubmatch(expression, -1) {
-		if len(value) != 2 {
-			continue
-		}
-		oauthCredentialValues = append(oauthCredentialValues, value[1])
-		lower := strings.ToLower(value[1])
-		if strings.Contains(lower, "bearer") {
-			records = appendUniqueAuth(records, newHTTPAuthRecord("bearer", sanitizedCredentialExpression(value[1]), source, confidence, line))
-		} else if strings.Contains(lower, "basic") {
-			records = appendUniqueAuth(records, newHTTPAuthRecord("basic", sanitizedCredentialExpression(value[1]), source, confidence, line))
-		}
-	}
-	apiKeyAssignmentRE := regexp.MustCompile(`(?is)\.headers(?:\.(?:apiKey|apikey)|\[\s*["'](?:x-api-key|api-key|api_key|apikey|ocp-apim-subscription-key)["']\s*\])\s*=\s*([^,;\n]+)`)
-	for _, value := range apiKeyAssignmentRE.FindAllStringSubmatch(expression, -1) {
-		if len(value) == 2 {
-			records = appendUniqueAuth(records, newHTTPAuthRecord("api_key", sanitizedCredentialExpression(value[1]), source, confidence, line))
+	if source == "http_client_interceptor" {
+		configName, configBinding, ok := interceptorConfigBinding(expression, expressionStart, model)
+		if ok {
+			authorizationAssignments := resolvedInterceptorAssignmentValues(
+				expression,
+				expressionStart,
+				regexp.MustCompile(`(?is)\b([A-Za-z_$][A-Za-z0-9_$]*)\.headers(?:\.authorization|\[\s*["']authorization["']\s*\])\s*=\s*([^,;\n]+)`),
+				configName,
+				configBinding,
+				model,
+			)
+			for _, value := range authorizationAssignments {
+				oauthCredentialValues = append(oauthCredentialValues, value)
+				lower := strings.ToLower(value)
+				if strings.Contains(lower, "bearer") {
+					records = appendUniqueAuth(records, newHTTPAuthRecord("bearer", sanitizedCredentialExpression(value), source, confidence, line))
+				} else if strings.Contains(lower, "basic") {
+					records = appendUniqueAuth(records, newHTTPAuthRecord("basic", sanitizedCredentialExpression(value), source, confidence, line))
+				}
+			}
+			apiKeyAssignments := resolvedInterceptorAssignmentValues(
+				expression,
+				expressionStart,
+				regexp.MustCompile(`(?is)\b([A-Za-z_$][A-Za-z0-9_$]*)\.headers(?:\.(?:apiKey|apikey)|\[\s*["'](?:x-api-key|api-key|api_key|apikey|ocp-apim-subscription-key)["']\s*\])\s*=\s*([^,;\n]+)`),
+				configName,
+				configBinding,
+				model,
+			)
+			for _, value := range apiKeyAssignments {
+				records = appendUniqueAuth(records, newHTTPAuthRecord("api_key", sanitizedCredentialExpression(value), source, confidence, line))
+			}
 		}
 	}
 	for _, authBlock := range propertyValuesByName(properties, "auth") {
@@ -780,20 +950,77 @@ func extractDirectHTTPCallAuth(fullSource, expression string, line int, confiden
 	if anyValueMatches(credentials, `(?i)^\s*["'](?:include|same-origin)["']\s*$`) || anyValueMatches(withCredentials, `(?i)^\s*true\s*$`) {
 		records = appendUniqueAuth(records, newHTTPAuthRecord("session", "", source, confidence, line))
 	}
-	for _, helper := range importedOAuthHelpers(fullSource) {
-		used := false
-		for _, value := range oauthCredentialValues {
-			if regexp.MustCompile(`\b` + regexp.QuoteMeta(helper) + `\s*\(`).MatchString(value) {
-				used = true
-				break
-			}
-		}
-		if !used {
+	for _, helper := range model.oauthHelperNames() {
+		if !oauthHelperUsesImportedBinding(model, expression, expressionStart, helper, oauthCredentialValues) {
 			continue
 		}
 		records = appendUniqueAuth(records, AuthRecord{Kind: "oauth2", Expression: helper, Source: oauthRecordSource(source), Confidence: confidence, Line: line})
 	}
 	return records
+}
+
+func interceptorConfigBinding(expression string, expressionStart int, model jsLexicalModel) (string, int, bool) {
+	arrowRE := regexp.MustCompile(`(?s)\.use\s*\(\s*(?:\(\s*([A-Za-z_$][A-Za-z0-9_$]*)[^)]*\)|([A-Za-z_$][A-Za-z0-9_$]*))\s*=>\s*(\{)`)
+	match := arrowRE.FindStringSubmatchIndex(expression)
+	if len(match) != 8 {
+		return "", -1, false
+	}
+	name := ""
+	if match[2] >= 0 {
+		name = expression[match[2]:match[3]]
+	} else if match[4] >= 0 {
+		name = expression[match[4]:match[5]]
+	}
+	if name == "" || match[6] < 0 {
+		return "", -1, false
+	}
+	binding, ok := model.resolveBinding(name, expressionStart+match[6]+1)
+	return name, binding, ok
+}
+
+func resolvedInterceptorAssignmentValues(expression string, expressionStart int, assignmentRE *regexp.Regexp, configName string, configBinding int, model jsLexicalModel) []string {
+	var values []string
+	for _, match := range assignmentRE.FindAllStringSubmatchIndex(expression, -1) {
+		if len(match) != 6 || expression[match[2]:match[3]] != configName {
+			continue
+		}
+		binding, ok := model.resolveBinding(configName, expressionStart+match[2])
+		if !ok || binding != configBinding {
+			continue
+		}
+		values = append(values, strings.TrimSpace(expression[match[4]:match[5]]))
+	}
+	return values
+}
+
+func (model jsLexicalModel) oauthHelperNames() []string {
+	seen := map[string]bool{}
+	var names []string
+	for _, binding := range model.bindings {
+		if binding.kind == jsBindingOAuthImport && !seen[binding.name] {
+			seen[binding.name] = true
+			names = append(names, binding.name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func oauthHelperUsesImportedBinding(model jsLexicalModel, expression string, expressionStart int, helper string, credentialValues []string) bool {
+	helperRE := regexp.MustCompile(`\b` + regexp.QuoteMeta(helper) + `\s*\(`)
+	for _, value := range credentialValues {
+		valueOffset := strings.Index(expression, value)
+		if valueOffset < 0 {
+			continue
+		}
+		for _, match := range helperRE.FindAllStringIndex(value, -1) {
+			binding, ok := model.resolveBinding(helper, expressionStart+valueOffset+match[0])
+			if ok && model.bindings[binding].kind == jsBindingOAuthImport {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type jsObjectProperty struct {
@@ -830,28 +1057,10 @@ func topLevelObjectProperties(expression string) []jsObjectProperty {
 }
 
 func topLevelPropertyColon(source string, start, end int) int {
+	code := scanJSLexicalSource(source).code
 	parenDepth, braceDepth, bracketDepth := 0, 0, 0
-	quote := byte(0)
-	escaped := false
 	for i := start; i < end; i++ {
-		char := source[i]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if char == '\\' {
-				escaped = true
-				continue
-			}
-			if char == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch char {
-		case '\'', '"', '`':
-			quote = char
+		switch code[i] {
 		case '(':
 			parenDepth++
 		case ')':
@@ -914,28 +1123,10 @@ func oauthRecordSource(source string) string {
 }
 
 func matchingBraceEnd(source string, open int) int {
+	code := scanJSLexicalSource(source).code
 	depth := 0
-	quote := byte(0)
-	escaped := false
 	for i := open; i < len(source); i++ {
-		char := source[i]
-		if quote != 0 {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if char == '\\' {
-				escaped = true
-				continue
-			}
-			if char == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch char {
-		case '\'', '"', '`':
-			quote = char
+		switch code[i] {
 		case '{':
 			depth++
 		case '}':
@@ -951,13 +1142,16 @@ func matchingBraceEnd(source string, open int) int {
 func sanitizedCredentialExpression(value string) string {
 	for _, match := range regexp.MustCompile(`\$\{\s*([^}]+)\s*\}`).FindAllStringSubmatch(value, -1) {
 		if len(match) == 2 {
-			if candidate := firstCredentialIdentifier(match[1]); candidate != "" {
+			if candidate := firstCredentialIdentifier(maskCredentialStringLiterals(match[1])); candidate != "" {
 				return candidate
 			}
 		}
 	}
-	withoutStrings := regexp.MustCompile(`"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`+"`[^`]*`"+``).ReplaceAllString(value, " ")
-	return firstCredentialIdentifier(withoutStrings)
+	return firstCredentialIdentifier(maskCredentialStringLiterals(value))
+}
+
+func maskCredentialStringLiterals(value string) string {
+	return regexp.MustCompile(`"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`+"`[^`]*`"+``).ReplaceAllString(value, " ")
 }
 
 func firstCredentialIdentifier(value string) string {
@@ -973,34 +1167,10 @@ func firstCredentialIdentifier(value string) string {
 	return ""
 }
 
-func importedOAuthHelpers(source string) []string {
-	supported := map[string]bool{
+func supportedOAuthHelperNames() map[string]bool {
+	return map[string]bool{
 		"getAccessToken": true, "getAccessTokenSilently": true, "getTokenSilently": true, "acquireTokenSilent": true,
 	}
-	seen := map[string]bool{}
-	var result []string
-	importRE := regexp.MustCompile(`(?s)\bimport\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']`)
-	for _, match := range importRE.FindAllStringSubmatch(source, -1) {
-		if len(match) != 3 || !isOAuthModule(match[2]) {
-			continue
-		}
-		for _, item := range strings.Split(match[1], ",") {
-			parts := regexp.MustCompile(`\s+as\s+`).Split(strings.TrimSpace(item), 2)
-			if len(parts) == 0 || !supported[parts[0]] {
-				continue
-			}
-			localName := parts[0]
-			if len(parts) == 2 {
-				localName = strings.TrimSpace(parts[1])
-			}
-			if regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`).MatchString(localName) && !seen[localName] {
-				seen[localName] = true
-				result = append(result, localName)
-			}
-		}
-	}
-	sort.Strings(result)
-	return result
 }
 
 func isOAuthModule(module string) bool {
