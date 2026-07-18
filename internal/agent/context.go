@@ -60,6 +60,30 @@ type ContextUncertainty struct {
 	Reason string `json:"reason"`
 }
 
+type ContextEndpointConsumer struct {
+	Project        string `json:"project"`
+	File           string `json:"file,omitempty"`
+	Line           int    `json:"line,omitempty"`
+	Authentication string `json:"authentication"`
+	Confidence     string `json:"confidence,omitempty"`
+}
+
+type ContextEndpoint struct {
+	Provider           string                    `json:"provider"`
+	HTTPMethod         string                    `json:"http_method"`
+	Path               string                    `json:"path"`
+	Handler            string                    `json:"handler,omitempty"`
+	File               string                    `json:"file,omitempty"`
+	Line               int                       `json:"line,omitempty"`
+	RequestType        string                    `json:"request_type,omitempty"`
+	ResponseType       string                    `json:"response_type,omitempty"`
+	Security           string                    `json:"security"`
+	SecurityConfidence string                    `json:"security_confidence,omitempty"`
+	Consumers          []ContextEndpointConsumer `json:"consumers,omitempty"`
+	OmittedConsumers   int                       `json:"omitted_consumers,omitempty"`
+	Limitations        []string                  `json:"limitations,omitempty"`
+}
+
 type ContextPack struct {
 	Schema           int                   `json:"schema"`
 	Query            string                `json:"query"`
@@ -68,6 +92,7 @@ type ContextPack struct {
 	FallbackRequired bool                  `json:"fallback_required"`
 	FallbackReason   string                `json:"fallback_reason,omitempty"`
 	Entrypoints      []ContextLocation     `json:"entrypoints,omitempty"`
+	Endpoints        []ContextEndpoint     `json:"endpoints,omitempty"`
 	CallChain        []ContextRelationship `json:"call_chain,omitempty"`
 	Contracts        []ContextLocation     `json:"contracts,omitempty"`
 	Persistence      []ContextLocation     `json:"persistence,omitempty"`

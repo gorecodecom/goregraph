@@ -23,7 +23,10 @@ const (
 	scoreResolvedConfidence   = 15
 	minimumContextSeedScore   = 180
 	maximumContextUncertainty = 3
+	maximumContextConsumers   = 8
 )
+
+const noAuthEvidenceDetected = "No auth evidence detected"
 
 type rankedContextFact struct {
 	fact         scan.AgentContextFactRecord
@@ -44,6 +47,10 @@ type expandedContextEdge struct {
 func compileContextPack(index scan.AgentContextIndexRecord, request ContextRequest) (ContextPack, error) {
 	ranked := rankContextFacts(index.Facts, request.Query)
 	seeds := selectContextSeeds(ranked)
+	endpointSeed, hasEndpoint := selectContextEndpoint(ranked, request.Query)
+	if len(seeds) == 0 && hasEndpoint {
+		seeds = []rankedContextFact{endpointSeed}
+	}
 	if len(seeds) == 0 {
 		return fallbackContextPack(index, request, "no sufficiently relevant context fact found", nil)
 	}
@@ -87,6 +94,16 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	}
 	includedFactIDs[top.fact.ID] = true
 	retainedSeeds = append(retainedSeeds, top)
+	if hasEndpoint {
+		var endpointAdded bool
+		pack, endpointAdded, err = tryAddContextEndpoint(pack, request, endpointSeed.fact, index)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		if endpointAdded {
+			includedFactIDs[endpointSeed.fact.ID] = true
+		}
+	}
 
 	for _, seed := range seeds[1:] {
 		var accepted bool
@@ -256,7 +273,7 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 			}
 		}
 		routeExtras := 0
-		if strings.EqualFold(fact.Kind, "route") {
+		if strings.EqualFold(fact.Kind, "route") || strings.EqualFold(fact.Kind, "api_endpoint") {
 			routeTokens := contextTokenSet(strings.TrimSpace(fact.HTTPMethod + " " + fact.Path))
 			routeMatches := 0
 			for _, token := range queryTokens {
@@ -295,7 +312,7 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		}
 		score += matched * scorePerMatchedTerm
 		switch strings.ToLower(fact.Kind) {
-		case "route":
+		case "route", "api_endpoint":
 			score += scoreRouteKind
 		case "symbol", "backend_handler":
 			score += scoreSymbolKind
@@ -355,6 +372,101 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		return left.fact.ID < right.fact.ID
 	})
 	return ranked
+}
+
+func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedContextFact, bool) {
+	candidates := make([]rankedContextFact, 0)
+	for _, candidate := range ranked {
+		if candidate.score < minimumContextSeedScore ||
+			!strings.EqualFold(candidate.fact.Kind, "api_endpoint") ||
+			strings.TrimSpace(candidate.fact.HTTPMethod) == "" || strings.TrimSpace(candidate.fact.Path) == "" ||
+			contextFactUsesTestSource(candidate.fact) || contextFactUsesGeneratedMetadata(candidate.fact) ||
+			!contextEndpointRouteMatchesQuery(candidate.fact, query) {
+			continue
+		}
+		candidates = append(candidates, candidate)
+	}
+	if len(candidates) == 0 {
+		return rankedContextFact{}, false
+	}
+
+	top := candidates[0]
+	routeKey := contextEndpointRouteKey(top.fact)
+	providers := map[string][]rankedContextFact{}
+	for _, candidate := range candidates {
+		if contextEndpointRouteKey(candidate.fact) == routeKey {
+			providers[candidate.fact.Project] = append(providers[candidate.fact.Project], candidate)
+		}
+	}
+	if len(providers) <= 1 {
+		return top, true
+	}
+	if !contextEndpointMethodAndPathMatchQuery(top.fact, query) {
+		return rankedContextFact{}, false
+	}
+
+	bestScore := 0
+	bestProvider := ""
+	tied := false
+	for provider := range providers {
+		score := contextEndpointProviderQueryScore(provider, top.fact, query)
+		switch {
+		case score > bestScore:
+			bestScore = score
+			bestProvider = provider
+			tied = false
+		case score == bestScore && score > 0:
+			tied = true
+		}
+	}
+	if bestScore == 0 || tied {
+		return rankedContextFact{}, false
+	}
+	return providers[bestProvider][0], true
+}
+
+func contextEndpointRouteKey(fact scan.AgentContextFactRecord) string {
+	return strings.ToUpper(strings.TrimSpace(fact.HTTPMethod)) + "\x00" + strings.TrimSpace(fact.Path)
+}
+
+func contextEndpointRouteMatchesQuery(fact scan.AgentContextFactRecord, query string) bool {
+	queryTokens := contextTokenSet(query)
+	for token := range contextTokenSet(strings.TrimSpace(fact.HTTPMethod + " " + fact.Path)) {
+		if queryTokens[token] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextEndpointMethodAndPathMatchQuery(fact scan.AgentContextFactRecord, query string) bool {
+	queryTokens := contextTokenSet(query)
+	if !queryTokens[strings.ToLower(strings.TrimSpace(fact.HTTPMethod))] {
+		return false
+	}
+	for token := range contextTokenSet(fact.Path) {
+		if queryTokens[token] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextEndpointProviderQueryScore(provider string, endpoint scan.AgentContextFactRecord, query string) int {
+	queryTerm := normalizeContextTerm(query)
+	providerTerm := normalizeContextTerm(provider)
+	score := 0
+	if providerTerm != "" && strings.Contains(queryTerm, providerTerm) {
+		score += 100
+	}
+	queryTokens := contextTokenSet(query)
+	routeTokens := contextTokenSet(strings.TrimSpace(endpoint.HTTPMethod + " " + endpoint.Path))
+	for token := range contextTokenSet(provider) {
+		if !routeTokens[token] && queryTokens[token] {
+			score++
+		}
+	}
+	return score
 }
 
 func contextQueryTokens(value string) []string {
@@ -558,7 +670,7 @@ func expandContextEdges(
 	}
 	for seedRank, seed := range seeds {
 		for _, edge := range sortedEdges {
-			if edge.FromFactID == edge.ToFactID ||
+			if contextStructuredEndpointEdge(edge.Kind) || edge.FromFactID == edge.ToFactID ||
 				edge.FromFactID != seed.fact.ID && edge.ToFactID != seed.fact.ID {
 				continue
 			}
@@ -578,7 +690,7 @@ func expandContextEdges(
 	}
 	for _, current := range frontier {
 		for _, edge := range sortedEdges {
-			if edge.FromFactID != current.factID || edge.FromFactID == edge.ToFactID {
+			if contextStructuredEndpointEdge(edge.Kind) || edge.FromFactID != current.factID || edge.FromFactID == edge.ToFactID {
 				continue
 			}
 			neighbor, ok := factByID[edge.ToFactID]
@@ -595,6 +707,10 @@ func expandContextEdges(
 		return contextEdgeLess(result[i].edge, result[j].edge)
 	})
 	return result
+}
+
+func contextStructuredEndpointEdge(kind string) bool {
+	return kind == "consumes_endpoint" || kind == "requires_auth"
 }
 
 func contextEdgeLess(left, right scan.AgentContextEdgeRecord) bool {
@@ -681,6 +797,246 @@ func contextRelationship(
 		Reason:     edge.Reason,
 		Confidence: edge.Confidence,
 	}
+}
+
+type contextEndpointConsumerCandidate struct {
+	fact scan.AgentContextFactRecord
+	edge scan.AgentContextEdgeRecord
+}
+
+func tryAddContextEndpoint(
+	pack ContextPack,
+	request ContextRequest,
+	fact scan.AgentContextFactRecord,
+	index scan.AgentContextIndexRecord,
+) (ContextPack, bool, error) {
+	consumers := contextEndpointConsumers(fact.ID, index.Facts, index.Edges)
+	endpoint := contextEndpointForFact(fact, index.Facts, index.Edges)
+	endpoint.OmittedConsumers = contextEndpointIndexedOmittedConsumers(fact.Summary) + len(consumers)
+
+	pack, added, err := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
+		candidate.Endpoints = append(candidate.Endpoints, endpoint)
+		return mergeContextFile(
+			candidate,
+			contextFileForFact(fact, "endpoint", "selected API endpoint"),
+			request.MaxFiles,
+		)
+	})
+	if err != nil || !added {
+		return pack, added, err
+	}
+
+	acceptedConsumers := 0
+	for _, consumer := range consumers {
+		if acceptedConsumers >= maximumContextConsumers {
+			break
+		}
+		consumerRecord := contextEndpointConsumerForFact(consumer.fact, consumer.edge)
+		candidate, accepted, appendErr := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
+			endpointIndex := len(candidate.Endpoints) - 1
+			candidate.Endpoints[endpointIndex].Consumers = append(
+				candidate.Endpoints[endpointIndex].Consumers,
+				consumerRecord,
+			)
+			candidate.Endpoints[endpointIndex].OmittedConsumers--
+			return mergeContextFile(
+				candidate,
+				contextFileForFact(consumer.fact, "endpoint_consumer", "calls selected API endpoint"),
+				request.MaxFiles,
+			)
+		})
+		if appendErr != nil {
+			return ContextPack{}, false, appendErr
+		}
+		if accepted {
+			pack = candidate
+			acceptedConsumers++
+		}
+	}
+	return pack, true, nil
+}
+
+func contextEndpointForFact(
+	fact scan.AgentContextFactRecord,
+	facts []scan.AgentContextFactRecord,
+	edges []scan.AgentContextEdgeRecord,
+) ContextEndpoint {
+	security := contextSummaryField(fact.Summary, "security")
+	if security == "" {
+		security = contextAuthenticationLabel(fact.Summary, fact.Search)
+	} else {
+		security = contextAuthenticationLabel(security)
+	}
+	return ContextEndpoint{
+		Provider:           fact.Project,
+		HTTPMethod:         strings.ToUpper(strings.TrimSpace(fact.HTTPMethod)),
+		Path:               strings.TrimSpace(fact.Path),
+		Handler:            strings.TrimSpace(fact.Qualified),
+		File:               strings.TrimSpace(fact.File),
+		Line:               fact.Line,
+		RequestType:        contextSummaryField(fact.Summary, "request"),
+		ResponseType:       contextSummaryField(fact.Summary, "response"),
+		Security:           security,
+		SecurityConfidence: contextEndpointSecurityConfidence(fact, facts, edges),
+	}
+}
+
+func contextEndpointConsumers(
+	endpointID string,
+	facts []scan.AgentContextFactRecord,
+	edges []scan.AgentContextEdgeRecord,
+) []contextEndpointConsumerCandidate {
+	factByID := make(map[string]scan.AgentContextFactRecord, len(facts))
+	for _, fact := range facts {
+		factByID[fact.ID] = fact
+	}
+	byFactID := map[string]contextEndpointConsumerCandidate{}
+	for _, edge := range edges {
+		if edge.Kind != "consumes_endpoint" || edge.ToFactID != endpointID {
+			continue
+		}
+		fact, ok := factByID[edge.FromFactID]
+		if !ok || fact.Kind != "api_consumer" {
+			continue
+		}
+		candidate := contextEndpointConsumerCandidate{fact: fact, edge: edge}
+		existing, found := byFactID[fact.ID]
+		if !found || contextEdgeLess(edge, existing.edge) {
+			byFactID[fact.ID] = candidate
+		}
+	}
+	result := make([]contextEndpointConsumerCandidate, 0, len(byFactID))
+	for _, candidate := range byFactID {
+		result = append(result, candidate)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		leftTest := contextFactUsesTestSource(result[i].fact)
+		rightTest := contextFactUsesTestSource(result[j].fact)
+		if leftTest != rightTest {
+			return !leftTest
+		}
+		leftGenerated := contextFactUsesGeneratedMetadata(result[i].fact)
+		rightGenerated := contextFactUsesGeneratedMetadata(result[j].fact)
+		if leftGenerated != rightGenerated {
+			return !leftGenerated
+		}
+		left, right := result[i].fact, result[j].fact
+		if left.Project != right.Project {
+			return left.Project < right.Project
+		}
+		if left.File != right.File {
+			return left.File < right.File
+		}
+		if left.Line != right.Line {
+			return left.Line < right.Line
+		}
+		return left.ID < right.ID
+	})
+	return result
+}
+
+func contextEndpointConsumerForFact(
+	fact scan.AgentContextFactRecord,
+	edge scan.AgentContextEdgeRecord,
+) ContextEndpointConsumer {
+	authentication := contextSummaryField(fact.Summary, "auth")
+	if authentication == "" {
+		authentication = contextAuthenticationLabel(edge.Reason, fact.Summary, fact.Search)
+	} else {
+		authentication = contextAuthenticationLabel(authentication)
+	}
+	return ContextEndpointConsumer{
+		Project:        fact.Project,
+		File:           fact.File,
+		Line:           fact.Line,
+		Authentication: authentication,
+		Confidence:     firstNonEmptyContext(fact.Confidence, edge.Confidence),
+	}
+}
+
+func contextSummaryField(summary, key string) string {
+	for _, part := range strings.Split(summary, ";") {
+		part = strings.TrimSpace(part)
+		prefix := key + " "
+		if strings.HasPrefix(strings.ToLower(part), prefix) {
+			return strings.TrimSpace(part[len(prefix):])
+		}
+	}
+	return ""
+}
+
+func contextAuthenticationLabel(values ...string) string {
+	kinds := map[string]bool{}
+	for _, value := range values {
+		for _, token := range strings.FieldsFunc(strings.ToLower(value), func(current rune) bool {
+			return !unicode.IsLetter(current) && !unicode.IsDigit(current) && current != '_'
+		}) {
+			switch token {
+			case scan.SecurityBasic, scan.SecurityBearer, scan.SecurityOAuth2, scan.SecurityAPIKey,
+				scan.SecuritySession, scan.SecurityMTLS, scan.SecurityRole, scan.SecurityAuthenticated,
+				scan.SecurityPublic, scan.SecurityUnknown:
+				kinds[token] = true
+			}
+		}
+	}
+	delete(kinds, scan.SecurityUnknown)
+	if len(kinds) == 0 {
+		return noAuthEvidenceDetected
+	}
+	labels := make([]string, 0, len(kinds))
+	for kind := range kinds {
+		labels = append(labels, kind)
+	}
+	sort.Strings(labels)
+	return strings.Join(labels, ", ")
+}
+
+func contextEndpointSecurityConfidence(
+	endpoint scan.AgentContextFactRecord,
+	facts []scan.AgentContextFactRecord,
+	edges []scan.AgentContextEdgeRecord,
+) string {
+	securityFactIDs := map[string]bool{}
+	for _, edge := range edges {
+		if edge.FromFactID == endpoint.ID && edge.Kind == "requires_auth" {
+			securityFactIDs[edge.ToFactID] = true
+		}
+	}
+	prefix := strings.ToLower(strings.TrimSpace(endpoint.HTTPMethod + " " + endpoint.Path + " "))
+	confidence := ""
+	for _, fact := range facts {
+		if fact.Kind != "endpoint_security" || fact.Project != endpoint.Project {
+			continue
+		}
+		if !securityFactIDs[fact.ID] && !strings.HasPrefix(strings.ToLower(fact.Qualified), prefix) {
+			continue
+		}
+		confidence = strongerContextConfidence(confidence, fact.Confidence)
+	}
+	return confidence
+}
+
+func contextEndpointIndexedOmittedConsumers(summary string) int {
+	for _, part := range strings.Split(summary, ";") {
+		var omitted int
+		if _, err := fmt.Sscanf(strings.TrimSpace(part), "%d consumer call sites omitted", &omitted); err == nil && omitted > 0 {
+			return omitted
+		}
+	}
+	return 0
+}
+
+func contextFactUsesGeneratedMetadata(fact scan.AgentContextFactRecord) bool {
+	return !contextSourceFileAllowed(fact.File)
+}
+
+func contextSourceFileAllowed(file string) bool {
+	file = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(file), "\\", "/"))
+	if file == "" {
+		return true
+	}
+	return !strings.HasSuffix(file, "/api-catalog.json") && file != "api-catalog.json" &&
+		!strings.HasSuffix(file, "/.goregraph-dashboard.json") && file != ".goregraph-dashboard.json"
 }
 
 func tryAddContextLocation(
@@ -829,10 +1185,17 @@ func contextFileForFact(fact scan.AgentContextFactRecord, role, reason string) C
 		endLine = fact.Line
 	}
 	return ContextFile{
-		Project: fact.Project, Path: fact.File,
+		Project: fact.Project, Path: contextPackSourceFile(fact.File),
 		StartLine: fact.Line, EndLine: endLine,
 		Role: role, Reason: reason, Confidence: fact.Confidence,
 	}
+}
+
+func contextPackSourceFile(file string) string {
+	if !contextSourceFileAllowed(file) {
+		return ""
+	}
+	return file
 }
 
 func mergeContextFile(pack *ContextPack, file ContextFile, maxFiles int) bool {
@@ -906,6 +1269,14 @@ func cloneContextPack(pack ContextPack) ContextPack {
 		return result
 	}
 	pack.Entrypoints = cloneLocations(pack.Entrypoints)
+	pack.Endpoints = append([]ContextEndpoint(nil), pack.Endpoints...)
+	for index := range pack.Endpoints {
+		pack.Endpoints[index].Consumers = append(
+			[]ContextEndpointConsumer(nil),
+			pack.Endpoints[index].Consumers...,
+		)
+		pack.Endpoints[index].Limitations = append([]string(nil), pack.Endpoints[index].Limitations...)
+	}
 	pack.CallChain = append([]ContextRelationship(nil), pack.CallChain...)
 	pack.Contracts = cloneLocations(pack.Contracts)
 	pack.Persistence = cloneLocations(pack.Persistence)

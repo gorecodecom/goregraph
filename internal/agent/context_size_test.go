@@ -92,6 +92,47 @@ func TestDefaultContextPackStaysWithinTokenAndByteBudgets(t *testing.T) {
 	}
 }
 
+func TestBuildContextEndpointBlockPreservesExistingHardCeilings(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{{
+		ID: "endpoint", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders/{id}",
+		HTTPMethod: "GET", Path: "/orders/{id}", File: "services/orders/src/Orders.java",
+		Summary: "provider orders; security bearer", Search: "GET /orders/{id} services orders bearer",
+		Confidence: "EXACT",
+	}}
+	edges := make([]scan.AgentContextEdgeRecord, 0, 80)
+	for index := 0; index < 80; index++ {
+		id := fmt.Sprintf("consumer:%03d", index)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Project: fmt.Sprintf("frontend/%03d", index), Kind: "api_consumer", Name: id,
+			File: fmt.Sprintf("frontend/%03d/src/api.ts", index), Line: index + 1,
+			Summary: "consumer service storefront; auth bearer, oauth2", Confidence: "RESOLVED",
+		})
+		edges = append(edges, scan.AgentContextEdgeRecord{
+			ID: "edge:" + id, FromFactID: id, ToFactID: "endpoint",
+			Kind: "consumes_endpoint", Reason: "catalog consumer auth bearer, oauth2",
+		})
+	}
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion, Facts: facts, Edges: edges,
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "who calls GET /orders/{id}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 1 || len(pack.Endpoints[0].Consumers) > 8 ||
+		pack.Endpoints[0].OmittedConsumers == 0 {
+		t.Fatalf("endpoint block bounds = %#v", pack.Endpoints)
+	}
+	if pack.EstimatedTokens > DefaultContextBudgetTokens || len(pack.Files) > DefaultContextMaxFiles || len(body) > 7200 {
+		t.Fatalf("hard ceilings exceeded: bytes=%d tokens=%d files=%d", len(body), pack.EstimatedTokens, len(pack.Files))
+	}
+}
+
 func writeDenseContextIndexFixture(t *testing.T, factCount int) string {
 	t.Helper()
 	if factCount < 2 {
