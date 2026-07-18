@@ -424,7 +424,7 @@ func workspaceCatalogEndpointCandidates(endpoints []APIEndpointRecord, match Wor
 		if match.BackendHTTPMethod != "" && !strings.EqualFold(match.BackendHTTPMethod, endpoint.HTTPMethod) {
 			continue
 		}
-		if match.BackendPath != "" && normalizeAPIPathParameterNames(canonicalProviderPath(match.BackendPath)) != normalizeAPIPathParameterNames(endpoint.Path) {
+		if match.BackendPath != "" && !pathsCompatibleWithKnownBasePrefixes(canonicalProviderPath(match.BackendPath), endpoint.Path) {
 			continue
 		}
 		if match.BackendHandler != "" && match.BackendHandler != endpoint.Handler {

@@ -651,6 +651,64 @@ func TestBuildWorkspaceAPICatalogKeepsMultipleAmbiguousCallSitesDeterministicall
 	}
 }
 
+func TestBuildWorkspaceAPICatalogRecoversPrefixCompatibleAmbiguousProviders(t *testing.T) {
+	userService := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "services/users", Service: "users"},
+		endpoints: []SpringEndpointRecord{{HTTPMethod: "GET", Path: "/userservice/users/{id}", Controller: "UserController", Method: "get", File: "UserController.java", Line: 10}},
+	}
+	productService := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "services/products", Service: "products"},
+		endpoints: []SpringEndpointRecord{{HTTPMethod: "GET", Path: "/productservice/users/{id}", Controller: "ProductUserController", Method: "get", File: "ProductUserController.java", Line: 20}},
+	}
+	consumer := workspaceIndexProject{
+		record:    WorkspaceProjectRecord{Path: "frontend/web"},
+		contracts: []APIContractRecord{{HTTPMethod: "GET", Path: "/users/{id}", File: "src/users.ts", Line: 7, Caller: "loadUser"}},
+	}
+	projects := []workspaceIndexProject{consumer, userService, productService}
+	registry := WorkspaceRegistryRecord{Root: "workspace", Projects: []WorkspaceProjectRecord{consumer.record, userService.record, productService.record}}
+	matches := buildWorkspaceContractMatches(projects)
+	if len(matches) != 1 || matches[0].Issue != "ambiguous_route" || matches[0].Confidence != "AMBIGUOUS" || len(matches[0].EquivalentRouteCandidates) != 2 {
+		t.Fatalf("prefix-compatible providers were not preserved by matcher: %#v", matches)
+	}
+
+	forward, err := BuildWorkspaceAPICatalog(registry, projects, matches, nil, "fixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(forward.Endpoints) != 2 {
+		t.Fatalf("provider inventory=%#v", forward.Endpoints)
+	}
+	for _, endpoint := range forward.Endpoints {
+		if len(endpoint.Consumers) != 0 || len(endpoint.Mismatches) != 1 {
+			t.Fatalf("prefix-compatible ambiguity was not attached to candidate endpoint: %#v", endpoint)
+		}
+		mismatch := endpoint.Mismatches[0]
+		if mismatch.Kind != "ambiguous_route_match" || mismatch.ConsumerProject != "frontend/web" || !containsString(mismatch.EvidenceIDs, matches[0].ID) {
+			t.Fatalf("prefix-compatible ambiguity lost scope/evidence: %#v", mismatch)
+		}
+	}
+	filtered := filterWorkspaceAPICatalog("frontend/web", forward)
+	if len(filtered.Endpoints) != 2 {
+		t.Fatalf("consumer catalog lost prefix-compatible candidates: %#v", filtered)
+	}
+
+	reverseProjects := append([]workspaceIndexProject(nil), projects...)
+	reverseSlice(reverseProjects)
+	reverseRegistry := registry
+	reverseRegistry.Projects = append([]WorkspaceProjectRecord(nil), registry.Projects...)
+	reverseSlice(reverseRegistry.Projects)
+	reverseMatches := buildWorkspaceContractMatches(reverseProjects)
+	reverse, err := BuildWorkspaceAPICatalog(reverseRegistry, reverseProjects, reverseMatches, nil, "fixed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forwardJSON, _ := json.Marshal(forward)
+	reverseJSON, _ := json.Marshal(reverse)
+	if string(forwardJSON) != string(reverseJSON) {
+		t.Fatalf("prefix-compatible discovery order changed catalog JSON:\nforward: %s\nreverse: %s", forwardJSON, reverseJSON)
+	}
+}
+
 func ambiguousMatchIDForProject(t *testing.T, matches []WorkspaceContractMatchRecord, project string) string {
 	t.Helper()
 	for _, match := range matches {
