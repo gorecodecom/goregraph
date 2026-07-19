@@ -518,6 +518,30 @@ func TestResolveSourcePathRejectsUnsafePaths(t *testing.T) {
 	}
 }
 
+func TestResolveSourcePathConfinesWorkspaceCandidatesToProjectRoot(t *testing.T) {
+	root := t.TempDir()
+	secret := writeSourceFile(t, root, "b/secret.java", "class Secret {}\n")
+	if err := os.MkdirAll(filepath.Join(root, "a"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(root, "a", "link.java")); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, candidate := range []sourceCandidate{
+		{Project: "a", Path: "../b/secret.java"},
+		{Project: "a", Path: "link.java"},
+	} {
+		_, err := resolveSourcePath(
+			loadedContextIndex{ScopeRoot: root, Workspace: true},
+			candidate,
+		)
+		if err == nil || err.Error() != "source path is unsafe" {
+			t.Fatalf("resolveSourcePath(%#v) error = %v, want source path is unsafe", candidate, err)
+		}
+	}
+}
+
 func TestReadSourceFileRejectsUnsafeContent(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "directory")

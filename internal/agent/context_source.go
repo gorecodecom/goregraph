@@ -869,17 +869,19 @@ func resolveSourcePath(loaded loadedContextIndex, candidate sourceCandidate) (st
 		return "", fmt.Errorf("source path is unsafe")
 	}
 
-	parts := []string{loaded.ScopeRoot}
+	projectRoot := filepath.Clean(loaded.ScopeRoot)
 	if loaded.Workspace {
 		project := strings.TrimSpace(candidate.Project)
 		if project == "" || filepath.IsAbs(project) {
 			return "", fmt.Errorf("source path is unsafe")
 		}
-		parts = append(parts, project)
+		projectRoot = filepath.Clean(filepath.Join(loaded.ScopeRoot, project))
+		if !pathIsWithin(loaded.ScopeRoot, projectRoot) {
+			return "", fmt.Errorf("source path is unsafe")
+		}
 	}
-	parts = append(parts, path)
-	resolvedCandidate := filepath.Clean(filepath.Join(parts...))
-	if !pathIsWithin(loaded.ScopeRoot, resolvedCandidate) {
+	resolvedCandidate := filepath.Clean(filepath.Join(projectRoot, path))
+	if !pathIsWithin(projectRoot, resolvedCandidate) {
 		return "", fmt.Errorf("source path is unsafe")
 	}
 
@@ -887,11 +889,18 @@ func resolveSourcePath(loaded loadedContextIndex, candidate sourceCandidate) (st
 	if err != nil {
 		return "", fmt.Errorf("source path is unsafe")
 	}
+	resolvedProjectRoot, err := filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return "", fmt.Errorf("source file is unreadable: %w", err)
+	}
+	if !pathIsWithin(resolvedRoot, resolvedProjectRoot) {
+		return "", fmt.Errorf("source path is unsafe")
+	}
 	resolvedCandidate, err = filepath.EvalSymlinks(resolvedCandidate)
 	if err != nil {
 		return "", fmt.Errorf("source file is unreadable: %w", err)
 	}
-	if !pathIsWithin(resolvedRoot, resolvedCandidate) {
+	if !pathIsWithin(resolvedProjectRoot, resolvedCandidate) {
 		return "", fmt.Errorf("source path is unsafe")
 	}
 
