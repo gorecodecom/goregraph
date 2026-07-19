@@ -684,7 +684,7 @@ func sourceTypeIdentifier(value string, requireTypeShape bool) bool {
 
 func sourceExpressionPrefixWord(value string) bool {
 	switch strings.ToLower(value) {
-	case "alignof", "await", "delete", "new", "sizeof", "throw", "typeof", "yield":
+	case "alignof", "await", "co_await", "co_return", "co_yield", "delete", "new", "sizeof", "throw", "typeof", "yield":
 		return true
 	default:
 		return false

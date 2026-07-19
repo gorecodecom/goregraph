@@ -201,6 +201,9 @@ func TestRenderSourceCandidateRejectsCStyleExpressionPrefixes(t *testing.T) {
 		{name: "C# new", path: "UserService.cs", line: "new deleteUser()"},
 		{name: "C sizeof", path: "user.c", line: "sizeof deleteUser()"},
 		{name: "C++ alignof", path: "user.cpp", line: "alignof deleteUser()"},
+		{name: "C++ co_await", path: "user.cpp", line: "co_await deleteUser()"},
+		{name: "C++ co_yield", path: "user.cpp", line: "co_yield deleteUser()"},
+		{name: "C++ co_return", path: "user.cpp", line: "co_return deleteUser()"},
 		{name: "Java comparison", path: "UserService.java", line: "count < limit > deleteUser()"},
 		{name: "C# expression", path: "UserService.cs", line: "left * right deleteUser()"},
 	} {
