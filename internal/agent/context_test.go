@@ -359,6 +359,135 @@ func findContextConcern(concerns []contextConcern, key string) (contextConcern, 
 	return contextConcern{}, false
 }
 
+func TestSelectContextPathsTraversesSevenHopsDeterministicallyWithinCaps(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{
+		{ID: "route", Project: "services/catalog", Kind: "route", Name: "DELETE /catalog/items/{id}", File: "CatalogController.go", Confidence: "EXACT"},
+		{ID: "00-operation", Project: "services/catalog", Kind: "symbol", Name: "deleteItem", File: "CatalogService.go", Confidence: "EXACT"},
+		{ID: "client", Project: "libraries/client", Kind: "symbol", Name: "deleteJobs", File: "JobsClient.go", Confidence: "EXACT"},
+		{ID: "contract", Project: "libraries/client", Kind: "api_contract", Name: "DELETE /jobs/items/{id}", File: "JobsClient.go", Confidence: "RESOLVED"},
+		{ID: "provider", Project: "services/jobs", Kind: "route", Name: "DELETE /jobs/items/{id}", File: "JobsController.go", Confidence: "EXACT"},
+		{ID: "service", Project: "services/jobs", Kind: "symbol", Name: "deleteJobs", File: "JobsService.go", Confidence: "EXACT"},
+		{ID: "repository", Project: "services/jobs", Kind: "persistence", Name: "deleteJobs", File: "JobsRepository.go", Confidence: "EXACT"},
+		{ID: "history", Project: "services/jobs", Kind: "persistence", Name: "deleteHistory", File: "HistoryRepository.go", Confidence: "EXACT"},
+		{ID: "beyond-limit", Project: "services/jobs", Kind: "persistence", Name: "deleteArchive", File: "ArchiveRepository.go", Confidence: "EXACT"},
+		{ID: "test", Project: "services/catalog", Kind: "test", Name: "deletes item", File: "src/test/CatalogController_test.go", Confidence: "EXACT"},
+		{ID: "generated", Project: "services/catalog", Kind: "metadata", Name: "catalog", File: "api-catalog.json", Confidence: "EXACT"},
+	}
+	edges := []scan.AgentContextEdgeRecord{
+		{ID: "path-1", FromFactID: "route", ToFactID: "00-operation", Kind: "call"},
+		{ID: "path-2", FromFactID: "00-operation", ToFactID: "client", Kind: "call"},
+		{ID: "path-3", FromFactID: "client", ToFactID: "contract", Kind: "call"},
+		{ID: "path-4", FromFactID: "contract", ToFactID: "provider", Kind: "http_contract"},
+		{ID: "path-5", FromFactID: "provider", ToFactID: "service", Kind: "call"},
+		{ID: "path-6", FromFactID: "service", ToFactID: "repository", Kind: "persistence"},
+		{ID: "path-7", FromFactID: "repository", ToFactID: "history", Kind: "persistence"},
+		{ID: "path-8", FromFactID: "history", ToFactID: "beyond-limit", Kind: "persistence"},
+		{ID: "cycle", FromFactID: "service", ToFactID: "00-operation", Kind: "call"},
+		{ID: "test-target", FromFactID: "test", ToFactID: "route", Kind: "test_target"},
+		{ID: "generated-edge", FromFactID: "route", ToFactID: "generated", Kind: "use"},
+	}
+	for index := range 100 {
+		id := fmt.Sprintf("fan-%03d", index)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Project: "services/unrelated", Kind: "symbol", Name: id, File: id + ".go", Confidence: "EXACT",
+		})
+		edges = append(edges, scan.AgentContextEdgeRecord{
+			ID: "fan-edge-" + id, FromFactID: "route", ToFactID: id, Kind: "use",
+		})
+	}
+	concerns := []contextConcern{
+		newContextConcern(contextConcernEntrypoint, "", true, []string{"route"}, "selected entrypoint"),
+		newContextConcern(contextConcernPrimaryPath, "", true, []string{
+			"route", "00-operation", "client", "contract", "provider", "service", "repository", "history",
+		}, "complete path"),
+		newContextConcern(contextConcernHTTPContract, "", true, []string{"contract", "provider"}, "contract boundary"),
+		newContextConcern(contextConcernPersistence, "", true, []string{"history"}, "terminal persistence"),
+	}
+	index := scan.AgentContextIndexRecord{Facts: facts, Edges: edges}
+	seed := rankedContextFact{fact: facts[0], score: scoreExactRoute}
+
+	forward := selectContextPaths(index, seed, concerns)
+	reversedFacts := append([]scan.AgentContextFactRecord(nil), facts...)
+	reversedEdges := append([]scan.AgentContextEdgeRecord(nil), edges...)
+	reversedConcerns := append([]contextConcern(nil), concerns...)
+	slices.Reverse(reversedFacts)
+	slices.Reverse(reversedEdges)
+	slices.Reverse(reversedConcerns)
+	backward := selectContextPaths(
+		scan.AgentContextIndexRecord{Facts: reversedFacts, Edges: reversedEdges},
+		seed,
+		reversedConcerns,
+	)
+
+	if !reflect.DeepEqual(forward, backward) {
+		t.Fatalf("path selection changed after reversing input: %#v != %#v", forward, backward)
+	}
+	if maximumContextPathHops != 7 || maximumContextVisitedFacts != 256 ||
+		maximumContextPaths != 8 || maximumContextEdgesPerNode != 24 {
+		t.Fatalf("path safety limits changed: %d/%d/%d/%d", maximumContextPathHops, maximumContextVisitedFacts, maximumContextPaths, maximumContextEdgesPerNode)
+	}
+	wantFacts := []string{"00-operation", "client", "contract", "history", "provider", "repository", "route", "service"}
+	wantEdges := []string{"path-1", "path-2", "path-3", "path-4", "path-5", "path-6", "path-7"}
+	if !reflect.DeepEqual(forward.factIDs, wantFacts) || !reflect.DeepEqual(forward.edgeIDs, wantEdges) {
+		t.Fatalf("selected seven-hop path = facts %#v edges %#v", forward.factIDs, forward.edgeIDs)
+	}
+	if len(forward.paths) > maximumContextPaths || forward.distances["history"] != maximumContextPathHops {
+		t.Fatalf("path count/distances exceed bounds: %#v", forward)
+	}
+	for _, path := range forward.paths {
+		seen := map[string]bool{}
+		if len(path.edgeIDs) > maximumContextPathHops {
+			t.Fatalf("path exceeds hop bound: %#v", path)
+		}
+		for _, factID := range path.factIDs {
+			if seen[factID] {
+				t.Fatalf("cyclic path selected: %#v", path)
+			}
+			seen[factID] = true
+		}
+	}
+	for _, rejected := range []string{"beyond-limit", "generated", "test", "fan-000"} {
+		if slices.Contains(forward.factIDs, rejected) {
+			t.Fatalf("ineligible or unrelated fact %q selected: %#v", rejected, forward.factIDs)
+		}
+	}
+	for _, key := range []string{contextConcernEntrypoint, contextConcernPrimaryPath, contextConcernHTTPContract, contextConcernPersistence} {
+		if !forward.concernCoverage[key] {
+			t.Fatalf("required concern %q was not covered: %#v", key, forward.concernCoverage)
+		}
+	}
+}
+
+func TestSelectContextPathsIncludesConnectedTestsOnlyWhenRequired(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "app", Kind: "route", Name: "GET /users", File: "route.go", Confidence: "EXACT"},
+			{ID: "service", Project: "app", Kind: "symbol", Name: "users", File: "service.go", Confidence: "EXACT"},
+			{ID: "test", Project: "app", Kind: "test", Name: "gets users", File: "src/test/route_test.go", Confidence: "EXACT"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "call", FromFactID: "route", ToFactID: "service", Kind: "call"},
+			{ID: "test-target", FromFactID: "test", ToFactID: "route", Kind: "test_target"},
+		},
+	}
+	seed := rankedContextFact{fact: index.Facts[0], score: scoreExactRoute}
+	core := []contextConcern{newContextConcern(
+		contextConcernPrimaryPath, "", true, []string{"route", "service"}, "production path",
+	)}
+
+	withoutTests := selectContextPaths(index, seed, core)
+	if slices.Contains(withoutTests.factIDs, "test") || slices.Contains(withoutTests.edgeIDs, "test-target") {
+		t.Fatalf("unrequested test entered production selection: %#v", withoutTests)
+	}
+	withTests := selectContextPaths(index, seed, append(core, newContextConcern(
+		contextConcernTests, "", true, []string{"test"}, "tests requested by task",
+	)))
+	if !slices.Contains(withTests.factIDs, "test") || !slices.Contains(withTests.edgeIDs, "test-target") ||
+		!withTests.concernCoverage[contextConcernTests] {
+		t.Fatalf("required connected test was not selected: %#v", withTests)
+	}
+}
+
 func TestBuildContextRejectsInvalidBounds(t *testing.T) {
 	for _, request := range []ContextRequest{
 		{Root: t.TempDir(), Query: "delete user", BudgetTokens: 255},
@@ -580,7 +709,7 @@ func TestBuildContextRanksExactRouteAndExpandsBoundedProductionChain(t *testing.
 			{ID: "second-hop", Project: "regulation", Kind: "persistence", Name: "RegulationRepository.delete", File: "Repository.java", Line: 12},
 		},
 		Edges: []scan.AgentContextEdgeRecord{
-			{ID: "call", FromFactID: "route", ToFactID: "service", FromLabel: "controller", ToLabel: "service", Kind: "calls", Confidence: "EXACT"},
+			{ID: "call", FromFactID: "route", ToFactID: "service", FromLabel: "controller", ToLabel: "service", Kind: "call", Confidence: "EXACT"},
 			{ID: "test-target", FromFactID: "test", ToFactID: "route", FromLabel: "test", ToLabel: "controller", Kind: "test_target", Confidence: "RESOLVED"},
 			{ID: "second", FromFactID: "service", ToFactID: "second-hop", FromLabel: "service", ToLabel: "repository", Kind: "persistence"},
 		},
@@ -596,7 +725,7 @@ func TestBuildContextRanksExactRouteAndExpandsBoundedProductionChain(t *testing.
 	if pack.FallbackRequired || len(pack.Entrypoints) == 0 || pack.Entrypoints[0].ID != "route" {
 		t.Fatalf("ranked pack = %#v", pack)
 	}
-	if len(pack.CallChain) != 3 || len(pack.Tests) != 1 || pack.Tests[0].ID != "test" {
+	if len(pack.CallChain) != 2 || len(pack.Tests) != 0 {
 		t.Fatalf("bounded expansion = %#v", pack)
 	}
 	if len(pack.Persistence) != 1 || !contextPackHasFile(pack, "Repository.java") {
@@ -1548,7 +1677,7 @@ func TestBuildContextNamedProjectCoverageUncertaintySurvivesGlobalCap(t *testing
 			{ID: "contract-edge", FromFactID: "route", ToFactID: "contract", Kind: "http_contract"},
 			{ID: "persistence-edge", FromFactID: "route", ToFactID: "persistence", Kind: "persistence"},
 			{ID: "test-edge", FromFactID: "test", ToFactID: "route", Kind: "test_target"},
-			{ID: "auth-edge", FromFactID: "route", ToFactID: "auth", Kind: "authentication"},
+			{ID: "auth-edge", FromFactID: "route", ToFactID: "auth", Kind: "requires_auth"},
 		},
 		Coverage: []scan.AgentContextCoverageRecord{
 			{Project: "services/catalog", Capability: "api_clients", Coverage: "PARTIAL", Reason: "contracts partial"},
@@ -1855,7 +1984,7 @@ func TestBuildContextKeepsOnlyHighestRankedProductionSeed(t *testing.T) {
 		},
 	})
 
-	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /users"})
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /users tests"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1873,8 +2002,8 @@ func TestBuildContextSortsCallChainByPublishedFields(t *testing.T) {
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{
 			{ID: "route", Kind: "route", Name: "GET /users", HTTPMethod: "GET", Path: "/users", File: "route.go", Confidence: "EXACT"},
-			{ID: "z", Kind: "symbol", Name: "z-neighbor", File: "z.go"},
-			{ID: "a", Kind: "symbol", Name: "a-neighbor", File: "a.go"},
+			{ID: "z", Kind: "symbol", Name: "z-neighbor", File: "z.go", Search: "get users"},
+			{ID: "a", Kind: "symbol", Name: "a-neighbor", File: "a.go", Search: "get users"},
 		},
 		Edges: []scan.AgentContextEdgeRecord{
 			{ID: "fallback-labels", FromFactID: "route", ToFactID: "z", Kind: "call"},
@@ -2002,7 +2131,7 @@ func TestBuildContextUnmappedAuthenticationPreventsAllIncompleteFallback(t *test
 		},
 		Edges: []scan.AgentContextEdgeRecord{{
 			ID: "auth-edge", Project: "app", FromFactID: "route", ToFactID: "auth",
-			FromLabel: "GET /users", ToLabel: "authenticated", Kind: "authentication",
+			FromLabel: "GET /users", ToLabel: "authenticated", Kind: "requires_auth",
 		}},
 		Coverage: []scan.AgentContextCoverageRecord{{
 			Project: "app", Capability: "routes", Coverage: "FAILED", Reason: "route parser failed",
@@ -2196,8 +2325,8 @@ func TestBuildContextSourceIncludesTestsOnlyWhenRequested(t *testing.T) {
 			t.Fatalf("production query included test source: %#v", production.SourceSections)
 		}
 	}
-	if len(production.Tests) != 1 {
-		t.Fatalf("test metadata was not retained: %#v", production.Tests)
+	if len(production.Tests) != 0 {
+		t.Fatalf("unrequested test metadata was retained: %#v", production.Tests)
 	}
 
 	withTests, err := BuildContext(ContextRequest{Root: root, Query: route + ". tests"})
@@ -2287,10 +2416,9 @@ func TestBuildContextSourceCapsRemainExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pack.SourceSections) != MaxContextSourceSections ||
-		len(pack.SourceOmissions) != MaxContextSourceOmissions ||
-		pack.SourceUnrepresented != candidateCount-MaxContextSourceSections-MaxContextSourceOmissions ||
-		pack.SourceCoverage != "partial" {
+	if len(pack.SourceSections) > maximumContextPaths+1 ||
+		len(pack.CallChain) > maximumContextPaths ||
+		pack.SourceCoverage != "complete" {
 		t.Fatalf("bounded source accounting = %#v", pack)
 	}
 }

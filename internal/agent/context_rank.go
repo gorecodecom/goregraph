@@ -32,6 +32,7 @@ const noAuthEvidenceDetected = "No auth evidence detected"
 
 type rankedContextFact struct {
 	fact          scan.AgentContextFactRecord
+	query         string
 	score         int
 	exactClass    int
 	embeddedExact bool
@@ -47,12 +48,6 @@ type rankedContextSupportFact struct {
 	explicit        bool
 	semanticMatches int
 	score           int
-}
-
-type expandedContextEdge struct {
-	edge     scan.AgentContextEdgeRecord
-	seedRank int
-	neighbor scan.AgentContextFactRecord
 }
 
 func compileContextPack(index scan.AgentContextIndexRecord, request ContextRequest) (ContextPack, error) {
@@ -85,8 +80,6 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	}
 	includedFactIDs := map[string]bool{}
 	acceptedEdgeIDs := map[string]bool{}
-	retainedSeeds := make([]rankedContextFact, 0, len(seeds))
-
 	topIsEndpoint := hasEndpoint && top.fact.ID == endpointSeed.fact.ID
 	added := false
 	if topIsEndpoint {
@@ -110,7 +103,6 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		return fallbackContextPack(index, request, "top context fact exceeds the requested budget", nil)
 	}
 	includedFactIDs[top.fact.ID] = true
-	retainedSeeds = append(retainedSeeds, top)
 	if hasEndpoint && !topIsEndpoint {
 		var endpointAdded bool
 		pack, endpointAdded, err = tryAddContextEndpoint(pack, request, endpointSeed.fact, index)
@@ -139,7 +131,6 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		}
 		if accepted {
 			includedFactIDs[seed.fact.ID] = true
-			retainedSeeds = append(retainedSeeds, seed)
 		}
 	}
 
@@ -147,77 +138,20 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
-	expanded := expandContextEdges(index.Edges, factByID, retainedSeeds)
-	for _, expandedEdge := range expanded {
-		from := factByID[expandedEdge.edge.FromFactID]
-		to := factByID[expandedEdge.edge.ToFactID]
-		relationship := contextRelationship(expandedEdge.edge, from, to)
-		candidate, accepted, appendErr := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
-			candidate.CallChain = append(candidate.CallChain, relationship)
-			candidate.Confidence = contextPackConfidence(top, true)
-			if !mergeContextFile(candidate, contextFileForFact(from, "call_chain", "direct "+expandedEdge.edge.Kind), request.MaxFiles) {
-				return false
-			}
-			if !mergeContextFile(candidate, contextFileForFact(to, "call_chain", "direct "+expandedEdge.edge.Kind), request.MaxFiles) {
-				return false
-			}
-			return true
-		})
-		if appendErr != nil {
-			return ContextPack{}, appendErr
-		}
-		if accepted {
-			pack = candidate
-			acceptedEdgeIDs[expandedEdge.edge.ID] = true
-			includedFactIDs[from.ID] = true
-			includedFactIDs[to.ID] = true
-		}
-	}
-	sortContextRelationships(pack.CallChain)
-
-	seedIDs := map[string]bool{}
-	for _, seed := range retainedSeeds {
-		seedIDs[seed.fact.ID] = true
-	}
-	neighbors := distinctContextNeighbors(expanded, seedIDs)
-	for _, kind := range []string{"api_contract", "persistence", "test"} {
-		for _, neighbor := range neighbors {
-			if neighbor.neighbor.Kind != kind {
-				continue
-			}
-			var appendLocation func(*ContextPack, ContextLocation)
-			role := kind
-			switch kind {
-			case "api_contract":
-				appendLocation = func(candidate *ContextPack, location ContextLocation) {
-					candidate.Contracts = append(candidate.Contracts, location)
-				}
-				role = "contract"
-			case "persistence":
-				appendLocation = func(candidate *ContextPack, location ContextLocation) {
-					candidate.Persistence = append(candidate.Persistence, location)
-				}
-			case "test":
-				appendLocation = func(candidate *ContextPack, location ContextLocation) {
-					candidate.Tests = append(candidate.Tests, location)
-				}
-			}
-			var accepted bool
-			pack, accepted, err = tryAddContextLocation(
-				pack,
-				request,
-				neighbor.neighbor,
-				"direct "+neighbor.edge.Kind,
-				role,
-				appendLocation,
-			)
-			if err != nil {
-				return ContextPack{}, err
-			}
-			if accepted {
-				includedFactIDs[neighbor.neighbor.ID] = true
-			}
-		}
+	concerns := planContextConcerns(request.Query, index, top.fact)
+	pathSelection := selectContextPaths(index, top, concerns)
+	pack, err = addSelectedContextPaths(
+		pack,
+		request,
+		top,
+		pathSelection,
+		index.Edges,
+		factByID,
+		includedFactIDs,
+		acceptedEdgeIDs,
+	)
+	if err != nil {
+		return ContextPack{}, err
 	}
 
 	pack.Confidence = contextPackConfidence(top, len(pack.CallChain) > 0)
@@ -246,22 +180,20 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	explicitProjects := contextExplicitProjects(request.Query, projectAliases)
 	representedProjects := contextRepresentedProjects(pack, includedFactIDs, factByID)
 	supportFactIDs := map[string]bool{}
-	supports := selectContextSupportFacts(
-		rankContextSupportFacts(index.Facts, request.Query, projectAliases, explicitProjects),
-		representedProjects,
-	)
 	acceptedSupportProjects := 0
-	for _, support := range supports {
+	for _, relatedFact := range pathSelection.relatedProductionFacts {
 		if acceptedSupportProjects >= maximumContextSupportingProjects {
 			break
 		}
-		if representedProjects[support.project] {
+		project := normalizeContextProject(relatedFact.Project)
+		if representedProjects[project] {
 			continue
 		}
+		relatedFact = lowerConfidenceForRelatedProduction(relatedFact)
 		candidate, accepted, appendErr := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
 			return mergeContextFile(
 				candidate,
-				contextFileForFact(support.fact, "related_project", "full task project match"),
+				contextFileForFact(relatedFact, "related_project", "full task project match"),
 				request.MaxFiles,
 			)
 		})
@@ -270,9 +202,9 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		}
 		if accepted {
 			pack = candidate
-			includedFactIDs[support.fact.ID] = true
-			supportFactIDs[support.fact.ID] = true
-			representedProjects[support.project] = true
+			includedFactIDs[relatedFact.ID] = true
+			supportFactIDs[relatedFact.ID] = true
+			representedProjects[project] = true
 			acceptedSupportProjects++
 		}
 	}
@@ -304,8 +236,139 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			pack = candidate
 		}
 	}
-	retainSelectedSourceFactIDs(&pack, includedFactIDs)
+	selectedSourceFactIDs := make(map[string]bool, len(includedFactIDs)+len(pathSelection.factIDs))
+	for factID := range includedFactIDs {
+		selectedSourceFactIDs[factID] = true
+	}
+	for _, factID := range pathSelection.factIDs {
+		selectedSourceFactIDs[factID] = true
+	}
+	retainSelectedSourceFactIDs(&pack, selectedSourceFactIDs)
 	return finalizeContextEstimate(pack)
+}
+
+func addSelectedContextPaths(
+	pack ContextPack,
+	request ContextRequest,
+	top rankedContextFact,
+	selection contextPathSelection,
+	edges []scan.AgentContextEdgeRecord,
+	factByID map[string]scan.AgentContextFactRecord,
+	includedFactIDs,
+	acceptedEdgeIDs map[string]bool,
+) (ContextPack, error) {
+	edgeByID := make(map[string]scan.AgentContextEdgeRecord, len(edges))
+	for _, edge := range edges {
+		edgeByID[contextPathEdgeIdentity(edge)] = edge
+	}
+	for _, path := range selection.paths {
+		for _, edgeID := range path.edgeIDs {
+			edge, ok := edgeByID[edgeID]
+			if !ok || acceptedEdgeIDs[edge.ID] {
+				continue
+			}
+			from, fromExists := factByID[edge.FromFactID]
+			to, toExists := factByID[edge.ToFactID]
+			if !fromExists || !toExists ||
+				!includedFactIDs[from.ID] && !includedFactIDs[to.ID] {
+				break
+			}
+			candidate, accepted, err := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
+				candidate.CallChain = append(candidate.CallChain, contextRelationship(edge, from, to))
+				candidate.Confidence = contextPackConfidence(top, true)
+				if !mergeContextFile(candidate, contextFileForFact(from, "call_chain", "selected "+edge.Kind), request.MaxFiles) {
+					return false
+				}
+				return mergeContextFile(candidate, contextFileForFact(to, "call_chain", "selected "+edge.Kind), request.MaxFiles)
+			})
+			if err != nil {
+				return ContextPack{}, err
+			}
+			if !accepted {
+				break
+			}
+			pack = candidate
+			acceptedEdgeIDs[edge.ID] = true
+			includedFactIDs[from.ID] = true
+			includedFactIDs[to.ID] = true
+		}
+	}
+	sortContextRelationships(pack.CallChain)
+
+	for _, factID := range selection.factIDs {
+		if !includedFactIDs[factID] || factID == top.fact.ID {
+			continue
+		}
+		fact := factByID[factID]
+		role, appendLocation := selectedContextLocationAppender(fact.Kind)
+		if appendLocation == nil {
+			continue
+		}
+		reason := selectedContextFactReason(factID, edges, acceptedEdgeIDs)
+		candidate, accepted, err := tryAddContextLocation(
+			pack,
+			request,
+			fact,
+			reason,
+			role,
+			appendLocation,
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		if accepted {
+			pack = candidate
+		}
+	}
+	return pack, nil
+}
+
+func selectedContextLocationAppender(kind string) (string, func(*ContextPack, ContextLocation)) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "api_contract":
+		return "contract", func(candidate *ContextPack, location ContextLocation) {
+			candidate.Contracts = append(candidate.Contracts, location)
+		}
+	case "persistence":
+		return "persistence", func(candidate *ContextPack, location ContextLocation) {
+			candidate.Persistence = append(candidate.Persistence, location)
+		}
+	case "test":
+		return "test", func(candidate *ContextPack, location ContextLocation) {
+			candidate.Tests = append(candidate.Tests, location)
+		}
+	default:
+		return "", nil
+	}
+}
+
+func selectedContextFactReason(
+	factID string,
+	edges []scan.AgentContextEdgeRecord,
+	acceptedEdgeIDs map[string]bool,
+) string {
+	sortedEdges := append([]scan.AgentContextEdgeRecord(nil), edges...)
+	sort.Slice(sortedEdges, func(i, j int) bool { return contextEdgeLess(sortedEdges[i], sortedEdges[j]) })
+	for _, edge := range sortedEdges {
+		if !acceptedEdgeIDs[edge.ID] {
+			continue
+		}
+		if edge.ToFactID == factID ||
+			strings.EqualFold(edge.Kind, "test_target") && edge.FromFactID == factID {
+			return "selected " + edge.Kind
+		}
+	}
+	return "selected context path"
+}
+
+func lowerConfidenceForRelatedProduction(fact scan.AgentContextFactRecord) scan.AgentContextFactRecord {
+	switch strings.ToUpper(strings.TrimSpace(fact.Confidence)) {
+	case "EXACT":
+		fact.Confidence = "RESOLVED"
+	case "", "RESOLVED":
+		fact.Confidence = "EXTRACTED"
+	}
+	return fact
 }
 
 func retainSelectedSourceFactIDs(pack *ContextPack, included map[string]bool) {
@@ -413,6 +476,7 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		}
 		ranked = append(ranked, rankedContextFact{
 			fact:          fact,
+			query:         query,
 			score:         score,
 			exactClass:    exactClass,
 			embeddedExact: embeddedExact,
@@ -1185,80 +1249,6 @@ func contextQueryHasAnchor(anchors []string, term string) bool {
 	return false
 }
 
-func expandContextEdges(
-	edges []scan.AgentContextEdgeRecord,
-	factByID map[string]scan.AgentContextFactRecord,
-	seeds []rankedContextFact,
-) []expandedContextEdge {
-	sortedEdges := append([]scan.AgentContextEdgeRecord(nil), edges...)
-	sort.Slice(sortedEdges, func(i, j int) bool {
-		return contextEdgeLess(sortedEdges[i], sortedEdges[j])
-	})
-	seen := map[string]bool{}
-	result := []expandedContextEdge{}
-	type contextExpansionFrontier struct {
-		factID   string
-		seedRank int
-	}
-	frontier := []contextExpansionFrontier{}
-	appendEdge := func(edge scan.AgentContextEdgeRecord, seedRank int, neighbor scan.AgentContextFactRecord) {
-		key := edge.ID
-		if key == "" {
-			key = edge.FromFactID + "\x00" + edge.ToFactID + "\x00" + edge.Kind
-		}
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		result = append(result, expandedContextEdge{
-			edge: edge, seedRank: seedRank, neighbor: neighbor,
-		})
-	}
-	for seedRank, seed := range seeds {
-		for _, edge := range sortedEdges {
-			if contextStructuredEndpointEdge(edge.Kind) || edge.FromFactID == edge.ToFactID ||
-				edge.FromFactID != seed.fact.ID && edge.ToFactID != seed.fact.ID {
-				continue
-			}
-			neighborID := edge.ToFactID
-			if neighborID == seed.fact.ID {
-				neighborID = edge.FromFactID
-			}
-			neighbor, ok := factByID[neighborID]
-			if !ok {
-				continue
-			}
-			appendEdge(edge, seedRank, neighbor)
-			if edge.FromFactID == seed.fact.ID && reliableProductionContextSeed(neighbor) {
-				frontier = append(frontier, contextExpansionFrontier{factID: neighbor.ID, seedRank: seedRank})
-			}
-		}
-	}
-	for _, current := range frontier {
-		for _, edge := range sortedEdges {
-			if contextStructuredEndpointEdge(edge.Kind) || edge.FromFactID != current.factID || edge.FromFactID == edge.ToFactID {
-				continue
-			}
-			neighbor, ok := factByID[edge.ToFactID]
-			if !ok {
-				continue
-			}
-			appendEdge(edge, current.seedRank, neighbor)
-		}
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].seedRank != result[j].seedRank {
-			return result[i].seedRank < result[j].seedRank
-		}
-		return contextEdgeLess(result[i].edge, result[j].edge)
-	})
-	return result
-}
-
-func contextStructuredEndpointEdge(kind string) bool {
-	return kind == "consumes_endpoint" || kind == "requires_auth"
-}
-
 func contextEdgeLess(left, right scan.AgentContextEdgeRecord) bool {
 	if left.FromLabel != right.FromLabel {
 		return left.FromLabel < right.FromLabel
@@ -1282,53 +1272,6 @@ func contextEdgeLess(left, right scan.AgentContextEdgeRecord) bool {
 		return left.ToFactID < right.ToFactID
 	}
 	return left.ID < right.ID
-}
-
-func distinctContextNeighbors(
-	expanded []expandedContextEdge,
-	seedIDs map[string]bool,
-) []expandedContextEdge {
-	byID := map[string]expandedContextEdge{}
-	for _, candidate := range expanded {
-		if seedIDs[candidate.neighbor.ID] {
-			continue
-		}
-		existing, ok := byID[candidate.neighbor.ID]
-		if !ok || candidate.seedRank < existing.seedRank ||
-			candidate.seedRank == existing.seedRank && contextEdgeLess(candidate.edge, existing.edge) {
-			byID[candidate.neighbor.ID] = candidate
-		}
-	}
-	result := make([]expandedContextEdge, 0, len(byID))
-	for _, candidate := range byID {
-		result = append(result, candidate)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].seedRank != result[j].seedRank {
-			return result[i].seedRank < result[j].seedRank
-		}
-		left, right := result[i].neighbor, result[j].neighbor
-		if left.Project != right.Project {
-			return left.Project < right.Project
-		}
-		if left.Kind != right.Kind {
-			return left.Kind < right.Kind
-		}
-		if left.Qualified != right.Qualified {
-			return left.Qualified < right.Qualified
-		}
-		if left.Name != right.Name {
-			return left.Name < right.Name
-		}
-		if left.File != right.File {
-			return left.File < right.File
-		}
-		if left.Line != right.Line {
-			return left.Line < right.Line
-		}
-		return left.ID < right.ID
-	})
-	return result
 }
 
 func contextRelationship(

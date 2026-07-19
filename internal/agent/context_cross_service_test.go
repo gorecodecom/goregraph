@@ -74,6 +74,41 @@ func TestContextSelectionIsLanguageNeutral(t *testing.T) {
 	}
 }
 
+func TestSelectContextPathsKeepsDisconnectedExplicitProjectAsRelatedProduction(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "DELETE /catalog/items/{id}", HTTPMethod: "DELETE", Path: "/catalog/items/{id}", File: "CatalogController.go", Confidence: "EXACT", Search: "delete catalog item"},
+			{ID: "service", Project: "services/catalog", Kind: "symbol", Name: "deleteItem", File: "CatalogService.go", Confidence: "EXACT", Search: "delete catalog item"},
+			{ID: "future-client", Project: "libraries/job-client", Kind: "symbol", Name: "deleteRelatedJobs", File: "JobClient.go", Confidence: "EXACT", Search: "delete related jobs client configuration"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "call", FromFactID: "route", ToFactID: "service", Kind: "call", Confidence: "EXACT",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root:  root,
+		Query: "Plan deleting related jobs through a future client configuration in libraries/job-client after DELETE /catalog/items/{id}.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.CallChain) != 1 || pack.CallChain[0].From != "DELETE /catalog/items/{id}" || pack.CallChain[0].To != "deleteItem" {
+		t.Fatalf("disconnected project was fabricated into the call chain: %#v", pack.CallChain)
+	}
+	for _, file := range pack.Files {
+		if file.Path != "JobClient.go" {
+			continue
+		}
+		if file.Role != "related_project" || file.Confidence != "RESOLVED" {
+			t.Fatalf("disconnected candidate metadata = %#v", file)
+		}
+		return
+	}
+	t.Fatalf("disconnected explicit project candidate missing: %#v", pack.Files)
+}
+
 func TestCrossServiceFixtureSourcesAvoidDeclarationCollisions(t *testing.T) {
 	facts := crossServiceContextFacts(".go")
 	sourceFacts := make(map[string][]scan.AgentContextFactRecord)

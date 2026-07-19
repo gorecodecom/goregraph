@@ -188,9 +188,20 @@ func TestServiceBuildsBoundedTaskContext(t *testing.T) {
 		t.Fatalf("unexpected task context: %#v", result)
 	}
 	pack, ok := result.Items[0].Data["context"].(ContextPack)
-	if !ok || len(pack.Entrypoints) != 1 || len(pack.Tests) != 1 ||
-		len(pack.CallChain) != 1 {
+	if !ok || pack.FallbackRequired || len(pack.Entrypoints) != 1 ||
+		len(pack.Tests) != 0 || len(pack.CallChain) != 0 {
 		t.Fatalf("incomplete task context: %#v", result.Items[0].Data)
+	}
+	assertSerializedCoreContextConcerns(t, pack)
+	for _, section := range pack.SourceSections {
+		if section.Role == "test" {
+			t.Fatalf("unrequested test source was serialized: %#v", pack.SourceSections)
+		}
+	}
+	for _, relationship := range pack.CallChain {
+		if relationship.Kind == "test_target" {
+			t.Fatalf("unrequested test relationship was serialized: %#v", pack.CallChain)
+		}
 	}
 	if pack.BudgetTokens != DefaultContextBudgetTokens ||
 		len(pack.Files) > DefaultContextMaxFiles ||
@@ -301,15 +312,26 @@ func TestTaskContextDoesNotUseGenericLimitAsDefaultMaxFiles(t *testing.T) {
 	}
 	writeContextIndexAt(t, filepath.Join(root, "goregraph-out", "agent", "context-index.json"), index)
 
-	result, err := (Service{}).Run(Request{
-		Root: root, Task: "task-context", Query: "GET /users", Limit: 20,
-	})
-	if err != nil {
-		t.Fatal(err)
+	build := func(limit int) ContextPack {
+		t.Helper()
+		result, err := (Service{}).Run(Request{
+			Root: root, Task: "task-context", Query: "GET /users", Limit: limit,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.Items[0].Data["context"].(ContextPack)
 	}
-	pack := result.Items[0].Data["context"].(ContextPack)
-	if len(pack.Files) != DefaultContextMaxFiles {
-		t.Fatalf("default context files = %d, want %d: %#v", len(pack.Files), DefaultContextMaxFiles, pack.Files)
+	limited := build(1)
+	unlimited := build(20)
+	if !reflect.DeepEqual(limited.Files, unlimited.Files) ||
+		!reflect.DeepEqual(limited.selectedSourceFactIDs, unlimited.selectedSourceFactIDs) {
+		t.Fatalf("generic pagination limit changed context selection: %#v / %#v", limited.Files, unlimited.Files)
+	}
+	for _, pack := range []ContextPack{limited, unlimited} {
+		if len(pack.Files) > DefaultContextMaxFiles || pack.EstimatedTokens > pack.BudgetTokens {
+			t.Fatalf("default context bounds = %#v", pack)
+		}
 	}
 }
 
