@@ -488,6 +488,66 @@ func TestSelectContextPathsIncludesConnectedTestsOnlyWhenRequired(t *testing.T) 
 	}
 }
 
+func TestSelectContextPathsRetainsRequiredContractEdgeAcrossDiamond(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "DELETE /catalog/items/{id}", File: "CatalogController.go", Confidence: "EXACT"},
+			{ID: "a-direct", Project: "services/catalog", Kind: "symbol", Name: "deleteDirect", File: "CatalogService.go", Confidence: "EXACT"},
+			{ID: "z-contract", Project: "libraries/client", Kind: "api_contract", Name: "DELETE /jobs/items/{id}", File: "JobsClient.go", Confidence: "RESOLVED"},
+			{ID: "provider", Project: "services/jobs", Kind: "route", Name: "DELETE /jobs/items/{id}", File: "JobsController.go", Confidence: "EXACT"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "a-direct-start", FromFactID: "route", ToFactID: "a-direct", Kind: "call"},
+			{ID: "a-direct-provider", FromFactID: "a-direct", ToFactID: "provider", Kind: "call"},
+			{ID: "z-contract-start", FromFactID: "route", ToFactID: "z-contract", Kind: "call"},
+			{ID: "contract-provider", FromFactID: "z-contract", ToFactID: "provider", Kind: "http_contract"},
+		},
+	}
+	for branch := range 22 {
+		branchID := fmt.Sprintf("m-fill-%02d", branch)
+		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+			ID: branchID, Project: "services/unrelated", Kind: "symbol", Name: branchID, File: branchID + ".go", Confidence: "EXACT",
+		})
+		index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+			ID: "m-fill-start-" + branchID, FromFactID: "route", ToFactID: branchID, Kind: "call",
+		})
+		for leaf := range 11 {
+			leafID := fmt.Sprintf("%s-leaf-%02d", branchID, leaf)
+			index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+				ID: leafID, Project: "services/unrelated", Kind: "symbol", Name: leafID, File: leafID + ".go", Confidence: "EXACT",
+			})
+			index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+				ID: "m-fill-edge-" + leafID, FromFactID: branchID, ToFactID: leafID, Kind: "call",
+			})
+		}
+	}
+	concerns := []contextConcern{
+		newContextConcern(contextConcernPrimaryPath, "", true, []string{"a-direct", "z-contract", "provider"}, "production path"),
+		newContextConcern(contextConcernHTTPContract, "", true, []string{"z-contract", "provider"}, "contract boundary"),
+	}
+	seed := rankedContextFact{fact: index.Facts[0], query: "DELETE /catalog/items/{id}", score: scoreExactRoute}
+
+	forward := selectContextPaths(index, seed, concerns)
+	reversedFacts := append([]scan.AgentContextFactRecord(nil), index.Facts...)
+	reversedEdges := append([]scan.AgentContextEdgeRecord(nil), index.Edges...)
+	reversedConcerns := append([]contextConcern(nil), concerns...)
+	slices.Reverse(reversedFacts)
+	slices.Reverse(reversedEdges)
+	slices.Reverse(reversedConcerns)
+	backward := selectContextPaths(scan.AgentContextIndexRecord{
+		Facts: reversedFacts,
+		Edges: reversedEdges,
+	}, seed, reversedConcerns)
+
+	if !reflect.DeepEqual(forward, backward) {
+		t.Fatalf("diamond selection changed after reversing input: %#v != %#v", forward, backward)
+	}
+	if !slices.Contains(forward.edgeIDs, "contract-provider") ||
+		!forward.concernCoverage[contextConcernHTTPContract] {
+		t.Fatalf("required HTTP contract edge was suppressed by call-only path: %#v", forward)
+	}
+}
+
 func TestBuildContextRejectsInvalidBounds(t *testing.T) {
 	for _, request := range []ContextRequest{
 		{Root: t.TempDir(), Query: "delete user", BudgetTokens: 255},

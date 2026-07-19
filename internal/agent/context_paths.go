@@ -76,7 +76,7 @@ func selectContextPaths(
 	adjacency := contextPathAdjacency(index.Edges, factByID, testsRequired)
 	candidates, reachable := enumerateContextPathCandidates(seed.fact.ID, adjacency)
 	lexicalScores := contextPathLexicalScores(index.Facts, seed.query)
-	covered := contextPathCoveredConcerns([]string{seed.fact.ID}, concerns)
+	covered := contextPathCoveredConcerns([]string{seed.fact.ID}, nil, concerns)
 	delete(covered, contextConcernPrimaryPath)
 	boundarySelected := false
 	selectedFacts := map[string]bool{seed.fact.ID: true}
@@ -126,7 +126,7 @@ func selectContextPaths(
 		for _, edge := range selected.edges {
 			selectedEdges[contextPathEdgeIdentity(edge)] = true
 		}
-		for key := range contextPathCoveredConcerns(selected.factIDs[1:], concerns) {
+		for key := range contextPathCoveredConcerns(selected.factIDs[1:], selected.edges, concerns) {
 			covered[key] = true
 		}
 		if contextPathCrossesContractBoundary(selected, factByID) {
@@ -145,9 +145,6 @@ func selectContextPaths(
 	}
 	sort.Strings(selection.relatedProductionFactIDs)
 	selection.factIDs = contextPathFactIDs(selectedFacts)
-	for key := range contextPathCoveredConcerns(selection.factIDs, concerns) {
-		covered[key] = true
-	}
 	if len(selection.paths) == 0 {
 		delete(covered, contextConcernPrimaryPath)
 	}
@@ -231,9 +228,9 @@ func enumerateContextPathCandidates(
 	adjacency map[string][]contextTraversalStep,
 ) ([]contextTraversalState, map[string]bool) {
 	frontier := []contextTraversalState{{factIDs: []string{seedID}, key: seedID}}
-	visited := map[string]bool{}
+	expanded := map[string]bool{}
 	candidates := []contextTraversalState{}
-	for len(frontier) > 0 && len(visited) < maximumContextVisitedFacts {
+	for len(frontier) > 0 {
 		sort.Slice(frontier, func(i, j int) bool {
 			left, right := frontier[i], frontier[j]
 			if left.cost != right.cost {
@@ -247,13 +244,17 @@ func enumerateContextPathCandidates(
 		current := frontier[0]
 		frontier = frontier[1:]
 		currentID := current.factIDs[len(current.factIDs)-1]
-		if visited[currentID] {
+		alreadyExpanded := expanded[currentID]
+		if !alreadyExpanded && len(expanded) >= maximumContextVisitedFacts {
 			continue
 		}
-		visited[currentID] = true
 		if len(current.edges) > 0 {
 			candidates = append(candidates, current)
 		}
+		if alreadyExpanded {
+			continue
+		}
+		expanded[currentID] = true
 		if len(current.edges) >= maximumContextPathHops {
 			continue
 		}
@@ -270,7 +271,7 @@ func enumerateContextPathCandidates(
 			})
 		}
 	}
-	return candidates, visited
+	return candidates, expanded
 }
 
 func contextPathLexicalScores(facts []scan.AgentContextFactRecord, query string) map[string]int {
@@ -289,7 +290,7 @@ func scoreContextPath(
 	lexicalScores map[string]int,
 	factByID map[string]scan.AgentContextFactRecord,
 ) (int, bool) {
-	pathCovered := contextPathCoveredConcerns(path.factIDs[1:], concerns)
+	pathCovered := contextPathCoveredConcerns(path.factIDs[1:], path.edges, concerns)
 	newConcerns := 0
 	newProjects := 0
 	for _, concern := range concerns {
@@ -311,13 +312,26 @@ func scoreContextPath(
 	return score, meaningful
 }
 
-func contextPathCoveredConcerns(factIDs []string, concerns []contextConcern) map[string]bool {
+func contextPathCoveredConcerns(
+	factIDs []string,
+	edges []scan.AgentContextEdgeRecord,
+	concerns []contextConcern,
+) map[string]bool {
 	selected := make(map[string]bool, len(factIDs))
 	for _, factID := range factIDs {
 		selected[factID] = true
 	}
 	covered := make(map[string]bool, len(concerns))
 	for _, concern := range concerns {
+		if concern.kind == contextConcernHTTPContract {
+			for _, edge := range edges {
+				if strings.EqualFold(strings.TrimSpace(edge.Kind), contextConcernHTTPContract) {
+					covered[concern.key] = true
+					break
+				}
+			}
+			continue
+		}
 		for _, candidateID := range concern.candidateFactIDs {
 			if selected[candidateID] {
 				covered[concern.key] = true
