@@ -30,11 +30,12 @@
 
 **Files:**
 - Modify: `internal/scan/extract_java.go:1250-1257`
+- Modify: `internal/scan/spring_extract.go:853-875`
 - Test: `internal/scan/extract_java_test.go`
 
 **Interfaces:**
 - Consumes: `parseJavaAnnotationAttributes`, `splitSpringPaths`, and `isSpringPathArray`.
-- Produces: `trimJavaValue(value string) string` that removes quotes from one literal but leaves annotation-array braces for `splitSpringPaths`, plus annotation continuation handling that retains literal-only lines.
+- Produces: `trimJavaValue(value string) string` that removes quotes from one literal but leaves annotation-array braces for its domain consumer, annotation continuation handling that retains literal-only lines, and OpenAPI empty-container handling at the Spring extraction boundary.
 
 - [ ] **Step 1: Write the failing regression**
 
@@ -89,6 +90,8 @@ Do not add Spring/path detection here. `splitSpringPaths` and `isSpringPathArray
 
 While `annotationSignature` is active, process the cleaned non-empty source line before applying the `lexicalLine == ""` skip. Java's lexical sanitizer intentionally blanks string contents, so a quoted continuation can otherwise disappear even though it belongs to the active annotation. Preserve the existing annotation-boundary fallthrough and do not change empty-line handling outside an active annotation.
 
+Because empty annotation arrays now remain `{}`, update `explicitEmptyOpenAPISecurity` to delegate `SecurityRequirements.value` and `Operation.security` to `emptyOpenAPIContainerExpression`. Preserve the existing explicit `@SecurityRequirement()` forms and do not classify non-empty arrays as public.
+
 - [ ] **Step 4: Verify focused and package behavior**
 
 Run:
@@ -103,9 +106,10 @@ Expected: `PASS`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/scan/extract_java.go internal/scan/extract_java_test.go
+git add internal/scan/extract_java.go internal/scan/spring_extract.go internal/scan/extract_java_test.go
 git commit -m "Preserve braces in Java annotation strings" -m "- Keep path-variable braces in quoted annotation values.
-- Retain array-valued Spring mappings through the dedicated path splitter."
+- Retain array-valued Spring mappings through the dedicated path splitter.
+- Interpret empty OpenAPI security containers at the OpenAPI extraction boundary."
 ```
 
 ### Task 2: Represent unavailable workspace projections
