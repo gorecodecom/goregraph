@@ -57,6 +57,30 @@ func TestRenderSourceCandidateRelocatesUniqueDeclaration(t *testing.T) {
 	}
 }
 
+func TestRenderSourceCandidateRelocatedEndpointUsesDefaultBodyWindow(t *testing.T) {
+	lines := numberedSourceLines(35)
+	lines[0] = "@DeleteMapping(\"/users/{id}\")"
+	lines[1] = "public void deleteUser() {"
+	lines[2] = "    service.deleteUser();"
+	lines[3] = "}"
+	candidate := sourceCandidate{
+		Path: "UserController.java", StartLine: 1, EndLine: 1,
+		Kind: "api_endpoint", Name: "DELETE /users/{id}", Qualified: "UserController.deleteUser",
+	}
+
+	section, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: lines}, "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 2 || section.EndLine != 30 {
+		t.Fatalf("relocated endpoint range = %d-%d, want 2-30", section.StartLine, section.EndLine)
+	}
+	if !strings.Contains(section.Content, "2\tpublic void deleteUser() {") ||
+		!strings.Contains(section.Content, "3\t    service.deleteUser();") {
+		t.Fatalf("relocated endpoint content:\n%s", section.Content)
+	}
+}
+
 func TestRenderSourceCandidateRejectsAbsentIdentifier(t *testing.T) {
 	candidate := sourceCandidate{Path: "UserService.java", StartLine: 1, EndLine: 2, Kind: "symbol", Name: "deleteUser"}
 	_, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: []string{

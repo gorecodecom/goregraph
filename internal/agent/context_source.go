@@ -709,7 +709,10 @@ func verifiedSourceRange(candidate sourceCandidate, lineCount, declarationLine i
 	}
 
 	span := 29
-	if candidate.EndLine > 0 {
+	hasExplicitBodySpan := candidate.EndLine > candidate.StartLine
+	isEndpointFact := strings.EqualFold(candidate.Kind, "route") ||
+		strings.EqualFold(candidate.Kind, "api_endpoint")
+	if candidate.EndLine > 0 && (hasExplicitBodySpan || !isEndpointFact) {
 		span = candidate.EndLine - candidate.StartLine + 1
 		if span < 1 {
 			span = 1
