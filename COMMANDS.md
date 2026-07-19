@@ -449,6 +449,13 @@ first substantive problem statement; later analysis requirements do not outrank
 the primary action. Tests can be supporting neighbors, but never ordinary
 entrypoints.
 
+In the structured Context Pack schema, `query` preserves the normalized request
+text verbatim when it is at most 256 runes and its JSON encoding, including
+quotes and escapes, is at most 256 bytes. Longer or JSON-escape-heavy input is
+represented by a compact primary-task summary. The complete input remains
+request-lifecycle internal for semantic selection and is neither serialized nor
+hashed into `context_id`.
+
 ```text
 Call goregraph context once with the complete task before reading indexed source.
 Treat source_sections as current source already read; do not re-read or grep included ranges.

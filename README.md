@@ -973,6 +973,11 @@ goregraph context <path> --query "<current coding task>" --budget-tokens 4000 --
 
 The result contains bounded entrypoints, relationships, tests, risks, source
 files, evidence IDs, confidence, freshness, and explicit uncertainty.
+The public `query` is the normalized request text verbatim when it is at most
+256 runes and its JSON encoding is at most 256 bytes; otherwise it is a compact
+primary-task summary. The complete request remains internal to that request
+lifecycle for selection and is neither emitted nor included in the Context ID
+hash.
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.

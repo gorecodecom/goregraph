@@ -250,10 +250,14 @@ func finalizeContextPackWithinBudget(pack ContextPack, request ContextRequest) (
 }
 
 func contextSourcePackFits(pack ContextPack, request ContextRequest) (bool, error) {
-	if pack.EstimatedTokens > request.BudgetTokens {
+	view, err := contextBudgetView(pack)
+	if err != nil {
+		return false, err
+	}
+	if view.EstimatedTokens > request.BudgetTokens {
 		return false, nil
 	}
-	body, err := json.Marshal(pack)
+	body, err := json.Marshal(view)
 	if err != nil {
 		return false, err
 	}

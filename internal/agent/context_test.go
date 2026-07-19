@@ -1113,6 +1113,58 @@ func TestBuildContextRequiresProviderEvidenceForSamePathEndpointCollision(t *tes
 	if len(pack.Endpoints) != 0 {
 		t.Fatalf("ambiguous endpoint was selected: %#v", pack.Endpoints)
 	}
+	if len(pack.Entrypoints) != 0 || !pack.FallbackRequired ||
+		!strings.Contains(strings.ToLower(pack.FallbackReason), "ambiguous") {
+		t.Fatalf("ambiguous endpoint collision was not reported honestly: %#v", pack)
+	}
+}
+
+func TestBuildContextRejectsIncompleteAndGeneratedEndpointsAsPrimary(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "handler", Project: "services/orders", Kind: "symbol", Name: "listOrders", File: "services/orders/src/OrdersHandler.java", Search: "GET orders", Confidence: "EXACT"},
+			{ID: "missing-method", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders", Path: "/orders", File: "services/orders/src/MissingMethod.java", Search: "GET orders", Confidence: "EXACT"},
+			{ID: "missing-path", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders", HTTPMethod: "GET", File: "services/orders/src/MissingPath.java", Search: "GET orders", Confidence: "EXACT"},
+			{ID: "generated", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders", HTTPMethod: "GET", Path: "/orders", File: ".goregraph-workspace/agent/api-catalog.json", Search: "GET orders", Confidence: "EXACT"},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET orders"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Endpoints) != 0 || len(pack.Entrypoints) != 1 ||
+		pack.Entrypoints[0].ID != "handler" {
+		t.Fatalf("ineligible endpoint became primary: %#v", pack)
+	}
+}
+
+func TestBuildContextDedicatedEndpointPreservesConnectedPath(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "endpoint", Project: "services/orders", Kind: "api_endpoint", Name: "DELETE /orders/{id}",
+				HTTPMethod: "DELETE", Path: "/orders/{id}", File: "services/orders/src/OrdersController.java",
+				Search: "delete orders", Confidence: "EXACT",
+			},
+			{ID: "handler", Project: "services/orders", Kind: "symbol", Name: "deleteOrder", File: "services/orders/src/OrdersService.java", Search: "delete orders", Confidence: "EXACT"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "endpoint-handler", FromFactID: "endpoint", ToFactID: "handler", FromLabel: "DELETE /orders/{id}", ToLabel: "deleteOrder", Kind: "call", Confidence: "EXACT",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "DELETE /orders/{id}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Endpoints) != 1 || len(pack.Entrypoints) != 0 ||
+		len(pack.CallChain) != 1 || pack.CallChain[0].To != "deleteOrder" ||
+		!contextPackHasFile(pack, "services/orders/src/OrdersService.java") {
+		t.Fatalf("dedicated endpoint path was not preserved: %#v", pack)
+	}
 }
 
 func TestBuildContextConsidersBelowThresholdProviderInEndpointCollision(t *testing.T) {
@@ -1402,6 +1454,27 @@ func TestBuildContextUsesProblemStatementAfterPreamble(t *testing.T) {
 	}
 	if !strings.Contains(pack.Query, "related jobs remain") {
 		t.Fatalf("wrapped task continuation was omitted from public query: %q", pack.Query)
+	}
+}
+
+func TestContextProblemStatementNormalizesHeadingsAndWrappedContinuation(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "plain colon", query: "preamble\n\nProblem Statement:\nDelete the catalog entry,\nthen remove related jobs."},
+		{name: "plain no colon", query: "preamble\n\nProblemstellung\nDelete the catalog entry,\nthen remove related jobs."},
+		{name: "markdown colon crlf", query: "preamble\r\n\r\n### Problem:\r\nDelete the catalog entry,\r\nthen remove related jobs."},
+		{name: "markdown no colon", query: "preamble\n\n## Task\nDelete the catalog entry,\nthen remove related jobs."},
+		{name: "German markdown spacing", query: "preamble\n\n#   aUfGaBe  :\nDelete the catalog entry,\nthen remove related jobs."},
+	}
+	const want = "Delete the catalog entry, then remove related jobs."
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := contextProblemStatement(test.query); got != want {
+				t.Fatalf("contextProblemStatement() = %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -2190,7 +2263,7 @@ func TestBuildContextFallsBackWithoutQueryCascade(t *testing.T) {
 	}
 }
 
-func TestBuildContextFallbackUsesMinimumTwoDimensionalEnvelope(t *testing.T) {
+func TestBuildContextFallbackAlwaysUsesMinimumTwoDimensionalEnvelope(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{{
@@ -2202,7 +2275,6 @@ func TestBuildContextFallbackUsesMinimumTwoDimensionalEnvelope(t *testing.T) {
 		}},
 	})
 	returnedPacks := 0
-	deterministicErrors := 0
 	for _, repeats := range []int{128, 300} {
 		request := ContextRequest{
 			Root: root, Query: strings.Repeat("界", repeats) + " GET /users",
@@ -2214,8 +2286,7 @@ func TestBuildContextFallbackUsesMinimumTwoDimensionalEnvelope(t *testing.T) {
 			t.Fatalf("repeat %d produced nondeterministic errors: %v != %v", repeats, err, againErr)
 		}
 		if err != nil {
-			deterministicErrors++
-			continue
+			t.Fatalf("repeat %d rejected bounded fallback: %v", repeats, err)
 		}
 		returnedPacks++
 		body, marshalErr := json.Marshal(pack)
@@ -2242,8 +2313,8 @@ func TestBuildContextFallbackUsesMinimumTwoDimensionalEnvelope(t *testing.T) {
 			)
 		}
 	}
-	if returnedPacks == 0 || deterministicErrors == 0 {
-		t.Fatalf("fallback boundary was not exercised: returned=%d errors=%d", returnedPacks, deterministicErrors)
+	if returnedPacks != 2 {
+		t.Fatalf("fallback count = %d, want 2", returnedPacks)
 	}
 }
 
@@ -2317,9 +2388,11 @@ func TestBuildContextHonorsFileLimitAcrossLocations(t *testing.T) {
 
 func TestCloneContextPackDeepCopiesBudgetProbeSlices(t *testing.T) {
 	original := ContextPack{
-		Entrypoints: []ContextLocation{{ID: "entry", EvidenceIDs: []string{"evidence"}}},
-		Files:       []ContextFile{{Path: "entry.go", Role: "entrypoint"}},
-		Tests:       make([]ContextLocation, 1, 4),
+		selectionQuery: "full private query",
+		budgetQuery:    "fixed private budget query",
+		Entrypoints:    []ContextLocation{{ID: "entry", EvidenceIDs: []string{"evidence"}}},
+		Files:          []ContextFile{{Path: "entry.go", Role: "entrypoint"}},
+		Tests:          make([]ContextLocation, 1, 4),
 	}
 	clone := cloneContextPack(original)
 	clone.Entrypoints[0].EvidenceIDs[0] = "changed"
@@ -2330,6 +2403,75 @@ func TestCloneContextPackDeepCopiesBudgetProbeSlices(t *testing.T) {
 		original.Files[0].Role != "entrypoint" ||
 		len(original.Tests) != 1 {
 		t.Fatalf("budget probe mutated original pack: %#v", original)
+	}
+	if clone.selectionQuery != original.selectionQuery || clone.budgetQuery != original.budgetQuery {
+		t.Fatalf("clone lost private query state: %#v", clone)
+	}
+}
+
+func TestContextBudgetQueryPlaceholderFillsEncodedCap(t *testing.T) {
+	body, err := json.Marshal(contextQueryBudgetPlaceholder())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != contextQueryJSONBudgetBytes {
+		t.Fatalf("budget query placeholder encodes to %d bytes, want %d", len(body), contextQueryJSONBudgetBytes)
+	}
+}
+
+func TestBuildContextUsesEquivalentCapacityAcrossEncodedQueryCap(t *testing.T) {
+	const safeEncodedQueryBytes = 256
+	root := writeSourceBackedContextFixture(t, false)
+	prefix := "DELETE /cadasters/{cadasterId}/regulations/{objectId} "
+	under := prefix + strings.Repeat("x", safeEncodedQueryBytes-2-len(prefix))
+	over := under + "y"
+	if encoded, err := json.Marshal(under); err != nil || len(encoded) != safeEncodedQueryBytes {
+		t.Fatalf("under-cap fixture encodes to %d bytes: %v", len(encoded), err)
+	}
+	if encoded, err := json.Marshal(over); err != nil || len(encoded) != safeEncodedQueryBytes+1 {
+		t.Fatalf("over-cap fixture encodes to %d bytes: %v", len(encoded), err)
+	}
+
+	build := func(query string) ContextPack {
+		t.Helper()
+		pack, err := BuildContext(ContextRequest{Root: root, Query: query, BudgetTokens: MinContextBudgetTokens})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pack
+	}
+	underPack := build(under)
+	overPack := build(over)
+	overAgain := build(over)
+	if underPack.Query != under {
+		t.Fatalf("safe boundary query changed: %q", underPack.Query)
+	}
+	if overPack.Query == over || strings.Contains(overPack.Query, "y") {
+		t.Fatalf("over-cap query leaked its full tail: %q", overPack.Query)
+	}
+	if got, err := json.Marshal(overPack.Query); err != nil || len(got) > safeEncodedQueryBytes {
+		t.Fatalf("compacted query encodes to %d bytes: %v", len(got), err)
+	}
+	if underPack.ContextID != overPack.ContextID {
+		t.Fatalf("query encoding boundary changed identity: %q / %q", underPack.ContextID, overPack.ContextID)
+	}
+	underComparable := cloneContextPack(underPack)
+	overComparable := cloneContextPack(overPack)
+	underComparable.Query, overComparable.Query = "", ""
+	underComparable.EstimatedTokens, overComparable.EstimatedTokens = 0, 0
+	if diff := cmpContextJSON(underComparable, overComparable); diff != "" {
+		t.Fatalf("query encoding boundary changed selection capacity: %s", diff)
+	}
+	if diff := cmpContextJSON(overPack, overAgain); diff != "" {
+		t.Fatalf("over-cap selection is not deterministic: %s", diff)
+	}
+	body, err := json.Marshal(overPack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(body, []byte(over)) || bytes.Contains(body, []byte("selectionQuery")) ||
+		bytes.Contains(body, []byte("budgetQuery")) {
+		t.Fatalf("private or full query leaked into Context Pack: %s", body)
 	}
 }
 

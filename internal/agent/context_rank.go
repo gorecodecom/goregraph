@@ -28,7 +28,10 @@ const (
 	maximumContextSupportingProjects = 2
 )
 
-const noAuthEvidenceDetected = "No auth evidence detected"
+const (
+	noAuthEvidenceDetected                 = "No auth evidence detected"
+	contextEndpointProviderAmbiguityReason = "matching endpoint provider is ambiguous; include the provider project or service"
+)
 
 type rankedContextFact struct {
 	fact          scan.AgentContextFactRecord
@@ -53,12 +56,15 @@ type rankedContextSupportFact struct {
 func compileContextPack(index scan.AgentContextIndexRecord, request ContextRequest) (ContextPack, error) {
 	ranked := rankContextFacts(index.Facts, request.Query)
 	seeds := selectContextSeeds(ranked)
-	endpointSeed, hasEndpoint := selectContextEndpoint(ranked, request.Query)
-	if len(seeds) == 0 && hasEndpoint {
+	endpointSeed, hasEndpoint, endpointFallbackReason := selectContextEndpoint(ranked, request.Query)
+	if hasEndpoint {
 		seeds = []rankedContextFact{endpointSeed}
 	}
 	if len(seeds) == 0 {
-		return fallbackContextPack(index, request, "no sufficiently relevant context fact found", nil)
+		if endpointFallbackReason == "" {
+			endpointFallbackReason = "no sufficiently relevant context fact found"
+		}
+		return fallbackContextPack(index, request, endpointFallbackReason, nil)
 	}
 
 	top := seeds[0]
@@ -71,10 +77,13 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	if err != nil {
 		return ContextPack{}, err
 	}
-	if pack.EstimatedTokens > request.BudgetTokens {
+	fits, err := contextPackFitsBudget(pack, request.BudgetTokens)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	if !fits {
 		return ContextPack{}, fmt.Errorf(
-			"context envelope requires %d tokens, exceeding budget %d",
-			pack.EstimatedTokens,
+			"context envelope exceeds budget %d",
 			request.BudgetTokens,
 		)
 	}
@@ -159,10 +168,13 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	if err != nil {
 		return ContextPack{}, err
 	}
-	if pack.EstimatedTokens > request.BudgetTokens {
+	fits, err = contextPackFitsBudget(pack, request.BudgetTokens)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	if !fits {
 		return ContextPack{}, fmt.Errorf(
-			"context pack requires %d tokens, exceeding budget %d",
-			pack.EstimatedTokens,
+			"context pack exceeds budget %d",
 			request.BudgetTokens,
 		)
 	}
@@ -950,7 +962,7 @@ func contextCoverageRecordLess(left, right scan.AgentContextCoverageRecord) bool
 	return left.Reason < right.Reason
 }
 
-func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedContextFact, bool) {
+func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedContextFact, bool, string) {
 	candidates := make([]rankedContextFact, 0)
 	for _, candidate := range ranked {
 		if candidate.score < minimumContextSeedScore ||
@@ -961,7 +973,7 @@ func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedCont
 		candidates = append(candidates, candidate)
 	}
 	if len(candidates) == 0 {
-		return rankedContextFact{}, false
+		return rankedContextFact{}, false, ""
 	}
 
 	top := candidates[0]
@@ -974,10 +986,10 @@ func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedCont
 		}
 	}
 	if len(providers) <= 1 {
-		return top, true
+		return top, true, ""
 	}
 	if !contextEndpointMethodAndPathMatchQuery(top.fact, query) {
-		return rankedContextFact{}, false
+		return rankedContextFact{}, false, contextEndpointProviderAmbiguityReason
 	}
 
 	bestScore := 0
@@ -995,9 +1007,9 @@ func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedCont
 		}
 	}
 	if bestScore == 0 || tied {
-		return rankedContextFact{}, false
+		return rankedContextFact{}, false, contextEndpointProviderAmbiguityReason
 	}
-	return providers[bestProvider][0], true
+	return providers[bestProvider][0], true, ""
 }
 
 func eligibleContextEndpoint(fact scan.AgentContextFactRecord) bool {
@@ -1097,12 +1109,19 @@ func contextPrimaryQuery(value string) string {
 func contextProblemStatement(value string) string {
 	lines := strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n")
 	for index, line := range lines {
-		switch strings.ToLower(strings.TrimSpace(line)) {
-		case "problem statement:", "problemstellung:", "problem:", "task:", "aufgabe:":
+		switch normalizeContextProblemHeading(line) {
+		case "problem statement", "problemstellung", "problem", "task", "aufgabe":
 			return contextFirstParagraph(strings.Join(lines[index+1:], "\n"))
 		}
 	}
 	return ""
+}
+
+func normalizeContextProblemHeading(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimSpace(strings.TrimLeft(value, "#"))
+	value = strings.TrimSpace(strings.TrimSuffix(value, ":"))
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
 }
 
 func contextFirstParagraph(value string) string {
@@ -1149,7 +1168,7 @@ func selectContextSeeds(ranked []rankedContextFact) []rankedContextFact {
 		if candidate.score < minimumContextSeedScore {
 			break
 		}
-		if reliableProductionContextSeed(candidate.fact) {
+		if !strings.EqualFold(candidate.fact.Kind, "api_endpoint") && reliableProductionContextSeed(candidate.fact) {
 			return []rankedContextFact{candidate}
 		}
 	}
@@ -1802,10 +1821,14 @@ func tryContextPack(
 }
 
 func contextPackFitsBudget(pack ContextPack, budget int) (bool, error) {
-	if pack.EstimatedTokens > budget {
+	view, err := contextBudgetView(pack)
+	if err != nil {
+		return false, err
+	}
+	if view.EstimatedTokens > budget {
 		return false, nil
 	}
-	body, err := json.Marshal(pack)
+	body, err := json.Marshal(view)
 	if err != nil {
 		return false, err
 	}

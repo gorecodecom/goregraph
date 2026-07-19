@@ -407,8 +407,8 @@ func orderedContextConcernIDs(values []string) []string {
 func contextConcernPlanningSeed(index scan.AgentContextIndexRecord, query string) (scan.AgentContextFactRecord, bool) {
 	ranked := rankContextFacts(index.Facts, query)
 	seeds := selectContextSeeds(ranked)
-	endpoint, hasEndpoint := selectContextEndpoint(ranked, query)
-	if len(seeds) == 0 && hasEndpoint {
+	endpoint, hasEndpoint, _ := selectContextEndpoint(ranked, query)
+	if hasEndpoint {
 		return endpoint.fact, true
 	}
 	if len(seeds) == 0 {

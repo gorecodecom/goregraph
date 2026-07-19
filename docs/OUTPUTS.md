@@ -228,6 +228,13 @@ most twice” ceiling applies to Context retrieval for one coding task. Context
 token estimates are approximate; complete-session tokens are the target for the
 benchmark gate.
 
+The Context Pack `query` field is the normalized request text verbatim when it
+is at most 256 runes and its JSON encoding, including quotes and escapes, is at
+most 256 bytes; otherwise it is a compact primary-task summary. The complete
+input remains internal for the request lifecycle so ranking, concerns, source
+selection, and retry planning use the full task, but that input is neither
+emitted nor included in `context_id`.
+
 For an API task, the agent compiler selects at most one relevant endpoint and
 eight consumer call sites, with an explicit omitted count. The default budget
 remains 4000 tokens. `agent/context-index.json` contains compact searchable

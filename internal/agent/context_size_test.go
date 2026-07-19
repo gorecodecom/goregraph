@@ -223,6 +223,63 @@ func TestBuildContextSourceMinimumBudgetFallbackAlwaysFits(t *testing.T) {
 	}
 }
 
+func TestBuildContextLongUnmatchedQueriesProduceBoundedDeterministicFallback(t *testing.T) {
+	const safeEncodedQueryBytes = 256
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{SchemaVersion: scan.SchemaVersion})
+	for _, test := range []struct {
+		name  string
+		query string
+	}{
+		{name: "emoji", query: strings.Repeat("😀", 600)},
+		{name: "JSON escaped angle bracket", query: strings.Repeat("<", 600)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := ContextRequest{Root: root, Query: test.query, BudgetTokens: MinContextBudgetTokens}
+			first, err := BuildContext(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := BuildContext(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			firstBody, err := json.Marshal(first)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secondBody, err := json.Marshal(second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			queryBody, err := json.Marshal(first.Query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !first.FallbackRequired || first.Query == test.query || !utf8.ValidString(first.Query) ||
+				!utf8.Valid(firstBody) || first.EstimatedTokens > MinContextBudgetTokens ||
+				len(firstBody) > contextByteBudget(MinContextBudgetTokens) ||
+				len(queryBody) > safeEncodedQueryBytes {
+				t.Fatalf("long query fallback is not safely bounded: query-bytes=%d body-bytes=%d pack=%#v", len(queryBody), len(firstBody), first)
+			}
+			if !bytes.Equal(firstBody, secondBody) {
+				t.Fatalf("long query fallback is not deterministic:\nfirst: %s\nsecond: %s", firstBody, secondBody)
+			}
+		})
+	}
+}
+
+func TestBuildContextPreservesShortSafeQueryByteForByte(t *testing.T) {
+	const query = "Inspect Größe & retry behavior"
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{SchemaVersion: scan.SchemaVersion})
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query, BudgetTokens: MinContextBudgetTokens})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Query != query {
+		t.Fatalf("short safe query = %q, want byte-identical %q", pack.Query, query)
+	}
+}
+
 func writeDenseContextIndexFixture(t *testing.T, factCount int) string {
 	t.Helper()
 	if factCount < 2 {

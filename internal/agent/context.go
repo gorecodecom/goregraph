@@ -25,6 +25,7 @@ const (
 	MaxContextSourceSections           = 12
 	MaxContextSourceOmissions          = 3
 	MaxContextSourceFileBytes          = 2 * 1024 * 1024
+	contextQueryJSONBudgetBytes        = 256
 )
 
 type ContextRequest struct {
@@ -113,6 +114,7 @@ type ContextPack struct {
 	Schema              int    `json:"schema"`
 	Query               string `json:"query"`
 	selectionQuery      string
+	budgetQuery         string
 	Freshness           string                  `json:"freshness,omitempty"`
 	Confidence          string                  `json:"confidence"`
 	FallbackRequired    bool                    `json:"fallback_required"`
@@ -377,10 +379,16 @@ func newContextEnvelope(index scan.AgentContextIndexRecord, request ContextReque
 	if freshness == "" {
 		freshness = "unknown"
 	}
+	publicQuery, compacted := compactContextQuery(request.Query)
+	budgetQuery := publicQuery
+	if compacted {
+		budgetQuery = contextQueryBudgetPlaceholder()
+	}
 	pack, err := finalizeContextEstimate(ContextPack{
 		Schema:         scan.SchemaVersion,
-		Query:          compactContextQuery(request.Query),
+		Query:          publicQuery,
 		selectionQuery: request.Query,
+		budgetQuery:    budgetQuery,
 		Freshness:      freshness,
 		Confidence:     "LOW",
 		BudgetTokens:   request.BudgetTokens,
@@ -388,31 +396,56 @@ func newContextEnvelope(index scan.AgentContextIndexRecord, request ContextReque
 	if err != nil {
 		return ContextPack{}, err
 	}
-	if pack.EstimatedTokens > request.BudgetTokens {
+	fits, err := contextPackFitsBudget(pack, request.BudgetTokens)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	if !fits {
 		return ContextPack{}, fmt.Errorf(
-			"context envelope requires %d tokens, exceeding budget %d",
-			pack.EstimatedTokens,
+			"context envelope exceeds budget %d",
 			request.BudgetTokens,
 		)
 	}
 	return pack, nil
 }
 
-func compactContextQuery(value string) string {
+func compactContextQuery(value string) (string, bool) {
 	value = strings.TrimSpace(value)
-	runes := []rune(value)
-	const compactContextQueryThresholdRunes = 512
-	if len(runes) <= compactContextQueryThresholdRunes {
-		return value
+	if contextQueryFitsPublicBudget(value) {
+		return value, false
 	}
 	if primary := contextPrimaryQuery(value); primary != "" {
-		value = primary
-		runes = []rune(value)
+		value = strings.TrimSpace(primary)
 	}
-	if len(runes) <= maximumContextQueryAnchorRunes {
-		return value
+	if contextQueryFitsPublicBudget(value) {
+		return value, true
 	}
-	return string(runes[:maximumContextQueryAnchorRunes-1]) + "…"
+	runes := []rune(value)
+	maximumPrefix := len(runes)
+	if maximumPrefix >= maximumContextQueryAnchorRunes {
+		maximumPrefix = maximumContextQueryAnchorRunes - 1
+	}
+	for length := maximumPrefix; length >= 0; length-- {
+		candidate := string(runes[:length]) + "…"
+		if contextQueryFitsPublicBudget(candidate) {
+			return candidate, true
+		}
+	}
+	return "…", true
+}
+
+func contextQueryFitsPublicBudget(value string) bool {
+	if len([]rune(value)) > maximumContextQueryAnchorRunes {
+		return false
+	}
+	body, err := json.Marshal(value)
+	return err == nil && len(body) <= contextQueryJSONBudgetBytes
+}
+
+// contextQueryJSONBudgetBytes includes JSON quotes and escaping. Reserving that
+// payload keeps the mandatory Context Pack envelope safe at the 1024-byte minimum.
+func contextQueryBudgetPlaceholder() string {
+	return strings.Repeat("x", contextQueryJSONBudgetBytes-2)
 }
 
 func contextSelectionQuery(pack ContextPack) string {
@@ -420,6 +453,14 @@ func contextSelectionQuery(pack ContextPack) string {
 		return pack.selectionQuery
 	}
 	return pack.Query
+}
+
+func contextBudgetView(pack ContextPack) (ContextPack, error) {
+	view := pack
+	if pack.budgetQuery != "" {
+		view.Query = pack.budgetQuery
+	}
+	return finalizeContextEstimate(view)
 }
 
 func fallbackContextPack(
