@@ -479,12 +479,9 @@ func selectRelatedContextProduction(
 	}
 	result := []scan.AgentContextFactRecord{}
 	for _, support := range selectContextSupportFacts(
-		rankContextSupportFacts(index.Facts, query, aliases, explicitProjects),
+		rankContextSupportFacts(index, query, aliases, explicitProjects, representedProjects),
 		representedProjects,
 	) {
-		if reachable[support.fact.ID] {
-			continue
-		}
 		result = append(result, support.fact)
 	}
 	return result

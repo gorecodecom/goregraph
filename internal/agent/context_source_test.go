@@ -658,6 +658,45 @@ func TestContextSourceOptionsEvaluateEveryFittingRenderMode(t *testing.T) {
 	}
 }
 
+func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "route", Project: "services/catalog", Kind: "route", File: "Catalog.go"},
+		{ID: "contract", Project: "libraries/integration", Kind: "api_contract", File: "Client.go"},
+		{ID: "repository", Project: "services/jobs", Kind: "persistence", File: "Repository.go"},
+	}}
+	pack := ContextPack{
+		Query: "Delete a catalog item. Analyze libraries/integration and services/jobs for the contract and persistence.",
+		Concerns: []ContextConcern{
+			{Kind: contextConcernHTTPContract},
+			{Kind: contextConcernPersistence},
+			{Kind: contextConcernProject, Project: "libraries/integration"},
+			{Kind: contextConcernProject, Project: "services/jobs"},
+		},
+		Contracts:             []ContextLocation{{ID: "contract"}},
+		Persistence:           []ContextLocation{{ID: "repository"}},
+		selectedSourceFactIDs: []string{"route", "contract", "repository"},
+	}
+
+	concerns := contextSourceConcerns(pack, index)
+	candidates := map[string]map[string]bool{}
+	for _, concern := range concerns {
+		candidates[concern.key] = map[string]bool{}
+		for _, factID := range concern.candidateFactIDs {
+			candidates[concern.key][factID] = true
+		}
+	}
+	for key, factID := range map[string]string{
+		contextConcernHTTPContract:                       "contract",
+		contextConcernPersistence:                        "repository",
+		contextConcernProject + ":libraries/integration": "contract",
+		contextConcernProject + ":services/jobs":         "repository",
+	} {
+		if !candidates[key][factID] {
+			t.Fatalf("source concern %q omitted selected support fact %q: %#v", key, factID, concerns)
+		}
+	}
+}
+
 func TestContextSourceOptionsUseSpecifiedTieBreakersWithoutPriority(t *testing.T) {
 	entrypoint := contextSourceOption{
 		candidate: sourceCandidate{FactID: "z", Role: "entrypoint", Priority: 99},

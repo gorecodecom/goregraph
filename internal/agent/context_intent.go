@@ -76,7 +76,7 @@ func planContextConcerns(
 		}
 		contractFactIDs = append(contractFactIDs, edge.FromFactID, edge.ToFactID)
 	}
-	if len(contractFactIDs) > 0 {
+	if contextQueryRequestsConcern(query, contextConcernHTTPContract) || len(contractFactIDs) > 0 {
 		concerns = append(concerns, newContextConcern(
 			contextConcernHTTPContract,
 			"",
@@ -355,6 +355,9 @@ func contextValueRequestsConcern(value, kind string) bool {
 }
 
 var contextConcernVocabulary = map[string][]string{
+	contextConcernHTTPContract: {
+		"api", "apis", "client", "clients", "contract", "contracts",
+	},
 	contextConcernAuth: {
 		"auth", "authenticate", "authentication", "authorization", "credential", "credentials", "security",
 	},
@@ -368,7 +371,7 @@ var contextConcernVocabulary = map[string][]string{
 
 func normalizedContextConcernKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "http_contract":
+	case "api_contract", "http_contract":
 		return contextConcernHTTPContract
 	case "authentication", "requires_auth", "security":
 		return contextConcernAuth

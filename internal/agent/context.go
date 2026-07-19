@@ -143,6 +143,7 @@ type ContextPack struct {
 	selectedFactIDs       []string
 	selectedEdgeIDs       []string
 	selectedConcernKeys   []string
+	selectedSupportKeys   []string
 }
 
 func BuildContext(request ContextRequest) (ContextPack, error) {
@@ -156,10 +157,11 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	}
 	metadataRequest := request
 	metadataBudget := contextMetadataBudget(request.BudgetTokens)
-	metadataRequest.BudgetTokens = metadataBudget
 	publicConcerns := []ContextConcern(nil)
 	if seed, ok := contextConcernPlanningSeed(loaded.Index, request.Query); ok {
 		publicConcerns = publicContextConcerns(planContextConcerns(request.Query, loaded.Index, seed))
+		metadataBudget = contextMetadataBudgetForConcerns(request.BudgetTokens, publicConcerns)
+		metadataRequest.BudgetTokens = metadataBudget
 		var concernTokens int
 		var measureErr error
 		publicConcerns, concernTokens, measureErr = contextConcernsWithinMetadataBudget(publicConcerns, metadataBudget)
@@ -167,6 +169,8 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 			return ContextPack{}, measureErr
 		}
 		metadataRequest.BudgetTokens -= concernTokens
+	} else {
+		metadataRequest.BudgetTokens = metadataBudget
 	}
 	pack, err := compileContextPack(loaded.Index, metadataRequest)
 	if err != nil {
@@ -266,6 +270,30 @@ func contextMetadataBudget(total int) int {
 		return total
 	}
 	return DefaultContextMetadataBudgetTokens
+}
+
+func contextMetadataBudgetForConcerns(total int, concerns []ContextConcern) int {
+	base := contextMetadataBudget(total)
+	projects := map[string]bool{}
+	for _, concern := range concerns {
+		if concern.Kind == contextConcernProject {
+			if project := normalizeContextProject(concern.Project); project != "" {
+				projects[project] = true
+			}
+		}
+	}
+	if len(projects) <= 1 || total <= base {
+		return base
+	}
+	expanded := base + (len(projects)-1)*300
+	maximum := total / 2
+	if maximum < base {
+		return base
+	}
+	if expanded > maximum {
+		return maximum
+	}
+	return expanded
 }
 
 func contextConcernMetadataTokens(concerns []ContextConcern) (int, error) {

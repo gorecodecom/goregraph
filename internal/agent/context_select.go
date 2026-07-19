@@ -121,18 +121,23 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 	if seed, ok := contextConcernPlanningSeed(index, contextSelectionQuery(pack)); ok {
 		planned = planContextConcerns(contextSelectionQuery(pack), index, seed)
 	}
-	plannedByKey := make(map[string]contextConcern, len(planned))
-	for _, concern := range planned {
-		plannedByKey[concern.key] = concern
+	plannedByKey := make(map[string]int, len(planned))
+	for index, concern := range planned {
+		plannedByKey[concern.key] = index
 	}
 
 	concerns := append([]contextConcern(nil), planned...)
 	for _, public := range pack.Concerns {
 		key := contextPublicConcernKey(public)
-		if _, ok := plannedByKey[key]; ok {
+		selected := contextSourceConcernFromPack(pack, index, public)
+		if plannedIndex, ok := plannedByKey[key]; ok {
+			concerns[plannedIndex].candidateFactIDs = orderedContextConcernIDs(append(
+				concerns[plannedIndex].candidateFactIDs,
+				selected.candidateFactIDs...,
+			))
 			continue
 		}
-		concerns = append(concerns, contextSourceConcernFromPack(pack, index, public))
+		concerns = append(concerns, selected)
 	}
 	sort.Slice(concerns, func(i, j int) bool { return concerns[i].key < concerns[j].key })
 	return concerns
@@ -194,7 +199,12 @@ func contextSourceConcernFromPack(
 	if kind == contextConcernHTTPContract {
 		for _, edge := range index.Edges {
 			if normalizedContextConcernKind(edge.Kind) == contextConcernHTTPContract {
-				candidateIDs = append(candidateIDs, edge.FromFactID, edge.ToFactID)
+				if selected[edge.FromFactID] {
+					candidateIDs = append(candidateIDs, edge.FromFactID)
+				}
+				if selected[edge.ToFactID] {
+					candidateIDs = append(candidateIDs, edge.ToFactID)
+				}
 			}
 		}
 	}
@@ -804,6 +814,10 @@ func applyContextSourceCoverage(
 	concerns []contextConcern,
 	covered map[string]bool,
 ) {
+	selectedSupport := make(map[string]bool, len(pack.selectedSupportKeys))
+	for _, key := range pack.selectedSupportKeys {
+		selectedSupport[key] = true
+	}
 	requiredMissing := false
 	for _, concern := range concerns {
 		if concern.required && !covered[concern.key] {
@@ -811,7 +825,8 @@ func applyContextSourceCoverage(
 		}
 	}
 	for index := range pack.Concerns {
-		pack.Concerns[index].Covered = covered[contextPublicConcernKey(pack.Concerns[index])]
+		key := contextPublicConcernKey(pack.Concerns[index])
+		pack.Concerns[index].Covered = covered[key] || selectedSupport[key]
 	}
 	switch {
 	case len(pack.SourceSections) == 0:

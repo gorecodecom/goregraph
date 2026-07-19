@@ -155,6 +155,88 @@ func TestSelectContextPathsKeepsDisconnectedExplicitProjectAsRelatedProduction(t
 	t.Fatalf("disconnected explicit project candidate missing: %#v", pack.Files)
 }
 
+func TestRelatedProjectSelectionPrefersOperationalEvidence(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "api_endpoint", Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem", HTTPMethod: "DELETE", Path: "/catalog/items/{id}", File: "CatalogController.go", Search: "delete catalog item", Confidence: "EXACT"},
+			{ID: "operation", Project: "services/catalog", Kind: "symbol", Name: "deleteItem", File: "CatalogService.go", Search: "delete catalog item", Confidence: "EXACT"},
+			{ID: "payload", Project: "libraries/integration", Kind: "symbol", Name: "RelatedJobPayload", File: "RelatedJobPayload.go", Search: "delete catalog item related jobs remain", Confidence: "EXACT"},
+			{ID: "client", Project: "libraries/integration", Kind: "api_contract", Name: "DELETE /internal/jobs", Qualified: "JobPort.deleteRelated", HTTPMethod: "DELETE", Path: "/internal/jobs", File: "JobPort.go", Search: "catalog item jobs", Confidence: "EXACT"},
+			{ID: "client-security", Project: "libraries/integration", Kind: "authentication", Name: "authenticated", File: "JobPortSecurity.go", Search: "authentication", Confidence: "EXACT"},
+			{ID: "unrelated-endpoint", Project: "services/jobs", Kind: "api_endpoint", Name: "GET /users/{id}/jobs", HTTPMethod: "GET", Path: "/users/{id}/jobs", File: "UserJobController.go", Search: "catalog item related jobs remain", Confidence: "EXACT"},
+			{ID: "repository", Project: "services/jobs", Kind: "persistence", Name: "findByCatalogItem", Qualified: "JobRepository.findByCatalogItem", File: "JobRepository.go", Search: "catalog item jobs persistence", Confidence: "EXACT"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "route-operation", FromFactID: "route", ToFactID: "operation", Kind: "call", Confidence: "EXACT"},
+			{ID: "client-auth", FromFactID: "client", ToFactID: "client-security", Kind: "requires_auth", Confidence: "EXACT"},
+		},
+	})
+	query := `Problem statement:
+
+Delete a catalog item, related jobs remain.
+
+Analyze services/catalog, libraries/integration, and services/jobs. Cover the internal contract, authentication, configuration, persistence, and tests.`
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"JobPort.go", "JobRepository.go"} {
+		if !contextPackHasFile(pack, path) {
+			t.Fatalf("operational support %q missing: %#v", path, pack.Files)
+		}
+	}
+	for _, path := range []string{"RelatedJobPayload.go", "UserJobController.go"} {
+		if contextPackHasFile(pack, path) {
+			t.Fatalf("lexical distractor %q displaced operational evidence: %#v", path, pack.Files)
+		}
+	}
+	covered := map[string]bool{}
+	for _, concern := range pack.Concerns {
+		covered[contextPublicConcernKey(concern)] = concern.Covered
+	}
+	for _, key := range []string{
+		contextConcernHTTPContract,
+		contextConcernPersistence,
+		contextConcernProject + ":libraries/integration",
+		contextConcernProject + ":services/jobs",
+	} {
+		if !covered[key] {
+			t.Fatalf("selected support concern %q is not covered: %#v", key, pack.Concerns)
+		}
+	}
+}
+
+func TestRelatedProjectSelectionLeavesWeakEvidenceUncovered(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "DELETE /catalog/items/{id}", HTTPMethod: "DELETE", Path: "/catalog/items/{id}", File: "CatalogController.go", Search: "delete catalog item", Confidence: "EXACT"},
+			{ID: "payload", Project: "libraries/model", Kind: "symbol", Name: "CatalogPayload", File: "CatalogPayload.go", Search: "catalog payload", Confidence: "EXACT"},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root:  root,
+		Query: "Delete a catalog item. Analyze libraries/model for an internal contract.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contextPackHasFile(pack, "CatalogPayload.go") {
+		t.Fatalf("weak lexical evidence was forced into the pack: %#v", pack.Files)
+	}
+	if !contextPackHasUncertainty(pack, "libraries/model/project_context", "no relevant production fact selected") {
+		t.Fatalf("missing project evidence was not reported honestly: %#v", pack.Uncertainties)
+	}
+	for _, concern := range pack.Concerns {
+		if contextPublicConcernKey(concern) == contextConcernProject+":libraries/model" && concern.Covered {
+			t.Fatalf("unselected weak project was reported as covered: %#v", pack.Concerns)
+		}
+	}
+}
+
 func TestCrossServiceFixtureSourcesAvoidDeclarationCollisions(t *testing.T) {
 	facts := crossServiceContextFacts(".go")
 	sourceFacts := make(map[string][]scan.AgentContextFactRecord)

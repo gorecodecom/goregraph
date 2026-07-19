@@ -47,11 +47,13 @@ type rankedContextFact struct {
 }
 
 type rankedContextSupportFact struct {
-	fact            scan.AgentContextFactRecord
-	project         string
-	explicit        bool
-	semanticMatches int
-	score           int
+	fact             scan.AgentContextFactRecord
+	project          string
+	explicit         bool
+	semanticMatches  int
+	requestedMatches int
+	operational      bool
+	score            int
 }
 
 func compileContextPack(index scan.AgentContextIndexRecord, request ContextRequest) (ContextPack, error) {
@@ -203,23 +205,49 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	explicitProjects := contextExplicitProjects(request.Query, projectAliases)
 	representedProjects := contextRepresentedProjects(pack, includedFactIDs, factByID)
 	supportFactIDs := map[string]bool{}
+	supportProjectCounts := map[string]int{}
+	supportProjectRoles := map[string]map[string]bool{}
 	acceptedSupportProjects := 0
+	primaryProjects := make(map[string]bool, len(representedProjects))
+	for project, represented := range representedProjects {
+		primaryProjects[project] = represented
+	}
 	for _, relatedFact := range pathSelection.relatedProductionFacts {
-		if acceptedSupportProjects >= maximumContextSupportingProjects {
-			break
-		}
 		project := normalizeContextProject(relatedFact.Project)
-		if representedProjects[project] {
+		if primaryProjects[project] || supportProjectCounts[project] >= maximumContextSupportFactsPerProject {
+			continue
+		}
+		if supportProjectCounts[project] > 0 {
+			role := contextSupportStructuralRole(index, relatedFact)
+			if role == "" || role != contextConcernPersistence && supportProjectRoles[project][role] {
+				continue
+			}
+		}
+		if supportProjectCounts[project] == 0 && acceptedSupportProjects >= maximumContextSupportingProjects {
 			continue
 		}
 		relatedFact = lowerConfidenceForRelatedProduction(relatedFact)
-		candidate, accepted, appendErr := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
-			return mergeContextFile(
-				candidate,
-				contextFileForFact(relatedFact, "related_project", "full task project match"),
-				request.MaxFiles,
+		candidate := pack
+		accepted := false
+		var appendErr error
+		if role, appendLocation := selectedContextLocationAppender(relatedFact.Kind); appendLocation != nil {
+			candidate, accepted, appendErr = tryAddContextLocation(
+				pack,
+				request,
+				relatedFact,
+				"related project task and role match",
+				role,
+				appendLocation,
 			)
-		})
+		} else {
+			candidate, accepted, appendErr = tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
+				return mergeContextFile(
+					candidate,
+					contextFileForFact(relatedFact, "related_project", "full task project match"),
+					request.MaxFiles,
+				)
+			})
+		}
 		if appendErr != nil {
 			return ContextPack{}, appendErr
 		}
@@ -228,7 +256,16 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			includedFactIDs[relatedFact.ID] = true
 			supportFactIDs[relatedFact.ID] = true
 			representedProjects[project] = true
-			acceptedSupportProjects++
+			supportProjectCounts[project]++
+			if supportProjectCounts[project] == 1 {
+				acceptedSupportProjects++
+			}
+			if role := contextSupportStructuralRole(index, relatedFact); role != "" {
+				if supportProjectRoles[project] == nil {
+					supportProjectRoles[project] = map[string]bool{}
+				}
+				supportProjectRoles[project][role] = true
+			}
 		}
 	}
 	supportScopes := selectedContextScopes(nil, supportFactIDs, nil, factByID)
@@ -267,8 +304,27 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		selectedSourceFactIDs[factID] = true
 	}
 	retainSelectedSourceFactIDs(&pack, selectedSourceFactIDs)
+	pack.selectedSupportKeys = contextSelectedSupportKeys(supportFactIDs, factByID)
 	retainContextSemanticSelection(&pack, includedFactIDs, acceptedEdgeIDs, concerns)
 	return finalizeContextEstimate(pack)
+}
+
+func contextSelectedSupportKeys(
+	supportFactIDs map[string]bool,
+	factByID map[string]scan.AgentContextFactRecord,
+) []string {
+	selected := map[string]bool{}
+	for factID := range supportFactIDs {
+		fact := factByID[factID]
+		if project := normalizeContextProject(fact.Project); project != "" {
+			selected[contextConcernProject+":"+project] = true
+		}
+		switch normalizedContextConcernKind(fact.Kind) {
+		case contextConcernHTTPContract, contextConcernPersistence, contextConcernAuth:
+			selected[normalizedContextConcernKind(fact.Kind)] = true
+		}
+	}
+	return contextSelectedMapKeys(selected)
 }
 
 func retainContextSemanticSelection(
@@ -751,14 +807,21 @@ func contextProjectPathBoundary(value rune) bool {
 }
 
 func rankContextSupportFacts(
-	facts []scan.AgentContextFactRecord,
+	index scan.AgentContextIndexRecord,
 	query string,
 	aliases map[string][]string,
 	explicitProjects map[string]bool,
+	representedProjects map[string]bool,
 ) []rankedContextSupportFact {
-	queryTokens := contextQueryTokens(query)
-	ranked := make([]rankedContextSupportFact, 0, len(facts))
-	for _, fact := range facts {
+	supportQuery := query
+	if contextProblemStatement(query) != "" {
+		supportQuery = contextPrimaryQuery(query)
+	}
+	queryTokens := contextQueryTokens(supportQuery)
+	requestedTokens := contextSupportRequestedTokens(query)
+	utility := newContextForwardUtility(index)
+	ranked := make([]rankedContextSupportFact, 0, len(index.Facts))
+	for _, fact := range index.Facts {
 		project := normalizeContextProject(fact.Project)
 		if project == "" || !eligibleContextSupportFact(fact) {
 			continue
@@ -773,17 +836,34 @@ func rankContextSupportFacts(
 			fact.Summary,
 		}, " "))
 		semanticMatches := 0
+		requestedMatches := 0
 		for _, token := range queryTokens {
 			if !projectTokens[token] && factTokens[token] {
 				semanticMatches++
 			}
 		}
+		for token := range requestedTokens {
+			if !projectTokens[token] && factTokens[token] {
+				requestedMatches++
+			}
+		}
+		operational, operationalScore := contextSupportOperationalScore(utility, fact, query)
+		operationalScore += contextSupportProjectAffinityScore(
+			fact,
+			project,
+			aliases,
+			explicitProjects,
+			representedProjects,
+		)
 		ranked = append(ranked, rankedContextSupportFact{
-			fact:            fact,
-			project:         project,
-			explicit:        explicitProjects[project],
-			semanticMatches: semanticMatches,
-			score:           contextSupportFactScore(fact, semanticMatches),
+			fact:             fact,
+			project:          project,
+			explicit:         explicitProjects[project],
+			semanticMatches:  semanticMatches,
+			requestedMatches: requestedMatches,
+			operational:      operational,
+			score: contextSupportFactScore(fact, semanticMatches) +
+				requestedMatches*scorePerMatchedTerm/2 + operationalScore,
 		})
 	}
 	sort.Slice(ranked, func(i, j int) bool {
@@ -791,11 +871,11 @@ func rankContextSupportFacts(
 		if left.explicit != right.explicit {
 			return left.explicit
 		}
-		if left.semanticMatches != right.semanticMatches {
-			return left.semanticMatches > right.semanticMatches
-		}
 		if left.score != right.score {
 			return left.score > right.score
+		}
+		if left.semanticMatches != right.semanticMatches {
+			return left.semanticMatches > right.semanticMatches
 		}
 		if left.project != right.project {
 			return left.project < right.project
@@ -819,6 +899,71 @@ func rankContextSupportFacts(
 	return ranked
 }
 
+func contextSupportRequestedTokens(query string) map[string]bool {
+	requested := make(map[string]bool)
+	for _, token := range contextQueryTokens(query) {
+		requested[token] = true
+	}
+	for _, token := range contextQueryTokens(contextPrimaryQuery(query)) {
+		delete(requested, token)
+	}
+	return requested
+}
+
+func contextSupportProjectAffinityScore(
+	fact scan.AgentContextFactRecord,
+	factProject string,
+	aliases map[string][]string,
+	explicitProjects map[string]bool,
+	representedProjects map[string]bool,
+) int {
+	identifier := compactContextIdentifier(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.File,
+	}, " "))
+	if identifier == "" {
+		return 0
+	}
+	best := 0
+	for project := range explicitProjects {
+		if project == factProject || representedProjects[project] {
+			continue
+		}
+		for _, alias := range aliases[project] {
+			for _, segment := range contextProjectIdentifierSegments(alias) {
+				if len([]rune(segment)) >= 4 && strings.Contains(identifier, segment) {
+					best = 240
+				}
+			}
+		}
+	}
+	return best
+}
+
+func compactContextIdentifier(value string) string {
+	var result strings.Builder
+	for _, current := range strings.ToLower(value) {
+		if unicode.IsLetter(current) || unicode.IsDigit(current) {
+			result.WriteRune(current)
+		}
+	}
+	return result.String()
+}
+
+func contextProjectIdentifierSegments(value string) []string {
+	parts := strings.FieldsFunc(strings.ToLower(value), func(current rune) bool {
+		return !unicode.IsLetter(current) && !unicode.IsDigit(current)
+	})
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
 func eligibleContextSupportFact(fact scan.AgentContextFactRecord) bool {
 	kind := strings.ToLower(strings.TrimSpace(fact.Kind))
 	if contextCapabilityForKind(kind) == "tests" || strings.Contains(kind, "generated") || strings.Contains(kind, "metadata") {
@@ -830,8 +975,6 @@ func eligibleContextSupportFact(fact scan.AgentContextFactRecord) bool {
 func contextSupportFactScore(fact scan.AgentContextFactRecord, semanticMatches int) int {
 	score := semanticMatches * scorePerMatchedTerm
 	switch strings.ToLower(strings.TrimSpace(fact.Kind)) {
-	case "route", "api_endpoint":
-		score += scoreRouteKind
 	case "symbol", "backend_handler":
 		score += scoreSymbolKind
 	}
@@ -844,6 +987,105 @@ func contextSupportFactScore(fact scan.AgentContextFactRecord, semanticMatches i
 	return score
 }
 
+func contextSupportOperationalScore(
+	utility *contextForwardUtility,
+	fact scan.AgentContextFactRecord,
+	query string,
+) (bool, int) {
+	kind := strings.ToLower(strings.TrimSpace(fact.Kind))
+	score := 0
+	operational := false
+	switch kind {
+	case "api_endpoint", "route":
+		if contextEndpointMethodAndPathMatchQuery(fact, contextPrimaryQuery(query)) {
+			score += 180
+			operational = true
+		}
+	case "api_contract":
+		score += 120
+		operational = true
+		if contextQueryRequestsConcern(query, contextConcernHTTPContract) {
+			score += 100
+		}
+	case "persistence":
+		score += 140
+		operational = true
+		if contextQueryRequestsConcern(query, contextConcernPersistence) {
+			score += 100
+		}
+	case "authentication", "requires_auth", "security":
+		score += 140
+		operational = true
+		if contextQueryRequestsConcern(query, contextConcernAuth) {
+			score += 100
+		}
+	}
+
+	value := strings.Join([]string{fact.Search, fact.Name, fact.Qualified, fact.Summary}, " ")
+	if contextQueryRequestsConcern(query, contextConcernAuth) &&
+		contextValueRequestsConcern(value, contextConcernAuth) {
+		score += 100
+		operational = true
+	}
+	if contextQueryRequestsConcern(query, contextConcernPersistence) &&
+		contextValueRequestsConcern(value, contextConcernPersistence) {
+		score += 100
+		operational = true
+	}
+	graphUtility := utility.score(fact.ID)
+	if graphUtility > 0 {
+		score += graphUtility
+		operational = true
+	} else if kind == "api_endpoint" || kind == "route" {
+		score -= scoreRouteKind
+	}
+	return operational, score
+}
+
+func contextSupportStructuralRole(
+	index scan.AgentContextIndexRecord,
+	fact scan.AgentContextFactRecord,
+) string {
+	switch normalizedContextConcernKind(fact.Kind) {
+	case contextConcernHTTPContract:
+		return contextConcernHTTPContract
+	case contextConcernPersistence:
+		return contextConcernPersistence
+	case contextConcernAuth:
+		return contextConcernAuth
+	}
+	roles := map[string]bool{}
+	for _, edge := range index.Edges {
+		if edge.FromFactID != fact.ID {
+			continue
+		}
+		switch normalizedContextConcernKind(edge.Kind) {
+		case contextConcernHTTPContract:
+			roles[contextConcernHTTPContract] = true
+		case contextConcernPersistence:
+			roles[contextConcernPersistence] = true
+		case contextConcernAuth:
+			roles[contextConcernAuth] = true
+		default:
+			switch strings.ToLower(strings.TrimSpace(edge.Kind)) {
+			case "call", "consumes_endpoint", "extends", "implements", "use":
+				roles["call"] = true
+			}
+		}
+	}
+	for _, role := range []string{
+		contextConcernHTTPContract,
+		contextConcernPersistence,
+		contextConcernAuth,
+		"call",
+	} {
+		if roles[role] {
+			return role
+		}
+	}
+	return ""
+}
+
 func selectContextSupportFacts(
 	ranked []rankedContextSupportFact,
 	representedProjects map[string]bool,
@@ -854,9 +1096,17 @@ func selectContextSupportFacts(
 		if candidate.explicit {
 			minimumMatches = 1
 		}
-		if candidate.semanticMatches >= minimumMatches && !representedProjects[candidate.project] {
-			selected = append(selected, candidate)
+		if candidate.semanticMatches < minimumMatches || representedProjects[candidate.project] {
+			continue
 		}
+		if !candidate.operational && candidate.semanticMatches < 2 && candidate.requestedMatches == 0 {
+			continue
+		}
+		if (strings.EqualFold(candidate.fact.Kind, "api_endpoint") ||
+			strings.EqualFold(candidate.fact.Kind, "route")) && !candidate.operational {
+			continue
+		}
+		selected = append(selected, candidate)
 	}
 	return selected
 }
@@ -2030,6 +2280,7 @@ func cloneContextPack(pack ContextPack) ContextPack {
 	pack.selectedFactIDs = append([]string(nil), pack.selectedFactIDs...)
 	pack.selectedEdgeIDs = append([]string(nil), pack.selectedEdgeIDs...)
 	pack.selectedConcernKeys = append([]string(nil), pack.selectedConcernKeys...)
+	pack.selectedSupportKeys = append([]string(nil), pack.selectedSupportKeys...)
 	return pack
 }
 

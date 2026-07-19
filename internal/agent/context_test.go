@@ -58,6 +58,23 @@ func TestContextBudgetsReserveSpaceForSource(t *testing.T) {
 	}
 }
 
+func TestContextMetadataBudgetReservesCrossProjectPlanningCapacity(t *testing.T) {
+	concerns := []ContextConcern{
+		{Kind: contextConcernProject, Project: "services/catalog"},
+		{Kind: contextConcernProject, Project: "libraries/integration"},
+		{Kind: contextConcernProject, Project: "services/jobs"},
+		{Kind: contextConcernHTTPContract},
+		{Kind: contextConcernPersistence},
+	}
+	got := contextMetadataBudgetForConcerns(DefaultContextBudgetTokens, concerns)
+	if got <= DefaultContextMetadataBudgetTokens || got > DefaultContextBudgetTokens/2 {
+		t.Fatalf("cross-project metadata budget = %d, want (%d, %d]", got, DefaultContextMetadataBudgetTokens, DefaultContextBudgetTokens/2)
+	}
+	if single := contextMetadataBudgetForConcerns(DefaultContextBudgetTokens, concerns[:1]); single != DefaultContextMetadataBudgetTokens {
+		t.Fatalf("single-project metadata budget = %d, want %d", single, DefaultContextMetadataBudgetTokens)
+	}
+}
+
 func TestPlanContextConcernsAlwaysRequiresEntrypointAndPrimaryPath(t *testing.T) {
 	seed := scan.AgentContextFactRecord{ID: "route", Project: "services/catalog", Kind: "route"}
 	concerns := planContextConcerns("inspect the selected operation", scan.AgentContextIndexRecord{
