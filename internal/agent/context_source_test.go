@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
 func TestRenderSourceCandidateKeepsCurrentIndexedDeclaration(t *testing.T) {
@@ -523,6 +525,224 @@ func numberedSourceLines(count int) []string {
 		lines[index] = fmt.Sprintf("source line %d", index+1)
 	}
 	return lines
+}
+
+func TestContextSourceOptionsMergeNearbyRangesDeterministically(t *testing.T) {
+	pack := ContextPack{
+		Query:                 "inspect production path",
+		Entrypoints:           []ContextLocation{{ID: "entry"}},
+		selectedSourceFactIDs: []string{"second", "entry"},
+	}
+	facts := []scan.AgentContextFactRecord{
+		{ID: "entry", Project: "app", Kind: "symbol", Name: "entry", File: "app.go", Line: 2, EndLine: 3},
+		{ID: "second", Project: "app", Kind: "symbol", Name: "second", File: "app.go", Line: 11, EndLine: 12},
+	}
+
+	forward := contextSourceCandidates(pack, scan.AgentContextIndexRecord{Facts: facts})
+	pack.selectedSourceFactIDs[0], pack.selectedSourceFactIDs[1] = pack.selectedSourceFactIDs[1], pack.selectedSourceFactIDs[0]
+	facts[0], facts[1] = facts[1], facts[0]
+	reversed := contextSourceCandidates(pack, scan.AgentContextIndexRecord{Facts: facts})
+
+	if len(forward) != 1 || len(reversed) != 1 {
+		t.Fatalf("nearby candidates were not merged: forward=%#v reversed=%#v", forward, reversed)
+	}
+	if forward[0].FactID != reversed[0].FactID || forward[0].StartLine != 2 || forward[0].EndLine != 12 ||
+		reversed[0].StartLine != forward[0].StartLine || reversed[0].EndLine != forward[0].EndLine {
+		t.Fatalf("nearby merge depends on input order: forward=%#v reversed=%#v", forward, reversed)
+	}
+}
+
+func TestContextSourceOptionsFallBackToFocusedWhenBodyDoesNotFit(t *testing.T) {
+	root := t.TempDir()
+	lines := make([]string, 110)
+	for index := range lines {
+		lines[index] = "    total = total + calculateAnotherValue()"
+	}
+	lines[0] = "func centralOperation() {"
+	lines[len(lines)-1] = "}"
+	writeSourceFile(t, root, "central.go", strings.Join(lines, "\n")+"\n")
+	pack := ContextPack{
+		Schema: 1, Query: "central operation", Confidence: "EXACT", BudgetTokens: 700,
+		Concerns:              []ContextConcern{{Kind: contextConcernEntrypoint}},
+		Entrypoints:           []ContextLocation{{ID: "central", File: "central.go"}},
+		selectedSourceFactIDs: []string{"central"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{{
+		ID: "central", Kind: "symbol", Name: "centralOperation", File: "central.go", Line: 1, EndLine: 110,
+	}}}
+	loaded := loadedContextIndex{ScopeRoot: root, Index: index}
+	candidates := contextSourceCandidates(pack, index)
+	options, _, err := contextSourceRenderOptions(
+		pack,
+		loaded,
+		candidates,
+		contextSourceConcerns(pack, index),
+		map[string]int{"central": 0},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modes := []string{}
+	previousCost := int(^uint(0) >> 1)
+	for _, option := range options {
+		modes = append(modes, option.section.RenderMode)
+		if option.estimated <= 0 || option.estimated > previousCost {
+			t.Fatalf("option costs are not precomputed from detailed to compact: %#v", options)
+		}
+		previousCost = option.estimated
+	}
+	if strings.Join(modes, ",") != "body,focused,signature" {
+		t.Fatalf("render option order = %v", modes)
+	}
+
+	got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: 700})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.SourceSections) != 1 || got.SourceSections[0].RenderMode != "focused" {
+		t.Fatalf("large central source selection = %#v", got.SourceSections)
+	}
+}
+
+func TestContextSourceOptionsRespectFileBudget(t *testing.T) {
+	root := t.TempDir()
+	writeSourceFile(t, root, "route.go", "func route() {}\n")
+	writeSourceFile(t, root, "provider.go", "func provider() {}\n")
+	pack := ContextPack{
+		Schema: 1, Query: "inspect app and provider", Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+		Concerns: []ContextConcern{
+			{Kind: contextConcernEntrypoint},
+			{Kind: contextConcernProject, Project: "provider"},
+		},
+		Entrypoints:           []ContextLocation{{ID: "route", Project: "app", File: "route.go"}},
+		selectedSourceFactIDs: []string{"route", "provider"},
+	}
+	loaded := loadedContextIndex{ScopeRoot: root, Index: scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "route", Project: "app", Kind: "symbol", Name: "route", File: "route.go", Line: 1, EndLine: 1},
+		{ID: "provider", Project: "provider", Kind: "symbol", Name: "provider", File: "provider.go", Line: 1, EndLine: 1},
+	}}}
+
+	got, err := attachContextSource(pack, loaded, ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.SourceSections) != 1 || got.SourceSections[0].Path != "route.go" || got.SourceCoverage != "partial" {
+		t.Fatalf("file budget source selection = %#v", got)
+	}
+}
+
+func TestContextSourceOptionsRetainFactRolesWithoutMetadataLocations(t *testing.T) {
+	pack := ContextPack{
+		Query:                 "inspect production path",
+		selectedSourceFactIDs: []string{"repository", "contract"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "repository", Kind: "persistence", Name: "deleteRecords", File: "repository.go", Line: 1},
+		{ID: "contract", Kind: "api_contract", Name: "DELETE /records", Qualified: "Client.deleteRecords", File: "client.go", Line: 1},
+	}}
+
+	candidates := contextSourceCandidates(pack, index)
+	if len(candidates) != 2 || candidates[0].FactID != "contract" || candidates[0].Role != "contract" ||
+		candidates[1].FactID != "repository" || candidates[1].Role != "persistence" {
+		t.Fatalf("source fact roles = %#v", candidates)
+	}
+}
+
+func TestContextSourceConcernCoverage(t *testing.T) {
+	t.Run("optional source omission stays complete", func(t *testing.T) {
+		root := t.TempDir()
+		writeSourceFile(t, root, "route.go", "func route() {}\n")
+		pack := ContextPack{
+			Schema: 1, Query: "inspect route", Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+			Concerns: []ContextConcern{
+				{Kind: contextConcernEntrypoint, Covered: false},
+				{Kind: contextConcernPrimaryPath, Covered: false},
+			},
+			Entrypoints:           []ContextLocation{{ID: "route", File: "route.go"}},
+			selectedSourceFactIDs: []string{"route", "optional"},
+		}
+		loaded := loadedContextIndex{ScopeRoot: root, Index: scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Kind: "symbol", Name: "route", File: "route.go", Line: 1, EndLine: 1},
+			{ID: "optional", Kind: "symbol", Name: "optional", File: "missing.go", Line: 1, EndLine: 1},
+		}}}
+
+		got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: DefaultContextBudgetTokens})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.SourceCoverage != "complete" || len(got.SourceOmissions) != 0 {
+			t.Fatalf("optional omission downgraded source coverage: %#v", got)
+		}
+		for _, concern := range got.Concerns {
+			if !concern.Covered {
+				t.Fatalf("selected current source did not cover %#v", concern)
+			}
+		}
+	})
+
+	t.Run("missing required project is partial with an exact omission", func(t *testing.T) {
+		root := t.TempDir()
+		writeSourceFile(t, root, "route.go", "func route() {}\n")
+		pack := ContextPack{
+			Schema: 1, Query: "inspect app and services/provider", Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+			Concerns: []ContextConcern{
+				{Kind: contextConcernEntrypoint, Covered: true},
+				{Kind: contextConcernProject, Project: "services/provider", Covered: true},
+			},
+			Entrypoints:           []ContextLocation{{ID: "route", Project: "app", File: "route.go"}},
+			selectedSourceFactIDs: []string{"route", "provider"},
+		}
+		loaded := loadedContextIndex{ScopeRoot: root, Index: scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "app", Kind: "symbol", Name: "route", File: "route.go", Line: 1, EndLine: 1},
+			{ID: "provider", Project: "services/provider", Kind: "symbol", Name: "provider", File: "Provider.go", Line: 1, EndLine: 1},
+		}}}
+
+		got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: DefaultContextBudgetTokens})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := ContextSourceOmission{
+			Project: "services/provider", Path: "Provider.go", Role: "call_chain", Reason: "source file is missing",
+		}
+		if got.SourceCoverage != "partial" || len(got.SourceOmissions) != 1 || got.SourceOmissions[0] != want {
+			t.Fatalf("required project omission = %#v, want %#v", got, want)
+		}
+		if got.Concerns[0].Covered != true || got.Concerns[1].Covered != false {
+			t.Fatalf("public concern coverage = %#v", got.Concerns)
+		}
+	})
+
+	t.Run("no current required source is none", func(t *testing.T) {
+		root := t.TempDir()
+		pack := ContextPack{
+			Schema: 1, Query: "inspect route", Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+			Concerns: []ContextConcern{
+				{Kind: contextConcernEntrypoint, Covered: true},
+				{Kind: contextConcernPrimaryPath, Covered: true},
+			},
+			Entrypoints:           []ContextLocation{{ID: "route", File: "route.go"}},
+			selectedSourceFactIDs: []string{"route"},
+		}
+		loaded := loadedContextIndex{ScopeRoot: root, Index: scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Kind: "symbol", Name: "route", File: "route.go", Line: 1, EndLine: 1},
+		}}}
+
+		got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: DefaultContextBudgetTokens})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.SourceCoverage != "none" || len(got.SourceOmissions) != 1 {
+			t.Fatalf("missing current source coverage = %#v", got)
+		}
+		for _, concern := range got.Concerns {
+			if concern.Covered {
+				t.Fatalf("unselected concern remained covered: %#v", got.Concerns)
+			}
+		}
+	})
 }
 
 func TestResolveSourcePathUsesSelectedIndexScope(t *testing.T) {

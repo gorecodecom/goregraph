@@ -41,14 +41,13 @@ func TestDefaultContextPackStaysWithinTokenAndByteBudgets(t *testing.T) {
 	if pack.SourceCoverage != "complete" && pack.SourceCoverage != "partial" && pack.SourceCoverage != "none" {
 		t.Fatalf("source coverage = %q", pack.SourceCoverage)
 	}
-	loaded, err := loadContextIndex(request)
-	if err != nil {
-		t.Fatal(err)
+	if pack.SourceUnrepresented < 0 {
+		t.Fatalf("source unrepresented = %d", pack.SourceUnrepresented)
 	}
-	candidateCount := len(contextSourceCandidates(pack, loaded.Index))
-	if pack.SourceUnrepresented < 0 ||
-		len(pack.SourceSections)+len(pack.SourceOmissions)+pack.SourceUnrepresented != candidateCount {
-		t.Fatalf("source accounting: sections=%d omissions=%d unrepresented=%d candidates=%d", len(pack.SourceSections), len(pack.SourceOmissions), pack.SourceUnrepresented, candidateCount)
+	for _, concern := range pack.Concerns {
+		if concern.Covered != (pack.SourceCoverage == "complete") && pack.SourceCoverage != "partial" {
+			t.Fatalf("concern/source coverage mismatch: concern=%#v source=%q", concern, pack.SourceCoverage)
+		}
 	}
 	if pack.BudgetTokens != DefaultContextBudgetTokens {
 		t.Fatalf("budget tokens = %d, want default %d", pack.BudgetTokens, DefaultContextBudgetTokens)

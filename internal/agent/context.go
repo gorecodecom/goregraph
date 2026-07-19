@@ -19,7 +19,7 @@ const (
 	MinContextMaxFiles                 = 1
 	DefaultContextMaxFiles             = 12
 	MaxContextMaxFiles                 = 20
-	MaxContextSourceSections           = 4
+	MaxContextSourceSections           = 12
 	MaxContextSourceOmissions          = 3
 	MaxContextSourceFileBytes          = 2 * 1024 * 1024
 )

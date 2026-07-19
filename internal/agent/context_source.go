@@ -18,6 +18,7 @@ import (
 
 type sourceCandidate struct {
 	FactID    string
+	FactIDs   []string
 	Project   string
 	Path      string
 	StartLine int
@@ -91,14 +92,15 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 				}
 			case entrypointIDs[id]:
 				role = "entrypoint"
-			case contractIDs[id]:
+			case contractIDs[id] || strings.EqualFold(fact.Kind, "api_contract"):
 				role = "contract"
-			case persistenceIDs[id]:
+			case persistenceIDs[id] || normalizedContextConcernKind(fact.Kind) == contextConcernPersistence:
 				role = "persistence"
 			}
 		}
 		candidates = append(candidates, sourceCandidate{
 			FactID: fact.ID, Project: fact.Project, Path: fact.File,
+			FactIDs:   []string{fact.ID},
 			StartLine: fact.Line, EndLine: fact.EndLine, Role: role,
 			Kind: fact.Kind, Name: fact.Name, Qualified: fact.Qualified,
 			Priority: contextSourceRolePriority[role],
@@ -124,6 +126,7 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 				absorbed = true
 				mergedRange = true
 				combined.StartLine = minimumPositiveContextLine(combined.StartLine, existing.StartLine)
+				combined.FactIDs = orderedContextConcernIDs(append(combined.FactIDs, existing.FactIDs...))
 				if sourceCandidateRangeEnd(existing) > sourceCandidateRangeEnd(combined) {
 					combined.EndLine = sourceCandidateRangeEnd(existing)
 				}
@@ -142,6 +145,7 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 		}
 		strongest.StartLine = combined.StartLine
 		strongest.EndLine = sourceCandidateRangeEnd(combined)
+		strongest.FactIDs = orderedContextConcernIDs(combined.FactIDs)
 		merged = append(merged, strongest)
 	}
 	sort.Slice(merged, func(i, j int) bool {
@@ -204,8 +208,8 @@ func sourceCandidateRangesOverlap(left, right sourceCandidate) bool {
 	if left.Project != right.Project || left.Path != right.Path {
 		return false
 	}
-	return sourceCandidateRangeStart(left) <= sourceCandidateRangeEnd(right) &&
-		sourceCandidateRangeStart(right) <= sourceCandidateRangeEnd(left)
+	return sourceCandidateRangeStart(left) <= sourceCandidateRangeEnd(right)+8 &&
+		sourceCandidateRangeStart(right) <= sourceCandidateRangeEnd(left)+8
 }
 
 func sourceCandidateRangeStart(candidate sourceCandidate) int {
@@ -227,91 +231,7 @@ func attachContextSource(
 	loaded loadedContextIndex,
 	request ContextRequest,
 ) (ContextPack, error) {
-	candidates := contextSourceCandidates(pack, loaded.Index)
-	pack.SourceCoverage = "complete"
-	pack.SourceUnrepresented = len(candidates)
-	var err error
-	pack, err = finalizeContextEstimate(pack)
-	if err != nil {
-		return ContextPack{}, err
-	}
-
-	uncoveredCandidates := 0
-	for _, source := range candidates {
-		sectionAdded := false
-		omissionReason := "source section does not fit the response budget"
-		if len(pack.SourceSections) < MaxContextSourceSections {
-			path, resolveErr := resolveSourcePath(loaded, source)
-			if resolveErr != nil {
-				omissionReason = stableContextSourceOmissionReason(resolveErr)
-			} else {
-				file, readErr := readSourceFile(path)
-				if readErr != nil {
-					omissionReason = stableContextSourceOmissionReason(readErr)
-				} else {
-					for _, mode := range []string{"body", "focused", "signature"} {
-						section, renderErr := renderSourceCandidate(source, file, mode)
-						if renderErr != nil {
-							if reason := stableContextSourceOmissionReason(renderErr); reason != "source section does not fit the response budget" {
-								omissionReason = reason
-							}
-							continue
-						}
-						candidate := cloneContextPack(pack)
-						candidate.SourceSections = append(candidate.SourceSections, section)
-						candidate.SourceUnrepresented--
-						candidate, err = finalizeContextEstimate(candidate)
-						if err != nil {
-							return ContextPack{}, err
-						}
-						fits, fitErr := contextSourcePackFits(candidate, request)
-						if fitErr != nil {
-							return ContextPack{}, fitErr
-						}
-						if fits {
-							pack = candidate
-							sectionAdded = true
-							break
-						}
-					}
-				}
-			}
-		}
-		if sectionAdded {
-			continue
-		}
-
-		uncoveredCandidates++
-		if len(pack.SourceOmissions) >= MaxContextSourceOmissions {
-			continue
-		}
-		candidate := cloneContextPack(pack)
-		candidate.SourceOmissions = append(candidate.SourceOmissions, ContextSourceOmission{
-			Project: source.Project, Path: source.Path, Role: source.Role, Reason: omissionReason,
-		})
-		candidate.SourceUnrepresented--
-		candidate, err = finalizeContextEstimate(candidate)
-		if err != nil {
-			return ContextPack{}, err
-		}
-		fits, fitErr := contextSourcePackFits(candidate, request)
-		if fitErr != nil {
-			return ContextPack{}, fitErr
-		}
-		if fits {
-			pack = candidate
-		}
-	}
-
-	switch {
-	case len(pack.SourceSections) == 0:
-		pack.SourceCoverage = "none"
-	case uncoveredCandidates > 0:
-		pack.SourceCoverage = "partial"
-	default:
-		pack.SourceCoverage = "complete"
-	}
-	return finalizeContextPackWithinBudget(pack, request)
+	return selectContextSourceOptions(pack, loaded, request)
 }
 
 func finalizeContextPackWithinBudget(pack ContextPack, request ContextRequest) (ContextPack, error) {
@@ -427,8 +347,9 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 
 func contextIdentifier(candidate sourceCandidate) string {
 	value := strings.TrimSpace(candidate.Name)
-	if candidate.Kind == "route" || candidate.Kind == "api_endpoint" || value == "" {
-		value = strings.TrimSpace(candidate.Qualified)
+	qualified := strings.TrimSpace(candidate.Qualified)
+	if qualified != "" && (candidate.Kind == "route" || candidate.Kind == "api_endpoint" || candidate.Kind == "api_contract") || value == "" {
+		value = qualified
 	}
 	separatorIndex, separatorWidth := -1, 0
 	for _, separator := range []string{".", "#", "::"} {

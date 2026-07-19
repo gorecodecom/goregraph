@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -38,6 +39,51 @@ func TestBuildContextReplacesCrossServiceDiscovery(t *testing.T) {
 	if pack.SourceCoverage != "complete" || pack.EstimatedTokens > 4000 {
 		t.Fatalf("source coverage/budget = %q/%d", pack.SourceCoverage, pack.EstimatedTokens)
 	}
+}
+
+func TestContextSourceProductionBeforeTests(t *testing.T) {
+	root := writeCrossServiceContextFixture(t, ".java")
+	query := "When a catalog item is deleted through DELETE /catalogs/{catalogId}/items/{itemId}, analyze services/catalog, libraries/shared-model, and services/jobs. Cover the endpoint, current and required chain, contract, authentication, configuration, persistence, and tests."
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, project := range []string{"services/catalog", "libraries/shared-model", "services/jobs"} {
+		if !contextPackHasProductionSource(pack, project) {
+			t.Fatalf("missing required production source for %s: %#v", project, pack.SourceSections)
+		}
+	}
+	if contextPackTestPrecedesProduction(pack, []string{"services/catalog", "libraries/shared-model", "services/jobs"}) {
+		t.Fatalf("test source precedes required production: %#v", pack.SourceSections)
+	}
+	hasRequestedTest := false
+	for _, section := range pack.SourceSections {
+		if section.Role == "test" {
+			hasRequestedTest = true
+			break
+		}
+	}
+	if !hasRequestedTest {
+		t.Fatalf("requested test source was not selected after production: %#v", pack.SourceSections)
+	}
+	for _, concern := range pack.Concerns {
+		if !concern.Covered {
+			t.Fatalf("required concern lacks current source: %#v", concern)
+		}
+	}
+	if pack.SourceCoverage != "complete" {
+		t.Fatalf("required production pack source coverage = %q: %#v", pack.SourceCoverage, pack.SourceOmissions)
+	}
+	body, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.EstimatedTokens > DefaultContextBudgetTokens || len(body) > MaxContextBytes ||
+		len(pack.SourceSections) >= MaxContextSourceSections {
+		t.Fatalf("source package bounds: tokens=%d bytes=%d sections=%d", pack.EstimatedTokens, len(body), len(pack.SourceSections))
+	}
+	t.Logf("source package: tokens=%d bytes=%d sections=%d", pack.EstimatedTokens, len(body), len(pack.SourceSections))
 }
 
 func TestContextSelectionIsLanguageNeutral(t *testing.T) {
