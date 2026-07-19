@@ -1878,6 +1878,7 @@ func (builder *workspaceAgentContextBuilder) index(generated string) AgentContex
 	sortAgentContextEdges(edges)
 	edges = compactWorkspaceAgentContextEdges(edges)
 	sortAgentContextEdges(edges)
+	builder.addUnavailableProjectCoverage()
 	coverage := make([]AgentContextCoverageRecord, 0, len(builder.coverageByKey))
 	for _, record := range builder.coverageByKey {
 		coverage = append(coverage, record)
@@ -1892,6 +1893,34 @@ func (builder *workspaceAgentContextBuilder) index(generated string) AgentContex
 		Facts:         facts,
 		Edges:         edges,
 		Coverage:      coverage,
+	}
+}
+
+func (builder *workspaceAgentContextBuilder) addUnavailableProjectCoverage() {
+	capabilities := []CapabilityID{
+		CapabilityAPIClients,
+		CapabilityCalls,
+		CapabilityPersistence,
+		CapabilityRoutes,
+		CapabilityTests,
+	}
+	projects := make([]string, 0, len(builder.projects))
+	for project := range builder.projects {
+		projects = append(projects, project)
+	}
+	sort.Strings(projects)
+	for _, project := range projects {
+		if _, merged := builder.projectFactIDs[project]; merged {
+			continue
+		}
+		for _, capability := range capabilities {
+			key := project + "\x00" + string(capability)
+			builder.coverageByKey[key] = AgentContextCoverageRecord{
+				Project: project, Capability: string(capability),
+				Coverage: string(CoverageUnavailable),
+				Reason:   "project agent context projection unavailable",
+			}
+		}
 	}
 }
 

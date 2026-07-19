@@ -386,6 +386,44 @@ func TestBuildWorkspaceAgentContextIndexReusesDossierPersistenceAndTestFacts(t *
 	}
 }
 
+func TestBuildWorkspaceAgentContextIndexMarksMissingProjectProjectionUnavailable(t *testing.T) {
+	projects := []WorkspaceProjectRecord{
+		{Path: "services/catalog", Indexed: true},
+		{Path: "services/jobs", Indexed: true},
+	}
+	build := func(projects []WorkspaceProjectRecord) AgentContextIndexRecord {
+		t.Helper()
+		return BuildWorkspaceAgentContextIndex(
+			WorkspaceRegistryRecord{Projects: projects},
+			[]AgentContextIndexRecord{{Root: "services/catalog"}},
+			nil, nil, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, "generated",
+		)
+	}
+
+	forward := build(projects)
+	for _, capability := range []string{"api_clients", "calls", "persistence", "routes", "tests"} {
+		matches := []AgentContextCoverageRecord{}
+		for _, record := range forward.Coverage {
+			if record.Project == "services/jobs" && record.Capability == capability {
+				matches = append(matches, record)
+			}
+		}
+		if len(matches) != 1 || matches[0].Coverage != string(CoverageUnavailable) || matches[0].Reason != "project agent context projection unavailable" {
+			t.Fatalf("jobs %q coverage = %#v", capability, matches)
+		}
+	}
+	for _, record := range forward.Coverage {
+		if record.Project == "services/catalog" && record.Coverage == string(CoverageUnavailable) && record.Reason == "project agent context projection unavailable" {
+			t.Fatalf("merged empty catalog index marked unavailable: %#v", forward.Coverage)
+		}
+	}
+
+	reversed := build([]WorkspaceProjectRecord{projects[1], projects[0]})
+	if !reflect.DeepEqual(forward, reversed) {
+		t.Fatalf("workspace context depends on registry order:\nforward: %#v\nreversed: %#v", forward, reversed)
+	}
+}
+
 func TestBuildWorkspaceAgentContextIndexEnrichesCopiedPersistenceFact(t *testing.T) {
 	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{
 		Path: "services/users", Indexed: true,
