@@ -531,6 +531,26 @@ class Controller {
 	}
 }
 
+func TestSpringIndexWrappedEmptyOpenAPISecurityRequirementIsPublic(t *testing.T) {
+	definitions := extractJavaSource(FileRecord{Path: "src/OpenAPIConfig.java", Language: "java"}, `
+@SecurityScheme(name = "bearerAuth", type = SecuritySchemeType.HTTP, scheme = "bearer")
+class OpenAPIConfig {}
+`)
+	controller := extractJavaSource(FileRecord{Path: "src/Controller.java", Language: "java"}, `@RestController
+@SecurityRequirement(name = "bearerAuth")
+class Controller {
+  @Operation(security = {@SecurityRequirement()})
+  @GetMapping("/public")
+  String publicOverride() { return "ok"; }
+}`)
+
+	index := buildSpringIndex([]JavaSourceRecord{definitions, controller})
+	endpoint, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/public")
+	if !ok || !hasAuthKind(endpoint.Auth, "permit_all") || hasAuthKind(endpoint.Auth, "bearer") {
+		t.Fatalf("wrapped empty operation security override not retained as explicit public: %#v", endpoint)
+	}
+}
+
 func hasAuthKind(records []AuthRecord, kind string) bool {
 	for _, record := range records {
 		if record.Kind == kind {

@@ -882,7 +882,11 @@ func emptyOpenAPIContainerExpression(expression string) bool {
 	if expression == "" {
 		return true
 	}
-	return strings.HasPrefix(expression, "{") && strings.HasSuffix(expression, "}") && strings.TrimSpace(expression[1:len(expression)-1]) == ""
+	if !strings.HasPrefix(expression, "{") || !strings.HasSuffix(expression, "}") {
+		return false
+	}
+	member := strings.TrimSpace(expression[1 : len(expression)-1])
+	return member == "" || member == "@SecurityRequirement()" || member == "@SecurityRequirement"
 }
 
 func openAPISecuritySchemes(sources []JavaSourceRecord) map[string][]AuthRecord {
