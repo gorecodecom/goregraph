@@ -48,7 +48,7 @@ func TestContextSelectionIsLanguageNeutral(t *testing.T) {
 	}
 	wantConcernKeys := []string{
 		"authentication", "entrypoint", "http_contract", "persistence", "primary_path",
-		"project:libraries/shared-model", "project:services/catalog", "project:services/jobs", "tests",
+		"project:libraries/shared-model", "project:services/catalog", "project:services/jobs",
 	}
 
 	var baseline contextSelectionSnapshot
@@ -146,23 +146,11 @@ func contextSelectionSnapshotForPack(pack ContextPack) contextSelectionSnapshot 
 }
 
 func contextPackConcernKeys(pack ContextPack) []string {
-	value := reflect.ValueOf(pack)
-	concerns := value.FieldByName("Concerns")
-	if !concerns.IsValid() || concerns.Kind() != reflect.Slice {
-		return nil
-	}
-
-	keys := make([]string, 0, concerns.Len())
-	for index := 0; index < concerns.Len(); index++ {
-		concern := concerns.Index(index)
-		kind := concern.FieldByName("Kind")
-		project := concern.FieldByName("Project")
-		if !kind.IsValid() || kind.Kind() != reflect.String {
-			continue
-		}
-		key := kind.String()
-		if project.IsValid() && project.Kind() == reflect.String && project.String() != "" {
-			key += ":" + project.String()
+	keys := make([]string, 0, len(pack.Concerns))
+	for _, concern := range pack.Concerns {
+		key := concern.Kind
+		if concern.Project != "" {
+			key += ":" + concern.Project
 		}
 		keys = append(keys, key)
 	}

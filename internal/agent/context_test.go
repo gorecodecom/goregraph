@@ -57,6 +57,204 @@ func TestContextBudgetsReserveSpaceForSource(t *testing.T) {
 	}
 }
 
+func TestPlanContextConcernsAlwaysRequiresEntrypointAndPrimaryPath(t *testing.T) {
+	seed := scan.AgentContextFactRecord{ID: "route", Project: "services/catalog", Kind: "route"}
+	concerns := planContextConcerns("inspect the selected operation", scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{seed},
+	}, seed)
+
+	for _, key := range []string{contextConcernEntrypoint, contextConcernPrimaryPath} {
+		concern, ok := findContextConcern(concerns, key)
+		if !ok || !concern.required || !slices.Contains(concern.candidateFactIDs, seed.ID) {
+			t.Fatalf("required core concern %q = %#v", key, concern)
+		}
+	}
+}
+
+func TestPlanContextConcernsRequiresSemanticExplicitProjects(t *testing.T) {
+	seed := scan.AgentContextFactRecord{ID: "route", Project: "services/catalog", Kind: "route", Search: "delete catalog item"}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		seed,
+		{ID: "jobs", Project: "services/jobs", Kind: "symbol", Search: "delete related jobs"},
+		{ID: "library-jobs", Project: "libraries/jobs", Kind: "symbol", Search: "delete related jobs"},
+		{ID: "shared", Project: "libraries/shared-model", Kind: "symbol", Search: "catalog identifier"},
+		{ID: "unrelated", Project: "services/audit", Kind: "symbol", Search: "audit events"},
+	}}
+
+	concerns := planContextConcerns(
+		"Analyze services/jobs delete behavior, libraries/shared-model catalog identifiers, and audit.",
+		index,
+		seed,
+	)
+	for _, key := range []string{"project:services/jobs", "project:libraries/shared-model"} {
+		concern, ok := findContextConcern(concerns, key)
+		if !ok || !concern.required || len(concern.candidateFactIDs) == 0 {
+			t.Fatalf("semantic explicit project concern %q = %#v", key, concern)
+		}
+	}
+	for _, key := range []string{"project:libraries/jobs", "project:services/audit"} {
+		if concern, ok := findContextConcern(concerns, key); ok {
+			t.Fatalf("non-unique or non-semantic project concern %q = %#v", key, concern)
+		}
+	}
+}
+
+func TestPlanContextConcernsUsesReachableHTTPContractEvidence(t *testing.T) {
+	seed := scan.AgentContextFactRecord{ID: "route", Kind: "route"}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			seed,
+			{ID: "client", Kind: "symbol"},
+			{ID: "contract", Kind: "api_contract"},
+			{ID: "unreachable-contract", Kind: "api_contract"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "call", FromFactID: "route", ToFactID: "client", Kind: "call"},
+			{ID: "contract", FromFactID: "client", ToFactID: "contract", Kind: "http_contract"},
+			{ID: "unreachable", FromFactID: "unreachable-contract", ToFactID: "route", Kind: "http_contract"},
+		},
+	}
+
+	concern, ok := findContextConcern(planContextConcerns("inspect deletion behavior", index, seed), contextConcernHTTPContract)
+	if !ok || !concern.required || !reflect.DeepEqual(concern.candidateFactIDs, []string{"client", "contract"}) {
+		t.Fatalf("reachable HTTP contract concern = %#v", concern)
+	}
+}
+
+func TestPlanContextConcernsRequiresAuthenticationAndPersistenceFromRequestOrPath(t *testing.T) {
+	seed := scan.AgentContextFactRecord{ID: "route", Kind: "route"}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			seed,
+			{ID: "auth", Kind: "authentication", Search: "credentials"},
+			{ID: "store", Kind: "persistence", Search: "repository"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "auth-edge", FromFactID: "route", ToFactID: "auth", Kind: "requires_auth"},
+			{ID: "store-edge", FromFactID: "auth", ToFactID: "store", Kind: "persistence"},
+		},
+	}
+
+	pathConcerns := planContextConcerns("inspect deletion behavior", index, seed)
+	for _, key := range []string{contextConcernAuth, contextConcernPersistence} {
+		concern, ok := findContextConcern(pathConcerns, key)
+		if !ok || !concern.required || len(concern.candidateFactIDs) == 0 {
+			t.Fatalf("path-exposed concern %q = %#v", key, concern)
+		}
+	}
+
+	requested := planContextConcerns("inspect authentication and persistence", scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{seed},
+	}, seed)
+	for _, key := range []string{contextConcernAuth, contextConcernPersistence} {
+		concern, ok := findContextConcern(requested, key)
+		if !ok || !concern.required || len(concern.candidateFactIDs) != 0 {
+			t.Fatalf("requested uncovered concern %q = %#v", key, concern)
+		}
+	}
+}
+
+func TestPlanContextConcernsUsesGraphEdgesForDomainConcerns(t *testing.T) {
+	seed := scan.AgentContextFactRecord{ID: "route", Kind: "route"}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			seed,
+			{ID: "guard", Kind: "symbol"},
+			{ID: "store", Kind: "symbol"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "auth-edge", FromFactID: "route", ToFactID: "guard", Kind: "requires_auth"},
+			{ID: "store-edge", FromFactID: "guard", ToFactID: "store", Kind: "persistence"},
+		},
+	}
+
+	concerns := planContextConcerns("inspect deletion behavior", index, seed)
+	for key, want := range map[string]string{
+		contextConcernAuth:        "guard",
+		contextConcernPersistence: "store",
+	} {
+		concern, ok := findContextConcern(concerns, key)
+		if !ok || !slices.Contains(concern.candidateFactIDs, want) {
+			t.Fatalf("edge-backed concern %q = %#v, want candidate %q", key, concern, want)
+		}
+	}
+}
+
+func TestPlanContextConcernsRequiresTestsOnlyWhenRequested(t *testing.T) {
+	seed := scan.AgentContextFactRecord{ID: "route", Kind: "route"}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{seed, {ID: "test", Kind: "test"}},
+		Edges: []scan.AgentContextEdgeRecord{{ID: "test-edge", FromFactID: "test", ToFactID: "route", Kind: "test_target"}},
+	}
+
+	if concern, ok := findContextConcern(planContextConcerns("inspect behavior", index, seed), contextConcernTests); ok {
+		t.Fatalf("unrequested tests concern = %#v", concern)
+	}
+	concern, ok := findContextConcern(planContextConcerns("inspect behavior and tests", index, seed), contextConcernTests)
+	if !ok || !concern.required || !reflect.DeepEqual(concern.candidateFactIDs, []string{"test"}) {
+		t.Fatalf("requested tests concern = %#v", concern)
+	}
+}
+
+func TestPlanContextConcernsReportsMissingProjectCoverageAsUncovered(t *testing.T) {
+	seed := scan.AgentContextFactRecord{ID: "route", Project: "services/catalog", Kind: "route"}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{seed},
+		Coverage: []scan.AgentContextCoverageRecord{{
+			Project: "services/jobs", Capability: "calls", Coverage: "UNAVAILABLE", Reason: "projection unavailable",
+		}},
+	}
+
+	concern, ok := findContextConcern(
+		planContextConcerns("Analyze services/jobs retry behavior", index, seed),
+		"project:services/jobs",
+	)
+	if !ok || !concern.required || len(concern.candidateFactIDs) != 0 || !strings.Contains(concern.reason, "projection unavailable") {
+		t.Fatalf("missing project concern = %#v", concern)
+	}
+	metadata := publicContextConcerns([]contextConcern{concern})
+	if len(metadata) != 1 || metadata[0].Covered {
+		t.Fatalf("missing project was reported covered: %#v", metadata)
+	}
+}
+
+func TestPlanContextConcernsSerializesAtMostEightWithRequiredDeterministicTies(t *testing.T) {
+	concerns := []contextConcern{
+		{key: "optional:b", kind: "optional", candidateFactIDs: []string{"b"}},
+		{key: "required:h", kind: "required_h", required: true, candidateFactIDs: []string{"h"}},
+		{key: "required:g", kind: "required_g", required: true, candidateFactIDs: []string{"g"}},
+		{key: "required:f", kind: "required_f", required: true, candidateFactIDs: []string{"f"}},
+		{key: "required:e", kind: "required_e", required: true, candidateFactIDs: []string{"e"}},
+		{key: "required:d", kind: "required_d", required: true, candidateFactIDs: []string{"d"}},
+		{key: "required:c", kind: "required_c", required: true, candidateFactIDs: []string{"c"}},
+		{key: "required:b", kind: "required_b", required: true, candidateFactIDs: []string{"b"}},
+		{key: "required:a", kind: "required_a", required: true, candidateFactIDs: []string{"a"}},
+		{key: "optional:a", kind: "optional", candidateFactIDs: []string{"a"}},
+	}
+	reversed := append([]contextConcern(nil), concerns...)
+	slices.Reverse(reversed)
+
+	forward := publicContextConcerns(concerns)
+	backward := publicContextConcerns(reversed)
+	if len(forward) != 8 || !reflect.DeepEqual(forward, backward) {
+		t.Fatalf("bounded deterministic concern metadata = %#v / %#v", forward, backward)
+	}
+	for _, concern := range forward {
+		if !strings.HasPrefix(concern.Kind, "required_") {
+			t.Fatalf("optional concern displaced a required concern: %#v", forward)
+		}
+	}
+}
+
+func findContextConcern(concerns []contextConcern, key string) (contextConcern, bool) {
+	for _, concern := range concerns {
+		if concern.key == key {
+			return concern, true
+		}
+	}
+	return contextConcern{}, false
+}
+
 func TestBuildContextRejectsInvalidBounds(t *testing.T) {
 	for _, request := range []ContextRequest{
 		{Root: t.TempDir(), Query: "delete user", BudgetTokens: 255},

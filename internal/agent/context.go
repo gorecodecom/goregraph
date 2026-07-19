@@ -22,6 +22,7 @@ const (
 	MaxContextSourceSections           = 4
 	MaxContextSourceOmissions          = 3
 	MaxContextSourceFileBytes          = 2 * 1024 * 1024
+	contextConcernBudgetReserveTokens  = 32
 )
 
 type ContextRequest struct {
@@ -50,6 +51,13 @@ type ContextRelationship struct {
 	Kind       string `json:"kind"`
 	Reason     string `json:"reason,omitempty"`
 	Confidence string `json:"confidence,omitempty"`
+}
+
+type ContextConcern struct {
+	Kind    string `json:"kind"`
+	Project string `json:"project,omitempty"`
+	Covered bool   `json:"covered"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 type ContextFile struct {
@@ -105,6 +113,7 @@ type ContextPack struct {
 	Confidence          string                  `json:"confidence"`
 	FallbackRequired    bool                    `json:"fallback_required"`
 	FallbackReason      string                  `json:"fallback_reason,omitempty"`
+	Concerns            []ContextConcern        `json:"concerns,omitempty"`
 	Entrypoints         []ContextLocation       `json:"entrypoints,omitempty"`
 	Endpoints           []ContextEndpoint       `json:"endpoints,omitempty"`
 	CallChain           []ContextRelationship   `json:"call_chain,omitempty"`
@@ -137,6 +146,21 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	pack, err := compileContextPack(loaded.Index, metadataRequest)
 	if err != nil {
 		return ContextPack{}, err
+	}
+	if seed, ok := contextConcernPlanningSeed(loaded.Index, request.Query); ok && !pack.FallbackRequired {
+		concernBudget := metadataRequest.BudgetTokens - contextConcernBudgetReserveTokens
+		for _, concern := range publicContextConcerns(planContextConcerns(request.Query, loaded.Index, seed)) {
+			candidate, accepted, appendErr := tryContextPack(pack, concernBudget, func(candidate *ContextPack) bool {
+				candidate.Concerns = append(candidate.Concerns, concern)
+				return true
+			})
+			if appendErr != nil {
+				return ContextPack{}, appendErr
+			}
+			if accepted {
+				pack = candidate
+			}
+		}
 	}
 	pack.BudgetTokens = request.BudgetTokens
 	if pack.FallbackRequired || pack.Confidence == "LOW" {
