@@ -261,7 +261,7 @@ func declarationLikeOccurrence(line string, start, end int) bool {
 
 func conservativeCallablePrefix(prefix string) bool {
 	fields := strings.Fields(prefix)
-	if len(fields) < 2 || !sourceDeclarationModifier(fields[0]) {
+	if len(fields) == 0 || !sourceDeclarationModifier(fields[0]) {
 		return false
 	}
 	for _, value := range prefix {
@@ -330,7 +330,7 @@ func sourcePrefixIsUnsafe(prefix string) bool {
 		strings.Contains(trimmed, "#") || strings.HasPrefix(trimmed, "*") {
 		return true
 	}
-	if strings.Contains(prefix, "=") || strings.Contains(prefix, ".") ||
+	if strings.Contains(prefix, "=") || strings.Contains(prefix, ".") || strings.Contains(prefix, "/") ||
 		strings.Contains(prefix, "->") || strings.Contains(prefix, "::") {
 		return true
 	}

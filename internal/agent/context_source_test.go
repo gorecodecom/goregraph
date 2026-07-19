@@ -114,6 +114,7 @@ func TestRenderSourceCandidateRejectsAmbiguousCallPrefixes(t *testing.T) {
 func TestRenderSourceCandidateAcceptsConservativeCallableDeclarations(t *testing.T) {
 	candidate := sourceCandidate{Path: "source", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
 	for _, line := range []string{
+		"public deleteUser() {}",
 		"public void deleteUser() {}",
 		"static int deleteUser(void) {",
 		"protected Task deleteUser() => repository.Delete();",
@@ -127,6 +128,27 @@ func TestRenderSourceCandidateAcceptsConservativeCallableDeclarations(t *testing
 				t.Fatalf("rendered content = %q", section.Content)
 			}
 		})
+	}
+}
+
+func TestRenderSourceCandidateKeepsIndexedConstructorOverClassDeclaration(t *testing.T) {
+	lines := []string{
+		"public class UserService {",
+		"    private final Repository repository;",
+		"",
+		"    @Inject",
+		"    public UserService() {",
+		"    }",
+		"}",
+	}
+	candidate := sourceCandidate{Path: "UserService.java", StartLine: 5, EndLine: 6, Kind: "symbol", Name: "UserService"}
+
+	section, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: lines}, "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 5 || section.EndLine != 6 || section.SourceState != "indexed_range_current" {
+		t.Fatalf("constructor section = %#v", section)
 	}
 }
 
@@ -179,6 +201,23 @@ func TestRenderSourceCandidateIgnoresMultilineStringDeclarationDuringRelocation(
 		t.Fatal(err)
 	}
 	if section.StartLine != 5 || section.EndLine != 5 || section.SourceState != "relocated_current" {
+		t.Fatalf("relocated section = %#v", section)
+	}
+}
+
+func TestRenderSourceCandidateIgnoresRegexDeclarationDuringRelocation(t *testing.T) {
+	lines := []string{
+		"/function deleteUser/.test(input)",
+		"",
+		"export function deleteUser() {}",
+	}
+	candidate := sourceCandidate{Path: "module.ts", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
+
+	section, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: lines}, "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 3 || section.EndLine != 3 || section.SourceState != "relocated_current" {
 		t.Fatalf("relocated section = %#v", section)
 	}
 }
