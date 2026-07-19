@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -519,6 +520,71 @@ func TestSelectContextPathsTraversesSevenHopsDeterministicallyWithinCaps(t *test
 		if !forward.concernCoverage[key] {
 			t.Fatalf("required concern %q was not covered: %#v", key, forward.concernCoverage)
 		}
+	}
+}
+
+func TestSelectContextPathsUsesPreindexedBoundedRoleEvidenceDeterministically(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{
+		{ID: "route", Project: "services/catalog", Kind: "route", Name: "DELETE /catalog/{id}", File: "CatalogController.go", Confidence: "EXACT"},
+		{ID: "service", Project: "services/catalog", Kind: "symbol", Name: "deleteCatalog", File: "CatalogService.go", Confidence: "EXACT"},
+		{ID: "repository-a", Project: "services/catalog", Kind: "persistence", Name: "deleteCatalog", File: "CatalogRepository.go", Confidence: "EXACT"},
+		{ID: "repository-b", Project: "services/catalog", Kind: "persistence", Name: "deleteHistory", File: "HistoryRepository.go", Confidence: "EXACT"},
+	}
+	edges := []scan.AgentContextEdgeRecord{
+		{ID: "route-service", FromFactID: "route", ToFactID: "service", Kind: "call"},
+		{ID: "service-repository-a", FromFactID: "service", ToFactID: "repository-a", Kind: "persistence"},
+		{ID: "service-repository-b", FromFactID: "service", ToFactID: "repository-b", Kind: "persistence"},
+	}
+	for index := range 200 {
+		edges = append(edges, scan.AgentContextEdgeRecord{
+			ID:         fmt.Sprintf("unrelated-%03d", index),
+			FromFactID: fmt.Sprintf("missing-from-%03d", index),
+			ToFactID:   fmt.Sprintf("missing-to-%03d", index),
+			Kind:       "call",
+		})
+	}
+	concerns := []contextConcern{
+		newContextConcern(contextConcernPrimaryPath, "", true, []string{"route", "service", "repository-a"}, "production path"),
+		newContextConcern(contextConcernPersistence, "", true, []string{"repository-a", "repository-b"}, "persistence requested"),
+	}
+	seed := rankedContextFact{fact: facts[0], score: scoreExactRoute}
+
+	forward := selectContextPaths(scan.AgentContextIndexRecord{Facts: facts, Edges: edges}, seed, concerns)
+	reversedFacts := append([]scan.AgentContextFactRecord(nil), facts...)
+	reversedEdges := append([]scan.AgentContextEdgeRecord(nil), edges...)
+	reversedConcerns := append([]contextConcern(nil), concerns...)
+	slices.Reverse(reversedFacts)
+	slices.Reverse(reversedEdges)
+	slices.Reverse(reversedConcerns)
+	backward := selectContextPaths(
+		scan.AgentContextIndexRecord{Facts: reversedFacts, Edges: reversedEdges},
+		seed,
+		reversedConcerns,
+	)
+
+	if !reflect.DeepEqual(forward, backward) {
+		t.Fatalf("bounded role evidence changed after reversing input: %#v != %#v", forward, backward)
+	}
+	wantFacts := []string{"repository-a", "repository-b", "route", "service"}
+	if !reflect.DeepEqual(forward.factIDs, wantFacts) {
+		t.Fatalf("bounded role evidence selected facts %#v, want %#v", forward.factIDs, wantFacts)
+	}
+
+	source, err := os.ReadFile("context_paths.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(source), "func contextPathAddsBoundedRoleEvidence(")
+	if start < 0 {
+		t.Fatal("contextPathAddsBoundedRoleEvidence source not found")
+	}
+	end := strings.Index(string(source)[start:], "\nfunc contextPathCoverableConcerns(")
+	if end < 0 {
+		t.Fatal("contextPathAddsBoundedRoleEvidence source not found")
+	}
+	body := string(source)[start : start+end]
+	if strings.Contains(body, "allEdges") {
+		t.Fatal("bounded role evidence still receives and rescans the full edge list")
 	}
 }
 
@@ -1278,6 +1344,100 @@ func TestBuildContextDedicatedEndpointPreservesConnectedPath(t *testing.T) {
 	}
 }
 
+func TestContextEndpointCompanionRequiresUniqueRouteEvidence(t *testing.T) {
+	endpoint := scan.AgentContextFactRecord{
+		ID: "endpoint", Project: "services/orders", Kind: "api_endpoint",
+		HTTPMethod: "GET", Path: "/orders/{id}", Qualified: "OrdersController.getOrder",
+	}
+	exact := scan.AgentContextFactRecord{
+		ID: "z-exact", Project: "services/orders", Kind: "route",
+		HTTPMethod: "GET", Path: "/orders/{id}", Qualified: "OrdersController.getOrder",
+		File: "OrdersController.go", Confidence: "EXACT",
+	}
+	other := scan.AgentContextFactRecord{
+		ID: "a-other", Project: "services/orders", Kind: "route",
+		HTTPMethod: "GET", Path: "/orders/{id}", Qualified: "OtherController.getOrder",
+		File: "OtherController.go", Confidence: "EXACT",
+	}
+	missing := scan.AgentContextFactRecord{
+		ID: "m-missing", Project: "services/orders", Kind: "route",
+		HTTPMethod: "GET", Path: "/orders/{id}", File: "GeneratedRoute.go", Confidence: "EXACT",
+	}
+
+	for _, facts := range [][]scan.AgentContextFactRecord{{other, exact}, {exact, other}} {
+		got, ok := contextEndpointCompanion(scan.AgentContextIndexRecord{Facts: facts}, endpoint)
+		if !ok || got.ID != exact.ID {
+			t.Fatalf("unique exact companion = %#v, %t", got, ok)
+		}
+	}
+	for _, facts := range [][]scan.AgentContextFactRecord{{other, missing}, {missing, other}} {
+		if got, ok := contextEndpointCompanion(scan.AgentContextIndexRecord{Facts: facts}, endpoint); ok {
+			t.Fatalf("ambiguous non-exact companion selected %#v", got)
+		}
+	}
+	duplicateExact := exact
+	duplicateExact.ID = "duplicate-exact"
+	for _, facts := range [][]scan.AgentContextFactRecord{{exact, duplicateExact}, {duplicateExact, exact}} {
+		if got, ok := contextEndpointCompanion(scan.AgentContextIndexRecord{Facts: facts}, endpoint); ok {
+			t.Fatalf("duplicate exact companion selected %#v", got)
+		}
+	}
+}
+
+func TestBuildContextAmbiguousEndpointCompanionsDoNotFabricatePath(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "endpoint", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders/{id}",
+			HTTPMethod: "GET", Path: "/orders/{id}", File: "Endpoint.go", Search: "get order", Confidence: "EXACT",
+		},
+		{
+			ID: "a-route", Project: "services/orders", Kind: "route", Name: "GET /orders/{id}",
+			HTTPMethod: "GET", Path: "/orders/{id}", Qualified: "FirstController.getOrder",
+			File: "FirstController.go", Search: "get order", Confidence: "EXACT",
+		},
+		{
+			ID: "z-route", Project: "services/orders", Kind: "route", Name: "GET /orders/{id}",
+			HTTPMethod: "GET", Path: "/orders/{id}", Qualified: "SecondController.getOrder",
+			File: "SecondController.go", Search: "get order", Confidence: "EXACT",
+		},
+		{ID: "first-handler", Project: "services/orders", Kind: "symbol", Name: "first", File: "FirstService.go", Confidence: "EXACT"},
+		{ID: "second-handler", Project: "services/orders", Kind: "symbol", Name: "second", File: "SecondService.go", Confidence: "EXACT"},
+	}
+	edges := []scan.AgentContextEdgeRecord{
+		{ID: "first-call", FromFactID: "a-route", ToFactID: "first-handler", Kind: "call", Confidence: "EXACT"},
+		{ID: "second-call", FromFactID: "z-route", ToFactID: "second-handler", Kind: "call", Confidence: "EXACT"},
+	}
+	build := func(reverse bool) ContextPack {
+		t.Helper()
+		indexFacts := append([]scan.AgentContextFactRecord(nil), facts...)
+		indexEdges := append([]scan.AgentContextEdgeRecord(nil), edges...)
+		if reverse {
+			slices.Reverse(indexFacts)
+			slices.Reverse(indexEdges)
+		}
+		root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+			SchemaVersion: scan.SchemaVersion,
+			Facts:         indexFacts,
+			Edges:         indexEdges,
+		})
+		pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /orders/{id}"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pack
+	}
+
+	forward := build(false)
+	backward := build(true)
+	if !reflect.DeepEqual(forward, backward) {
+		t.Fatalf("ambiguous endpoint companion changed after reversing input: %#v != %#v", forward, backward)
+	}
+	if len(forward.Endpoints) != 1 || forward.Endpoints[0].Provider != "services/orders" || len(forward.CallChain) != 0 ||
+		contextPackHasFile(forward, "FirstService.go") || contextPackHasFile(forward, "SecondService.go") {
+		t.Fatalf("ambiguous endpoint companion fabricated a path: %#v", forward)
+	}
+}
+
 func TestBuildContextConsidersBelowThresholdProviderInEndpointCollision(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
@@ -1788,6 +1948,68 @@ func TestBuildContextAddsSupportingFactsFromNamedProjects(t *testing.T) {
 			if file.Role != "related_project" || file.Reason != "full task project match" {
 				t.Fatalf("support file metadata = %#v", file)
 			}
+		}
+	}
+}
+
+func TestContextSupportSelectionUsesPrimaryQueryAcrossPromptFormats(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "relevant", Project: "services/worker", Kind: "symbol", Name: "CatalogLink",
+			File: "CatalogLink.go", Confidence: "EXACT", Search: "catalog linked cleanup",
+		},
+		{
+			ID: "role-noise", Project: "services/reporting", Kind: "symbol", Name: "ConcernSummary",
+			File: "ConcernSummary.go", Confidence: "EXACT", Search: "authentication persistence tests",
+		},
+	}}
+	aliases := contextProjectAliases(index.Facts, nil)
+	represented := map[string]bool{"services/catalog": true}
+	queries := []string{
+		"Catalog items remain linked. Analyze authentication, persistence, and tests.",
+		"Problem statement:\n\nCatalog items remain linked.\n\nAnalyze authentication, persistence, and tests.",
+		"## Task\nCatalog items remain linked.\n\nAnalyze authentication, persistence, and tests.",
+	}
+
+	var baseline []string
+	for _, query := range queries {
+		ranked := rankContextSupportFacts(index, query, aliases, contextExplicitProjects(query, aliases), represented)
+		selected := selectContextSupportFacts(ranked, represented)
+		ids := make([]string, 0, len(selected))
+		for _, candidate := range selected {
+			ids = append(ids, candidate.fact.ID)
+		}
+		sort.Strings(ids)
+		if baseline == nil {
+			baseline = ids
+		} else if !reflect.DeepEqual(ids, baseline) {
+			t.Fatalf("support selection changed for prompt %q: %#v != %#v", query, ids, baseline)
+		}
+	}
+	if want := []string{"relevant"}; !reflect.DeepEqual(baseline, want) {
+		t.Fatalf("support selection = %#v, want %#v", baseline, want)
+	}
+}
+
+func TestContextSupportProjectAffinityIgnoresGenericParentFolders(t *testing.T) {
+	aliases := map[string][]string{
+		"services/jobs": {"jobs", "services/jobs"},
+	}
+	explicit := map[string]bool{"services/jobs": true}
+	represented := map[string]bool{"services/catalog": true}
+
+	jobs := scan.AgentContextFactRecord{
+		Project: "libraries/integration", Name: "JobsClient", Qualified: "integration.JobsClient", File: "libraries/integration/JobsClient.go",
+	}
+	if got := contextSupportProjectAffinityScore(jobs, "libraries/integration", aliases, explicit, represented); got == 0 {
+		t.Fatal("distinctive jobs basename did not add project affinity")
+	}
+	for _, distractor := range []scan.AgentContextFactRecord{
+		{Project: "services/catalog", Name: "CatalogService", File: "services/catalog/CatalogService.go"},
+		{Project: "services/reporting", Name: "ReportingService", File: "services/reporting/ReportingService.go"},
+	} {
+		if got := contextSupportProjectAffinityScore(distractor, distractor.Project, aliases, explicit, represented); got != 0 {
+			t.Fatalf("generic services folder gave %q affinity score %d", distractor.Project, got)
 		}
 	}
 }

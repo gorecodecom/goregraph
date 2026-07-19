@@ -55,6 +55,8 @@ type contextTraversalState struct {
 	key     string
 }
 
+type contextBoundedRoleEvidence map[string]map[string]bool
+
 func selectContextPaths(
 	index scan.AgentContextIndexRecord,
 	seed rankedContextFact,
@@ -74,6 +76,7 @@ func selectContextPaths(
 
 	testsRequired := contextPathTestsRequired(concerns)
 	adjacency := contextPathAdjacency(index.Edges, factByID, testsRequired)
+	boundedRoleEvidence := contextPathBoundedRoleEvidence(index.Edges, factByID)
 	candidates, reachable := enumerateContextPathCandidates(seed.fact.ID, adjacency)
 	coverable := contextPathCoverableConcerns(candidates, concerns)
 	lexicalScores := contextPathLexicalScores(index.Facts, seed.query)
@@ -99,7 +102,7 @@ func selectContextPaths(
 				boundarySelected,
 				allowLexicalExpansion,
 				selectedFacts,
-				index.Edges,
+				boundedRoleEvidence,
 				lexicalScores,
 				factByID,
 			)
@@ -219,6 +222,23 @@ func contextPathAdjacency(
 	return adjacency
 }
 
+func contextPathBoundedRoleEvidence(
+	edges []scan.AgentContextEdgeRecord,
+	factByID map[string]scan.AgentContextFactRecord,
+) contextBoundedRoleEvidence {
+	evidence := make(contextBoundedRoleEvidence)
+	for _, edge := range edges {
+		if normalizedContextConcernKind(factByID[edge.ToFactID].Kind) != contextConcernPersistence {
+			continue
+		}
+		if evidence[edge.FromFactID] == nil {
+			evidence[edge.FromFactID] = map[string]bool{}
+		}
+		evidence[edge.FromFactID][edge.ToFactID] = true
+	}
+	return evidence
+}
+
 func eligibleContextPathFact(fact scan.AgentContextFactRecord, testsRequired bool) bool {
 	kind := strings.ToLower(strings.TrimSpace(fact.Kind))
 	if strings.Contains(kind, "generated") || strings.Contains(kind, "metadata") ||
@@ -295,7 +315,7 @@ func scoreContextPath(
 	boundarySelected bool,
 	allowLexicalExpansion bool,
 	selectedFacts map[string]bool,
-	allEdges []scan.AgentContextEdgeRecord,
+	boundedRoleEvidence contextBoundedRoleEvidence,
 	lexicalScores map[string]int,
 	factByID map[string]scan.AgentContextFactRecord,
 ) (int, bool) {
@@ -321,7 +341,7 @@ func scoreContextPath(
 		path,
 		selectedFacts,
 		factByID,
-		allEdges,
+		boundedRoleEvidence,
 		concerns,
 	)
 	meaningful := newConcerns > 0 || newProjects > 0 || newBoundary || additionalRoleEvidence ||
@@ -350,7 +370,7 @@ func contextPathAddsBoundedRoleEvidence(
 	path contextTraversalState,
 	selectedFacts map[string]bool,
 	factByID map[string]scan.AgentContextFactRecord,
-	allEdges []scan.AgentContextEdgeRecord,
+	boundedRoleEvidence contextBoundedRoleEvidence,
 	concerns []contextConcern,
 ) bool {
 	persistenceRequired := false
@@ -378,9 +398,8 @@ func contextPathAddsBoundedRoleEvidence(
 			normalizedContextConcernKind(factByID[candidateID].Kind) != contextConcernPersistence {
 			continue
 		}
-		for _, edge := range allEdges {
-			if edge.FromFactID == pathEdge.FromFactID && selectedFacts[edge.ToFactID] &&
-				normalizedContextConcernKind(factByID[edge.ToFactID].Kind) == contextConcernPersistence {
+		for siblingID := range boundedRoleEvidence[pathEdge.FromFactID] {
+			if selectedFacts[siblingID] {
 				return true
 			}
 		}

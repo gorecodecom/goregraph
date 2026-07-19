@@ -813,9 +813,9 @@ func rankContextSupportFacts(
 	explicitProjects map[string]bool,
 	representedProjects map[string]bool,
 ) []rankedContextSupportFact {
-	supportQuery := query
-	if contextProblemStatement(query) != "" {
-		supportQuery = contextPrimaryQuery(query)
+	supportQuery := contextPrimaryQuery(query)
+	if strings.TrimSpace(supportQuery) == "" {
+		supportQuery = query
 	}
 	queryTokens := contextQueryTokens(supportQuery)
 	requestedTokens := contextSupportRequestedTokens(query)
@@ -931,10 +931,9 @@ func contextSupportProjectAffinityScore(
 			continue
 		}
 		for _, alias := range aliases[project] {
-			for _, segment := range contextProjectIdentifierSegments(alias) {
-				if len([]rune(segment)) >= 4 && strings.Contains(identifier, segment) {
-					best = 240
-				}
+			segment := compactContextIdentifier(contextProjectBasename(normalizeContextProject(alias)))
+			if len([]rune(segment)) >= 4 && strings.Contains(identifier, segment) {
+				best = 240
 			}
 		}
 	}
@@ -949,19 +948,6 @@ func compactContextIdentifier(value string) string {
 		}
 	}
 	return result.String()
-}
-
-func contextProjectIdentifierSegments(value string) []string {
-	parts := strings.FieldsFunc(strings.ToLower(value), func(current rune) bool {
-		return !unicode.IsLetter(current) && !unicode.IsDigit(current)
-	})
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part != "" {
-			result = append(result, part)
-		}
-	}
-	return result
 }
 
 func eligibleContextSupportFact(fact scan.AgentContextFactRecord) bool {
@@ -1092,11 +1078,11 @@ func selectContextSupportFacts(
 ) []rankedContextSupportFact {
 	selected := make([]rankedContextSupportFact, 0, len(ranked))
 	for _, candidate := range ranked {
-		minimumMatches := 2
+		matchesTask := candidate.semanticMatches >= 2
 		if candidate.explicit {
-			minimumMatches = 1
+			matchesTask = candidate.semanticMatches >= 1 || candidate.requestedMatches > 0
 		}
-		if candidate.semanticMatches < minimumMatches || representedProjects[candidate.project] {
+		if !matchesTask || representedProjects[candidate.project] {
 			continue
 		}
 		if !candidate.operational && candidate.semanticMatches < 2 && candidate.requestedMatches == 0 {
@@ -1319,6 +1305,7 @@ func contextEndpointCompanion(
 	routeKey := contextEndpointRouteKey(endpoint)
 	qualified := normalizeContextTerm(endpoint.Qualified)
 	candidates := []scan.AgentContextFactRecord{}
+	exactMatches := []scan.AgentContextFactRecord{}
 	for _, fact := range index.Facts {
 		if !strings.EqualFold(strings.TrimSpace(fact.Kind), "route") ||
 			normalizeContextProject(fact.Project) != project ||
@@ -1326,23 +1313,17 @@ func contextEndpointCompanion(
 			!reliableProductionContextSeed(fact) {
 			continue
 		}
-		factQualified := normalizeContextTerm(fact.Qualified)
-		if qualified != "" && factQualified != "" && qualified != factQualified {
-			continue
-		}
 		candidates = append(candidates, fact)
+		if qualified != "" && normalizeContextTerm(fact.Qualified) == qualified {
+			exactMatches = append(exactMatches, fact)
+		}
 	}
-	if len(candidates) == 0 {
+	if len(exactMatches) == 1 {
+		return exactMatches[0], true
+	}
+	if len(exactMatches) > 1 || len(candidates) != 1 {
 		return scan.AgentContextFactRecord{}, false
 	}
-	sort.Slice(candidates, func(i, j int) bool {
-		leftQualified := normalizeContextTerm(candidates[i].Qualified) == qualified
-		rightQualified := normalizeContextTerm(candidates[j].Qualified) == qualified
-		if leftQualified != rightQualified {
-			return leftQualified
-		}
-		return candidates[i].ID < candidates[j].ID
-	})
 	return candidates[0], true
 }
 
