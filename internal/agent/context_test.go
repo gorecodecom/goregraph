@@ -1369,7 +1369,8 @@ func TestBuildContextUsesProblemStatementAfterPreamble(t *testing.T) {
 	query := "This is a read-only prepared benchmark workspace with source-only instructions.\n\n" +
 		"Problem statement:\n" +
 		"The service has this issue:\n" +
-		"When the system must delete a catalog entry, related jobs remain."
+		"When the system must delete a catalog entry,\n" +
+		"related jobs remain."
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{
@@ -1398,6 +1399,9 @@ func TestBuildContextUsesProblemStatementAfterPreamble(t *testing.T) {
 	if pack.FallbackRequired || len(pack.Entrypoints) != 0 || len(pack.Endpoints) != 1 ||
 		pack.Endpoints[0].Path != "/catalogs/{catalogId}/entries/{entryId}" {
 		t.Fatalf("problem statement after preamble did not select the endpoint: %#v", pack)
+	}
+	if !strings.Contains(pack.Query, "related jobs remain") {
+		t.Fatalf("wrapped task continuation was omitted from public query: %q", pack.Query)
 	}
 }
 

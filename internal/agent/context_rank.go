@@ -1077,8 +1077,9 @@ func contextPrimaryQuery(value string) string {
 	if problemStatement := contextProblemStatement(value); problemStatement != "" {
 		value = problemStatement
 	}
+	value = contextFirstParagraph(value)
 	segments := strings.FieldsFunc(value, func(current rune) bool {
-		return current == '.' || current == '?' || current == '!' || current == '\n' || current == '\r'
+		return current == '.' || current == '?' || current == '!'
 	})
 	for _, segment := range segments {
 		segment = strings.TrimSpace(segment)
@@ -1094,14 +1095,33 @@ func contextPrimaryQuery(value string) string {
 }
 
 func contextProblemStatement(value string) string {
-	lines := strings.Split(value, "\n")
+	lines := strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n")
 	for index, line := range lines {
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "problem statement:", "problemstellung:", "problem:", "task:", "aufgabe:":
-			return strings.TrimSpace(strings.Join(lines[index+1:], "\n"))
+			return contextFirstParagraph(strings.Join(lines[index+1:], "\n"))
 		}
 	}
 	return ""
+}
+
+func contextFirstParagraph(value string) string {
+	lines := strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n")
+	parts := []string{}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			if len(parts) > 0 {
+				break
+			}
+			continue
+		}
+		if strings.HasSuffix(line, ":") && len(strings.Fields(line)) <= 8 && len(parts) == 0 {
+			continue
+		}
+		parts = append(parts, line)
+	}
+	return strings.Join(parts, " ")
 }
 
 var contextQueryTokenAliases = map[string][]string{
