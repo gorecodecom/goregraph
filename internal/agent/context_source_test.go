@@ -92,16 +92,39 @@ func TestRenderSourceCandidateRejectsOldCallAfterDeclarationRename(t *testing.T)
 	}
 }
 
-func TestRenderSourceCandidateRejectsGoCallPrefixes(t *testing.T) {
-	candidate := sourceCandidate{Path: "service.go", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
+func TestRenderSourceCandidateRejectsAmbiguousCallPrefixes(t *testing.T) {
+	candidate := sourceCandidate{Path: "source", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
 	for _, line := range []string{
 		"go deleteUser()",
 		"defer deleteUser()",
+		"echo deleteUser();",
+		"void deleteUser()",
+		"not deleteUser()",
+		"sizeof deleteUser()",
 	} {
 		t.Run(line, func(t *testing.T) {
 			_, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: []string{line}}, "body")
 			if err == nil || err.Error() != "indexed symbol has no unique declaration-like occurrence" {
 				t.Fatalf("renderSourceCandidate() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestRenderSourceCandidateAcceptsConservativeCallableDeclarations(t *testing.T) {
+	candidate := sourceCandidate{Path: "source", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
+	for _, line := range []string{
+		"public void deleteUser() {}",
+		"static int deleteUser(void) {",
+		"protected Task deleteUser() => repository.Delete();",
+	} {
+		t.Run(line, func(t *testing.T) {
+			section, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: []string{line}}, "body")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if section.Content != "1\t"+line {
+				t.Fatalf("rendered content = %q", section.Content)
 			}
 		})
 	}
@@ -119,6 +142,44 @@ func TestRenderSourceCandidateRejectsIdentifiersOutsideCode(t *testing.T) {
 				t.Fatalf("renderSourceCandidate() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestRenderSourceCandidateIgnoresBlockCommentDeclarationDuringRelocation(t *testing.T) {
+	lines := []string{
+		"/*",
+		"public void deleteUser() {",
+		"}",
+		"*/",
+		"public void deleteUser() {",
+	}
+	candidate := sourceCandidate{Path: "source", StartLine: 2, EndLine: 2, Kind: "symbol", Name: "deleteUser"}
+
+	section, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: lines}, "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 5 || section.EndLine != 5 || section.SourceState != "relocated_current" {
+		t.Fatalf("relocated section = %#v", section)
+	}
+}
+
+func TestRenderSourceCandidateIgnoresMultilineStringDeclarationDuringRelocation(t *testing.T) {
+	lines := []string{
+		`message = """`,
+		"def deleteUser():",
+		`"""`,
+		"",
+		"def deleteUser():",
+	}
+	candidate := sourceCandidate{Path: "source.py", StartLine: 2, EndLine: 2, Kind: "symbol", Name: "deleteUser"}
+
+	section, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: lines}, "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 5 || section.EndLine != 5 || section.SourceState != "relocated_current" {
+		t.Fatalf("relocated section = %#v", section)
 	}
 }
 
@@ -262,6 +323,28 @@ func TestRenderSourceCandidateSignatureIncludesMultilineAnnotation(t *testing.T)
 	}
 	if section.StartLine != 1 || section.EndLine != 4 {
 		t.Fatalf("signature range = %d-%d, want 1-4", section.StartLine, section.EndLine)
+	}
+}
+
+func TestRenderSourceCandidateSignatureIgnoresNestedParameterTerminators(t *testing.T) {
+	lines := []string{
+		"def deleteUser(",
+		"    user_id: str,",
+		`    reason: str = "audit:manual",`,
+		"):",
+		"    pass",
+	}
+	candidate := sourceCandidate{Path: "service.py", StartLine: 1, EndLine: 5, Kind: "symbol", Name: "deleteUser"}
+
+	section, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: lines}, "signature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 1 || section.EndLine != 4 {
+		t.Fatalf("signature range = %d-%d, want 1-4", section.StartLine, section.EndLine)
+	}
+	if !strings.Contains(section.Content, "4\t):") {
+		t.Fatalf("signature content:\n%s", section.Content)
 	}
 }
 

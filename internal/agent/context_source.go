@@ -49,7 +49,8 @@ type sourceOccurrence struct {
 func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode string) (ContextSourceSection, error) {
 	identifier := contextIdentifier(candidate)
 	occurrences := identifierOccurrences(file.Lines, identifier)
-	declarations := declarationOccurrences(file.Lines, occurrences)
+	codeLines := sourceCodeMask(file.Lines)
+	declarations := declarationOccurrences(codeLines, occurrences)
 	indexedStart, indexedEnd := indexedSourceRange(candidate, len(file.Lines))
 
 	declaration := sourceOccurrence{}
@@ -81,7 +82,7 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 	}
 
 	rangeStart, rangeEnd := verifiedSourceRange(candidate, len(file.Lines), declaration.Line, state)
-	renderStart, renderEnd, err := sourceRenderRange(file.Lines, declaration.Line, rangeStart, rangeEnd, mode)
+	renderStart, renderEnd, err := sourceRenderRange(file.Lines, codeLines, declaration, rangeStart, rangeEnd, mode)
 	if err != nil {
 		return ContextSourceSection{}, err
 	}
@@ -140,6 +141,71 @@ func identifierOccurrences(lines []string, identifier string) []sourceOccurrence
 	return occurrences
 }
 
+type sourceLexicalState struct {
+	blockComment bool
+	stringEnd    string
+}
+
+func sourceCodeMask(lines []string) []string {
+	masked := make([]string, len(lines))
+	state := sourceLexicalState{}
+	for lineIndex, line := range lines {
+		body := []byte(line)
+		for index := 0; index < len(line); {
+			switch {
+			case state.blockComment:
+				body[index] = ' '
+				if strings.HasPrefix(line[index:], "*/") {
+					body[index+1] = ' '
+					index += 2
+					state.blockComment = false
+					continue
+				}
+				index++
+			case state.stringEnd != "":
+				if strings.HasPrefix(line[index:], state.stringEnd) {
+					blankSourceBytes(body, index, len(state.stringEnd))
+					index += len(state.stringEnd)
+					state.stringEnd = ""
+					continue
+				}
+				body[index] = ' '
+				if line[index] == '\\' && index+1 < len(line) {
+					body[index+1] = ' '
+					index += 2
+					continue
+				}
+				index++
+			case strings.HasPrefix(line[index:], "/*"):
+				blankSourceBytes(body, index, 2)
+				index += 2
+				state.blockComment = true
+			case strings.HasPrefix(line[index:], "//") || strings.HasPrefix(line[index:], "--") || line[index] == '#':
+				blankSourceBytes(body, index, len(line)-index)
+				index = len(line)
+			case strings.HasPrefix(line[index:], `"""`) || strings.HasPrefix(line[index:], `'''`):
+				state.stringEnd = line[index : index+3]
+				blankSourceBytes(body, index, 3)
+				index += 3
+			case line[index] == '"' || line[index] == '\'' || line[index] == '`':
+				state.stringEnd = line[index : index+1]
+				body[index] = ' '
+				index++
+			default:
+				index++
+			}
+		}
+		masked[lineIndex] = string(body)
+	}
+	return masked
+}
+
+func blankSourceBytes(body []byte, start, width int) {
+	for index := start; index < start+width; index++ {
+		body[index] = ' '
+	}
+}
+
 func isWholeSourceToken(line string, start, end int) bool {
 	if start > 0 {
 		previous, _ := utf8.DecodeLastRuneInString(line[:start])
@@ -190,12 +256,33 @@ func declarationLikeOccurrence(line string, start, end int) bool {
 	if strings.ContainsAny(prefix, "(){};,") {
 		return false
 	}
-	for _, word := range []string{"new", "await", "yield", "assert"} {
-		if containsSourceWord(prefix, word) {
-			return false
+	return conservativeCallablePrefix(prefix)
+}
+
+func conservativeCallablePrefix(prefix string) bool {
+	fields := strings.Fields(prefix)
+	if len(fields) < 2 || !sourceDeclarationModifier(fields[0]) {
+		return false
+	}
+	for _, value := range prefix {
+		if unicode.IsLetter(value) || unicode.IsDigit(value) || unicode.IsSpace(value) ||
+			strings.ContainsRune("_$*?<>[]@", value) {
+			continue
 		}
+		return false
 	}
 	return true
+}
+
+func sourceDeclarationModifier(value string) bool {
+	switch value {
+	case "public", "protected", "private", "internal", "static", "final", "abstract",
+		"virtual", "override", "async", "synchronized", "native", "extern", "inline",
+		"constexpr", "const", "volatile", "sealed", "open", "partial", "unsafe":
+		return true
+	default:
+		return false
+	}
 }
 
 func lastDeclarationKeyword(prefix string) (string, int) {
@@ -317,7 +404,14 @@ func clampSourceLine(line, lineCount int) int {
 	return line
 }
 
-func sourceRenderRange(lines []string, declarationLine, verifiedStart, verifiedEnd int, mode string) (int, int, error) {
+func sourceRenderRange(
+	lines []string,
+	codeLines []string,
+	declaration sourceOccurrence,
+	verifiedStart int,
+	verifiedEnd int,
+	mode string,
+) (int, int, error) {
 	switch mode {
 	case "body":
 		if verifiedEnd-verifiedStart+1 > 120 {
@@ -325,22 +419,74 @@ func sourceRenderRange(lines []string, declarationLine, verifiedStart, verifiedE
 		}
 		return verifiedStart, verifiedEnd, nil
 	case "focused":
-		return clampSourceLine(declarationLine-28, len(lines)), clampSourceLine(declarationLine+32, len(lines)), nil
+		return clampSourceLine(declaration.Line-28, len(lines)), clampSourceLine(declaration.Line+32, len(lines)), nil
 	case "signature":
-		start := sourceAnnotationStart(lines, declarationLine)
+		start := sourceAnnotationStart(codeLines, declaration.Line)
 		maximumEnd := start + 11
 		if maximumEnd > len(lines) {
 			maximumEnd = len(lines)
 		}
-		for line := declarationLine; line <= maximumEnd; line++ {
-			if sourceDeclarationTerminated(lines[line-1]) {
-				return start, line, nil
-			}
+		if end := sourceSignatureEnd(codeLines, declaration, maximumEnd); end > 0 {
+			return start, end, nil
 		}
 		return 0, 0, fmt.Errorf("source signature is unavailable")
 	default:
 		return 0, 0, fmt.Errorf("unsupported source render mode %q", mode)
 	}
+}
+
+func sourceSignatureEnd(lines []string, declaration sourceOccurrence, maximumEnd int) int {
+	parentheses, brackets, angles, braces := 0, 0, 0, 0
+	for lineNumber := declaration.Line; lineNumber <= maximumEnd; lineNumber++ {
+		line := lines[lineNumber-1]
+		start := 0
+		if lineNumber == declaration.Line {
+			start = declaration.End
+		}
+		for index := start; index < len(line); index++ {
+			atDeclarationLevel := parentheses == 0 && brackets == 0 && angles == 0 && braces == 0
+			if atDeclarationLevel && strings.HasPrefix(line[index:], "=>") {
+				return lineNumber
+			}
+			switch line[index] {
+			case '(':
+				parentheses++
+			case ')':
+				if parentheses == 0 {
+					return 0
+				}
+				parentheses--
+			case '[':
+				brackets++
+			case ']':
+				if brackets == 0 {
+					return 0
+				}
+				brackets--
+			case '<':
+				angles++
+			case '>':
+				if angles > 0 {
+					angles--
+				}
+			case '{':
+				if atDeclarationLevel {
+					return lineNumber
+				}
+				braces++
+			case '}':
+				if braces == 0 {
+					return 0
+				}
+				braces--
+			case ':', ';':
+				if atDeclarationLevel {
+					return lineNumber
+				}
+			}
+		}
+	}
+	return 0
 }
 
 func sourceAnnotationStart(lines []string, declarationLine int) int {
@@ -377,11 +523,6 @@ func precedingSourceAnnotation(lines []string, end int) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-func sourceDeclarationTerminated(line string) bool {
-	return strings.Contains(line, "{") || strings.Contains(line, ":") ||
-		strings.Contains(line, ";") || strings.Contains(line, "=>")
 }
 
 func renderNumberedSource(lines []string, start, end int) string {
