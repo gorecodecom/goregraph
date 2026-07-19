@@ -490,6 +490,69 @@ router.get("/unrelated", unrelatedHandler);
 	}
 }
 
+func TestExtractCodeRoutesPreservesParameterizedLiteralsAcrossLanguages(t *testing.T) {
+	tests := []struct {
+		name string
+		file FileRecord
+		body string
+		want string
+	}{
+		{
+			name: "Go router",
+			file: FileRecord{Path: "routes.go", Language: "go"},
+			body: `package routes
+func getRecord() {}
+func registerRoutes() { router.GET("/records/{recordId:[0-9]{2,4}}", getRecord) }`,
+			want: "/records/{recordId:[0-9]{2,4}}",
+		},
+		{
+			name: "PHP Laravel",
+			file: FileRecord{Path: "routes/api.php", Language: "php"},
+			body: `<?php
+Route::get('/records/{record}', [RecordController::class, 'show']);`,
+			want: "/records/{record}",
+		},
+		{
+			name: "TypeScript Express",
+			file: FileRecord{Path: "src/routes.ts", Language: "typescript"},
+			body: `import express from "express";
+const app = express();
+app.get("/records/:recordId([0-9]{2,4})", getRecord);`,
+			want: "/records/:recordId([0-9]{2,4})",
+		},
+		{
+			name: "Python FastAPI",
+			file: FileRecord{Path: "app.py", Language: "python"},
+			body: `from fastapi import FastAPI
+app = FastAPI()
+@app.get("/records/{record_id:path}")
+def get_record():
+    pass`,
+			want: "/records/{record_id:path}",
+		},
+		{
+			name: "Rust Actix",
+			file: FileRecord{Path: "src/routes.rs", Language: "rust"},
+			body: `use actix_web::get;
+#[get("/records/{record_id:[0-9]{2,4}}")]
+async fn get_record() {}`,
+			want: "/records/{record_id:[0-9]{2,4}}",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			record := extractCodeIntelligence(test.file, test.body)
+			if len(record.Routes) != 1 {
+				t.Fatalf("routes = %#v, want exactly one", record.Routes)
+			}
+			if got := record.Routes[0].Path; got != test.want {
+				t.Fatalf("route path = %q, want byte-identical %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestBuildProjectAPICatalogMergesDuplicateMetadataDeterministically(t *testing.T) {
 	endpoints := []SpringEndpointRecord{
 		{
