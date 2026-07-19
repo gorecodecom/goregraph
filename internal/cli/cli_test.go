@@ -1477,7 +1477,7 @@ Do not use specialist GoreGraph queries or expert MCP tools.`
 }
 
 func TestQueryAndReportHelpDocumentManualCompatibilityAndDashboardPath(t *testing.T) {
-	const sourceBackedGuidance = "Agents should use goregraph context: when source_coverage is complete, continue from source_sections without another navigation read; when source_coverage is partial or none, read only relevant ranges named by source_omissions."
+	const sourceBackedGuidance = "Agents should use goregraph context: when source_coverage is complete, continue from source_sections without another navigation read; when source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections."
 
 	var stdout, stderr bytes.Buffer
 	if code := Run([]string{"query", "help"}, &stdout, &stderr); code != 0 {

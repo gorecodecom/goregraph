@@ -1095,7 +1095,7 @@ func runQuery(args []string, stdout, stderr io.Writer) int {
 
 Searches existing generated output.
 Legacy/manual compatibility operations are supported but are not the normal agent workflow.
-Agents should use goregraph context: when source_coverage is complete, continue from source_sections without another navigation read; when source_coverage is partial or none, read only relevant ranges named by source_omissions.
+Agents should use goregraph context: when source_coverage is complete, continue from source_sections without another navigation read; when source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
 
 Canonical symbol operations are:
   symbol-inventory       List declarations by project, package, module, or name
