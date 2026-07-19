@@ -261,52 +261,120 @@ func contextSourceRenderOptions(
 			contextSourceRecordFailure(failures, candidate, stableContextSourceOmissionReason(err))
 			continue
 		}
-		candidateOptions := 0
 		verifiedFacts := make(map[string]bool)
-		for _, mode := range []string{"body", "focused", "signature"} {
-			section, renderErr := renderSourceCandidate(candidate, file, mode)
-			if renderErr != nil {
-				contextSourceRecordFailure(failures, candidate, stableContextSourceOmissionReason(renderErr))
-				continue
-			}
-			verified, rejected := verifiedContextSourceFactIDs(pack, loaded.Index, candidate, file, section)
-			for factID, reason := range rejected {
-				if _, recorded := failures[factID]; !recorded {
-					failures[factID] = reason
+		candidateOptions, renderErr := appendContextSourceCandidateOptions(
+			&options,
+			failures,
+			verifiedFacts,
+			pack,
+			loaded.Index,
+			candidate,
+			file,
+			concerns,
+			distances,
+		)
+		if renderErr != nil {
+			return nil, nil, renderErr
+		}
+		if candidateOptions == 0 && len(contextSourceCandidateFactIDs(candidate)) > 1 {
+			for _, factID := range contextSourceCandidateFactIDs(candidate) {
+				constituent, ok := contextSourceCandidateForFact(pack, loaded.Index, factID)
+				if !ok {
+					continue
+				}
+				_, renderErr = appendContextSourceCandidateOptions(
+					&options,
+					failures,
+					verifiedFacts,
+					pack,
+					loaded.Index,
+					constituent,
+					file,
+					concerns,
+					distances,
+				)
+				if renderErr != nil {
+					return nil, nil, renderErr
 				}
 			}
-			if len(verified) == 0 {
-				continue
-			}
-			for _, factID := range verified {
-				verifiedFacts[factID] = true
-			}
-			optionCandidate := candidate
-			optionCandidate.FactIDs = verified
-			estimated, estimateErr := EstimateContextTokens(section)
-			if estimateErr != nil {
-				return nil, nil, estimateErr
-			}
-			concernKeys, required := contextSourceOptionConcerns(optionCandidate, concerns)
-			projectKey := ""
-			if optionCandidate.Role != "test" {
-				projectKey = normalizeContextProject(optionCandidate.Project)
-			}
-			options = append(options, contextSourceOption{
-				candidate: optionCandidate, section: section, estimated: estimated,
-				concernKeys: concernKeys, projectKey: projectKey, required: required,
-				pathDistance: contextSourceCandidateDistance(optionCandidate, distances),
-			})
-			candidateOptions++
 		}
-		if candidateOptions > 0 {
-			for factID := range verifiedFacts {
-				delete(failures, factID)
-			}
+		for factID := range verifiedFacts {
+			delete(failures, factID)
 		}
 	}
 	sort.Slice(options, func(i, j int) bool { return contextSourceOptionLess(options[i], options[j]) })
 	return options, failures, nil
+}
+
+func appendContextSourceCandidateOptions(
+	options *[]contextSourceOption,
+	failures map[string]string,
+	verifiedFacts map[string]bool,
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	candidate sourceCandidate,
+	file sourceFile,
+	concerns []contextConcern,
+	distances map[string]int,
+) (int, error) {
+	added := 0
+	for _, mode := range []string{"body", "focused", "signature"} {
+		section, renderErr := renderSourceCandidate(candidate, file, mode)
+		if renderErr != nil {
+			contextSourceRecordFailure(failures, candidate, stableContextSourceOmissionReason(renderErr))
+			continue
+		}
+		verified, rejected := verifiedContextSourceFactIDs(pack, index, candidate, file, section)
+		for factID, reason := range rejected {
+			if _, recorded := failures[factID]; !recorded {
+				failures[factID] = reason
+			}
+		}
+		if len(verified) == 0 {
+			continue
+		}
+		for _, factID := range verified {
+			verifiedFacts[factID] = true
+		}
+		optionCandidate := candidate
+		optionCandidate.FactIDs = verified
+		estimated, err := EstimateContextTokens(section)
+		if err != nil {
+			return 0, err
+		}
+		concernKeys, required := contextSourceOptionConcerns(optionCandidate, concerns)
+		projectKey := ""
+		if optionCandidate.Role != "test" {
+			projectKey = normalizeContextProject(optionCandidate.Project)
+		}
+		*options = append(*options, contextSourceOption{
+			candidate: optionCandidate, section: section, estimated: estimated,
+			concernKeys: concernKeys, projectKey: projectKey, required: required,
+			pathDistance: contextSourceCandidateDistance(optionCandidate, distances),
+		})
+		added++
+	}
+	return added, nil
+}
+
+func contextSourceCandidateForFact(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	factID string,
+) (sourceCandidate, bool) {
+	for _, fact := range index.Facts {
+		if fact.ID != factID {
+			continue
+		}
+		role := contextSourceRole(pack, fact)
+		return sourceCandidate{
+			FactID: fact.ID, FactIDs: []string{fact.ID}, Project: fact.Project, Path: fact.File,
+			StartLine: fact.Line, EndLine: fact.EndLine, Role: role,
+			Kind: fact.Kind, Name: fact.Name, Qualified: fact.Qualified,
+			Priority: contextSourceRolePriority[role],
+		}, true
+	}
+	return sourceCandidate{}, false
 }
 
 func contextSourceRecordFailure(failures map[string]string, candidate sourceCandidate, reason string) {
@@ -527,37 +595,22 @@ func fittingContextSourceOptions(
 	concerns []contextConcern,
 	state contextSourceSelectionState,
 ) ([]contextSourceOption, error) {
-	byCandidate := make(map[string][]contextSourceOption)
+	fitting := make([]contextSourceOption, 0, len(options))
 	for _, option := range options {
 		key := contextSourceCandidateKey(option.candidate)
 		if state.selectedCandidates[key] {
 			continue
 		}
-		byCandidate[key] = append(byCandidate[key], option)
-	}
-	preferred := make([]contextSourceOption, 0, len(byCandidate))
-	for _, candidateOptions := range byCandidate {
-		sort.Slice(candidateOptions, func(i, j int) bool {
-			leftMode := contextSourceRenderModeOrder(candidateOptions[i].section.RenderMode)
-			rightMode := contextSourceRenderModeOrder(candidateOptions[j].section.RenderMode)
-			if leftMode != rightMode {
-				return leftMode < rightMode
-			}
-			return contextSourceOptionLess(candidateOptions[i], candidateOptions[j])
-		})
-		for _, option := range candidateOptions {
-			fits, err := contextSourceOptionFits(pack, request, option, concerns, state)
-			if err != nil {
-				return nil, err
-			}
-			if fits {
-				preferred = append(preferred, option)
-				break
-			}
+		fits, err := contextSourceOptionFits(pack, request, option, concerns, state)
+		if err != nil {
+			return nil, err
+		}
+		if fits {
+			fitting = append(fitting, option)
 		}
 	}
-	sort.Slice(preferred, func(i, j int) bool { return contextSourceOptionLess(preferred[i], preferred[j]) })
-	return preferred, nil
+	sort.Slice(fitting, func(i, j int) bool { return contextSourceOptionLess(fitting[i], fitting[j]) })
+	return fitting, nil
 }
 
 func contextSourceOptionFits(
@@ -840,9 +893,6 @@ func contextSourceCandidateKey(candidate sourceCandidate) string {
 }
 
 func contextSourceOptionLess(left, right contextSourceOption) bool {
-	if left.candidate.Priority != right.candidate.Priority {
-		return left.candidate.Priority < right.candidate.Priority
-	}
 	if left.candidate.Role != right.candidate.Role {
 		return left.candidate.Role < right.candidate.Role
 	}

@@ -80,7 +80,7 @@ func TestContextSourceProductionBeforeTests(t *testing.T) {
 		t.Fatal(err)
 	}
 	if pack.EstimatedTokens > DefaultContextBudgetTokens || len(body) > MaxContextBytes ||
-		len(pack.SourceSections) >= MaxContextSourceSections {
+		len(pack.SourceSections) > MaxContextSourceSections {
 		t.Fatalf("source package bounds: tokens=%d bytes=%d sections=%d", pack.EstimatedTokens, len(body), len(pack.SourceSections))
 	}
 	t.Logf("source package: tokens=%d bytes=%d sections=%d", pack.EstimatedTokens, len(body), len(pack.SourceSections))

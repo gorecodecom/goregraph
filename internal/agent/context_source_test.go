@@ -552,7 +552,7 @@ func TestContextSourceOptionsMergeNearbyRangesDeterministically(t *testing.T) {
 	}
 }
 
-func TestContextSourceOptionsFallBackToFocusedWhenBodyDoesNotFit(t *testing.T) {
+func TestContextSourceOptionsEvaluateEveryFittingRenderMode(t *testing.T) {
 	root := t.TempDir()
 	lines := make([]string, 110)
 	for index := range lines {
@@ -562,7 +562,7 @@ func TestContextSourceOptionsFallBackToFocusedWhenBodyDoesNotFit(t *testing.T) {
 	lines[len(lines)-1] = "}"
 	writeSourceFile(t, root, "central.go", strings.Join(lines, "\n")+"\n")
 	pack := ContextPack{
-		Schema: 1, Query: "central operation", Confidence: "EXACT", BudgetTokens: 700,
+		Schema: 1, Query: "central operation", Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
 		Concerns:              []ContextConcern{{Kind: contextConcernEntrypoint}},
 		Entrypoints:           []ContextLocation{{ID: "central", File: "central.go"}},
 		selectedSourceFactIDs: []string{"central"},
@@ -595,12 +595,118 @@ func TestContextSourceOptionsFallBackToFocusedWhenBodyDoesNotFit(t *testing.T) {
 		t.Fatalf("render option order = %v", modes)
 	}
 
-	got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: 700})
+	concerns := contextSourceConcerns(pack, index)
+	state := contextSourceSelectionState{
+		selectedCandidates: map[string]bool{},
+		selectedFactIDs:    map[string]bool{},
+		selectedProjects:   map[string]bool{},
+		coveredConcerns:    map[string]bool{},
+		coveredRoles:       map[string]bool{},
+	}
+	fitting, err := fittingContextSourceOptions(
+		pack,
+		ContextRequest{BudgetTokens: DefaultContextBudgetTokens},
+		options,
+		concerns,
+		state,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.SourceSections) != 1 || got.SourceSections[0].RenderMode != "focused" {
+	fittingModes := make([]string, 0, len(fitting))
+	for _, option := range fitting {
+		fittingModes = append(fittingModes, option.section.RenderMode)
+	}
+	if strings.Join(fittingModes, ",") != "body,focused,signature" {
+		t.Fatalf("fitting render modes = %v", fittingModes)
+	}
+	mandatory, ok, err := smallestFittingContextSourceOption(
+		pack,
+		ContextRequest{BudgetTokens: DefaultContextBudgetTokens},
+		options,
+		concerns,
+		state,
+		contextSourceBoundary{factID: "central"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || mandatory.section.RenderMode != "signature" {
+		t.Fatalf("mandatory render option = %#v", mandatory)
+	}
+	greedy, _, found, err := contextSourceUtilityOption(
+		pack,
+		ContextRequest{BudgetTokens: DefaultContextBudgetTokens},
+		options,
+		concerns,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || greedy.section.RenderMode != "signature" {
+		t.Fatalf("greedy render option = %#v", greedy)
+	}
+
+	got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: DefaultContextBudgetTokens})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.SourceSections) != 1 || got.SourceSections[0].RenderMode != "signature" {
 		t.Fatalf("large central source selection = %#v", got.SourceSections)
+	}
+}
+
+func TestContextSourceOptionsUseSpecifiedTieBreakersWithoutPriority(t *testing.T) {
+	entrypoint := contextSourceOption{
+		candidate: sourceCandidate{FactID: "z", Role: "entrypoint", Priority: 99},
+		section:   ContextSourceSection{StartLine: 1, RenderMode: "body"},
+	}
+	test := contextSourceOption{
+		candidate: sourceCandidate{FactID: "a", Role: "test", Priority: 0},
+		section:   ContextSourceSection{StartLine: 1, RenderMode: "body"},
+	}
+
+	if !contextSourceOptionLess(entrypoint, test) {
+		t.Fatalf("priority preceded the specified role tie-breaker: entrypoint=%#v test=%#v", entrypoint, test)
+	}
+}
+
+func TestContextSourceOptionsRecoverFromStaleMergedAnchor(t *testing.T) {
+	root := t.TempDir()
+	lines := numberedSourceLines(12)
+	lines[9] = "func currentNeighbor() {}"
+	writeSourceFile(t, root, "shared.go", strings.Join(lines, "\n")+"\n")
+	pack := ContextPack{
+		Schema: 1, Query: "current neighbor persistence", Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+		Concerns:              []ContextConcern{{Kind: contextConcernPersistence}},
+		Persistence:           []ContextLocation{{ID: "current"}},
+		selectedSourceFactIDs: []string{"stale", "current"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "stale", Kind: "api_contract", Name: "DELETE /stale", Qualified: "Client.staleAnchor",
+			File: "shared.go", Line: 2, EndLine: 3,
+		},
+		{
+			ID: "current", Kind: "persistence", Name: "currentNeighbor", Search: "current neighbor persistence",
+			File: "shared.go", Line: 10, EndLine: 10, Confidence: "EXACT",
+		},
+	}}
+	loaded := loadedContextIndex{ScopeRoot: root, Index: index}
+	candidates := contextSourceCandidates(pack, index)
+	if len(candidates) != 1 || candidates[0].FactID != "stale" {
+		t.Fatalf("stale anchor fixture did not merge as expected: %#v", candidates)
+	}
+
+	got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: DefaultContextBudgetTokens})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.SourceSections) != 1 || !strings.Contains(got.SourceSections[0].Content, "currentNeighbor") ||
+		got.SourceCoverage != "complete" || len(got.SourceOmissions) != 0 || !got.Concerns[0].Covered {
+		t.Fatalf("current neighbor was suppressed by stale merged anchor: %#v", got)
 	}
 }
 

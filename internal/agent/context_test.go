@@ -2340,7 +2340,7 @@ func TestBuildContextAttachesCentralSourcePath(t *testing.T) {
 	if pack.FallbackRequired || len(pack.SourceSections) < 2 {
 		t.Fatalf("source-backed pack = %#v", pack)
 	}
-	if pack.SourceSections[0].Role != "entrypoint" || pack.SourceSections[0].RenderMode != "body" {
+	if pack.SourceSections[0].Role != "entrypoint" || pack.SourceSections[0].RenderMode != "signature" {
 		t.Fatalf("first section = %#v", pack.SourceSections[0])
 	}
 	if !strings.Contains(pack.SourceSections[0].Content, "deleteFromCadaster") ||
