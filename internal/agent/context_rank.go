@@ -248,7 +248,14 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		rankContextSupportFacts(index.Facts, request.Query, projectAliases, explicitProjects),
 		representedProjects,
 	)
+	acceptedSupportProjects := 0
 	for _, support := range supports {
+		if acceptedSupportProjects >= maximumContextSupportingProjects {
+			break
+		}
+		if representedProjects[support.project] {
+			continue
+		}
 		candidate, accepted, appendErr := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
 			return mergeContextFile(
 				candidate,
@@ -264,14 +271,15 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			includedFactIDs[support.fact.ID] = true
 			supportFactIDs[support.fact.ID] = true
 			representedProjects[support.project] = true
+			acceptedSupportProjects++
 		}
 	}
 	supportScopes := selectedContextScopes(nil, supportFactIDs, nil, factByID)
 	supportUncertainties, _ := scopedContextUncertainties(index.Coverage, supportScopes)
-	uncertainties = append(uncertainties, supportUncertainties...)
-	uncertainties = append(
+	uncertainties = deduplicateContextUncertainties(
+		contextProjectSupportUncertainties(explicitProjects, representedProjects, index.Coverage),
 		uncertainties,
-		contextProjectSupportUncertainties(explicitProjects, representedProjects, index.Coverage)...,
+		supportUncertainties,
 	)
 	for _, uncertainty := range uncertainties {
 		if len(pack.Uncertainties) >= maximumContextUncertainty {
@@ -597,7 +605,7 @@ func rankContextSupportFacts(
 
 func eligibleContextSupportFact(fact scan.AgentContextFactRecord) bool {
 	kind := strings.ToLower(strings.TrimSpace(fact.Kind))
-	if kind == "test" || strings.Contains(kind, "generated") || strings.Contains(kind, "metadata") {
+	if contextCapabilityForKind(kind) == "tests" || strings.Contains(kind, "generated") || strings.Contains(kind, "metadata") {
 		return false
 	}
 	return !contextFactUsesTestSource(fact) && contextPackSourceFile(fact.File) != ""
@@ -624,26 +632,33 @@ func selectContextSupportFacts(
 	ranked []rankedContextSupportFact,
 	representedProjects map[string]bool,
 ) []rankedContextSupportFact {
-	seenProjects := map[string]bool{}
-	for project := range representedProjects {
-		seenProjects[project] = true
-	}
-	selected := make([]rankedContextSupportFact, 0, maximumContextSupportingProjects)
-	appendPhase := func(explicit bool, minimumMatches int) {
-		for _, candidate := range ranked {
-			if len(selected) >= maximumContextSupportingProjects {
-				return
-			}
-			if candidate.explicit != explicit || candidate.semanticMatches < minimumMatches || seenProjects[candidate.project] {
-				continue
-			}
+	selected := make([]rankedContextSupportFact, 0, len(ranked))
+	for _, candidate := range ranked {
+		minimumMatches := 2
+		if candidate.explicit {
+			minimumMatches = 1
+		}
+		if candidate.semanticMatches >= minimumMatches && !representedProjects[candidate.project] {
 			selected = append(selected, candidate)
-			seenProjects[candidate.project] = true
 		}
 	}
-	appendPhase(true, 1)
-	appendPhase(false, 2)
 	return selected
+}
+
+func deduplicateContextUncertainties(groups ...[]ContextUncertainty) []ContextUncertainty {
+	seen := map[string]bool{}
+	result := []ContextUncertainty{}
+	for _, group := range groups {
+		for _, uncertainty := range group {
+			key := uncertainty.Scope + "\x00" + uncertainty.Reason
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			result = append(result, uncertainty)
+		}
+	}
+	return result
 }
 
 func contextRepresentedProjects(
@@ -1621,12 +1636,13 @@ func selectedContextScopes(
 	scopes := map[string]bool{}
 	for factID := range includedFactIDs {
 		fact := factByID[factID]
+		project := normalizeContextProject(fact.Project)
 		capability := contextCapabilityForKind(fact.Kind)
 		if capability == "" {
-			scopes[fact.Project+"\x00"] = true
+			scopes[project+"\x00"] = true
 			continue
 		}
-		scopes[fact.Project+"\x00"+capability] = true
+		scopes[project+"\x00"+capability] = true
 	}
 	for _, edge := range edges {
 		if !acceptedEdgeIDs[edge.ID] {
@@ -1636,7 +1652,11 @@ func selectedContextScopes(
 		if capability == "" {
 			continue
 		}
-		project := firstNonEmptyContext(edge.Project, factByID[edge.FromFactID].Project, factByID[edge.ToFactID].Project)
+		project := normalizeContextProject(firstNonEmptyContext(
+			edge.Project,
+			factByID[edge.FromFactID].Project,
+			factByID[edge.ToFactID].Project,
+		))
 		scopes[project+"\x00"+capability] = true
 	}
 	return scopes
@@ -1667,6 +1687,9 @@ func scopedContextUncertainties(
 	scopes map[string]bool,
 ) ([]ContextUncertainty, bool) {
 	records := append([]scan.AgentContextCoverageRecord(nil), coverage...)
+	for index := range records {
+		records[index].Project = normalizeContextProject(records[index].Project)
+	}
 	sort.Slice(records, func(i, j int) bool {
 		if records[i].Project != records[j].Project {
 			return records[i].Project < records[j].Project

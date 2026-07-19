@@ -766,6 +766,11 @@ func TestBuildContextAddsSupportingFactsFromNamedProjects(t *testing.T) {
 				Search: "jobs retry persistence",
 			},
 			{
+				ID: "jobs-test-target", Project: "services/jobs", Kind: "test_target",
+				Name: "deleteEntryJobsTarget", File: "JobsTarget.go", Confidence: "EXACT",
+				Search: "delete entry jobs public endpoint internal client authentication retry identifiers persistence tests",
+			},
+			{
 				ID: "jobs-test-source", Project: "services/jobs", Kind: "symbol",
 				Name: "deleteEntryJobsTest", File: "src/test/JobsClient_test.go", Confidence: "EXACT",
 				Search: "delete entry jobs internal client authentication retry persistence tests",
@@ -817,7 +822,7 @@ func TestBuildContextAddsSupportingFactsFromNamedProjects(t *testing.T) {
 			t.Fatalf("named project file %q missing from context: %#v", path, pack.Files)
 		}
 	}
-	for _, path := range []string{"JobsRetry.go", "Reporting.go", "src/test/JobsClient_test.go", "api-catalog.json", "SharedModelMetadata.go"} {
+	for _, path := range []string{"JobsRetry.go", "JobsTarget.go", "Reporting.go", "src/test/JobsClient_test.go", "api-catalog.json", "SharedModelMetadata.go"} {
 		if contextPackHasFile(pack, path) {
 			t.Fatalf("ineligible support file %q leaked into context: %#v", path, pack.Files)
 		}
@@ -1009,10 +1014,10 @@ func TestBuildContextNamedProjectSupportRetainsCoverageUncertainty(t *testing.T)
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{
 			{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT"},
-			{ID: "worker", Project: "services/worker", Kind: "symbol", Name: "retryCatalog", File: "Worker.go", Confidence: "EXACT", Search: "retry authentication"},
+			{ID: "worker", Project: `services\worker`, Kind: "symbol", Name: "retryCatalog", File: "Worker.go", Confidence: "EXACT", Search: "retry authentication"},
 		},
 		Coverage: []scan.AgentContextCoverageRecord{{
-			Project: "services/worker", Capability: "calls", Coverage: "PARTIAL",
+			Project: "./services/worker", Capability: "calls", Coverage: "PARTIAL",
 			Reason: "dynamic calls may be unresolved",
 		}},
 	})
@@ -1028,6 +1033,57 @@ func TestBuildContextNamedProjectSupportRetainsCoverageUncertainty(t *testing.T)
 	}
 	if !contextPackHasUncertainty(pack, "services/worker/calls", "dynamic calls may be unresolved") {
 		t.Fatalf("accepted support coverage was not surfaced: %#v", pack.Uncertainties)
+	}
+}
+
+func TestBuildContextNamedProjectCoverageUncertaintySurvivesGlobalCap(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT"},
+			{ID: "handler", Project: "services/catalog", Kind: "symbol", Name: "getCatalog", File: "CatalogService.go"},
+			{ID: "contract", Project: "services/catalog", Kind: "api_contract", Name: "CatalogClient", File: "CatalogClient.go"},
+			{ID: "persistence", Project: "services/catalog", Kind: "persistence", Name: "CatalogRepository.find", File: "CatalogRepository.go"},
+			{ID: "test", Project: "services/catalog", Kind: "test", Name: "TestCatalog", File: "catalog_test.go"},
+			{ID: "auth", Project: "services/catalog", Kind: "authentication", Name: "authenticated", File: "Security.go"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "handler-edge", FromFactID: "route", ToFactID: "handler", Kind: "call"},
+			{ID: "contract-edge", FromFactID: "route", ToFactID: "contract", Kind: "http_contract"},
+			{ID: "persistence-edge", FromFactID: "route", ToFactID: "persistence", Kind: "persistence"},
+			{ID: "test-edge", FromFactID: "test", ToFactID: "route", Kind: "test_target"},
+			{ID: "auth-edge", FromFactID: "route", ToFactID: "auth", Kind: "authentication"},
+		},
+		Coverage: []scan.AgentContextCoverageRecord{
+			{Project: "services/catalog", Capability: "api_clients", Coverage: "PARTIAL", Reason: "contracts partial"},
+			{Project: "services/catalog", Capability: "calls", Coverage: "PARTIAL", Reason: "calls partial"},
+			{Project: "services/catalog", Capability: "persistence", Coverage: "PARTIAL", Reason: "persistence partial"},
+			{Project: "services/catalog", Capability: "routes", Coverage: "PARTIAL", Reason: "routes partial"},
+			{Project: "services/catalog", Capability: "tests", Coverage: "PARTIAL", Reason: "tests partial"},
+			{Project: "services/missing", Capability: "calls", Coverage: "UNAVAILABLE", Reason: "projection unavailable"},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "GET /catalog. Analyze services/missing retry behavior.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired {
+		t.Fatalf("missing support changed the reliable primary fallback decision: %#v", pack)
+	}
+	if len(pack.Uncertainties) != maximumContextUncertainty ||
+		!contextPackHasUncertainty(pack, "services/missing/project_context", "projection unavailable") {
+		t.Fatalf("missing project uncertainty was displaced by primary coverage: %#v", pack.Uncertainties)
+	}
+	seen := map[string]bool{}
+	for _, uncertainty := range pack.Uncertainties {
+		key := uncertainty.Scope + "\x00" + uncertainty.Reason
+		if seen[key] {
+			t.Fatalf("duplicate uncertainty leaked into context: %#v", pack.Uncertainties)
+		}
+		seen[key] = true
 	}
 }
 
@@ -1063,6 +1119,56 @@ func TestBuildContextProjectSupportProtectsPrimaryBudget(t *testing.T) {
 	if contextPackHasFile(small, longSupportFile) {
 		t.Fatalf("oversized optional support exceeded the budget: %#v", small)
 	}
+}
+
+func TestBuildContextProjectSupportContinuesAfterRejectedCandidates(t *testing.T) {
+	t.Run("smaller fact from same project", func(t *testing.T) {
+		oversizedFile := strings.Repeat("worker/", 90) + "OversizedWorker.go"
+		root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+			SchemaVersion: scan.SchemaVersion,
+			Facts: []scan.AgentContextFactRecord{
+				{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT"},
+				{ID: "worker-large", Project: "services/worker", Kind: "symbol", Name: "retryCatalogLarge", File: oversizedFile, Confidence: "EXACT", Search: "retry authentication persistence"},
+				{ID: "worker-small", Project: "services/worker", Kind: "symbol", Name: "retryCatalog", File: "Worker.go", Confidence: "EXACT", Search: "retry authentication"},
+			},
+		})
+
+		pack, err := BuildContext(ContextRequest{
+			Root: root, Query: "GET /catalog. Analyze services/worker retry authentication persistence.", BudgetTokens: 256,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !contextPackHasFile(pack, "Worker.go") || contextPackHasFile(pack, oversizedFile) {
+			t.Fatalf("rejected top fact blocked smaller same-project support: %#v", pack.Files)
+		}
+	})
+
+	t.Run("later project", func(t *testing.T) {
+		workerFile := strings.Repeat("worker/", 90) + "OversizedWorker.go"
+		sharedFile := strings.Repeat("shared/", 90) + "OversizedShared.go"
+		root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+			SchemaVersion: scan.SchemaVersion,
+			Facts: []scan.AgentContextFactRecord{
+				{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT"},
+				{ID: "worker-large", Project: "services/worker", Kind: "symbol", Name: "retryCatalog", File: workerFile, Confidence: "EXACT", Search: "retry authentication persistence"},
+				{ID: "shared-large", Project: "libraries/shared", Kind: "symbol", Name: "CatalogIdentifier", File: sharedFile, Confidence: "EXACT", Search: "identifier persistence"},
+				{ID: "notifications", Project: "services/notifications", Kind: "symbol", Name: "notifyRetry", File: "Notification.go", Confidence: "EXACT", Search: "retry delivery"},
+			},
+		})
+
+		pack, err := BuildContext(ContextRequest{
+			Root:         root,
+			Query:        "GET /catalog. Analyze services/worker retry authentication persistence, libraries/shared identifier persistence, and services/notifications retry delivery.",
+			BudgetTokens: 256,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !contextPackHasFile(pack, "Notification.go") || contextPackHasFile(pack, workerFile) || contextPackHasFile(pack, sharedFile) {
+			t.Fatalf("rejected projects blocked later qualifying support: %#v", pack.Files)
+		}
+	})
 }
 
 func TestBuildContextProjectSupportIsDeterministicAcrossInputOrder(t *testing.T) {
