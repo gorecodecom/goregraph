@@ -235,10 +235,11 @@ func TestDefaultMCPTaskContextSchemaAndInstructions(t *testing.T) {
 			"additionalProperties": false,
 			"required":             []string{"query"},
 			"properties": map[string]any{
-				"root":          map[string]any{"type": "string"},
-				"query":         map[string]any{"type": "string", "minLength": 1},
-				"budget_tokens": map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
-				"max_files":     map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
+				"root":                map[string]any{"type": "string"},
+				"query":               map[string]any{"type": "string", "minLength": 1},
+				"budget_tokens":       map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
+				"max_files":           map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
+				"previous_context_id": map[string]any{"type": "string", "minLength": 24, "maxLength": 24, "pattern": "^[0-9a-f]{24}$"},
 			},
 		},
 	}
@@ -274,15 +275,41 @@ func TestInitializeInstructsAgentsToReuseIncludedSource(t *testing.T) {
 	}
 	text := string(body)
 	for _, want := range []string{
-		"Call task_context before Read or Grep",
-		"Treat source_sections as current source already read",
-		"Do not re-read or grep included ranges",
-		"If source_coverage is absent, partial, or none, inspect only relevant uncovered ranges from source_omissions or files",
-		"At most one narrower task_context retry",
+		"Call task_context once before indexed source discovery. Treat source_sections as already read.",
+		"Retry only when retry_allowed is true, use one retry_anchor, and pass context_id as previous_context_id.",
+		"If duplicate_of is present, use the first pack and do not read more source because of the duplicate response.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("initialize instructions missing %q: %s", want, text)
 		}
+	}
+}
+
+func TestMCPTaskContextPassesPreviousContextID(t *testing.T) {
+	root := writeMCPContextFixture(t)
+	firstText, err := callTool(Options{}, "task_context", map[string]any{"root": root, "query": "DELETE /users/{id}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first agent.ContextPack
+	if err := json.Unmarshal([]byte(firstText), &first); err != nil {
+		t.Fatal(err)
+	}
+	secondText, err := callTool(Options{}, "task_context", map[string]any{
+		"root": root, "query": "DELETE /users/{id}", "previous_context_id": first.ContextID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var second agent.ContextPack
+	if err := json.Unmarshal([]byte(secondText), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.DuplicateOf != first.ContextID || second.EstimatedTokens > 200 || second.RetryAllowed {
+		t.Fatalf("MCP duplicate response = %#v", second)
+	}
+	if got := toolNames(tools(Options{})); !reflect.DeepEqual(got, []string{"task_context"}) {
+		t.Fatalf("default MCP tools = %#v", got)
 	}
 }
 
@@ -647,7 +674,7 @@ func assertMCPEndpointContextWireKeys(t *testing.T, body []byte) {
 	if err := json.Unmarshal(body, &contextObject); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"endpoints", "budget_tokens", "fallback_required"} {
+	for _, key := range []string{"endpoints", "budget_tokens", "fallback_required", "retry_allowed"} {
 		if _, ok := contextObject[key]; !ok {
 			t.Fatalf("MCP context JSON missing public key %q: %s", key, body)
 		}

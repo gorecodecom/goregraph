@@ -13,6 +13,9 @@ import (
 
 func TestRenderContextMarkdownIsCompactAndActionable(t *testing.T) {
 	pack := completeContextPackFixture()
+	pack.ContextID = "0123456789abcdef01234567"
+	pack.RetryAllowed = true
+	pack.RetryAnchors = []string{"UsersTest.deletesUser"}
 	pack.FallbackRequired = false
 	pack.FallbackReason = ""
 
@@ -22,6 +25,9 @@ func TestRenderContextMarkdownIsCompactAndActionable(t *testing.T) {
 		"Query: delete user",
 		"Confidence: EXACT",
 		"Fallback required: no",
+		"Context ID: 0123456789abcdef01234567",
+		"Retry allowed: yes",
+		"Retry anchors: UsersTest.deletesUser",
 		"`api/UserController.java:20-28`",
 	} {
 		if !strings.Contains(body, want) {
@@ -37,6 +43,31 @@ func TestRenderContextMarkdownIsCompactAndActionable(t *testing.T) {
 	}
 	if !strings.HasSuffix(body, "\n") || strings.HasSuffix(body, "\n\n") {
 		t.Fatalf("markdown must end in exactly one newline: %q", body)
+	}
+}
+
+func TestRunContextPassesPreviousContextID(t *testing.T) {
+	root := writeQueryContextIndex(t, simpleContextIndex())
+	firstBody, err := RunContext(ContextOptions{Root: root, Query: "delete user", Format: "json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first agent.ContextPack
+	if err := json.Unmarshal([]byte(firstBody), &first); err != nil {
+		t.Fatal(err)
+	}
+	secondBody, err := RunContext(ContextOptions{
+		Root: root, Query: "delete user", Format: "json", PreviousContextID: first.ContextID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var second agent.ContextPack
+	if err := json.Unmarshal([]byte(secondBody), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.DuplicateOf != first.ContextID || second.Query != "" || second.RetryAllowed {
+		t.Fatalf("duplicate query response = %#v", second)
 	}
 }
 

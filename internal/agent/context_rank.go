@@ -244,7 +244,98 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		selectedSourceFactIDs[factID] = true
 	}
 	retainSelectedSourceFactIDs(&pack, selectedSourceFactIDs)
+	retainContextSemanticSelection(&pack, includedFactIDs, acceptedEdgeIDs, concerns)
 	return finalizeContextEstimate(pack)
+}
+
+func retainContextSemanticSelection(
+	pack *ContextPack,
+	factIDs, edgeIDs map[string]bool,
+	concerns []contextConcern,
+) {
+	pack.selectedFactIDs = contextSelectedMapKeys(factIDs)
+	pack.selectedEdgeIDs = contextSelectedMapKeys(edgeIDs)
+	pack.selectedConcernKeys = pack.selectedConcernKeys[:0]
+	for _, concern := range concerns {
+		pack.selectedConcernKeys = append(pack.selectedConcernKeys, concern.key)
+	}
+	sort.Strings(pack.selectedConcernKeys)
+}
+
+func contextSelectedMapKeys(selected map[string]bool) []string {
+	keys := make([]string, 0, len(selected))
+	for key, included := range selected {
+		if included {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord) (bool, []string) {
+	if len(pack.Concerns) == 0 {
+		return false, nil
+	}
+	seed, ok := contextConcernPlanningSeed(index, pack.Query)
+	if !ok {
+		return false, nil
+	}
+	planned := planContextConcerns(pack.Query, index, seed)
+	plannedByKey := make(map[string]contextConcern, len(planned))
+	for _, concern := range planned {
+		plannedByKey[concern.key] = concern
+	}
+	selected := make(map[string]bool, len(pack.selectedFactIDs)+len(pack.selectedSourceFactIDs))
+	selectedIDs := pack.selectedFactIDs
+	if len(selectedIDs) == 0 {
+		selectedIDs = pack.selectedSourceFactIDs
+	}
+	for _, factID := range selectedIDs {
+		selected[factID] = true
+	}
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	anchors := []string{}
+	seen := map[string]bool{}
+	for _, public := range pack.Concerns {
+		if public.Covered {
+			continue
+		}
+		concern, exists := plannedByKey[contextPublicConcernKey(public)]
+		if !exists || !concern.required {
+			continue
+		}
+		for _, factID := range concern.candidateFactIDs {
+			fact, exists := factByID[factID]
+			if !exists || selected[factID] {
+				continue
+			}
+			anchor := contextRetryAnchor(fact)
+			if anchor == "" || seen[anchor] {
+				continue
+			}
+			seen[anchor] = true
+			anchors = append(anchors, anchor)
+		}
+	}
+	sort.Strings(anchors)
+	if len(anchors) > 3 {
+		anchors = anchors[:3]
+	}
+	return len(anchors) > 0, anchors
+}
+
+func contextRetryAnchor(fact scan.AgentContextFactRecord) string {
+	if method, route := strings.TrimSpace(fact.HTTPMethod), strings.TrimSpace(fact.Path); method != "" && route != "" {
+		return strings.ToUpper(method) + " " + route
+	}
+	if qualified := strings.TrimSpace(fact.Qualified); qualified != "" {
+		return qualified
+	}
+	return strings.TrimSpace(fact.File)
 }
 
 func addSelectedContextPaths(
@@ -1711,7 +1802,11 @@ func cloneContextPack(pack ContextPack) ContextPack {
 	pack.Uncertainties = append([]ContextUncertainty(nil), pack.Uncertainties...)
 	pack.SourceSections = append([]ContextSourceSection(nil), pack.SourceSections...)
 	pack.SourceOmissions = append([]ContextSourceOmission(nil), pack.SourceOmissions...)
+	pack.RetryAnchors = append([]string(nil), pack.RetryAnchors...)
 	pack.selectedSourceFactIDs = append([]string(nil), pack.selectedSourceFactIDs...)
+	pack.selectedFactIDs = append([]string(nil), pack.selectedFactIDs...)
+	pack.selectedEdgeIDs = append([]string(nil), pack.selectedEdgeIDs...)
+	pack.selectedConcernKeys = append([]string(nil), pack.selectedConcernKeys...)
 	return pack
 }
 

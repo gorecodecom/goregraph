@@ -10,19 +10,21 @@ import (
 )
 
 type ContextOptions struct {
-	Root         string
-	Query        string
-	Format       string
-	BudgetTokens int
-	MaxFiles     int
+	Root              string
+	Query             string
+	Format            string
+	BudgetTokens      int
+	MaxFiles          int
+	PreviousContextID string
 }
 
 func RunContext(options ContextOptions) (string, error) {
 	pack, err := agent.BuildContext(agent.ContextRequest{
-		Root:         options.Root,
-		Query:        options.Query,
-		BudgetTokens: options.BudgetTokens,
-		MaxFiles:     options.MaxFiles,
+		Root:              options.Root,
+		Query:             options.Query,
+		BudgetTokens:      options.BudgetTokens,
+		MaxFiles:          options.MaxFiles,
+		PreviousContextID: options.PreviousContextID,
 	})
 	if err != nil {
 		return "", err
@@ -46,6 +48,12 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		"",
 		"Query: " + contextInline(pack.Query),
 	}
+	if contextID := contextInline(pack.ContextID); contextID != "" {
+		lines = append(lines, "Context ID: "+contextID)
+	}
+	if duplicateOf := contextInline(pack.DuplicateOf); duplicateOf != "" {
+		lines = append(lines, "Duplicate of: "+duplicateOf)
+	}
 	if freshness := contextInline(pack.Freshness); freshness != "" {
 		lines = append(lines, "Freshness: "+freshness)
 	}
@@ -53,9 +61,21 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		"Confidence: "+contextInline(pack.Confidence),
 		fmt.Sprintf("Budget tokens: %d / %d", pack.EstimatedTokens, pack.BudgetTokens),
 		"Fallback required: "+contextYesNo(pack.FallbackRequired),
+		"Retry allowed: "+contextYesNo(pack.RetryAllowed),
 		"Source coverage: "+contextSourceCoverage(pack.SourceCoverage),
 		fmt.Sprintf("Source unrepresented: %d", pack.SourceUnrepresented),
 	)
+	if len(pack.RetryAnchors) > 0 {
+		anchors := make([]string, 0, len(pack.RetryAnchors))
+		for _, anchor := range pack.RetryAnchors {
+			if anchor = contextInline(anchor); anchor != "" {
+				anchors = append(anchors, anchor)
+			}
+		}
+		if len(anchors) > 0 {
+			lines = append(lines, "Retry anchors: "+strings.Join(anchors, ", "))
+		}
+	}
 
 	lines = appendContextLocationSection(lines, "Entrypoints", pack.Entrypoints)
 	if len(pack.CallChain) > 0 {

@@ -1387,6 +1387,7 @@ func TestContextCLIHelpAndGlobalOrdering(t *testing.T) {
 		"--budget-tokens 4000",
 		"--max-files 12",
 		"--format markdown|json",
+		"--previous-context-id",
 		"256-6000",
 		"1-20",
 	} {
@@ -1404,6 +1405,32 @@ func TestContextCLIHelpAndGlobalOrdering(t *testing.T) {
 	queryIndex := strings.Index(stdout.String(), "query <path>")
 	if contextIndex < 0 || queryIndex < 0 || contextIndex >= queryIndex {
 		t.Fatalf("global help does not list context before query:\n%s", stdout.String())
+	}
+}
+
+func TestCLIContextPassesPreviousContextID(t *testing.T) {
+	root := writeCLIContextFixture(t, 0)
+	var firstOut, firstErr bytes.Buffer
+	if code := Run([]string{"context", root, "--query", "DELETE /users/{id}", "--format", "json"}, &firstOut, &firstErr); code != 0 {
+		t.Fatalf("first context exit code = %d, stderr=%s", code, firstErr.String())
+	}
+	var first agent.ContextPack
+	if err := json.Unmarshal(firstOut.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	var secondOut, secondErr bytes.Buffer
+	if code := Run([]string{
+		"context", root, "--query", "DELETE /users/{id}", "--format", "json",
+		"--previous-context-id", first.ContextID,
+	}, &secondOut, &secondErr); code != 0 {
+		t.Fatalf("second context exit code = %d, stderr=%s", code, secondErr.String())
+	}
+	var second agent.ContextPack
+	if err := json.Unmarshal(secondOut.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if second.DuplicateOf != first.ContextID || second.EstimatedTokens > 200 || second.RetryAllowed {
+		t.Fatalf("CLI duplicate response = %#v", second)
 	}
 }
 
@@ -1445,13 +1472,9 @@ func TestCLIEndpointContextSerialization(t *testing.T) {
 }
 
 func TestContextHelpDocumentsBoundedAgentWorkflow(t *testing.T) {
-	const assistedInstruction = `Call goregraph context once with the complete task before reading indexed source.
-Treat source_sections as current source already read; do not re-read or grep included ranges.
-If source_coverage is complete, continue from the included source without another navigation read.
-If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
-If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
-Do not use specialist GoreGraph queries or expert MCP tools.`
+	const assistedInstruction = `Call task_context once before indexed source discovery. Treat source_sections as already read.
+Retry only when retry_allowed is true, use one retry_anchor, and pass context_id as previous_context_id.
+If duplicate_of is present, use the first pack and do not read more source because of the duplicate response.`
 
 	var stdout, stderr bytes.Buffer
 	if code := Run([]string{"context", "help"}, &stdout, &stderr); code != 0 {

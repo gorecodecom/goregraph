@@ -1,8 +1,11 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -25,10 +28,11 @@ const (
 )
 
 type ContextRequest struct {
-	Root         string `json:"root,omitempty"`
-	Query        string `json:"query"`
-	BudgetTokens int    `json:"budget_tokens,omitempty"`
-	MaxFiles     int    `json:"max_files,omitempty"`
+	Root              string `json:"root,omitempty"`
+	Query             string `json:"query"`
+	BudgetTokens      int    `json:"budget_tokens,omitempty"`
+	MaxFiles          int    `json:"max_files,omitempty"`
+	PreviousContextID string `json:"previous_context_id,omitempty"`
 }
 
 type ContextLocation struct {
@@ -127,8 +131,15 @@ type ContextPack struct {
 	SourceUnrepresented int                     `json:"source_unrepresented,omitempty"`
 	EstimatedTokens     int                     `json:"estimated_tokens"`
 	BudgetTokens        int                     `json:"budget_tokens"`
+	ContextID           string                  `json:"context_id,omitempty"`
+	DuplicateOf         string                  `json:"duplicate_of,omitempty"`
+	RetryAllowed        bool                    `json:"retry_allowed"`
+	RetryAnchors        []string                `json:"retry_anchors,omitempty"`
 
 	selectedSourceFactIDs []string
+	selectedFactIDs       []string
+	selectedEdgeIDs       []string
+	selectedConcernKeys   []string
 }
 
 func BuildContext(request ContextRequest) (ContextPack, error) {
@@ -173,15 +184,74 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 		}
 	}
 	pack.BudgetTokens = request.BudgetTokens
+	pack.ContextID = contextIdentity(
+		pack.Freshness,
+		pack.selectedFactIDs,
+		pack.selectedEdgeIDs,
+		pack.selectedConcernKeys,
+	)
+	if request.PreviousContextID != "" && request.PreviousContextID == pack.ContextID {
+		return duplicateContextPack(pack)
+	}
 	if pack.FallbackRequired || pack.Confidence == "LOW" {
 		pack.SourceCoverage = "none"
 		return finalizeContextPackWithinBudget(pack, request)
 	}
+	metadataPack := pack
 	pack, err = attachContextSource(pack, loaded, request)
+	if err != nil && request.BudgetTokens == MinContextBudgetTokens {
+		compact := metadataPack
+		compact.Files = nil
+		pack, err = attachContextSource(compact, loaded, request)
+	}
 	if err != nil {
 		return ContextPack{}, err
 	}
+	pack.RetryAllowed, pack.RetryAnchors = contextRetryPermission(pack, loaded.Index)
 	return finalizeContextPackWithinBudget(pack, request)
+}
+
+func contextIdentity(freshness string, factIDs, edgeIDs, concernKeys []string) string {
+	identity := struct {
+		Freshness   string   `json:"freshness"`
+		FactIDs     []string `json:"fact_ids"`
+		EdgeIDs     []string `json:"edge_ids"`
+		ConcernKeys []string `json:"concern_keys"`
+	}{
+		Freshness:   strings.TrimSpace(freshness),
+		FactIDs:     orderedContextIdentityValues(factIDs),
+		EdgeIDs:     orderedContextIdentityValues(edgeIDs),
+		ConcernKeys: orderedContextIdentityValues(concernKeys),
+	}
+	body, _ := json.Marshal(identity)
+	digest := sha256.Sum256(body)
+	return hex.EncodeToString(digest[:12])
+}
+
+func orderedContextIdentityValues(values []string) []string {
+	ordered := append([]string(nil), values...)
+	sort.Strings(ordered)
+	result := ordered[:0]
+	for _, value := range ordered {
+		value = strings.TrimSpace(value)
+		if value == "" || len(result) > 0 && result[len(result)-1] == value {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
+}
+
+func duplicateContextPack(pack ContextPack) (ContextPack, error) {
+	duplicate := ContextPack{
+		Schema:       pack.Schema,
+		Freshness:    pack.Freshness,
+		Confidence:   pack.Confidence,
+		ContextID:    pack.ContextID,
+		DuplicateOf:  pack.ContextID,
+		BudgetTokens: pack.BudgetTokens,
+	}
+	return finalizeContextEstimate(duplicate)
 }
 
 func contextMetadataBudget(total int) int {

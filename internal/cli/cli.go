@@ -1012,20 +1012,16 @@ func emptyCLI(value string) string {
 
 func runContext(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, `Usage: goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12] [--format markdown|json]
+		fmt.Fprint(stdout, `Usage: goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12] [--format markdown|json] [--previous-context-id <id>]
 
 Builds one deterministic, budgeted Context Pack from existing generated output.
 Budget tokens: 256-6000. Max files: 1-20.
 
 Normal agent workflow:
 
-Call goregraph context once with the complete task before reading indexed source.
-Treat source_sections as current source already read; do not re-read or grep included ranges.
-If source_coverage is complete, continue from the included source without another navigation read.
-If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
-If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
-Do not use specialist GoreGraph queries or expert MCP tools.
+Call task_context once before indexed source discovery. Treat source_sections as already read.
+Retry only when retry_allowed is true, use one retry_anchor, and pass context_id as previous_context_id.
+If duplicate_of is present, use the first pack and do not read more source because of the duplicate response.
 
   Run goregraph doctor . only when Context reports missing or stale output.
 
@@ -1071,6 +1067,8 @@ Do not read index/, dashboard/, dashboard assets, or index/symbol-usages.json as
 			options.MaxFiles = parsed
 		case "--format":
 			options.Format = value
+		case "--previous-context-id":
+			options.PreviousContextID = value
 		default:
 			fmt.Fprintf(stderr, "error: unknown context option %s\n", option)
 			return 2

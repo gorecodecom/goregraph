@@ -119,22 +119,20 @@ func taskContextTool() map[string]any {
 			"additionalProperties": false,
 			"required":             []string{"query"},
 			"properties": map[string]any{
-				"root":          map[string]any{"type": "string"},
-				"query":         map[string]any{"type": "string", "minLength": 1},
-				"budget_tokens": map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
-				"max_files":     map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
+				"root":                map[string]any{"type": "string"},
+				"query":               map[string]any{"type": "string", "minLength": 1},
+				"budget_tokens":       map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
+				"max_files":           map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
+				"previous_context_id": map[string]any{"type": "string", "minLength": 24, "maxLength": 24, "pattern": "^[0-9a-f]{24}$"},
 			},
 		},
 	}
 }
 
 func serverInstructions() string {
-	return "Call task_context before Read or Grep for indexed code questions. " +
-		"Treat source_sections as current source already read. " +
-		"Do not re-read or grep included ranges. " +
-		"If source_coverage is absent, partial, or none, inspect only relevant uncovered ranges from source_omissions or files. " +
-		"If fallback_required is true, stop using GoreGraph and inspect source directly. " +
-		"At most one narrower task_context retry may use an exact route, qualified symbol, or file returned by the first call."
+	return "Call task_context once before indexed source discovery. Treat source_sections as already read. " +
+		"Retry only when retry_allowed is true, use one retry_anchor, and pass context_id as previous_context_id. " +
+		"If duplicate_of is present, use the first pack and do not read more source because of the duplicate response."
 }
 
 func legacyTools() []map[string]any {
@@ -236,7 +234,7 @@ func callTool(options Options, name string, args map[string]any) (string, error)
 func callTaskContext(args map[string]any) (string, error) {
 	for name := range args {
 		switch name {
-		case "root", "query", "budget_tokens", "max_files":
+		case "root", "query", "budget_tokens", "max_files", "previous_context_id":
 		default:
 			return "", fmt.Errorf("unknown task_context argument: %s", name)
 		}
@@ -266,11 +264,20 @@ func callTaskContext(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	previousContextID := ""
+	if value, ok := args["previous_context_id"]; ok {
+		var valid bool
+		previousContextID, valid = value.(string)
+		if !valid || !validContextID(previousContextID) {
+			return "", fmt.Errorf("task_context previous_context_id must be 24 lowercase hexadecimal characters")
+		}
+	}
 	pack, err := agent.BuildContext(agent.ContextRequest{
-		Root:         root,
-		Query:        query,
-		BudgetTokens: budgetTokens,
-		MaxFiles:     maxFiles,
+		Root:              root,
+		Query:             query,
+		BudgetTokens:      budgetTokens,
+		MaxFiles:          maxFiles,
+		PreviousContextID: previousContextID,
 	})
 	if err != nil {
 		return "", err
@@ -280,6 +287,20 @@ func callTaskContext(args map[string]any) (string, error) {
 		return "", err
 	}
 	return string(body) + "\n", nil
+}
+
+func validContextID(value string) bool {
+	if len(value) != 24 {
+		return false
+	}
+	for _, current := range value {
+		if current < '0' || current > '9' {
+			if current < 'a' || current > 'f' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func boundedIntegerArg(args map[string]any, name string, minimum, maximum int) (int, error) {

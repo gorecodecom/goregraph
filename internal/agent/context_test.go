@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -2612,6 +2613,129 @@ func TestBuildContextRejectsMandatoryEnvelopeOverflow(t *testing.T) {
 		Root: root, Query: strings.Repeat("very-long-query ", 500), BudgetTokens: 256,
 	}); err == nil {
 		t.Fatal("mandatory envelope overflow was accepted")
+	}
+}
+
+func TestContextIdentityIsStableAcrossSelectionOrder(t *testing.T) {
+	forward := contextIdentity(
+		"2026-07-19T00:00:00Z",
+		[]string{"route", "service", "repository"},
+		[]string{"call", "persistence"},
+		[]string{"entrypoint", "persistence", "primary_path"},
+	)
+	reversed := contextIdentity(
+		"2026-07-19T00:00:00Z",
+		[]string{"repository", "service", "route"},
+		[]string{"persistence", "call"},
+		[]string{"primary_path", "persistence", "entrypoint"},
+	)
+	if forward != reversed {
+		t.Fatalf("context identity depends on selection order: %q / %q", forward, reversed)
+	}
+	if matched, err := regexp.MatchString(`^[0-9a-f]{24}$`, forward); err != nil || !matched {
+		t.Fatalf("context identity = %q, want 24 lowercase hexadecimal characters", forward)
+	}
+}
+
+func TestContextIdentityChangesWithSemanticSelectionOrFreshness(t *testing.T) {
+	base := contextIdentity("fresh", []string{"route"}, []string{"call"}, []string{"entrypoint"})
+	variants := map[string]string{
+		"fact":      contextIdentity("fresh", []string{"route", "service"}, []string{"call"}, []string{"entrypoint"}),
+		"edge":      contextIdentity("fresh", []string{"route"}, []string{"call", "persistence"}, []string{"entrypoint"}),
+		"concern":   contextIdentity("fresh", []string{"route"}, []string{"call"}, []string{"entrypoint", "tests"}),
+		"freshness": contextIdentity("newer", []string{"route"}, []string{"call"}, []string{"entrypoint"}),
+	}
+	for name, identity := range variants {
+		if identity == base {
+			t.Fatalf("%s did not change context identity %q", name, base)
+		}
+	}
+}
+
+func TestContextIdentityExcludesSourceContents(t *testing.T) {
+	root := writeSourceBackedContextFixture(t, false)
+	query := "DELETE /cadasters/{cadasterId}/regulations/{objectId}"
+	first, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeContextSourceFile(t, root, "Controller.java", "public class Controller {\n    public void deleteFromCadaster() {\n        changed();\n    }\n}\n")
+	second, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ContextID == "" || second.ContextID != first.ContextID {
+		t.Fatalf("source contents changed identity: %q / %q", first.ContextID, second.ContextID)
+	}
+}
+
+func TestContextDuplicateResponseIsMinimal(t *testing.T) {
+	root := writeSourceBackedContextFixture(t, false)
+	first, err := BuildContext(ContextRequest{
+		Root:  root,
+		Query: "DELETE /cadasters/{cadasterId}/regulations/{objectId}. Analyze the selected operation.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := BuildContext(ContextRequest{
+		Root: root, Query: "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+		PreviousContextID: first.ContextID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.DuplicateOf != first.ContextID || second.ContextID != first.ContextID {
+		t.Fatalf("duplicate identity = %#v", second)
+	}
+	if len(second.SourceSections) != 0 || len(second.Files) != 0 || second.EstimatedTokens > 200 {
+		t.Fatalf("duplicate response was not minimal: %#v", second)
+	}
+	if second.RetryAllowed || second.FallbackRequired {
+		t.Fatalf("duplicate response requested more work: %#v", second)
+	}
+	if second.Query != "" || len(second.CallChain) != 0 || len(second.Concerns) != 0 ||
+		len(second.SourceOmissions) != 0 || len(second.RetryAnchors) != 0 {
+		t.Fatalf("duplicate response retained semantic or source payload: %#v", second)
+	}
+	if second.Schema != first.Schema || second.Freshness != first.Freshness ||
+		second.Confidence != first.Confidence || second.BudgetTokens != first.BudgetTokens {
+		t.Fatalf("duplicate response lost envelope fields: first=%#v second=%#v", first, second)
+	}
+	body, err := json.Marshal(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte(`"retry_allowed":false`)) {
+		t.Fatalf("false retry permission was omitted: %s", body)
+	}
+}
+
+func TestContextRetryAllowsOnlyConcreteUnselectedExactAnchors(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "route", Kind: "route", Name: "GET /users", HTTPMethod: "GET", Path: "/users", Confidence: "EXACT"},
+		{ID: "test-qualified", Kind: "test", Name: "qualified", Qualified: "UsersTest.getUsers", File: "UsersTest.java", Confidence: "EXACT"},
+		{ID: "test-file", Kind: "test", Name: "file", File: "FallbackTest.java", Confidence: "EXACT"},
+		{ID: "test-resolved", Kind: "test", Name: "resolved", Qualified: "UsersTest.resolved", Confidence: "RESOLVED"},
+		{ID: "test-no-anchor", Kind: "test", Name: "no anchor", Confidence: "EXACT"},
+	}, Edges: []scan.AgentContextEdgeRecord{
+		{ID: "test-1", FromFactID: "test-qualified", ToFactID: "route", Kind: "test_target"},
+		{ID: "test-2", FromFactID: "test-file", ToFactID: "route", Kind: "test_target"},
+		{ID: "test-3", FromFactID: "test-resolved", ToFactID: "route", Kind: "test_target"},
+		{ID: "test-4", FromFactID: "test-no-anchor", ToFactID: "route", Kind: "test_target"},
+	}}
+	pack := ContextPack{
+		Query:                 "GET /users tests",
+		Concerns:              []ContextConcern{{Kind: contextConcernTests, Covered: false}},
+		selectedSourceFactIDs: []string{"route"},
+	}
+	allowed, anchors := contextRetryPermission(pack, index)
+	if !allowed || !reflect.DeepEqual(anchors, []string{"FallbackTest.java", "UsersTest.getUsers", "UsersTest.resolved"}) {
+		t.Fatalf("retry permission = %v / %#v", allowed, anchors)
+	}
+	pack.selectedSourceFactIDs = append(pack.selectedSourceFactIDs, "test-qualified", "test-file", "test-resolved")
+	if allowed, anchors := contextRetryPermission(pack, index); allowed || len(anchors) != 0 {
+		t.Fatalf("retry accepted without a new exact anchor: %v / %#v", allowed, anchors)
 	}
 }
 

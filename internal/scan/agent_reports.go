@@ -32,13 +32,9 @@ Use the source-backed Context Pack once for the complete task.
 
 MCP: ` + "`task_context`" + `
 
-` + "```text\n" + `Call goregraph context once with the complete task before reading indexed source.
-Treat source_sections as current source already read; do not re-read or grep included ranges.
-If source_coverage is complete, continue from the included source without another navigation read.
-If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
-If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
-Do not use specialist GoreGraph queries or expert MCP tools.
+` + "```text\n" + `Call task_context once before indexed source discovery. Treat source_sections as already read.
+Retry only when retry_allowed is true, use one retry_anchor, and pass context_id as previous_context_id.
+If duplicate_of is present, use the first pack and do not read more source because of the duplicate response.
 ` + "```" + `
 
 - Read generated AI context only from ` + "`goregraph-out/agent/`" + ` or ` + "`.goregraph-workspace/agent/`" + `.
