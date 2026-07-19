@@ -54,6 +54,11 @@ func detectLanguage(rel string) string {
 	}
 }
 
+// IsSupportedSourceFile reports whether the scanner recognizes a file type.
+func IsSupportedSourceFile(rel string) bool {
+	return detectLanguage(rel) != "text"
+}
+
 func detectKind(rel string) string {
 	base := strings.ToLower(filepath.Base(rel))
 	switch base {

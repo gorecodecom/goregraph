@@ -1087,8 +1087,8 @@ func contextQueryAnchors(query string) []string {
 		}
 	}
 	for _, token := range tokens {
-		if contextSupportedSourceExtension(token.value) {
-			occurrences = append(occurrences, token)
+		if sourceFile, ok := contextQuerySourceFileAnchor(token.value); ok {
+			occurrences = append(occurrences, contextQueryAnchorToken{start: token.start, value: sourceFile})
 			continue
 		}
 		if !strings.Contains(token.value, "/") &&
@@ -1162,18 +1162,15 @@ func contextQueryAnchorTokens(query string) []contextQueryAnchorToken {
 	return tokens
 }
 
-func contextSupportedSourceExtension(value string) bool {
-	value = strings.ToLower(value)
-	for _, extension := range []string{
-		".go", ".java", ".kt", ".kts", ".scala", ".rs", ".swift", ".rb", ".cs",
-		".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx", ".py", ".php",
-		".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
-	} {
-		if strings.HasSuffix(value, extension) {
-			return true
-		}
+func contextQuerySourceFileAnchor(value string) (string, bool) {
+	if scan.IsSupportedSourceFile(value) {
+		return value, true
 	}
-	return false
+	value = strings.TrimRight(value, ".!?")
+	if value == "" || !scan.IsSupportedSourceFile(value) {
+		return "", false
+	}
+	return value, true
 }
 
 func contextQueryHasAnchor(anchors []string, term string) bool {

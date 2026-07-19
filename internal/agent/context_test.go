@@ -349,6 +349,48 @@ func TestBuildContextRanksEmbeddedExact(t *testing.T) {
 	}
 }
 
+func TestContextQueryAnchorsPreserveFirstAppearance(t *testing.T) {
+	query := "Inspect `removeRegulation` before DELETE /cadasters/{cadasterId}/regulations/{objectId} in src/main/java/example/CadasterRegulationController.java."
+	want := []string{
+		"removeRegulation",
+		"DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+		"src/main/java/example/CadasterRegulationController.java",
+	}
+	if got := contextQueryAnchors(query); !reflect.DeepEqual(got, want) {
+		t.Fatalf("contextQueryAnchors() = %#v, want %#v", got, want)
+	}
+}
+
+func TestContextQueryAnchorsCapAtEight(t *testing.T) {
+	query := "`one` `two` `three` `four` `five` `six` `seven` `eight` `nine`"
+	want := []string{"one", "two", "three", "four", "five", "six", "seven", "eight"}
+	if got := contextQueryAnchors(query); !reflect.DeepEqual(got, want) {
+		t.Fatalf("contextQueryAnchors() = %#v, want %#v", got, want)
+	}
+}
+
+func TestContextQueryAnchorsRejectValuesLongerThan256Runes(t *testing.T) {
+	query := "`" + strings.Repeat("a", maximumContextQueryAnchorRunes+1) + "` `removeRegulation`"
+	want := []string{"removeRegulation"}
+	if got := contextQueryAnchors(query); !reflect.DeepEqual(got, want) {
+		t.Fatalf("contextQueryAnchors() = %#v, want %#v", got, want)
+	}
+}
+
+func TestContextQueryAnchorsRecognizeSupportedFilesAndSentencePunctuation(t *testing.T) {
+	query := "Inspect scripts/release.sh. config/application.yaml, docs/context.md! data/catalog.json? and scripts/setup.zsh."
+	want := []string{
+		"scripts/release.sh",
+		"config/application.yaml",
+		"docs/context.md",
+		"data/catalog.json",
+		"scripts/setup.zsh",
+	}
+	if got := contextQueryAnchors(query); !reflect.DeepEqual(got, want) {
+		t.Fatalf("contextQueryAnchors() = %#v, want %#v", got, want)
+	}
+}
+
 func TestBuildContextReturnsOnlyRelevantEndpointSecurityAndBoundedConsumers(t *testing.T) {
 	facts := []scan.AgentContextFactRecord{{
 		ID: "endpoint", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders/{id}",

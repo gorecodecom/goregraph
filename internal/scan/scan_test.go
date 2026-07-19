@@ -46,6 +46,20 @@ func TestRunWritesDeterministicFilesManifestAndReport(t *testing.T) {
 	}
 }
 
+func TestIsSupportedSourceFileMatchesDetectedFileTypes(t *testing.T) {
+	for _, path := range []string{
+		"src/main.go", "src/Controller.java", "scripts/release.sh", "scripts/setup.bash", "scripts/setup.zsh",
+		"config/application.json", "config/application.yaml", "config/application.yml", "docs/context.md",
+	} {
+		if !IsSupportedSourceFile(path) {
+			t.Fatalf("IsSupportedSourceFile(%q) = false, want true", path)
+		}
+	}
+	if IsSupportedSourceFile("docs/context.txt") {
+		t.Fatal("IsSupportedSourceFile(\"docs/context.txt\") = true, want false")
+	}
+}
+
 func TestRunWritesEvidenceCapabilitiesAndCoverageOutputs(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main.go", "package main\nfunc main() {}\n")
