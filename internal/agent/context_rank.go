@@ -11,19 +11,20 @@ import (
 )
 
 const (
-	scoreExactRoute           = 1000
-	scoreExactQualified       = 900
-	scoreExactName            = 800
-	scoreAllTerms             = 500
-	scorePerMatchedTerm       = 60
-	scoreRouteKind            = 80
-	scoreSymbolKind           = 60
-	scoreTestKind             = 20
-	scoreExactConfidence      = 30
-	scoreResolvedConfidence   = 15
-	minimumContextSeedScore   = 180
-	maximumContextUncertainty = 3
-	maximumContextConsumers   = 8
+	scoreExactRoute                  = 1000
+	scoreExactQualified              = 900
+	scoreExactName                   = 800
+	scoreAllTerms                    = 500
+	scorePerMatchedTerm              = 60
+	scoreRouteKind                   = 80
+	scoreSymbolKind                  = 60
+	scoreTestKind                    = 20
+	scoreExactConfidence             = 30
+	scoreResolvedConfidence          = 15
+	minimumContextSeedScore          = 180
+	maximumContextUncertainty        = 3
+	maximumContextConsumers          = 8
+	maximumContextSupportingProjects = 2
 )
 
 const noAuthEvidenceDetected = "No auth evidence detected"
@@ -36,6 +37,14 @@ type rankedContextFact struct {
 	routeExtras  int
 	allTerms     bool
 	reason       string
+}
+
+type rankedContextSupportFact struct {
+	fact            scan.AgentContextFactRecord
+	project         string
+	explicit        bool
+	semanticMatches int
+	score           int
 }
 
 type expandedContextEdge struct {
@@ -222,14 +231,48 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		)
 	}
 
-	scopes := selectedContextScopes(index.Edges, includedFactIDs, acceptedEdgeIDs, factByID)
-	uncertainties, allIncomplete := scopedContextUncertainties(index.Coverage, scopes)
+	primaryScopes := selectedContextScopes(index.Edges, includedFactIDs, acceptedEdgeIDs, factByID)
+	uncertainties, allIncomplete := scopedContextUncertainties(index.Coverage, primaryScopes)
 	if pack.Confidence == "LOW" {
 		return fallbackContextPack(index, request, "context confidence is low; inspect source directly", uncertainties)
 	}
 	if allIncomplete {
 		return fallbackContextPack(index, request, "all selected context scopes have incomplete coverage", uncertainties)
 	}
+
+	projectAliases := contextProjectAliases(index.Facts, index.Coverage)
+	explicitProjects := contextExplicitProjects(request.Query, projectAliases)
+	representedProjects := contextRepresentedProjects(pack, includedFactIDs, factByID)
+	supportFactIDs := map[string]bool{}
+	supports := selectContextSupportFacts(
+		rankContextSupportFacts(index.Facts, request.Query, projectAliases, explicitProjects),
+		representedProjects,
+	)
+	for _, support := range supports {
+		candidate, accepted, appendErr := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
+			return mergeContextFile(
+				candidate,
+				contextFileForFact(support.fact, "related_project", "full task project match"),
+				request.MaxFiles,
+			)
+		})
+		if appendErr != nil {
+			return ContextPack{}, appendErr
+		}
+		if accepted {
+			pack = candidate
+			includedFactIDs[support.fact.ID] = true
+			supportFactIDs[support.fact.ID] = true
+			representedProjects[support.project] = true
+		}
+	}
+	supportScopes := selectedContextScopes(nil, supportFactIDs, nil, factByID)
+	supportUncertainties, _ := scopedContextUncertainties(index.Coverage, supportScopes)
+	uncertainties = append(uncertainties, supportUncertainties...)
+	uncertainties = append(
+		uncertainties,
+		contextProjectSupportUncertainties(explicitProjects, representedProjects, index.Coverage)...,
+	)
 	for _, uncertainty := range uncertainties {
 		if len(pack.Uncertainties) >= maximumContextUncertainty {
 			break
@@ -374,6 +417,322 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		return left.fact.ID < right.fact.ID
 	})
 	return ranked
+}
+
+func contextProjectAliases(
+	facts []scan.AgentContextFactRecord,
+	coverage []scan.AgentContextCoverageRecord,
+) map[string][]string {
+	projects := map[string]bool{}
+	for _, fact := range facts {
+		if project := normalizeContextProject(fact.Project); project != "" {
+			projects[project] = true
+		}
+	}
+	for _, record := range coverage {
+		if project := normalizeContextProject(record.Project); project != "" {
+			projects[project] = true
+		}
+	}
+
+	projectNames := make([]string, 0, len(projects))
+	basenameCounts := map[string]int{}
+	for project := range projects {
+		projectNames = append(projectNames, project)
+		basenameCounts[normalizeContextTerm(contextProjectBasename(project))]++
+	}
+	sort.Strings(projectNames)
+
+	aliases := make(map[string][]string, len(projectNames))
+	for _, project := range projectNames {
+		aliases[project] = []string{project}
+		basenameAlias := normalizeContextTerm(contextProjectBasename(project))
+		if basenameAlias != "" && basenameCounts[basenameAlias] == 1 && basenameAlias != project {
+			aliases[project] = append(aliases[project], basenameAlias)
+		}
+		sort.Strings(aliases[project])
+	}
+	return aliases
+}
+
+func normalizeContextProject(project string) string {
+	project = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(project), "\\", "/"))
+	for strings.HasPrefix(project, "./") {
+		project = strings.TrimPrefix(project, "./")
+	}
+	return strings.Trim(project, "/")
+}
+
+func contextProjectBasename(project string) string {
+	if index := strings.LastIndex(project, "/"); index >= 0 {
+		return project[index+1:]
+	}
+	return project
+}
+
+func contextExplicitProjects(query string, aliases map[string][]string) map[string]bool {
+	normalizedQuery := " " + normalizeContextTerm(query) + " "
+	explicit := map[string]bool{}
+	for project, projectAliases := range aliases {
+		if contextQueryContainsProjectPath(query, project) {
+			explicit[project] = true
+			continue
+		}
+		for _, alias := range projectAliases {
+			if alias != project && alias != "" && strings.Contains(normalizedQuery, " "+alias+" ") {
+				explicit[project] = true
+				break
+			}
+		}
+	}
+	return explicit
+}
+
+func contextQueryContainsProjectPath(query, project string) bool {
+	queryRunes := []rune(strings.ToLower(strings.ReplaceAll(query, "\\", "/")))
+	projectRunes := []rune(project)
+	if len(projectRunes) == 0 || len(projectRunes) > len(queryRunes) {
+		return false
+	}
+	for start := 0; start+len(projectRunes) <= len(queryRunes); start++ {
+		matched := true
+		for offset := range projectRunes {
+			if queryRunes[start+offset] != projectRunes[offset] {
+				matched = false
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		before := start == 0 || contextProjectPathBoundary(queryRunes[start-1])
+		afterIndex := start + len(projectRunes)
+		after := afterIndex == len(queryRunes) || contextProjectPathBoundary(queryRunes[afterIndex])
+		if before && after {
+			return true
+		}
+	}
+	return false
+}
+
+func contextProjectPathBoundary(value rune) bool {
+	return !unicode.IsLetter(value) && !unicode.IsDigit(value) && !strings.ContainsRune("/._-", value)
+}
+
+func rankContextSupportFacts(
+	facts []scan.AgentContextFactRecord,
+	query string,
+	aliases map[string][]string,
+	explicitProjects map[string]bool,
+) []rankedContextSupportFact {
+	queryTokens := contextQueryTokens(query)
+	ranked := make([]rankedContextSupportFact, 0, len(facts))
+	for _, fact := range facts {
+		project := normalizeContextProject(fact.Project)
+		if project == "" || !eligibleContextSupportFact(fact) {
+			continue
+		}
+		projectTokens := contextTokenSet(strings.Join(aliases[project], " "))
+		factTokens := contextTokenSet(strings.Join([]string{
+			fact.Search,
+			fact.Name,
+			fact.Qualified,
+			fact.HTTPMethod,
+			fact.Path,
+			fact.Summary,
+		}, " "))
+		semanticMatches := 0
+		for _, token := range queryTokens {
+			if !projectTokens[token] && factTokens[token] {
+				semanticMatches++
+			}
+		}
+		ranked = append(ranked, rankedContextSupportFact{
+			fact:            fact,
+			project:         project,
+			explicit:        explicitProjects[project],
+			semanticMatches: semanticMatches,
+			score:           contextSupportFactScore(fact, semanticMatches),
+		})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		left, right := ranked[i], ranked[j]
+		if left.explicit != right.explicit {
+			return left.explicit
+		}
+		if left.semanticMatches != right.semanticMatches {
+			return left.semanticMatches > right.semanticMatches
+		}
+		if left.score != right.score {
+			return left.score > right.score
+		}
+		if left.project != right.project {
+			return left.project < right.project
+		}
+		if left.fact.Kind != right.fact.Kind {
+			return left.fact.Kind < right.fact.Kind
+		}
+		leftName := firstNonEmptyContext(left.fact.Qualified, left.fact.Name)
+		rightName := firstNonEmptyContext(right.fact.Qualified, right.fact.Name)
+		if leftName != rightName {
+			return leftName < rightName
+		}
+		if left.fact.File != right.fact.File {
+			return left.fact.File < right.fact.File
+		}
+		if left.fact.Line != right.fact.Line {
+			return left.fact.Line < right.fact.Line
+		}
+		return left.fact.ID < right.fact.ID
+	})
+	return ranked
+}
+
+func eligibleContextSupportFact(fact scan.AgentContextFactRecord) bool {
+	kind := strings.ToLower(strings.TrimSpace(fact.Kind))
+	if kind == "test" || strings.Contains(kind, "generated") || strings.Contains(kind, "metadata") {
+		return false
+	}
+	return !contextFactUsesTestSource(fact) && contextPackSourceFile(fact.File) != ""
+}
+
+func contextSupportFactScore(fact scan.AgentContextFactRecord, semanticMatches int) int {
+	score := semanticMatches * scorePerMatchedTerm
+	switch strings.ToLower(strings.TrimSpace(fact.Kind)) {
+	case "route", "api_endpoint":
+		score += scoreRouteKind
+	case "symbol", "backend_handler":
+		score += scoreSymbolKind
+	}
+	switch strings.ToUpper(strings.TrimSpace(fact.Confidence)) {
+	case "EXACT":
+		score += scoreExactConfidence
+	case "RESOLVED":
+		score += scoreResolvedConfidence
+	}
+	return score
+}
+
+func selectContextSupportFacts(
+	ranked []rankedContextSupportFact,
+	representedProjects map[string]bool,
+) []rankedContextSupportFact {
+	seenProjects := map[string]bool{}
+	for project := range representedProjects {
+		seenProjects[project] = true
+	}
+	selected := make([]rankedContextSupportFact, 0, maximumContextSupportingProjects)
+	appendPhase := func(explicit bool, minimumMatches int) {
+		for _, candidate := range ranked {
+			if len(selected) >= maximumContextSupportingProjects {
+				return
+			}
+			if candidate.explicit != explicit || candidate.semanticMatches < minimumMatches || seenProjects[candidate.project] {
+				continue
+			}
+			selected = append(selected, candidate)
+			seenProjects[candidate.project] = true
+		}
+	}
+	appendPhase(true, 1)
+	appendPhase(false, 2)
+	return selected
+}
+
+func contextRepresentedProjects(
+	pack ContextPack,
+	includedFactIDs map[string]bool,
+	factByID map[string]scan.AgentContextFactRecord,
+) map[string]bool {
+	represented := map[string]bool{}
+	for factID := range includedFactIDs {
+		if project := normalizeContextProject(factByID[factID].Project); project != "" {
+			represented[project] = true
+		}
+	}
+	for _, file := range pack.Files {
+		if project := normalizeContextProject(file.Project); project != "" {
+			represented[project] = true
+		}
+	}
+	return represented
+}
+
+func contextProjectSupportUncertainties(
+	explicitProjects map[string]bool,
+	representedProjects map[string]bool,
+	coverage []scan.AgentContextCoverageRecord,
+) []ContextUncertainty {
+	projects := make([]string, 0, len(explicitProjects))
+	for project := range explicitProjects {
+		if !representedProjects[project] {
+			projects = append(projects, project)
+		}
+	}
+	sort.Strings(projects)
+
+	uncertainties := make([]ContextUncertainty, 0, len(projects))
+	for _, project := range projects {
+		reason := "no relevant production fact selected"
+		if record, ok := strongestIncompleteContextProjectCoverage(project, coverage); ok {
+			reason = strings.ToUpper(strings.TrimSpace(record.Coverage))
+			if detail := strings.TrimSpace(record.Reason); detail != "" {
+				reason += " — " + detail
+			}
+		}
+		uncertainties = append(uncertainties, ContextUncertainty{
+			Scope: project + "/project_context", Reason: reason,
+		})
+		if len(uncertainties) >= maximumContextUncertainty {
+			break
+		}
+	}
+	return uncertainties
+}
+
+func strongestIncompleteContextProjectCoverage(
+	project string,
+	coverage []scan.AgentContextCoverageRecord,
+) (scan.AgentContextCoverageRecord, bool) {
+	var strongest scan.AgentContextCoverageRecord
+	strongestRank := 0
+	for _, record := range coverage {
+		if normalizeContextProject(record.Project) != project {
+			continue
+		}
+		rank := contextIncompleteCoverageRank(record.Coverage)
+		if rank == 0 {
+			continue
+		}
+		if rank > strongestRank || rank == strongestRank && contextCoverageRecordLess(record, strongest) {
+			strongest = record
+			strongestRank = rank
+		}
+	}
+	return strongest, strongestRank > 0
+}
+
+func contextIncompleteCoverageRank(coverage string) int {
+	switch strings.ToUpper(strings.TrimSpace(coverage)) {
+	case "FAILED":
+		return 3
+	case "PARTIAL":
+		return 2
+	case "UNAVAILABLE":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func contextCoverageRecordLess(left, right scan.AgentContextCoverageRecord) bool {
+	if left.Capability != right.Capability {
+		return left.Capability < right.Capability
+	}
+	if left.Coverage != right.Coverage {
+		return left.Coverage < right.Coverage
+	}
+	return left.Reason < right.Reason
 }
 
 func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedContextFact, bool) {

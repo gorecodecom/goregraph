@@ -740,6 +740,370 @@ func TestBuildContextUsesProductionEntrypointsForLongAnalysisRequests(t *testing
 	}
 }
 
+func TestBuildContextAddsSupportingFactsFromNamedProjects(t *testing.T) {
+	query := "When a catalog entry is deleted, related jobs remain. Analyze services/catalog, services/jobs, and libraries/shared-model for the public endpoint, internal client authentication and retry, identifiers, persistence, and tests."
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "catalog-route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/{catalogId}/entries/{entryId}", HTTPMethod: "DELETE",
+				Path: "/catalog/{catalogId}/entries/{entryId}", File: "CatalogController.go",
+				Confidence: "EXACT", Search: "delete catalog entry related",
+			},
+			{
+				ID: "catalog-service", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteEntry", File: "CatalogService.go", Confidence: "EXACT",
+			},
+			{
+				ID: "jobs-client", Project: "services/jobs", Kind: "symbol",
+				Name: "deleteEntryJobs", File: "JobsClient.go", Confidence: "EXACT",
+				Search: "delete entry jobs internal client authentication retry",
+			},
+			{
+				ID: "jobs-secondary", Project: "services/jobs", Kind: "symbol",
+				Name: "retryJobs", File: "JobsRetry.go", Confidence: "EXACT",
+				Search: "jobs retry persistence",
+			},
+			{
+				ID: "jobs-test-source", Project: "services/jobs", Kind: "symbol",
+				Name: "deleteEntryJobsTest", File: "src/test/JobsClient_test.go", Confidence: "EXACT",
+				Search: "delete entry jobs internal client authentication retry persistence tests",
+			},
+			{
+				ID: "jobs-empty-source", Project: "services/jobs", Kind: "symbol",
+				Name: "deleteEntryJobsWithoutSource", Confidence: "EXACT",
+				Search: "delete entry jobs public endpoint internal client authentication retry identifiers persistence tests",
+			},
+			{
+				ID: "jobs-generated-metadata", Project: "services/jobs", Kind: "symbol",
+				Name: "deleteEntryJobsMetadata", File: "api-catalog.json", Confidence: "EXACT",
+				Search: "delete entry jobs public endpoint internal client authentication retry identifiers persistence tests",
+			},
+			{
+				ID: "shared-model", Project: "libraries/shared-model", Kind: "symbol",
+				Name: "JobReference", File: "JobReference.go", Confidence: "EXACT",
+				Search: "entry job catalog identifier persistence",
+			},
+			{
+				ID: "shared-metadata", Project: "libraries/shared-model", Kind: "metadata",
+				Name: "SharedModelMetadata", File: "SharedModelMetadata.go", Confidence: "EXACT",
+				Search: "entry job catalog identifier persistence tests",
+			},
+			{
+				ID: "reporting", Project: "services/reporting", Kind: "symbol",
+				Name: "deleteReport", File: "Reporting.go", Confidence: "EXACT",
+				Search: "delete entry retry persistence",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "catalog-call", FromFactID: "catalog-route", ToFactID: "catalog-service",
+			Kind: "call", Reason: "catalog deletion",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "catalog-route" {
+		t.Fatalf("support selection changed the primary entrypoint: %#v", pack)
+	}
+	if len(pack.CallChain) != 1 || pack.CallChain[0].From != "DELETE /catalog/{catalogId}/entries/{entryId}" || pack.CallChain[0].To != "deleteEntry" {
+		t.Fatalf("support selection changed the primary chain: %#v", pack.CallChain)
+	}
+	for _, path := range []string{"CatalogController.go", "CatalogService.go", "JobsClient.go", "JobReference.go"} {
+		if !contextPackHasFile(pack, path) {
+			t.Fatalf("named project file %q missing from context: %#v", path, pack.Files)
+		}
+	}
+	for _, path := range []string{"JobsRetry.go", "Reporting.go", "src/test/JobsClient_test.go", "api-catalog.json", "SharedModelMetadata.go"} {
+		if contextPackHasFile(pack, path) {
+			t.Fatalf("ineligible support file %q leaked into context: %#v", path, pack.Files)
+		}
+	}
+	for _, file := range pack.Files {
+		if file.Path == "JobsClient.go" || file.Path == "JobReference.go" {
+			if file.Role != "related_project" || file.Reason != "full task project match" {
+				t.Fatalf("support file metadata = %#v", file)
+			}
+		}
+	}
+}
+
+func TestBuildContextAddsOnlyStrongCrossProjectSupportWhenProjectsAreUnnamed(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "catalog-route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/{id}/entries/{entryId}", HTTPMethod: "DELETE",
+				Path: "/catalog/{id}/entries/{entryId}", File: "CatalogController.go",
+				Confidence: "EXACT", Search: "delete catalog entry related",
+			},
+			{
+				ID: "worker-client", Project: "services/worker", Kind: "symbol",
+				Name: "deleteEntryJobs", File: "WorkerClient.ts", Confidence: "EXACT",
+				Search: "delete entry job internal client authentication retry",
+			},
+			{
+				ID: "notification-retry", Project: "services/notifications", Kind: "symbol",
+				Name: "retry", File: "RetryNotification.py", Confidence: "EXACT", Search: "retry",
+			},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root:  root,
+		Query: "When a catalog entry is deleted, related jobs remain. Analyze internal client authentication and retry behavior.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "catalog-route" {
+		t.Fatalf("unnamed support changed the primary entrypoint: %#v", pack)
+	}
+	if !contextPackHasFile(pack, "WorkerClient.ts") {
+		t.Fatalf("strong unnamed project support missing: %#v", pack.Files)
+	}
+	if contextPackHasFile(pack, "RetryNotification.py") {
+		t.Fatalf("single-token unnamed support leaked into context: %#v", pack.Files)
+	}
+}
+
+func TestBuildContextNamedProjectRequiresSemanticMatch(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT"},
+			{ID: "worker", Project: "services/worker", Kind: "symbol", Name: "Worker", File: "Worker.go", Confidence: "EXACT", Search: "services worker"},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /catalog. Analyze services/worker."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contextPackHasFile(pack, "Worker.go") {
+		t.Fatalf("project-name-only support was accepted: %#v", pack.Files)
+	}
+	if !contextPackHasUncertainty(pack, "services/worker/project_context", "no relevant production fact selected") {
+		t.Fatalf("missing semantic project match was not surfaced: %#v", pack.Uncertainties)
+	}
+}
+
+func TestBuildContextProjectAliasesRejectAmbiguousBasenames(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT"},
+			{ID: "service-jobs", Project: "services/jobs", Kind: "symbol", Name: "authenticateJobs", File: "ServiceJobs.go", Confidence: "EXACT", Search: "authentication"},
+			{ID: "library-jobs", Project: "libraries/jobs", Kind: "symbol", Name: "persistJobs", File: "LibraryJobs.go", Confidence: "EXACT", Search: "persistence"},
+			{ID: "service-shared", Project: "services/shared-model", Kind: "symbol", Name: "retryShared", File: "ServiceShared.go", Confidence: "EXACT", Search: "retry"},
+			{ID: "library-shared", Project: "libraries/shared_model", Kind: "symbol", Name: "persistShared", File: "LibraryShared.go", Confidence: "EXACT", Search: "persistence"},
+			{ID: "short-project", Project: "x", Kind: "symbol", Name: "authenticateShort", File: "ShortProject.go", Confidence: "EXACT", Search: "authentication"},
+		},
+	}
+
+	bareRoot := writeContextIndexFixture(t, index)
+	bare, err := BuildContext(ContextRequest{Root: bareRoot, Query: "GET /catalog. Analyze jobs authentication."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contextPackHasFile(bare, "ServiceJobs.go") || contextPackHasFile(bare, "LibraryJobs.go") {
+		t.Fatalf("ambiguous basename selected project support: %#v", bare.Files)
+	}
+
+	fullRoot := writeContextIndexFixture(t, index)
+	full, err := BuildContext(ContextRequest{Root: fullRoot, Query: "GET /catalog. Analyze services/jobs authentication."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contextPackHasFile(full, "ServiceJobs.go") || contextPackHasFile(full, "LibraryJobs.go") {
+		t.Fatalf("exact full path did not select only its project: %#v", full.Files)
+	}
+
+	normalizedBareRoot := writeContextIndexFixture(t, index)
+	normalizedBare, err := BuildContext(ContextRequest{Root: normalizedBareRoot, Query: "GET /catalog. Analyze shared model retry."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contextPackHasFile(normalizedBare, "ServiceShared.go") || contextPackHasFile(normalizedBare, "LibraryShared.go") {
+		t.Fatalf("normalized ambiguous basename selected project support: %#v", normalizedBare.Files)
+	}
+
+	normalizedFullRoot := writeContextIndexFixture(t, index)
+	normalizedFull, err := BuildContext(ContextRequest{Root: normalizedFullRoot, Query: "GET /catalog. Analyze services/shared-model retry."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contextPackHasFile(normalizedFull, "ServiceShared.go") || contextPackHasFile(normalizedFull, "LibraryShared.go") {
+		t.Fatalf("normalized full path did not select only its project: %#v", normalizedFull.Files)
+	}
+
+	shortRoot := writeContextIndexFixture(t, index)
+	short, err := BuildContext(ContextRequest{Root: shortRoot, Query: "GET /catalog. Analyze x authentication."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contextPackHasFile(short, "ShortProject.go") {
+		t.Fatalf("exact one-character full path did not select its project: %#v", short.Files)
+	}
+}
+
+func TestBuildContextNamedProjectCoverageAddsUncertaintyWithoutFallback(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog",
+			HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT",
+		}},
+		Coverage: []scan.AgentContextCoverageRecord{{
+			Project: "services/jobs", Capability: "calls", Coverage: "UNAVAILABLE",
+			Reason: "project agent context projection unavailable",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /catalog. Analyze services/jobs retry behavior."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "route" {
+		t.Fatalf("missing named support changed reliable primary selection: %#v", pack)
+	}
+	if !contextPackHasUncertainty(pack, "services/jobs/project_context", "project agent context projection unavailable") {
+		t.Fatalf("missing named project coverage was silent: %#v", pack.Uncertainties)
+	}
+}
+
+func TestBuildContextNamedProjectSupportRetainsCoverageUncertainty(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT"},
+			{ID: "worker", Project: "services/worker", Kind: "symbol", Name: "retryCatalog", File: "Worker.go", Confidence: "EXACT", Search: "retry authentication"},
+		},
+		Coverage: []scan.AgentContextCoverageRecord{{
+			Project: "services/worker", Capability: "calls", Coverage: "PARTIAL",
+			Reason: "dynamic calls may be unresolved",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "GET /catalog. Analyze services/worker retry authentication.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || !contextPackHasFile(pack, "Worker.go") {
+		t.Fatalf("support coverage changed support selection or fallback: %#v", pack)
+	}
+	if !contextPackHasUncertainty(pack, "services/worker/calls", "dynamic calls may be unresolved") {
+		t.Fatalf("accepted support coverage was not surfaced: %#v", pack.Uncertainties)
+	}
+}
+
+func TestBuildContextProjectSupportProtectsPrimaryBudget(t *testing.T) {
+	longSupportFile := strings.Repeat("worker/", 90) + "WorkerClient.java"
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT"},
+			{ID: "worker", Project: "services/worker", Kind: "symbol", Name: "retryCatalog", File: longSupportFile, Confidence: "EXACT", Search: "retry authentication"},
+		},
+	}
+
+	largeRoot := writeContextIndexFixture(t, index)
+	large, err := BuildContext(ContextRequest{Root: largeRoot, Query: "GET /catalog. Analyze services/worker retry authentication."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contextPackHasFile(large, longSupportFile) {
+		t.Fatalf("support fixture did not fit the default budget: %#v", large.Files)
+	}
+
+	smallRoot := writeContextIndexFixture(t, index)
+	small, err := BuildContext(ContextRequest{
+		Root: smallRoot, Query: "GET /catalog. Analyze services/worker retry authentication.", BudgetTokens: 256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if small.FallbackRequired || len(small.Entrypoints) != 1 || small.Entrypoints[0].ID != "route" {
+		t.Fatalf("optional support displaced the primary entrypoint: %#v", small)
+	}
+	if contextPackHasFile(small, longSupportFile) {
+		t.Fatalf("oversized optional support exceeded the budget: %#v", small)
+	}
+}
+
+func TestBuildContextProjectSupportIsDeterministicAcrossInputOrder(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "generated",
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "Catalog.go", Confidence: "EXACT"},
+			{ID: "worker-z", Project: "services/worker", Kind: "symbol", Name: "retryZ", File: "WorkerZ.go", Confidence: "EXACT", Search: "retry authentication"},
+			{ID: "worker-a", Project: "services/worker", Kind: "symbol", Name: "retryA", File: "WorkerA.go", Confidence: "EXACT", Search: "retry authentication"},
+			{ID: "shared", Project: "libraries/shared", Kind: "symbol", Name: "CatalogIdentifier", File: "Identifier.kt", Confidence: "EXACT", Search: "catalog identifier persistence"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{ID: "self", FromFactID: "route", ToFactID: "route", Kind: "call"}},
+		Coverage: []scan.AgentContextCoverageRecord{
+			{Project: "services/worker", Capability: "calls", Coverage: "COMPLETE"},
+			{Project: "libraries/shared", Capability: "persistence", Coverage: "PARTIAL", Reason: "some stores unresolved"},
+		},
+	}
+	reversed := index
+	reversed.Facts = append([]scan.AgentContextFactRecord(nil), index.Facts...)
+	reversed.Edges = append([]scan.AgentContextEdgeRecord(nil), index.Edges...)
+	reversed.Coverage = append([]scan.AgentContextCoverageRecord(nil), index.Coverage...)
+	slices.Reverse(reversed.Facts)
+	slices.Reverse(reversed.Edges)
+	slices.Reverse(reversed.Coverage)
+
+	query := "GET /catalog. Analyze services/worker retry authentication and libraries/shared identifier persistence."
+	forwardRoot := writeContextIndexFixture(t, index)
+	reverseRoot := writeContextIndexFixture(t, reversed)
+	forward, err := BuildContext(ContextRequest{Root: forwardRoot, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backward, err := BuildContext(ContextRequest{Root: reverseRoot, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contextPackHasFile(forward, "WorkerA.go") || !contextPackHasFile(forward, "Identifier.kt") {
+		t.Fatalf("determinism fixture did not select expected supports: %#v", forward.Files)
+	}
+	if !reflect.DeepEqual(forward, backward) {
+		t.Fatalf("project support depends on input order:\nforward: %#v\nreverse: %#v", forward, backward)
+	}
+}
+
+func TestBuildContextProjectSupportAcceptsMixedFileExtensions(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog", HTTPMethod: "GET", Path: "/catalog", File: "CatalogController.go", Confidence: "EXACT"},
+			{ID: "web", Project: "clients/web", Kind: "symbol", Name: "retryCatalog", File: "catalog-client.ts", Confidence: "EXACT", Search: "retry authentication"},
+			{ID: "model", Project: "libraries/model", Kind: "symbol", Name: "CatalogIdentifier", File: "CatalogIdentifier.java", Confidence: "EXACT", Search: "catalog identifier persistence"},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root:  root,
+		Query: "GET /catalog. Analyze clients/web retry authentication and libraries/model identifier persistence.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"CatalogController.go", "catalog-client.ts", "CatalogIdentifier.java"} {
+		if !contextPackHasFile(pack, path) {
+			t.Fatalf("mixed-extension file %q missing from context: %#v", path, pack.Files)
+		}
+	}
+}
+
 func TestBuildContextFallsBackForUnreliableTestOnlyMatches(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
@@ -1145,6 +1509,15 @@ func writeContextIndexAt(t *testing.T, path string, index scan.AgentContextIndex
 func contextPackHasFile(pack ContextPack, path string) bool {
 	for _, file := range pack.Files {
 		if file.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+func contextPackHasUncertainty(pack ContextPack, scope, reason string) bool {
+	for _, uncertainty := range pack.Uncertainties {
+		if uncertainty.Scope == scope && strings.Contains(uncertainty.Reason, reason) {
 			return true
 		}
 	}
