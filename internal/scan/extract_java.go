@@ -197,6 +197,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		source.Constants = nil
 	}
 	resolveJavaHTTPClientKinds(&source)
+	resolveJavaHTTPCallConfidence(&source)
 	return source
 }
 
@@ -1052,7 +1053,7 @@ func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, line
 				path, _ := javaHTTPRequestPath(expression, vars)
 				requests = append(requests, JavaHTTPCallRecord{
 					Receiver: receiver, HTTPMethod: strings.ToUpper(method), Path: path,
-					PathExpression: expression, Line: lineNo,
+					PathExpression: expression, Line: lineNo, Confidence: javaExtractedHTTPCallConfidence(expression, path),
 				})
 				continue
 			}
@@ -1063,7 +1064,7 @@ func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, line
 		path, _ := javaHTTPRequestPath(expression, vars)
 		requests = append(requests, JavaHTTPCallRecord{
 			Receiver: receiver, HTTPMethod: strings.ToUpper(method), Path: path,
-			PathExpression: expression, Line: lineNo,
+			PathExpression: expression, Line: lineNo, Confidence: javaExtractedHTTPCallConfidence(expression, path),
 		})
 	}
 	for _, match := range javaHTTPCallRE.FindAllStringSubmatchIndex(literalLine, -1) {
@@ -1072,7 +1073,7 @@ func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, line
 		}
 		expression := strings.TrimSpace(literalLine[match[4]:match[5]])
 		if path, ok := javaHTTPRequestPath(expression, vars); ok {
-			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, PathExpression: expression, Line: lineNo})
+			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, PathExpression: expression, Line: lineNo, Confidence: javaExtractedHTTPCallConfidence(expression, path)})
 		}
 	}
 	for _, match := range javaHTTPBuilderRefRE.FindAllStringSubmatchIndex(literalLine, -1) {
@@ -1081,7 +1082,7 @@ func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, line
 		}
 		if path, ok := javaHTTPRequestPath(literalLine[match[4]:match[5]], vars); ok {
 			expression := strings.TrimSpace(literalLine[match[4]:match[5]])
-			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, PathExpression: expression, Line: lineNo})
+			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, PathExpression: expression, Line: lineNo, Confidence: javaExtractedHTTPCallConfidence(expression, path)})
 		}
 	}
 	if match := javaHTTPChainVerbRE.FindStringSubmatchIndex(literalLine); len(match) == 4 && javaSourceSpanIsStructural(scanLine, literalLine, match[2], match[3]) {
@@ -1097,6 +1098,7 @@ func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, line
 				requests = append(requests, JavaHTTPCallRecord{
 					Receiver: pending.Receiver, ClientKind: pending.ClientKind,
 					HTTPMethod: pending.HTTPMethod, Path: path, PathExpression: expression, Line: pending.Line,
+					Confidence: javaExtractedHTTPCallConfidence(expression, path),
 				})
 				pending = javaPendingHTTPRecord{}
 			}
@@ -1108,6 +1110,18 @@ func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, line
 		}
 	}
 	return requests, pending
+}
+
+func javaExtractedHTTPCallConfidence(expression, path string) string {
+	if strings.TrimSpace(path) == "" {
+		return "PARTIAL"
+	}
+	expression = strings.TrimSpace(expression)
+	if len(expression) >= 2 && expression[0] == '"' && expression[len(expression)-1] == '"' &&
+		len(javaStringLiteralRE.FindAllStringIndex(expression, -1)) == 1 {
+		return "EXACT"
+	}
+	return "RESOLVED"
 }
 
 func isJavaHTTPVerb(method string) bool {
@@ -1334,6 +1348,27 @@ func resolveJavaHTTPClientKinds(source *JavaSourceRecord) {
 			if _, ok := imported[kind]; ok {
 				request.ClientKind = kind
 			}
+		}
+	}
+}
+
+func resolveJavaHTTPCallConfidence(source *JavaSourceRecord) {
+	if source == nil {
+		return
+	}
+	for methodIndex := range source.Methods {
+		method := &source.Methods[methodIndex]
+		for requestIndex := range method.HTTPRequests {
+			request := &method.HTTPRequests[requestIndex]
+			expression := strings.TrimSpace(request.PathExpression)
+			if request.Path == "" {
+				if value, ok := method.StringVars[expression]; ok {
+					request.Path = value
+				} else if value, ok := source.Constants[expression]; ok {
+					request.Path = value
+				}
+			}
+			request.Confidence = javaExtractedHTTPCallConfidence(expression, request.Path)
 		}
 	}
 }

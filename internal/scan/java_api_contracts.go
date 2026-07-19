@@ -428,18 +428,25 @@ func javaResolvedPathPart(part string, constants, locals map[string]string, base
 
 func javaConfigurationBaseURLExpressions(source JavaSourceRecord, method JavaMethodRecord) map[string]bool {
 	result := map[string]bool{}
+	valueImported := javaHasImport(source.Imports, "org.springframework.beans.factory.annotation.Value")
+	configurationPropertiesImported := javaHasImport(source.Imports, "org.springframework.boot.context.properties.ConfigurationProperties")
 	for _, field := range source.Fields {
-		if field.Owner != method.Owner || !javaAnnotationsContain(field.Annotations, "Value", "ConfigurationProperties") {
+		if field.Owner != method.Owner || !javaHasImportedConfigurationAnnotation(field.Annotations, valueImported, configurationPropertiesImported) {
 			continue
 		}
 		result[field.Name] = true
 	}
 	for _, parameter := range method.Parameters {
-		if javaAnnotationsContain(parameter.Annotations, "Value") {
+		if javaHasImportedConfigurationAnnotation(parameter.Annotations, valueImported, configurationPropertiesImported) {
 			result[parameter.Name] = true
 		}
 	}
 	return result
+}
+
+func javaHasImportedConfigurationAnnotation(annotations []JavaAnnotationRecord, valueImported, configurationPropertiesImported bool) bool {
+	return valueImported && javaAnnotationsContain(annotations, "Value") ||
+		configurationPropertiesImported && javaAnnotationsContain(annotations, "ConfigurationProperties")
 }
 
 func javaAnnotationsContain(annotations []JavaAnnotationRecord, names ...string) bool {

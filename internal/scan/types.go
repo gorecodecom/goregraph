@@ -706,6 +706,7 @@ type JavaHTTPCallRecord struct {
 	Path           string `json:"path,omitempty"`
 	PathExpression string `json:"path_expression,omitempty"`
 	Line           int    `json:"line"`
+	Confidence     string `json:"confidence,omitempty"`
 }
 
 type javaPendingHTTPRecord struct {

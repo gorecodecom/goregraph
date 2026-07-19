@@ -317,6 +317,80 @@ class JobClient {
 	}
 }
 
+func TestBuildJavaAPIContractsRequiresSpringImportForConfigurationBaseURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		valueImport string
+		declaration string
+		parameter   string
+		wantPath    string
+		confidence  string
+		unsafe      bool
+	}{
+		{name: "custom field", valueImport: "example.Value", declaration: "  @Value(\"${client.url}\")\n  private String arbitraryPrefix;", confidence: "PARTIAL", unsafe: true},
+		{name: "custom parameter", valueImport: "example.Value", parameter: "@Value(\"${client.url}\") String arbitraryPrefix", confidence: "PARTIAL", unsafe: true},
+		{name: "Spring field", valueImport: "org.springframework.beans.factory.annotation.Value", declaration: "  @Value(\"${client.url}\")\n  private String arbitraryPrefix;", wantPath: "/items/9", confidence: "RESOLVED"},
+		{name: "Spring parameter", valueImport: "org.springframework.beans.factory.annotation.Value", parameter: "@Value(\"${client.url}\") String arbitraryPrefix", wantPath: "/items/9", confidence: "RESOLVED"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := `import ` + test.valueImport + `;
+import org.springframework.web.client.RestTemplate;
+class JobClient {
+  private final RestTemplate restTemplate;
+` + test.declaration + `
+  void deleteRelatedJobs(` + test.parameter + `) {
+    restTemplate.delete(arbitraryPrefix + "/items/9");
+  }
+}`
+			source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, body)
+			records := buildJavaAPIContracts([]JavaSourceRecord{source})
+			if len(records) != 1 || records[0].Path != test.wantPath || records[0].UnsafeDynamic != test.unsafe || records[0].Confidence != test.confidence {
+				t.Fatalf("configuration annotation provenance = %#v", records)
+			}
+		})
+	}
+}
+
+func TestExtractJavaHTTPCallConfidence(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
+class JobClient {
+  private static final String ITEM_PATH = "/items/10";
+  private final RestClient restClient;
+  void literalPath() {
+    restClient.delete("/items/9");
+  }
+  void resolvedPath(String itemId) {
+    restClient.delete("/items/" + itemId);
+  }
+  void constantPath() {
+    restClient.delete(ITEM_PATH);
+  }
+  void partialPath(Request request) {
+    restClient.delete(request.resolvePath());
+  }
+}`)
+	want := map[string]string{
+		"literalPath":  "EXACT",
+		"resolvedPath": "RESOLVED",
+		"constantPath": "RESOLVED",
+		"partialPath":  "PARTIAL",
+	}
+	for _, method := range source.Methods {
+		confidence, ok := want[method.Name]
+		if !ok {
+			continue
+		}
+		if len(method.HTTPRequests) != 1 || method.HTTPRequests[0].Confidence != confidence {
+			t.Fatalf("%s HTTP requests = %#v, want confidence %s", method.Name, method.HTTPRequests, confidence)
+		}
+		delete(want, method.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing confidence cases: %#v", want)
+	}
+}
+
 func TestBuildJavaAPIContractsResolvesLocalConcatenation(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestTemplate;
 class JobClient {
