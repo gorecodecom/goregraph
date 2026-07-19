@@ -11,21 +11,22 @@ import (
 )
 
 const (
-	scoreExactRoute                  = 1000
-	scoreEmbeddedExact               = scoreExactRoute + 100
-	scoreExactQualified              = 900
-	scoreExactName                   = 800
-	scoreAllTerms                    = 500
-	scorePerMatchedTerm              = 60
-	scoreRouteKind                   = 80
-	scoreSymbolKind                  = 60
-	scoreTestKind                    = 20
-	scoreExactConfidence             = 30
-	scoreResolvedConfidence          = 15
-	minimumContextSeedScore          = 180
-	maximumContextUncertainty        = 3
-	maximumContextConsumers          = 8
-	maximumContextSupportingProjects = 2
+	scoreExactRoute                      = 1000
+	scoreEmbeddedExact                   = scoreExactRoute + 100
+	scoreExactQualified                  = 900
+	scoreExactName                       = 800
+	scoreAllTerms                        = 500
+	scorePerMatchedTerm                  = 60
+	scoreRouteKind                       = 80
+	scoreSymbolKind                      = 60
+	scoreTestKind                        = 20
+	scoreExactConfidence                 = 30
+	scoreResolvedConfidence              = 15
+	minimumContextSeedScore              = 180
+	maximumContextUncertainty            = 3
+	maximumContextConsumers              = 8
+	maximumContextSupportingProjects     = 2
+	maximumContextSupportFactsPerProject = 2
 )
 
 const (
@@ -56,7 +57,10 @@ type rankedContextSupportFact struct {
 func compileContextPack(index scan.AgentContextIndexRecord, request ContextRequest) (ContextPack, error) {
 	ranked := rankContextFacts(index.Facts, request.Query)
 	seeds := selectContextSeeds(ranked)
-	endpointSeed, hasEndpoint, endpointFallbackReason := selectContextEndpoint(ranked, request.Query)
+	endpointSeed, hasEndpoint, endpointFallbackReason := selectContextEndpoint(index, ranked, request.Query)
+	if endpointFallbackReason != "" {
+		return fallbackContextPack(index, request, endpointFallbackReason, nil)
+	}
 	if hasEndpoint {
 		seeds = []rankedContextFact{endpointSeed}
 	}
@@ -112,6 +116,13 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		return fallbackContextPack(index, request, "top context fact exceeds the requested budget", nil)
 	}
 	includedFactIDs[top.fact.ID] = true
+	pathTop := top
+	if topIsEndpoint {
+		if companion, ok := contextEndpointCompanion(index, top.fact); ok {
+			pathTop.fact = companion
+			includedFactIDs[companion.ID] = true
+		}
+	}
 	if hasEndpoint && !topIsEndpoint {
 		var endpointAdded bool
 		pack, endpointAdded, err = tryAddContextEndpoint(pack, request, endpointSeed.fact, index)
@@ -147,12 +158,12 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
-	concerns := planContextConcerns(request.Query, index, top.fact)
-	pathSelection := selectContextPaths(index, top, concerns)
+	concerns := planContextConcerns(request.Query, index, pathTop.fact)
+	pathSelection := selectContextPaths(index, pathTop, concerns)
 	pack, err = addSelectedContextPaths(
 		pack,
 		request,
-		top,
+		pathTop,
 		pathSelection,
 		index.Edges,
 		factByID,
@@ -962,7 +973,11 @@ func contextCoverageRecordLess(left, right scan.AgentContextCoverageRecord) bool
 	return left.Reason < right.Reason
 }
 
-func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedContextFact, bool, string) {
+func selectContextEndpoint(
+	index scan.AgentContextIndexRecord,
+	ranked []rankedContextFact,
+	query string,
+) (rankedContextFact, bool, string) {
 	candidates := make([]rankedContextFact, 0)
 	for _, candidate := range ranked {
 		if candidate.score < minimumContextSeedScore ||
@@ -975,6 +990,21 @@ func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedCont
 	if len(candidates) == 0 {
 		return rankedContextFact{}, false, ""
 	}
+	utility := newContextForwardUtility(index)
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left, right := candidates[i], candidates[j]
+		leftAnchor := contextEndpointExplicitAnchor(left)
+		rightAnchor := contextEndpointExplicitAnchor(right)
+		if leftAnchor != rightAnchor {
+			return leftAnchor
+		}
+		leftUtility := left.score + contextEndpointPathUtility(index, utility, left.fact)
+		rightUtility := right.score + contextEndpointPathUtility(index, utility, right.fact)
+		if leftUtility != rightUtility {
+			return leftUtility > rightUtility
+		}
+		return false
+	})
 
 	top := candidates[0]
 	routeKey := contextEndpointRouteKey(top.fact)
@@ -1012,6 +1042,134 @@ func selectContextEndpoint(ranked []rankedContextFact, query string) (rankedCont
 	return providers[bestProvider][0], true, ""
 }
 
+func contextEndpointExplicitAnchor(candidate rankedContextFact) bool {
+	return candidate.exactClass == 3 &&
+		(candidate.reason == "exact route" || candidate.reason == "embedded exact route")
+}
+
+func contextEndpointPathUtility(
+	index scan.AgentContextIndexRecord,
+	utility *contextForwardUtility,
+	endpoint scan.AgentContextFactRecord,
+) int {
+	if companion, ok := contextEndpointCompanion(index, endpoint); ok {
+		return utility.score(companion.ID)
+	}
+	return utility.score(endpoint.ID)
+}
+
+func contextEndpointCompanion(
+	index scan.AgentContextIndexRecord,
+	endpoint scan.AgentContextFactRecord,
+) (scan.AgentContextFactRecord, bool) {
+	if !strings.EqualFold(strings.TrimSpace(endpoint.Kind), "api_endpoint") {
+		return scan.AgentContextFactRecord{}, false
+	}
+	project := normalizeContextProject(endpoint.Project)
+	routeKey := contextEndpointRouteKey(endpoint)
+	qualified := normalizeContextTerm(endpoint.Qualified)
+	candidates := []scan.AgentContextFactRecord{}
+	for _, fact := range index.Facts {
+		if !strings.EqualFold(strings.TrimSpace(fact.Kind), "route") ||
+			normalizeContextProject(fact.Project) != project ||
+			contextEndpointRouteKey(fact) != routeKey ||
+			!reliableProductionContextSeed(fact) {
+			continue
+		}
+		factQualified := normalizeContextTerm(fact.Qualified)
+		if qualified != "" && factQualified != "" && qualified != factQualified {
+			continue
+		}
+		candidates = append(candidates, fact)
+	}
+	if len(candidates) == 0 {
+		return scan.AgentContextFactRecord{}, false
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		leftQualified := normalizeContextTerm(candidates[i].Qualified) == qualified
+		rightQualified := normalizeContextTerm(candidates[j].Qualified) == qualified
+		if leftQualified != rightQualified {
+			return leftQualified
+		}
+		return candidates[i].ID < candidates[j].ID
+	})
+	return candidates[0], true
+}
+
+type contextForwardUtility struct {
+	adjacency map[string][]contextTraversalStep
+	cache     map[string]int
+}
+
+func newContextForwardUtility(index scan.AgentContextIndexRecord) *contextForwardUtility {
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	return &contextForwardUtility{
+		adjacency: contextPathAdjacency(index.Edges, factByID, false),
+		cache:     make(map[string]int),
+	}
+}
+
+func (utility *contextForwardUtility) score(startID string) int {
+	if score, ok := utility.cache[startID]; ok {
+		return score
+	}
+	if len(utility.adjacency[startID]) == 0 {
+		utility.cache[startID] = -120
+		return -120
+	}
+	type utilityState struct {
+		id    string
+		depth int
+	}
+	queue := []utilityState{{id: startID}}
+	visited := map[string]bool{startID: true}
+	seenEdges := map[string]bool{}
+	score := 0
+	for len(queue) > 0 && len(visited) <= 64 {
+		current := queue[0]
+		queue = queue[1:]
+		if current.depth >= 4 {
+			continue
+		}
+		for _, step := range utility.adjacency[current.id] {
+			edgeID := contextPathEdgeIdentity(step.edge)
+			if !seenEdges[edgeID] {
+				seenEdges[edgeID] = true
+				weight := 0
+				switch normalizedContextConcernKind(step.edge.Kind) {
+				case contextConcernHTTPContract, contextConcernPersistence:
+					weight = 180
+				case contextConcernAuth:
+					weight = 100
+				default:
+					switch strings.ToLower(strings.TrimSpace(step.edge.Kind)) {
+					case "call", "implements", "extends":
+						weight = 140
+					case "use", "consumes_endpoint":
+						weight = 60
+					}
+				}
+				weight -= 20 * current.depth
+				if weight > 0 {
+					score += weight
+				}
+			}
+			if !visited[step.nextID] {
+				visited[step.nextID] = true
+				queue = append(queue, utilityState{id: step.nextID, depth: current.depth + 1})
+			}
+		}
+	}
+	if score > 480 {
+		score = 480
+	}
+	utility.cache[startID] = score
+	return score
+}
+
 func eligibleContextEndpoint(fact scan.AgentContextFactRecord) bool {
 	return strings.EqualFold(fact.Kind, "api_endpoint") &&
 		strings.TrimSpace(fact.HTTPMethod) != "" && strings.TrimSpace(fact.Path) != "" &&
@@ -1023,7 +1181,14 @@ func contextEndpointRouteKey(fact scan.AgentContextFactRecord) string {
 }
 
 func contextEndpointRouteMatchesQuery(fact scan.AgentContextFactRecord, query string) bool {
-	queryTokens := contextTokenSet(query)
+	routeTerm := normalizeContextTerm(strings.TrimSpace(fact.HTTPMethod + " " + fact.Path))
+	if contextQueryHasAnchor(contextQueryAnchors(query), routeTerm) {
+		return true
+	}
+	queryTokens := make(map[string]bool)
+	for _, token := range contextQueryTokens(contextPrimaryQuery(query)) {
+		queryTokens[token] = true
+	}
 	for token := range contextTokenSet(strings.TrimSpace(fact.HTTPMethod + " " + fact.Path)) {
 		if queryTokens[token] {
 			return true

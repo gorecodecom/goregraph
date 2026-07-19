@@ -75,6 +75,7 @@ func selectContextPaths(
 	testsRequired := contextPathTestsRequired(concerns)
 	adjacency := contextPathAdjacency(index.Edges, factByID, testsRequired)
 	candidates, reachable := enumerateContextPathCandidates(seed.fact.ID, adjacency)
+	coverable := contextPathCoverableConcerns(candidates, concerns)
 	lexicalScores := contextPathLexicalScores(index.Facts, seed.query)
 	covered := contextPathCoveredConcerns([]string{seed.fact.ID}, nil, concerns)
 	delete(covered, contextConcernPrimaryPath)
@@ -85,6 +86,8 @@ func selectContextPaths(
 	for len(selection.paths) < maximumContextPaths {
 		bestIndex := -1
 		bestScore := 0
+		allowLexicalExpansion := contextPathHasPendingCoreConcern(concerns, covered, coverable) ||
+			contextPathMaximumSelectedDistance(selection.distances) < 2
 		for candidateIndex, candidate := range candidates {
 			if !contextPathAddsFact(candidate, selectedFacts) {
 				continue
@@ -94,6 +97,9 @@ func selectContextPaths(
 				concerns,
 				covered,
 				boundarySelected,
+				allowLexicalExpansion,
+				selectedFacts,
+				index.Edges,
 				lexicalScores,
 				factByID,
 			)
@@ -287,6 +293,9 @@ func scoreContextPath(
 	concerns []contextConcern,
 	covered map[string]bool,
 	boundarySelected bool,
+	allowLexicalExpansion bool,
+	selectedFacts map[string]bool,
+	allEdges []scan.AgentContextEdgeRecord,
 	lexicalScores map[string]int,
 	factByID map[string]scan.AgentContextFactRecord,
 ) (int, bool) {
@@ -303,13 +312,108 @@ func scoreContextPath(
 		}
 	}
 	newBoundary := !boundarySelected && contextPathCrossesContractBoundary(path, factByID)
-	terminalScore := lexicalScores[path.factIDs[len(path.factIDs)-1]]
-	meaningful := newConcerns > 0 || newProjects > 0 || newBoundary || terminalScore >= minimumContextSeedScore
+	terminal := factByID[path.factIDs[len(path.factIDs)-1]]
+	terminalScore := lexicalScores[terminal.ID]
+	if normalizedContextConcernKind(terminal.Kind) == contextConcernTests || contextFactUsesTestSource(terminal) {
+		terminalScore = 0
+	}
+	additionalRoleEvidence := contextPathAddsBoundedRoleEvidence(
+		path,
+		selectedFacts,
+		factByID,
+		allEdges,
+		concerns,
+	)
+	meaningful := newConcerns > 0 || newProjects > 0 || newBoundary || additionalRoleEvidence ||
+		allowLexicalExpansion && terminalScore >= minimumContextSeedScore
 	score := 1000*newConcerns + 300*newProjects + terminalScore - 40*len(path.edges) - path.cost
 	if newBoundary {
 		score += 200
 	}
+	if additionalRoleEvidence {
+		score += 500
+	}
 	return score, meaningful
+}
+
+func contextPathMaximumSelectedDistance(distances map[string]int) int {
+	maximum := 0
+	for _, distance := range distances {
+		if distance > maximum {
+			maximum = distance
+		}
+	}
+	return maximum
+}
+
+func contextPathAddsBoundedRoleEvidence(
+	path contextTraversalState,
+	selectedFacts map[string]bool,
+	factByID map[string]scan.AgentContextFactRecord,
+	allEdges []scan.AgentContextEdgeRecord,
+	concerns []contextConcern,
+) bool {
+	persistenceRequired := false
+	for _, concern := range concerns {
+		if concern.required && concern.kind == contextConcernPersistence {
+			persistenceRequired = true
+			break
+		}
+	}
+	if !persistenceRequired {
+		return false
+	}
+	selectedPersistence := 0
+	for factID := range selectedFacts {
+		if normalizedContextConcernKind(factByID[factID].Kind) == contextConcernPersistence {
+			selectedPersistence++
+		}
+	}
+	if selectedPersistence >= maximumContextSupportFactsPerProject {
+		return false
+	}
+	for _, pathEdge := range path.edges {
+		candidateID := pathEdge.ToFactID
+		if selectedFacts[candidateID] ||
+			normalizedContextConcernKind(factByID[candidateID].Kind) != contextConcernPersistence {
+			continue
+		}
+		for _, edge := range allEdges {
+			if edge.FromFactID == pathEdge.FromFactID && selectedFacts[edge.ToFactID] &&
+				normalizedContextConcernKind(factByID[edge.ToFactID].Kind) == contextConcernPersistence {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func contextPathCoverableConcerns(
+	candidates []contextTraversalState,
+	concerns []contextConcern,
+) map[string]bool {
+	coverable := make(map[string]bool, len(concerns))
+	for _, candidate := range candidates {
+		for key := range contextPathCoveredConcerns(candidate.factIDs, candidate.edges, concerns) {
+			coverable[key] = true
+		}
+	}
+	return coverable
+}
+
+func contextPathHasPendingCoreConcern(
+	concerns []contextConcern,
+	covered map[string]bool,
+	coverable map[string]bool,
+) bool {
+	for _, concern := range concerns {
+		if !concern.required || concern.kind == contextConcernProject ||
+			covered[concern.key] || !coverable[concern.key] {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func contextPathCoveredConcerns(

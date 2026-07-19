@@ -1119,6 +1119,100 @@ func TestBuildContextRequiresProviderEvidenceForSamePathEndpointCollision(t *tes
 	}
 }
 
+func TestBuildContextEndpointSelectionUsesTriggerClause(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "trigger", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/items/{id}", File: "CatalogController.go",
+				Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "trigger-route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/items/{id}", File: "CatalogController.go",
+				Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "symptom", Project: "services/jobs", Kind: "api_endpoint",
+				Name: "GET /jobs/{id}", Qualified: "JobController.getJob",
+				HTTPMethod: "GET", Path: "/jobs/{id}", File: "JobController.go",
+				Search: "catalog item related jobs remain", Confidence: "EXACT",
+			},
+			{
+				ID: "operation", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", Qualified: "CatalogService.deleteItem",
+				File: "CatalogService.go", Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "security", Project: "services/catalog", Kind: "authentication",
+				Name: "authenticated", File: "Security.go", Confidence: "EXACT",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{
+				ID: "trigger-auth", FromFactID: "trigger", ToFactID: "security",
+				Kind: "requires_auth", Confidence: "EXACT",
+			},
+			{
+				ID: "trigger-operation", FromFactID: "trigger-route", ToFactID: "operation",
+				FromLabel: "DELETE /catalog/items/{id}", ToLabel: "CatalogService.deleteItem",
+				Kind: "call", Confidence: "EXACT",
+			},
+		},
+	})
+
+	query := `Problem statement:
+
+Delete a catalog item, related jobs remain.
+
+Analyze services/catalog and services/jobs. Cover the endpoint, persistence, and tests.`
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Endpoints) != 1 || pack.Endpoints[0].Provider != "services/catalog" ||
+		pack.Endpoints[0].Handler != "CatalogController.deleteItem" {
+		t.Fatalf("endpoint trigger was displaced by the symptom: %#v", pack)
+	}
+	if len(pack.CallChain) != 1 || pack.CallChain[0].To != "CatalogService.deleteItem" {
+		t.Fatalf("trigger graph path was not traversed: %#v", pack.CallChain)
+	}
+}
+
+func TestBuildContextEndpointAmbiguityIsNotMaskedBySymbolSeed(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "orders", Project: "services/orders", Kind: "api_endpoint",
+				Name: "GET /orders", HTTPMethod: "GET", Path: "/orders", File: "Orders.go",
+				Search: "GET orders", Confidence: "EXACT",
+			},
+			{
+				ID: "archive", Project: "services/archive", Kind: "api_endpoint",
+				Name: "GET /orders", HTTPMethod: "GET", Path: "/orders", File: "Archive.go",
+				Search: "GET orders", Confidence: "EXACT",
+			},
+			{
+				ID: "handler", Project: "services/orders", Kind: "symbol",
+				Name: "listOrders", File: "OrderService.go", Search: "GET orders", Confidence: "EXACT",
+			},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "show GET /orders"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pack.FallbackRequired || len(pack.Entrypoints) != 0 || len(pack.Endpoints) != 0 ||
+		!strings.Contains(strings.ToLower(pack.FallbackReason), "ambiguous") {
+		t.Fatalf("symbol seed masked endpoint provider ambiguity: %#v", pack)
+	}
+}
+
 func TestBuildContextRejectsIncompleteAndGeneratedEndpointsAsPrimary(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,

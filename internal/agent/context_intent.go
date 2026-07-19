@@ -407,8 +407,11 @@ func orderedContextConcernIDs(values []string) []string {
 func contextConcernPlanningSeed(index scan.AgentContextIndexRecord, query string) (scan.AgentContextFactRecord, bool) {
 	ranked := rankContextFacts(index.Facts, query)
 	seeds := selectContextSeeds(ranked)
-	endpoint, hasEndpoint, _ := selectContextEndpoint(ranked, query)
+	endpoint, hasEndpoint, _ := selectContextEndpoint(index, ranked, query)
 	if hasEndpoint {
+		if companion, companionExists := contextEndpointCompanion(index, endpoint.fact); companionExists {
+			return companion, true
+		}
 		return endpoint.fact, true
 	}
 	if len(seeds) == 0 {
