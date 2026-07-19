@@ -287,7 +287,7 @@ Require exactly one entrypoint (`catalog-route`), the unchanged primary chain, f
 
 - [ ] **Step 2: Write the failing unnamed-but-strongly-relevant test**
 
-Add `TestBuildContextAddsOnlyStrongCrossProjectSupportWhenProjectsAreUnnamed`. Query only the catalog-entry/jobs failure without project names. Require one `services/jobs` support with at least two semantic matches, exclude a project whose best fact matches only `retry`, and retain exactly one entrypoint.
+Add `TestBuildContextAddsOnlyStrongCrossProjectSupportWhenProjectsAreUnnamed`. Query only the catalog-entry/jobs failure without project names. Use a supporting project whose full path and unique basename do not occur in the query, such as `services/worker`, while its facts match at least two non-project semantic terms such as `job`, `retry`, or `persistence`. Exclude a different project whose best fact matches only `retry`, and retain exactly one entrypoint. Do not use `services/jobs` for this case: the query token `jobs` would make that unique basename an explicit project alias.
 
 - [ ] **Step 3: Write coverage, budget, ambiguity, and determinism regressions**
 
