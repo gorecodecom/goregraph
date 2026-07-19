@@ -14,7 +14,7 @@
 - Use strict TDD: add one focused failing test, run it and observe the failure, implement the smallest behavior, then rerun the focused and package tests.
 - Add no runtime dependency, parser dependency, tokenizer dependency, daemon, watcher, telemetry, network request, hook, or agent-configuration write.
 - Reuse `agent/context-index.json`, fact IDs, line ranges, call-chain ranking, confidence, evidence, workspace paths, and fallback behavior.
-- Do not modify source extraction, language coverage, dashboard behavior, workspace reconciliation semantics, or the generated agent-index schema in this iteration.
+- Do not expand language coverage, dashboard behavior, or the generated agent-index schema. Before source attachment, complete the generic correctness work in `docs/superpowers/plans/2026-07-19-general-context-hardening.md`: correct quoted Java annotation values, expose unavailable workspace projections, and add bounded supporting facts from semantically relevant projects. Do not add benchmark-, repository-, service-, framework-route-, class-, or symbol-specific ranking rules.
 - Standard MCP continues to expose exactly one tool, `task_context`; expert tools remain opt-in and unchanged.
 - Source access is read-only. Reject absolute fact paths, traversal, symlink escapes, directories, non-regular files, and files larger than 2 MiB.
 - Never execute indexed project code or invoke its build tools while compiling a Context Pack.
@@ -344,7 +344,8 @@ git commit -m "Reserve context capacity for source" -m "- Raise and split the to
 
 Complete this checkpoint after Task 2 and before creating `internal/agent/context_source.go`. Task 9 consumes this control; it must not attempt to reconstruct it after source attachment exists.
 
-- [ ] Record the Task 2 GoreGraph commit, binary digest, GoreGraph version, Codex version, model, reasoning, sandbox, approval policy, indexed-workspace commit, index digest, task-prompt digest, and the exact metadata-only assisted instruction.
+- [ ] Complete and review `docs/superpowers/plans/2026-07-19-general-context-hardening.md`. Build the metadata-only control from its final commit, then rescan once with that binary. The earlier Task 2 diagnostic artifact remains useful regression evidence but is not the matched release control because its route extraction and multi-project support selection are known to be incomplete.
+- [ ] Record the final pre-source hardening commit, binary digest, GoreGraph version, Codex version, model, reasoning, sandbox, approval policy, indexed-workspace commit, index digest, task-prompt digest, and the exact metadata-only assisted instruction.
 - [ ] Run three metadata-only assisted trials against one unchanged indexed workspace snapshot. Use one integration surface consistently for control and treatment: the existing harness uses `goregraph context`, while an MCP-specific run may use `task_context` only when both variants provision the same MCP configuration. The instruction must tell the agent to call the chosen context surface once before source reads and then use the returned `files` and ranges as navigation metadata. Do not mention `source_sections`, because the control binary cannot return them.
 - [ ] Store raw transcripts, token totals, the median, and the twelve-point rubric outside the repository. Record only non-proprietary digests and aggregate results in any repository documentation.
 - [ ] Do not start Task 3 until all three control runs and their signed rubric are present.
@@ -819,7 +820,7 @@ git commit -m "Define the source-backed agent workflow" -m "- Align user guidanc
 
 - [ ] **Step 1: Validate the mandatory metadata-only control**
 
-Load the three trials captured at the checkpoint after Task 2. Verify that all provenance fields are present and that the indexed-workspace commit, index digest, task-prompt digest, Codex version, model, reasoning, sandbox, and approvals match the source-backed treatment. The GoreGraph control commit and binary must be the recorded Task 2 artifacts; the treatment uses the final source-backed commit and binary. If the workspace or prompt digest differs, the comparison is invalid and the release gate remains blocked until a new matched control is captured from the Task 2 artifact.
+Load the three trials captured from the final pre-source hardening artifact. Verify that all provenance fields are present and that the indexed-workspace commit, index digest, task-prompt digest, Codex version, model, reasoning, sandbox, and approvals match the source-backed treatment. The treatment uses the final source-backed commit and binary. If the workspace or prompt digest differs, the comparison is invalid and the release gate remains blocked until a new matched control is captured from the recorded pre-source hardening artifact.
 
 Expected: three valid metadata-only assisted transcripts, one signed rubric, and an explicit control-versus-treatment provenance table stored outside the repository.
 
@@ -874,7 +875,7 @@ Expected: tests pass; `git diff --check` is silent; status contains only intenti
 ## Delivery Gates
 
 1. **Guidance:** Tasks 1-2 are independently measurable. Benchmark once after Task 1 to isolate instruction effects.
-2. **Metadata-only control:** Complete the mandatory checkpoint after Task 2. Source implementation must not begin without its three matched control runs.
+2. **Metadata-only control:** Complete the mandatory checkpoint after the generic pre-source hardening dependency. Source implementation must not begin without its three matched control runs.
 3. **Minimum viable source path:** Tasks 3-5 are the central deliverable. Benchmark before adding ranking work.
 4. **Retrieval hardening:** Tasks 6-8 improve long-task selection and contract consistency without new tools or stores.
 5. **Release decision:** Task 9 determines whether the behavior is a real end-to-end optimization. Do not market pack-size or single-run percentages.
@@ -914,4 +915,4 @@ Expected: tests pass; `git diff --check` is silent; status contains only intenti
 - [ ] Exact routes, symbols, files, and backtick anchors outrank broad distractors.
 - [ ] Tests remain supporting context unless explicitly requested.
 - [ ] Documentation and benchmark instructions use the same exact behavior.
-- [ ] Release claims use the pre-source metadata control, matched end-to-end medians, recorded distinct GoreGraph binaries, and equal-or-better evidence quality.
+- [ ] Release claims use the post-hardening/pre-source metadata control, matched end-to-end medians, recorded distinct GoreGraph binaries, and equal-or-better evidence quality.
