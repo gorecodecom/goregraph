@@ -226,6 +226,32 @@ func TestRenderContextMarkdownIncludesSourceCoverageSectionsAndOmissions(t *test
 	}
 }
 
+func TestRenderContextMarkdownEscapesSourceControls(t *testing.T) {
+	body := RenderContextMarkdown(agent.ContextPack{
+		Query: "inspect controls", Confidence: "EXACT", SourceCoverage: "complete",
+		SourceSections: []agent.ContextSourceSection{{
+			Path: "control.go", StartLine: 1, EndLine: 2, Role: "entrypoint",
+			RenderMode: "body", SourceState: "indexed_range_current",
+			Content: "1\tplain\x1b[31m\n2\tosc\x1b]0;owned\x07\r\b\x00",
+		}},
+		BudgetTokens: 1800,
+	})
+
+	for _, want := range []string{
+		"    1\tplain\\u001B[31m",
+		"    2\tosc\\u001B]0;owned\\u0007\\u000D\\u0008\\u0000",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("escaped source markdown missing %q:\n%q", want, body)
+		}
+	}
+	for _, forbidden := range []string{"\x1b", "\x07", "\r", "\b", "\x00"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("source markdown retained raw control %q:\n%q", forbidden, body)
+		}
+	}
+}
+
 func TestRunContextReturnsBarePrettyJSONWithSeparateByteGates(t *testing.T) {
 	root := writeQueryContextIndex(t, simpleContextIndex())
 
@@ -320,6 +346,33 @@ func TestRunContextDefaultMarkdownIncludesBuiltSource(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("default markdown missing source %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestRunContextDefaultMarkdownEscapesSourceControls(t *testing.T) {
+	index := simpleContextIndex()
+	index.Facts[0].Qualified = "UserController.deleteUser"
+	index.Facts[0].Line = 1
+	index.Facts[0].EndLine = 3
+	root := writeQueryContextIndex(t, index)
+	if err := os.WriteFile(filepath.Join(root, "UserController.java"), []byte(
+		"public void deleteUser() {\n    service.deleteUser();\x1b]0;owned\x07\r\b\x00\n}\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	body, err := RunContext(ContextOptions{Root: root, Query: "DELETE /users/{id}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "    2\t    service.deleteUser();\\u001B]0;owned\\u0007\\u000D\\u0008\\u0000"
+	if !strings.Contains(body, want) {
+		t.Fatalf("default markdown missing escaped source %q:\n%q", want, body)
+	}
+	for _, forbidden := range []string{"\x1b", "\x07", "\r", "\b", "\x00"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("default markdown retained raw control %q:\n%q", forbidden, body)
 		}
 	}
 }

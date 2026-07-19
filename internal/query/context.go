@@ -156,7 +156,7 @@ func appendContextSourceSections(
 		}
 		entry = append(entry, "")
 		for _, sourceLine := range strings.Split(section.Content, "\n") {
-			entry = append(entry, "    "+sourceLine)
+			entry = append(entry, "    "+contextSourceMarkdownLine(sourceLine))
 		}
 		entries = append(entries, entry)
 	}
@@ -169,6 +169,18 @@ func appendContextSourceSections(
 		lines = append(lines, entry...)
 	}
 	return lines
+}
+
+func contextSourceMarkdownLine(value string) string {
+	var escaped strings.Builder
+	for _, current := range value {
+		if current == '\t' || !unicode.IsControl(current) {
+			escaped.WriteRune(current)
+			continue
+		}
+		fmt.Fprintf(&escaped, `\u%04X`, current)
+	}
+	return escaped.String()
 }
 
 func appendContextSourceOmissions(
