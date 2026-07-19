@@ -63,6 +63,43 @@ interface JobClient {
 	}
 }
 
+func TestBuildJavaAPIContractsKeepsUnresolvedDeclarativePathsPartial(t *testing.T) {
+	tests := []struct {
+		name       string
+		basePath   string
+		wantPath   string
+		confidence string
+		unsafe     bool
+	}{
+		{name: "property expression", basePath: `"${client.path}"`, confidence: "PARTIAL", unsafe: true},
+		{name: "external constant expression", basePath: "ExternalPaths.ROOT", confidence: "PARTIAL", unsafe: true},
+		{name: "literal empty path", basePath: `""`, wantPath: "/items/{itemId}", confidence: "EXACT"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := `import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.DeleteMapping;
+@FeignClient(name = "jobs", path = ` + test.basePath + `)
+interface JobClient {
+  @DeleteMapping("/items/{itemId}")
+  void deleteRelatedJobs(String itemId);
+}`
+			source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, body)
+			records := buildJavaAPIContracts([]JavaSourceRecord{source})
+			if len(records) != 1 {
+				t.Fatalf("contracts = %#v, want one", records)
+			}
+			got := records[0]
+			if got.Path != test.wantPath || got.Confidence != test.confidence || got.UnsafeDynamic != test.unsafe {
+				t.Fatalf("declarative contract = %#v", got)
+			}
+			if test.unsafe && got.RawPath == "" {
+				t.Fatalf("unresolved declarative expression lost raw path: %#v", got)
+			}
+		})
+	}
+}
+
 func TestBuildJavaAPIContractsBoundImperativeClients(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -226,6 +263,31 @@ class PathProvider {
 	}
 }
 
+func TestBuildJavaAPIContractsBindsPathGetterToReceiverType(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
+class JobClient {
+  private final RestClient restClient;
+  private final PathProvider pathProvider;
+  void deleteRelatedJobs() {
+    restClient.delete().uri(pathProvider.deletePath()).retrieve();
+  }
+}
+class PathProvider {
+  String deletePath() {
+    return "/job-management/items/9";
+  }
+}
+class AlternatePathProvider {
+  String deletePath() {
+    return "/other/items/9";
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 || records[0].Path != "/job-management/items/9" || records[0].Confidence != "RESOLVED" {
+		t.Fatalf("typed getter contracts = %#v", records)
+	}
+}
+
 func TestBuildJavaAPIContractsResolvesConstantConcatenation(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestTemplate;
 class JobClient {
@@ -238,6 +300,20 @@ class JobClient {
 	records := buildJavaAPIContracts([]JavaSourceRecord{source})
 	if len(records) != 1 || records[0].Path != "/job-management/catalogs/{dynamic}/items/9" {
 		t.Fatalf("constant concatenation contracts = %#v", records)
+	}
+}
+
+func TestBuildJavaAPIContractsDoesNotDropUnknownConcatenationPrefix(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestTemplate;
+class JobClient {
+  private final RestTemplate restTemplate;
+  void deleteRelatedJobs(String UNKNOWN_BASE_PATH) {
+    restTemplate.delete(UNKNOWN_BASE_PATH + "/items/9");
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 || records[0].Path != "" || !records[0].UnsafeDynamic || records[0].Confidence != "PARTIAL" {
+		t.Fatalf("unknown prefix was treated as a base URL: %#v", records)
 	}
 }
 
@@ -316,7 +392,8 @@ import org.springframework.retry.annotation.Retryable;
 import org.springframework.web.client.RestClient;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 class JobClient {
-  @Value("${jobs.url}") private String baseUrl;
+  @Value("${jobs.url}")
+  private String baseUrl;
   private final RestClient restClient;
   @Retryable
   void deleteRelatedJobs(String catalogId, String itemId) {
@@ -346,5 +423,29 @@ class JobClient {
 		if strings.Contains(string(marshaled), secret) {
 			t.Fatalf("marshaled contracts leaked %q: %s", secret, marshaled)
 		}
+	}
+}
+
+func TestBuildJavaAPIContractsFindsBareBasicAuthenticationInterceptor(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
+import org.springframework.http.client.support.BasicAuthenticationInterceptor;
+class JobClient {
+  private final RestClient restClient;
+  void deleteRelatedJobs() {
+    new BasicAuthenticationInterceptor("private-user", "private-password");
+    restClient.delete("/job-management/items/9");
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	want := []AuthRecord{{Kind: "basic", Source: "spring_client_interceptor", Confidence: "EXTRACTED"}}
+	if len(records) != 1 || !reflect.DeepEqual(records[0].Auth, want) {
+		t.Fatalf("bare interceptor contracts = %#v, want auth %#v", records, want)
+	}
+	marshaled, err := json.Marshal(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(marshaled), "private-user") || strings.Contains(string(marshaled), "private-password") {
+		t.Fatalf("bare interceptor leaked credentials: %s", marshaled)
 	}
 }

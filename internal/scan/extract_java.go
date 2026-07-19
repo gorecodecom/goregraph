@@ -16,6 +16,7 @@ var (
 	javaConstantLineRE        = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*;`)
 	javaCallRE                = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	javaNewCallRE             = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+	javaConstructorTypeRE     = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_$.]*)\s*\(`)
 	javaBareCallRE            = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	javaHTTPCallRE            = regexp.MustCompile(`\b(get|post|put|delete|patch)\s*\(([^)]*)\)`)
 	javaHTTPBuilderRefRE      = regexp.MustCompile(`MockMvcRequestBuilders::(get|post|put|delete|patch)\s*,\s*(.+?)(?:,\s*[^)]*)?\)`)
@@ -174,6 +175,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			}
 			last.StringExpressions = mergeJavaStringExpressions(last.StringExpressions, extractJavaStringExpression(strings.TrimSpace(literalLines[index])))
 			last.StringVars = mergeJavaStringVars(last.StringVars, extractJavaStringVars(strings.TrimSpace(literalLines[index])))
+			last.ConstructedTypes = append(last.ConstructedTypes, extractJavaConstructedTypes(lexicalLines[index])...)
 			last.Calls = append(last.Calls, extractJavaCallsWithSource(lexicalLines[index], literalLines[index], lineNo)...)
 			last.Auth = append(last.Auth, extractJavaSecurityAuth(lexicalLine, lineNo, file.Path)...)
 			requests, pending := extractJavaHTTPRequestsWithPendingSource(lexicalLines[index], literalLines[index], lineNo, last.StringVars, last.PendingHTTP)
@@ -941,6 +943,16 @@ func extractJavaCallsWithSource(scanLine, argumentLine string, lineNo int) []Jav
 		calls = append(calls, JavaCallRecord{Method: name, Line: lineNo, Arguments: javaCallArguments(argumentLine, match[1]-1)})
 	}
 	return calls
+}
+
+func extractJavaConstructedTypes(line string) []string {
+	var result []string
+	for _, match := range javaConstructorTypeRE.FindAllStringSubmatch(line, -1) {
+		if len(match) == 2 {
+			result = append(result, shortJavaName(match[1]))
+		}
+	}
+	return result
 }
 
 func javaCallArguments(line string, open int) []string {

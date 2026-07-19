@@ -663,6 +663,7 @@ type JavaMethodRecord struct {
 	StringExpressions map[string]string      `json:"-"`
 	LocalTypes        map[string]string      `json:"-"`
 	ReturnExpression  string                 `json:"-"`
+	ConstructedTypes  []string               `json:"-"`
 	PendingHTTP       javaPendingHTTPRecord  `json:"-"`
 	TypeParameters    []string               `json:"-"`
 }

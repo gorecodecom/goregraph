@@ -37,7 +37,7 @@ func javaDeclarativeAPIContracts(source JavaSourceRecord) []APIContractRecord {
 		if !ok {
 			continue
 		}
-		basePath := javaAnnotationPath(clientAnnotation, source.Constants, "path", "url", "value")
+		basePath, baseRawPath, baseResolved := javaAnnotationPath(clientAnnotation, source.Constants, "path", "url", "value")
 		serviceCandidate := ""
 		if clientAnnotation.Name == "FeignClient" {
 			serviceCandidate = javaAnnotationAttribute(clientAnnotation, "name", "value")
@@ -50,25 +50,34 @@ func javaDeclarativeAPIContracts(source JavaSourceRecord) []APIContractRecord {
 			if !ok {
 				continue
 			}
-			methodPath := javaAnnotationPath(mapping, source.Constants, "path", "url", "value")
+			methodPath, methodRawPath, methodResolved := javaAnnotationPath(mapping, source.Constants, "path", "url", "value")
 			reason := fmt.Sprintf("spring %s declarative mapping", clientAnnotation.Name)
 			if javaMethodIsRetryable(source, method) {
 				reason += "; retryable method"
 			}
-			records = append(records, APIContractRecord{
+			record := APIContractRecord{
 				Language:         "java",
 				Package:          source.Package,
 				HTTPMethod:       httpMethod,
-				Path:             javaJoinAPIPaths(basePath, methodPath),
 				Auth:             javaClientAuthentication(source, method),
 				ServiceCandidate: serviceCandidate,
 				Caller:           method.Owner + "." + method.Name,
 				File:             source.File,
 				Line:             mapping.Line,
-				Confidence:       "EXACT",
-				ConfidenceScore:  1,
 				Reason:           reason,
-			})
+			}
+			if baseResolved && methodResolved {
+				record.Path = javaJoinAPIPaths(basePath, methodPath)
+				record.Confidence = "EXACT"
+				record.ConfidenceScore = 1
+			} else {
+				record.RawPath = javaDeclarativeRawPath(baseRawPath, methodRawPath)
+				record.UnsafeDynamic = true
+				record.Confidence = "PARTIAL"
+				record.ConfidenceScore = 0.5
+				record.Reason += "; unresolved declarative path expression"
+			}
+			records = append(records, record)
 		}
 	}
 	return records
@@ -128,7 +137,8 @@ func buildJavaPathIndex(sources []JavaSourceRecord) javaPathIndex {
 			if len(method.Parameters) != 0 || strings.TrimSpace(method.ReturnExpression) == "" {
 				continue
 			}
-			index.getters[method.Name] = append(index.getters[method.Name], javaIndexedPathExpression{
+			key := javaGetterIndexKey(method.Owner, method.Name)
+			index.getters[key] = append(index.getters[key], javaIndexedPathExpression{
 				expression: strings.TrimSpace(method.ReturnExpression),
 				constants:  source.Constants,
 			})
@@ -141,6 +151,11 @@ func javaClientAuthentication(source JavaSourceRecord, method JavaMethodRecord) 
 	hasBasicImport := javaHasImport(source.Imports, "org.springframework.http.client.support.BasicAuthenticationInterceptor")
 	if hasBasicImport {
 		for _, candidate := range source.Methods {
+			for _, typeName := range candidate.ConstructedTypes {
+				if typeName == "BasicAuthenticationInterceptor" {
+					return []AuthRecord{{Kind: "basic", Source: "spring_client_interceptor", Confidence: "EXTRACTED"}}
+				}
+			}
 			for _, call := range candidate.Calls {
 				if shortJavaName(call.TargetOwner) == "BasicAuthenticationInterceptor" {
 					return []AuthRecord{{Kind: "basic", Source: "spring_client_interceptor", Confidence: "EXTRACTED"}}
@@ -226,18 +241,57 @@ func javaDeclarativeMethodMapping(annotations []JavaAnnotationRecord) (JavaAnnot
 	return JavaAnnotationRecord{}, "", false
 }
 
-func javaAnnotationPath(annotation JavaAnnotationRecord, constants map[string]string, keys ...string) string {
+func javaAnnotationPath(annotation JavaAnnotationRecord, constants map[string]string, keys ...string) (string, string, bool) {
 	for _, key := range keys {
 		value := strings.TrimSpace(annotation.Attributes[key])
-		if value == "" {
+		raw, present := javaRawAnnotationAttribute(annotation, key)
+		if !present {
 			continue
 		}
 		if resolved, ok := constants[value]; ok {
-			return resolved
+			return resolved, raw, true
 		}
-		return value
+		if javaQuotedAnnotationPath(raw) && !strings.Contains(value, "${") {
+			return value, raw, true
+		}
+		return "", raw, false
 	}
-	return ""
+	return "", "", true
+}
+
+func javaRawAnnotationAttribute(annotation JavaAnnotationRecord, key string) (string, bool) {
+	for _, part := range splitTopLevel(annotation.Arguments, ',') {
+		piece := strings.TrimSpace(part)
+		if piece == "" {
+			continue
+		}
+		if index := strings.Index(piece, "="); index >= 0 {
+			if strings.TrimSpace(piece[:index]) == key {
+				return strings.TrimSpace(piece[index+1:]), true
+			}
+			continue
+		}
+		if key == "value" {
+			return piece, true
+		}
+	}
+	return "", false
+}
+
+func javaQuotedAnnotationPath(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	return len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"'
+}
+
+func javaDeclarativeRawPath(base, method string) string {
+	parts := make([]string, 0, 2)
+	if strings.TrimSpace(base) != "" {
+		parts = append(parts, strings.TrimSpace(base))
+	}
+	if strings.TrimSpace(method) != "" {
+		parts = append(parts, strings.TrimSpace(method))
+	}
+	return strings.Join(parts, " + ")
 }
 
 func javaAnnotationAttribute(annotation JavaAnnotationRecord, keys ...string) string {
@@ -278,15 +332,22 @@ func resolveJavaContractPath(request JavaHTTPCallRecord, source JavaSourceRecord
 		return normalizeAPIPath(value), "exact"
 	}
 	if value, ok := method.StringExpressions[expression]; ok {
-		if path, ok := javaResolvedPathExpression(value, source.Constants, method.StringExpressions, 0); ok {
+		if path, ok := javaResolvedPathExpression(value, source.Constants, method.StringExpressions, javaConfigurationBaseURLExpressions(source, method), 0); ok {
 			return normalizeAPIPath(path), "resolved"
 		}
 	}
-	if getter := javaZeroArgumentGetterName(expression); getter != "" {
-		if candidates := paths.getters[getter]; len(candidates) == 1 {
-			if path, ok := javaResolvedPathExpression(candidates[0].expression, candidates[0].constants, nil, 0); ok {
+	if receiver, getter, ok := javaZeroArgumentGetterCall(expression); ok {
+		receiverType := javaDeclaredReceiverType(source, method, receiver)
+		if candidates := paths.getters[javaGetterIndexKey(receiverType, getter)]; receiverType != "" && len(candidates) == 1 {
+			if path, ok := javaResolvedPathExpression(candidates[0].expression, candidates[0].constants, nil, nil, 0); ok {
 				return normalizeAPIPath(path), "getter"
 			}
+		}
+		return "", "partial"
+	}
+	if len(splitTopLevel(expression, '+')) > 1 {
+		if path, ok := javaResolvedPathExpression(expression, source.Constants, method.StringExpressions, javaConfigurationBaseURLExpressions(source, method), 0); ok {
+			return normalizeAPIPath(path), "resolved"
 		}
 		return "", "partial"
 	}
@@ -297,13 +358,13 @@ func resolveJavaContractPath(request JavaHTTPCallRecord, source JavaSourceRecord
 		}
 		return normalizeAPIPath(request.Path), resolution
 	}
-	if path, ok := javaResolvedPathExpression(expression, source.Constants, method.StringExpressions, 0); ok {
+	if path, ok := javaResolvedPathExpression(expression, source.Constants, method.StringExpressions, javaConfigurationBaseURLExpressions(source, method), 0); ok {
 		return normalizeAPIPath(path), "resolved"
 	}
 	return "", "partial"
 }
 
-func javaResolvedPathExpression(expression string, constants, locals map[string]string, depth int) (string, bool) {
+func javaResolvedPathExpression(expression string, constants, locals map[string]string, baseURLs map[string]bool, depth int) (string, bool) {
 	if depth > 8 {
 		return "", false
 	}
@@ -312,7 +373,7 @@ func javaResolvedPathExpression(expression string, constants, locals map[string]
 		return value, strings.HasPrefix(value, "/")
 	}
 	if value, ok := locals[expression]; ok && strings.TrimSpace(value) != expression {
-		return javaResolvedPathExpression(value, constants, locals, depth+1)
+		return javaResolvedPathExpression(value, constants, locals, baseURLs, depth+1)
 	}
 	if value, ok := javaQuotedStringValue(expression); ok {
 		return value, strings.HasPrefix(value, "/")
@@ -322,10 +383,12 @@ func javaResolvedPathExpression(expression string, constants, locals map[string]
 		var path strings.Builder
 		for _, rawPart := range parts {
 			part := strings.TrimSpace(rawPart)
-			value, resolved := javaResolvedPathPart(part, constants, locals, depth+1)
+			value, resolved := javaResolvedPathPart(part, constants, locals, baseURLs, depth+1)
 			if !resolved {
 				if path.Len() > 0 {
 					appendDynamicPathSegment(&path)
+				} else if !baseURLs[part] {
+					return "", false
 				}
 				continue
 			}
@@ -350,7 +413,7 @@ func javaResolvedPathExpression(expression string, constants, locals map[string]
 	return "", false
 }
 
-func javaResolvedPathPart(part string, constants, locals map[string]string, depth int) (string, bool) {
+func javaResolvedPathPart(part string, constants, locals map[string]string, baseURLs map[string]bool, depth int) (string, bool) {
 	if value, ok := javaQuotedStringValue(part); ok {
 		return value, true
 	}
@@ -358,9 +421,36 @@ func javaResolvedPathPart(part string, constants, locals map[string]string, dept
 		return value, true
 	}
 	if value, ok := locals[part]; ok && strings.TrimSpace(value) != part {
-		return javaResolvedPathExpression(value, constants, locals, depth)
+		return javaResolvedPathExpression(value, constants, locals, baseURLs, depth)
 	}
 	return "", false
+}
+
+func javaConfigurationBaseURLExpressions(source JavaSourceRecord, method JavaMethodRecord) map[string]bool {
+	result := map[string]bool{}
+	for _, field := range source.Fields {
+		if field.Owner != method.Owner || !javaAnnotationsContain(field.Annotations, "Value", "ConfigurationProperties") {
+			continue
+		}
+		result[field.Name] = true
+	}
+	for _, parameter := range method.Parameters {
+		if javaAnnotationsContain(parameter.Annotations, "Value") {
+			result[parameter.Name] = true
+		}
+	}
+	return result
+}
+
+func javaAnnotationsContain(annotations []JavaAnnotationRecord, names ...string) bool {
+	for _, annotation := range annotations {
+		for _, name := range names {
+			if annotation.Name == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func javaQuotedStringValue(expression string) (string, bool) {
@@ -371,19 +461,46 @@ func javaQuotedStringValue(expression string) (string, bool) {
 	return expression[1 : len(expression)-1], true
 }
 
-func javaZeroArgumentGetterName(expression string) string {
+func javaZeroArgumentGetterCall(expression string) (string, string, bool) {
 	expression = strings.TrimSpace(expression)
 	if !strings.HasSuffix(expression, "()") {
-		return ""
+		return "", "", false
 	}
 	prefix := strings.TrimSpace(strings.TrimSuffix(expression, "()"))
-	if dot := strings.LastIndex(prefix, "."); dot >= 0 {
-		prefix = prefix[dot+1:]
+	dot := strings.LastIndex(prefix, ".")
+	if dot <= 0 || dot == len(prefix)-1 {
+		return "", "", false
 	}
-	if !isJavaIdentifierPath(prefix) || strings.Contains(prefix, ".") {
-		return ""
+	receiver := strings.TrimSpace(prefix[:dot])
+	getter := strings.TrimSpace(prefix[dot+1:])
+	if !isJavaIdentifierPath(receiver) || !isJavaIdentifierPath(getter) || strings.Contains(getter, ".") {
+		return "", "", false
 	}
-	return prefix
+	return receiver, getter, true
+}
+
+func javaGetterIndexKey(owner, method string) string {
+	return shortJavaName(cleanJavaType(owner)) + "\x00" + method
+}
+
+func javaDeclaredReceiverType(source JavaSourceRecord, method JavaMethodRecord, receiver string) string {
+	if dot := strings.LastIndex(receiver, "."); dot >= 0 {
+		receiver = receiver[dot+1:]
+	}
+	if typeName := method.LocalTypes[receiver]; typeName != "" {
+		return shortJavaName(typeName)
+	}
+	for _, parameter := range method.Parameters {
+		if parameter.Name == receiver {
+			return shortJavaName(parameter.Type)
+		}
+	}
+	for _, field := range source.Fields {
+		if field.Owner == method.Owner && field.Name == receiver {
+			return shortJavaName(field.Type)
+		}
+	}
+	return ""
 }
 
 func javaMethodIsRetryable(source JavaSourceRecord, method JavaMethodRecord) bool {

@@ -28,6 +28,16 @@ func buildContractMatches(contracts []APIContractRecord, routes []CodeRouteRecor
 			records = append(records, contractIssue(contract, CodeRouteRecord{}, contractIssueFrontendInternalAPI, "OUT_OF_SCOPE", 0.8, "frontend-internal API route; not matched against backend services"))
 			continue
 		}
+		if strings.TrimSpace(contract.Path) == "" {
+			issue := contractIssueMissingRoute
+			reason := "api contract has no statically resolved path"
+			if contract.UnsafeDynamic {
+				issue = contractIssueUnsafeDynamic
+				reason = "api path could not be resolved statically"
+			}
+			records = append(records, contractIssue(contract, CodeRouteRecord{}, issue, "UNRESOLVED", 0.3, reason))
+			continue
+		}
 		if route, ok := exactContractRoute(contract, backendRoutes); ok {
 			records = append(records, contractIssue(contract, route, contractIssueMatched, "RESOLVED", 0.9, "http method and path pattern match backend route"))
 			continue
