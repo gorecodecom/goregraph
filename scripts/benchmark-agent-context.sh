@@ -280,10 +280,13 @@ if grep -Eiq 'goregraph|goregraph-out|\.goregraph-workspace|task_context|context
 fi
 
 expected_baseline='Do not use the goregraph CLI, MCP tools, goregraph-out, or .goregraph-workspace files.'
-expected_assisted='Call goregraph context once with the task and its default budget.
-Read only cited source needed for verification.
+expected_assisted='Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-At most one narrower retry may use the exact route or qualified symbol from that entrypoint; never use a call-chain value.'
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.'
 expected_baseline_file="$temporary_directory/expected-baseline.txt"
 expected_baseline_no_newline="$temporary_directory/expected-baseline-no-newline.txt"
 expected_assisted_file="$temporary_directory/expected-assisted.txt"

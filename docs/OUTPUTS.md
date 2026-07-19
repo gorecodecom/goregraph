@@ -202,8 +202,7 @@ project-specific JavaScript shard only after a project is selected. Keep
 
 ## Normal Agent Workflow
 
-Use GoreGraph once to obtain a bounded navigation pack, then verify cited
-source:
+Use GoreGraph once to obtain a source-backed Context Pack for the complete task:
 
 ```bash
 goregraph context . --query "<current coding task>" --budget-tokens 1800 --max-files 12
@@ -211,27 +210,23 @@ goregraph context . --query "<current coding task>" --budget-tokens 1800 --max-f
 
 Standard MCP exposes exactly one tool, `task_context`, with equivalent values.
 
-1. Call Context once for the current coding task.
-2. Read only cited file ranges needed to verify the result.
-3. If `fallback_required` is true, stop using GoreGraph immediately and inspect
-   source.
-4. If confidence is low, or the first result does not contain exactly one
-   reliable production entrypoint, stop and inspect source. Reliable means a
-   `route`, `symbol`, or `backend_handler` with `EXACT`, `RESOLVED`, or
-   `EXTRACTED` confidence.
-5. Only when further narrowing is necessary, allow one retry using that
-   entrypoint's exact returned route or qualified symbol. Never use a call-chain
-   value.
-6. After that retry, inspect source. There is no third Context call and no
-   specialist-query fallback cascade.
-7. Run `goregraph doctor .` only when Context reports missing or stale output.
+```text
+Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.
+```
 
-The “at most twice” ceiling applies to Context retrieval for one coding task.
-Context token estimates are approximate; benchmark totals are authoritative.
-Existing specialist CLI queries remain available for manual compatibility, but
-are not part of the normal agent workflow. `goregraph mcp --expert-tools`
-exposes legacy diagnostic and exploration tools for explicit manual use; they
-are not substitutes for a third Context call.
+The source sections replace reads of included ranges. `source_coverage` is authoritative:
+`source_omissions` are the normal reason to read afterward, and
+`source_unrepresented` reports bounded omission detail. Uncovered entries in
+`files` remain navigation metadata when coverage is partial or none. The “at
+most twice” ceiling applies to Context retrieval for one coding task. Context
+token estimates are approximate; complete-session tokens are the target for the
+benchmark gate.
 
 For an API task, the agent compiler selects at most one relevant endpoint and
 eight consumer call sites, with an explicit omitted count. The default budget

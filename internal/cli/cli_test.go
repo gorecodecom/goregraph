@@ -1450,14 +1450,13 @@ func TestContextHelpDocumentsBoundedAgentWorkflow(t *testing.T) {
 		t.Fatalf("context help exit code = %d, stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"Call Context once",
-		"exactly one reliable production entrypoint",
-		"EXACT, RESOLVED, or EXTRACTED",
-		"one narrower retry",
-		"Never retry with a call-chain value",
-		"fallback_required",
-		"stop using GoreGraph",
-		"There is no third Context call",
+		"Call goregraph context once with the complete task before reading indexed source.",
+		"Treat source_sections as current source already read; do not re-read or grep included ranges.",
+		"If source_coverage is complete, continue from the included source without another navigation read.",
+		"If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.",
+		"If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.",
+		"At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.",
+		"Do not use specialist GoreGraph queries or expert MCP tools.",
 		"goregraph-out/agent/",
 		".goregraph-workspace/agent/",
 		"Do not read index/, dashboard/",

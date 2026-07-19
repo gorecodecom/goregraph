@@ -271,17 +271,20 @@ goregraph build agent .
 goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-files 12
 ```
 
-Agents should read only the cited source ranges required to verify the result.
-For long task descriptions, GoreGraph ranks the first substantive problem
-statement as the primary action, selects one reliable production entrypoint,
-and follows at most two bounded production steps. Tests remain supporting
-neighbors instead of entrypoints. If `fallback_required` is true, confidence is
-low, or there is not exactly one `route`, `symbol`, or `backend_handler` with
-`EXACT`, `RESOLVED`, or `EXTRACTED` confidence, stop using GoreGraph and inspect
-source directly. If further narrowing is necessary, one retry may use that
-entrypoint's exact returned route or qualified symbol. Never retry with a
-call-chain value. After that retry, continue from source; do not start a
-specialist-query cascade.
+```text
+Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.
+```
+
+`source_sections` replace reads of included ranges. `source_coverage` is
+authoritative; omissions are the normal reason to read afterward, while
+`source_unrepresented` gives bounded omission detail. When coverage is partial
+or none, uncovered `files` entries remain navigation metadata.
 
 ### Update source safely before scanning
 
@@ -534,8 +537,7 @@ goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12]
 ```
 
 Compile one bounded Context Pack from `agent/context-index.json`. This is the
-normal AI workflow; use source fallback and the two-call ceiling described in
-the Quick Start.
+normal AI workflow; the source-backed read rules are stated in the Quick Start.
 
 ```bash
 goregraph update
@@ -847,7 +849,7 @@ All normal output paths are relative to the scanned project root.
 
 `goregraph mcp` starts a read-only stdio server. Standard mode exposes exactly
 one tool: `task_context`. It returns the same bounded Context Pack as the direct
-`context` command and follows the same source-fallback and two-call ceiling.
+`context` command and follows the same source-backed workflow.
 
 It:
 
@@ -970,13 +972,17 @@ goregraph context <path> --query "<current coding task>" --budget-tokens 4000 --
 ```
 
 The result contains bounded entrypoints, relationships, tests, risks, source
-files, evidence IDs, confidence, freshness, and explicit uncertainty. If
-`fallback_required` is true, stop using GoreGraph and inspect source directly.
-Only a non-low-confidence result with exactly one reliable production
-entrypoint permits one narrower retry when further narrowing is necessary. Use
-that entrypoint's exact returned route or qualified symbol, never a call-chain
-value. After the second Context call, continue from source regardless of
-outcome.
+files, evidence IDs, confidence, freshness, and explicit uncertainty.
+
+```text
+Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.
+```
 
 For an endpoint task, the compact projection keeps at most one selected endpoint
 and eight consumer call sites with an explicit omitted count. It preserves the
@@ -1004,7 +1010,7 @@ baseline quality. Context Pack `estimated_tokens` values are approximate pack
 size estimates; final Codex `tokens used` totals from raw transcripts are the
 authoritative benchmark values.
 
-The exact one-line baseline instruction, four-line assisted instruction,
+The exact one-line baseline instruction, seven-line assisted instruction,
 execution protocol, rubric, and dashboard-only decision when a gate fails are
 defined in [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md). A failed gate blocks
 the 1.3.0 release.

@@ -6,6 +6,44 @@ import (
 	"testing"
 )
 
+const sourceBackedAssistedInstruction = `Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.`
+
+func TestDocumentationUsesSourceBackedAssistedInstruction(t *testing.T) {
+	for _, file := range []string{"README.md", "COMMANDS.md", "docs/OUTPUTS.md", "docs/BENCHMARKING.md", "docs/RELEASE.md"} {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), sourceBackedAssistedInstruction) {
+			t.Fatalf("%s is missing the exact source-backed assisted instruction", file)
+		}
+	}
+}
+
+func TestDocumentationDescribesSourceBackedCoverage(t *testing.T) {
+	content, err := os.ReadFile("docs/OUTPUTS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"source sections replace reads of included ranges",
+		"`source_coverage` is authoritative",
+		"`source_omissions`",
+		"`source_unrepresented`",
+		"`files` remain navigation metadata when coverage is partial or none",
+	} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("OUTPUTS.md is missing %q", want)
+		}
+	}
+}
+
 func TestCommandsReferenceDocumentsEveryUserCommand(t *testing.T) {
 	body, err := os.ReadFile("COMMANDS.md")
 	if err != nil {

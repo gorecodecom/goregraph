@@ -36,9 +36,7 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
   selected endpoint and eight consumers plus an explicit omitted count; the
   1,800-token default and existing fallback behavior remain unchanged;
 - `goregraph context` with defaults of 1,800 estimated tokens and 12 files,
-  immediate `fallback_required` source inspection, and at most one narrower
-  retry using the exact route or qualified symbol from one reliable production
-  entrypoint, never a call-chain value;
+  source-backed sections, authoritative coverage, and bounded omission detail;
 - standard MCP with exactly `task_context`; explicit
   `goregraph mcp --expert-tools` retains legacy diagnostics and exploration for
   manual use only;
@@ -94,14 +92,32 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
 The exact matched-prompt protocol and treatment instructions are defined in
 [`BENCHMARKING.md`](BENCHMARKING.md). The baseline may append only the specified
 one-line prohibition; the assisted variant may append only the specified
-four-line bounded Context instruction. All other prompt and execution inputs
+seven-line bounded Context instruction. All other prompt and execution inputs
 must be identical. Retain every raw transcript, `summary.tsv`, and the signed
 manual rubric outside the repository.
 
-Final Codex `tokens used` totals are authoritative for the release gate. Context
-Pack `estimated_tokens` values are approximate pack-size estimates and do not
+```text
+Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.
+```
+
+The source sections replace reads of included ranges, and `source_coverage` is authoritative.
+Omissions are the normal reason to read afterward;
+`source_unrepresented` reports bounded omission detail, while uncovered entries
+in `files` remain navigation metadata when coverage is partial or none.
+
+The complete-session tokens are the target, and final Codex `tokens used` totals
+are authoritative for the release gate. Context Pack `estimated_tokens` values are
+approximate pack-size estimates and do not
 replace the three-run median totals. Assisted runs may use at most two Context
 Pack calls and may not fall back to specialist GoreGraph queries.
+
+GoreGraph remains offline, explicit, dependency-free, and watcher-free.
 
 If either token threshold fails, assisted quality is below baseline, the run
 protocol is violated, or the required external evidence is missing, do not

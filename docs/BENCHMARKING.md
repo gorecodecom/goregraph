@@ -43,13 +43,16 @@ The baseline instruction is exactly this one line:
 Do not use the goregraph CLI, MCP tools, goregraph-out, or .goregraph-workspace files.
 ```
 
-The assisted instruction is exactly these four lines:
+The assisted instruction is exactly these seven lines:
 
 ```text
-Call goregraph context once with the task and its default budget.
-Read only cited source needed for verification.
+Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-At most one narrower retry may use the exact route or qualified symbol from that entrypoint; never use a call-chain value.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.
 ```
 
 Reject the benchmark before running if an input is absent, either instruction
@@ -100,14 +103,15 @@ Both token conditions must pass:
 2. When compared directly with the recorded 145,700-token baseline, the
    assisted median must be at most 116,560 tokens.
 
-The final Codex `tokens used` totals in the retained raw transcripts and
+The complete-session final Codex `tokens used` totals in the retained raw transcripts and
 `summary.tsv` are authoritative for this gate. A Context Pack's
 `estimated_tokens` value is an approximate local size estimate only; it is
 useful for enforcing the pack budget but must not replace end-to-end Codex token
 totals.
 
-Each assisted transcript must also show no more than two Context Pack calls and
-no specialist GoreGraph query or expert MCP fallback.
+Each assisted transcript must show the source-backed workflow above: one initial
+Context Pack call, at most one narrower retry, and no specialist GoreGraph query
+or expert MCP tool.
 
 ## Latest diagnostic evidence
 

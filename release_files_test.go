@@ -131,6 +131,24 @@ func TestReleaseFilesKeep130Unreleased(t *testing.T) {
 	}
 }
 
+func TestReleaseDocumentationDefinesSourceBackedContextContract(t *testing.T) {
+	body, err := os.ReadFile("docs/RELEASE.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"source sections replace reads of included ranges",
+		"`source_coverage` is authoritative",
+		"source_unrepresented",
+		"complete-session tokens are the target",
+		"offline, explicit, dependency-free, and watcher-free",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("release notes missing source-backed Context contract %q", want)
+		}
+	}
+}
+
 func TestReleaseNotesDescribeEditableDashboardWithoutPublishing130(t *testing.T) {
 	body, err := os.ReadFile("docs/RELEASE.md")
 	if err != nil {

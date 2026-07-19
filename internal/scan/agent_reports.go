@@ -25,21 +25,20 @@ func renderCanonicalDiagnosticsEntry(records []CanonicalDiagnosticRecord) string
 func renderAgentGuideEntry() string {
 	return `# GoreGraph Agent Guide
 
-Use GoreGraph once to obtain a small navigation pack, then verify the cited source.
+Use the source-backed Context Pack once for the complete task.
 
 ` + "```bash\n" + `goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-files 12
 ` + "```" + `
 
 MCP: ` + "`task_context`" + `
 
-- Read only the cited file ranges required to verify the answer.
-- If ` + "`fallback_required`" + ` is true, stop using GoreGraph and inspect source directly.
-- A reliable production entrypoint has kind ` + "`route`" + `, ` + "`symbol`" + `, or ` + "`backend_handler`" + ` and confidence ` + "`EXACT`" + `, ` + "`RESOLVED`" + `, or ` + "`EXTRACTED`" + `.
-- If confidence is low or the result does not contain exactly one reliable production entrypoint, stop using GoreGraph and inspect source directly.
-- If additional narrowing is necessary, at most one narrower retry with that entrypoint's exact returned route or qualified symbol is allowed.
-- Never retry with a call-chain value.
-- After that retry, inspect source directly; do not make a third context call.
-- Do not call coverage, diagnostics, tests, data-flow, evidence, or symbol tools in sequence.
+- Call goregraph context once with the complete task before reading indexed source.
+- Treat source_sections as current source already read; do not re-read or grep included ranges.
+- If source_coverage is complete, continue from the included source without another navigation read.
+- If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+- If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+- At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+- Do not use specialist GoreGraph queries or expert MCP tools.
 - Read generated AI context only from ` + "`goregraph-out/agent/`" + ` or ` + "`.goregraph-workspace/agent/`" + `.
 - Do not read ` + "`index/`" + `, ` + "`dashboard/`" + `, dashboard assets, or ` + "`index/symbol-usages.json`" + ` as AI context.
 - Run ` + "`goregraph doctor .`" + ` only when the context command reports missing or stale output.

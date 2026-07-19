@@ -9,15 +9,17 @@ goregraph build agent <path>
 goregraph context <path> --query "<current coding task>" --budget-tokens 4000 --max-files 12
 ```
 
-The equivalent standard MCP tool is `task_context`. Read only the cited source
-ranges required to verify the result. If `fallback_required` is true, confidence
-is low, or the result does not contain exactly one reliable production
-entrypoint, stop using GoreGraph and inspect source directly. A reliable
-production entrypoint is a `route`, `symbol`, or `backend_handler` with
-`EXACT`, `RESOLVED`, or `EXTRACTED` confidence. At most one narrower retry is
-allowed when further narrowing is necessary; use the exact returned route or
-qualified symbol from that entrypoint, never a call-chain value. After the
-retry, continue from source; do not call specialist tools in sequence.
+The equivalent standard MCP tool is `task_context`.
+
+```text
+Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.
+```
 
 Run `goregraph doctor <path>` only when Context reports missing or stale output.
 
@@ -442,18 +444,20 @@ goregraph build agent .
 goregraph context . --query "Trace GET /users/{id}" --budget-tokens 4000 --max-files 12
 ```
 
-Use the first Context Pack directly and read only cited source ranges needed to
-verify it. Long task descriptions are ranked by their first substantive problem
-statement; later analysis requirements do not outrank the primary action. The
-pack contains one reliable production entrypoint and follows at most two bounded
-production steps. Tests can be supporting neighbors, but never ordinary
-entrypoints. If the pack reports `fallback_required`, low confidence, or does
-not contain exactly one reliable `route`, `symbol`, or `backend_handler` with
-`EXACT`, `RESOLVED`, or `EXTRACTED` confidence, stop using GoreGraph and inspect
-source. If further narrowing is necessary, one retry may use that entrypoint's
-exact returned route or qualified symbol. Never retry with a call-chain value.
-After the retry, inspect source; there is no third Context call or
-specialist-query fallback cascade.
+Use the first Context Pack directly. Long task descriptions are ranked by their
+first substantive problem statement; later analysis requirements do not outrank
+the primary action. Tests can be supporting neighbors, but never ordinary
+entrypoints.
+
+```text
+Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.
+```
 
 Endpoint tasks select at most one endpoint and eight consumer call sites, with
 an explicit omitted count when more consumers exist. The 4000-token default is
@@ -1378,13 +1382,18 @@ Then configure the MCP client to run:
 goregraph mcp
 ```
 
-The standard server exposes only `task_context`. Give it the task and use its
-first Context Pack directly. If it reports `fallback_required`, low confidence,
-or does not contain exactly one reliable production entrypoint, stop using
-GoreGraph and inspect source. If further narrowing is necessary, one narrower
-`task_context` call may use that entrypoint's exact returned route or qualified
-symbol. Never use a call-chain value for the retry. After that retry, inspect
-source regardless of its outcome.
+The standard server exposes only `task_context`. Give it the complete task and
+use its first Context Pack directly.
+
+```text
+Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.
+```
 
 Legacy specialist tools are manual compatibility operations. Expose them only
 with the explicit expert mode:
