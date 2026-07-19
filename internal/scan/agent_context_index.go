@@ -381,6 +381,9 @@ func (builder *agentContextBuilder) selectSymbols(
 		if hasTo && startsAtSeed {
 			builder.selectSymbol(to, "symbol")
 		}
+		if hasFrom && hasTo && relationSeeds[to.ID] {
+			builder.selectSymbol(from, "symbol")
+		}
 	}
 }
 

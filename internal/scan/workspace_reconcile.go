@@ -1049,27 +1049,61 @@ func (builder *workspaceAgentContextBuilder) addCatalogConsumerFacts(
 		name := compactCatalogValue(firstNonEmpty(consumer.Caller, selected.service, contextFileStem(consumer.File)))
 		authLabels := compactCatalogConsumerAuthLabels(consumer.CallAuth)
 		authSummary := strings.Join(authLabels, ", ")
-		consumerID := builder.addFact(AgentContextFactRecord{
-			ID: StableWorkspaceID(
-				"agent-context-fact", "api_consumer", consumer.ID, consumer.Project,
-				consumer.File, fmt.Sprint(consumer.Line),
-			),
-			Project: consumer.Project, Kind: "api_consumer", Name: name,
-			Qualified:  compactCatalogValue(firstNonEmpty(consumer.Caller, selected.service)),
-			HTTPMethod: compactCatalogValue(firstNonEmpty(consumer.HTTPMethod, method)),
-			Path:       compactCatalogValue(firstNonEmpty(consumer.Path, endpointPath)),
-			File:       consumer.File, Line: consumer.Line,
-			Summary:    "consumer service " + selected.service + "; auth " + authSummary,
-			Confidence: string(consumer.Confidence), EvidenceIDs: consumer.EvidenceIDs,
-			Search: compactContextSearch(
-				consumer.Project, selected.service, name, consumer.File, method, endpointPath, authSummary,
-			),
-		})
+		consumerID := builder.findCanonicalContractFact(
+			consumer.Project,
+			consumer.File,
+			consumer.Line,
+			consumer.Caller,
+		)
+		if consumerID == "" {
+			consumerID = builder.addFact(AgentContextFactRecord{
+				ID: StableWorkspaceID(
+					"agent-context-fact", "api_consumer", consumer.ID, consumer.Project,
+					consumer.File, fmt.Sprint(consumer.Line),
+				),
+				Project: consumer.Project, Kind: "api_consumer", Name: name,
+				Qualified:  compactCatalogValue(firstNonEmpty(consumer.Caller, selected.service)),
+				HTTPMethod: compactCatalogValue(firstNonEmpty(consumer.HTTPMethod, method)),
+				Path:       compactCatalogValue(firstNonEmpty(consumer.Path, endpointPath)),
+				File:       consumer.File, Line: consumer.Line,
+				Summary:    "consumer service " + selected.service + "; auth " + authSummary,
+				Confidence: string(consumer.Confidence), EvidenceIDs: consumer.EvidenceIDs,
+				Search: compactContextSearch(
+					consumer.Project, selected.service, name, consumer.File, method, endpointPath, authSummary,
+				),
+			})
+		}
 		builder.addEdge(AgentContextEdgeRecord{
 			FromFactID: consumerID, ToFactID: endpointID, Kind: "consumes_endpoint",
 			Reason: "catalog consumer auth " + authSummary, Confidence: string(consumer.Confidence),
 		})
 	}
+}
+
+func (builder *workspaceAgentContextBuilder) findCanonicalContractFact(
+	project string,
+	file string,
+	line int,
+	caller string,
+) string {
+	project = contextPathKey(project)
+	file = workspaceAgentFile(project, file)
+	callerKey := contextLabelKey(caller)
+	if project == "" || file == "" || line <= 0 || callerKey == "" {
+		return ""
+	}
+	var candidates []string
+	for id, fact := range builder.factsByID {
+		if fact.Project == project && fact.Kind == "api_contract" && fact.File == file && fact.Line == line &&
+			workspaceAgentExactIdentity(fact, callerKey) {
+			candidates = append(candidates, id)
+		}
+	}
+	sort.Strings(candidates)
+	if len(candidates) != 1 {
+		return ""
+	}
+	return candidates[0]
 }
 
 type workspaceAgentContextBuilder struct {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -622,6 +623,157 @@ func TestBuildWorkspaceAgentContextIndexRequiresContractDiscriminators(t *testin
 			t.Fatalf("contract edge ignored caller discriminator: %#v", edge)
 		}
 	}
+}
+
+func TestWorkspaceAgentContextPreservesCrossRepositoryHTTPPath(t *testing.T) {
+	const (
+		catalogPath  = "/catalogs/{catalogId}/items/{itemId}"
+		contractPath = "/job-management/catalogs/{catalogId}/items/{itemId}"
+		clientFile   = "src/main/java/example/JobClient.java"
+	)
+	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{
+		{Path: "services/catalog", Indexed: true},
+		{Path: "libraries/shared-model", Indexed: true},
+		{Path: "services/jobs", Indexed: true},
+	}}
+	projectIndexes := []AgentContextIndexRecord{
+		{
+			Root: "services/catalog",
+			Facts: []AgentContextFactRecord{
+				{
+					ID: "catalog-route", Kind: "route", Name: "DELETE " + catalogPath,
+					Qualified: "CatalogController.deleteItem", HTTPMethod: "DELETE", Path: catalogPath,
+					File: "src/main/java/example/CatalogController.java", Line: 10,
+				},
+				{
+					ID: "catalog-operations", Kind: "symbol", Name: "deleteItem",
+					Qualified: "CatalogOperations.deleteItem",
+					File:      "src/main/java/example/CatalogOperations.java", Line: 14,
+				},
+			},
+			Edges: []AgentContextEdgeRecord{{
+				ID: "catalog-call", FromFactID: "catalog-route", ToFactID: "catalog-operations", Kind: "call",
+			}},
+		},
+		{
+			Root: "libraries/shared-model",
+			Facts: []AgentContextFactRecord{
+				{
+					ID: "job-client", Kind: "symbol", Name: "deleteRelatedJobs",
+					Qualified: "JobClient.deleteRelatedJobs", File: clientFile, Line: 12,
+				},
+				{
+					ID: "jobs-contract", Kind: "api_contract", Name: "DELETE " + contractPath,
+					Qualified: "JobClient.deleteRelatedJobs", HTTPMethod: "DELETE", Path: contractPath,
+					File: clientFile, Line: 13,
+				},
+			},
+			Edges: []AgentContextEdgeRecord{{
+				ID: "client-contract", FromFactID: "job-client", ToFactID: "jobs-contract", Kind: "call",
+			}},
+		},
+		{
+			Root: "services/jobs",
+			Facts: []AgentContextFactRecord{{
+				ID: "jobs-route", Kind: "route", Name: "DELETE " + contractPath,
+				Qualified: "JobController.deleteRelatedJobs", HTTPMethod: "DELETE", Path: contractPath,
+				File: "src/main/java/example/JobController.java", Line: 20,
+			}},
+		},
+	}
+	matches := []WorkspaceContractMatchRecord{{
+		APIProject: "libraries/shared-model", APIHTTPMethod: "DELETE", APIPath: contractPath,
+		APIFile: clientFile, APILine: 13, APICaller: "JobClient.deleteRelatedJobs",
+		BackendProject: "services/jobs", BackendHTTPMethod: "DELETE", BackendPath: contractPath,
+		BackendFile: "src/main/java/example/JobController.java", BackendLine: 20,
+		BackendHandler: "JobController.deleteRelatedJobs",
+		Issue:          contractIssueMatched, Confidence: "RESOLVED", Reason: "exact workspace contract match",
+	}}
+	catalog := APICatalogRecord{Endpoints: []APIEndpointRecord{{
+		ID: "endpoint:jobs", ProviderProject: "services/jobs", ProviderService: "jobs",
+		HTTPMethod: "DELETE", Path: contractPath, Handler: "JobController.deleteRelatedJobs",
+		File: "src/main/java/example/JobController.java", Line: 20,
+		Consumers: []APIConsumerRecord{{
+			ID: "consumer:shared-job-client", Project: "libraries/shared-model", Service: "shared-model",
+			Caller: "JobClient.deleteRelatedJobs", File: clientFile, Line: 13,
+			HTTPMethod: "DELETE", Path: contractPath, Confidence: ConfidenceExact,
+		}},
+	}}}
+
+	build := func(indexes []AgentContextIndexRecord) AgentContextIndexRecord {
+		t.Helper()
+		return BuildWorkspaceAgentContextIndex(
+			registry, indexes, matches, nil, WorkspaceEndpointTraceIndexRecord{}, catalog, "fixed",
+		)
+	}
+	forward := build(projectIndexes)
+	reversedIndexes := slices.Clone(projectIndexes)
+	slices.Reverse(reversedIndexes)
+	backward := build(reversedIndexes)
+	if diff := cmpJSON(forward, backward); diff != "" {
+		t.Fatalf("workspace HTTP path depends on project input order: %s", diff)
+	}
+
+	catalogRoute := findContextFact(forward.Facts, "route", "DELETE "+catalogPath)
+	client := findContextFact(forward.Facts, "symbol", "deleteRelatedJobs")
+	contract := findContextFact(forward.Facts, "api_contract", "DELETE "+contractPath)
+	provider := findContextFact(forward.Facts, "route", "DELETE "+contractPath)
+	endpoint := findContextFact(forward.Facts, "api_endpoint", "DELETE "+contractPath)
+	for name, fact := range map[string]AgentContextFactRecord{
+		"catalog route":  catalogRoute,
+		"shared client":  client,
+		"contract":       contract,
+		"provider route": provider,
+		"endpoint":       endpoint,
+	} {
+		if fact.ID == "" {
+			t.Fatalf("%s fact missing: %#v", name, forward.Facts)
+		}
+	}
+	path := directedContextPath(forward.Edges, client.ID, provider.ID, 7)
+	if len(path) == 0 {
+		t.Fatalf("shared client-to-provider path missing: %#v", forward.Edges)
+	}
+	for _, factID := range path {
+		fact := findContextFactByID(forward.Facts, factID)
+		if strings.Contains(fact.File, ".goregraph") || strings.Contains(fact.File, "context-index.json") {
+			t.Fatalf("generated metadata fact lies on HTTP path: %#v", fact)
+		}
+	}
+	if got := countContextFacts(forward.Facts, "api_consumer"); got != 0 {
+		t.Fatalf("canonical contract was duplicated as %d API consumer facts: %#v", got, forward.Facts)
+	}
+	if !hasContextEdge(forward.Edges, contract.ID, endpoint.ID, "consumes_endpoint") {
+		t.Fatalf("canonical contract is not linked to endpoint metadata: %#v", forward.Edges)
+	}
+	if path := directedContextPath(forward.Edges, catalogRoute.ID, client.ID, 7); len(path) != 0 {
+		t.Fatalf("workspace reconciliation fabricated catalog-to-library connectivity: %#v", path)
+	}
+}
+
+func directedContextPath(edges []AgentContextEdgeRecord, fromID, toID string, maximumEdges int) []string {
+	type contextPathState struct {
+		factIDs []string
+	}
+	queue := []contextPathState{{factIDs: []string{fromID}}}
+	for len(queue) > 0 {
+		state := queue[0]
+		queue = queue[1:]
+		current := state.factIDs[len(state.factIDs)-1]
+		if current == toID {
+			return state.factIDs
+		}
+		if len(state.factIDs)-1 >= maximumEdges {
+			continue
+		}
+		for _, edge := range edges {
+			if edge.FromFactID != current || slices.Contains(state.factIDs, edge.ToFactID) {
+				continue
+			}
+			queue = append(queue, contextPathState{factIDs: append(slices.Clone(state.factIDs), edge.ToFactID)})
+		}
+	}
+	return nil
 }
 
 func TestBuildWorkspaceAgentContextIndexRejectsContractIdentityPrefixCollisions(t *testing.T) {

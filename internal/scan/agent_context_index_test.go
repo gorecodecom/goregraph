@@ -279,6 +279,100 @@ func TestBuildProjectAgentContextIndexCompactsFlowsTestsContractsAndCoverage(t *
 	}
 }
 
+func TestProjectAgentContextLinksJavaCallerToContract(t *testing.T) {
+	const contractPath = "/job-management/catalogs/{catalogId}/items/{itemId}"
+	symbols := []RichSymbolRecord{
+		{
+			ID: "symbol:catalog-operations", Name: "deleteItem",
+			QualifiedName: "CatalogOperations.deleteItem", Kind: "method", Language: "java",
+			File: "src/main/java/example/CatalogOperations.java", Line: 14,
+		},
+		{
+			ID: "symbol:job-client", Name: "deleteRelatedJobs",
+			QualifiedName: "JobClient.deleteRelatedJobs", Kind: "method", Language: "java",
+			File: "src/main/java/example/JobClient.java", Line: 12,
+		},
+		{
+			ID: "symbol:health-operations", Name: "checkHealth",
+			QualifiedName: "HealthOperations.checkHealth", Kind: "method", Language: "java",
+			File: "src/main/java/example/HealthOperations.java", Line: 8,
+		},
+		{
+			ID: "symbol:health-client", Name: "health",
+			QualifiedName: "HealthClient.health", Kind: "method", Language: "java",
+			File: "src/main/java/example/HealthClient.java", Line: 6,
+		},
+	}
+	relations := []RichRelationRecord{
+		{
+			ID: "relation:catalog-to-jobs", From: "src/main/java/example/CatalogOperations.java",
+			To: "JobClient.deleteRelatedJobs", Type: "call", Language: "java", Line: 20,
+			FromSymbolID: "symbol:catalog-operations", ToSymbolID: "symbol:job-client",
+			Resolution: SymbolResolutionExact, Confidence: "RESOLVED",
+		},
+		{
+			ID: "relation:health-check", From: "src/main/java/example/HealthOperations.java",
+			To: "HealthClient.health", Type: "call", Language: "java", Line: 10,
+			FromSymbolID: "symbol:health-operations", ToSymbolID: "symbol:health-client",
+			Resolution: SymbolResolutionExact, Confidence: "EXACT",
+		},
+	}
+	contracts := []APIContractRecord{
+		{
+			Language: "java", HTTPMethod: "DELETE", Path: contractPath,
+			Caller: "JobClient.deleteRelatedJobs", File: "src/main/java/example/JobClient.java",
+			Line: 13, Confidence: "EXACT",
+		},
+		{
+			Language: "java", HTTPMethod: "GET", Path: "/health",
+			Caller: "HealthClient.health", File: "src/main/java/example/HealthClient.java",
+			Line: 7, Confidence: "EXACT",
+		},
+	}
+
+	build := func(symbols []RichSymbolRecord, relations []RichRelationRecord, contracts []APIContractRecord) AgentContextIndexRecord {
+		t.Helper()
+		return BuildProjectAgentContextIndex(
+			"libraries/shared-model", "fixed", nil, nil, symbols, relations, nil, contracts, nil, nil,
+		)
+	}
+	forward := build(symbols, relations, contracts)
+	reversedSymbols := slices.Clone(symbols)
+	slices.Reverse(reversedSymbols)
+	reversedRelations := slices.Clone(relations)
+	slices.Reverse(reversedRelations)
+	reversedContracts := slices.Clone(contracts)
+	slices.Reverse(reversedContracts)
+	backward := build(reversedSymbols, reversedRelations, reversedContracts)
+
+	if diff := cmpJSON(forward, backward); diff != "" {
+		t.Fatalf("Java caller-contract context depends on input order: %s", diff)
+	}
+	operations := findContextFact(forward.Facts, "symbol", "deleteItem")
+	client := findContextFact(forward.Facts, "symbol", "deleteRelatedJobs")
+	contract := findContextFact(forward.Facts, "api_contract", "DELETE "+contractPath)
+	for name, fact := range map[string]AgentContextFactRecord{
+		"catalog operations": operations,
+		"job client":         client,
+		"API contract":       contract,
+	} {
+		if fact.ID == "" {
+			t.Fatalf("%s fact missing: %#v", name, forward.Facts)
+		}
+	}
+	if !hasContextEdge(forward.Edges, operations.ID, client.ID, "call") {
+		t.Fatalf("catalog caller-to-client edge missing: %#v", forward.Edges)
+	}
+	if !hasContextEdge(forward.Edges, client.ID, contract.ID, "call") {
+		t.Fatalf("Java client-to-contract edge missing: %#v", forward.Edges)
+	}
+	for _, edge := range forward.Edges {
+		if edge.ID == "" || edge.FromFactID == "" || edge.ToFactID == "" {
+			t.Fatalf("unstable Java caller-contract edge identity: %#v", edge)
+		}
+	}
+}
+
 func TestBuildProjectAgentContextIndexNormalizesRoutesAndFlowTransitions(t *testing.T) {
 	routes := []CodeRouteRecord{{
 		Kind: "backend", HTTPMethod: "delete", Path: "users/{id}",
