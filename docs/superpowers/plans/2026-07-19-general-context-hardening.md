@@ -124,7 +124,7 @@ git commit -m "Preserve braces in Java annotation strings" -m "- Keep path-varia
 
 - [ ] **Step 1: Add a table-driven route-literal parity test**
 
-Add `TestExtractCodeRoutesPreservesParameterizedLiteralsAcrossLanguages`. For each supported extractor, call `extractCodeIntelligence` with one proven framework binding and one parameterized production route:
+Add `TestExtractCodeRoutesPreservesParameterizedLiteralsAcrossLanguages`. For each supported extractor, call `extractCodeIntelligence` with one parameterized route in syntax that extractor already recognizes:
 
 - Go router: `/records/{recordId:[0-9]{2,4}}`
 - PHP/Laravel: `/records/{record}`
@@ -132,7 +132,7 @@ Add `TestExtractCodeRoutesPreservesParameterizedLiteralsAcrossLanguages`. For ea
 - Python/FastAPI: `/records/{record_id:path}`
 - Rust/Actix or Rocket: `/records/{record_id:[0-9]{2,4}}`
 
-Require exactly one route and byte-identical `Path` for every case. Keep each registration in a syntax already supported by the corresponding extractor; do not imply multiline or framework coverage that does not exist.
+Require exactly one route, the extractor's current framework label, and byte-identical `Path` for every case. Assert `FrameworkBound` only for the TypeScript/Express case, where imports and factory initialization provide actual binding evidence; require it to remain false for syntax-classified Go, PHP, Python, and Rust cases. Name the Rust case `Rust attribute syntax`, because its shared `Actix/Rocket` label does not prove one specific framework. Do not imply multiline or framework coverage that does not exist.
 
 - [ ] **Step 2: Run the focused characterization**
 
