@@ -2,6 +2,8 @@ package agent
 
 import (
 	"fmt"
+	"go/parser"
+	"go/token"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -68,6 +70,45 @@ func TestContextSelectionIsLanguageNeutral(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, baseline) {
 			t.Fatalf("extension %s selection diverged from .java: %#v != %#v", extension, got, baseline)
+		}
+	}
+}
+
+func TestCrossServiceFixtureSourcesAvoidDeclarationCollisions(t *testing.T) {
+	facts := crossServiceContextFacts(".go")
+	sourceFacts := make(map[string][]scan.AgentContextFactRecord)
+	for _, fact := range facts {
+		path := filepath.Join(fact.Project, fact.File)
+		sourceFacts[path] = append(sourceFacts[path], fact)
+	}
+
+	goMethods := make(map[string]string)
+	for path, sourceFacts := range sourceFacts {
+		fixtureType := crossServiceFixtureType(path)
+		goSource := crossServiceSource(".go", path, sourceFacts)
+		if _, err := parser.ParseFile(token.NewFileSet(), filepath.Base(path), goSource, 0); err != nil {
+			t.Fatalf("Go fixture %q is invalid: %v", path, err)
+		}
+		for _, fact := range sourceFacts {
+			method := fixtureType + "." + crossServiceFactIdentifier(fact)
+			projectMethod := fact.Project + "\x00" + method
+			if existing, exists := goMethods[projectMethod]; exists {
+				t.Fatalf("Go fixture method %q collides for %q and %q", method, existing, path)
+			}
+			goMethods[projectMethod] = path
+		}
+	}
+
+	javaTypes := make(map[string]string)
+	for _, fact := range crossServiceContextFacts(".java") {
+		path := filepath.Join(fact.Project, fact.File)
+		fixtureType := crossServiceFixtureType(path)
+		if existing, exists := javaTypes[fixtureType]; exists && existing != path {
+			t.Fatalf("Java fixture type %q collides for %q and %q", fixtureType, existing, path)
+		}
+		javaTypes[fixtureType] = path
+		if source := crossServiceSource(".java", path, []scan.AgentContextFactRecord{fact}); !strings.Contains(source, "class "+fixtureType+" {") {
+			t.Fatalf("Java fixture %q does not declare %q", path, fixtureType)
 		}
 	}
 }
@@ -192,7 +233,7 @@ func writeCrossServiceContextFixture(t *testing.T, extension string) string {
 		}
 	}
 	for path, facts := range sourceFacts {
-		writeContextSourceFile(t, root, path, crossServiceSource(extension, facts))
+		writeContextSourceFile(t, root, path, crossServiceSource(extension, path, facts))
 	}
 	return root
 }
@@ -218,20 +259,29 @@ func crossServiceContextFacts(extension string) []scan.AgentContextFactRecord {
 	return facts
 }
 
-func crossServiceSource(extension string, facts []scan.AgentContextFactRecord) string {
+func crossServiceSource(extension, sourcePath string, facts []scan.AgentContextFactRecord) string {
 	lines := make([]string, 50)
 	for index := range lines {
 		lines[index] = fmt.Sprintf("// source line %d", index+1)
 	}
 	lines[0] = crossServiceSourceHeader(extension)
-	if extension == ".java" {
-		lines[1] = "class ContextFixture {"
+	fixtureType := crossServiceFixtureType(sourcePath)
+	switch extension {
+	case ".java":
+		lines[1] = "class " + fixtureType + " {"
 		lines[len(lines)-1] = "}"
+	case ".go":
+		lines[1] = "type " + fixtureType + " struct{}"
 	}
 	for _, fact := range facts {
-		lines[fact.Line-1] = crossServiceSourceDeclaration(extension, crossServiceFactIdentifier(fact))
+		lines[fact.Line-1] = crossServiceSourceDeclaration(extension, fixtureType, crossServiceFactIdentifier(fact))
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func crossServiceFixtureType(sourcePath string) string {
+	name := strings.NewReplacer("/", "_", "\\", "_", ".", "_", "-", "_").Replace(sourcePath)
+	return "ContextFixture_" + name
 }
 
 func crossServiceSourceHeader(extension string) string {
@@ -258,10 +308,10 @@ func crossServiceFactIdentifier(fact scan.AgentContextFactRecord) string {
 	return strings.Fields(identifier)[0]
 }
 
-func crossServiceSourceDeclaration(extension, identifier string) string {
+func crossServiceSourceDeclaration(extension, fixtureType, identifier string) string {
 	switch extension {
 	case ".go":
-		return "func " + identifier + "() {}"
+		return "func (" + fixtureType + ") " + identifier + "() {}"
 	case ".ts":
 		return "export function " + identifier + "() {}"
 	case ".py":
