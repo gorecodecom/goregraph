@@ -238,15 +238,16 @@ func goReceiverPrefix(prefix string) bool {
 
 func sourcePrefixIsUnsafe(prefix string) bool {
 	trimmed := strings.TrimSpace(prefix)
-	if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") ||
-		strings.HasPrefix(trimmed, "*") || strings.HasPrefix(trimmed, "#") {
+	if strings.ContainsAny(trimmed, "\"'`") || strings.Contains(trimmed, "//") ||
+		strings.Contains(trimmed, "/*") || strings.Contains(trimmed, "--") ||
+		strings.Contains(trimmed, "#") || strings.HasPrefix(trimmed, "*") {
 		return true
 	}
 	if strings.Contains(prefix, "=") || strings.Contains(prefix, ".") ||
 		strings.Contains(prefix, "->") || strings.Contains(prefix, "::") {
 		return true
 	}
-	for _, word := range []string{"return", "throw", "if", "for", "while", "switch", "case"} {
+	for _, word := range []string{"return", "throw", "if", "for", "while", "switch", "case", "go", "defer"} {
 		if containsSourceWord(prefix, word) {
 			return true
 		}

@@ -92,6 +92,36 @@ func TestRenderSourceCandidateRejectsOldCallAfterDeclarationRename(t *testing.T)
 	}
 }
 
+func TestRenderSourceCandidateRejectsGoCallPrefixes(t *testing.T) {
+	candidate := sourceCandidate{Path: "service.go", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
+	for _, line := range []string{
+		"go deleteUser()",
+		"defer deleteUser()",
+	} {
+		t.Run(line, func(t *testing.T) {
+			_, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: []string{line}}, "body")
+			if err == nil || err.Error() != "indexed symbol has no unique declaration-like occurrence" {
+				t.Fatalf("renderSourceCandidate() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestRenderSourceCandidateRejectsIdentifiersOutsideCode(t *testing.T) {
+	candidate := sourceCandidate{Path: "source", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
+	for _, line := range []string{
+		`print("def deleteUser")`,
+		"x(); // class deleteUser",
+	} {
+		t.Run(line, func(t *testing.T) {
+			_, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: []string{line}}, "body")
+			if err == nil || err.Error() != "indexed symbol has no unique declaration-like occurrence" {
+				t.Fatalf("renderSourceCandidate() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestRenderSourceCandidateExtractsQualifiedIdentifiers(t *testing.T) {
 	tests := []struct {
 		name      string
