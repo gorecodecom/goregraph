@@ -1,0 +1,272 @@
+package agent
+
+import (
+	"fmt"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/gorecodecom/goregraph/internal/scan"
+)
+
+func TestBuildContextReplacesCrossServiceDiscovery(t *testing.T) {
+	root := writeCrossServiceContextFixture(t, ".java")
+	query := "When a catalog item is deleted through DELETE /catalogs/{catalogId}/items/{itemId}, analyze services/catalog, libraries/shared-model, and services/jobs. Cover the endpoint, current and required chain, contract, authentication, configuration, persistence, and tests."
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "route" {
+		t.Fatalf("primary entrypoint = %#v", pack)
+	}
+	for _, project := range []string{"services/catalog", "libraries/shared-model", "services/jobs"} {
+		if !contextPackHasProductionSource(pack, project) {
+			t.Fatalf("missing production source for %s: %#v", project, pack.SourceSections)
+		}
+	}
+	if !contextPackHasRelationshipKind(pack, "http_contract") {
+		t.Fatalf("cross-service contract path missing: %#v", pack.CallChain)
+	}
+	if contextPackTestPrecedesProduction(pack, []string{"services/catalog", "libraries/shared-model", "services/jobs"}) {
+		t.Fatalf("test source displaced required production: %#v", pack.SourceSections)
+	}
+	if pack.SourceCoverage != "complete" || pack.EstimatedTokens > 4000 {
+		t.Fatalf("source coverage/budget = %q/%d", pack.SourceCoverage, pack.EstimatedTokens)
+	}
+}
+
+func TestContextSelectionIsLanguageNeutral(t *testing.T) {
+	query := "When a catalog item is deleted through DELETE /catalogs/{catalogId}/items/{itemId}, analyze services/catalog, libraries/shared-model, and services/jobs. Cover the endpoint, current and required chain, contract, authentication, configuration, persistence, and tests."
+	wantFactIDs := []string{
+		"change-repository", "client", "contract", "operations", "provider",
+		"regular-repository", "route", "service", "test",
+	}
+	wantConcernKeys := []string{
+		"authentication", "entrypoint", "http_contract", "persistence", "primary_path",
+		"project:libraries/shared-model", "project:services/catalog", "project:services/jobs", "tests",
+	}
+
+	var baseline contextSelectionSnapshot
+	for _, extension := range []string{".java", ".go", ".ts", ".py"} {
+		root := writeCrossServiceContextFixture(t, extension)
+		pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := contextSelectionSnapshotForPack(pack)
+		if !reflect.DeepEqual(got.FactIDs, wantFactIDs) ||
+			!reflect.DeepEqual(got.ConcernKeys, wantConcernKeys) ||
+			got.SourceCoverage != "complete" {
+			t.Fatalf("extension %s selection = %#v, want fact IDs %#v, concern keys %#v, and complete source coverage", extension, got, wantFactIDs, wantConcernKeys)
+		}
+		if extension == ".java" {
+			baseline = got
+			continue
+		}
+		if !reflect.DeepEqual(got, baseline) {
+			t.Fatalf("extension %s selection diverged from .java: %#v != %#v", extension, got, baseline)
+		}
+	}
+}
+
+type contextSelectionSnapshot struct {
+	FactIDs        []string
+	ConcernKeys    []string
+	ProjectOrder   []string
+	RenderModes    []string
+	SourceCoverage string
+}
+
+func contextSelectionSnapshotForPack(pack ContextPack) contextSelectionSnapshot {
+	factIDs := append([]string(nil), pack.selectedSourceFactIDs...)
+	sort.Strings(factIDs)
+
+	projects := make([]string, 0, len(pack.SourceSections))
+	seenProjects := make(map[string]bool)
+	renderModes := make([]string, 0, len(pack.SourceSections))
+	for _, section := range pack.SourceSections {
+		if section.Role != "test" && !seenProjects[section.Project] {
+			seenProjects[section.Project] = true
+			projects = append(projects, section.Project)
+		}
+		renderModes = append(renderModes, section.RenderMode)
+	}
+
+	return contextSelectionSnapshot{
+		FactIDs:        factIDs,
+		ConcernKeys:    contextPackConcernKeys(pack),
+		ProjectOrder:   projects,
+		RenderModes:    renderModes,
+		SourceCoverage: pack.SourceCoverage,
+	}
+}
+
+func contextPackConcernKeys(pack ContextPack) []string {
+	value := reflect.ValueOf(pack)
+	concerns := value.FieldByName("Concerns")
+	if !concerns.IsValid() || concerns.Kind() != reflect.Slice {
+		return nil
+	}
+
+	keys := make([]string, 0, concerns.Len())
+	for index := 0; index < concerns.Len(); index++ {
+		concern := concerns.Index(index)
+		kind := concern.FieldByName("Kind")
+		project := concern.FieldByName("Project")
+		if !kind.IsValid() || kind.Kind() != reflect.String {
+			continue
+		}
+		key := kind.String()
+		if project.IsValid() && project.Kind() == reflect.String && project.String() != "" {
+			key += ":" + project.String()
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func contextPackHasProductionSource(pack ContextPack, project string) bool {
+	for _, section := range pack.SourceSections {
+		if section.Project == project && section.Role != "test" {
+			return true
+		}
+	}
+	return false
+}
+
+func contextPackHasRelationshipKind(pack ContextPack, kind string) bool {
+	for _, relationship := range pack.CallChain {
+		if relationship.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func contextPackTestPrecedesProduction(pack ContextPack, requiredProjects []string) bool {
+	required := make(map[string]bool, len(requiredProjects))
+	for _, project := range requiredProjects {
+		required[project] = true
+	}
+	firstTest := len(pack.SourceSections)
+	lastRequiredProduction := -1
+	for index, section := range pack.SourceSections {
+		if section.Role == "test" && firstTest == len(pack.SourceSections) {
+			firstTest = index
+		}
+		if section.Role != "test" && required[section.Project] {
+			lastRequiredProduction = index
+		}
+	}
+	return firstTest < lastRequiredProduction
+}
+
+func writeCrossServiceContextFixture(t *testing.T, extension string) string {
+	t.Helper()
+	root := t.TempDir()
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-19T00:00:00Z",
+		Facts:         crossServiceContextFacts(extension),
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "e1", FromFactID: "route", ToFactID: "operations", Kind: "call", Confidence: "EXACT"},
+			{ID: "e2", FromFactID: "operations", ToFactID: "client", Kind: "call", Confidence: "RESOLVED"},
+			{ID: "e3", FromFactID: "client", ToFactID: "contract", Kind: "call", Confidence: "EXACT"},
+			{ID: "e4", FromFactID: "contract", ToFactID: "provider", Kind: "http_contract", Confidence: "RESOLVED"},
+			{ID: "e5", FromFactID: "provider", ToFactID: "service", Kind: "call", Confidence: "EXACT"},
+			{ID: "e6", FromFactID: "service", ToFactID: "regular-repository", Kind: "persistence", Confidence: "RESOLVED"},
+			{ID: "e7", FromFactID: "service", ToFactID: "change-repository", Kind: "persistence", Confidence: "RESOLVED"},
+			{ID: "e8", FromFactID: "test", ToFactID: "route", Kind: "test_target", Confidence: "EXACT"},
+		},
+	}
+	writeContextIndexAt(t, filepath.Join(root, ".goregraph-workspace", "agent", "context-index.json"), index)
+	sourceFacts := make(map[string][]scan.AgentContextFactRecord)
+	for _, fact := range index.Facts {
+		if fact.Kind == "test" || fact.Kind == "route" || fact.Kind == "symbol" || fact.Kind == "api_contract" || fact.Kind == "persistence" {
+			path := filepath.Join(fact.Project, fact.File)
+			sourceFacts[path] = append(sourceFacts[path], fact)
+		}
+	}
+	for path, facts := range sourceFacts {
+		writeContextSourceFile(t, root, path, crossServiceSource(extension, facts))
+	}
+	return root
+}
+
+func crossServiceContextFacts(extension string) []scan.AgentContextFactRecord {
+	facts := []scan.AgentContextFactRecord{
+		{ID: "route", Project: "services/catalog", Kind: "route", Name: "DELETE /catalogs/{catalogId}/items/{itemId}", Qualified: "CatalogController.deleteItem", HTTPMethod: "DELETE", Path: "/catalogs/{catalogId}/items/{itemId}", File: "src/main/java/example/CatalogController.java", Line: 10, EndLine: 14, Confidence: "EXACT", Search: "delete catalog item"},
+		{ID: "operations", Project: "services/catalog", Kind: "symbol", Name: "deleteItem", Qualified: "CatalogOperations.deleteItem", File: "src/main/java/example/CatalogOperations.java", Line: 8, EndLine: 15, Confidence: "EXACT", Search: "delete catalog item operations"},
+		{ID: "client", Project: "libraries/shared-model", Kind: "symbol", Name: "deleteRelatedJobs", Qualified: "JobManagementClient.deleteRelatedJobs", File: "src/main/java/example/JobManagementClient.java", Line: 12, EndLine: 24, Confidence: "EXACT", Search: "delete related jobs basic authentication retry configuration"},
+		{ID: "contract", Project: "libraries/shared-model", Kind: "api_contract", Name: "DELETE /job-management/catalogs/{catalogId}/items/{itemId}", Qualified: "JobManagementClient.deleteRelatedJobs", HTTPMethod: "DELETE", Path: "/job-management/catalogs/{catalogId}/items/{itemId}", File: "src/main/java/example/JobManagementClient.java", Line: 18, EndLine: 21, Confidence: "RESOLVED", Search: "delete related jobs internal contract"},
+		{ID: "provider", Project: "services/jobs", Kind: "route", Name: "DELETE /job-management/catalogs/{catalogId}/items/{itemId}", Qualified: "JobManagementController.deleteRelatedJobs", HTTPMethod: "DELETE", Path: "/job-management/catalogs/{catalogId}/items/{itemId}", File: "src/main/java/example/JobManagementController.java", Line: 20, EndLine: 25, Confidence: "EXACT", Search: "delete related jobs"},
+		{ID: "service", Project: "services/jobs", Kind: "symbol", Name: "deleteRelatedJobs", Qualified: "JobService.deleteRelatedJobs", File: "src/main/java/example/JobService.java", Line: 30, EndLine: 45, Confidence: "EXACT", Search: "delete related jobs persistence"},
+		{ID: "regular-repository", Project: "services/jobs", Kind: "persistence", Name: "deleteByCatalogIdAndItemId", Qualified: "JobRepository.deleteByCatalogIdAndItemId", File: "src/main/java/example/JobRepository.java", Line: 8, EndLine: 10, Confidence: "EXACT", Search: "regular job catalog item delete persistence"},
+		{ID: "change-repository", Project: "services/jobs", Kind: "persistence", Name: "deleteByCatalogIdAndItemId", Qualified: "ChangeJobRepository.deleteByCatalogIdAndItemId", File: "src/main/java/example/ChangeJobRepository.java", Line: 8, EndLine: 10, Confidence: "EXACT", Search: "change job catalog item delete persistence"},
+		{ID: "test", Project: "services/catalog", Kind: "test", Name: "deletes item", File: "src/test/java/example/CatalogControllerTest.java", Line: 15, EndLine: 28, Confidence: "EXACT", Search: "delete catalog item test"},
+	}
+	if extension == ".java" {
+		return facts
+	}
+	for index := range facts {
+		facts[index].File = strings.TrimSuffix(facts[index].File, ".java") + extension
+	}
+	return facts
+}
+
+func crossServiceSource(extension string, facts []scan.AgentContextFactRecord) string {
+	lines := make([]string, 50)
+	for index := range lines {
+		lines[index] = fmt.Sprintf("// source line %d", index+1)
+	}
+	lines[0] = crossServiceSourceHeader(extension)
+	if extension == ".java" {
+		lines[1] = "class ContextFixture {"
+		lines[len(lines)-1] = "}"
+	}
+	for _, fact := range facts {
+		lines[fact.Line-1] = crossServiceSourceDeclaration(extension, crossServiceFactIdentifier(fact))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func crossServiceSourceHeader(extension string) string {
+	switch extension {
+	case ".go":
+		return "package example"
+	case ".ts":
+		return "export {}"
+	case ".py":
+		return "# example source"
+	default:
+		return "package example;"
+	}
+}
+
+func crossServiceFactIdentifier(fact scan.AgentContextFactRecord) string {
+	identifier := fact.Name
+	if fact.Kind == "route" {
+		identifier = fact.Qualified
+	}
+	if index := strings.LastIndex(identifier, "."); index >= 0 {
+		identifier = identifier[index+1:]
+	}
+	return strings.Fields(identifier)[0]
+}
+
+func crossServiceSourceDeclaration(extension, identifier string) string {
+	switch extension {
+	case ".go":
+		return "func " + identifier + "() {}"
+	case ".ts":
+		return "export function " + identifier + "() {}"
+	case ".py":
+		return "def " + identifier + "(): pass"
+	default:
+		return "    void " + identifier + "() {}"
+	}
+}
