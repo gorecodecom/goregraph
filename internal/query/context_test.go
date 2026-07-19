@@ -181,6 +181,51 @@ func TestRenderContextMarkdownNeutralizesControlsAndSkipsEmptyRecords(t *testing
 	}
 }
 
+func TestRenderContextMarkdownIncludesSourceCoverageSectionsAndOmissions(t *testing.T) {
+	pack := completeContextPackFixture()
+	pack.SourceCoverage = "partial"
+	pack.SourceUnrepresented = 2
+	pack.SourceSections = []agent.ContextSourceSection{
+		{
+			Project: "api", Path: "UserController.java", StartLine: 20, EndLine: 22,
+			Role: "entrypoint", RenderMode: "body", SourceState: "indexed_range_current",
+			Content: "20\tpublic void deleteUser() {\n21\t    service.deleteUser();\n22\t}",
+		},
+		{
+			Project: "service", Path: "UserService.java", StartLine: 8, EndLine: 8,
+			Role: "call_chain", RenderMode: "signature", SourceState: "relocated_current",
+			Content: "8\tvoid deleteUser();",
+		},
+	}
+	pack.SourceOmissions = []agent.ContextSourceOmission{
+		{Project: "data", Path: "UserRepository.java", Role: "persistence", Reason: "source file is missing"},
+	}
+
+	body := RenderContextMarkdown(pack)
+	for _, want := range []string{
+		"Source coverage: partial",
+		"Source unrepresented: 2",
+		"## Source sections",
+		"### 1. `api/UserController.java:20-22`",
+		"Role: entrypoint",
+		"Render mode: body",
+		"Source state: indexed_range_current",
+		"    20\tpublic void deleteUser() {",
+		"    21\t    service.deleteUser();",
+		"    22\t}",
+		"### 2. `service/UserService.java:8`",
+		"    8\tvoid deleteUser();",
+		"## Source omissions",
+		"`data/UserRepository.java`",
+		"role: persistence",
+		"source file is missing",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("source markdown missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestRunContextReturnsBarePrettyJSONWithSeparateByteGates(t *testing.T) {
 	root := writeQueryContextIndex(t, simpleContextIndex())
 
@@ -246,6 +291,36 @@ func TestRunContextDefaultsToDeterministicMarkdown(t *testing.T) {
 	}
 	if !strings.Contains(first, "Budget tokens: ") || !strings.Contains(first, " / 4000") {
 		t.Fatalf("default budget missing:\n%s", first)
+	}
+}
+
+func TestRunContextDefaultMarkdownIncludesBuiltSource(t *testing.T) {
+	index := simpleContextIndex()
+	index.Facts[0].Qualified = "UserController.deleteUser"
+	index.Facts[0].Line = 1
+	index.Facts[0].EndLine = 3
+	root := writeQueryContextIndex(t, index)
+	if err := os.WriteFile(filepath.Join(root, "UserController.java"), []byte(
+		"public void deleteUser() {\n    service.deleteUser();\n}\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	body, err := RunContext(ContextOptions{Root: root, Query: "DELETE /users/{id}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Source coverage: complete",
+		"Source unrepresented: 0",
+		"### 1. `api/UserController.java:1-3`",
+		"    1\tpublic void deleteUser() {",
+		"    2\t    service.deleteUser();",
+		"    3\t}",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("default markdown missing source %q:\n%s", want, body)
+		}
 	}
 }
 

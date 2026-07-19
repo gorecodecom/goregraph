@@ -53,6 +53,8 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		"Confidence: "+contextInline(pack.Confidence),
 		fmt.Sprintf("Budget tokens: %d / %d", pack.EstimatedTokens, pack.BudgetTokens),
 		"Fallback required: "+contextYesNo(pack.FallbackRequired),
+		"Source coverage: "+contextSourceCoverage(pack.SourceCoverage),
+		fmt.Sprintf("Source unrepresented: %d", pack.SourceUnrepresented),
 	)
 
 	lines = appendContextLocationSection(lines, "Entrypoints", pack.Entrypoints)
@@ -96,6 +98,8 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 			lines = append(lines, entries...)
 		}
 	}
+	lines = appendContextSourceSections(lines, pack.SourceSections)
+	lines = appendContextSourceOmissions(lines, pack.SourceOmissions)
 	if len(pack.Uncertainties) > 0 {
 		entries := make([]string, 0, len(pack.Uncertainties))
 		for _, uncertainty := range pack.Uncertainties {
@@ -122,6 +126,74 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		lines = append(lines, "", "## Fallback", "- "+reason)
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func appendContextSourceSections(
+	lines []string,
+	sections []agent.ContextSourceSection,
+) []string {
+	entries := make([][]string, 0, len(sections))
+	for _, section := range sections {
+		if contextInline(section.Path) == "" || section.Content == "" {
+			continue
+		}
+		entry := []string{
+			fmt.Sprintf("### %d. %s", len(entries)+1, contextCodeReference(
+				section.Project,
+				section.Path,
+				section.StartLine,
+				section.EndLine,
+			)),
+		}
+		if role := contextInline(section.Role); role != "" {
+			entry = append(entry, "Role: "+role)
+		}
+		if mode := contextInline(section.RenderMode); mode != "" {
+			entry = append(entry, "Render mode: "+mode)
+		}
+		if state := contextInline(section.SourceState); state != "" {
+			entry = append(entry, "Source state: "+state)
+		}
+		entry = append(entry, "")
+		for _, sourceLine := range strings.Split(section.Content, "\n") {
+			entry = append(entry, "    "+sourceLine)
+		}
+		entries = append(entries, entry)
+	}
+	if len(entries) == 0 {
+		return lines
+	}
+	lines = append(lines, "", "## Source sections")
+	for _, entry := range entries {
+		lines = append(lines, "")
+		lines = append(lines, entry...)
+	}
+	return lines
+}
+
+func appendContextSourceOmissions(
+	lines []string,
+	omissions []agent.ContextSourceOmission,
+) []string {
+	entries := make([]string, 0, len(omissions))
+	for _, omission := range omissions {
+		if contextInline(omission.Path) == "" {
+			continue
+		}
+		entry := "- " + contextCodeReference(omission.Project, omission.Path, 0, 0)
+		if role := contextInline(omission.Role); role != "" {
+			entry += " — role: " + role
+		}
+		if reason := contextInline(omission.Reason); reason != "" {
+			entry += " — reason: " + reason
+		}
+		entries = append(entries, entry)
+	}
+	if len(entries) > 0 {
+		lines = append(lines, "", "## Source omissions")
+		lines = append(lines, entries...)
+	}
+	return lines
 }
 
 func appendContextLocationSection(
@@ -233,4 +305,11 @@ func contextYesNo(value bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+func contextSourceCoverage(value string) string {
+	if value = contextInline(value); value != "" {
+		return value
+	}
+	return "unknown"
 }
