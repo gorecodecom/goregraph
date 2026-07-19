@@ -12,6 +12,7 @@ import (
 
 const (
 	scoreExactRoute                  = 1000
+	scoreEmbeddedExact               = scoreExactRoute + 100
 	scoreExactQualified              = 900
 	scoreExactName                   = 800
 	scoreAllTerms                    = 500
@@ -30,13 +31,14 @@ const (
 const noAuthEvidenceDetected = "No auth evidence detected"
 
 type rankedContextFact struct {
-	fact         scan.AgentContextFactRecord
-	score        int
-	exactClass   int
-	matchedTerms int
-	routeExtras  int
-	allTerms     bool
-	reason       string
+	fact          scan.AgentContextFactRecord
+	score         int
+	exactClass    int
+	embeddedExact bool
+	matchedTerms  int
+	routeExtras   int
+	allTerms      bool
+	reason        string
 }
 
 type rankedContextSupportFact struct {
@@ -318,6 +320,7 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 	primaryQuery := contextPrimaryQuery(query)
 	queryTokens := contextQueryTokens(primaryQuery)
 	queryTerm := normalizeContextTerm(query)
+	queryAnchors := contextQueryAnchors(query)
 	ranked := make([]rankedContextFact, 0, len(facts))
 	for _, fact := range facts {
 		factTokens := contextTokenSet(strings.Join([]string{
@@ -346,6 +349,7 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 			routeExtras = len(routeTokens) - routeMatches
 		}
 		exactClass := 0
+		embeddedExact := false
 		score := 0
 		reason := "primary task match"
 		if normalizeContextTerm(primaryQuery) == queryTerm {
@@ -367,6 +371,26 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 			exactClass = 1
 			score += scoreExactName
 			reason = "exact name"
+		case contextQueryHasAnchor(queryAnchors, routeTerm):
+			exactClass = 3
+			embeddedExact = true
+			score += scoreEmbeddedExact
+			reason = "embedded exact route"
+		case contextQueryHasAnchor(queryAnchors, qualifiedTerm):
+			exactClass = 2
+			embeddedExact = true
+			score += scoreEmbeddedExact
+			reason = "embedded exact qualified name"
+		case contextQueryHasAnchor(queryAnchors, normalizeContextTerm(fact.File)):
+			exactClass = 2
+			embeddedExact = true
+			score += scoreEmbeddedExact
+			reason = "embedded exact file"
+		case contextQueryHasAnchor(queryAnchors, nameTerm):
+			exactClass = 1
+			embeddedExact = true
+			score += scoreEmbeddedExact
+			reason = "embedded exact name"
 		}
 		allTerms := len(queryTokens) > 0 && matched == len(queryTokens)
 		if allTerms {
@@ -388,17 +412,21 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 			score += scoreResolvedConfidence
 		}
 		ranked = append(ranked, rankedContextFact{
-			fact:         fact,
-			score:        score,
-			exactClass:   exactClass,
-			matchedTerms: matched,
-			routeExtras:  routeExtras,
-			allTerms:     allTerms,
-			reason:       reason,
+			fact:          fact,
+			score:         score,
+			exactClass:    exactClass,
+			embeddedExact: embeddedExact,
+			matchedTerms:  matched,
+			routeExtras:   routeExtras,
+			allTerms:      allTerms,
+			reason:        reason,
 		})
 	}
 	sort.Slice(ranked, func(i, j int) bool {
 		left, right := ranked[i], ranked[j]
+		if left.embeddedExact != right.embeddedExact {
+			return left.embeddedExact
+		}
 		if left.score != right.score {
 			return left.score > right.score
 		}
@@ -1037,6 +1065,127 @@ func contextTokenSet(value string) map[string]bool {
 
 func normalizeContextTerm(value string) string {
 	return strings.Join(contextOrderedTokens(value), " ")
+}
+
+const maximumContextQueryAnchors = 8
+const maximumContextQueryAnchorRunes = 256
+
+type contextQueryAnchorToken struct {
+	start int
+	value string
+}
+
+func contextQueryAnchors(query string) []string {
+	occurrences := make([]contextQueryAnchorToken, 0)
+	tokens := contextQueryAnchorTokens(query)
+	for index := 0; index+1 < len(tokens); index++ {
+		if contextHTTPVerbs[strings.ToUpper(tokens[index].value)] && strings.HasPrefix(tokens[index+1].value, "/") {
+			occurrences = append(occurrences, contextQueryAnchorToken{
+				start: tokens[index].start,
+				value: tokens[index].value + " " + tokens[index+1].value,
+			})
+		}
+	}
+	for _, token := range tokens {
+		if contextSupportedSourceExtension(token.value) {
+			occurrences = append(occurrences, token)
+			continue
+		}
+		if !strings.Contains(token.value, "/") &&
+			(strings.Contains(token.value, ".") || strings.Contains(token.value, "#") || strings.Contains(token.value, "::")) {
+			occurrences = append(occurrences, token)
+		}
+	}
+
+	runes := []rune(query)
+	for start := 0; start < len(runes); start++ {
+		if runes[start] != '`' {
+			continue
+		}
+		end := start + 1
+		for end < len(runes) && runes[end] != '`' {
+			end++
+		}
+		if end >= len(runes) {
+			break
+		}
+		occurrences = append(occurrences, contextQueryAnchorToken{
+			start: start,
+			value: strings.TrimSpace(string(runes[start+1 : end])),
+		})
+		start = end
+	}
+
+	sort.SliceStable(occurrences, func(i, j int) bool {
+		return occurrences[i].start < occurrences[j].start
+	})
+	anchors := make([]string, 0, maximumContextQueryAnchors)
+	seen := map[string]bool{}
+	for _, occurrence := range occurrences {
+		value := strings.TrimSpace(occurrence.value)
+		if value == "" || len([]rune(value)) > maximumContextQueryAnchorRunes {
+			continue
+		}
+		normalized := normalizeContextTerm(value)
+		if normalized == "" || seen[normalized] {
+			continue
+		}
+		seen[normalized] = true
+		anchors = append(anchors, value)
+		if len(anchors) == maximumContextQueryAnchors {
+			break
+		}
+	}
+	return anchors
+}
+
+func contextQueryAnchorTokens(query string) []contextQueryAnchorToken {
+	runes := []rune(query)
+	tokens := []contextQueryAnchorToken{}
+	for start := 0; start < len(runes); {
+		for start < len(runes) && unicode.IsSpace(runes[start]) {
+			start++
+		}
+		end := start
+		for end < len(runes) && !unicode.IsSpace(runes[end]) {
+			end++
+		}
+		if start == end {
+			continue
+		}
+		value := strings.Trim(string(runes[start:end]), "`\\\"'()[]<>,;:!?")
+		if value != "" {
+			tokens = append(tokens, contextQueryAnchorToken{start: start, value: value})
+		}
+		start = end
+	}
+	return tokens
+}
+
+func contextSupportedSourceExtension(value string) bool {
+	value = strings.ToLower(value)
+	for _, extension := range []string{
+		".go", ".java", ".kt", ".kts", ".scala", ".rs", ".swift", ".rb", ".cs",
+		".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx", ".py", ".php",
+		".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
+	} {
+		if strings.HasSuffix(value, extension) {
+			return true
+		}
+	}
+	return false
+}
+
+func contextQueryHasAnchor(anchors []string, term string) bool {
+	if term == "" {
+		return false
+	}
+	for _, anchor := range anchors {
+		if normalizeContextTerm(anchor) == term {
+			return true
+		}
+	}
+	return false
 }
 
 func expandContextEdges(

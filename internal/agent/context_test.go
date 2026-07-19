@@ -282,6 +282,73 @@ func TestBuildContextRanksExactRouteAndExpandsBoundedProductionChain(t *testing.
 	}
 }
 
+func TestBuildContextRanksEmbeddedExact(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		target     scan.AgentContextFactRecord
+		wantReason string
+	}{
+		{
+			name:  "route",
+			query: "Analyze broad dependent cleanup work around DELETE /cadasters/{cadasterId}/regulations/{objectId} before implementation.",
+			target: scan.AgentContextFactRecord{
+				ID: "route", Kind: "route", Name: "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}", File: "CadasterRegulationController.java", Confidence: "EXACT",
+			},
+			wantReason: "embedded exact route",
+		},
+		{
+			name:  "qualified symbol",
+			query: "Analyze broad dependent cleanup work around CadasterRegulationOperationsService.removeRegulation before implementation.",
+			target: scan.AgentContextFactRecord{
+				ID: "qualified", Kind: "symbol", Name: "removeRegulation", Qualified: "CadasterRegulationOperationsService.removeRegulation", File: "CadasterRegulationOperationsService.java", Confidence: "EXACT",
+			},
+			wantReason: "embedded exact qualified name",
+		},
+		{
+			name:  "source file",
+			query: "Analyze broad dependent cleanup work around src/main/java/example/CadasterRegulationController.java before implementation.",
+			target: scan.AgentContextFactRecord{
+				ID: "file", Kind: "symbol", Name: "removeRegulation", File: "src/main/java/example/CadasterRegulationController.java", Confidence: "EXACT",
+			},
+			wantReason: "embedded exact file",
+		},
+		{
+			name:  "backtick name",
+			query: "Analyze broad dependent cleanup work around `removeRegulation` before implementation.",
+			target: scan.AgentContextFactRecord{
+				ID: "name", Kind: "symbol", Name: "removeRegulation", File: "CadasterRegulationOperationsService.java", Confidence: "EXACT",
+			},
+			wantReason: "embedded exact name",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			broad := scan.AgentContextFactRecord{
+				ID: "broad", Kind: "symbol", Name: "reviewBroadCleanup", File: "BroadCleanup.java",
+				Search: test.query, Confidence: "EXACT",
+			}
+			testSource := test.target
+			testSource.ID = "test-source"
+			testSource.File = "src/test/java/example/CadasterRegulationTest.java"
+			testSource.Search = test.query
+
+			ranked := rankContextFacts([]scan.AgentContextFactRecord{
+				broad, testSource, test.target,
+			}, test.query)
+			seeds := selectContextSeeds(ranked)
+			if len(seeds) != 1 || seeds[0].fact.ID != test.target.ID {
+				t.Fatalf("first production seed = %#v, ranked = %#v, want %q", seeds, ranked, test.target.ID)
+			}
+			if seeds[0].score <= scoreExactRoute || seeds[0].reason != test.wantReason {
+				t.Fatalf("embedded exact seed = %#v, want score above %d and reason %q", seeds[0], scoreExactRoute, test.wantReason)
+			}
+		})
+	}
+}
+
 func TestBuildContextReturnsOnlyRelevantEndpointSecurityAndBoundedConsumers(t *testing.T) {
 	facts := []scan.AgentContextFactRecord{{
 		ID: "endpoint", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders/{id}",
