@@ -229,12 +229,16 @@ func contextIdentity(freshness string, factIDs, edgeIDs, concernKeys []string) s
 }
 
 func orderedContextIdentityValues(values []string) []string {
-	ordered := append([]string(nil), values...)
+	ordered := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			ordered = append(ordered, value)
+		}
+	}
 	sort.Strings(ordered)
 	result := ordered[:0]
 	for _, value := range ordered {
-		value = strings.TrimSpace(value)
-		if value == "" || len(result) > 0 && result[len(result)-1] == value {
+		if len(result) > 0 && result[len(result)-1] == value {
 			continue
 		}
 		result = append(result, value)

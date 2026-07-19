@@ -2637,6 +2637,36 @@ func TestContextIdentityIsStableAcrossSelectionOrder(t *testing.T) {
 	}
 }
 
+func TestContextIdentityNormalizesWhitespaceBeforeCanonicalization(t *testing.T) {
+	canonical := contextIdentity(
+		"fresh",
+		[]string{"a", "b"},
+		[]string{"edge-a", "edge-b"},
+		[]string{"entrypoint", "primary_path"},
+	)
+	withWhitespaceAndDuplicates := contextIdentity(
+		"fresh",
+		[]string{" b", "a", "b", " a ", ""},
+		[]string{" edge-b", "edge-a", "edge-b", " edge-a ", " "},
+		[]string{" primary_path", "entrypoint", "primary_path", " entrypoint ", ""},
+	)
+	if withWhitespaceAndDuplicates != canonical {
+		t.Fatalf(
+			"whitespace variants changed context identity: %q / %q",
+			canonical,
+			withWhitespaceAndDuplicates,
+		)
+	}
+}
+
+func TestOrderedContextIdentityValuesNormalizesSortsAndDeduplicates(t *testing.T) {
+	got := orderedContextIdentityValues([]string{" b", "a", "b", " a ", "", " "})
+	want := []string{"a", "b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("canonical identity values = %#v, want %#v", got, want)
+	}
+}
+
 func TestContextIdentityChangesWithSemanticSelectionOrFreshness(t *testing.T) {
 	base := contextIdentity("fresh", []string{"route"}, []string{"call"}, []string{"entrypoint"})
 	variants := map[string]string{
