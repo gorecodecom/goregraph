@@ -21,8 +21,11 @@ var (
 	javaHTTPBuilderRefRE      = regexp.MustCompile(`MockMvcRequestBuilders::(get|post|put|delete|patch)\s*,\s*(.+?)(?:,\s*[^)]*)?\)`)
 	javaHTTPChainVerbRE       = regexp.MustCompile(`^\s*\.(get|post|put|delete|patch)\s*\(\s*\)\s*$`)
 	javaHTTPChainURIRE        = regexp.MustCompile(`^\s*\.uri\s*\((.+)\)\s*$`)
+	javaHTTPChainReceiverRE   = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$`)
 	javaStringLiteralRE       = regexp.MustCompile(`"([^"]*)"`)
 	javaStringVarLineRE       = regexp.MustCompile(`^\s*(?:final\s+)?String\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);\s*$`)
+	javaLocalTypeLineRE       = regexp.MustCompile(`^\s*(?:final\s+)?([A-Za-z_][A-Za-z0-9_$.<>?, ]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*.+;\s*$`)
+	javaReturnExpressionRE    = regexp.MustCompile(`^\s*return\s+(.+);\s*$`)
 	javaSecurityCallRE        = regexp.MustCompile(`\.(permitAll|authenticated|hasRole|hasAnyRole|hasAuthority|hasAnyAuthority|httpBasic|oauth2ResourceServer|oauth2Login|formLogin|x509)\s*\(([^)]*)\)`)
 	javaParameterDeclaratorRE = regexp.MustCompile(`^(.+?)\s+([A-Za-z_][A-Za-z0-9_]*)\s*((?:\[\s*\])*)$`)
 	javaTypeParameterNameRE   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -165,6 +168,11 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			pending = nil
 		} else if len(source.Methods) > 0 {
 			last := &source.Methods[len(source.Methods)-1]
+			last.LocalTypes = mergeJavaLocalTypes(last.LocalTypes, extractJavaLocalType(strings.TrimSpace(lexicalLines[index])))
+			if match := javaReturnExpressionRE.FindStringSubmatch(strings.TrimSpace(literalLines[index])); len(match) == 2 {
+				last.ReturnExpression = strings.TrimSpace(match[1])
+			}
+			last.StringExpressions = mergeJavaStringExpressions(last.StringExpressions, extractJavaStringExpression(strings.TrimSpace(literalLines[index])))
 			last.StringVars = mergeJavaStringVars(last.StringVars, extractJavaStringVars(strings.TrimSpace(literalLines[index])))
 			last.Calls = append(last.Calls, extractJavaCallsWithSource(lexicalLines[index], literalLines[index], lineNo)...)
 			last.Auth = append(last.Auth, extractJavaSecurityAuth(lexicalLine, lineNo, file.Path)...)
@@ -186,6 +194,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	if len(source.Constants) == 0 {
 		source.Constants = nil
 	}
+	resolveJavaHTTPClientKinds(&source)
 	return source
 }
 
@@ -906,12 +915,19 @@ func extractJavaCallsWithSource(scanLine, argumentLine string, lineNo int) []Jav
 			calls = append(calls, JavaCallRecord{TargetOwner: match[1], Method: match[2], Line: lineNo})
 		}
 	}
-	for _, match := range javaCallRE.FindAllStringSubmatch(scanLine, -1) {
-		if len(match) == 3 {
-			if match[1] == "new" {
+	for _, match := range javaCallRE.FindAllStringSubmatchIndex(scanLine, -1) {
+		if len(match) == 6 {
+			receiver := scanLine[match[2]:match[3]]
+			if receiver == "new" {
 				continue
 			}
-			calls = append(calls, JavaCallRecord{Receiver: match[1], Method: match[2], Line: lineNo})
+			open := strings.Index(scanLine[match[5]:], "(") + match[5]
+			calls = append(calls, JavaCallRecord{
+				Receiver:  receiver,
+				Method:    scanLine[match[4]:match[5]],
+				Line:      lineNo,
+				Arguments: javaCallArguments(argumentLine, open),
+			})
 		}
 	}
 	for _, match := range javaBareCallRE.FindAllStringSubmatchIndex(scanLine, -1) {
@@ -993,27 +1009,58 @@ func extractJavaHTTPRequests(line string, lineNo int) []JavaHTTPCallRecord {
 }
 
 func extractJavaHTTPRequestsWithVars(line string, lineNo int, vars map[string]string) []JavaHTTPCallRecord {
-	requests, _ := extractJavaHTTPRequestsWithPending(line, lineNo, vars, "")
+	requests, _ := extractJavaHTTPRequestsWithPending(line, lineNo, vars, javaPendingHTTPRecord{})
 	return requests
 }
 
-func extractJavaHTTPRequestsWithPending(line string, lineNo int, vars map[string]string, pending string) ([]JavaHTTPCallRecord, string) {
+func extractJavaHTTPRequestsWithPending(line string, lineNo int, vars map[string]string, pending javaPendingHTTPRecord) ([]JavaHTTPCallRecord, javaPendingHTTPRecord) {
 	return extractJavaHTTPRequestsWithPendingSource(line, line, lineNo, vars, pending)
 }
 
 func extractJavaHTTPRequestsWithSource(scanLine, literalLine string, lineNo int, vars map[string]string) []JavaHTTPCallRecord {
-	requests, _ := extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine, lineNo, vars, "")
+	requests, _ := extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine, lineNo, vars, javaPendingHTTPRecord{})
 	return requests
 }
 
-func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, lineNo int, vars map[string]string, pending string) ([]JavaHTTPCallRecord, string) {
+func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, lineNo int, vars map[string]string, pending javaPendingHTTPRecord) ([]JavaHTTPCallRecord, javaPendingHTTPRecord) {
 	var requests []JavaHTTPCallRecord
-	for _, match := range javaHTTPCallRE.FindAllStringSubmatchIndex(literalLine, -1) {
-		if len(match) != 6 || !javaSourceSpanIsStructural(scanLine, literalLine, match[2], match[3]) {
+	for _, match := range javaCallRE.FindAllStringSubmatchIndex(literalLine, -1) {
+		if len(match) != 6 || !javaSourceSpanIsStructural(scanLine, literalLine, match[4], match[5]) {
 			continue
 		}
-		if path, ok := javaHTTPRequestPath(literalLine[match[4]:match[5]], vars); ok {
-			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, Line: lineNo})
+		method := strings.ToLower(literalLine[match[4]:match[5]])
+		if !isJavaHTTPVerb(method) {
+			continue
+		}
+		receiver := literalLine[match[2]:match[3]]
+		open := strings.Index(literalLine[match[5]:], "(") + match[5]
+		args := javaCallArguments(literalLine, open)
+		if len(args) == 0 {
+			if expression, ok := javaInlineURIExpression(literalLine, matchingJavaParen(literalLine, open)+1); ok {
+				path, _ := javaHTTPRequestPath(expression, vars)
+				requests = append(requests, JavaHTTPCallRecord{
+					Receiver: receiver, HTTPMethod: strings.ToUpper(method), Path: path,
+					PathExpression: expression, Line: lineNo,
+				})
+				continue
+			}
+			pending = javaPendingHTTPRecord{Receiver: receiver, HTTPMethod: strings.ToUpper(method), Line: lineNo}
+			continue
+		}
+		expression := strings.TrimSpace(args[0])
+		path, _ := javaHTTPRequestPath(expression, vars)
+		requests = append(requests, JavaHTTPCallRecord{
+			Receiver: receiver, HTTPMethod: strings.ToUpper(method), Path: path,
+			PathExpression: expression, Line: lineNo,
+		})
+	}
+	for _, match := range javaHTTPCallRE.FindAllStringSubmatchIndex(literalLine, -1) {
+		if len(match) != 6 || !javaSourceSpanIsStructural(scanLine, literalLine, match[2], match[3]) || isJavaQualifiedCall(literalLine, match[0]) {
+			continue
+		}
+		expression := strings.TrimSpace(literalLine[match[4]:match[5]])
+		if path, ok := javaHTTPRequestPath(expression, vars); ok {
+			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, PathExpression: expression, Line: lineNo})
 		}
 	}
 	for _, match := range javaHTTPBuilderRefRE.FindAllStringSubmatchIndex(literalLine, -1) {
@@ -1021,26 +1068,64 @@ func extractJavaHTTPRequestsWithPendingSource(scanLine, literalLine string, line
 			continue
 		}
 		if path, ok := javaHTTPRequestPath(literalLine[match[4]:match[5]], vars); ok {
-			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, Line: lineNo})
+			expression := strings.TrimSpace(literalLine[match[4]:match[5]])
+			requests = append(requests, JavaHTTPCallRecord{HTTPMethod: strings.ToUpper(literalLine[match[2]:match[3]]), Path: path, PathExpression: expression, Line: lineNo})
 		}
 	}
 	if match := javaHTTPChainVerbRE.FindStringSubmatchIndex(literalLine); len(match) == 4 && javaSourceSpanIsStructural(scanLine, literalLine, match[2], match[3]) {
-		pending = strings.ToUpper(literalLine[match[2]:match[3]])
+		pending.HTTPMethod = strings.ToUpper(literalLine[match[2]:match[3]])
+		pending.Line = lineNo
 	}
-	if pending != "" {
+	if pending.HTTPMethod != "" {
 		if match := javaHTTPChainURIRE.FindStringSubmatchIndex(literalLine); len(match) == 4 {
 			uriStart := strings.Index(literalLine, ".uri")
 			if uriStart >= 0 && javaSourceSpanIsStructural(scanLine, literalLine, uriStart, uriStart+4) {
-				path, ok := javaHTTPRequestPath(literalLine[match[2]:match[3]], vars)
-				if !ok {
-					return requests, pending
-				}
-				requests = append(requests, JavaHTTPCallRecord{HTTPMethod: pending, Path: path, Line: lineNo})
-				pending = ""
+				expression := strings.TrimSpace(literalLine[match[2]:match[3]])
+				path, _ := javaHTTPRequestPath(expression, vars)
+				requests = append(requests, JavaHTTPCallRecord{
+					Receiver: pending.Receiver, ClientKind: pending.ClientKind,
+					HTTPMethod: pending.HTTPMethod, Path: path, PathExpression: expression, Line: pending.Line,
+				})
+				pending = javaPendingHTTPRecord{}
 			}
 		}
 	}
+	if pending.HTTPMethod == "" {
+		if match := javaHTTPChainReceiverRE.FindStringSubmatch(literalLine); len(match) == 2 {
+			pending.Receiver = match[1]
+		}
+	}
 	return requests, pending
+}
+
+func isJavaHTTPVerb(method string) bool {
+	switch strings.ToLower(method) {
+	case "get", "post", "put", "delete", "patch":
+		return true
+	default:
+		return false
+	}
+}
+
+func javaInlineURIExpression(line string, start int) (string, bool) {
+	if start < 0 || start >= len(line) {
+		return "", false
+	}
+	relative := strings.Index(line[start:], ".uri")
+	if relative < 0 {
+		return "", false
+	}
+	uriStart := start + relative
+	open := strings.Index(line[uriStart+4:], "(")
+	if open < 0 {
+		return "", false
+	}
+	open += uriStart + 4
+	args := javaCallArguments(line, open)
+	if len(args) == 0 {
+		return "", false
+	}
+	return strings.TrimSpace(args[0]), true
 }
 
 func javaSourceSpanIsStructural(scanLine, literalLine string, start, end int) bool {
@@ -1141,6 +1226,27 @@ func extractJavaStringVars(line string) map[string]string {
 	return nil
 }
 
+func extractJavaStringExpression(line string) map[string]string {
+	match := javaStringVarLineRE.FindStringSubmatch(line)
+	if len(match) != 3 {
+		return nil
+	}
+	return map[string]string{match[1]: strings.TrimSpace(match[2])}
+}
+
+func mergeJavaStringExpressions(existing, next map[string]string) map[string]string {
+	if len(next) == 0 {
+		return existing
+	}
+	if existing == nil {
+		existing = map[string]string{}
+	}
+	for name, expression := range next {
+		existing[name] = expression
+	}
+	return existing
+}
+
 func mergeJavaStringVars(existing, next map[string]string) map[string]string {
 	if len(next) == 0 {
 		return existing
@@ -1152,6 +1258,85 @@ func mergeJavaStringVars(existing, next map[string]string) map[string]string {
 		existing[key] = value
 	}
 	return existing
+}
+
+func extractJavaLocalType(line string) map[string]string {
+	match := javaLocalTypeLineRE.FindStringSubmatch(line)
+	if len(match) != 3 {
+		return nil
+	}
+	typeName := cleanJavaType(match[1])
+	if typeName == "String" {
+		return nil
+	}
+	return map[string]string{match[2]: typeName}
+}
+
+func mergeJavaLocalTypes(existing, next map[string]string) map[string]string {
+	if len(next) == 0 {
+		return existing
+	}
+	if existing == nil {
+		existing = map[string]string{}
+	}
+	for name, typeName := range next {
+		existing[name] = typeName
+	}
+	return existing
+}
+
+func resolveJavaHTTPClientKinds(source *JavaSourceRecord) {
+	if source == nil {
+		return
+	}
+	imported := map[string]string{}
+	for _, record := range source.Imports {
+		if record.Static {
+			continue
+		}
+		if kind := javaSpringHTTPClientImport(record.Name); kind != "" {
+			imported[kind] = record.Name
+		}
+	}
+	if len(imported) == 0 {
+		return
+	}
+	for methodIndex := range source.Methods {
+		method := &source.Methods[methodIndex]
+		for requestIndex := range method.HTTPRequests {
+			request := &method.HTTPRequests[requestIndex]
+			receiver := request.Receiver
+			if dot := strings.LastIndex(receiver, "."); dot >= 0 {
+				receiver = receiver[dot+1:]
+			}
+			typeName := method.LocalTypes[receiver]
+			if typeName == "" {
+				for _, field := range source.Fields {
+					if field.Owner == method.Owner && field.Name == receiver {
+						typeName = field.Type
+						break
+					}
+				}
+			}
+			kind := shortJavaName(typeName)
+			if _, ok := imported[kind]; ok {
+				request.ClientKind = kind
+			}
+		}
+	}
+}
+
+func javaSpringHTTPClientImport(importName string) string {
+	switch strings.TrimSpace(importName) {
+	case "org.springframework.web.client.RestClient":
+		return "RestClient"
+	case "org.springframework.web.reactive.function.client.WebClient":
+		return "WebClient"
+	case "org.springframework.web.client.RestTemplate":
+		return "RestTemplate"
+	default:
+		return ""
+	}
 }
 
 func hasJavaConcatExpression(part string) bool {

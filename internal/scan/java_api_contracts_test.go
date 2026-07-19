@@ -1,0 +1,350 @@
+package scan
+
+import (
+	"encoding/json"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestBuildJavaAPIContractsDeclarativeClients(t *testing.T) {
+	tests := []struct {
+		name             string
+		body             string
+		serviceCandidate string
+	}{
+		{
+			name: "FeignClient",
+			body: `package example;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.DeleteMapping;
+@FeignClient(name = "jobs", path = "/job-management")
+interface JobClient {
+  @DeleteMapping("/catalogs/{catalogId}/items/{itemId}")
+  void deleteRelatedJobs(String catalogId, String itemId);
+}`,
+			serviceCandidate: "jobs",
+		},
+		{
+			name: "HttpExchange",
+			body: `package example;
+import org.springframework.web.service.annotation.HttpExchange;
+import org.springframework.web.service.annotation.DeleteExchange;
+@HttpExchange(url = "/job-management")
+interface JobClient {
+  @DeleteExchange("/catalogs/{catalogId}/items/{itemId}")
+  void deleteRelatedJobs(String catalogId, String itemId);
+}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			const file = "src/main/java/example/JobClient.java"
+			source := extractJavaSource(FileRecord{Path: file, Language: "java"}, test.body)
+			records := buildJavaAPIContracts([]JavaSourceRecord{source})
+			want := APIContractRecord{
+				Language: "java", Package: "example", HTTPMethod: "DELETE",
+				Path:             "/job-management/catalogs/{catalogId}/items/{itemId}",
+				ServiceCandidate: test.serviceCandidate,
+				Caller:           "JobClient.deleteRelatedJobs",
+				File:             file, Line: 6,
+				Confidence: "EXACT", ConfidenceScore: 1,
+			}
+			if len(records) != 1 {
+				t.Fatalf("contracts = %#v, want exactly one", records)
+			}
+			got := records[0]
+			got.Reason = ""
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("contract = %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
+func TestBuildJavaAPIContractsBoundImperativeClients(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		wantPath string
+		wantRaw  string
+	}{
+		{
+			name: "RestClient literal",
+			body: `import org.springframework.web.client.RestClient;
+class JobClient {
+  private final RestClient restClient;
+  void deleteRelatedJobs() {
+    restClient
+        .delete()
+        .uri("/job-management/catalogs/7/items/9")
+        .retrieve();
+  }
+}`,
+			wantPath: "/job-management/catalogs/7/items/9",
+			wantRaw:  `"/job-management/catalogs/7/items/9"`,
+		},
+		{
+			name: "WebClient constant",
+			body: `import org.springframework.web.reactive.function.client.WebClient;
+class JobClient {
+  private static final String DELETE_PATH = "/job-management/catalogs/7/items/9";
+  private final WebClient webClient;
+  void deleteRelatedJobs() {
+    webClient
+        .delete()
+        .uri(DELETE_PATH)
+        .retrieve();
+  }
+}`,
+			wantPath: "/job-management/catalogs/7/items/9",
+			wantRaw:  "DELETE_PATH",
+		},
+		{
+			name: "RestTemplate local variable",
+			body: `import org.springframework.web.client.RestTemplate;
+class JobClient {
+  private final RestTemplate restTemplate;
+  void deleteRelatedJobs() {
+    String path = "/job-management/catalogs/7/items/9";
+    restTemplate.delete(path);
+  }
+}`,
+			wantPath: "/job-management/catalogs/7/items/9",
+			wantRaw:  "path",
+		},
+		{
+			name: "local RestClient receiver",
+			body: `import org.springframework.web.client.RestClient;
+class JobClient {
+  void deleteRelatedJobs() {
+    RestClient client = RestClient.create();
+    client
+        .delete()
+        .uri("/job-management/catalogs/7/items/9")
+        .retrieve();
+  }
+}`,
+			wantPath: "/job-management/catalogs/7/items/9",
+			wantRaw:  `"/job-management/catalogs/7/items/9"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			const file = "src/main/java/example/JobClient.java"
+			source := extractJavaSource(FileRecord{Path: file, Language: "java"}, test.body)
+			records := buildJavaAPIContracts([]JavaSourceRecord{source})
+			if len(records) != 1 {
+				t.Fatalf("contracts = %#v, want exactly one", records)
+			}
+			got := records[0]
+			if got.Language != "java" || got.HTTPMethod != "DELETE" || got.Path != test.wantPath ||
+				got.RawPath != test.wantRaw || got.Caller != "JobClient.deleteRelatedJobs" || got.File != file ||
+				got.Confidence != "EXACT" || got.ConfidenceScore != 1 || got.UnsafeDynamic {
+				t.Fatalf("unexpected contract: %#v", got)
+			}
+		})
+	}
+}
+
+func TestBuildJavaAPIContractsInlineFluentClient(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
+class JobClient {
+  private final RestClient restClient;
+  void deleteRelatedJobs() {
+    restClient.delete().uri("/job-management/catalogs/7/items/9").retrieve();
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 || records[0].Path != "/job-management/catalogs/7/items/9" || records[0].Line != 5 {
+		t.Fatalf("inline fluent contracts = %#v, want one exact call", records)
+	}
+}
+
+func TestBuildJavaAPIContractsDefaultAuthorizationHeader(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
+class JobClient {
+  private final RestClient restClient;
+  void deleteRelatedJobs() {
+    restClient.defaultHeader("Authorization", "private-token");
+    restClient.delete("/job-management/catalogs/7/items/9");
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	want := []AuthRecord{{Kind: "basic", Source: "spring_client_interceptor", Confidence: "EXTRACTED"}}
+	if len(records) != 1 || !reflect.DeepEqual(records[0].Auth, want) {
+		t.Fatalf("default-header contracts = %#v, want categorical auth %#v", records, want)
+	}
+}
+
+func TestBuildJavaAPIContractsIgnoresNonAuthorizationDefaultHeader(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
+class JobClient {
+  private final RestClient restClient;
+  void deleteRelatedJobs() {
+    restClient.defaultHeader("Content-Type", "application/json");
+    restClient.delete("/job-management/catalogs/7/items/9");
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 || len(records[0].Auth) != 0 {
+		t.Fatalf("non-authorization header produced auth: %#v", records)
+	}
+}
+
+func TestBuildJavaAPIContractsResolvesUniquePathGetter(t *testing.T) {
+	const file = "src/main/java/example/JobClient.java"
+	source := extractJavaSource(FileRecord{Path: file, Language: "java"}, `import org.springframework.web.client.RestClient;
+class JobClient {
+  private final RestClient restClient;
+  private final PathProvider pathProvider;
+  void deleteRelatedJobs(String catalogId, String itemId) {
+    restClient
+        .delete()
+        .uri(pathProvider.deleteRelatedJobsPath())
+        .retrieve();
+  }
+}
+class PathProvider {
+  String deleteRelatedJobsPath() {
+    return "/job-management/catalogs/" + catalogId + "/items/" + itemId;
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	want := APIContractRecord{
+		Language: "java", HTTPMethod: "DELETE",
+		Path:    "/job-management/catalogs/{dynamic}/items/{dynamic}",
+		RawPath: "pathProvider.deleteRelatedJobsPath()",
+		Caller:  "JobClient.deleteRelatedJobs", File: file, Line: 7,
+		Confidence: "RESOLVED", ConfidenceScore: 0.9,
+		Reason: "spring RestClient receiver with statically resolved path getter",
+	}
+	if len(records) != 1 || !reflect.DeepEqual(records[0], want) {
+		t.Fatalf("contracts = %#v, want %#v", records, want)
+	}
+}
+
+func TestBuildJavaAPIContractsResolvesConstantConcatenation(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestTemplate;
+class JobClient {
+  private static final String ROOT = "/job-management";
+  private final RestTemplate restTemplate;
+  void deleteRelatedJobs(String catalogId) {
+    restTemplate.delete(ROOT + "/catalogs/" + catalogId + "/items/9");
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 || records[0].Path != "/job-management/catalogs/{dynamic}/items/9" {
+		t.Fatalf("constant concatenation contracts = %#v", records)
+	}
+}
+
+func TestBuildJavaAPIContractsResolvesLocalConcatenation(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestTemplate;
+class JobClient {
+  private static final String ROOT = "/job-management";
+  private final RestTemplate restTemplate;
+  void deleteRelatedJobs(String catalogId) {
+    String path = ROOT + "/catalogs/" + catalogId + "/items/9";
+    restTemplate.delete(path);
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 || records[0].Path != "/job-management/catalogs/{dynamic}/items/9" {
+		t.Fatalf("local concatenation contracts = %#v", records)
+	}
+}
+
+func TestBuildJavaAPIContractsPreservesUnresolvedDynamicExpression(t *testing.T) {
+	const file = "src/main/java/example/JobClient.java"
+	source := extractJavaSource(FileRecord{Path: file, Language: "java"}, `import org.springframework.web.client.RestClient;
+class JobClient {
+  private final RestClient restClient;
+  void deleteRelatedJobs(Request request) {
+    restClient
+        .delete()
+        .uri(request.resolvePath())
+        .retrieve();
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 {
+		t.Fatalf("contracts = %#v, want exactly one", records)
+	}
+	got := records[0]
+	if got.Path != "" || got.RawPath != "request.resolvePath()" || !got.UnsafeDynamic || got.Confidence != "PARTIAL" || got.ConfidenceScore >= 0.9 {
+		t.Fatalf("unresolved contract = %#v", got)
+	}
+}
+
+func TestBuildJavaAPIContractsRejectsUnboundDeleteReceiver(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
+class JobClient {
+  private final AuditStore auditStore;
+  void deleteRelatedJobs() {
+    auditStore.delete("/job-management/catalogs/7/items/9");
+  }
+}`)
+	if records := buildJavaAPIContracts([]JavaSourceRecord{source}); len(records) != 0 {
+		t.Fatalf("unrelated receiver produced contracts: %#v", records)
+	}
+}
+
+func TestBuildJavaAPIContractsSortsAndDeduplicatesCallSites(t *testing.T) {
+	body := `import org.springframework.web.client.RestTemplate;
+class JobClient {
+  private final RestTemplate restTemplate;
+  void deleteRelatedJobs() {
+    restTemplate.delete("/job-management/catalogs/7/items/9");
+  }
+}`
+	later := extractJavaSource(FileRecord{Path: "z/JobClient.java", Language: "java"}, body)
+	earlier := extractJavaSource(FileRecord{Path: "a/JobClient.java", Language: "java"}, body)
+	records := buildJavaAPIContracts([]JavaSourceRecord{later, earlier, later})
+	if len(records) != 2 || records[0].File != "a/JobClient.java" || records[1].File != "z/JobClient.java" {
+		t.Fatalf("sorted unique contracts = %#v", records)
+	}
+}
+
+func TestBuildJavaAPIContractsAuthenticationRetryAndPrivacy(t *testing.T) {
+	const file = "src/main/java/example/JobClient.java"
+	source := extractJavaSource(FileRecord{Path: file, Language: "java"}, `package example;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.web.client.RestClient;
+import org.springframework.http.client.support.BasicAuthenticationInterceptor;
+class JobClient {
+  @Value("${jobs.url}") private String baseUrl;
+  private final RestClient restClient;
+  @Retryable
+  void deleteRelatedJobs(String catalogId, String itemId) {
+    String credentialUser = "private-user";
+    String credentialPassword = "private-password";
+    new BasicAuthenticationInterceptor(credentialUser, credentialPassword);
+    restClient.defaultHeader("Authorization", "Basic private-token");
+    restClient.delete(baseUrl + "/job-management/catalogs/" + catalogId + "/items/" + itemId);
+  }
+}`)
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 {
+		t.Fatalf("contracts = %#v, want exactly one", records)
+	}
+	wantAuth := []AuthRecord{{Kind: "basic", Source: "spring_client_interceptor", Confidence: "EXTRACTED"}}
+	if !reflect.DeepEqual(records[0].Auth, wantAuth) {
+		t.Fatalf("auth = %#v, want %#v", records[0].Auth, wantAuth)
+	}
+	if records[0].Path != "/job-management/catalogs/{dynamic}/items/{dynamic}" || !strings.Contains(records[0].Reason, "retryable") {
+		t.Fatalf("path/retry provenance missing: %#v", records[0])
+	}
+	marshaled, err := json.Marshal(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"private-user", "private-password", "private-token", "${jobs.url}"} {
+		if strings.Contains(string(marshaled), secret) {
+			t.Fatalf("marshaled contracts leaked %q: %s", secret, marshaled)
+		}
+	}
+}

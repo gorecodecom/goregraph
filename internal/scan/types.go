@@ -648,20 +648,23 @@ type JavaTypeRecord struct {
 }
 
 type JavaMethodRecord struct {
-	Name           string                 `json:"name"`
-	File           string                 `json:"file"`
-	Line           int                    `json:"line"`
-	Owner          string                 `json:"owner,omitempty"`
-	Visibility     string                 `json:"visibility,omitempty"`
-	ReturnType     string                 `json:"return_type,omitempty"`
-	Parameters     []JavaParameterRecord  `json:"parameters,omitempty"`
-	Annotations    []JavaAnnotationRecord `json:"annotations,omitempty"`
-	Calls          []JavaCallRecord       `json:"calls,omitempty"`
-	HTTPRequests   []JavaHTTPCallRecord   `json:"http_requests,omitempty"`
-	Auth           []AuthRecord           `json:"auth,omitempty"`
-	StringVars     map[string]string      `json:"-"`
-	PendingHTTP    string                 `json:"-"`
-	TypeParameters []string               `json:"-"`
+	Name              string                 `json:"name"`
+	File              string                 `json:"file"`
+	Line              int                    `json:"line"`
+	Owner             string                 `json:"owner,omitempty"`
+	Visibility        string                 `json:"visibility,omitempty"`
+	ReturnType        string                 `json:"return_type,omitempty"`
+	Parameters        []JavaParameterRecord  `json:"parameters,omitempty"`
+	Annotations       []JavaAnnotationRecord `json:"annotations,omitempty"`
+	Calls             []JavaCallRecord       `json:"calls,omitempty"`
+	HTTPRequests      []JavaHTTPCallRecord   `json:"http_requests,omitempty"`
+	Auth              []AuthRecord           `json:"auth,omitempty"`
+	StringVars        map[string]string      `json:"-"`
+	StringExpressions map[string]string      `json:"-"`
+	LocalTypes        map[string]string      `json:"-"`
+	ReturnExpression  string                 `json:"-"`
+	PendingHTTP       javaPendingHTTPRecord  `json:"-"`
+	TypeParameters    []string               `json:"-"`
 }
 
 type JavaFieldRecord struct {
@@ -696,9 +699,19 @@ type JavaCallRecord struct {
 }
 
 type JavaHTTPCallRecord struct {
-	HTTPMethod string `json:"http_method"`
-	Path       string `json:"path"`
-	Line       int    `json:"line"`
+	Receiver       string `json:"receiver,omitempty"`
+	ClientKind     string `json:"client_kind,omitempty"`
+	HTTPMethod     string `json:"http_method"`
+	Path           string `json:"path,omitempty"`
+	PathExpression string `json:"path_expression,omitempty"`
+	Line           int    `json:"line"`
+}
+
+type javaPendingHTTPRecord struct {
+	Receiver   string
+	ClientKind string
+	HTTPMethod string
+	Line       int
 }
 
 type SpringIndex struct {

@@ -376,8 +376,11 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	codeFlows := buildCodeFlows(index.Code, springIndex, endpointFlows, callGraph)
 	testMap := append(buildJavaTestMap(index.JavaSources, springIndex.Endpoints), buildGenericTestMap(index.Code)...)
 	routes := buildCodeRoutes(index.Code, springIndex)
+	apiContracts := append([]APIContractRecord(nil), index.Code.APIContracts...)
+	apiContracts = append(apiContracts, buildJavaAPIContracts(index.JavaSources)...)
+	sortAPIContracts(apiContracts)
 	frontendUsage := buildFrontendUsage(index.Code.APIContracts, codeFlows)
-	contractMatches := buildContractMatches(index.Code.APIContracts, routes)
+	contractMatches := buildContractMatches(apiContracts, routes)
 	serviceDependencies := buildServiceDependencies(WorkspaceProjectRecord{}, index.JavaSources)
 	diagnostics := buildDiagnostics(routes, contractMatches, endpointFlows, codeFlows, testMap)
 	packageGraph := buildPackageGraph(index.Workspace)
@@ -393,7 +396,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
 	diagnosticFamilies := BuildDiagnosticFamilies(filepath.Base(root), canonicalDiagnostics)
 	finished := time.Now().UTC()
-	apiCatalog := BuildProjectAPICatalog(filepath.Base(root), finished.Format(time.RFC3339), routes, springIndex, index.Code.APIContracts, capabilities)
+	apiCatalog := BuildProjectAPICatalog(filepath.Base(root), finished.Format(time.RFC3339), routes, springIndex, apiContracts, capabilities)
 	var contextIndex AgentContextIndexRecord
 	if target.IncludesAgent() {
 		contextIndex = BuildProjectAgentContextIndex(
@@ -404,7 +407,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 			richSymbols,
 			richRelations,
 			testMap,
-			index.Code.APIContracts,
+			apiContracts,
 			evidence,
 			capabilities,
 		)
@@ -466,7 +469,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"test-map.json", testMap},
 		{"routes.json", routes},
 		{"flows.json", codeFlows},
-		{"api-contracts.json", index.Code.APIContracts},
+		{"api-contracts.json", apiContracts},
 		{"api-catalog.json", apiCatalog},
 		{"architecture-capabilities.json", index.ArchitectureCapabilities},
 		{"service-dependencies.json", serviceDependencies},
@@ -520,7 +523,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		{"callgraph.md", renderCallGraphReport(callGraph)},
 		{"routes.md", renderRoutesReport(routes)},
 		{"flows.md", renderCodeFlowsReport(codeFlows)},
-		{"api-contracts.md", renderAPIContractsReport(index.Code.APIContracts)},
+		{"api-contracts.md", renderAPIContractsReport(apiContracts)},
 		{"frontend-usage.md", renderFrontendUsageReport(frontendUsage)},
 		{"contract-matches.md", renderContractMatchesReport(contractMatches)},
 		{"potentially-broken-contracts.md", renderPotentiallyBrokenContractsReport(contractMatches)},

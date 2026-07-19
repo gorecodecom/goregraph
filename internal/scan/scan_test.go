@@ -46,6 +46,62 @@ func TestRunWritesDeterministicFilesManifestAndReport(t *testing.T) {
 	}
 }
 
+func TestRunWritesJavaAPIContractsExactlyOnceThroughProjectOutputs(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main/java/example/JobClient.java", `package example;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.DeleteMapping;
+@FeignClient(name = "jobs", path = "/job-management")
+interface JobClient {
+  @DeleteMapping("/catalogs/{catalogId}/items/{itemId}")
+  void deleteRelatedJobs(String catalogId, String itemId);
+}`)
+	writeFile(t, root, "src/main/java/example/JobController.java", `package example;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.RestController;
+@RestController
+class JobController {
+  @DeleteMapping("/job-management/catalogs/{catalogId}/items/{itemId}")
+  void deleteRelatedJobs(String catalogId, String itemId) {}
+}`)
+
+	if _, err := RunBuild(root, config.Defaults(), BuildTargetAll); err != nil {
+		t.Fatal(err)
+	}
+
+	var contracts []APIContractRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "api-contracts.json"), &contracts)
+	if len(contracts) != 1 || contracts[0].Caller != "JobClient.deleteRelatedJobs" {
+		t.Fatalf("api contracts = %#v, want one Java client contract", contracts)
+	}
+	var matches []ContractMatchRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "contract-matches.json"), &matches)
+	if len(matches) != 1 || matches[0].BackendHandler != "JobController.deleteRelatedJobs" {
+		t.Fatalf("contract matches = %#v, want one Java client match", matches)
+	}
+	var catalog APICatalogRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "api-catalog.json"), &catalog)
+	if len(catalog.Endpoints) != 1 || catalog.Endpoints[0].Handler != "JobController.deleteRelatedJobs" {
+		t.Fatalf("api catalog = %#v, want matching Java endpoint", catalog)
+	}
+	var context AgentContextIndexRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "agent", "context-index.json"), &context)
+	contractFacts := 0
+	for _, fact := range context.Facts {
+		if fact.Kind == "api_contract" && fact.Qualified == "JobClient.deleteRelatedJobs" {
+			contractFacts++
+		}
+	}
+	if contractFacts != 1 {
+		t.Fatalf("api contract facts = %d, want one in %#v", contractFacts, context.Facts)
+	}
+	var frontend []FrontendUsageRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "frontend-usage.json"), &frontend)
+	if len(frontend) != 0 {
+		t.Fatalf("Java contracts were mislabeled as frontend usage: %#v", frontend)
+	}
+}
+
 func TestIsSupportedSourceFileMatchesDetectedFileTypes(t *testing.T) {
 	for _, path := range []string{
 		"src/main.go", "src/Controller.java", "scripts/release.sh", "scripts/setup.bash", "scripts/setup.zsh",
