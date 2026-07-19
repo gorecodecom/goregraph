@@ -21,6 +21,7 @@
 - Add at most one independent supporting fact per project and at most two supporting projects. Admit supports after the primary chain through the existing byte/token and file-count gates.
 - Preserve byte-identical output for identical inputs and input-order independence.
 - Missing secondary project coverage produces uncertainty, not fallback, when the primary entrypoint remains reliable.
+- Context support ranking is language- and extension-neutral. Mixed-language fact fixtures must prove that no source language is privileged.
 - Use synthetic `services/catalog`, `services/jobs`, `libraries/shared-model`, and `services/reporting` fixtures in tests. These names describe generic architecture only.
 - Use English source comments, tests, documentation, and commit messages.
 
@@ -110,6 +111,43 @@ git add internal/scan/extract_java.go internal/scan/spring_extract.go internal/s
 git commit -m "Preserve braces in Java annotation strings" -m "- Keep path-variable braces in quoted annotation values.
 - Retain array-valued Spring mappings through the dedicated path splitter.
 - Interpret empty OpenAPI security containers at the OpenAPI extraction boundary."
+```
+
+### Task 1b: Prove parameterized route parity
+
+**Files:**
+- Test: `internal/scan/rich_graph_test.go`
+
+**Interfaces:**
+- Consumes: the existing Go, PHP, JavaScript/TypeScript, Python, and Rust route extractors.
+- Produces: characterization coverage proving that supported literal route syntaxes preserve parameter and regex braces.
+
+- [ ] **Step 1: Add a table-driven route-literal parity test**
+
+Add `TestExtractCodeRoutesPreservesParameterizedLiteralsAcrossLanguages`. For each supported extractor, call `extractCodeIntelligence` with one proven framework binding and one parameterized production route:
+
+- Go router: `/records/{recordId:[0-9]{2,4}}`
+- PHP/Laravel: `/records/{record}`
+- TypeScript/Express: `/records/:recordId([0-9]{2,4})`
+- Python/FastAPI: `/records/{record_id:path}`
+- Rust/Actix or Rocket: `/records/{record_id:[0-9]{2,4}}`
+
+Require exactly one route and byte-identical `Path` for every case. Keep each registration in a syntax already supported by the corresponding extractor; do not imply multiline or framework coverage that does not exist.
+
+- [ ] **Step 2: Run the focused characterization**
+
+```bash
+go test ./internal/scan -run '^TestExtractCodeRoutesPreservesParameterizedLiteralsAcrossLanguages$' -count=1
+```
+
+Expected: `PASS`. If a case fails, fix only an actual shared literal-corruption path and rerun the full scan package. If every case passes, make no production change.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add internal/scan/rich_graph_test.go
+git commit -m "Cover parameterized routes across extractors" -m "- Prove supported language extractors preserve route and regex braces.
+- Keep parity coverage limited to syntax the scanners actually support."
 ```
 
 ### Task 2: Represent unavailable workspace projections
@@ -215,12 +253,12 @@ Add `TestBuildContextAddsSupportingFactsFromNamedProjects`. Use a synthetic inde
 catalogRoute := scan.AgentContextFactRecord{
     ID: "catalog-route", Project: "services/catalog", Kind: "route",
     Name: "DELETE /catalog/{catalogId}/entries/{entryId}", HTTPMethod: "DELETE",
-    Path: "/catalog/{catalogId}/entries/{entryId}", File: "CatalogController.go",
+    Path: "/catalog/{catalogId}/entries/{entryId}", File: "CatalogController.java",
     Confidence: "EXACT", Search: "delete catalog entry",
 }
 catalogService := scan.AgentContextFactRecord{
     ID: "catalog-service", Project: "services/catalog", Kind: "symbol",
-    Name: "deleteEntry", File: "CatalogService.go", Confidence: "EXACT",
+    Name: "deleteEntry", File: "CatalogService.java", Confidence: "EXACT",
 }
 jobsClient := scan.AgentContextFactRecord{
     ID: "jobs-client", Project: "services/jobs", Kind: "symbol",
@@ -229,12 +267,12 @@ jobsClient := scan.AgentContextFactRecord{
 }
 sharedModel := scan.AgentContextFactRecord{
     ID: "shared-model", Project: "libraries/shared-model", Kind: "symbol",
-    Name: "JobReference", File: "JobReference.go", Confidence: "EXACT",
+    Name: "JobReference", File: "JobReference.ts", Confidence: "EXACT",
     Search: "entry job catalog identifier persistence",
 }
 reportingNoise := scan.AgentContextFactRecord{
     ID: "reporting", Project: "services/reporting", Kind: "symbol",
-    Name: "deleteReport", File: "Reporting.go", Confidence: "EXACT",
+    Name: "deleteReport", File: "Reporting.py", Confidence: "EXACT",
     Search: "delete entry retry persistence",
 }
 ```
@@ -345,6 +383,7 @@ Record the commit, binary SHA-256, version, Go version, platform, index digest, 
 
 - [ ] No production or test rule names a proprietary service, repository, route, class, symbol, prompt, or path.
 - [ ] Quoted annotation strings keep braces; annotation path arrays still expand.
+- [ ] Existing Go, PHP, TypeScript, Python, and Rust route extractors preserve parameterized literals.
 - [ ] Missing indexed workspace projections are explicit `UNAVAILABLE` coverage.
 - [ ] Primary ranking still uses the first substantive problem statement and returns exactly one reliable production entrypoint.
 - [ ] Supporting facts use the full query, remain bounded, never become entrypoints, and never displace the primary chain.
