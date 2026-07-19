@@ -121,8 +121,8 @@ func taskContextTool() map[string]any {
 			"properties": map[string]any{
 				"root":          map[string]any{"type": "string"},
 				"query":         map[string]any{"type": "string", "minLength": 1},
-				"budget_tokens": map[string]any{"type": "integer", "minimum": 256, "maximum": 6000, "default": 4000},
-				"max_files":     map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "default": 12},
+				"budget_tokens": map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
+				"max_files":     map[string]any{"type": "integer", "minimum": 1, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
 			},
 		},
 	}
@@ -258,11 +258,11 @@ func callTaskContext(args map[string]any) (string, error) {
 	if !ok || strings.TrimSpace(query) == "" {
 		return "", fmt.Errorf("task_context query must be a non-empty string")
 	}
-	budgetTokens, err := boundedIntegerArg(args, "budget_tokens", 256, 6000)
+	budgetTokens, err := boundedIntegerArg(args, "budget_tokens", agent.MinContextBudgetTokens, agent.MaxContextBudgetTokens)
 	if err != nil {
 		return "", err
 	}
-	maxFiles, err := boundedIntegerArg(args, "max_files", 1, 20)
+	maxFiles, err := boundedIntegerArg(args, "max_files", 1, agent.MaxContextMaxFiles)
 	if err != nil {
 		return "", err
 	}

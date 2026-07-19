@@ -237,13 +237,31 @@ func TestDefaultMCPTaskContextSchemaAndInstructions(t *testing.T) {
 			"properties": map[string]any{
 				"root":          map[string]any{"type": "string"},
 				"query":         map[string]any{"type": "string", "minLength": 1},
-				"budget_tokens": map[string]any{"type": "integer", "minimum": 256, "maximum": 6000, "default": 4000},
-				"max_files":     map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "default": 12},
+				"budget_tokens": map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
+				"max_files":     map[string]any{"type": "integer", "minimum": 1, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
 			},
 		},
 	}
 	if len(listed) != 1 || !reflect.DeepEqual(listed[0], want) {
 		t.Fatalf("task_context schema = %#v, want %#v", listed, want)
+	}
+}
+
+func TestTaskContextSchemaSharesAgentBounds(t *testing.T) {
+	source, err := os.ReadFile("mcp.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"agent.MinContextBudgetTokens",
+		"agent.MaxContextBudgetTokens",
+		"agent.DefaultContextBudgetTokens",
+		"agent.MaxContextMaxFiles",
+		"agent.DefaultContextMaxFiles",
+	} {
+		if !strings.Contains(string(source), want) {
+			t.Fatalf("task_context does not share agent bound %q", want)
+		}
 	}
 }
 
@@ -342,6 +360,12 @@ func TestMCPTaskContextPassesBudgetsToCompilerAsBareCompactJSON(t *testing.T) {
 	if pack.BudgetTokens != 700 || len(pack.Files) > 5 || pack.EstimatedTokens > 700 {
 		t.Fatalf("pack = %#v", pack)
 	}
+	if len(pack.SourceSections) == 0 || !strings.Contains(pack.SourceSections[0].Content, "deleteUser") {
+		t.Fatalf("MCP source is not useful: %#v", pack.SourceSections)
+	}
+	if pack.SourceCoverage != "complete" || pack.SourceUnrepresented != 0 {
+		t.Fatalf("MCP source coverage = %q / %d", pack.SourceCoverage, pack.SourceUnrepresented)
+	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(text), &envelope); err != nil {
 		t.Fatal(err)
@@ -353,6 +377,9 @@ func TestMCPTaskContextPassesBudgetsToCompilerAsBareCompactJSON(t *testing.T) {
 	}
 	if !strings.HasSuffix(text, "\n") || strings.HasSuffix(text, "\n\n") || strings.Contains(text, "\n  ") {
 		t.Fatalf("context text is not compact JSON with one newline: %q", text)
+	}
+	if strings.Contains(text, "```") {
+		t.Fatalf("compact JSON contains Markdown fences: %s", text)
 	}
 	again, err := callTool(Options{ExpertTools: true}, "task_context", args)
 	if err != nil {
@@ -460,7 +487,7 @@ func TestMCPTaskContextValidatesArgumentsStrictly(t *testing.T) {
 }
 
 func TestMCPTaskContextAcceptsExactBounds(t *testing.T) {
-	root := writeMCPContextFixture(t)
+	root := writeMCPBoundsFixture(t)
 	for _, bounds := range []struct {
 		budget float64
 		files  float64
@@ -502,20 +529,49 @@ func writeMCPContextFixture(t *testing.T) string {
 		Generated:     "generated",
 		Facts: []scan.AgentContextFactRecord{{
 			ID: "route", Project: "api", Kind: "route", Name: "delete user",
-			HTTPMethod: "DELETE", Path: "/users/{id}", File: "UserController.java",
+			Qualified: "UserController.deleteUser", HTTPMethod: "DELETE", Path: "/users/{id}", File: "UserController.java",
 			Line: 20, EndLine: 28, Confidence: "EXACT",
+		}, {
+			ID: "service", Project: "api", Kind: "symbol", Name: "removeUser",
+			Qualified: "UserService.removeUser", File: "UserService.java",
+			Line: 2, EndLine: 4, Confidence: "EXACT",
 		}},
 	}
+	index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+		ID: "edge-service", FromFactID: "route", ToFactID: "service",
+		FromLabel: "route", ToLabel: "service", Kind: "call", Confidence: "EXACT",
+	})
 	for number := 0; number < 8; number++ {
 		id := "neighbor-" + string(rune('a'+number))
 		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
 			ID: id, Project: "api", Kind: "symbol", Name: id,
-			File: id + ".go", Confidence: "EXACT",
+			Confidence: "EXACT",
 		})
 		index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
 			ID: "edge-" + id, FromFactID: "route", ToFactID: id,
 			FromLabel: "route", ToLabel: id, Kind: "call", Confidence: "EXACT",
 		})
+	}
+	body, err := json.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, root, "goregraph-out/agent/context-index.json", string(body))
+	writeFile(t, root, "UserController.java", strings.Repeat("// padding\n", 19)+"public void deleteUser() {\n\tservice.removeUser();\n}\n")
+	writeFile(t, root, "UserService.java", "public class UserService {\n\tpublic void removeUser() {\n\t\trepository.delete();\n\t}\n}\n")
+	return root
+}
+
+func writeMCPBoundsFixture(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "generated",
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "route", Kind: "route", Name: "delete user",
+			HTTPMethod: "DELETE", Path: "/users/{id}", Confidence: "EXACT",
+		}},
 	}
 	body, err := json.Marshal(index)
 	if err != nil {
