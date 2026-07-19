@@ -84,6 +84,9 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
   arguments, plus retained raw transcripts;
 - an assisted median no greater than 80% of the matched baseline median and no
   greater than 116,560 tokens against the recorded 145,700-token baseline;
+- an assisted tool-call median no greater than 70% of the matched baseline,
+  an assisted source-read median no greater than 50%, and no repeated full
+  Context Pack in an assisted transcript;
 - a manually completed and signed external 12-point evidence rubric whose
   assisted quality score is greater than or equal to the baseline score.
 
@@ -93,8 +96,10 @@ The exact matched-prompt protocol and treatment instructions are defined in
 [`BENCHMARKING.md`](BENCHMARKING.md). The baseline may append only the specified
 one-line prohibition; the assisted variant may append only the specified
 seven-line bounded Context instruction. All other prompt and execution inputs
-must be identical. Retain every raw transcript, `summary.tsv`, and the signed
-manual rubric outside the repository.
+must be identical, including skill availability. Control skill isolation in the
+invocation, never by adding “do not use skills” to a treatment prompt. Retain
+every raw transcript, its analyzer result, `summary.tsv`, and the signed manual
+rubric outside the repository.
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.
@@ -117,18 +122,23 @@ approximate pack-size estimates and do not
 replace the three-run median totals. Assisted runs may use at most two Context
 Pack calls and may not fall back to specialist GoreGraph queries.
 
+The benchmark also requires structural navigation savings: assisted median tool
+calls at or below 70% of baseline, assisted median source reads at or below 50%
+of baseline, a nonzero baseline source-read median, and no duplicate Context
+Pack in assisted transcripts.
+
 GoreGraph remains offline, explicit, dependency-free, and watcher-free.
 
-If either token threshold fails, assisted quality is below baseline, the run
-protocol is violated, or the required external evidence is missing, do not
-release 1.3.0. Keep the dashboard, remove the standard MCP integration from
+If a token or structural threshold fails, assisted quality is below baseline,
+the run protocol is violated, or the required external evidence is missing, do
+not release 1.3.0. Keep the dashboard, remove the standard MCP integration from
 release documentation, and decide explicitly whether to ship dashboard-only or
 continue Context-ranking work in a later version.
 
-The latest single-run diagnostic pair (169,913 baseline, 148,657 assisted)
-saved 12.51% and therefore failed the 20% token gate. It was used to add the
-production-entrypoint ranking regression described in `BENCHMARKING.md`; it is
-not release evidence. A fresh controlled three-by-three run remains required.
+The latest diagnostic pair (159,739 baseline, 141,259 assisted) saved 11.57%,
+but regressed from 34 to 48 tool calls. It fails the token and structural gates
+and is diagnostic evidence only, not release proof. A fresh controlled
+three-by-three run with the matched 12-point rubric remains required.
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.
 

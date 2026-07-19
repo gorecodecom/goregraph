@@ -33,10 +33,46 @@ case "$prompt" in
   *"Treat source_sections as current source already read"*)
     printf 'a\n' >>"$FAKE_ORDER"
     tokens=${FAKE_ASSISTED_TOKENS:-80.000}
+    printf '{"type":"tool_call","tool_name":"exec","command":"goregraph context /work --query route"}\n'
+    printf '{"type":"tool_call","tool_name":"exec","command":"sed -n 1,40p /work/src/Service.java"}\n'
+    printf '{"type":"tool_call","tool_name":"exec","command":"sed -n 41,80p /work/src/Worker.go"}\n'
+    printf '{"type":"tool_call","tool_name":"exec","command":"make test"}\n'
+    printf '{"type":"tool_call","tool_name":"exec","command":"git status"}\n'
+    printf '{"type":"tool_call","tool_name":"exec","command":"pwd"}\n'
+    extra_tools=${FAKE_ASSISTED_EXTRA_TOOLS:-0}
+    while [ "$extra_tools" -gt 0 ]; do
+      printf '{"type":"tool_call","tool_name":"exec","command":"make lint"}\n'
+      extra_tools=$((extra_tools - 1))
+    done
+    extra_source_reads=${FAKE_ASSISTED_EXTRA_SOURCE_READS:-0}
+    while [ "$extra_source_reads" -gt 0 ]; do
+      printf '{"type":"tool_call","tool_name":"exec","command":"cat /work/src/Extra%s.py"}\n' "$extra_source_reads"
+      extra_source_reads=$((extra_source_reads - 1))
+    done
+    printf '{"context_id":"assisted-pack"}\n'
+    if [ "${FAKE_ASSISTED_DUPLICATE_PACK:-0}" = "1" ]; then
+      printf '{"context_id":"retry-pack","duplicate_of":"assisted-pack"}\n'
+    fi
     ;;
   *)
     printf 'b\n' >>"$FAKE_ORDER"
     tokens=${FAKE_BASELINE_TOKENS:-100,000}
+    if [ "${FAKE_BASELINE_ZERO_SOURCE_READS:-0}" = "1" ]; then
+      for number in 1 2 3 4 5 6 7 8 9 10; do
+        printf '{"type":"tool_call","tool_name":"exec","command":"make test"}\n'
+      done
+    else
+      printf '{"type":"tool_call","tool_name":"exec","command":"rg -n Service /work/src/Service.java"}\n'
+      printf '{"type":"tool_call","tool_name":"exec","command":"grep -n Worker /work/src/Worker.go"}\n'
+      printf '{"type":"tool_call","tool_name":"exec","command":"sed -n 1,40p /work/src/Service.java"}\n'
+      printf '{"type":"tool_call","tool_name":"exec","command":"sed -n 41,80p /work/src/Service.java"}\n'
+      printf '{"type":"tool_call","tool_name":"exec","command":"nl -ba /work/src/Worker.go"}\n'
+      printf '{"type":"tool_call","tool_name":"exec","command":"cat /work/src/Worker.go"}\n'
+      printf '{"type":"tool_call","tool_name":"exec","command":"make test"}\n'
+      printf '{"type":"tool_call","tool_name":"exec","command":"git status"}\n'
+      printf '{"type":"tool_call","tool_name":"exec","command":"pwd"}\n'
+      printf '{"type":"tool_call","tool_name":"exec","command":"go test ./..."}\n'
+    fi
     ;;
 esac
 printf 'tokens used\n%s\n' "$tokens"
@@ -85,6 +121,9 @@ run_harness() {
     FAKE_ORDER="$temporary_directory/$result_name.order" \
     FAKE_BASELINE_TOKENS=${FAKE_BASELINE_TOKENS:-100,000} \
     FAKE_ASSISTED_TOKENS=${FAKE_ASSISTED_TOKENS:-80.000} \
+    FAKE_ASSISTED_EXTRA_TOOLS=${FAKE_ASSISTED_EXTRA_TOOLS:-0} \
+    FAKE_ASSISTED_EXTRA_SOURCE_READS=${FAKE_ASSISTED_EXTRA_SOURCE_READS:-0} \
+    FAKE_ASSISTED_DUPLICATE_PACK=${FAKE_ASSISTED_DUPLICATE_PACK:-0} \
     /bin/bash "$harness" \
       --workspace "$temporary_directory/workspace" \
       --prompt "$temporary_directory/base-prompt.txt" \
@@ -99,19 +138,51 @@ run_harness() {
 run_harness pass >/dev/null
 actual_order=$(tr -d '\n' <"$temporary_directory/pass.order")
 [ "$actual_order" = "baabba" ] || fail "run order = $actual_order, want baabba"
-grep -q $'^baseline\tmedian\t100000\t-$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tduplicate_context_packs\traw_navigation_calls\tsource_read_calls\tunique_source_files\tlog$' "$temporary_directory/pass/summary.tsv" ||
+  fail "summary schema missing"
+grep -q $'^baseline\tmedian\t100000\t10\t-\t-\t-\t6\t4\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
   fail "baseline median missing"
-grep -q $'^assisted\tmedian\t80000\t-$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^assisted\tmedian\t80000\t6\t-\t-\t-\t2\t2\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
   fail "assisted median missing"
+[ -s "$temporary_directory/pass/assisted-1.log.metrics.tsv" ] ||
+  fail "analyzer result was not retained"
 
 FAKE_ASSISTED_TOKENS=80.001
 export FAKE_ASSISTED_TOKENS
 if run_harness over-eighty >/dev/null 2>&1; then
   fail "80% plus one token passed"
 fi
-grep -q $'^assisted\tmedian\t80001\t-$' "$temporary_directory/over-eighty/summary.tsv" ||
+grep -q $'^assisted\tmedian\t80001\t6\t-\t-\t-\t2\t2\t-\t-$' "$temporary_directory/over-eighty/summary.tsv" ||
   fail "failed gate did not retain median evidence"
 unset FAKE_ASSISTED_TOKENS
+
+FAKE_ASSISTED_EXTRA_TOOLS=2
+export FAKE_ASSISTED_EXTRA_TOOLS
+if run_harness over-tool-gate >/dev/null 2>&1; then
+  fail "tool-call gate passed"
+fi
+unset FAKE_ASSISTED_EXTRA_TOOLS
+
+FAKE_ASSISTED_EXTRA_SOURCE_READS=1
+export FAKE_ASSISTED_EXTRA_SOURCE_READS
+if run_harness over-source-read-gate >/dev/null 2>&1; then
+  fail "source-read gate passed"
+fi
+unset FAKE_ASSISTED_EXTRA_SOURCE_READS
+
+FAKE_ASSISTED_DUPLICATE_PACK=1
+export FAKE_ASSISTED_DUPLICATE_PACK
+if run_harness duplicate-pack-gate >/dev/null 2>&1; then
+  fail "duplicate Context Pack gate passed"
+fi
+unset FAKE_ASSISTED_DUPLICATE_PACK
+
+FAKE_BASELINE_ZERO_SOURCE_READS=1
+export FAKE_BASELINE_ZERO_SOURCE_READS
+if run_harness zero-baseline-source-reads >/dev/null 2>&1; then
+  fail "zero baseline source reads passed"
+fi
+unset FAKE_BASELINE_ZERO_SOURCE_READS
 
 cp "$temporary_directory/assisted-instruction.txt" "$temporary_directory/assisted-extra-newlines.txt"
 printf '\n\n' >>"$temporary_directory/assisted-extra-newlines.txt"

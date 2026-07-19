@@ -17,11 +17,14 @@ Every baseline and assisted run must use:
 - the identical Codex model and reasoning setting;
 - the identical sandbox and approval mode;
 - the identical workspace and all other `CODEX_BENCHMARK_ARGS`;
+- the identical skill availability and invocation settings;
 - the same restrictions on network access, Git history, builds, tests, and
   writes whenever the neutral prompt forbids those actions.
 
 The only treatment difference is the instruction appended to the neutral base
 prompt. Do not add, remove, paraphrase, or reorder any other text.
+Control skill isolation through the Codex invocation, not through either
+treatment prompt. In particular, never add “do not use skills” to one prompt.
 
 Set `CODEX_BENCHMARK_ARGS` as one literal argument per line. The harness rejects
 space-split or executable shell text and never evaluates this value:
@@ -91,9 +94,17 @@ scripts/benchmark-agent-context.sh \
   --output /absolute/path/to/results
 ```
 
-The harness records every raw log and writes `summary.tsv` with the variant,
-run number, final `tokens used` value, and log path. Release evaluation uses the
-integer median of the three end-to-end token totals for each variant.
+The harness records every raw log and a colocated analyzer result outside the
+workspace. Its `summary.tsv` has this schema:
+
+```text
+variant run tokens tool_calls goregraph_calls full_context_packs duplicate_context_packs raw_navigation_calls source_read_calls unique_source_files log
+```
+
+Release evaluation uses the integer median of the three end-to-end token,
+tool-call, raw-navigation, and source-read totals for each variant. The analyzer
+deduplicates source paths and retains counts only; it does not retain source
+content.
 
 ## Token gate
 
@@ -113,25 +124,28 @@ Each assisted transcript must show the source-backed workflow above: one initial
 Context Pack call, at most one narrower retry, and no specialist GoreGraph query
 or expert MCP tool.
 
+## Structural gates
+
+After both token conditions pass, all structural conditions must pass:
+
+1. The assisted tool-call median must be at most 70% of the matched baseline
+   median.
+2. The assisted source-read median must be at most 50% of the matched baseline
+   median. A zero baseline source-read median is invalid benchmark input because
+   it cannot measure source-replacement savings.
+3. No assisted transcript may contain a duplicate Context Pack.
+
 ## Latest diagnostic evidence
 
-A single matched-task diagnostic run recorded 169,913 baseline tokens and
-148,657 assisted tokens. The assisted run used 21,256 fewer tokens (12.51%), or
-87.49% of the baseline. It therefore missed the 80% gate: the maximum for that
-baseline was 135,930 tokens, 12,727 fewer than the assisted result.
+A single diagnostic pair recorded 159,739 baseline tokens and 141,259 assisted
+tokens: an 18,480-token reduction (11.57%). It still missed the 80% token gate,
+and the assisted transcript made 48 tool calls versus 34 baseline calls. That
+tool-call regression also fails the 70% structural gate.
 
-This pair is regression evidence, not release evidence. It has only one run per
-variant, and the transcripts did not load identical agent skills. The pre-fix
-Context Pack also selected three test methods as entrypoints, required an
-unhelpful symbol retry, and did not reduce source navigation.
-
-The resulting 1.3.0 ranking regression now requires one reliable production
-entrypoint, ranks the first substantive problem statement ahead of later
-analysis requirements, excludes test-source symbols from production seeds, and
-follows a bounded two-step production chain. Against the same generated index,
-the corrected local pack selects the public DELETE route and its operations
-service in 534 estimated tokens instead of the incorrect 895-token pack. This
-pack-size improvement does not replace a new three-by-three end-to-end run.
+This is diagnostic evidence, not release evidence. It is not a controlled
+three-by-three result and has no matched 12-point quality rubric. A release run
+must isolate skills in the invocation for both treatments; prompt text must not
+be used to disable skills for only one variant.
 
 ## Twelve-point quality rubric
 
@@ -179,9 +193,9 @@ repository as release evidence.
 
 ## Release decision
 
-Release 1.3.0 only when both token conditions pass, assisted quality is at least
-baseline quality, every assisted run follows the Context-call limits, and the
-raw transcripts plus signed external rubric are retained.
+Release 1.3.0 only when both token and structural conditions pass, assisted
+quality is at least baseline quality, every assisted run follows the Context-call
+limits, and the raw transcripts plus signed external rubric are retained.
 
 If any gate fails, do not release 1.3.0. Keep the dashboard, remove the standard
 MCP integration from release documentation, and explicitly decide whether to

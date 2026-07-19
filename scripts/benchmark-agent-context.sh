@@ -3,6 +3,9 @@
 set -euo pipefail
 export LC_ALL=C
 
+script_dir=$(cd -P -- "$(dirname -- "$0")" && pwd -P)
+analyzer="$script_dir/analyze-agent-context-log.sh"
+
 usage() {
   cat <<'EOF'
 Usage: scripts/benchmark-agent-context.sh \
@@ -115,6 +118,8 @@ esac
 for command_name in codex goregraph awk sed sort grep mktemp cat cp cmp mkdir rm dirname basename; do
   require_command "$command_name"
 done
+[ -f "$analyzer" ] && [ -r "$analyzer" ] ||
+  die "transcript analyzer is not a readable regular file: $analyzer"
 
 require_absolute "--workspace" "$workspace"
 require_absolute "--prompt" "$prompt"
@@ -324,11 +329,25 @@ goregraph version >"$output/goregraph-version.txt" 2>&1
 goregraph context "$workspace" --query "benchmark context preflight" --format json \
   >"$output/context-preflight.json"
 
-printf 'variant\trun\ttokens\tlog\n' >"$output/summary.tsv"
+printf 'variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tduplicate_context_packs\traw_navigation_calls\tsource_read_calls\tunique_source_files\tlog\n' >"$output/summary.tsv"
 baseline_tokens="$temporary_directory/baseline.tokens"
 assisted_tokens="$temporary_directory/assisted.tokens"
+baseline_tool_calls="$temporary_directory/baseline.tool-calls"
+assisted_tool_calls="$temporary_directory/assisted.tool-calls"
+baseline_navigation_calls="$temporary_directory/baseline.navigation-calls"
+assisted_navigation_calls="$temporary_directory/assisted.navigation-calls"
+baseline_source_read_calls="$temporary_directory/baseline.source-read-calls"
+assisted_source_read_calls="$temporary_directory/assisted.source-read-calls"
+assisted_duplicate_context_packs="$temporary_directory/assisted.duplicate-context-packs"
 : >"$baseline_tokens"
 : >"$assisted_tokens"
+: >"$baseline_tool_calls"
+: >"$assisted_tool_calls"
+: >"$baseline_navigation_calls"
+: >"$assisted_navigation_calls"
+: >"$baseline_source_read_calls"
+: >"$assisted_source_read_calls"
+: >"$assisted_duplicate_context_packs"
 
 extract_tokens() {
   awk '
@@ -385,6 +404,7 @@ run_variant() {
   run_number=$2
   prompt_path="$output/$variant-prompt.txt"
   log_path="$output/$variant-$run_number.log"
+  metrics_path="$log_path.metrics.tsv"
 
   set +e
   codex "${codex_args[@]}" -C "$workspace" - <"$prompt_path" >"$log_path" 2>&1
@@ -395,9 +415,32 @@ run_variant() {
 
   tokens=$(extract_tokens "$log_path")
   [ -n "$tokens" ] || die "cannot extract tokens from $log_path"
-  printf '%s\t%s\t%s\t%s\n' "$variant" "$run_number" "$tokens" "$log_path" \
+  metrics=$(bash "$analyzer" "$log_path") ||
+    die "cannot analyze transcript: $log_path"
+  printf '%s\n' "$metrics" >"$metrics_path"
+  IFS=$'\t' read -r tool_calls goregraph_calls full_context_packs duplicate_context_packs \
+    raw_navigation_calls source_read_calls unique_source_files extra_metrics <<EOF
+$metrics
+EOF
+  [ -z "${extra_metrics:-}" ] || die "invalid analyzer result: $metrics_path"
+  for metric in "$tool_calls" "$goregraph_calls" "$full_context_packs" \
+    "$duplicate_context_packs" "$raw_navigation_calls" "$source_read_calls" "$unique_source_files"; do
+    case "$metric" in
+      *[!0-9]*|"") die "invalid analyzer result: $metrics_path" ;;
+    esac
+  done
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$variant" "$run_number" "$tokens" "$tool_calls" "$goregraph_calls" \
+    "$full_context_packs" "$duplicate_context_packs" "$raw_navigation_calls" \
+    "$source_read_calls" "$unique_source_files" "$log_path" \
     >>"$output/summary.tsv"
   printf '%s\n' "$tokens" >>"$temporary_directory/$variant.tokens"
+  printf '%s\n' "$tool_calls" >>"$temporary_directory/$variant.tool-calls"
+  printf '%s\n' "$raw_navigation_calls" >>"$temporary_directory/$variant.navigation-calls"
+  printf '%s\n' "$source_read_calls" >>"$temporary_directory/$variant.source-read-calls"
+  if [ "$variant" = "assisted" ]; then
+    printf '%s\n' "$duplicate_context_packs" >>"$assisted_duplicate_context_packs"
+  fi
 }
 
 run_number=1
@@ -413,21 +456,52 @@ while [ "$run_number" -le "$runs" ]; do
 done
 
 middle=$(((runs + 1) / 2))
-baseline_median=$(sort -n "$baseline_tokens" | sed -n "${middle}p")
-assisted_median=$(sort -n "$assisted_tokens" | sed -n "${middle}p")
-[ -n "$baseline_median" ] && [ -n "$assisted_median" ] ||
-  die "cannot calculate benchmark medians"
+median() {
+  sort -n "$1" | sed -n "${middle}p"
+}
 
-printf 'baseline\tmedian\t%s\t-\n' "$baseline_median" >>"$output/summary.tsv"
-printf 'assisted\tmedian\t%s\t-\n' "$assisted_median" >>"$output/summary.tsv"
+baseline_median=$(median "$baseline_tokens")
+assisted_median=$(median "$assisted_tokens")
+baseline_tool_median=$(median "$baseline_tool_calls")
+assisted_tool_median=$(median "$assisted_tool_calls")
+baseline_navigation_median=$(median "$baseline_navigation_calls")
+assisted_navigation_median=$(median "$assisted_navigation_calls")
+baseline_source_read_median=$(median "$baseline_source_read_calls")
+assisted_source_read_median=$(median "$assisted_source_read_calls")
+[ -n "$baseline_median" ] && [ -n "$assisted_median" ] && \
+  [ -n "$baseline_tool_median" ] && [ -n "$assisted_tool_median" ] && \
+  [ -n "$baseline_navigation_median" ] && [ -n "$assisted_navigation_median" ] && \
+  [ -n "$baseline_source_read_median" ] && [ -n "$assisted_source_read_median" ] ||
+  die "cannot calculate benchmark medians"
+assisted_duplicate_full_packs=$(awk '{ total += $1 } END { print total + 0 }' "$assisted_duplicate_context_packs")
+
+printf 'baseline\tmedian\t%s\t%s\t-\t-\t-\t%s\t%s\t-\t-\n' \
+  "$baseline_median" "$baseline_tool_median" "$baseline_navigation_median" \
+  "$baseline_source_read_median" >>"$output/summary.tsv"
+printf 'assisted\tmedian\t%s\t%s\t-\t-\t-\t%s\t%s\t-\t-\n' \
+  "$assisted_median" "$assisted_tool_median" "$assisted_navigation_median" \
+  "$assisted_source_read_median" >>"$output/summary.tsv"
 
 printf 'Baseline median: %s tokens\n' "$baseline_median"
 printf 'Assisted median: %s tokens\n' "$assisted_median"
+printf 'Baseline/assisted tool-call medians: %s/%s\n' "$baseline_tool_median" "$assisted_tool_median"
+printf 'Baseline/assisted raw-navigation medians: %s/%s\n' \
+  "$baseline_navigation_median" "$assisted_navigation_median"
+printf 'Baseline/assisted source-read medians: %s/%s\n' \
+  "$baseline_source_read_median" "$assisted_source_read_median"
 printf 'Complete the quality rubric in docs/BENCHMARKING.md before release.\n'
 
 [ $((assisted_median * 5)) -le $((baseline_median * 4)) ] ||
   die "assisted median exceeds 80% of matched baseline"
 [ "$assisted_median" -le 116560 ] ||
   die "assisted median exceeds the recorded-baseline gate of 116560"
+[ "$baseline_source_read_median" -gt 0 ] ||
+  die "baseline source-read median is zero; benchmark cannot measure source-replacement savings"
+[ $((assisted_tool_median * 10)) -le $((baseline_tool_median * 7)) ] ||
+  die "assisted tool-call median exceeds 70% of matched baseline"
+[ $((assisted_source_read_median * 2)) -le "$baseline_source_read_median" ] ||
+  die "assisted source-read median exceeds 50% of matched baseline"
+[ "$assisted_duplicate_full_packs" -eq 0 ] ||
+  die "assisted runs repeated a full Context Pack"
 
-printf 'Token gates passed. Raw evidence: %s\n' "$output"
+printf 'Token and structural gates passed. Raw evidence: %s\n' "$output"
