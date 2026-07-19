@@ -51,6 +51,29 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		line, inBlock := stripJavaLineNoise(raw, blockComment)
 		blockComment = inBlock
 		lexicalLine := strings.TrimSpace(lexicalLines[index])
+		if annotationSignature != "" {
+			if isAnnotationBoundary(lexicalLine) {
+				if annotation, ok := parseJavaAnnotationLine(annotationSignature, annotationSignatureLine); ok {
+					pending = append(pending, annotation)
+					source.Annotations = append(source.Annotations, annotation)
+				}
+				annotationSignature = ""
+				annotationSignatureLine = 0
+			} else {
+				if cleanedLine := strings.TrimSpace(line); cleanedLine != "" {
+					annotationSignature += " " + cleanedLine
+				}
+				if balancedJavaParens(annotationSignature) {
+					if annotation, ok := parseJavaAnnotationLine(annotationSignature, annotationSignatureLine); ok {
+						pending = append(pending, annotation)
+						source.Annotations = append(source.Annotations, annotation)
+					}
+					annotationSignature = ""
+					annotationSignatureLine = 0
+				}
+				continue
+			}
+		}
 		if lexicalLine == "" {
 			continue
 		}
@@ -69,27 +92,6 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			braceDepth -= strings.Count(lexicalLine, "}")
 			typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
 			continue
-		}
-		if annotationSignature != "" {
-			if isAnnotationBoundary(lexicalLine) {
-				if annotation, ok := parseJavaAnnotationLine(annotationSignature, annotationSignatureLine); ok {
-					pending = append(pending, annotation)
-					source.Annotations = append(source.Annotations, annotation)
-				}
-				annotationSignature = ""
-				annotationSignatureLine = 0
-			} else {
-				annotationSignature += " " + strings.TrimSpace(line)
-				if balancedJavaParens(annotationSignature) {
-					if annotation, ok := parseJavaAnnotationLine(annotationSignature, annotationSignatureLine); ok {
-						pending = append(pending, annotation)
-						source.Annotations = append(source.Annotations, annotation)
-					}
-					annotationSignature = ""
-					annotationSignatureLine = 0
-				}
-				continue
-			}
 		}
 		if methodSignature != "" {
 			methodSignature += " " + lexicalLines[index]
@@ -1248,10 +1250,5 @@ func splitTopLevel(value string, sep rune) []string {
 }
 
 func trimJavaValue(value string) string {
-	value = strings.TrimSpace(value)
-	value = strings.Trim(value, `"`)
-	if strings.HasPrefix(value, "{") && strings.HasSuffix(value, "}") {
-		value = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "{"), "}"))
-	}
-	return strings.Trim(value, `"`)
+	return strings.Trim(strings.TrimSpace(value), `"`)
 }

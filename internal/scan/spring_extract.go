@@ -855,8 +855,8 @@ func explicitEmptyOpenAPISecurity(annotation JavaAnnotationRecord) bool {
 		return strings.TrimSpace(annotation.Attributes["name"]) == ""
 	}
 	if annotation.Name == "SecurityRequirements" {
-		if value, ok := annotation.Attributes["value"]; ok && strings.TrimSpace(value) != "" {
-			return false
+		if value, ok := annotation.Attributes["value"]; ok {
+			return emptyOpenAPIContainerExpression(value)
 		}
 		return emptyOpenAPIContainerExpression(annotation.Arguments)
 	}
@@ -868,7 +868,7 @@ func explicitEmptyOpenAPISecurity(annotation JavaAnnotationRecord) bool {
 		return false
 	}
 	security = strings.TrimSpace(security)
-	return security == "" || security == "@SecurityRequirement()" || security == "@SecurityRequirement"
+	return security == "@SecurityRequirement()" || security == "@SecurityRequirement" || emptyOpenAPIContainerExpression(security)
 }
 
 func emptyOpenAPIContainerExpression(expression string) bool {

@@ -2,6 +2,8 @@ package scan
 
 import (
 	"reflect"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -79,6 +81,39 @@ class Controller {
 		if !ok || !hasAuthKind(endpoint.Auth, kind) {
 			t.Fatalf("path=%q kind=%q endpoint=%#v endpoints=%#v", path, kind, endpoint, index.Endpoints)
 		}
+	}
+}
+
+func TestSpringIndexPreservesPathVariablesAndMappingArrays(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/CatalogController.java", Language: "java"}, `@RestController
+@RequestMapping("/catalog/")
+class CatalogController {
+  @DeleteMapping(path = "{catalogId}/entries/{entryId:.+}")
+  void deleteOne() {}
+
+  @DeleteMapping(path = {
+      "{catalogId}/entries/{entryId:.+}",
+      "{catalogId}/entries/by-key/{entryId:[a-z]+}"
+  })
+  void deleteMany() {}
+}`)
+	index := buildSpringIndex([]JavaSourceRecord{source})
+
+	paths := []string{}
+	for _, endpoint := range index.Endpoints {
+		if endpoint.HTTPMethod != "DELETE" || slices.Contains(paths, endpoint.Path) {
+			continue
+		}
+		paths = append(paths, endpoint.Path)
+	}
+	want := []string{
+		"/catalog/{catalogId}/entries/{entryId:.+}",
+		"/catalog/{catalogId}/entries/by-key/{entryId:[a-z]+}",
+	}
+	sort.Strings(paths)
+	sort.Strings(want)
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("DELETE paths = %#v, want %#v", paths, want)
 	}
 }
 
