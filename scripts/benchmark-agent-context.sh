@@ -5,6 +5,7 @@ export LC_ALL=C
 
 script_dir=$(cd -P -- "$(dirname -- "$0")" && pwd -P)
 analyzer="$script_dir/analyze-agent-context-log.sh"
+analyzer_go="$script_dir/analyze-agent-context-log.go"
 
 usage() {
   cat <<'EOF'
@@ -115,11 +116,13 @@ esac
 [ "$runs" -ge 3 ] || die "--runs must be an odd integer of at least 3"
 [ $((runs % 2)) -eq 1 ] || die "--runs must be an odd integer of at least 3"
 
-for command_name in codex goregraph awk sed sort grep mktemp cat cp cmp mkdir rm dirname basename; do
+for command_name in codex goregraph go awk sed sort grep mktemp cat cp cmp mkdir rm dirname basename; do
   require_command "$command_name"
 done
 [ -f "$analyzer" ] && [ -r "$analyzer" ] ||
   die "transcript analyzer is not a readable regular file: $analyzer"
+[ -f "$analyzer_go" ] && [ -r "$analyzer_go" ] ||
+  die "transcript analyzer helper is not a readable regular file: $analyzer_go"
 
 require_absolute "--workspace" "$workspace"
 require_absolute "--prompt" "$prompt"
@@ -350,34 +353,7 @@ assisted_repeated_full_packs="$temporary_directory/assisted.repeated-full-packs"
 : >"$assisted_repeated_full_packs"
 
 extract_tokens() {
-  awk '
-    function usage_value(field, line, value) {
-      value = line
-      if (value !~ ("\\\"" field "\\\"[[:space:]]*:[[:space:]]*[0-9]+")) {
-        return ""
-      }
-      sub("^.*\\\"" field "\\\"[[:space:]]*:[[:space:]]*", "", value)
-      sub("[^0-9].*$", "", value)
-      return value
-    }
-    $0 ~ /"type"[[:space:]]*:[[:space:]]*"turn\.completed"/ {
-      total = usage_value("total_tokens", $0)
-      if (total != "" && total + 0 > 0) {
-        candidate = total
-        next
-      }
-      input = usage_value("input_tokens", $0)
-      output = usage_value("output_tokens", $0)
-      if (input != "" && output != "" && input + output > 0) {
-        candidate = input + output
-      }
-    }
-    END {
-      if (candidate != "") {
-        print candidate
-      }
-    }
-  ' "$1"
+  go run "$analyzer_go" --tokens "$1"
 }
 
 run_variant() {
@@ -385,14 +361,15 @@ run_variant() {
   run_number=$2
   prompt_path="$output/$variant-prompt.txt"
   log_path="$output/$variant-$run_number.log"
+  stderr_path="$log_path.stderr"
   metrics_path="$log_path.metrics.tsv"
 
   set +e
-  codex "${codex_args[@]}" --json -C "$workspace" - <"$prompt_path" >"$log_path" 2>&1
+  codex "${codex_args[@]}" --json -C "$workspace" - <"$prompt_path" >"$log_path" 2>"$stderr_path"
   codex_status=$?
   set -e
   [ "$codex_status" -eq 0 ] ||
-    die "$variant run $run_number failed with exit $codex_status; log retained at $log_path"
+    die "$variant run $run_number failed with exit $codex_status; JSONL log retained at $log_path; stderr retained at $stderr_path"
 
   tokens=$(extract_tokens "$log_path")
   [ -n "$tokens" ] || die "cannot extract tokens from $log_path"

@@ -98,9 +98,9 @@ one-line prohibition; the assisted variant may append only the specified
 seven-line bounded Context instruction. All other prompt and execution inputs
 must be identical, including skill availability. Control skill isolation in the
 invocation, never by adding “do not use skills” to a treatment prompt. Retain
-every raw JSONL transcript, its analyzer result, `summary.tsv`, and the signed
-manual rubric outside the repository. The harness supplies `--json`; callers
-must not supply it through `CODEX_BENCHMARK_ARGS`.
+every raw JSONL transcript, separate stderr log, analyzer result, `summary.tsv`,
+and the signed manual rubric outside the repository. The harness supplies
+`--json`; callers must not supply it through `CODEX_BENCHMARK_ARGS`.
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.

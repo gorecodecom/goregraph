@@ -27,15 +27,17 @@ cat >"$temporary_directory/transcript.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"find-pattern","type":"command_execution","command":"find . -name '*.java'","exit_code":1}}
 {"type":"item.completed","item":{"id":"source-read","type":"command_execution","command":"sed -n '1,20p' /src/Service.java","exit_code":0}}
 {"type":"item.completed","item":{"id":"wrapped-search","type":"command_execution","command":"/bin/zsh -lc 'grep -n Worker /src/Worker.go'","exit_code":0}}
+{"type":"item.completed","item":{"id":"wrapped-sed","type":"command_execution","command":"/bin/zsh -lc 'sed -n \"1,20p\" /src/Wrapped.java'","exit_code":0}}
 {"type":"item.completed","item":{"id":"option-pattern","type":"command_execution","command":"rg -e 'Model.ts' -g '*.ts' Worker /src/Handler.java","exit_code":0}}
 {"type":"item.completed","item":{"id":"expression-target","type":"command_execution","command":"rg -e 'Model.ts' /src/Only.java","exit_code":0}}
 {"type":"item.completed","item":{"id":"cat-numbered","type":"command_execution","command":"cat -n /src/Cat.java","exit_code":0}}
-{"type":"item.completed","item":{"id":"direct-read","type":"file_read","path":"/src/worker.py","status":"failed"}}
-{"type":"item.completed","item":{"id":"cli-full","type":"command_execution","command":"goregraph context /work --query route","aggregated_output":"# Context Pack\ncontext_id: full-two\n"}}
-{"type":"item.completed","item":{"id":"mcp-full","type":"mcp_tool_call","tool":"task_context","result":"{\"context_id\":\"full-one\"}"}}
-{"type":"item.completed","item":{"id":"mcp-duplicate","type":"mcp_tool_call","tool":"task_context","result":"{\"context_id\":\"compact-one\",\"duplicate_of\":\"full-one\"}"}}
-{"type":"item.completed","item":{"id":"cli-repeat","type":"command_execution","command":"goregraph context /work --query retry","aggregated_output":"# Context Pack\ncontext_id: full-two\n"}}
+{"type":"item.completed","item":{"id":"direct-read","type":"file_change","path":"/src/worker.py","status":"failed"}}
+{"type":"item.completed","item":{"id":"cli-full","type":"command_execution","command":"goregraph context /work --query route","aggregated_output":"# Context Pack\n\nContext ID: full-two\n"}}
+{"type":"item.completed","item":{"id":"mcp-full","type":"mcp_tool_call","tool":"task_context","result":{"content":[{"type":"text","text":"{\"context_id\":\"full-one\"}"}]}}}
+{"type":"item.completed","item":{"id":"mcp-duplicate","type":"mcp_tool_call","tool":"task_context","result":{"content":[{"type":"text","text":"# Context Pack\n\nContext ID: compact-one\nDuplicate of: full-one\n"}]}}}
+{"type":"item.completed","item":{"id":"cli-repeat","type":"command_execution","command":"goregraph context /work --query retry","aggregated_output":"# Context Pack\n\nContext ID: full-two\n"}}
 {"type":"item.completed","item":{"id":"web-search","type":"web_search","query":"route"}}
+{"type":"item.completed","item":{"id":"collaboration","type":"collab_tool_call","target":"helper"}}
 {"type":"item.completed","item":{"id":"assistant-message","type":"agent_message","text":"not a tool"}}
 {"type":"turn.completed","usage":{"input_tokens":60000,"cached_input_tokens":10000,"output_tokens":30000,"total_tokens":100000}}
 EOF
@@ -45,7 +47,14 @@ header=$(bash "$analyzer" --header "$temporary_directory/transcript.jsonl")
 [ "$header" = "$expected_header" ] || fail "header = $header"
 
 row=$(bash "$analyzer" "$temporary_directory/transcript.jsonl")
-[ "$row" = $'13\t4\t2\t1\t1\t6\t3\t6' ] || fail "row = $row"
+[ "$row" = $'15\t4\t2\t1\t1\t7\t4\t7' ] || fail "row = $row"
+
+cat >"$temporary_directory/fallback-usage.jsonl" <<'EOF'
+{"type":"item.completed","item":{"id":"search","type":"web_search","query":"route"}}
+{"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":3}}
+EOF
+tokens=$(bash "$analyzer" --tokens "$temporary_directory/fallback-usage.jsonl")
+[ "$tokens" = "15" ] || fail "fallback tokens = $tokens"
 
 if bash "$analyzer" "$temporary_directory/missing.jsonl" >/dev/null 2>&1; then
   fail "missing transcript passed"
@@ -56,9 +65,22 @@ if bash "$analyzer" "$temporary_directory/unparseable.jsonl" >/dev/null 2>&1; th
   fail "unparseable transcript passed"
 fi
 
-printf '{"type":"item.completed","item":{"id":"broken","type":"command_execution","command":"cat /src/Broken.java"}\n' >"$temporary_directory/malformed.jsonl"
+printf '{"type":"item.completed","item":{"id":"broken","type":"command_execution","command":"cat /src/Broken.java"}},\n' >"$temporary_directory/malformed.jsonl"
 if bash "$analyzer" "$temporary_directory/malformed.jsonl" >/dev/null 2>&1; then
   fail "malformed JSONL passed"
+fi
+
+printf '{"type":"item.completed","item":{"id":"unknown","type":"future_tool"}}\n' >"$temporary_directory/unknown-item.jsonl"
+if bash "$analyzer" "$temporary_directory/unknown-item.jsonl" >/dev/null 2>&1; then
+  fail "unknown completed item passed"
+fi
+
+cat >"$temporary_directory/conflicting-id.jsonl" <<'EOF'
+{"type":"item.completed","item":{"id":"same","type":"web_search","query":"first"}}
+{"type":"item.completed","item":{"id":"same","type":"web_search","query":"second"}}
+EOF
+if bash "$analyzer" "$temporary_directory/conflicting-id.jsonl" >/dev/null 2>&1; then
+  fail "conflicting terminal item ID passed"
 fi
 
 printf 'PASS: analyze-agent-context-log\n'

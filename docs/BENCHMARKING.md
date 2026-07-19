@@ -95,8 +95,8 @@ scripts/benchmark-agent-context.sh \
 ```
 
 The harness invokes `codex exec --json` itself, records the resulting raw JSONL
-log and a colocated analyzer result outside the workspace. Its `summary.tsv`
-has this schema:
+stdout log, separate stderr log, and a colocated analyzer result outside the
+workspace. Its `summary.tsv` has this schema:
 
 ```text
 variant run tokens tool_calls goregraph_calls full_context_packs compact_duplicate_packs repeated_full_packs raw_navigation_calls source_read_calls unique_source_files log

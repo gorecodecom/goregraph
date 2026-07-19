@@ -5,6 +5,7 @@ export LC_ALL=C
 
 script_dir=$(cd -P -- "$(dirname -- "$0")" && pwd -P)
 harness="$script_dir/benchmark-agent-context.sh"
+go_bin=$(dirname -- "$(command -v go)")
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/goregraph-benchmark-test.XXXXXX")
 cleanup() {
   status=$?
@@ -34,6 +35,7 @@ if [ "$#" -gt 0 ]; then
     [ "$argument" = "--json" ] && json_count=$((json_count + 1))
   done
   [ "$json_count" -eq 1 ] || exit 4
+  printf 'codex-test warning\n' >&2
 fi
 event_number=0
 emit_command() {
@@ -49,7 +51,7 @@ case "$prompt" in
   *"Treat source_sections as current source already read"*)
     printf 'a\n' >>"$FAKE_ORDER"
     tokens=${FAKE_ASSISTED_TOKENS:-80000}
-    emit_command 'goregraph context /work --query route' '# Context Pack\\ncontext_id: assisted-pack\\n'
+    emit_command 'goregraph context /work --query route' '# Context Pack\n\nContext ID: assisted-pack\n'
     emit_command 'sed -n 1,40p /work/src/Service.java'
     emit_command 'sed -n 41,80p /work/src/Worker.go'
     emit_command 'make test'
@@ -66,10 +68,10 @@ case "$prompt" in
       extra_source_reads=$((extra_source_reads - 1))
     done
     if [ "${FAKE_ASSISTED_COMPACT_DUPLICATE:-0}" = "1" ]; then
-      emit_command 'goregraph context /work --query retry' '# Context Pack\\ncontext_id: compact-pack\\nduplicate_of: assisted-pack\\n'
+      emit_command 'goregraph context /work --query retry' '# Context Pack\n\nContext ID: compact-pack\nDuplicate of: assisted-pack\n'
     fi
     if [ "${FAKE_ASSISTED_REPEATED_FULL:-0}" = "1" ]; then
-      emit_command 'goregraph context /work --query retry' '# Context Pack\\ncontext_id: assisted-pack\\n'
+      emit_command 'goregraph context /work --query retry' '# Context Pack\n\nContext ID: assisted-pack\n'
     fi
     ;;
   *)
@@ -135,7 +137,7 @@ printf 'Call goregraph context once with the complete task before reading indexe
 run_harness() {
   result_name=$1
   CODEX_BENCHMARK_ARGS=${2:-$safe_args} \
-    PATH="$temporary_directory/bin:/usr/bin:/bin" \
+    PATH="$temporary_directory/bin:$go_bin:/usr/bin:/bin" \
     FAKE_ORDER="$temporary_directory/$result_name.order" \
     FAKE_BASELINE_TOKENS=${FAKE_BASELINE_TOKENS:-100000} \
     FAKE_ASSISTED_TOKENS=${FAKE_ASSISTED_TOKENS:-80000} \
@@ -165,6 +167,8 @@ grep -q $'^assisted\tmedian\t80000\t6\t-\t-\t-\t-\t2\t2\t-\t-$' "$temporary_dire
   fail "assisted median missing"
 [ -s "$temporary_directory/pass/assisted-1.log.metrics.tsv" ] ||
   fail "analyzer result was not retained"
+[ -s "$temporary_directory/pass/assisted-1.log.stderr" ] ||
+  fail "Codex stderr was not retained separately"
 
 FAKE_ASSISTED_TOKENS=80001
 export FAKE_ASSISTED_TOKENS
