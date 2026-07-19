@@ -492,10 +492,12 @@ router.get("/unrelated", unrelatedHandler);
 
 func TestExtractCodeRoutesPreservesParameterizedLiteralsAcrossLanguages(t *testing.T) {
 	tests := []struct {
-		name string
-		file FileRecord
-		body string
-		want string
+		name           string
+		file           FileRecord
+		body           string
+		want           string
+		framework      string
+		frameworkBound bool
 	}{
 		{
 			name: "Go router",
@@ -503,14 +505,16 @@ func TestExtractCodeRoutesPreservesParameterizedLiteralsAcrossLanguages(t *testi
 			body: `package routes
 func getRecord() {}
 func registerRoutes() { router.GET("/records/{recordId:[0-9]{2,4}}", getRecord) }`,
-			want: "/records/{recordId:[0-9]{2,4}}",
+			want:      "/records/{recordId:[0-9]{2,4}}",
+			framework: "Go Router",
 		},
 		{
 			name: "PHP Laravel",
 			file: FileRecord{Path: "routes/api.php", Language: "php"},
 			body: `<?php
 Route::get('/records/{record}', [RecordController::class, 'show']);`,
-			want: "/records/{record}",
+			want:      "/records/{record}",
+			framework: "Laravel",
 		},
 		{
 			name: "TypeScript Express",
@@ -518,7 +522,9 @@ Route::get('/records/{record}', [RecordController::class, 'show']);`,
 			body: `import express from "express";
 const app = express();
 app.get("/records/:recordId([0-9]{2,4})", getRecord);`,
-			want: "/records/:recordId([0-9]{2,4})",
+			want:           "/records/:recordId([0-9]{2,4})",
+			framework:      "Express",
+			frameworkBound: true,
 		},
 		{
 			name: "Python FastAPI",
@@ -528,15 +534,17 @@ app = FastAPI()
 @app.get("/records/{record_id:path}")
 def get_record():
     pass`,
-			want: "/records/{record_id:path}",
+			want:      "/records/{record_id:path}",
+			framework: "FastAPI",
 		},
 		{
-			name: "Rust Actix",
+			name: "Rust attribute syntax",
 			file: FileRecord{Path: "src/routes.rs", Language: "rust"},
 			body: `use actix_web::get;
 #[get("/records/{record_id:[0-9]{2,4}}")]
 async fn get_record() {}`,
-			want: "/records/{record_id:[0-9]{2,4}}",
+			want:      "/records/{record_id:[0-9]{2,4}}",
+			framework: "Actix/Rocket",
 		},
 	}
 
@@ -548,6 +556,12 @@ async fn get_record() {}`,
 			}
 			if got := record.Routes[0].Path; got != test.want {
 				t.Fatalf("route path = %q, want byte-identical %q", got, test.want)
+			}
+			if got := record.Routes[0].Framework; got != test.framework {
+				t.Fatalf("framework = %q, want %q", got, test.framework)
+			}
+			if got := record.Routes[0].FrameworkBound; got != test.frameworkBound {
+				t.Fatalf("framework bound = %t, want %t", got, test.frameworkBound)
 			}
 		})
 	}
