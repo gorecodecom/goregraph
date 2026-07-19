@@ -31,6 +31,12 @@ cat >"$temporary_directory/transcript.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"option-pattern","type":"command_execution","command":"rg -e 'Model.ts' -g '*.ts' Worker /src/Handler.java","exit_code":0}}
 {"type":"item.completed","item":{"id":"expression-target","type":"command_execution","command":"rg -e 'Model.ts' /src/Only.java","exit_code":0}}
 {"type":"item.completed","item":{"id":"cat-numbered","type":"command_execution","command":"cat -n /src/Cat.java","exit_code":0}}
+{"type":"item.completed","item":{"id":"compound-sed","type":"command_execution","command":"/bin/zsh -lc 'cd /work/service && sed -n \"1,20p\" src/Service.java'","exit_code":0}}
+{"type":"item.completed","item":{"id":"attached-grep","type":"command_execution","command":"grep -eService /src/Attached.java","exit_code":0}}
+{"type":"item.completed","item":{"id":"attached-rg","type":"command_execution","command":"rg -eWorker /src/AttachedRg.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"attached-sed-expression","type":"command_execution","command":"sed -e1,20p /src/AttachedSed.java","exit_code":0}}
+{"type":"item.completed","item":{"id":"attached-sed-file","type":"command_execution","command":"sed -f/src/Script.java /src/FileProgram.java","exit_code":0}}
+{"type":"item.completed","item":{"id":"compound-pipeline","type":"command_execution","command":"/bin/zsh -lc 'grep -n Service src/Compound.java | sed -n \"1,20p\" src/Compound.java'","exit_code":0}}
 {"type":"item.completed","item":{"id":"direct-read","type":"file_change","path":"/src/worker.py","status":"failed"}}
 {"type":"item.completed","item":{"id":"cli-full","type":"command_execution","command":"goregraph context /work --query route","aggregated_output":"# Context Pack\n\nContext ID: full-two\n"}}
 {"type":"item.completed","item":{"id":"mcp-full","type":"mcp_tool_call","tool":"task_context","result":{"content":[{"type":"text","text":"{\"context_id\":\"full-one\"}"}]}}}
@@ -47,7 +53,7 @@ header=$(bash "$analyzer" --header "$temporary_directory/transcript.jsonl")
 [ "$header" = "$expected_header" ] || fail "header = $header"
 
 row=$(bash "$analyzer" "$temporary_directory/transcript.jsonl")
-[ "$row" = $'15\t4\t2\t1\t1\t7\t4\t7' ] || fail "row = $row"
+[ "$row" = $'21\t4\t2\t1\t1\t13\t8\t13' ] || fail "row = $row"
 
 cat >"$temporary_directory/fallback-usage.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"search","type":"web_search","query":"route"}}

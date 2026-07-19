@@ -263,6 +263,12 @@ func isShell(name string) bool {
 func shellWords(command string) ([]string, error) {
 	var words []string
 	var current strings.Builder
+	appendCurrent := func() {
+		if current.Len() > 0 {
+			words = append(words, current.String())
+			current.Reset()
+		}
+	}
 	var quote rune
 	escaped := false
 	for _, char := range command {
@@ -286,11 +292,11 @@ func shellWords(command string) ([]string, error) {
 			quote = char
 		case char == '\\':
 			escaped = true
+		case char == ';' || char == '|' || char == '&':
+			appendCurrent()
+			words = append(words, string(char))
 		case unicode.IsSpace(char):
-			if current.Len() > 0 {
-				words = append(words, current.String())
-				current.Reset()
-			}
+			appendCurrent()
 		default:
 			current.WriteRune(char)
 		}
@@ -298,9 +304,7 @@ func shellWords(command string) ([]string, error) {
 	if escaped || quote != 0 {
 		return nil, errors.New("unterminated shell command quoting")
 	}
-	if current.Len() > 0 {
-		words = append(words, current.String())
-	}
+	appendCurrent()
 	return words, nil
 }
 
@@ -309,24 +313,57 @@ func classifyCommand(command string, metrics *metrics) bool {
 	if err != nil || len(words) == 0 {
 		return false
 	}
+	contextCall, navigation, sourceRead := false, false, false
+	for _, segment := range shellSegments(words) {
+		context, navigates, reads := classifySimpleCommand(segment, metrics)
+		contextCall = contextCall || context
+		navigation = navigation || navigates
+		sourceRead = sourceRead || reads
+	}
+	if navigation {
+		metrics.navigationCalls++
+	}
+	if sourceRead {
+		metrics.sourceReadCalls++
+	}
+	return contextCall
+}
+
+func shellSegments(words []string) [][]string {
+	segments := make([][]string, 0, 1)
+	current := make([]string, 0, len(words))
+	for _, word := range words {
+		if word == ";" || word == "|" || word == "&" {
+			if len(current) > 0 {
+				segments = append(segments, current)
+				current = make([]string, 0, len(words))
+			}
+			continue
+		}
+		current = append(current, word)
+	}
+	if len(current) > 0 {
+		segments = append(segments, current)
+	}
+	return segments
+}
+
+func classifySimpleCommand(words []string, metrics *metrics) (bool, bool, bool) {
+	if len(words) == 0 {
+		return false, false, false
+	}
 	switch words[0] {
 	case "goregraph":
-		return len(words) > 1 && words[1] == "context"
+		return len(words) > 1 && words[1] == "context", false, false
 	case "rg", "grep":
-		if recordSearchTargets(words[1:], metrics) {
-			metrics.navigationCalls++
-		}
+		return false, recordSearchTargets(words[1:], metrics), false
 	case "find":
-		if recordFindTargets(words[1:], metrics) {
-			metrics.navigationCalls++
-		}
+		return false, recordFindTargets(words[1:], metrics), false
 	case "sed", "nl", "cat", "head", "tail":
-		if recordReadTargets(words[0], words[1:], metrics) {
-			metrics.navigationCalls++
-			metrics.sourceReadCalls++
-		}
+		reads := recordReadTargets(words[0], words[1:], metrics)
+		return false, reads, reads
 	}
-	return false
+	return false, false, false
 }
 
 func recordSearchTargets(words []string, metrics *metrics) bool {
@@ -349,6 +386,10 @@ func recordSearchTargets(words []string, metrics *metrics) bool {
 				continue
 			case "-g", "--glob", "--type", "--type-not":
 				optionValue = true
+				continue
+			}
+			if (strings.HasPrefix(word, "-e") || strings.HasPrefix(word, "-f")) && len(word) > 2 {
+				patternSeen = true
 				continue
 			}
 			if strings.HasPrefix(word, "--regexp=") || strings.HasPrefix(word, "--file=") {
@@ -397,6 +438,10 @@ func recordReadTargets(command string, words []string, metrics *metrics) bool {
 			}
 			if optionTakesValue(command, word) {
 				optionValue = true
+				continue
+			}
+			if command == "sed" && (strings.HasPrefix(word, "-e") || strings.HasPrefix(word, "-f")) && len(word) > 2 {
+				scriptSeen = true
 				continue
 			}
 			if strings.HasPrefix(word, "-") {
