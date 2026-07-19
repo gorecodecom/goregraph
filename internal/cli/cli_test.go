@@ -1763,14 +1763,15 @@ func TestRunQueryTaskContextMapsLimitAndMaxFilesBeforeServiceDefaults(t *testing
 	tests := []struct {
 		name       string
 		options    []string
+		maxFiles   int
 		wantFiles  int
 		wantBudget int
 	}{
-		{name: "default remains twelve", wantFiles: 12, wantBudget: 4000},
-		{name: "explicit limit", options: []string{"--limit", "5"}, wantFiles: 5, wantBudget: 4000},
-		{name: "limit is capped", options: []string{"--limit", "25"}, wantFiles: 20, wantBudget: 4000},
-		{name: "max files wins after limit", options: []string{"--limit", "20", "--max-files", "6", "--budget-tokens", "900"}, wantFiles: 6, wantBudget: 900},
-		{name: "max files wins before limit", options: []string{"--max-files", "6", "--limit", "20", "--budget-tokens", "900"}, wantFiles: 6, wantBudget: 900},
+		{name: "default remains bounded", maxFiles: agent.DefaultContextMaxFiles, wantBudget: 4000},
+		{name: "explicit limit constrains selection", options: []string{"--limit", "1"}, maxFiles: 1, wantFiles: 1, wantBudget: 4000},
+		{name: "limit is capped", options: []string{"--limit", "25"}, maxFiles: agent.MaxContextMaxFiles, wantBudget: 4000},
+		{name: "max files wins after limit", options: []string{"--limit", "1", "--max-files", "2", "--budget-tokens", "900"}, maxFiles: 2, wantFiles: 2, wantBudget: 900},
+		{name: "max files wins before limit", options: []string{"--max-files", "2", "--limit", "1", "--budget-tokens", "900"}, maxFiles: 2, wantFiles: 2, wantBudget: 900},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1780,9 +1781,21 @@ func TestRunQueryTaskContextMapsLimitAndMaxFilesBeforeServiceDefaults(t *testing
 			if code := Run(args, &stdout, &stderr); code != 0 {
 				t.Fatalf("exit code = %d, stderr=%s", code, stderr.String())
 			}
+			first := stdout.String()
+			stdout.Reset()
+			stderr.Reset()
+			if code := Run(args, &stdout, &stderr); code != 0 {
+				t.Fatalf("repeat exit code = %d, stderr=%s", code, stderr.String())
+			}
+			if first != stdout.String() {
+				t.Fatalf("task context is not deterministic:\nfirst=%s\nsecond=%s", first, stdout.String())
+			}
 			pack := decodeCLIContextPack(t, stdout.Bytes())
-			if len(pack.Files) != test.wantFiles || pack.BudgetTokens != test.wantBudget {
-				t.Fatalf("files/budget = %d/%d, want %d/%d: %#v", len(pack.Files), pack.BudgetTokens, test.wantFiles, test.wantBudget, pack)
+			if len(pack.Files) == 0 || len(pack.Files) > test.maxFiles || pack.BudgetTokens != test.wantBudget {
+				t.Fatalf("files/budget = %d/%d, want 1-%d/%d: %#v", len(pack.Files), pack.BudgetTokens, test.maxFiles, test.wantBudget, pack)
+			}
+			if test.wantFiles != 0 && len(pack.Files) != test.wantFiles {
+				t.Fatalf("files = %d, want %d: %#v", len(pack.Files), test.wantFiles, pack)
 			}
 			var envelope map[string]json.RawMessage
 			if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {

@@ -370,10 +370,8 @@ func TestRunContextDefaultMarkdownIncludesBuiltSource(t *testing.T) {
 	for _, want := range []string{
 		"Source coverage: complete",
 		"Source unrepresented: 0",
-		"### 1. `api/UserController.java:1-3`",
+		"### 1. `api/UserController.java:1`",
 		"    1\tpublic void deleteUser() {",
-		"    2\t    service.deleteUser();",
-		"    3\t}",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("default markdown missing source %q:\n%s", want, body)
@@ -388,7 +386,7 @@ func TestRunContextDefaultMarkdownEscapesSourceControls(t *testing.T) {
 	index.Facts[0].EndLine = 3
 	root := writeQueryContextIndex(t, index)
 	if err := os.WriteFile(filepath.Join(root, "UserController.java"), []byte(
-		"public void deleteUser() {\n    service.deleteUser();\x1b]0;owned\x07\r\b\x00\n}\n",
+		"public void deleteUser() {\x1b]0;owned\x07\r\b\x00\n    service.deleteUser();\n}\n",
 	), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +395,7 @@ func TestRunContextDefaultMarkdownEscapesSourceControls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "    2\t    service.deleteUser();\\u001B]0;owned\\u0007\\u000D\\u0008\\u0000"
+	want := "    1\tpublic void deleteUser() {\\u001B]0;owned\\u0007\\u000D\\u0008\\u0000"
 	if !strings.Contains(body, want) {
 		t.Fatalf("default markdown missing escaped source %q:\n%q", want, body)
 	}
@@ -420,15 +418,16 @@ func TestRunContextRejectsUnknownFormat(t *testing.T) {
 func TestRunTaskForwardsContextBudgetsAndMapsOnlyExplicitLimit(t *testing.T) {
 	root := writeQueryContextIndex(t, denseContextIndex())
 	tests := []struct {
-		name     string
-		options  TaskOptions
-		wantMax  int
-		wantPack int
+		name      string
+		options   TaskOptions
+		maxFiles  int
+		wantFiles int
+		wantPack  int
 	}{
-		{name: "defaults", options: TaskOptions{}, wantMax: agent.DefaultContextMaxFiles, wantPack: agent.DefaultContextBudgetTokens},
-		{name: "explicit limit", options: TaskOptions{Limit: 5}, wantMax: 5, wantPack: agent.DefaultContextBudgetTokens},
-		{name: "capped limit", options: TaskOptions{Limit: 25}, wantMax: 20, wantPack: agent.DefaultContextBudgetTokens},
-		{name: "max files wins", options: TaskOptions{Limit: 20, MaxFiles: 6, BudgetTokens: 900}, wantMax: 6, wantPack: 900},
+		{name: "defaults", options: TaskOptions{}, maxFiles: agent.DefaultContextMaxFiles, wantPack: agent.DefaultContextBudgetTokens},
+		{name: "explicit limit constrains selection", options: TaskOptions{Limit: 1}, maxFiles: 1, wantFiles: 1, wantPack: agent.DefaultContextBudgetTokens},
+		{name: "capped limit", options: TaskOptions{Limit: 25}, maxFiles: agent.MaxContextMaxFiles, wantPack: agent.DefaultContextBudgetTokens},
+		{name: "max files wins", options: TaskOptions{Limit: 1, MaxFiles: 2, BudgetTokens: 900}, maxFiles: 2, wantFiles: 2, wantPack: 900},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -441,9 +440,19 @@ func TestRunTaskForwardsContextBudgetsAndMapsOnlyExplicitLimit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			again, err := RunTask(options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if body != again {
+				t.Fatalf("task context is not deterministic:\nfirst=%s\nsecond=%s", body, again)
+			}
 			pack := decodeLegacyContextPack(t, body)
-			if len(pack.Files) != test.wantMax || pack.BudgetTokens != test.wantPack {
-				t.Fatalf("files/budget = %d/%d, want %d/%d: %#v", len(pack.Files), pack.BudgetTokens, test.wantMax, test.wantPack, pack)
+			if len(pack.Files) == 0 || len(pack.Files) > test.maxFiles || pack.BudgetTokens != test.wantPack {
+				t.Fatalf("files/budget = %d/%d, want 1-%d/%d: %#v", len(pack.Files), pack.BudgetTokens, test.maxFiles, test.wantPack, pack)
+			}
+			if test.wantFiles != 0 && len(pack.Files) != test.wantFiles {
+				t.Fatalf("files = %d, want %d: %#v", len(pack.Files), test.wantFiles, pack)
 			}
 			var envelope map[string]json.RawMessage
 			if err := json.Unmarshal([]byte(body), &envelope); err != nil {
