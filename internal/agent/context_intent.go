@@ -41,13 +41,14 @@ func planContextConcerns(
 
 	aliases := contextProjectAliases(index.Facts, index.Coverage)
 	explicitProjects := contextExplicitProjects(query, aliases)
+	semanticQueryTokens := contextProjectSemanticQueryTokens(query, aliases, explicitProjects)
 	projects := make([]string, 0, len(explicitProjects))
 	for project := range explicitProjects {
 		projects = append(projects, project)
 	}
 	sort.Strings(projects)
 	for _, project := range projects {
-		candidates := semanticContextProjectFacts(query, project, aliases[project], index.Facts)
+		candidates := semanticContextProjectFacts(semanticQueryTokens, project, index.Facts)
 		reason := "explicit project task match"
 		if len(candidates) == 0 {
 			coverage, incomplete := strongestIncompleteContextProjectCoverage(project, index.Coverage)
@@ -170,6 +171,16 @@ func publicContextConcerns(concerns []contextConcern) []ContextConcern {
 	return result
 }
 
+func corePublicContextConcerns(concerns []ContextConcern) []ContextConcern {
+	result := make([]ContextConcern, 0, 2)
+	for _, concern := range concerns {
+		if concern.Kind == contextConcernEntrypoint || concern.Kind == contextConcernPrimaryPath {
+			result = append(result, concern)
+		}
+	}
+	return result
+}
+
 func reachableContextConcernEvidence(
 	index scan.AgentContextIndexRecord,
 	seedID string,
@@ -228,18 +239,10 @@ func reachableContextConcernEvidence(
 }
 
 func semanticContextProjectFacts(
-	query string,
+	queryTokens map[string]bool,
 	project string,
-	aliases []string,
 	facts []scan.AgentContextFactRecord,
 ) []string {
-	queryTokens := contextTokenSet(query)
-	for _, alias := range aliases {
-		for token := range contextTokenSet(alias) {
-			delete(queryTokens, token)
-		}
-	}
-
 	result := []string{}
 	for _, fact := range facts {
 		if normalizeContextProject(fact.Project) != project || !eligibleContextConcernFact(fact) {
@@ -261,6 +264,22 @@ func semanticContextProjectFacts(
 		}
 	}
 	return orderedContextConcernIDs(result)
+}
+
+func contextProjectSemanticQueryTokens(
+	query string,
+	aliases map[string][]string,
+	explicitProjects map[string]bool,
+) map[string]bool {
+	queryTokens := contextTokenSet(query)
+	for project := range explicitProjects {
+		for _, alias := range aliases[project] {
+			for token := range contextTokenSet(alias) {
+				delete(queryTokens, token)
+			}
+		}
+	}
+	return queryTokens
 }
 
 func eligibleContextConcernFact(fact scan.AgentContextFactRecord) bool {

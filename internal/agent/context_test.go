@@ -77,7 +77,7 @@ func TestPlanContextConcernsRequiresSemanticExplicitProjects(t *testing.T) {
 		seed,
 		{ID: "jobs", Project: "services/jobs", Kind: "symbol", Search: "delete related jobs"},
 		{ID: "library-jobs", Project: "libraries/jobs", Kind: "symbol", Search: "delete related jobs"},
-		{ID: "shared", Project: "libraries/shared-model", Kind: "symbol", Search: "catalog identifier"},
+		{ID: "shared", Project: "libraries/shared-model", Kind: "symbol", Search: "catalog identifiers"},
 		{ID: "unrelated", Project: "services/audit", Kind: "symbol", Search: "audit events"},
 	}}
 
@@ -96,6 +96,110 @@ func TestPlanContextConcernsRequiresSemanticExplicitProjects(t *testing.T) {
 		if concern, ok := findContextConcern(concerns, key); ok {
 			t.Fatalf("non-unique or non-semantic project concern %q = %#v", key, concern)
 		}
+	}
+}
+
+func TestPlanContextConcernsDoesNotCrossMatchExplicitProjectAliases(t *testing.T) {
+	seed := scan.AgentContextFactRecord{ID: "route", Project: "app", Kind: "route"}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		seed,
+		{ID: "jobs", Project: "services/jobs", Kind: "symbol", Search: "shared"},
+		{ID: "shared", Project: "libraries/shared", Kind: "symbol", Search: "jobs"},
+	}}
+
+	concerns := planContextConcerns(
+		"Analyze services/jobs and libraries/shared.",
+		index,
+		seed,
+	)
+	for _, key := range []string{"project:services/jobs", "project:libraries/shared"} {
+		if concern, ok := findContextConcern(concerns, key); ok {
+			t.Fatalf("another explicit project alias covered %q: %#v", key, concern)
+		}
+	}
+}
+
+func TestBuildContextSerializesCoreConcernsAtMinimumBudget(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "route", Kind: "route", Name: "GET /x", HTTPMethod: "GET", Path: "/x",
+			File: strings.Repeat("dir/", 55) + "x.go", Confidence: "EXACT",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "GET /x", BudgetTokens: MinContextBudgetTokens,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSerializedCoreContextConcerns(t, pack)
+	assertContextPackWithinRequestBudget(t, pack, MinContextBudgetTokens)
+}
+
+func TestBuildContextSerializesCoreConcernsBeforeHeavyMetadata(t *testing.T) {
+	longValue := strings.Repeat("metadata", 10)
+	facts := []scan.AgentContextFactRecord{{
+		ID: "route", Project: "services/catalog", Kind: "route", Name: "GET /catalog",
+		HTTPMethod: "GET", Path: "/catalog", Qualified: "CatalogController.get", File: "Catalog.go", Confidence: "EXACT",
+	}}
+	edges := []scan.AgentContextEdgeRecord{}
+	for index := range 16 {
+		id := fmt.Sprintf("neighbor-%02d", index)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Project: "services/catalog", Kind: "symbol",
+			Name:       id + longValue,
+			Qualified:  "CatalogService." + id + longValue,
+			File:       id + longValue + ".go",
+			Confidence: "EXACT",
+		})
+		edges = append(edges, scan.AgentContextEdgeRecord{
+			ID: "edge-" + id, FromFactID: "route", ToFactID: id, Kind: "call",
+			FromLabel: "catalog", ToLabel: id + longValue, Confidence: "EXACT",
+		})
+	}
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts:         facts,
+		Edges:         edges,
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "GET /catalog"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSerializedCoreContextConcerns(t, pack)
+	assertContextPackWithinRequestBudget(t, pack, DefaultContextBudgetTokens)
+}
+
+func assertSerializedCoreContextConcerns(t *testing.T, pack ContextPack) {
+	t.Helper()
+	seen := make(map[string]bool, len(pack.Concerns))
+	for _, concern := range pack.Concerns {
+		seen[concern.Kind] = true
+	}
+	for _, kind := range []string{contextConcernEntrypoint, contextConcernPrimaryPath} {
+		if !seen[kind] {
+			t.Fatalf("required concern %q was not serialized: %#v", kind, pack.Concerns)
+		}
+	}
+}
+
+func assertContextPackWithinRequestBudget(t *testing.T, pack ContextPack, budget int) {
+	t.Helper()
+	body, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.EstimatedTokens > budget || len(body) > contextByteBudget(budget) {
+		t.Fatalf(
+			"context pack exceeded budget: tokens %d/%d, bytes %d/%d",
+			pack.EstimatedTokens,
+			budget,
+			len(body),
+			contextByteBudget(budget),
+		)
 	}
 }
 

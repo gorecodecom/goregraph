@@ -22,7 +22,6 @@ const (
 	MaxContextSourceSections           = 4
 	MaxContextSourceOmissions          = 3
 	MaxContextSourceFileBytes          = 2 * 1024 * 1024
-	contextConcernBudgetReserveTokens  = 32
 )
 
 type ContextRequest struct {
@@ -142,24 +141,35 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 		return ContextPack{}, err
 	}
 	metadataRequest := request
-	metadataRequest.BudgetTokens = contextMetadataBudget(request.BudgetTokens)
+	metadataBudget := contextMetadataBudget(request.BudgetTokens)
+	metadataRequest.BudgetTokens = metadataBudget
+	publicConcerns := []ContextConcern(nil)
+	if seed, ok := contextConcernPlanningSeed(loaded.Index, request.Query); ok {
+		publicConcerns = publicContextConcerns(planContextConcerns(request.Query, loaded.Index, seed))
+		var concernTokens int
+		var measureErr error
+		publicConcerns, concernTokens, measureErr = contextConcernsWithinMetadataBudget(publicConcerns, metadataBudget)
+		if measureErr != nil {
+			return ContextPack{}, measureErr
+		}
+		metadataRequest.BudgetTokens -= concernTokens
+	}
 	pack, err := compileContextPack(loaded.Index, metadataRequest)
 	if err != nil {
 		return ContextPack{}, err
 	}
-	if seed, ok := contextConcernPlanningSeed(loaded.Index, request.Query); ok && !pack.FallbackRequired {
-		concernBudget := metadataRequest.BudgetTokens - contextConcernBudgetReserveTokens
-		for _, concern := range publicContextConcerns(planContextConcerns(request.Query, loaded.Index, seed)) {
-			candidate, accepted, appendErr := tryContextPack(pack, concernBudget, func(candidate *ContextPack) bool {
-				candidate.Concerns = append(candidate.Concerns, concern)
-				return true
-			})
-			if appendErr != nil {
-				return ContextPack{}, appendErr
-			}
-			if accepted {
-				pack = candidate
-			}
+	if len(publicConcerns) > 0 && !pack.FallbackRequired {
+		pack.Concerns = publicConcerns
+		pack, err = finalizeContextEstimate(pack)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		fits, fitErr := contextPackFitsBudget(pack, metadataBudget)
+		if fitErr != nil {
+			return ContextPack{}, fitErr
+		}
+		if !fits {
+			return ContextPack{}, fmt.Errorf("required context concerns exceed metadata budget")
 		}
 	}
 	pack.BudgetTokens = request.BudgetTokens
@@ -179,6 +189,50 @@ func contextMetadataBudget(total int) int {
 		return total
 	}
 	return DefaultContextMetadataBudgetTokens
+}
+
+func contextConcernMetadataTokens(concerns []ContextConcern) (int, error) {
+	withoutConcerns, err := json.Marshal(ContextPack{})
+	if err != nil {
+		return 0, err
+	}
+	withConcerns, err := json.Marshal(ContextPack{
+		Concerns:       concerns,
+		SourceCoverage: "complete",
+	})
+	if err != nil {
+		return 0, err
+	}
+	extraRunes := utf8.RuneCount(withConcerns) - utf8.RuneCount(withoutConcerns)
+	return (extraRunes+3)/4 + 1, nil
+}
+
+func contextConcernsWithinMetadataBudget(
+	concerns []ContextConcern,
+	metadataBudget int,
+) ([]ContextConcern, int, error) {
+	selected := corePublicContextConcerns(concerns)
+	selectedTokens, err := contextConcernMetadataTokens(selected)
+	if err != nil {
+		return nil, 0, err
+	}
+	minimumCompilationBudget := MinContextBudgetTokens - selectedTokens
+	for _, concern := range concerns {
+		if concern.Kind == contextConcernEntrypoint || concern.Kind == contextConcernPrimaryPath {
+			continue
+		}
+		candidate := append(append([]ContextConcern(nil), selected...), concern)
+		candidateTokens, measureErr := contextConcernMetadataTokens(candidate)
+		if measureErr != nil {
+			return nil, 0, measureErr
+		}
+		if metadataBudget-candidateTokens < minimumCompilationBudget {
+			continue
+		}
+		selected = candidate
+		selectedTokens = candidateTokens
+	}
+	return selected, selectedTokens, nil
 }
 
 func contextByteBudget(tokens int) int {
