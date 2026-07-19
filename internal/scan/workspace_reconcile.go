@@ -936,7 +936,7 @@ func (builder *workspaceAgentContextBuilder) addCatalogFacts(catalog APICatalogR
 	})
 	for _, endpoint := range endpoints {
 		project := contextPathKey(endpoint.ProviderProject)
-		if !builder.projects[project] {
+		if !builder.hasProject(project) {
 			continue
 		}
 		method := strings.ToUpper(compactCatalogValue(endpoint.HTTPMethod))
@@ -1092,7 +1092,9 @@ func newWorkspaceAgentContextBuilder(registry WorkspaceRegistryRecord) *workspac
 	projects := map[string]bool{}
 	for _, project := range registry.Projects {
 		if project.Indexed {
-			projects[project.Path] = true
+			if path := contextPathKey(project.Path); path != "" {
+				projects[path] = true
+			}
 		}
 	}
 	return &workspaceAgentContextBuilder{
@@ -1107,9 +1109,13 @@ func newWorkspaceAgentContextBuilder(registry WorkspaceRegistryRecord) *workspac
 	}
 }
 
+func (builder *workspaceAgentContextBuilder) hasProject(project string) bool {
+	return builder.projects[contextPathKey(project)]
+}
+
 func (builder *workspaceAgentContextBuilder) mergeProjectIndex(index AgentContextIndexRecord) {
 	project := contextPathKey(index.Root)
-	if project == "" || !builder.projects[project] {
+	if project == "" || !builder.hasProject(project) {
 		return
 	}
 	if builder.projectFactIDs[project] == nil {
@@ -1231,7 +1237,7 @@ func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureD
 	persistenceFactIDs := builder.addDossierPersistenceFacts(dossiers)
 	for _, dossier := range dossiers {
 		handlerID := ""
-		if dossier.BackendHandler != "" && builder.projects[dossier.BackendProject] {
+		if dossier.BackendHandler != "" && builder.hasProject(dossier.BackendProject) {
 			handlerID = builder.resolveHandler(
 				dossier.BackendProject,
 				dossier.BackendHandler,
@@ -1243,7 +1249,7 @@ func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureD
 		}
 		for _, auth := range dossier.Auth {
 			project := firstNonEmpty(dossier.BackendProject, dossier.FrontendProject)
-			if !builder.projects[project] {
+			if !builder.hasProject(project) {
 				continue
 			}
 			authID := builder.addFact(AgentContextFactRecord{
@@ -1259,7 +1265,7 @@ func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureD
 			builder.addDossierEdge(handlerID, authID, "authentication", dossier.Confidence)
 		}
 		for _, persistence := range dossier.PersistencePath {
-			if !builder.projects[dossier.BackendProject] {
+			if !builder.hasProject(dossier.BackendProject) {
 				continue
 			}
 			baseKey := workspacePersistenceBaseKey(dossier.BackendProject, persistence)
@@ -1269,7 +1275,7 @@ func (builder *workspaceAgentContextBuilder) addDossierFacts(dossiers []FeatureD
 		}
 		for _, test := range dossier.Tests {
 			project := firstNonEmpty(dossier.BackendProject, dossier.FrontendProject)
-			if !builder.projects[project] {
+			if !builder.hasProject(project) {
 				continue
 			}
 			qualified := qualifiedContextName(test.TestClass, test.TestMethod)
@@ -1328,7 +1334,7 @@ func (builder *workspaceAgentContextBuilder) addDossierPersistenceFacts(
 
 	groups := map[string]*workspaceDossierPersistenceGroup{}
 	for _, dossier := range dossiers {
-		if !builder.projects[dossier.BackendProject] {
+		if !builder.hasProject(dossier.BackendProject) {
 			continue
 		}
 		for _, persistence := range dossier.PersistencePath {
@@ -1495,7 +1501,7 @@ func (builder *workspaceAgentContextBuilder) addTraceTransitions(traces Workspac
 		stepFactIDs := map[string]string{}
 		stepsByID := map[string]WorkspaceEndpointTraceStepRecord{}
 		for _, step := range trace.Steps {
-			if !builder.projects[step.Project] {
+			if !builder.hasProject(step.Project) {
 				continue
 			}
 			kind := workspaceTraceFactKind(step.Kind)

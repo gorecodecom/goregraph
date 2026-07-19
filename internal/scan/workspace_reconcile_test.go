@@ -388,8 +388,8 @@ func TestBuildWorkspaceAgentContextIndexReusesDossierPersistenceAndTestFacts(t *
 
 func TestBuildWorkspaceAgentContextIndexMarksMissingProjectProjectionUnavailable(t *testing.T) {
 	projects := []WorkspaceProjectRecord{
-		{Path: "services/catalog", Indexed: true},
-		{Path: "services/jobs", Indexed: true},
+		{Path: "./services/catalog", Indexed: true},
+		{Path: `services\jobs`, Indexed: true},
 	}
 	build := func(projects []WorkspaceProjectRecord) AgentContextIndexRecord {
 		t.Helper()
