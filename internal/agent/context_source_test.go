@@ -165,6 +165,11 @@ func TestRenderSourceCandidateAcceptsPackagePrivateCStyleDeclarations(t *testing
 		{name: "Java typed method", path: "UserService.java", line: "Task deleteUser() {}"},
 		{name: "Java interface method", path: "UserRepository.java", line: "void deleteUser();"},
 		{name: "C# typed method", path: "UserService.cs", line: "Task deleteUser() => repository.Delete();"},
+		{name: "Java generic return", path: "UserService.java", line: "Result<User> deleteUser() {}"},
+		{name: "C++ pointer return", path: "user.cpp", line: "User* deleteUser() {}"},
+		{name: "C array return", path: "user.c", line: "user_result[] deleteUser() {}"},
+		{name: "C primitive return", path: "user.c", line: "unsigned long deleteUser(void) {"},
+		{name: "C tagged pointer return", path: "user.c", line: "struct User * deleteUser(void) {"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			candidate := sourceCandidate{
@@ -180,6 +185,36 @@ func TestRenderSourceCandidateAcceptsPackagePrivateCStyleDeclarations(t *testing
 			}
 			if section.Content != "1\t"+test.line {
 				t.Fatalf("rendered content = %q", section.Content)
+			}
+		})
+	}
+}
+
+func TestRenderSourceCandidateRejectsCStyleExpressionPrefixes(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+		line string
+	}{
+		{name: "C# await", path: "UserService.cs", line: "await deleteUser()"},
+		{name: "Java new", path: "UserService.java", line: "new deleteUser()"},
+		{name: "C# new", path: "UserService.cs", line: "new deleteUser()"},
+		{name: "C sizeof", path: "user.c", line: "sizeof deleteUser()"},
+		{name: "C++ alignof", path: "user.cpp", line: "alignof deleteUser()"},
+		{name: "Java comparison", path: "UserService.java", line: "count < limit > deleteUser()"},
+		{name: "C# expression", path: "UserService.cs", line: "left * right deleteUser()"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := sourceCandidate{
+				Path: test.path, StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser",
+			}
+			_, err := renderSourceCandidate(
+				candidate,
+				sourceFile{Path: candidate.Path, Lines: []string{test.line}},
+				"body",
+			)
+			if err == nil || err.Error() != "indexed symbol has no unique declaration-like occurrence" {
+				t.Fatalf("renderSourceCandidate() error = %v", err)
 			}
 		})
 	}

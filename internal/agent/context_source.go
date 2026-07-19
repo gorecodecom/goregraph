@@ -601,7 +601,7 @@ func conservativeCallablePrefix(path, prefix string) bool {
 	if sourceDeclarationModifier(fields[0]) {
 		return true
 	}
-	return cStyleSourcePath(path) && conservativeCStyleReturnTypePrefix(prefix)
+	return cStyleSourcePath(path) && conservativeCStyleReturnTypePrefix(path, prefix)
 }
 
 func cStyleSourcePath(path string) bool {
@@ -613,31 +613,115 @@ func cStyleSourcePath(path string) bool {
 	}
 }
 
-func conservativeCStyleReturnTypePrefix(prefix string) bool {
-	identifierFound := false
-	angleDepth := 0
-	arrayDepth := 0
-	for _, value := range prefix {
+func conservativeCStyleReturnTypePrefix(path, prefix string) bool {
+	fields := strings.Fields(prefix)
+	if len(fields) == 1 {
+		return conservativeCStyleTypeToken(fields[0])
+	}
+	if !cFamilySourcePath(path) {
+		return false
+	}
+
+	for len(fields) > 1 && fields[len(fields)-1] == "*" {
+		fields = fields[:len(fields)-1]
+	}
+	if len(fields) == 1 {
+		return conservativeCStyleTypeToken(fields[0])
+	}
+	if len(fields) == 2 && sourceCTypeTag(fields[0]) {
+		return sourceTypeIdentifier(fields[1], false)
+	}
+	return safeMultiTokenCType(strings.Join(fields, " "))
+}
+
+func cFamilySourcePath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx":
+		return true
+	default:
+		return false
+	}
+}
+
+func conservativeCStyleTypeToken(value string) bool {
+	for strings.HasSuffix(value, "[]") || strings.HasSuffix(value, "*") || strings.HasSuffix(value, "?") {
 		switch {
-		case unicode.IsLetter(value) || value == '_' || value == '$':
-			identifierFound = true
-		case unicode.IsDigit(value) || unicode.IsSpace(value) || value == '*' || value == '?':
-		case value == '<':
-			angleDepth++
-		case value == '>':
-			angleDepth--
-		case value == '[':
-			arrayDepth++
-		case value == ']':
-			arrayDepth--
+		case strings.HasSuffix(value, "[]"):
+			value = strings.TrimSuffix(value, "[]")
+		case strings.HasSuffix(value, "*"):
+			value = strings.TrimSuffix(value, "*")
 		default:
-			return false
-		}
-		if angleDepth < 0 || arrayDepth < 0 {
-			return false
+			value = strings.TrimSuffix(value, "?")
 		}
 	}
-	return identifierFound && angleDepth == 0 && arrayDepth == 0
+	if genericStart := strings.IndexByte(value, '<'); genericStart >= 0 {
+		if genericStart == 0 || !strings.HasSuffix(value, ">") ||
+			!conservativeCStyleTypeToken(value[genericStart+1:len(value)-1]) {
+			return false
+		}
+		value = value[:genericStart]
+	}
+	if strings.ContainsAny(value, "<>[]*?") {
+		return false
+	}
+	return sourcePrimitiveType(value) || sourceTypeIdentifier(value, true)
+}
+
+func sourceTypeIdentifier(value string, requireTypeShape bool) bool {
+	if value == "" || sourceExpressionPrefixWord(value) {
+		return false
+	}
+	for index, current := range value {
+		if unicode.IsLetter(current) || current == '_' || current == '$' ||
+			index > 0 && unicode.IsDigit(current) {
+			continue
+		}
+		return false
+	}
+	first, _ := utf8.DecodeRuneInString(value)
+	return !requireTypeShape || unicode.IsUpper(first) || strings.ContainsAny(value, "_$")
+}
+
+func sourceExpressionPrefixWord(value string) bool {
+	switch strings.ToLower(value) {
+	case "alignof", "await", "delete", "new", "sizeof", "throw", "typeof", "yield":
+		return true
+	default:
+		return false
+	}
+}
+
+func sourcePrimitiveType(value string) bool {
+	switch value {
+	case "_Bool", "auto", "bool", "boolean", "byte", "char", "char8_t", "char16_t", "char32_t",
+		"decimal", "double", "dynamic", "float", "int", "long", "object", "sbyte", "short",
+		"signed", "string", "uint", "ulong", "unsigned", "ushort", "void", "wchar_t":
+		return true
+	default:
+		return false
+	}
+}
+
+func sourceCTypeTag(value string) bool {
+	switch value {
+	case "enum", "struct", "union":
+		return true
+	default:
+		return false
+	}
+}
+
+func safeMultiTokenCType(value string) bool {
+	switch value {
+	case "long double", "long int", "long long", "long long int",
+		"short int", "signed char", "signed int", "signed long", "signed long int",
+		"signed long long", "signed long long int", "signed short", "signed short int",
+		"unsigned char", "unsigned int", "unsigned long", "unsigned long int",
+		"unsigned long long", "unsigned long long int", "unsigned short", "unsigned short int":
+		return true
+	default:
+		return false
+	}
 }
 
 func sourceDeclarationModifier(value string) bool {
