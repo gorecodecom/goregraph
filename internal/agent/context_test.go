@@ -174,6 +174,52 @@ func TestBuildContextSerializesCoreConcernsBeforeHeavyMetadata(t *testing.T) {
 	assertContextPackWithinRequestBudget(t, pack, DefaultContextBudgetTokens)
 }
 
+func TestBuildContextReservesLongQueryEnvelopeBeforeOptionalConcerns(t *testing.T) {
+	query := strings.Repeat("This benchmark contains source-only navigation constraints. ", 60) +
+		"\nProblem statement:\nThe service has this issue:\n" +
+		"Delete a catalog entry and analyze the endpoint, primary path, internal HTTP contract, authentication, configuration, persistence, tests, and retry behavior."
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "route", Project: "catalog", Kind: "route", Name: "DELETE /catalog/entries/{id}", HTTPMethod: "DELETE", Path: "/catalog/entries/{id}", File: "CatalogController.go", Confidence: "EXACT", Search: "delete catalog entry"},
+			{ID: "service", Project: "catalog", Kind: "symbol", Name: "deleteEntry", File: "CatalogService.go", Confidence: "EXACT", Search: "delete catalog entry"},
+			{ID: "contract", Project: "catalog", Kind: "api_contract", Name: "DELETE /jobs/entries/{id}", File: "JobsClient.go", Confidence: "EXACT", Search: "delete catalog entry internal contract authentication configuration retry"},
+			{ID: "persistence", Project: "jobs", Kind: "persistence", Name: "deleteJobs", File: "JobRepository.go", Confidence: "EXACT", Search: "delete catalog entry persistence"},
+			{ID: "test", Project: "catalog", Kind: "test", Name: "deleteEntryTest", File: "src/test/CatalogControllerTest.go", Confidence: "EXACT", Search: "delete catalog entry tests"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "route-service", FromFactID: "route", ToFactID: "service", Kind: "call", Confidence: "EXACT"},
+			{ID: "service-contract", FromFactID: "service", ToFactID: "contract", Kind: "http_contract", Confidence: "EXACT"},
+			{ID: "service-persistence", FromFactID: "service", ToFactID: "persistence", Kind: "call", Confidence: "EXACT"},
+			{ID: "test-route", FromFactID: "test", ToFactID: "route", Kind: "test_target", Confidence: "EXACT"},
+		},
+	}
+	root := writeContextIndexFixture(t, index)
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query, BudgetTokens: DefaultContextBudgetTokens})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired {
+		t.Fatalf("long structured query unexpectedly fell back: %#v", pack)
+	}
+	assertSerializedCoreContextConcerns(t, pack)
+	assertContextPackWithinRequestBudget(t, pack, DefaultContextBudgetTokens)
+
+	if len([]rune(pack.Query)) > maximumContextQueryAnchorRunes || pack.Query == query {
+		t.Fatalf("public query was not compacted: %q", pack.Query)
+	}
+	for _, kind := range []string{contextConcernHTTPContract, contextConcernPersistence, contextConcernTests} {
+		found := false
+		for _, concern := range pack.Concerns {
+			found = found || concern.Kind == kind
+		}
+		if !found {
+			t.Fatalf("full selection query lost optional concern %q: %#v", kind, pack.Concerns)
+		}
+	}
+}
+
 func assertSerializedCoreContextConcerns(t *testing.T, pack ContextPack) {
 	t.Helper()
 	seen := make(map[string]bool, len(pack.Concerns))
@@ -1316,6 +1362,42 @@ func TestBuildContextExpandsGermanTaskTermsForTechnicalFacts(t *testing.T) {
 	}
 	if pack.Query != query {
 		t.Fatalf("reported query = %q, want original %q", pack.Query, query)
+	}
+}
+
+func TestBuildContextUsesProblemStatementAfterPreamble(t *testing.T) {
+	query := "This is a read-only prepared benchmark workspace with source-only instructions.\n\n" +
+		"Problem statement:\n" +
+		"The service has this issue:\n" +
+		"When the system must delete a catalog entry, related jobs remain."
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "route", Project: "catalog", Kind: "api_endpoint",
+				Name:       "DELETE /catalogs/{catalogId}/entries/{entryId}",
+				HTTPMethod: "DELETE", Path: "/catalogs/{catalogId}/entries/{entryId}",
+				File: "CatalogController.go", Confidence: "EXACT",
+				Search: "delete catalog entry",
+			},
+			{
+				ID: "service", Project: "catalog", Kind: "symbol",
+				Name: "deleteEntry", File: "CatalogService.go", Confidence: "EXACT",
+				Search: "delete catalog entry",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "route-service", FromFactID: "route", ToFactID: "service", Kind: "call", Confidence: "EXACT",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.Entrypoints) != 0 || len(pack.Endpoints) != 1 ||
+		pack.Endpoints[0].Path != "/catalogs/{catalogId}/entries/{entryId}" {
+		t.Fatalf("problem statement after preamble did not select the endpoint: %#v", pack)
 	}
 }
 
@@ -2607,12 +2689,16 @@ func TestScopedContextUncertaintiesIgnoreUnknownCoverage(t *testing.T) {
 	}
 }
 
-func TestBuildContextRejectsMandatoryEnvelopeOverflow(t *testing.T) {
+func TestBuildContextCompactsMandatoryEnvelopeOverflow(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{SchemaVersion: scan.SchemaVersion})
-	if _, err := BuildContext(ContextRequest{
+	pack, err := BuildContext(ContextRequest{
 		Root: root, Query: strings.Repeat("very-long-query ", 500), BudgetTokens: 256,
-	}); err == nil {
-		t.Fatal("mandatory envelope overflow was accepted")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pack.FallbackRequired || len([]rune(pack.Query)) > maximumContextQueryAnchorRunes {
+		t.Fatalf("long fallback was not compact: %#v", pack)
 	}
 }
 

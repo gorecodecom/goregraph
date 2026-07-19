@@ -69,7 +69,7 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 	contractIDs := contextLocationIDs(pack.Contracts)
 	persistenceIDs := contextLocationIDs(pack.Persistence)
 	testIDs := contextLocationIDs(pack.Tests)
-	includeTests := contextQueryRequestsTests(pack.Query)
+	includeTests := contextQueryRequestsTests(contextSelectionQuery(pack))
 
 	candidates := make([]sourceCandidate, 0, len(pack.selectedSourceFactIDs))
 	for _, id := range pack.selectedSourceFactIDs {

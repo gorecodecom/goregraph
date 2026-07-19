@@ -118,8 +118,8 @@ func selectContextSourceOptions(
 
 func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord) []contextConcern {
 	planned := []contextConcern(nil)
-	if seed, ok := contextConcernPlanningSeed(index, pack.Query); ok {
-		planned = planContextConcerns(pack.Query, index, seed)
+	if seed, ok := contextConcernPlanningSeed(index, contextSelectionQuery(pack)); ok {
+		planned = planContextConcerns(contextSelectionQuery(pack), index, seed)
 	}
 	plannedByKey := make(map[string]contextConcern, len(planned))
 	for _, concern := range planned {
@@ -205,7 +205,7 @@ func contextSourcePathDistances(pack ContextPack, index scan.AgentContextIndexRe
 	seedID := ""
 	if len(pack.Entrypoints) > 0 {
 		seedID = pack.Entrypoints[0].ID
-	} else if seed, ok := contextConcernPlanningSeed(index, pack.Query); ok {
+	} else if seed, ok := contextConcernPlanningSeed(index, contextSelectionQuery(pack)); ok {
 		seedID = seed.ID
 	}
 	if seedID == "" {

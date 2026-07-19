@@ -110,8 +110,9 @@ type ContextEndpoint struct {
 }
 
 type ContextPack struct {
-	Schema              int                     `json:"schema"`
-	Query               string                  `json:"query"`
+	Schema              int    `json:"schema"`
+	Query               string `json:"query"`
+	selectionQuery      string
 	Freshness           string                  `json:"freshness,omitempty"`
 	Confidence          string                  `json:"confidence"`
 	FallbackRequired    bool                    `json:"fallback_required"`
@@ -377,11 +378,12 @@ func newContextEnvelope(index scan.AgentContextIndexRecord, request ContextReque
 		freshness = "unknown"
 	}
 	pack, err := finalizeContextEstimate(ContextPack{
-		Schema:       scan.SchemaVersion,
-		Query:        request.Query,
-		Freshness:    freshness,
-		Confidence:   "LOW",
-		BudgetTokens: request.BudgetTokens,
+		Schema:         scan.SchemaVersion,
+		Query:          compactContextQuery(request.Query),
+		selectionQuery: request.Query,
+		Freshness:      freshness,
+		Confidence:     "LOW",
+		BudgetTokens:   request.BudgetTokens,
 	})
 	if err != nil {
 		return ContextPack{}, err
@@ -394,6 +396,30 @@ func newContextEnvelope(index scan.AgentContextIndexRecord, request ContextReque
 		)
 	}
 	return pack, nil
+}
+
+func compactContextQuery(value string) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	const compactContextQueryThresholdRunes = 512
+	if len(runes) <= compactContextQueryThresholdRunes {
+		return value
+	}
+	if primary := contextPrimaryQuery(value); primary != "" {
+		value = primary
+		runes = []rune(value)
+	}
+	if len(runes) <= maximumContextQueryAnchorRunes {
+		return value
+	}
+	return string(runes[:maximumContextQueryAnchorRunes-1]) + "…"
+}
+
+func contextSelectionQuery(pack ContextPack) string {
+	if strings.TrimSpace(pack.selectionQuery) != "" {
+		return pack.selectionQuery
+	}
+	return pack.Query
 }
 
 func fallbackContextPack(

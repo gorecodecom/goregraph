@@ -277,11 +277,12 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 	if len(pack.Concerns) == 0 {
 		return false, nil
 	}
-	seed, ok := contextConcernPlanningSeed(index, pack.Query)
+	selectionQuery := contextSelectionQuery(pack)
+	seed, ok := contextConcernPlanningSeed(index, selectionQuery)
 	if !ok {
 		return false, nil
 	}
-	planned := planContextConcerns(pack.Query, index, seed)
+	planned := planContextConcerns(selectionQuery, index, seed)
 	plannedByKey := make(map[string]contextConcern, len(planned))
 	for _, concern := range planned {
 		plannedByKey[concern.key] = concern
@@ -1073,6 +1074,9 @@ func contextPrimaryQuery(value string) string {
 	if value == "" {
 		return value
 	}
+	if problemStatement := contextProblemStatement(value); problemStatement != "" {
+		value = problemStatement
+	}
 	segments := strings.FieldsFunc(value, func(current rune) bool {
 		return current == '.' || current == '?' || current == '!' || current == '\n' || current == '\r'
 	})
@@ -1081,12 +1085,23 @@ func contextPrimaryQuery(value string) string {
 		if segment == "" {
 			continue
 		}
-		if strings.HasSuffix(segment, ":") && len(strings.Fields(segment)) <= 3 {
+		if strings.HasSuffix(segment, ":") && len(strings.Fields(segment)) <= 8 {
 			continue
 		}
 		return segment
 	}
 	return value
+}
+
+func contextProblemStatement(value string) string {
+	lines := strings.Split(value, "\n")
+	for index, line := range lines {
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "problem statement:", "problemstellung:", "problem:", "task:", "aufgabe:":
+			return strings.TrimSpace(strings.Join(lines[index+1:], "\n"))
+		}
+	}
+	return ""
 }
 
 var contextQueryTokenAliases = map[string][]string{
@@ -1134,7 +1149,7 @@ func reliableProductionContextSeed(fact scan.AgentContextFactRecord) bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(fact.Kind)) {
-	case "route", "symbol", "backend_handler":
+	case "route", "api_endpoint", "symbol", "backend_handler":
 	default:
 		return false
 	}

@@ -179,7 +179,6 @@ func TestBuildContextEndpointTopFactFitsMinimumBudgetWithoutGenericEntrypoint(t 
 func TestBuildContextSourceMinimumBudgetFallbackAlwaysFits(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{SchemaVersion: scan.SchemaVersion})
 	returnedPacks := 0
-	deterministicErrors := 0
 	for repeats := 1; repeats <= 200; repeats++ {
 		request := ContextRequest{
 			Root: root, Query: strings.Repeat("Größe ", repeats), BudgetTokens: MinContextBudgetTokens,
@@ -190,8 +189,7 @@ func TestBuildContextSourceMinimumBudgetFallbackAlwaysFits(t *testing.T) {
 			t.Fatalf("repeat %d produced nondeterministic errors: %v != %v", repeats, err, againErr)
 		}
 		if err != nil {
-			deterministicErrors++
-			continue
+			t.Fatal(err)
 		}
 		returnedPacks++
 		body, marshalErr := json.Marshal(pack)
@@ -220,8 +218,8 @@ func TestBuildContextSourceMinimumBudgetFallbackAlwaysFits(t *testing.T) {
 			t.Fatalf("repeat %d fallback source state = %#v", repeats, pack)
 		}
 	}
-	if returnedPacks == 0 || deterministicErrors == 0 {
-		t.Fatalf("minimum-budget boundary was not exercised: returned=%d errors=%d", returnedPacks, deterministicErrors)
+	if returnedPacks != 200 {
+		t.Fatalf("minimum-budget fallback count = %d, want 200", returnedPacks)
 	}
 }
 
