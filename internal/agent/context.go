@@ -256,20 +256,21 @@ func fallbackContextPack(
 	}
 	pack.FallbackRequired = true
 	pack.FallbackReason = strings.TrimSpace(reason)
+	pack.SourceCoverage = "none"
 	pack, err = finalizeContextEstimate(pack)
 	if err != nil {
 		return ContextPack{}, err
 	}
-	ceiling := request.BudgetTokens
-	if ceiling > 256 {
-		ceiling = 256
+	fallbackRequest := request
+	if fallbackRequest.BudgetTokens > MinContextBudgetTokens {
+		fallbackRequest.BudgetTokens = MinContextBudgetTokens
 	}
-	if pack.EstimatedTokens > ceiling {
-		return ContextPack{}, fmt.Errorf(
-			"context fallback requires %d tokens, exceeding fallback budget %d",
-			pack.EstimatedTokens,
-			ceiling,
-		)
+	fits, err := contextSourcePackFits(pack, fallbackRequest)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	if !fits {
+		return ContextPack{}, fmt.Errorf("context fallback exceeds the minimum token or byte envelope")
 	}
 	if len(uncertainties) > 0 {
 		candidate := cloneContextPack(pack)
@@ -278,7 +279,11 @@ func fallbackContextPack(
 		if err != nil {
 			return ContextPack{}, err
 		}
-		if candidate.EstimatedTokens <= ceiling {
+		fits, err = contextSourcePackFits(candidate, fallbackRequest)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		if fits {
 			pack = candidate
 		}
 	}

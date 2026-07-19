@@ -1612,6 +1612,63 @@ func TestBuildContextFallsBackWithoutQueryCascade(t *testing.T) {
 	}
 }
 
+func TestBuildContextFallbackUsesMinimumTwoDimensionalEnvelope(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "route", Project: "app", Kind: "route", Name: "GET /users",
+			HTTPMethod: "GET", Path: "/users", File: "users.go", Confidence: "EXACT",
+		}},
+		Coverage: []scan.AgentContextCoverageRecord{{
+			Project: "app", Capability: "routes", Coverage: "FAILED", Reason: "parser failed",
+		}},
+	})
+	returnedPacks := 0
+	deterministicErrors := 0
+	for _, repeats := range []int{128, 300} {
+		request := ContextRequest{
+			Root: root, Query: strings.Repeat("界", repeats) + " GET /users",
+			BudgetTokens: DefaultContextBudgetTokens,
+		}
+		pack, err := BuildContext(request)
+		again, againErr := BuildContext(request)
+		if fmt.Sprint(err) != fmt.Sprint(againErr) {
+			t.Fatalf("repeat %d produced nondeterministic errors: %v != %v", repeats, err, againErr)
+		}
+		if err != nil {
+			deterministicErrors++
+			continue
+		}
+		returnedPacks++
+		body, marshalErr := json.Marshal(pack)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		againBody, marshalErr := json.Marshal(again)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		if !bytes.Equal(body, againBody) {
+			t.Fatalf("repeat %d fallback JSON is not deterministic", repeats)
+		}
+		estimated, estimateErr := EstimateContextTokens(pack)
+		if estimateErr != nil {
+			t.Fatal(estimateErr)
+		}
+		if !pack.FallbackRequired || pack.SourceCoverage != "none" ||
+			pack.BudgetTokens != DefaultContextBudgetTokens || pack.EstimatedTokens != estimated ||
+			estimated > MinContextBudgetTokens || len(body) > contextByteBudget(MinContextBudgetTokens) {
+			t.Fatalf(
+				"repeat %d fallback exceeds special envelope: bytes=%d/%d tokens=%d/%d pack=%#v",
+				repeats, len(body), contextByteBudget(MinContextBudgetTokens), estimated, MinContextBudgetTokens, pack,
+			)
+		}
+	}
+	if returnedPacks == 0 || deterministicErrors == 0 {
+		t.Fatalf("fallback boundary was not exercised: returned=%d errors=%d", returnedPacks, deterministicErrors)
+	}
+}
+
 func TestBuildContextScopesCoverageAndFallsBackWhenAllSelectedScopesFail(t *testing.T) {
 	index := contextIndexWithFact("route", "GET users details")
 	index.Facts[0].Project = "users"
