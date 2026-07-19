@@ -1445,18 +1445,22 @@ func TestCLIEndpointContextSerialization(t *testing.T) {
 }
 
 func TestContextHelpDocumentsBoundedAgentWorkflow(t *testing.T) {
+	const assistedInstruction = `Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.`
+
 	var stdout, stderr bytes.Buffer
 	if code := Run([]string{"context", "help"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("context help exit code = %d, stderr=%s", code, stderr.String())
 	}
+	if count := strings.Count(stdout.String(), assistedInstruction); count != 1 {
+		t.Fatalf("context help contains the exact assisted instruction %d times, want 1:\n%s", count, stdout.String())
+	}
 	for _, want := range []string{
-		"Call goregraph context once with the complete task before reading indexed source.",
-		"Treat source_sections as current source already read; do not re-read or grep included ranges.",
-		"If source_coverage is complete, continue from the included source without another navigation read.",
-		"If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.",
-		"If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.",
-		"At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.",
-		"Do not use specialist GoreGraph queries or expert MCP tools.",
 		"goregraph-out/agent/",
 		".goregraph-workspace/agent/",
 		"Do not read index/, dashboard/",
@@ -1473,9 +1477,14 @@ func TestContextHelpDocumentsBoundedAgentWorkflow(t *testing.T) {
 }
 
 func TestQueryAndReportHelpDocumentManualCompatibilityAndDashboardPath(t *testing.T) {
+	const sourceBackedGuidance = "Agents should use goregraph context: when source_coverage is complete, continue from source_sections without another navigation read; when source_coverage is partial or none, read only relevant ranges named by source_omissions."
+
 	var stdout, stderr bytes.Buffer
 	if code := Run([]string{"query", "help"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("query help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), sourceBackedGuidance) {
+		t.Fatalf("query help is missing exact source-backed guidance:\n%s", stdout.String())
 	}
 	for _, want := range []string{
 		"Legacy/manual compatibility",
@@ -1485,6 +1494,9 @@ func TestQueryAndReportHelpDocumentManualCompatibilityAndDashboardPath(t *testin
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("query help missing %q:\n%s", want, stdout.String())
 		}
+	}
+	if strings.Contains(stdout.String(), "inspect source after its bounded workflow") {
+		t.Fatalf("query help contains obsolete source-reading guidance:\n%s", stdout.String())
 	}
 
 	stdout.Reset()

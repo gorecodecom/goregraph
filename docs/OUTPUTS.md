@@ -205,7 +205,7 @@ project-specific JavaScript shard only after a project is selected. Keep
 Use GoreGraph once to obtain a source-backed Context Pack for the complete task:
 
 ```bash
-goregraph context . --query "<current coding task>" --budget-tokens 1800 --max-files 12
+goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-files 12
 ```
 
 Standard MCP exposes exactly one tool, `task_context`, with equivalent values.
@@ -230,7 +230,7 @@ benchmark gate.
 
 For an API task, the agent compiler selects at most one relevant endpoint and
 eight consumer call sites, with an explicit omitted count. The default budget
-remains 1800 tokens. `agent/context-index.json` contains compact searchable
+remains 4000 tokens. `agent/context-index.json` contains compact searchable
 facts; Context output never includes the full `index/api-catalog.json`, the
 dashboard payload, or `.goregraph-dashboard.json` merely because an agent uses
 GoreGraph.

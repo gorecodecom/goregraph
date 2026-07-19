@@ -34,8 +34,8 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
   human `dashboard/` projections;
 - compact `agent/context-index.json` endpoint projection with at most one
   selected endpoint and eight consumers plus an explicit omitted count; the
-  1,800-token default and existing fallback behavior remain unchanged;
-- `goregraph context` with defaults of 1,800 estimated tokens and 12 files,
+  4,000-token default and existing fallback behavior remain unchanged;
+- `goregraph context` with defaults of 4,000 estimated tokens and 12 files,
   source-backed sections, authoritative coverage, and bounded omission detail;
 - standard MCP with exactly `task_context`; explicit
   `goregraph mcp --expert-tools` retains legacy diagnostics and exploration for

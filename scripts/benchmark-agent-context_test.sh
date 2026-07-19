@@ -30,7 +30,7 @@ if [ "${1:-}" = "--version" ]; then
 fi
 prompt=$(cat)
 case "$prompt" in
-  *"Call goregraph context once"*)
+  *"Treat source_sections as current source already read"*)
     printf 'a\n' >>"$FAKE_ORDER"
     tokens=${FAKE_ASSISTED_TOKENS:-80.000}
     ;;
@@ -71,6 +71,12 @@ printf 'fixture\n' >"$temporary_directory/workspace/service.txt"
 chmod +x "$temporary_directory/bin/codex" "$temporary_directory/bin/goregraph"
 
 safe_args=$'-a\nnever\nexec\n--sandbox\nread-only\n--skip-git-repo-check\n--ephemeral\n--ignore-user-config\n--ignore-rules\n--color\nnever\n-m\ntest-model\n-c\nmodel_reasoning_effort="high"'
+
+: >"$temporary_directory/first-line-only.order"
+printf 'Call goregraph context once with the complete task before reading indexed source.\n' |
+  FAKE_ORDER="$temporary_directory/first-line-only.order" "$temporary_directory/bin/codex" >/dev/null
+[ "$(tr -d '\n' <"$temporary_directory/first-line-only.order")" = "b" ] ||
+  fail "first-line-only assisted prompt was classified as assisted"
 
 run_harness() {
   result_name=$1

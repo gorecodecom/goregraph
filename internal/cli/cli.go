@@ -1018,13 +1018,15 @@ Builds one deterministic, budgeted Context Pack from existing generated output.
 Budget tokens: 256-6000. Max files: 1-20.
 
 Normal agent workflow:
-  Call goregraph context once with the complete task before reading indexed source.
-  Treat source_sections as current source already read; do not re-read or grep included ranges.
-  If source_coverage is complete, continue from the included source without another navigation read.
-  If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
-  If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-  At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
-  Do not use specialist GoreGraph queries or expert MCP tools.
+
+Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.
+
   Run goregraph doctor . only when Context reports missing or stale output.
 
 Agent input comes only from goregraph-out/agent/ or .goregraph-workspace/agent/.
@@ -1093,7 +1095,7 @@ func runQuery(args []string, stdout, stderr io.Writer) int {
 
 Searches existing generated output.
 Legacy/manual compatibility operations are supported but are not the normal agent workflow.
-Agents should use goregraph context and inspect source after its bounded workflow.
+Agents should use goregraph context: when source_coverage is complete, continue from source_sections without another navigation read; when source_coverage is partial or none, read only relevant ranges named by source_omissions.
 
 Canonical symbol operations are:
   symbol-inventory       List declarations by project, package, module, or name

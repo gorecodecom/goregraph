@@ -33,19 +33,23 @@ func TestPrimaryDashboardReportsDoNotPromoteAgentQueryCascades(t *testing.T) {
 
 func assertAgentGuideContract(t *testing.T, guide string) {
 	t.Helper()
+	const assistedInstruction = `Call goregraph context once with the complete task before reading indexed source.
+Treat source_sections as current source already read; do not re-read or grep included ranges.
+If source_coverage is complete, continue from the included source without another navigation read.
+If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
+At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Do not use specialist GoreGraph queries or expert MCP tools.`
+
 	command := `goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-files 12`
 	if count := strings.Count(guide, command); count != 1 {
 		t.Fatalf("bounded context command occurs %d times, want exactly once:\n%s", count, guide)
 	}
+	if count := strings.Count(guide, assistedInstruction); count != 1 {
+		t.Fatalf("agent guide contains the exact assisted instruction %d times, want 1:\n%s", count, guide)
+	}
 	for _, want := range []string{
 		"MCP: `task_context`",
-		"Call goregraph context once with the complete task before reading indexed source.",
-		"Treat source_sections as current source already read; do not re-read or grep included ranges.",
-		"If source_coverage is complete, continue from the included source without another navigation read.",
-		"If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.",
-		"If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.",
-		"At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.",
-		"Do not use specialist GoreGraph queries or expert MCP tools.",
 		"`goregraph-out/agent/`",
 		"`.goregraph-workspace/agent/`",
 		"Do not read `index/`, `dashboard/`, dashboard assets, or `index/symbol-usages.json` as AI context",

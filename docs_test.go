@@ -44,6 +44,22 @@ func TestDocumentationDescribesSourceBackedCoverage(t *testing.T) {
 	}
 }
 
+func TestSourceBackedDocumentationUsesThe4000TokenDefault(t *testing.T) {
+	for _, file := range []string{"docs/OUTPUTS.md", "docs/RELEASE.md"} {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(content)
+		if !strings.Contains(text, "4000") && !strings.Contains(text, "4,000") {
+			t.Fatalf("%s is missing the 4000-token Context default", file)
+		}
+		if strings.Contains(text, "1800") || strings.Contains(text, "1,800") {
+			t.Fatalf("%s contains an obsolete 1,800-token Context default", file)
+		}
+	}
+}
+
 func TestCommandsReferenceDocumentsEveryUserCommand(t *testing.T) {
 	body, err := os.ReadFile("COMMANDS.md")
 	if err != nil {
