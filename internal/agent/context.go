@@ -140,13 +140,13 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	pack.BudgetTokens = request.BudgetTokens
 	if pack.FallbackRequired || pack.Confidence == "LOW" {
 		pack.SourceCoverage = "none"
-		return finalizeContextEstimate(pack)
+		return finalizeContextPackWithinBudget(pack, request)
 	}
 	pack, err = attachContextSource(pack, loaded, request)
 	if err != nil {
 		return ContextPack{}, err
 	}
-	return finalizeContextEstimate(pack)
+	return finalizeContextPackWithinBudget(pack, request)
 }
 
 func contextMetadataBudget(total int) int {

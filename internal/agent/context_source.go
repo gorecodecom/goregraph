@@ -311,7 +311,11 @@ func attachContextSource(
 	default:
 		pack.SourceCoverage = "complete"
 	}
-	pack, err = finalizeContextEstimate(pack)
+	return finalizeContextPackWithinBudget(pack, request)
+}
+
+func finalizeContextPackWithinBudget(pack ContextPack, request ContextRequest) (ContextPack, error) {
+	pack, err := finalizeContextEstimate(pack)
 	if err != nil {
 		return ContextPack{}, err
 	}
@@ -320,7 +324,7 @@ func attachContextSource(
 		return ContextPack{}, err
 	}
 	if !fits {
-		return ContextPack{}, fmt.Errorf("context source exceeds the requested budget")
+		return ContextPack{}, fmt.Errorf("context pack exceeds the requested token or byte budget")
 	}
 	return pack, nil
 }

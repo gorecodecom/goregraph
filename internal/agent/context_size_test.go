@@ -177,6 +177,55 @@ func TestBuildContextEndpointTopFactFitsMinimumBudgetWithoutGenericEntrypoint(t 
 	}
 }
 
+func TestBuildContextSourceMinimumBudgetFallbackAlwaysFits(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{SchemaVersion: scan.SchemaVersion})
+	returnedPacks := 0
+	deterministicErrors := 0
+	for repeats := 1; repeats <= 200; repeats++ {
+		request := ContextRequest{
+			Root: root, Query: strings.Repeat("Größe ", repeats), BudgetTokens: MinContextBudgetTokens,
+		}
+		pack, err := BuildContext(request)
+		again, againErr := BuildContext(request)
+		if fmt.Sprint(err) != fmt.Sprint(againErr) {
+			t.Fatalf("repeat %d produced nondeterministic errors: %v != %v", repeats, err, againErr)
+		}
+		if err != nil {
+			deterministicErrors++
+			continue
+		}
+		returnedPacks++
+		body, marshalErr := json.Marshal(pack)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		againBody, marshalErr := json.Marshal(again)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		if !bytes.Equal(body, againBody) {
+			t.Fatalf("repeat %d fallback JSON is not deterministic", repeats)
+		}
+		estimated, estimateErr := EstimateContextTokens(pack)
+		if estimateErr != nil {
+			t.Fatal(estimateErr)
+		}
+		if pack.EstimatedTokens != estimated || estimated > request.BudgetTokens ||
+			len(body) > contextByteBudget(request.BudgetTokens) {
+			t.Fatalf(
+				"repeat %d fallback exceeds budget: bytes=%d/%d tokens=%d/%d pack=%#v",
+				repeats, len(body), contextByteBudget(request.BudgetTokens), estimated, request.BudgetTokens, pack,
+			)
+		}
+		if !pack.FallbackRequired || pack.SourceCoverage != "none" || len(pack.SourceSections) != 0 {
+			t.Fatalf("repeat %d fallback source state = %#v", repeats, pack)
+		}
+	}
+	if returnedPacks == 0 || deterministicErrors == 0 {
+		t.Fatalf("minimum-budget boundary was not exercised: returned=%d errors=%d", returnedPacks, deterministicErrors)
+	}
+}
+
 func writeDenseContextIndexFixture(t *testing.T, factCount int) string {
 	t.Helper()
 	if factCount < 2 {
