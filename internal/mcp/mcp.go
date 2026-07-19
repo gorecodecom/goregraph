@@ -122,7 +122,7 @@ func taskContextTool() map[string]any {
 				"root":          map[string]any{"type": "string"},
 				"query":         map[string]any{"type": "string", "minLength": 1},
 				"budget_tokens": map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
-				"max_files":     map[string]any{"type": "integer", "minimum": 1, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
+				"max_files":     map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
 			},
 		},
 	}
@@ -262,7 +262,7 @@ func callTaskContext(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	maxFiles, err := boundedIntegerArg(args, "max_files", 1, agent.MaxContextMaxFiles)
+	maxFiles, err := boundedIntegerArg(args, "max_files", agent.MinContextMaxFiles, agent.MaxContextMaxFiles)
 	if err != nil {
 		return "", err
 	}

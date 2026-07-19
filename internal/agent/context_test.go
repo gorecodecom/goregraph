@@ -61,12 +61,35 @@ func TestBuildContextRejectsInvalidBounds(t *testing.T) {
 	for _, request := range []ContextRequest{
 		{Root: t.TempDir(), Query: "delete user", BudgetTokens: 255},
 		{Root: t.TempDir(), Query: "delete user", BudgetTokens: 6001},
-		{Root: t.TempDir(), Query: "delete user", MaxFiles: -1},
-		{Root: t.TempDir(), Query: "delete user", MaxFiles: 21},
+		{Root: t.TempDir(), Query: "delete user", MaxFiles: MinContextMaxFiles - 1},
+		{Root: t.TempDir(), Query: "delete user", MaxFiles: MaxContextMaxFiles + 1},
 		{Root: t.TempDir(), Query: "   "},
 	} {
 		if _, err := BuildContext(request); err == nil {
 			t.Fatalf("accepted invalid request: %#v", request)
+		}
+	}
+}
+
+func TestContextMaxFilesSharesExportedMinimum(t *testing.T) {
+	normalized, err := normalizeContextRequest(ContextRequest{Query: "delete user", MaxFiles: MinContextMaxFiles})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.MaxFiles != MinContextMaxFiles {
+		t.Fatalf("max files = %d, want %d", normalized.MaxFiles, MinContextMaxFiles)
+	}
+
+	source, err := os.ReadFile("context.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"request.MaxFiles < MinContextMaxFiles",
+		"\n\t\t\tMinContextMaxFiles,\n\t\t\tMaxContextMaxFiles",
+	} {
+		if !strings.Contains(string(source), want) {
+			t.Fatalf("context max-files does not share bound %q", want)
 		}
 	}
 }

@@ -16,6 +16,7 @@ const (
 	DefaultContextMetadataBudgetTokens = 1100
 	DefaultContextMaxBytes             = 16000
 	MaxContextBytes                    = 24000
+	MinContextMaxFiles                 = 1
 	DefaultContextMaxFiles             = 12
 	MaxContextMaxFiles                 = 20
 	MaxContextSourceSections           = 4
@@ -185,8 +186,12 @@ func normalizeContextRequest(request ContextRequest) (ContextRequest, error) {
 			MaxContextBudgetTokens,
 		)
 	}
-	if request.MaxFiles < 1 || request.MaxFiles > MaxContextMaxFiles {
-		return ContextRequest{}, fmt.Errorf("max-files must be between 1 and %d", MaxContextMaxFiles)
+	if request.MaxFiles < MinContextMaxFiles || request.MaxFiles > MaxContextMaxFiles {
+		return ContextRequest{}, fmt.Errorf(
+			"max-files must be between %d and %d",
+			MinContextMaxFiles,
+			MaxContextMaxFiles,
+		)
 	}
 	return request, nil
 }

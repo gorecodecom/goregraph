@@ -238,7 +238,7 @@ func TestDefaultMCPTaskContextSchemaAndInstructions(t *testing.T) {
 				"root":          map[string]any{"type": "string"},
 				"query":         map[string]any{"type": "string", "minLength": 1},
 				"budget_tokens": map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
-				"max_files":     map[string]any{"type": "integer", "minimum": 1, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
+				"max_files":     map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
 			},
 		},
 	}
@@ -256,6 +256,7 @@ func TestTaskContextSchemaSharesAgentBounds(t *testing.T) {
 		"agent.MinContextBudgetTokens",
 		"agent.MaxContextBudgetTokens",
 		"agent.DefaultContextBudgetTokens",
+		"agent.MinContextMaxFiles",
 		"agent.MaxContextMaxFiles",
 		"agent.DefaultContextMaxFiles",
 	} {
@@ -362,6 +363,9 @@ func TestMCPTaskContextPassesBudgetsToCompilerAsBareCompactJSON(t *testing.T) {
 	}
 	if len(pack.SourceSections) == 0 || !strings.Contains(pack.SourceSections[0].Content, "deleteUser") {
 		t.Fatalf("MCP source is not useful: %#v", pack.SourceSections)
+	}
+	if section := pack.SourceSections[0]; section.StartLine != 20 || section.EndLine != 22 {
+		t.Fatalf("MCP source range = %d-%d, want 20-22", section.StartLine, section.EndLine)
 	}
 	if pack.SourceCoverage != "complete" || pack.SourceUnrepresented != 0 {
 		t.Fatalf("MCP source coverage = %q / %d", pack.SourceCoverage, pack.SourceUnrepresented)
@@ -492,7 +496,7 @@ func TestMCPTaskContextAcceptsExactBounds(t *testing.T) {
 		budget float64
 		files  float64
 	}{
-		{budget: 256, files: 1},
+		{budget: 256, files: float64(agent.MinContextMaxFiles)},
 		{budget: 6000, files: 20},
 	} {
 		text, err := callTool(Options{}, "task_context", map[string]any{
@@ -530,7 +534,7 @@ func writeMCPContextFixture(t *testing.T) string {
 		Facts: []scan.AgentContextFactRecord{{
 			ID: "route", Project: "api", Kind: "route", Name: "delete user",
 			Qualified: "UserController.deleteUser", HTTPMethod: "DELETE", Path: "/users/{id}", File: "UserController.java",
-			Line: 20, EndLine: 28, Confidence: "EXACT",
+			Line: 20, EndLine: 22, Confidence: "EXACT",
 		}, {
 			ID: "service", Project: "api", Kind: "symbol", Name: "removeUser",
 			Qualified: "UserService.removeUser", File: "UserService.java",

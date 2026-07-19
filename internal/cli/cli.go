@@ -1063,7 +1063,7 @@ Do not read index/, dashboard/, dashboard assets, or index/symbol-usages.json as
 			options.BudgetTokens = parsed
 		case "--max-files":
 			parsed, err := parseBoundedCLIInteger(
-				"--max-files", value, 1, agent.MaxContextMaxFiles,
+				"--max-files", value, agent.MinContextMaxFiles, agent.MaxContextMaxFiles,
 			)
 			if err != nil {
 				fmt.Fprintf(stderr, "error: %v\n", err)
@@ -1150,7 +1150,7 @@ Known output aliases such as graph-full, symbol-index, symbol-usages-json, works
 				options.BudgetTokens = parsed
 			case "--max-files":
 				parsed, err := parseBoundedCLIInteger(
-					"--max-files", value, 1, agent.MaxContextMaxFiles,
+					"--max-files", value, agent.MinContextMaxFiles, agent.MaxContextMaxFiles,
 				)
 				if err != nil {
 					fmt.Fprintf(stderr, "error: %v\n", err)

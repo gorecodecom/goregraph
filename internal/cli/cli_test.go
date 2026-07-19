@@ -1673,7 +1673,7 @@ func TestContextCLIRejectsUsageErrors(t *testing.T) {
 		{name: "noninteger budget", args: []string{"context", root, "--query", "route", "--budget-tokens", "many"}, want: "must be an integer"},
 		{name: "noninteger max files", args: []string{"context", root, "--query", "route", "--max-files", "many"}, want: "must be an integer"},
 		{name: "explicit zero budget", args: []string{"context", root, "--query", "route", "--budget-tokens", "0"}, want: "between 256 and 6000"},
-		{name: "explicit zero max files", args: []string{"context", root, "--query", "route", "--max-files", "0"}, want: "between 1 and 20"},
+		{name: "explicit zero max files", args: []string{"context", root, "--query", "route", "--max-files", "0"}, want: fmt.Sprintf("between %d and %d", agent.MinContextMaxFiles, agent.MaxContextMaxFiles)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1688,6 +1688,16 @@ func TestContextCLIRejectsUsageErrors(t *testing.T) {
 	}
 }
 
+func TestContextCLIParsersShareAgentMaxFilesBounds(t *testing.T) {
+	source, err := os.ReadFile("cli.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(source), "agent.MinContextMaxFiles") < 2 {
+		t.Fatalf("context CLI parsers do not share the agent max-files minimum")
+	}
+}
+
 func TestRunQueryRejectsExplicitZeroValuesAsUsage(t *testing.T) {
 	root := t.TempDir()
 	for _, test := range []struct {
@@ -1695,7 +1705,7 @@ func TestRunQueryRejectsExplicitZeroValuesAsUsage(t *testing.T) {
 		want   string
 	}{
 		{option: "--budget-tokens", want: "between 256 and 6000"},
-		{option: "--max-files", want: "between 1 and 20"},
+		{option: "--max-files", want: fmt.Sprintf("between %d and %d", agent.MinContextMaxFiles, agent.MaxContextMaxFiles)},
 		{option: "--limit", want: "between 1 and 100"},
 	} {
 		t.Run(test.option, func(t *testing.T) {
