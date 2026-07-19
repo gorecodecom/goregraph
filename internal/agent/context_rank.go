@@ -505,7 +505,7 @@ func contextQueryContainsProjectPath(query, project string) bool {
 		if !matched {
 			continue
 		}
-		before := start == 0 || contextProjectPathBoundary(queryRunes[start-1])
+		before := contextProjectPathStartBoundary(queryRunes, start)
 		afterIndex := start + len(projectRunes)
 		after := afterIndex == len(queryRunes) || contextProjectPathBoundary(queryRunes[afterIndex])
 		if before && after {
@@ -513,6 +513,13 @@ func contextQueryContainsProjectPath(query, project string) bool {
 		}
 	}
 	return false
+}
+
+func contextProjectPathStartBoundary(value []rune, start int) bool {
+	for start >= 2 && value[start-2] == '.' && value[start-1] == '/' {
+		start -= 2
+	}
+	return start == 0 || contextProjectPathBoundary(value[start-1])
 }
 
 func contextProjectPathBoundary(value rune) bool {

@@ -923,6 +923,34 @@ func TestBuildContextProjectAliasesRejectAmbiguousBasenames(t *testing.T) {
 		t.Fatalf("exact full path did not select only its project: %#v", full.Files)
 	}
 
+	for _, query := range []string{
+		"GET /catalog. Analyze ./services/jobs authentication.",
+		`GET /catalog. Analyze .\services\jobs authentication.`,
+	} {
+		root := writeContextIndexFixture(t, index)
+		pack, buildErr := BuildContext(ContextRequest{Root: root, Query: query})
+		if buildErr != nil {
+			t.Fatal(buildErr)
+		}
+		if !contextPackHasFile(pack, "ServiceJobs.go") || contextPackHasFile(pack, "LibraryJobs.go") {
+			t.Fatalf("normalized full path %q did not select only its project: %#v", query, pack.Files)
+		}
+	}
+
+	for _, query := range []string{
+		"GET /catalog. Analyze workspace/services/jobs authentication.",
+		"GET /catalog. Analyze services/jobs/archive authentication.",
+	} {
+		root := writeContextIndexFixture(t, index)
+		pack, buildErr := BuildContext(ContextRequest{Root: root, Query: query})
+		if buildErr != nil {
+			t.Fatal(buildErr)
+		}
+		if contextPackHasFile(pack, "ServiceJobs.go") || contextPackHasFile(pack, "LibraryJobs.go") {
+			t.Fatalf("longer path %q falsely selected project support: %#v", query, pack.Files)
+		}
+	}
+
 	normalizedBareRoot := writeContextIndexFixture(t, index)
 	normalizedBare, err := BuildContext(ContextRequest{Root: normalizedBareRoot, Query: "GET /catalog. Analyze shared model retry."})
 	if err != nil {
