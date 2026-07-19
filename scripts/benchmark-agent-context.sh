@@ -329,7 +329,7 @@ goregraph version >"$output/goregraph-version.txt" 2>&1
 goregraph context "$workspace" --query "benchmark context preflight" --format json \
   >"$output/context-preflight.json"
 
-printf 'variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tduplicate_context_packs\traw_navigation_calls\tsource_read_calls\tunique_source_files\tlog\n' >"$output/summary.tsv"
+printf 'variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tunique_source_files\tlog\n' >"$output/summary.tsv"
 baseline_tokens="$temporary_directory/baseline.tokens"
 assisted_tokens="$temporary_directory/assisted.tokens"
 baseline_tool_calls="$temporary_directory/baseline.tool-calls"
@@ -338,7 +338,7 @@ baseline_navigation_calls="$temporary_directory/baseline.navigation-calls"
 assisted_navigation_calls="$temporary_directory/assisted.navigation-calls"
 baseline_source_read_calls="$temporary_directory/baseline.source-read-calls"
 assisted_source_read_calls="$temporary_directory/assisted.source-read-calls"
-assisted_duplicate_context_packs="$temporary_directory/assisted.duplicate-context-packs"
+assisted_repeated_full_packs="$temporary_directory/assisted.repeated-full-packs"
 : >"$baseline_tokens"
 : >"$assisted_tokens"
 : >"$baseline_tool_calls"
@@ -347,48 +347,29 @@ assisted_duplicate_context_packs="$temporary_directory/assisted.duplicate-contex
 : >"$assisted_navigation_calls"
 : >"$baseline_source_read_calls"
 : >"$assisted_source_read_calls"
-: >"$assisted_duplicate_context_packs"
+: >"$assisted_repeated_full_packs"
 
 extract_tokens() {
   awk '
-    function normalize_grouped(value, separator, count, parts, part, result) {
-      if (value ~ /^[0-9]+$/) {
-        return value
-      }
-      if (index(value, ".") > 0 && index(value, ",") > 0) {
+    function usage_value(field, line, value) {
+      value = line
+      if (value !~ ("\\\"" field "\\\"[[:space:]]*:[[:space:]]*[0-9]+")) {
         return ""
       }
-      separator = index(value, ".") > 0 ? "\\." : ","
-      count = split(value, parts, separator)
-      if (count < 2 || length(parts[1]) < 1 || length(parts[1]) > 3 ||
-          parts[1] !~ /^[0-9]+$/) {
-        return ""
-      }
-      result = parts[1]
-      for (part = 2; part <= count; part++) {
-        if (length(parts[part]) != 3 || parts[part] !~ /^[0-9]+$/) {
-          return ""
-        }
-        result = result parts[part]
-      }
-      return result
+      sub("^.*\\\"" field "\\\"[[:space:]]*:[[:space:]]*", "", value)
+      sub("[^0-9].*$", "", value)
+      return value
     }
-    BEGIN { waiting = 0; candidate = "" }
-    tolower($0) ~ /^[[:space:]]*tokens used[[:space:]]*$/ {
-      waiting = 1
-      next
-    }
-    waiting {
-      value = $0
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-      if (value ~ /^[0-9][0-9.,]*$/) {
-        normalized = normalize_grouped(value)
-        if (normalized ~ /^[0-9]+$/ && normalized + 0 > 0) {
-          candidate = normalized
-        }
+    $0 ~ /"type"[[:space:]]*:[[:space:]]*"turn\.completed"/ {
+      total = usage_value("total_tokens", $0)
+      if (total != "" && total + 0 > 0) {
+        candidate = total
+        next
       }
-      if (value != "") {
-        waiting = 0
+      input = usage_value("input_tokens", $0)
+      output = usage_value("output_tokens", $0)
+      if (input != "" && output != "" && input + output > 0) {
+        candidate = input + output
       }
     }
     END {
@@ -407,7 +388,7 @@ run_variant() {
   metrics_path="$log_path.metrics.tsv"
 
   set +e
-  codex "${codex_args[@]}" -C "$workspace" - <"$prompt_path" >"$log_path" 2>&1
+  codex "${codex_args[@]}" --json -C "$workspace" - <"$prompt_path" >"$log_path" 2>&1
   codex_status=$?
   set -e
   [ "$codex_status" -eq 0 ] ||
@@ -418,28 +399,29 @@ run_variant() {
   metrics=$(bash "$analyzer" "$log_path") ||
     die "cannot analyze transcript: $log_path"
   printf '%s\n' "$metrics" >"$metrics_path"
-  IFS=$'\t' read -r tool_calls goregraph_calls full_context_packs duplicate_context_packs \
-    raw_navigation_calls source_read_calls unique_source_files extra_metrics <<EOF
+  IFS=$'\t' read -r tool_calls goregraph_calls full_context_packs compact_duplicate_packs \
+    repeated_full_packs raw_navigation_calls source_read_calls unique_source_files extra_metrics <<EOF
 $metrics
 EOF
   [ -z "${extra_metrics:-}" ] || die "invalid analyzer result: $metrics_path"
   for metric in "$tool_calls" "$goregraph_calls" "$full_context_packs" \
-    "$duplicate_context_packs" "$raw_navigation_calls" "$source_read_calls" "$unique_source_files"; do
+    "$compact_duplicate_packs" "$repeated_full_packs" "$raw_navigation_calls" \
+    "$source_read_calls" "$unique_source_files"; do
     case "$metric" in
       *[!0-9]*|"") die "invalid analyzer result: $metrics_path" ;;
     esac
   done
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$variant" "$run_number" "$tokens" "$tool_calls" "$goregraph_calls" \
-    "$full_context_packs" "$duplicate_context_packs" "$raw_navigation_calls" \
-    "$source_read_calls" "$unique_source_files" "$log_path" \
+    "$full_context_packs" "$compact_duplicate_packs" "$repeated_full_packs" \
+    "$raw_navigation_calls" "$source_read_calls" "$unique_source_files" "$log_path" \
     >>"$output/summary.tsv"
   printf '%s\n' "$tokens" >>"$temporary_directory/$variant.tokens"
   printf '%s\n' "$tool_calls" >>"$temporary_directory/$variant.tool-calls"
   printf '%s\n' "$raw_navigation_calls" >>"$temporary_directory/$variant.navigation-calls"
   printf '%s\n' "$source_read_calls" >>"$temporary_directory/$variant.source-read-calls"
   if [ "$variant" = "assisted" ]; then
-    printf '%s\n' "$duplicate_context_packs" >>"$assisted_duplicate_context_packs"
+    printf '%s\n' "$repeated_full_packs" >>"$assisted_repeated_full_packs"
   fi
 }
 
@@ -473,12 +455,12 @@ assisted_source_read_median=$(median "$assisted_source_read_calls")
   [ -n "$baseline_navigation_median" ] && [ -n "$assisted_navigation_median" ] && \
   [ -n "$baseline_source_read_median" ] && [ -n "$assisted_source_read_median" ] ||
   die "cannot calculate benchmark medians"
-assisted_duplicate_full_packs=$(awk '{ total += $1 } END { print total + 0 }' "$assisted_duplicate_context_packs")
+assisted_repeated_full_packs=$(awk '{ total += $1 } END { print total + 0 }' "$assisted_repeated_full_packs")
 
-printf 'baseline\tmedian\t%s\t%s\t-\t-\t-\t%s\t%s\t-\t-\n' \
+printf 'baseline\tmedian\t%s\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\n' \
   "$baseline_median" "$baseline_tool_median" "$baseline_navigation_median" \
   "$baseline_source_read_median" >>"$output/summary.tsv"
-printf 'assisted\tmedian\t%s\t%s\t-\t-\t-\t%s\t%s\t-\t-\n' \
+printf 'assisted\tmedian\t%s\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\n' \
   "$assisted_median" "$assisted_tool_median" "$assisted_navigation_median" \
   "$assisted_source_read_median" >>"$output/summary.tsv"
 
@@ -501,7 +483,7 @@ printf 'Complete the quality rubric in docs/BENCHMARKING.md before release.\n'
   die "assisted tool-call median exceeds 70% of matched baseline"
 [ $((assisted_source_read_median * 2)) -le "$baseline_source_read_median" ] ||
   die "assisted source-read median exceeds 50% of matched baseline"
-[ "$assisted_duplicate_full_packs" -eq 0 ] ||
+[ "$assisted_repeated_full_packs" -eq 0 ] ||
   die "assisted runs repeated a full Context Pack"
 
 printf 'Token and structural gates passed. Raw evidence: %s\n' "$output"

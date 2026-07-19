@@ -1005,17 +1005,23 @@ outside the repository.
 Release requires the assisted median to be at most 80% of the matched baseline
 median and at most 116,560 tokens when compared directly with the recorded
 145,700-token baseline, tool calls at most 70% of baseline, source reads at
-most 50% of a nonzero baseline, and no duplicate assisted Context Pack. A
+most 50% of a nonzero baseline, and no repeated full assisted Context Pack. A
 manually completed, externally retained and signed 12-point evidence rubric
 must also score assisted quality at least as high as baseline quality. Context
-Pack `estimated_tokens` values are approximate pack-size estimates; final Codex
-`tokens used` totals from raw transcripts are the authoritative benchmark values.
+Pack `estimated_tokens` values are approximate pack-size estimates;
+`turn.completed` usage totals from raw JSONL transcripts are the authoritative
+benchmark values.
 
 The latest 159,739-token baseline versus 141,259-token assisted diagnostic
 reduced tokens by 11.57% but regressed from 34 to 48 tool calls. It is
 diagnostic evidence, not release proof: release still requires the matched
 three-by-three benchmark and 12-point rubric. Skill isolation is set in the
 invocation for both variants, never by adding “do not use skills” to a prompt.
+
+The benchmark consumes Codex JSONL logs and distinguishes compact
+`duplicate_of` Context Packs from a repeated full payload: compact duplicates
+are retained as diagnostic evidence, while a repeated full `context_id` fails
+the release gate.
 
 The exact one-line baseline instruction, seven-line assisted instruction,
 execution protocol, rubric, and dashboard-only decision when a gate fails are

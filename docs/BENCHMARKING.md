@@ -94,17 +94,19 @@ scripts/benchmark-agent-context.sh \
   --output /absolute/path/to/results
 ```
 
-The harness records every raw log and a colocated analyzer result outside the
-workspace. Its `summary.tsv` has this schema:
+The harness invokes `codex exec --json` itself, records the resulting raw JSONL
+log and a colocated analyzer result outside the workspace. Its `summary.tsv`
+has this schema:
 
 ```text
-variant run tokens tool_calls goregraph_calls full_context_packs duplicate_context_packs raw_navigation_calls source_read_calls unique_source_files log
+variant run tokens tool_calls goregraph_calls full_context_packs compact_duplicate_packs repeated_full_packs raw_navigation_calls source_read_calls unique_source_files log
 ```
 
 Release evaluation uses the integer median of the three end-to-end token,
 tool-call, raw-navigation, and source-read totals for each variant. The analyzer
 deduplicates source paths and retains counts only; it does not retain source
-content.
+content. It counts only unique terminal tool items from the Codex JSONL event
+lifecycle, including unsuccessful tools.
 
 ## Token gate
 
@@ -114,8 +116,8 @@ Both token conditions must pass:
 2. When compared directly with the recorded 145,700-token baseline, the
    assisted median must be at most 116,560 tokens.
 
-The complete-session final Codex `tokens used` totals in the retained raw transcripts and
-`summary.tsv` are authoritative for this gate. A Context Pack's
+The complete-session `turn.completed` usage totals in the retained JSONL
+transcripts and `summary.tsv` are authoritative for this gate. A Context Pack's
 `estimated_tokens` value is an approximate local size estimate only; it is
 useful for enforcing the pack budget but must not replace end-to-end Codex token
 totals.
@@ -133,7 +135,13 @@ After both token conditions pass, all structural conditions must pass:
 2. The assisted source-read median must be at most 50% of the matched baseline
    median. A zero baseline source-read median is invalid benchmark input because
    it cannot measure source-replacement savings.
-3. No assisted transcript may contain a duplicate Context Pack.
+3. No assisted transcript may contain a repeated full Context Pack.
+
+`compact_duplicate_packs` records responses with `duplicate_of`. These compact
+responses are expected diagnostic evidence and do not fail the benchmark. A
+later full payload that reuses a previously full `context_id` is instead counted
+as `repeated_full_packs` and fails the gate. This deliberately replaces the
+earlier ambiguous single duplicate-pack column.
 
 ## Latest diagnostic evidence
 

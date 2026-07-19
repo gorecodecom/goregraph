@@ -98,8 +98,9 @@ one-line prohibition; the assisted variant may append only the specified
 seven-line bounded Context instruction. All other prompt and execution inputs
 must be identical, including skill availability. Control skill isolation in the
 invocation, never by adding “do not use skills” to a treatment prompt. Retain
-every raw transcript, its analyzer result, `summary.tsv`, and the signed manual
-rubric outside the repository.
+every raw JSONL transcript, its analyzer result, `summary.tsv`, and the signed
+manual rubric outside the repository. The harness supplies `--json`; callers
+must not supply it through `CODEX_BENCHMARK_ARGS`.
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.
@@ -116,16 +117,19 @@ Omissions are the normal reason to read afterward;
 `source_unrepresented` reports bounded omission detail, while uncovered entries
 in `files` remain navigation metadata when coverage is partial or none.
 
-The complete-session tokens are the target, and final Codex `tokens used` totals
-are authoritative for the release gate. Context Pack `estimated_tokens` values are
+The complete-session tokens are the target; the `turn.completed` usage total is
+authoritative for the release gate. Context Pack `estimated_tokens` values are
 approximate pack-size estimates and do not
 replace the three-run median totals. Assisted runs may use at most two Context
 Pack calls and may not fall back to specialist GoreGraph queries.
 
 The benchmark also requires structural navigation savings: assisted median tool
 calls at or below 70% of baseline, assisted median source reads at or below 50%
-of baseline, a nonzero baseline source-read median, and no duplicate Context
-Pack in assisted transcripts.
+of baseline, a nonzero baseline source-read median, and no repeated full
+Context Pack in assisted transcripts. The analyzer distinguishes a compact
+`duplicate_of` response, which is retained as diagnostic evidence, from a
+repeated full payload reusing a prior full `context_id`; only the latter fails
+the gate.
 
 GoreGraph remains offline, explicit, dependency-free, and watcher-free.
 
