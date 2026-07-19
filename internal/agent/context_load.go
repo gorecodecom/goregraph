@@ -10,81 +10,109 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
-func loadContextIndex(request ContextRequest) (scan.AgentContextIndexRecord, string, error) {
-	cfg, err := config.Load(request.Root)
+type loadedContextIndex struct {
+	Index     scan.AgentContextIndexRecord
+	Path      string
+	ScopeRoot string
+	Workspace bool
+}
+
+type contextIndexCandidate struct {
+	Path      string
+	ScopeRoot string
+	Workspace bool
+}
+
+func loadContextIndex(request ContextRequest) (loadedContextIndex, error) {
+	requestRoot, err := filepath.Abs(request.Root)
 	if err != nil {
-		return scan.AgentContextIndexRecord{}, "", err
+		return loadedContextIndex{}, fmt.Errorf("resolve context root: %w", err)
+	}
+	cfg, err := config.Load(requestRoot)
+	if err != nil {
+		return loadedContextIndex{}, err
 	}
 
-	candidates := []string{
-		scan.NewWorkspaceOutputLayout(
-			filepath.Join(request.Root, ".goregraph-workspace"),
-		).Agent("context-index.json"),
+	candidates := []contextIndexCandidate{
+		{
+			Path: scan.NewWorkspaceOutputLayout(
+				filepath.Join(requestRoot, ".goregraph-workspace"),
+			).Agent("context-index.json"),
+			ScopeRoot: requestRoot,
+			Workspace: true,
+		},
 	}
-	if workspaceRoot, ok, resolveErr := scan.WorkspaceRoot(request.Root, cfg); resolveErr != nil {
-		return scan.AgentContextIndexRecord{}, "", resolveErr
+	if workspaceRoot, ok, resolveErr := scan.WorkspaceRoot(requestRoot, cfg); resolveErr != nil {
+		return loadedContextIndex{}, resolveErr
 	} else if ok {
-		candidates = append(candidates, scan.NewWorkspaceOutputLayout(
-			filepath.Join(workspaceRoot, ".goregraph-workspace"),
-		).Agent("context-index.json"))
+		candidates = append(candidates, contextIndexCandidate{
+			Path: scan.NewWorkspaceOutputLayout(
+				filepath.Join(workspaceRoot, ".goregraph-workspace"),
+			).Agent("context-index.json"),
+			ScopeRoot: workspaceRoot,
+			Workspace: true,
+		})
 	}
-	candidates = append(candidates, scan.NewProjectOutputLayout(
-		filepath.Join(request.Root, cfg.OutputDir),
-	).Agent("context-index.json"))
+	candidates = append(candidates, contextIndexCandidate{
+		Path:      filepath.Join(requestRoot, cfg.OutputDir, "agent", "context-index.json"),
+		ScopeRoot: requestRoot,
+	})
 
 	seen := map[string]bool{}
 	for _, candidate := range candidates {
-		candidate = filepath.Clean(candidate)
-		if seen[candidate] {
+		candidate.Path = filepath.Clean(candidate.Path)
+		if seen[candidate.Path] {
 			continue
 		}
-		seen[candidate] = true
-		info, statErr := os.Stat(candidate)
+		seen[candidate.Path] = true
+		info, statErr := os.Stat(candidate.Path)
 		if os.IsNotExist(statErr) {
 			continue
 		}
 		if statErr != nil {
-			return scan.AgentContextIndexRecord{}, "", fmt.Errorf(
+			return loadedContextIndex{}, fmt.Errorf(
 				"context index %q is not readable: %w",
-				candidate,
+				candidate.Path,
 				statErr,
 			)
 		}
 		if info.IsDir() {
-			return scan.AgentContextIndexRecord{}, "", fmt.Errorf(
+			return loadedContextIndex{}, fmt.Errorf(
 				"context index %q is not a file",
-				candidate,
+				candidate.Path,
 			)
 		}
-		body, readErr := os.ReadFile(candidate)
+		body, readErr := os.ReadFile(candidate.Path)
 		if readErr != nil {
-			return scan.AgentContextIndexRecord{}, "", fmt.Errorf(
+			return loadedContextIndex{}, fmt.Errorf(
 				"context index %q is not readable: %w",
-				candidate,
+				candidate.Path,
 				readErr,
 			)
 		}
 		var index scan.AgentContextIndexRecord
 		if decodeErr := json.Unmarshal(body, &index); decodeErr != nil {
-			return scan.AgentContextIndexRecord{}, "", fmt.Errorf(
+			return loadedContextIndex{}, fmt.Errorf(
 				"context index %q is invalid JSON: %w",
-				candidate,
+				candidate.Path,
 				decodeErr,
 			)
 		}
 		if validateErr := validateContextIndex(index); validateErr != nil {
-			return scan.AgentContextIndexRecord{}, "", fmt.Errorf(
+			return loadedContextIndex{}, fmt.Errorf(
 				"context index %q is invalid: %w",
-				candidate,
+				candidate.Path,
 				validateErr,
 			)
 		}
-		return index, candidate, nil
+		return loadedContextIndex{
+			Index: index, Path: candidate.Path, ScopeRoot: candidate.ScopeRoot, Workspace: candidate.Workspace,
+		}, nil
 	}
 
-	return scan.AgentContextIndexRecord{}, "", fmt.Errorf(
+	return loadedContextIndex{}, fmt.Errorf(
 		"context index is missing; run `goregraph build agent %s` first",
-		request.Root,
+		requestRoot,
 	)
 }
 

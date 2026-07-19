@@ -135,6 +135,67 @@ func TestBuildContextUsesConfiguredProjectOutput(t *testing.T) {
 	}
 }
 
+func TestLoadContextIndexCarriesExactSourceScopes(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	projectRoot := filepath.Join(workspaceRoot, "services", "users")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceRoot, ".goregraph-workspace.yml"), []byte("workspace: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name       string
+		root       string
+		indexPath  string
+		wantRoot   string
+		workspace  bool
+		outputFile string
+	}{
+		{
+			name:       "nested configured project output",
+			root:       projectRoot,
+			indexPath:  filepath.Join(projectRoot, "build", "generated", "goregraph", "agent", "context-index.json"),
+			wantRoot:   projectRoot,
+			outputFile: "output: build/generated/goregraph\n",
+		},
+		{
+			name:      "workspace requested directly",
+			root:      workspaceRoot,
+			indexPath: filepath.Join(workspaceRoot, ".goregraph-workspace", "agent", "context-index.json"),
+			wantRoot:  workspaceRoot,
+			workspace: true,
+		},
+		{
+			name:      "detected parent workspace",
+			root:      projectRoot,
+			indexPath: filepath.Join(workspaceRoot, ".goregraph-workspace", "agent", "context-index.json"),
+			wantRoot:  workspaceRoot,
+			workspace: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.outputFile != "" {
+				if err := os.WriteFile(filepath.Join(test.root, "goregraph.yml"), []byte(test.outputFile), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeContextIndexAt(t, test.indexPath, contextIndexWithFact(test.name, test.name))
+
+			loaded, err := loadContextIndex(ContextRequest{Root: test.root})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loaded.Path != test.indexPath || loaded.ScopeRoot != test.wantRoot || loaded.Workspace != test.workspace {
+				t.Fatalf("loaded index = %#v, want path %q, root %q, workspace %t", loaded, test.indexPath, test.wantRoot, test.workspace)
+			}
+		})
+	}
+}
+
 func TestBuildContextRejectsInvalidIndexGraphs(t *testing.T) {
 	validFact := scan.AgentContextFactRecord{ID: "fact", Kind: "route", Name: "GET /users"}
 	for name, index := range map[string]scan.AgentContextIndexRecord{

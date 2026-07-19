@@ -18,6 +18,7 @@ const (
 	MaxContextBytes                    = 24000
 	DefaultContextMaxFiles             = 12
 	MaxContextMaxFiles                 = 20
+	MaxContextSourceFileBytes          = 2 * 1024 * 1024
 )
 
 type ContextRequest struct {
@@ -111,13 +112,13 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	if err != nil {
 		return ContextPack{}, err
 	}
-	index, _, err := loadContextIndex(request)
+	loadedIndex, err := loadContextIndex(request)
 	if err != nil {
 		return ContextPack{}, err
 	}
 	metadataRequest := request
 	metadataRequest.BudgetTokens = contextMetadataBudget(request.BudgetTokens)
-	pack, err := compileContextPack(index, metadataRequest)
+	pack, err := compileContextPack(loadedIndex.Index, metadataRequest)
 	if err != nil {
 		return ContextPack{}, err
 	}
