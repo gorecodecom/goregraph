@@ -296,7 +296,11 @@ Add table-driven cases that require:
 - an explicitly named project still needs one semantic token after its project-name tokens are removed;
 - duplicate basenames such as `services/jobs` and `libraries/jobs` make bare `jobs` ambiguous, while full paths remain exact;
 - a named project represented only by `UNAVAILABLE` coverage adds uncertainty without setting `fallback_required` when the central path is reliable;
+- accepted support facts match incomplete coverage across canonical `./`, slash, and backslash project spellings;
+- `test_target` and other known test fact kinds remain ineligible even when their file path looks like production source;
 - `BudgetTokens: 256` may drop all optional supports but must retain the central entrypoint;
+- a rejected oversized top support does not block a smaller qualifying fact from the same or a later project;
+- explicit missing-project uncertainty remains visible after deduplication and the global uncertainty cap, even when the primary path already has several incomplete scopes;
 - reversing facts, edges, and coverage yields `reflect.DeepEqual` packs.
 
 - [ ] **Step 4: Verify the new tests fail for missing support selection**
@@ -316,9 +320,10 @@ Keep `rankContextFacts` and `selectContextSeeds` unchanged for the primary entry
 1. Build unique normalized aliases from all non-empty `fact.Project` and `coverage.Project` values. Full project paths are always aliases; basenames are aliases only when unique.
 2. Detect exact aliases in the normalized full query.
 3. Rank eligible non-test, non-generated facts against `contextQueryTokens(request.Query)`, excluding every token belonging to that fact's project aliases from the semantic match count.
-4. First select at most one qualifying fact from each explicitly named, unrepresented project with at least one semantic match. Then fill remaining capacity from unrepresented projects with at least two semantic matches. Sort by explicitness, semantic matches descending, score descending, project, kind, qualified name, file, line, and ID.
-5. Admit at most two projects and one fact per project through `tryContextPack`. Add only `ContextFile{Role: "related_project", Reason: "full task project match"}` and the fact ID to `includedFactIDs`; never append a support to `Entrypoints` or `CallChain`.
-6. For an explicitly named project with no accepted qualifying fact, add a bounded `ContextUncertainty` with scope `<project>/project_context` and reason taken from its strongest incomplete coverage record, or `no relevant production fact selected` when no explicit coverage failure exists.
+4. Order qualifying candidates from explicitly named, unrepresented projects with at least one semantic match before candidates from unnamed projects with at least two semantic matches. Sort by explicitness, semantic matches descending, score descending, project, kind, qualified name, file, line, and ID. Keep lower-ranked candidates available until budget admission succeeds.
+5. Walk candidates in rank order through `tryContextPack`, marking a project consumed only after a fact is accepted. Continue after token/file rejection so a smaller fact from the same project or a later qualifying project can still fit. Stop after at most two accepted projects and one accepted fact per project. Add only `ContextFile{Role: "related_project", Reason: "full task project match"}` and the fact ID to `includedFactIDs`; never append a support to `Entrypoints` or `CallChain`.
+6. Normalize project spellings consistently in selected support scopes and coverage lookup. Preserve incomplete coverage for accepted supports as bounded uncertainty without feeding it into the primary fallback decision.
+7. For an explicitly named project with no accepted qualifying fact, add a bounded `ContextUncertainty` with scope `<project>/project_context` and reason taken from its strongest incomplete coverage record, or `no relevant production fact selected` when no explicit coverage failure exists. Deduplicate uncertainty records and prioritize explicit missing-project uncertainty before applying `maximumContextUncertainty`, so several primary coverage gaps cannot make a named missing project silent.
 
 Use constants:
 
