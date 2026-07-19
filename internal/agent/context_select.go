@@ -330,7 +330,7 @@ func appendContextSourceCandidateOptions(
 				failures[factID] = reason
 			}
 		}
-		if len(verified) == 0 {
+		if len(verified) != len(contextSourceCandidateFactIDs(candidate)) {
 			continue
 		}
 		for _, factID := range verified {

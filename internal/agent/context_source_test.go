@@ -710,6 +710,65 @@ func TestContextSourceOptionsRecoverFromStaleMergedAnchor(t *testing.T) {
 	}
 }
 
+func TestContextSourceOptionsRequireCompleteMergedEvidence(t *testing.T) {
+	root := t.TempDir()
+	lines := numberedSourceLines(14)
+	lines[1] = "func entrypoint() {"
+	lines[2] = "}"
+	lines[9] = "func firstHop() {"
+	lines[10] = "}"
+	writeSourceFile(t, root, "flow.go", strings.Join(lines, "\n")+"\n")
+	pack := ContextPack{
+		Schema: 1, Query: "entrypoint first hop", Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+		Concerns: []ContextConcern{
+			{Kind: contextConcernEntrypoint},
+			{Kind: contextConcernPrimaryPath},
+		},
+		Entrypoints:           []ContextLocation{{ID: "entrypoint"}},
+		selectedSourceFactIDs: []string{"entrypoint", "first-hop"},
+	}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "entrypoint", Kind: "symbol", Name: "entrypoint", Search: "entrypoint first hop", File: "flow.go", Line: 2, EndLine: 3, Confidence: "EXACT"},
+			{ID: "first-hop", Kind: "symbol", Name: "firstHop", Search: "entrypoint first hop", File: "flow.go", Line: 10, EndLine: 11, Confidence: "EXACT"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "entrypoint-first-hop", FromFactID: "entrypoint", ToFactID: "first-hop", Kind: "call", Confidence: "EXACT",
+		}},
+	}
+	loaded := loadedContextIndex{ScopeRoot: root, Index: index}
+	candidates := contextSourceCandidates(pack, index)
+	if len(candidates) != 1 || len(candidates[0].FactIDs) != 2 {
+		t.Fatalf("mandatory facts did not form one nearby candidate: %#v", candidates)
+	}
+	options, _, err := contextSourceRenderOptions(
+		pack,
+		loaded,
+		candidates,
+		contextSourceConcerns(pack, index),
+		map[string]int{"entrypoint": 0, "first-hop": 1},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, option := range options {
+		if len(option.candidate.FactIDs) != 2 {
+			t.Fatalf("partial merged option remained eligible: %#v", option)
+		}
+	}
+
+	got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: DefaultContextBudgetTokens})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.SourceSections) != 1 ||
+		!strings.Contains(got.SourceSections[0].Content, "entrypoint") ||
+		!strings.Contains(got.SourceSections[0].Content, "firstHop") ||
+		got.SourceCoverage != "complete" {
+		t.Fatalf("mandatory merged evidence = %#v", got)
+	}
+}
+
 func TestContextSourceOptionsRespectFileBudget(t *testing.T) {
 	root := t.TempDir()
 	writeSourceFile(t, root, "route.go", "func route() {}\n")
