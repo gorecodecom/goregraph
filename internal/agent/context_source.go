@@ -377,7 +377,7 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 	identifier := contextIdentifier(candidate)
 	occurrences := identifierOccurrences(file.Lines, identifier)
 	codeLines := sourceCodeMask(file.Lines)
-	declarations := declarationOccurrences(codeLines, occurrences)
+	declarations := declarationOccurrences(file.Path, codeLines, occurrences)
 	indexedStart, indexedEnd := indexedSourceRange(candidate, len(file.Lines))
 
 	declaration := sourceOccurrence{}
@@ -553,17 +553,17 @@ func isSourceIdentifierRune(value rune) bool {
 	return unicode.IsLetter(value) || unicode.IsDigit(value) || value == '_' || value == '$'
 }
 
-func declarationOccurrences(lines []string, occurrences []sourceOccurrence) []sourceOccurrence {
+func declarationOccurrences(path string, lines []string, occurrences []sourceOccurrence) []sourceOccurrence {
 	declarations := make([]sourceOccurrence, 0, len(occurrences))
 	for _, occurrence := range occurrences {
-		if declarationLikeOccurrence(lines[occurrence.Line-1], occurrence.Start, occurrence.End) {
+		if declarationLikeOccurrence(path, lines[occurrence.Line-1], occurrence.Start, occurrence.End) {
 			declarations = append(declarations, occurrence)
 		}
 	}
 	return declarations
 }
 
-func declarationLikeOccurrence(line string, start, end int) bool {
+func declarationLikeOccurrence(path, line string, start, end int) bool {
 	prefix := strings.TrimSpace(line[:start])
 	if prefix == "" || sourcePrefixIsUnsafe(prefix) {
 		return false
@@ -583,12 +583,12 @@ func declarationLikeOccurrence(line string, start, end int) bool {
 	if strings.ContainsAny(prefix, "(){};,") {
 		return false
 	}
-	return conservativeCallablePrefix(prefix)
+	return conservativeCallablePrefix(path, prefix)
 }
 
-func conservativeCallablePrefix(prefix string) bool {
+func conservativeCallablePrefix(path, prefix string) bool {
 	fields := strings.Fields(prefix)
-	if len(fields) == 0 || !sourceDeclarationModifier(fields[0]) {
+	if len(fields) == 0 {
 		return false
 	}
 	for _, value := range prefix {
@@ -598,7 +598,46 @@ func conservativeCallablePrefix(prefix string) bool {
 		}
 		return false
 	}
-	return true
+	if sourceDeclarationModifier(fields[0]) {
+		return true
+	}
+	return cStyleSourcePath(path) && conservativeCStyleReturnTypePrefix(prefix)
+}
+
+func cStyleSourcePath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx", ".java", ".cs":
+		return true
+	default:
+		return false
+	}
+}
+
+func conservativeCStyleReturnTypePrefix(prefix string) bool {
+	identifierFound := false
+	angleDepth := 0
+	arrayDepth := 0
+	for _, value := range prefix {
+		switch {
+		case unicode.IsLetter(value) || value == '_' || value == '$':
+			identifierFound = true
+		case unicode.IsDigit(value) || unicode.IsSpace(value) || value == '*' || value == '?':
+		case value == '<':
+			angleDepth++
+		case value == '>':
+			angleDepth--
+		case value == '[':
+			arrayDepth++
+		case value == ']':
+			arrayDepth--
+		default:
+			return false
+		}
+		if angleDepth < 0 || arrayDepth < 0 {
+			return false
+		}
+	}
+	return identifierFound && angleDepth == 0 && arrayDepth == 0
 }
 
 func sourceDeclarationModifier(value string) bool {

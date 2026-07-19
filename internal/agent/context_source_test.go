@@ -155,6 +155,50 @@ func TestRenderSourceCandidateAcceptsConservativeCallableDeclarations(t *testing
 	}
 }
 
+func TestRenderSourceCandidateAcceptsPackagePrivateCStyleDeclarations(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+		line string
+	}{
+		{name: "Java void method", path: "UserService.java", line: "void deleteUser() {}"},
+		{name: "Java typed method", path: "UserService.java", line: "Task deleteUser() {}"},
+		{name: "Java interface method", path: "UserRepository.java", line: "void deleteUser();"},
+		{name: "C# typed method", path: "UserService.cs", line: "Task deleteUser() => repository.Delete();"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := sourceCandidate{
+				Path: test.path, StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser",
+			}
+			section, err := renderSourceCandidate(
+				candidate,
+				sourceFile{Path: candidate.Path, Lines: []string{test.line}},
+				"body",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if section.Content != "1\t"+test.line {
+				t.Fatalf("rendered content = %q", section.Content)
+			}
+		})
+	}
+}
+
+func TestRenderSourceCandidateRejectsJavaScriptVoidCall(t *testing.T) {
+	candidate := sourceCandidate{
+		Path: "module.js", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser",
+	}
+	_, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: []string{"void deleteUser()"}},
+		"body",
+	)
+	if err == nil || err.Error() != "indexed symbol has no unique declaration-like occurrence" {
+		t.Fatalf("renderSourceCandidate() error = %v", err)
+	}
+}
+
 func TestRenderSourceCandidateKeepsIndexedConstructorOverClassDeclaration(t *testing.T) {
 	lines := []string{
 		"public class UserService {",
