@@ -1,14 +1,19 @@
 package agent
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
 type sourceCandidate struct {
@@ -44,6 +49,324 @@ type sourceOccurrence struct {
 	Line  int
 	Start int
 	End   int
+}
+
+var contextSourceRolePriority = map[string]int{
+	"entrypoint":  0,
+	"call_chain":  1,
+	"contract":    2,
+	"persistence": 3,
+	"test":        4,
+}
+
+func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecord) []sourceCandidate {
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	entrypointIDs := contextLocationIDs(pack.Entrypoints)
+	contractIDs := contextLocationIDs(pack.Contracts)
+	persistenceIDs := contextLocationIDs(pack.Persistence)
+	testIDs := contextLocationIDs(pack.Tests)
+	includeTests := contextQueryRequestsTests(pack.Query)
+
+	candidates := make([]sourceCandidate, 0, len(pack.selectedSourceFactIDs))
+	for _, id := range pack.selectedSourceFactIDs {
+		fact, ok := factByID[id]
+		if !ok || strings.TrimSpace(fact.File) == "" || contextPackSourceFile(fact.File) == "" {
+			continue
+		}
+		role := "call_chain"
+		isTestCandidate := testIDs[id] || strings.EqualFold(fact.Kind, "test") || contextFactUsesTestSource(fact)
+		if isTestCandidate {
+			if !includeTests {
+				continue
+			}
+			role = "test"
+		} else {
+			switch {
+			case strings.EqualFold(fact.Kind, "api_endpoint"):
+				if contextFactMatchesSelectedEndpoint(fact, pack.Endpoints) {
+					role = "entrypoint"
+				}
+			case entrypointIDs[id]:
+				role = "entrypoint"
+			case contractIDs[id]:
+				role = "contract"
+			case persistenceIDs[id]:
+				role = "persistence"
+			}
+		}
+		candidates = append(candidates, sourceCandidate{
+			FactID: fact.ID, Project: fact.Project, Path: fact.File,
+			StartLine: fact.Line, EndLine: fact.EndLine, Role: role,
+			Kind: fact.Kind, Name: fact.Name, Qualified: fact.Qualified,
+			Priority: contextSourceRolePriority[role],
+		})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return contextSourceCandidateLess(candidates[i], candidates[j])
+	})
+
+	merged := make([]sourceCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		combined := candidate
+		strongest := candidate
+		absorbed := false
+		for {
+			remaining := merged[:0]
+			mergedRange := false
+			for _, existing := range merged {
+				if !sourceCandidateRangesOverlap(existing, combined) {
+					remaining = append(remaining, existing)
+					continue
+				}
+				absorbed = true
+				mergedRange = true
+				combined.StartLine = minimumPositiveContextLine(combined.StartLine, existing.StartLine)
+				if sourceCandidateRangeEnd(existing) > sourceCandidateRangeEnd(combined) {
+					combined.EndLine = sourceCandidateRangeEnd(existing)
+				}
+				if contextSourceCandidateLess(existing, strongest) {
+					strongest = existing
+				}
+			}
+			merged = remaining
+			if !mergedRange {
+				break
+			}
+		}
+		if !absorbed {
+			merged = append(merged, candidate)
+			continue
+		}
+		strongest.StartLine = combined.StartLine
+		strongest.EndLine = sourceCandidateRangeEnd(combined)
+		merged = append(merged, strongest)
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		return contextSourceCandidateLess(merged[i], merged[j])
+	})
+	return merged
+}
+
+func contextLocationIDs(locations []ContextLocation) map[string]bool {
+	result := make(map[string]bool, len(locations))
+	for _, location := range locations {
+		result[location.ID] = true
+	}
+	return result
+}
+
+func contextFactMatchesSelectedEndpoint(fact scan.AgentContextFactRecord, endpoints []ContextEndpoint) bool {
+	for _, endpoint := range endpoints {
+		if strings.TrimSpace(fact.Project) == strings.TrimSpace(endpoint.Provider) &&
+			strings.ToUpper(strings.TrimSpace(fact.HTTPMethod)) == strings.ToUpper(strings.TrimSpace(endpoint.HTTPMethod)) &&
+			strings.TrimSpace(fact.Path) == strings.TrimSpace(endpoint.Path) &&
+			strings.TrimSpace(fact.Qualified) == strings.TrimSpace(endpoint.Handler) &&
+			strings.TrimSpace(fact.File) == strings.TrimSpace(endpoint.File) && fact.Line == endpoint.Line {
+			return true
+		}
+	}
+	return false
+}
+
+func contextQueryRequestsTests(query string) bool {
+	tokens := contextTokenSet(query)
+	for _, token := range []string{"test", "tests", "testing", "junit", "jest", "playwright"} {
+		if tokens[token] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextSourceCandidateLess(left, right sourceCandidate) bool {
+	if left.Priority != right.Priority {
+		return left.Priority < right.Priority
+	}
+	if left.Project != right.Project {
+		return left.Project < right.Project
+	}
+	if left.Path != right.Path {
+		return left.Path < right.Path
+	}
+	if left.StartLine != right.StartLine {
+		return left.StartLine < right.StartLine
+	}
+	if left.EndLine != right.EndLine {
+		return left.EndLine < right.EndLine
+	}
+	return left.FactID < right.FactID
+}
+
+func sourceCandidateRangesOverlap(left, right sourceCandidate) bool {
+	if left.Project != right.Project || left.Path != right.Path {
+		return false
+	}
+	return sourceCandidateRangeStart(left) <= sourceCandidateRangeEnd(right) &&
+		sourceCandidateRangeStart(right) <= sourceCandidateRangeEnd(left)
+}
+
+func sourceCandidateRangeStart(candidate sourceCandidate) int {
+	if candidate.StartLine > 0 {
+		return candidate.StartLine
+	}
+	return 1
+}
+
+func sourceCandidateRangeEnd(candidate sourceCandidate) int {
+	if candidate.EndLine > 0 {
+		return candidate.EndLine
+	}
+	return sourceCandidateRangeStart(candidate)
+}
+
+func attachContextSource(
+	pack ContextPack,
+	loaded loadedContextIndex,
+	request ContextRequest,
+) (ContextPack, error) {
+	candidates := contextSourceCandidates(pack, loaded.Index)
+	pack.SourceCoverage = "complete"
+	pack.SourceUnrepresented = len(candidates)
+	var err error
+	pack, err = finalizeContextEstimate(pack)
+	if err != nil {
+		return ContextPack{}, err
+	}
+
+	uncoveredCandidates := 0
+	for _, source := range candidates {
+		sectionAdded := false
+		omissionReason := "source section does not fit the response budget"
+		if len(pack.SourceSections) < MaxContextSourceSections {
+			path, resolveErr := resolveSourcePath(loaded, source)
+			if resolveErr != nil {
+				omissionReason = stableContextSourceOmissionReason(resolveErr)
+			} else {
+				file, readErr := readSourceFile(path)
+				if readErr != nil {
+					omissionReason = stableContextSourceOmissionReason(readErr)
+				} else {
+					for _, mode := range []string{"body", "focused", "signature"} {
+						section, renderErr := renderSourceCandidate(source, file, mode)
+						if renderErr != nil {
+							if reason := stableContextSourceOmissionReason(renderErr); reason != "source section does not fit the response budget" {
+								omissionReason = reason
+							}
+							continue
+						}
+						candidate := cloneContextPack(pack)
+						candidate.SourceSections = append(candidate.SourceSections, section)
+						candidate.SourceUnrepresented--
+						candidate, err = finalizeContextEstimate(candidate)
+						if err != nil {
+							return ContextPack{}, err
+						}
+						fits, fitErr := contextSourcePackFits(candidate, request)
+						if fitErr != nil {
+							return ContextPack{}, fitErr
+						}
+						if fits {
+							pack = candidate
+							sectionAdded = true
+							break
+						}
+					}
+				}
+			}
+		}
+		if sectionAdded {
+			continue
+		}
+
+		uncoveredCandidates++
+		if len(pack.SourceOmissions) >= MaxContextSourceOmissions {
+			continue
+		}
+		candidate := cloneContextPack(pack)
+		candidate.SourceOmissions = append(candidate.SourceOmissions, ContextSourceOmission{
+			Project: source.Project, Path: source.Path, Role: source.Role, Reason: omissionReason,
+		})
+		candidate.SourceUnrepresented--
+		candidate, err = finalizeContextEstimate(candidate)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		fits, fitErr := contextSourcePackFits(candidate, request)
+		if fitErr != nil {
+			return ContextPack{}, fitErr
+		}
+		if fits {
+			pack = candidate
+		}
+	}
+
+	switch {
+	case len(pack.SourceSections) == 0:
+		pack.SourceCoverage = "none"
+	case uncoveredCandidates > 0:
+		pack.SourceCoverage = "partial"
+	default:
+		pack.SourceCoverage = "complete"
+	}
+	pack, err = finalizeContextEstimate(pack)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	fits, err := contextSourcePackFits(pack, request)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	if !fits {
+		return ContextPack{}, fmt.Errorf("context source exceeds the requested budget")
+	}
+	return pack, nil
+}
+
+func contextSourcePackFits(pack ContextPack, request ContextRequest) (bool, error) {
+	if pack.EstimatedTokens > request.BudgetTokens {
+		return false, nil
+	}
+	body, err := json.Marshal(pack)
+	if err != nil {
+		return false, err
+	}
+	return len(body) <= contextByteBudget(request.BudgetTokens), nil
+}
+
+func stableContextSourceOmissionReason(err error) string {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "source file is missing"
+	case errors.Is(err, os.ErrPermission):
+		return "source file is unreadable"
+	}
+	message := err.Error()
+	for _, stable := range []string{
+		"indexed symbol is absent from current source",
+		"indexed symbol is ambiguous in current source",
+		"indexed symbol has no unique declaration-like occurrence",
+	} {
+		if strings.Contains(message, stable) {
+			return stable
+		}
+	}
+	switch {
+	case strings.Contains(message, "source path is unsafe"):
+		return "source path escapes project root"
+	case strings.Contains(message, "source file is not regular"):
+		return "source file is not a regular file"
+	case strings.Contains(message, "source file exceeds maximum size"):
+		return "source file exceeds 2097152 bytes"
+	case strings.Contains(message, "source file is not valid UTF-8"):
+		return "source file is not UTF-8 text"
+	case strings.Contains(message, "source file is unreadable"):
+		return "source file is unreadable"
+	default:
+		return "source section does not fit the response budget"
+	}
 }
 
 func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode string) (ContextSourceSection, error) {

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -1647,6 +1648,272 @@ func TestBuildContextRetainsOnlyFirstIndexedEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildContextAttachesCentralSourcePath(t *testing.T) {
+	root := writeSourceBackedContextFixture(t, false)
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || len(pack.SourceSections) < 2 {
+		t.Fatalf("source-backed pack = %#v", pack)
+	}
+	if pack.SourceSections[0].Role != "entrypoint" || pack.SourceSections[0].RenderMode != "body" {
+		t.Fatalf("first section = %#v", pack.SourceSections[0])
+	}
+	if !strings.Contains(pack.SourceSections[0].Content, "deleteFromCadaster") ||
+		!strings.Contains(pack.SourceSections[1].Content, "removeRegulation") {
+		t.Fatalf("central source path is missing: %#v", pack.SourceSections)
+	}
+	if pack.SourceCoverage != "complete" || len(pack.SourceOmissions) != 0 || pack.SourceUnrepresented != 0 {
+		t.Fatalf("complete source coverage = %#v", pack)
+	}
+}
+
+func TestBuildContextSourceFallbackAndLowConfidenceContainNoBodies(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "weak", Kind: "symbol", Name: "unrelatedThing", File: "missing.go",
+			Search: "unrelated thing",
+		}},
+	})
+
+	for _, query := range []string{"nothing relevant here", "unrelated thing"} {
+		pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(pack.SourceSections) != 0 || pack.SourceCoverage != "none" {
+			t.Fatalf("query %q source fallback = %#v", query, pack)
+		}
+	}
+}
+
+func TestBuildContextSourceIncludesTestsOnlyWhenRequested(t *testing.T) {
+	root := writeSourceBackedContextFixture(t, false)
+	route := "DELETE /cadasters/{cadasterId}/regulations/{objectId}"
+
+	production, err := BuildContext(ContextRequest{Root: root, Query: route})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, section := range production.SourceSections {
+		if section.Role == "test" || strings.Contains(section.Content, "deletesRegulation") {
+			t.Fatalf("production query included test source: %#v", production.SourceSections)
+		}
+	}
+	if len(production.Tests) != 1 {
+		t.Fatalf("test metadata was not retained: %#v", production.Tests)
+	}
+
+	withTests, err := BuildContext(ContextRequest{Root: root, Query: route + ". tests"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testIndex := -1
+	for index, section := range withTests.SourceSections {
+		if section.Role == "test" {
+			testIndex = index
+		}
+	}
+	if testIndex < 2 || !strings.Contains(withTests.SourceSections[testIndex].Content, "deletesRegulation") {
+		t.Fatalf("explicit test query source = %#v", withTests.SourceSections)
+	}
+}
+
+func TestBuildContextSourceOperationalFailuresBecomeStableOmissions(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		body   []byte
+		remove bool
+		mode   os.FileMode
+		want   string
+	}{
+		{name: "missing", remove: true, want: "source file is missing"},
+		{name: "unreadable", body: []byte("func target() {}\n"), mode: 0, want: "source file is unreadable"},
+		{name: "non UTF-8", body: []byte{0xff, 0xfe}, mode: 0o644, want: "source file is not UTF-8 text"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			index := scan.AgentContextIndexRecord{
+				SchemaVersion: scan.SchemaVersion,
+				Facts: []scan.AgentContextFactRecord{{
+					ID: "target", Kind: "symbol", Name: "target", File: "target.go",
+					Line: 1, EndLine: 1, Search: "target", Confidence: "EXACT",
+				}},
+			}
+			root := writeContextIndexFixture(t, index)
+			path := filepath.Join(root, "target.go")
+			if !test.remove {
+				if err := os.WriteFile(path, test.body, test.mode); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			pack, err := BuildContext(ContextRequest{Root: root, Query: "target"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(pack.SourceSections) != 0 || len(pack.SourceOmissions) != 1 ||
+				pack.SourceOmissions[0].Reason != test.want || pack.SourceCoverage != "none" {
+				t.Fatalf("operational omission = %#v", pack)
+			}
+		})
+	}
+}
+
+func TestBuildContextSourceCapsRemainExplicit(t *testing.T) {
+	const candidateCount = 9
+	facts := make([]scan.AgentContextFactRecord, 0, candidateCount)
+	edges := make([]scan.AgentContextEdgeRecord, 0, candidateCount-1)
+	facts = append(facts, scan.AgentContextFactRecord{
+		ID: "seed", Kind: "symbol", Name: "centralTask", File: "source-0.go",
+		Line: 1, EndLine: 1, Search: "central task", Confidence: "EXACT",
+	})
+	for index := 1; index < candidateCount; index++ {
+		id := fmt.Sprintf("step-%d", index)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Kind: "symbol", Name: id, File: fmt.Sprintf("source-%d.go", index),
+			Line: 1, EndLine: 1, Confidence: "EXACT",
+		})
+		edges = append(edges, scan.AgentContextEdgeRecord{
+			ID: "edge-" + id, FromFactID: "seed", ToFactID: id,
+			FromLabel: "centralTask", ToLabel: id, Kind: "call", Confidence: "EXACT",
+		})
+	}
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion, Facts: facts, Edges: edges,
+	})
+	for _, fact := range facts {
+		writeContextSourceFile(t, root, fact.File, "func "+fact.Name+"() {}\n")
+	}
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "central task", BudgetTokens: MaxContextBudgetTokens,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.SourceSections) != MaxContextSourceSections ||
+		len(pack.SourceOmissions) != MaxContextSourceOmissions ||
+		pack.SourceUnrepresented != candidateCount-MaxContextSourceSections-MaxContextSourceOmissions ||
+		pack.SourceCoverage != "partial" {
+		t.Fatalf("bounded source accounting = %#v", pack)
+	}
+}
+
+func TestContextSourceCandidatesPreserveSelectedFactsAndMergeOnlyOverlaps(t *testing.T) {
+	pack := ContextPack{
+		Query:       "production path",
+		Entrypoints: []ContextLocation{{ID: "entry"}, {ID: "second-entry"}},
+		Contracts:   []ContextLocation{{ID: "contract"}},
+		selectedSourceFactIDs: []string{
+			"entry", "overlap", "bridge", "second-entry", "contract", "test", "generated", "empty",
+		},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "entry", Project: "app", Kind: "symbol", Name: "entry", File: "app.go", Line: 10, EndLine: 20},
+		{ID: "overlap", Project: "app", Kind: "symbol", Name: "overlap", File: "app.go", Line: 18, EndLine: 30},
+		{ID: "bridge", Project: "app", Kind: "symbol", Name: "bridge", File: "app.go", Line: 30, EndLine: 40},
+		{ID: "second-entry", Project: "app", Kind: "symbol", Name: "secondEntry", File: "app.go", Line: 40, EndLine: 50},
+		{ID: "contract", Project: "app", Kind: "api_contract", Name: "contract", File: "contract.go", Line: 4, EndLine: 8},
+		{ID: "test", Project: "app", Kind: "test", Name: "testEntry", File: "app_test.go", Line: 1, EndLine: 3},
+		{ID: "generated", Project: "app", Kind: "symbol", Name: "generated", File: "build/generated/api-catalog.json", Line: 1},
+		{ID: "empty", Project: "app", Kind: "symbol", Name: "empty"},
+	}}
+
+	candidates := contextSourceCandidates(pack, index)
+	if len(candidates) != 2 {
+		t.Fatalf("production candidates = %#v", candidates)
+	}
+	if candidates[0].FactID != "entry" || candidates[0].Role != "entrypoint" ||
+		candidates[0].StartLine != 10 || candidates[0].EndLine != 50 || candidates[0].Name != "entry" {
+		t.Fatalf("merged entrypoint candidate = %#v", candidates[0])
+	}
+	if candidates[1].FactID != "contract" || candidates[1].Role != "contract" {
+		t.Fatalf("contract candidate = %#v", candidates[1])
+	}
+}
+
+func TestContextSourceCandidatesMatchAPIEndpointExactly(t *testing.T) {
+	pack := ContextPack{
+		Query:       "GET /users",
+		Entrypoints: []ContextLocation{{ID: "route"}},
+		Endpoints: []ContextEndpoint{{
+			Provider: "users", HTTPMethod: "GET", Path: "/users", Handler: "UsersAPI.list",
+			File: "Users.java", Line: 20,
+		}},
+		selectedSourceFactIDs: []string{"endpoint", "endpoint-impostor", "route"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "route", Project: "users", Kind: "route", Name: "GET /users", Qualified: "UsersController.list", HTTPMethod: "GET", Path: "/users", File: "Users.java", Line: 5, EndLine: 8},
+		{ID: "endpoint", Project: "users", Kind: "api_endpoint", Name: "GET /users", Qualified: "UsersAPI.list", HTTPMethod: "GET", Path: "/users", File: "Users.java", Line: 20, EndLine: 23},
+		{ID: "endpoint-impostor", Project: "users", Kind: "api_endpoint", Name: "GET /users", Qualified: "OtherAPI.list", HTTPMethod: "GET", Path: "/users", File: "Other.java", Line: 20, EndLine: 23},
+	}}
+
+	candidates := contextSourceCandidates(pack, index)
+	if len(candidates) != 3 || candidates[0].FactID != "route" || candidates[1].FactID != "endpoint" ||
+		candidates[0].Role != "entrypoint" || candidates[1].Role != "entrypoint" ||
+		candidates[2].FactID != "endpoint-impostor" || candidates[2].Role != "call_chain" {
+		t.Fatalf("endpoint candidates = %#v", candidates)
+	}
+}
+
+func TestContextSourceCandidatesGateEntrypointAndTestFileBodies(t *testing.T) {
+	pack := ContextPack{
+		Query:                 "production behavior",
+		Entrypoints:           []ContextLocation{{ID: "exact-test"}},
+		selectedSourceFactIDs: []string{"exact-test", "helper"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "exact-test", Kind: "test", Name: "TestBehavior", File: "behavior.go", Line: 1},
+		{ID: "helper", Kind: "symbol", Name: "testHelper", File: "behavior_test.go", Line: 2},
+	}}
+
+	if candidates := contextSourceCandidates(pack, index); len(candidates) != 0 {
+		t.Fatalf("production query included test-source candidates: %#v", candidates)
+	}
+	pack.Query = "production behavior. tests"
+	candidates := contextSourceCandidates(pack, index)
+	if len(candidates) != 2 || candidates[0].Role != "test" || candidates[1].Role != "test" {
+		t.Fatalf("test query candidates = %#v", candidates)
+	}
+}
+
+func TestBuildContextSourceJSONIsPrivateAndInputOrderDeterministic(t *testing.T) {
+	forwardRoot := writeSourceBackedContextFixture(t, false)
+	reverseRoot := writeSourceBackedContextFixture(t, true)
+	request := ContextRequest{Query: "DELETE /cadasters/{cadasterId}/regulations/{objectId}"}
+	request.Root = forwardRoot
+	forward, err := BuildContext(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Root = reverseRoot
+	reversed, err := BuildContext(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forwardJSON, err := json.Marshal(forward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversedJSON, err := json.Marshal(reversed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(forwardJSON, reversedJSON) {
+		t.Fatalf("source pack depends on input order:\nforward: %s\nreverse: %s", forwardJSON, reversedJSON)
+	}
+	if bytes.Contains(forwardJSON, []byte("private-service-fact-id")) ||
+		bytes.Contains(forwardJSON, []byte("selectedSourceFactIDs")) ||
+		bytes.Contains(forwardJSON, []byte("selected_source_fact_ids")) {
+		t.Fatalf("private selected facts leaked into JSON: %s", forwardJSON)
+	}
+}
+
 func TestScopedContextUncertaintiesIgnoreUnknownCoverage(t *testing.T) {
 	uncertainties, allIncomplete := scopedContextUncertainties(
 		[]scan.AgentContextCoverageRecord{
@@ -1677,6 +1944,64 @@ func contextIndexWithFact(id, search string) scan.AgentContextIndexRecord {
 			ID: id, Kind: "route", Name: search, Search: search,
 			File: id + ".go", Line: 1, Confidence: "EXACT",
 		}},
+	}
+}
+
+func writeSourceBackedContextFixture(t *testing.T, reverse bool) string {
+	t.Helper()
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-19T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "route", Project: "regulation", Kind: "route",
+				Name:      "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+				Qualified: "CadasterController.deleteFromCadaster", HTTPMethod: "DELETE",
+				Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+				File: "Controller.java", Line: 2, EndLine: 4, Confidence: "EXACT",
+			},
+			{
+				ID: "private-service-fact-id", Project: "regulation", Kind: "symbol",
+				Name: "removeRegulation", Qualified: "CadasterService.removeRegulation",
+				File: "Service.java", Line: 2, EndLine: 4, Confidence: "EXACT",
+			},
+			{
+				ID: "repository", Project: "regulation", Kind: "persistence",
+				Name: "deleteRegulation", Qualified: "RegulationRepository.deleteRegulation",
+				File: "Repository.java", Line: 2, EndLine: 4, Confidence: "EXACT",
+			},
+			{
+				ID: "test", Project: "regulation", Kind: "test",
+				Name: "deletesRegulation", Qualified: "CadasterControllerTest.deletesRegulation",
+				File: "ControllerTest.java", Line: 2, EndLine: 4, Confidence: "EXACT",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "call", FromFactID: "route", ToFactID: "private-service-fact-id", FromLabel: "deleteFromCadaster", ToLabel: "removeRegulation", Kind: "call", Confidence: "EXACT"},
+			{ID: "persistence", FromFactID: "private-service-fact-id", ToFactID: "repository", FromLabel: "removeRegulation", ToLabel: "deleteRegulation", Kind: "persistence", Confidence: "EXACT"},
+			{ID: "test-target", FromFactID: "test", ToFactID: "route", FromLabel: "deletesRegulation", ToLabel: "deleteFromCadaster", Kind: "test_target", Confidence: "EXACT"},
+		},
+	}
+	if reverse {
+		slices.Reverse(index.Facts)
+		slices.Reverse(index.Edges)
+	}
+	root := writeContextIndexFixture(t, index)
+	writeContextSourceFile(t, root, "Controller.java", "public class Controller {\n    public void deleteFromCadaster() {\n        service.removeRegulation();\n    }\n}\n")
+	writeContextSourceFile(t, root, "Service.java", "public class Service {\n    public void removeRegulation() {\n        repository.deleteRegulation();\n    }\n}\n")
+	writeContextSourceFile(t, root, "Repository.java", "public class Repository {\n    public void deleteRegulation() {\n        records.remove();\n    }\n}\n")
+	writeContextSourceFile(t, root, "ControllerTest.java", "public class ControllerTest {\n    public void deletesRegulation() {\n        controller.deleteFromCadaster();\n    }\n}\n")
+	return root
+}
+
+func writeContextSourceFile(t *testing.T, root, relativePath, content string) {
+	t.Helper()
+	path := filepath.Join(root, relativePath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

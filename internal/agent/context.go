@@ -18,6 +18,8 @@ const (
 	MaxContextBytes                    = 24000
 	DefaultContextMaxFiles             = 12
 	MaxContextMaxFiles                 = 20
+	MaxContextSourceSections           = 4
+	MaxContextSourceOmissions          = 3
 	MaxContextSourceFileBytes          = 2 * 1024 * 1024
 )
 
@@ -64,6 +66,13 @@ type ContextUncertainty struct {
 	Reason string `json:"reason"`
 }
 
+type ContextSourceOmission struct {
+	Project string `json:"project,omitempty"`
+	Path    string `json:"path"`
+	Role    string `json:"role"`
+	Reason  string `json:"reason"`
+}
+
 type ContextEndpointConsumer struct {
 	Project        string `json:"project"`
 	File           string `json:"file,omitempty"`
@@ -89,22 +98,28 @@ type ContextEndpoint struct {
 }
 
 type ContextPack struct {
-	Schema           int                   `json:"schema"`
-	Query            string                `json:"query"`
-	Freshness        string                `json:"freshness,omitempty"`
-	Confidence       string                `json:"confidence"`
-	FallbackRequired bool                  `json:"fallback_required"`
-	FallbackReason   string                `json:"fallback_reason,omitempty"`
-	Entrypoints      []ContextLocation     `json:"entrypoints,omitempty"`
-	Endpoints        []ContextEndpoint     `json:"endpoints,omitempty"`
-	CallChain        []ContextRelationship `json:"call_chain,omitempty"`
-	Contracts        []ContextLocation     `json:"contracts,omitempty"`
-	Persistence      []ContextLocation     `json:"persistence,omitempty"`
-	Tests            []ContextLocation     `json:"tests,omitempty"`
-	Files            []ContextFile         `json:"files,omitempty"`
-	Uncertainties    []ContextUncertainty  `json:"uncertainties,omitempty"`
-	EstimatedTokens  int                   `json:"estimated_tokens"`
-	BudgetTokens     int                   `json:"budget_tokens"`
+	Schema              int                     `json:"schema"`
+	Query               string                  `json:"query"`
+	Freshness           string                  `json:"freshness,omitempty"`
+	Confidence          string                  `json:"confidence"`
+	FallbackRequired    bool                    `json:"fallback_required"`
+	FallbackReason      string                  `json:"fallback_reason,omitempty"`
+	Entrypoints         []ContextLocation       `json:"entrypoints,omitempty"`
+	Endpoints           []ContextEndpoint       `json:"endpoints,omitempty"`
+	CallChain           []ContextRelationship   `json:"call_chain,omitempty"`
+	Contracts           []ContextLocation       `json:"contracts,omitempty"`
+	Persistence         []ContextLocation       `json:"persistence,omitempty"`
+	Tests               []ContextLocation       `json:"tests,omitempty"`
+	Files               []ContextFile           `json:"files,omitempty"`
+	Uncertainties       []ContextUncertainty    `json:"uncertainties,omitempty"`
+	SourceSections      []ContextSourceSection  `json:"source_sections,omitempty"`
+	SourceOmissions     []ContextSourceOmission `json:"source_omissions,omitempty"`
+	SourceCoverage      string                  `json:"source_coverage,omitempty"`
+	SourceUnrepresented int                     `json:"source_unrepresented,omitempty"`
+	EstimatedTokens     int                     `json:"estimated_tokens"`
+	BudgetTokens        int                     `json:"budget_tokens"`
+
+	selectedSourceFactIDs []string
 }
 
 func BuildContext(request ContextRequest) (ContextPack, error) {
@@ -112,17 +127,25 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	if err != nil {
 		return ContextPack{}, err
 	}
-	loadedIndex, err := loadContextIndex(request)
+	loaded, err := loadContextIndex(request)
 	if err != nil {
 		return ContextPack{}, err
 	}
 	metadataRequest := request
 	metadataRequest.BudgetTokens = contextMetadataBudget(request.BudgetTokens)
-	pack, err := compileContextPack(loadedIndex.Index, metadataRequest)
+	pack, err := compileContextPack(loaded.Index, metadataRequest)
 	if err != nil {
 		return ContextPack{}, err
 	}
 	pack.BudgetTokens = request.BudgetTokens
+	if pack.FallbackRequired || pack.Confidence == "LOW" {
+		pack.SourceCoverage = "none"
+		return finalizeContextEstimate(pack)
+	}
+	pack, err = attachContextSource(pack, loaded, request)
+	if err != nil {
+		return ContextPack{}, err
+	}
 	return finalizeContextEstimate(pack)
 }
 

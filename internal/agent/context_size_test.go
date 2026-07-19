@@ -34,6 +34,22 @@ func TestDefaultContextPackStaysWithinTokenAndByteBudgets(t *testing.T) {
 	if len(pack.Entrypoints) == 0 || len(pack.CallChain) == 0 || len(pack.Files) == 0 {
 		t.Fatalf("dense fixture produced a trivial pack: %#v", pack)
 	}
+	if len(pack.SourceSections) < 1 || len(pack.SourceSections) > MaxContextSourceSections ||
+		len(pack.SourceOmissions) > MaxContextSourceOmissions {
+		t.Fatalf("source bounds = %#v", pack)
+	}
+	if pack.SourceCoverage != "complete" && pack.SourceCoverage != "partial" && pack.SourceCoverage != "none" {
+		t.Fatalf("source coverage = %q", pack.SourceCoverage)
+	}
+	loaded, err := loadContextIndex(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateCount := len(contextSourceCandidates(pack, loaded.Index))
+	if pack.SourceUnrepresented < 0 ||
+		len(pack.SourceSections)+len(pack.SourceOmissions)+pack.SourceUnrepresented != candidateCount {
+		t.Fatalf("source accounting: sections=%d omissions=%d unrepresented=%d candidates=%d", len(pack.SourceSections), len(pack.SourceOmissions), pack.SourceUnrepresented, candidateCount)
+	}
 	if pack.BudgetTokens != DefaultContextBudgetTokens {
 		t.Fatalf("budget tokens = %d, want default %d", pack.BudgetTokens, DefaultContextBudgetTokens)
 	}
@@ -49,7 +65,7 @@ func TestDefaultContextPackStaysWithinTokenAndByteBudgets(t *testing.T) {
 			DefaultContextBudgetTokens,
 		)
 	}
-	if len(body) > DefaultContextMaxBytes {
+	if len(body) > contextByteBudget(DefaultContextBudgetTokens) {
 		t.Fatalf(
 			"serialized context = %d bytes, want at most %d (runes=%d estimated=%d files=%d entrypoints=%d relationships=%d contracts=%d persistence=%d tests=%d uncertainties=%d)",
 			len(body),
@@ -64,9 +80,6 @@ func TestDefaultContextPackStaysWithinTokenAndByteBudgets(t *testing.T) {
 			len(pack.Tests),
 			len(pack.Uncertainties),
 		)
-	}
-	if len(body) > DefaultContextMetadataBudgetTokens*4 {
-		t.Fatalf("serialized metadata = %d bytes, want at most %d to reserve source capacity", len(body), DefaultContextMetadataBudgetTokens*4)
 	}
 	if len(pack.Files) > DefaultContextMaxFiles || len(pack.Uncertainties) > 3 {
 		t.Fatalf("pack bounds = %#v", pack)
@@ -93,6 +106,9 @@ func TestDefaultContextPackStaysWithinTokenAndByteBudgets(t *testing.T) {
 	}
 	if !bytes.Equal(body, againBody) {
 		t.Fatalf("default dense Context Pack is not deterministic:\nfirst:  %s\nsecond: %s", body, againBody)
+	}
+	if bytes.Contains(body, []byte("selectedSourceFactIDs")) || bytes.Contains(body, []byte("selected_source_fact_ids")) {
+		t.Fatalf("private selected fact state leaked into JSON: %s", body)
 	}
 }
 
@@ -179,7 +195,7 @@ func writeDenseContextIndexFixture(t *testing.T, factCount int) string {
 			ID:         "seed",
 			Project:    project,
 			Kind:       "symbol",
-			Name:       query,
+			Name:       "deleteRegulationTasksAcrossServices",
 			Qualified:  "VorschriftenAufgabenService.deleteRegulationTasksAcrossServices",
 			File:       "src/main/java/VorschriftenÄnderungsService.java",
 			Line:       40,
@@ -265,5 +281,19 @@ func writeDenseContextIndexFixture(t *testing.T, factCount int) string {
 	if len(index.Facts) != factCount || len(index.Edges) != factCount-1 {
 		t.Fatalf("dense fixture shape: facts=%d edges=%d", len(index.Facts), len(index.Edges))
 	}
-	return writeContextIndexFixture(t, index)
+	root := writeContextIndexFixture(t, index)
+	linesByFile := map[string][]string{}
+	for _, fact := range index.Facts {
+		lines := linesByFile[fact.File]
+		if lines == nil {
+			lines = make([]string, 300)
+		}
+		name := fact.Name
+		lines[fact.Line-1] = "public void " + name + "() {}"
+		linesByFile[fact.File] = lines
+	}
+	for path, lines := range linesByFile {
+		writeContextSourceFile(t, root, path, strings.Join(lines, "\n"))
+	}
+	return root
 }

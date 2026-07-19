@@ -302,7 +302,16 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			pack = candidate
 		}
 	}
+	retainSelectedSourceFactIDs(&pack, includedFactIDs)
 	return finalizeContextEstimate(pack)
+}
+
+func retainSelectedSourceFactIDs(pack *ContextPack, included map[string]bool) {
+	pack.selectedSourceFactIDs = pack.selectedSourceFactIDs[:0]
+	for id := range included {
+		pack.selectedSourceFactIDs = append(pack.selectedSourceFactIDs, id)
+	}
+	sort.Strings(pack.selectedSourceFactIDs)
 }
 
 func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []rankedContextFact {
@@ -1611,6 +1620,9 @@ func cloneContextPack(pack ContextPack) ContextPack {
 	pack.Tests = cloneLocations(pack.Tests)
 	pack.Files = append([]ContextFile(nil), pack.Files...)
 	pack.Uncertainties = append([]ContextUncertainty(nil), pack.Uncertainties...)
+	pack.SourceSections = append([]ContextSourceSection(nil), pack.SourceSections...)
+	pack.SourceOmissions = append([]ContextSourceOmission(nil), pack.SourceOmissions...)
+	pack.selectedSourceFactIDs = append([]string(nil), pack.selectedSourceFactIDs...)
 	return pack
 }
 
