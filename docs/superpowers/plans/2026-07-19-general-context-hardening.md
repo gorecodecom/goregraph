@@ -34,7 +34,7 @@
 
 **Interfaces:**
 - Consumes: `parseJavaAnnotationAttributes`, `splitSpringPaths`, and `isSpringPathArray`.
-- Produces: `trimJavaValue(value string) string` that removes quotes from one literal but leaves annotation-array braces for `splitSpringPaths`.
+- Produces: `trimJavaValue(value string) string` that removes quotes from one literal but leaves annotation-array braces for `splitSpringPaths`, plus annotation continuation handling that retains literal-only lines.
 
 - [ ] **Step 1: Write the failing regression**
 
@@ -75,7 +75,7 @@ go test ./internal/scan -run '^TestSpringIndexPreservesPathVariablesAndMappingAr
 
 Expected: `FAIL`; the first path is missing its outer path-variable braces.
 
-- [ ] **Step 3: Make literal and array ownership explicit**
+- [ ] **Step 3: Make literal, array, and continuation ownership explicit**
 
 Change `trimJavaValue` so it trims whitespace and surrounding double quotes only:
 
@@ -86,6 +86,8 @@ func trimJavaValue(value string) string {
 ```
 
 Do not add Spring/path detection here. `splitSpringPaths` and `isSpringPathArray` remain responsible for unwrapping `{...}` annotation arrays.
+
+While `annotationSignature` is active, process the cleaned non-empty source line before applying the `lexicalLine == ""` skip. Java's lexical sanitizer intentionally blanks string contents, so a quoted continuation can otherwise disappear even though it belongs to the active annotation. Preserve the existing annotation-boundary fallthrough and do not change empty-line handling outside an active annotation.
 
 - [ ] **Step 4: Verify focused and package behavior**
 
