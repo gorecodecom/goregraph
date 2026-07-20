@@ -577,6 +577,23 @@ func contextCoreSourceBoundaries(
 	boundaries := []contextSourceBoundary{{factID: entryID}}
 	entryProject := normalizeContextProject(entry.Project)
 	entryFile := contextPackSourceFile(entry.File)
+	selectedFacts := make(map[string]bool, len(pack.selectedSourceFactIDs))
+	for _, factID := range pack.selectedSourceFactIDs {
+		selectedFacts[factID] = true
+	}
+	selectedEdges := make(map[string]bool, len(pack.selectedEdgeIDs))
+	for _, edgeID := range pack.selectedEdgeIDs {
+		selectedEdges[edgeID] = true
+	}
+	localCallTargets := make(map[string]bool)
+	for _, edge := range index.Edges {
+		kind := strings.ToLower(strings.TrimSpace(edge.Kind))
+		if !selectedEdges[edge.ID] || !selectedFacts[edge.FromFactID] || !selectedFacts[edge.ToFactID] ||
+			(kind != "call" && kind != "calls" && kind != "use") {
+			continue
+		}
+		localCallTargets[edge.ToFactID] = true
+	}
 	type coreCandidate struct {
 		factID   string
 		distance int
@@ -586,10 +603,11 @@ func contextCoreSourceBoundaries(
 	for _, factID := range pack.selectedSourceFactIDs {
 		fact := factByID[factID]
 		distance, connected := distances[factID]
-		kind := normalizedContextConcernKind(fact.Kind)
+		kind := strings.ToLower(strings.TrimSpace(fact.Kind))
 		file := contextPackSourceFile(fact.File)
 		if !connected || distance <= 0 || normalizeContextProject(fact.Project) != entryProject ||
-			file == "" || file == entryFile || kind == contextConcernTests || kind == contextConcernAuth {
+			file == "" || file == entryFile || !localCallTargets[factID] ||
+			(kind != "symbol" && kind != "backend_handler") || contextFactUsesTestSource(fact) {
 			continue
 		}
 		candidates = append(candidates, coreCandidate{factID: factID, distance: distance, file: file})
@@ -616,43 +634,58 @@ func enrichContextCoreSourceOptions(
 	state contextSourceSelectionState,
 	boundaries []contextSourceBoundary,
 ) (ContextPack, error) {
-	enriched := map[string]bool{}
+	var err error
+	for _, mode := range []string{"focused", "body"} {
+		pack, err = enrichContextCoreSourceMode(pack, request, options, state, boundaries, mode)
+		if err != nil {
+			return ContextPack{}, err
+		}
+	}
+	return pack, nil
+}
+
+func enrichContextCoreSourceMode(
+	pack ContextPack,
+	request ContextRequest,
+	options []contextSourceOption,
+	state contextSourceSelectionState,
+	boundaries []contextSourceBoundary,
+	mode string,
+) (ContextPack, error) {
+	enriched := make(map[string]bool, len(boundaries))
+	desiredMode := contextSourceRenderModeOrder(mode)
 	for _, boundary := range boundaries {
 		candidateKey, sectionIndex, currentMode, ok := selectedContextSourceOption(pack, options, state, boundary)
-		if !ok || enriched[candidateKey] {
+		if !ok || enriched[candidateKey] || currentMode <= desiredMode {
 			continue
 		}
 		enriched[candidateKey] = true
-		upgrades := []contextSourceOption{}
+		upgrade := contextSourceOption{}
+		found := false
 		for _, option := range options {
-			if contextSourceCandidateKey(option.candidate) == candidateKey &&
-				contextSourceRenderModeOrder(option.section.RenderMode) < currentMode {
-				upgrades = append(upgrades, option)
+			if contextSourceCandidateKey(option.candidate) != candidateKey || option.section.RenderMode != mode {
+				continue
+			}
+			if !found || contextSourceOptionLess(option, upgrade) {
+				upgrade = option
+				found = true
 			}
 		}
-		sort.Slice(upgrades, func(i, j int) bool {
-			left := contextSourceRenderModeOrder(upgrades[i].section.RenderMode)
-			right := contextSourceRenderModeOrder(upgrades[j].section.RenderMode)
-			if left != right {
-				return left < right
-			}
-			return contextSourceOptionLess(upgrades[i], upgrades[j])
-		})
-		for _, upgrade := range upgrades {
-			candidate := cloneContextPack(pack)
-			candidate.SourceSections[sectionIndex] = upgrade.section
-			candidate, err := finalizeContextEstimate(candidate)
-			if err != nil {
-				return ContextPack{}, err
-			}
-			fits, fitErr := contextSourcePackFits(candidate, request)
-			if fitErr != nil {
-				return ContextPack{}, fitErr
-			}
-			if fits {
-				pack = candidate
-				break
-			}
+		if !found {
+			continue
+		}
+		candidate := cloneContextPack(pack)
+		candidate.SourceSections[sectionIndex] = upgrade.section
+		candidate, err := finalizeContextEstimate(candidate)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		fits, fitErr := contextSourcePackFits(candidate, request)
+		if fitErr != nil {
+			return ContextPack{}, fitErr
+		}
+		if fits {
+			pack = candidate
 		}
 	}
 	return pack, nil

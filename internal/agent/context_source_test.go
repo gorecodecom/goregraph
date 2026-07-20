@@ -734,6 +734,123 @@ func TestBuildContextEnrichesEndpointAndFirstLocalServiceSource(t *testing.T) {
 	}
 }
 
+func TestContextCoreSourceBoundariesPreferSelectedLocalCallTarget(t *testing.T) {
+	pack := ContextPack{
+		Entrypoints: []ContextLocation{{ID: "endpoint"}},
+		selectedSourceFactIDs: []string{
+			"endpoint", "contract", "security", "persistence", "unrelated-symbol", "service",
+		},
+		selectedEdgeIDs: []string{
+			"endpoint-contract", "endpoint-security", "endpoint-persistence", "endpoint-unrelated", "endpoint-service",
+		},
+	}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "endpoint", Project: "catalog", Kind: "api_endpoint", File: "CatalogController.java"},
+			{ID: "contract", Project: "catalog", Kind: "api_contract", File: "AContract.java"},
+			{ID: "security", Project: "catalog", Kind: "endpoint_security", File: "BSecurity.java"},
+			{ID: "persistence", Project: "catalog", Kind: "persistence", File: "CRepository.java"},
+			{ID: "unrelated-symbol", Project: "catalog", Kind: "symbol", File: "DHelper.java"},
+			{ID: "service", Project: "catalog", Kind: "symbol", File: "ZCatalogService.java"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "endpoint-contract", FromFactID: "endpoint", ToFactID: "contract", Kind: "http_contract"},
+			{ID: "endpoint-security", FromFactID: "endpoint", ToFactID: "security", Kind: "auth"},
+			{ID: "endpoint-persistence", FromFactID: "endpoint", ToFactID: "persistence", Kind: "persistence"},
+			{ID: "endpoint-unrelated", FromFactID: "endpoint", ToFactID: "unrelated-symbol", Kind: "reference"},
+			{ID: "endpoint-service", FromFactID: "endpoint", ToFactID: "service", Kind: "call"},
+		},
+	}
+	distances := map[string]int{
+		"endpoint": 0, "contract": 1, "security": 1, "persistence": 1, "unrelated-symbol": 1, "service": 1,
+	}
+
+	boundaries := contextCoreSourceBoundaries(pack, index, distances)
+	if len(boundaries) != 2 || boundaries[0].factID != "endpoint" || boundaries[1].factID != "service" {
+		t.Fatalf("core boundaries = %#v, want endpoint followed by selected service call target", boundaries)
+	}
+}
+
+func TestEnrichContextCoreSourceOptionsFocusesEveryBoundaryBeforeBodies(t *testing.T) {
+	endpoint := sourceCandidate{FactID: "endpoint", Project: "catalog", Path: "CatalogController.java"}
+	service := sourceCandidate{FactID: "service", Project: "catalog", Path: "CatalogService.java"}
+	section := func(candidate sourceCandidate, mode, content string) ContextSourceSection {
+		return ContextSourceSection{
+			Project: candidate.Project, Path: candidate.Path, StartLine: 1, EndLine: 2,
+			Role: "call_chain", RenderMode: mode, SourceState: "indexed_range_current", Content: content,
+		}
+	}
+	endpointSignature := section(endpoint, "signature", "void deleteItem();")
+	endpointFocused := section(endpoint, "focused", strings.Repeat("endpoint focused ", 50))
+	endpointBody := section(endpoint, "body", strings.Repeat("endpoint body ", 100))
+	serviceSignature := section(service, "signature", "void deleteItem();")
+	serviceFocused := section(service, "focused", strings.Repeat("service focused ", 50))
+	serviceBody := section(service, "body", strings.Repeat("service body ", 100))
+	options := []contextSourceOption{
+		{candidate: endpoint, section: endpointSignature},
+		{candidate: endpoint, section: endpointFocused},
+		{candidate: endpoint, section: endpointBody},
+		{candidate: service, section: serviceSignature},
+		{candidate: service, section: serviceFocused},
+		{candidate: service, section: serviceBody},
+	}
+	base, err := finalizeContextEstimate(ContextPack{SourceSections: []ContextSourceSection{
+		endpointSignature, serviceSignature,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSections := func(sections ...ContextSourceSection) ContextPack {
+		candidate := cloneContextPack(base)
+		candidate.SourceSections = append([]ContextSourceSection(nil), sections...)
+		candidate, finalizeErr := finalizeContextEstimate(candidate)
+		if finalizeErr != nil {
+			t.Fatal(finalizeErr)
+		}
+		return candidate
+	}
+	bothFocused := withSections(endpointFocused, serviceFocused)
+	endpointBodyOnly := withSections(endpointBody, serviceSignature)
+	endpointBodyAndServiceFocused := withSections(endpointBody, serviceFocused)
+	budget := 0
+	for candidateBudget := 1; candidateBudget <= DefaultContextBudgetTokens; candidateBudget++ {
+		request := ContextRequest{BudgetTokens: candidateBudget}
+		baseFits, baseErr := contextSourcePackFits(base, request)
+		focusedFits, focusedErr := contextSourcePackFits(bothFocused, request)
+		bodyFits, bodyErr := contextSourcePackFits(endpointBodyOnly, request)
+		unfairMixFits, unfairMixErr := contextSourcePackFits(endpointBodyAndServiceFocused, request)
+		if baseErr != nil || focusedErr != nil || bodyErr != nil || unfairMixErr != nil {
+			t.Fatalf("budget check failed: %v %v %v %v", baseErr, focusedErr, bodyErr, unfairMixErr)
+		}
+		if baseFits && focusedFits && bodyFits && !unfairMixFits {
+			budget = candidateBudget
+			break
+		}
+	}
+	if budget == 0 {
+		t.Fatal("test fixture has no budget that distinguishes fair focused enrichment")
+	}
+
+	got, err := enrichContextCoreSourceOptions(
+		base,
+		ContextRequest{BudgetTokens: budget},
+		options,
+		contextSourceSelectionState{selectedCandidates: map[string]bool{
+			contextSourceCandidateKey(endpoint): true,
+			contextSourceCandidateKey(service):  true,
+		}},
+		[]contextSourceBoundary{{factID: "endpoint"}, {factID: "service"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, section := range got.SourceSections {
+		if section.RenderMode == "signature" {
+			t.Fatalf("core section remained a signature despite room for both focused sections: %#v", got.SourceSections)
+		}
+	}
+}
+
 func TestBuildContextEnrichesCoreSourcesBeforeOptionalTestSource(t *testing.T) {
 	root := t.TempDir()
 	index := scan.AgentContextIndexRecord{
