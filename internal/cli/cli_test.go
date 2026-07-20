@@ -421,8 +421,8 @@ func assertCLIPathState(t *testing.T, path string, want bool) {
 
 func TestWorkspaceHelpExplainsFlatWorkspaceDetection(t *testing.T) {
 	for _, args := range [][]string{
-		{"help"},
-		{"workspace", "help"},
+		{"help", "--all"},
+		{"workspace", "help", "--all"},
 		{"workspace", "scan-all", "help"},
 	} {
 		var stdout, stderr bytes.Buffer
@@ -1211,7 +1211,7 @@ func TestWorkspaceDashboardHelpExplainsStaticAndEditableModes(t *testing.T) {
 }
 
 func TestHelpDistinguishesWorkspaceDashboardPathOpenAndEdit(t *testing.T) {
-	for _, args := range [][]string{{"help"}, {"workspace", "help"}} {
+	for _, args := range [][]string{{"help", "--all"}, {"workspace", "help", "--all"}} {
 		var stdout, stderr bytes.Buffer
 		if code := Run(args, &stdout, &stderr); code != 0 {
 			t.Fatalf("%v exit code = %d, stderr=%s", args, code, stderr.String())
@@ -1510,7 +1510,7 @@ func TestContextCLIHelpAndGlobalOrdering(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	if code := Run([]string{"help"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"help", "--all"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("global help exit code = %d, stderr=%s", code, stderr.String())
 	}
 	contextIndex := strings.Index(stdout.String(), "context <path>")

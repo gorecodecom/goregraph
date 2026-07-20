@@ -31,9 +31,12 @@ var (
 )
 
 func Run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 0 || isHelp(args[0]) {
+	if len(args) == 0 {
 		printHelp(stdout)
 		return 0
+	}
+	if isHelp(args[0]) {
+		return runHelpSelector(args[1:], stdout, stderr, printHelp, printAllHelp, "goregraph help")
 	}
 
 	switch args[0] {
@@ -133,8 +136,14 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 
 func runWorkspace(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		printWorkspaceHelp(stdout)
-		return 0
+		return runHelpSelector(
+			args[1:],
+			stdout,
+			stderr,
+			printWorkspaceHelp,
+			printAllWorkspaceHelp,
+			"goregraph workspace help",
+		)
 	}
 	if len(args) == 0 {
 		fmt.Fprint(stderr, "error: usage: goregraph workspace <build|status|scan-missing|scan-all|refresh|clean|diff|dashboard|explain|path|impact|git> [path] [options]\n")
@@ -1255,7 +1264,11 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 
 func runScan(args []string, stdout, stderr io.Writer, update, allowTarget bool) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		printScanHelp(stdout)
+		if update {
+			printUpdateHelp(stdout)
+		} else {
+			printScanHelp(stdout)
+		}
 		return 0
 	}
 
@@ -1293,7 +1306,11 @@ func runScan(args []string, stdout, stderr io.Writer, update, allowTarget bool) 
 			i++
 			cfg.WorkspaceRoot = args[i]
 		case "--help", "help":
-			printScanHelp(stdout)
+			if update {
+				printUpdateHelp(stdout)
+			} else {
+				printScanHelp(stdout)
+			}
 			return 0
 		default:
 			if strings.HasPrefix(arg, "-") {
@@ -1389,23 +1406,82 @@ func isHelp(arg string) bool {
 	return arg == "help" || arg == "--help" || arg == "-h"
 }
 
+func runHelpSelector(
+	args []string,
+	stdout, stderr io.Writer,
+	standard, complete func(io.Writer),
+	usage string,
+) int {
+	switch {
+	case len(args) == 0:
+		standard(stdout)
+		return 0
+	case len(args) == 1 && args[0] == "--all":
+		complete(stdout)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "error: unknown help option %q; run %s\n", args[0], usage)
+		return 2
+	}
+}
+
 func printHelp(w io.Writer) {
 	fmt.Fprint(w, `GoreGraph creates deterministic local code maps.
 
 Usage: goregraph <command> [options]
 
-Commands:
+Common workflows:
+  Agent context:
+    goregraph build agent .
+    goregraph context . --query "<current coding task>"
+  Dashboard:
+    goregraph build dashboard .
+    goregraph dashboard open .
+  Diagnosis:
+    goregraph doctor .
+
+Core commands:
   build <target>    Build agent, dashboard, or all project projections
-  scan <path>       Compatibility alias for build all
-  update            Refresh the current project's selected projections
-  report <path>     Print the generated Markdown report
   context <path>    Build one deterministic, budgeted Context Pack
-  query <path>      Search the generated index or print an output alias
-  explain <path>    Explain a file or symbol from the generated index
+  dashboard         Print or open the generated project dashboard
   doctor <path>     Check generated output health
-  git update [path] Preview or execute a safe Git update
+  workspace         Build and inspect workspace-wide projections
+  mcp               Start standard MCP with task_context only
+
+More commands and compatibility aliases:
+  goregraph help --all
+
+Command-specific help:
+  goregraph <command> --help
+`)
+}
+
+func printAllHelp(w io.Writer) {
+	fmt.Fprint(w, `GoreGraph creates deterministic local code maps.
+
+Usage: goregraph <command> [options]
+
+Core commands:
+  build <target>    Build agent, dashboard, or all project projections
+  context <path>    Build one deterministic, budgeted Context Pack
+  dashboard         Print or open the generated project dashboard
+  doctor <path>     Check generated output health
   workspace         Show, scan, clean, and inspect workspace projects
   mcp               Start standard MCP with task_context only
+
+Manual exploration:
+  query <path>      Search the generated index or print an output alias
+  explain <path>    Explain a file or symbol from the generated index
+  report <path>     Print the generated Markdown report
+
+Maintenance:
+  update            Refresh the current project's selected projections
+  git update [path] Preview or execute a safe Git update
+
+Compatibility:
+  scan <path>       Compatibility alias for build all
+
+Utility:
   version           Print build metadata
   help              Show this help
 
@@ -1490,18 +1566,46 @@ Workspace detection:
 func printWorkspaceHelp(w io.Writer) {
 	fmt.Fprint(w, `Usage: goregraph workspace <command> [options]
 
-Commands:
-  status [path]        Show workspace projects and loaded indexes without scanning
-  scan-missing [path]  Show prioritized missing service scans; add --execute to scan
+Core commands:
+  build <target>    Build agent, dashboard, or all workspace projections
+  dashboard [path] Print, open, or edit the workspace dashboard
+  status [path]    Show projects and loaded indexes without scanning
+
+Exploration:
+  explain <target> Explain a route, file, symbol, contract, or feature
+  path             Show a graph path between two workspace targets
+  impact           Show affected features for changed files
+
+More workspace commands and compatibility aliases:
+  goregraph workspace help --all
+
+Command-specific help:
+  goregraph workspace <command> --help
+`)
+}
+
+func printAllWorkspaceHelp(w io.Writer) {
+	fmt.Fprint(w, `Usage: goregraph workspace <command> [options]
+
+Core commands:
   build <target>       Build agent, dashboard, or all workspace projections
-  scan-all [path]      Compatibility alias for workspace build all
-  refresh [path]       Refresh workspace overlays without scanning source files
-  clean [path]         Show generated workspace outputs; add --execute to remove
+  status [path]        Show workspace projects and loaded indexes without scanning
   dashboard [path]     Print, open, or edit the workspace dashboard
+
+Exploration:
   explain <target>     Explain a route, file, symbol, contract, or feature
   path                 Show graph path between two workspace targets
   impact               Show affected features for changed files
+  diff                 Compare two generated workspace output directories
+
+Maintenance:
+  scan-missing [path]  Show prioritized missing service scans; add --execute to scan
+  refresh [path]       Refresh workspace overlays without scanning source files
+  clean [path]         Show generated workspace outputs; add --execute to remove
   git update [path]    Preview or execute safe updates for workspace Git repositories
+
+Compatibility:
+  scan-all [path]      Compatibility alias for workspace build all
 
 Examples:
   goregraph workspace status .
@@ -1554,5 +1658,24 @@ Examples:
   goregraph scan .
   goregraph scan . --no-update-gitignore
   goregraph scan . --workspace ..
+`)
+}
+
+func printUpdateHelp(w io.Writer) {
+	fmt.Fprint(w, `Usage: goregraph update [path] [--target agent|dashboard|all] [options]
+
+Refreshes the current project's selected projections.
+
+Options:
+  --target agent|dashboard|all  Select projections to refresh; default is all
+  --no-update-gitignore        Do not add generated GoreGraph output to .gitignore files
+  --no-workspace               Do not discover or refresh workspace overlays
+  --workspace <path>           Use an explicit workspace root
+
+Examples:
+  goregraph update
+  goregraph update . --target agent
+  goregraph update . --target dashboard --no-workspace
+  goregraph update . --target all --workspace ..
 `)
 }

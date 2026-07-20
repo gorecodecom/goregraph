@@ -217,7 +217,7 @@ func TestRunGitUpdateHelpDocumentsExecuteAndFormat(t *testing.T) {
 	}
 
 	stdout.Reset()
-	if code := Run([]string{"help"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"help", "--all"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("global help exit code = %d, want 0", code)
 	}
 	if preview := strings.Index(stdout.String(), "goregraph git update .\n"); preview < 0 {
@@ -346,7 +346,7 @@ func TestRunWorkspaceGitUpdateHelpDocumentsPreview(t *testing.T) {
 	}
 
 	stdout.Reset()
-	if code := Run([]string{"workspace", "--help"}, &stdout, &stderr); code != 0 {
+	if code := Run([]string{"workspace", "--help", "--all"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("workspace help exit code = %d, want 0", code)
 	}
 	if preview := strings.Index(stdout.String(), "goregraph workspace git update .\n"); preview < 0 {
