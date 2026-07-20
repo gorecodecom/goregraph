@@ -370,8 +370,11 @@ func TestRunContextDefaultMarkdownIncludesBuiltSource(t *testing.T) {
 	for _, want := range []string{
 		"Source coverage: complete",
 		"Source unrepresented: 0",
-		"### 1. `api/UserController.java:1`",
+		"### 1. `api/UserController.java:1-3`",
+		"Render mode: body",
 		"    1\tpublic void deleteUser() {",
+		"    2\t    service.deleteUser();",
+		"    3\t}",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("default markdown missing source %q:\n%s", want, body)

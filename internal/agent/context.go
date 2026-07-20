@@ -143,7 +143,6 @@ type ContextPack struct {
 	selectedFactIDs       []string
 	selectedEdgeIDs       []string
 	selectedConcernKeys   []string
-	selectedSupportKeys   []string
 }
 
 func BuildContext(request ContextRequest) (ContextPack, error) {

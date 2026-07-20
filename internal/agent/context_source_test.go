@@ -649,12 +649,212 @@ func TestContextSourceOptionsEvaluateEveryFittingRenderMode(t *testing.T) {
 		t.Fatalf("greedy render option = %#v", greedy)
 	}
 
-	got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: DefaultContextBudgetTokens})
+	got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: MinContextBudgetTokens})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got.SourceSections) != 1 || got.SourceSections[0].RenderMode != "signature" {
-		t.Fatalf("large central source selection = %#v", got.SourceSections)
+		t.Fatalf("tight-budget central source selection = %#v", got.SourceSections)
+	}
+}
+
+func TestBuildContextEnrichesEndpointAndFirstLocalServiceSource(t *testing.T) {
+	root := t.TempDir()
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-20T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "endpoint", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/items/{id}", File: "CatalogController.java",
+				Line: 2, EndLine: 6, Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/items/{id}", File: "CatalogController.java",
+				Line: 2, EndLine: 6, Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "controller", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", Qualified: "CatalogController.deleteItem",
+				File: "CatalogController.java", Line: 2, EndLine: 6,
+				Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "service", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", Qualified: "CatalogService.deleteItem",
+				File: "CatalogService.java", Line: 2, EndLine: 6,
+				Confidence: "EXACT", Search: "delete catalog item service",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "route-controller", FromFactID: "route", ToFactID: "controller", Kind: "call", Confidence: "EXACT"},
+			{ID: "controller-service", FromFactID: "controller", ToFactID: "service", Kind: "call", Confidence: "EXACT"},
+		},
+	}
+	writeContextIndexAt(t, filepath.Join(root, ".goregraph-workspace", "agent", "context-index.json"), index)
+	writeSourceFile(t, root, filepath.Join("services/catalog", "CatalogController.java"), `class CatalogController {
+  void deleteItem() {
+    catalogService.deleteItem();
+  }
+}
+`)
+	writeSourceFile(t, root, filepath.Join("services/catalog", "CatalogService.java"), `class CatalogService {
+  void deleteItem() {
+    repository.deleteItem();
+  }
+}
+`)
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "Delete a catalog item through DELETE /catalog/items/{id}.",
+		BudgetTokens: DefaultContextBudgetTokens,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBodies := map[string]string{
+		"CatalogController.java": "catalogService.deleteItem();",
+		"CatalogService.java":    "repository.deleteItem();",
+	}
+	for path, body := range wantBodies {
+		found := false
+		for _, section := range pack.SourceSections {
+			if section.Path != path {
+				continue
+			}
+			found = section.RenderMode != "signature" && strings.Contains(section.Content, body)
+			break
+		}
+		if !found {
+			t.Fatalf("enriched source %q missing: %#v", path, pack.SourceSections)
+		}
+	}
+}
+
+func TestBuildContextEnrichesCoreSourcesBeforeOptionalTestSource(t *testing.T) {
+	root := t.TempDir()
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-20T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "endpoint", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/items/{id}", File: "CatalogController.java",
+				Line: 2, EndLine: 35, Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/items/{id}", File: "CatalogController.java",
+				Line: 2, EndLine: 35, Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "controller", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", Qualified: "CatalogController.deleteItem",
+				File: "CatalogController.java", Line: 2, EndLine: 35,
+				Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "service", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", Qualified: "CatalogService.deleteItem",
+				File: "CatalogService.java", Line: 2, EndLine: 35,
+				Confidence: "EXACT", Search: "delete catalog item service",
+			},
+			{
+				ID: "test", Project: "services/catalog", Kind: "test",
+				Name: "deletesItem", Qualified: "CatalogControllerTest.deletesItem",
+				File: "CatalogControllerTest.java", Line: 2, EndLine: 35,
+				Confidence: "EXACT", Search: "delete catalog item test",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "route-controller", FromFactID: "route", ToFactID: "controller", Kind: "call", Confidence: "EXACT"},
+			{ID: "controller-service", FromFactID: "controller", ToFactID: "service", Kind: "call", Confidence: "EXACT"},
+			{ID: "test-route", FromFactID: "test", ToFactID: "route", Kind: "test_target", Confidence: "EXACT"},
+		},
+	}
+	writeContextIndexAt(t, filepath.Join(root, ".goregraph-workspace", "agent", "context-index.json"), index)
+	writeSourceFile(t, root, filepath.Join("services/catalog", "CatalogController.java"),
+		contextTestMethodSource("CatalogController", "deleteItem", "catalogService.deleteItem();", 30))
+	writeSourceFile(t, root, filepath.Join("services/catalog", "CatalogService.java"),
+		contextTestMethodSource("CatalogService", "deleteItem", "repository.deleteItem();", 30))
+	writeSourceFile(t, root, filepath.Join("services/catalog", "CatalogControllerTest.java"),
+		contextTestMethodSource("CatalogControllerTest", "deletesItem", "controller.deleteItem();", 30))
+
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: "Delete a catalog item through DELETE /catalog/items/{id} and include tests.",
+		BudgetTokens: 1200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"CatalogController.java", "CatalogService.java"} {
+		found := false
+		for _, section := range pack.SourceSections {
+			if section.Path == path && section.RenderMode != "signature" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("optional source consumed the enrichment budget for %q: %#v", path, pack.SourceSections)
+		}
+	}
+}
+
+func contextTestMethodSource(typeName, methodName, statement string, repetitions int) string {
+	lines := []string{"class " + typeName + " {", "  void " + methodName + "() {"}
+	for range repetitions {
+		lines = append(lines, "    "+statement)
+	}
+	lines = append(lines, "  }", "}", "")
+	return strings.Join(lines, "\n")
+}
+
+func TestBuildContextLeavesUnrenderedSupportConcernsUncovered(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/items/{id}", HTTPMethod: "DELETE", Path: "/catalog/items/{id}",
+				File: "CatalogController.go", Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "service", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", File: "CatalogService.go", Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "contract", Project: "libraries/integration", Kind: "api_contract",
+				Name: "DELETE /internal/jobs", Qualified: "JobClient.deleteRelated",
+				HTTPMethod: "DELETE", Path: "/internal/jobs", File: "JobClient.go",
+				Confidence: "EXACT", Search: "catalog item internal contract",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "route-service", FromFactID: "route", ToFactID: "service", Kind: "call", Confidence: "EXACT",
+		}},
+	})
+
+	pack, err := BuildContext(ContextRequest{
+		Root:  root,
+		Query: "Delete a catalog item. Analyze libraries/integration for the internal contract.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Contracts) != 1 || pack.Contracts[0].ID != "contract" {
+		t.Fatalf("support contract was not selected: %#v", pack.Contracts)
+	}
+	for _, concern := range pack.Concerns {
+		key := contextPublicConcernKey(concern)
+		if (key == contextConcernHTTPContract || key == contextConcernProject+":libraries/integration") && concern.Covered {
+			t.Fatalf("unrendered support concern %q was marked covered: %#v", key, pack.Concerns)
+		}
 	}
 }
 
@@ -662,11 +862,13 @@ func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 		{ID: "route", Project: "services/catalog", Kind: "route", File: "Catalog.go"},
 		{ID: "contract", Project: "libraries/integration", Kind: "api_contract", File: "Client.go"},
+		{ID: "auth", Project: "libraries/integration", Kind: "authentication", File: "ClientSecurity.go"},
 		{ID: "repository", Project: "services/jobs", Kind: "persistence", File: "Repository.go"},
 	}}
 	pack := ContextPack{
 		Query: "Delete a catalog item. Analyze libraries/integration and services/jobs for the contract and persistence.",
 		Concerns: []ContextConcern{
+			{Kind: contextConcernAuth},
 			{Kind: contextConcernHTTPContract},
 			{Kind: contextConcernPersistence},
 			{Kind: contextConcernProject, Project: "libraries/integration"},
@@ -674,7 +876,7 @@ func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
 		},
 		Contracts:             []ContextLocation{{ID: "contract"}},
 		Persistence:           []ContextLocation{{ID: "repository"}},
-		selectedSourceFactIDs: []string{"route", "contract", "repository"},
+		selectedSourceFactIDs: []string{"route", "contract", "auth", "repository"},
 	}
 
 	concerns := contextSourceConcerns(pack, index)
@@ -686,6 +888,7 @@ func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
 		}
 	}
 	for key, factID := range map[string]string{
+		contextConcernAuth:                               "auth",
 		contextConcernHTTPContract:                       "contract",
 		contextConcernPersistence:                        "repository",
 		contextConcernProject + ":libraries/integration": "contract",

@@ -2902,8 +2902,9 @@ func TestBuildContextAttachesCentralSourcePath(t *testing.T) {
 	if pack.FallbackRequired || len(pack.SourceSections) < 2 {
 		t.Fatalf("source-backed pack = %#v", pack)
 	}
-	if pack.SourceSections[0].Role != "entrypoint" || pack.SourceSections[0].RenderMode != "signature" {
-		t.Fatalf("first section = %#v", pack.SourceSections[0])
+	if pack.SourceSections[0].Role != "entrypoint" || pack.SourceSections[0].RenderMode == "signature" ||
+		pack.SourceSections[1].RenderMode == "signature" {
+		t.Fatalf("core sections were not enriched: %#v", pack.SourceSections[:2])
 	}
 	if !strings.Contains(pack.SourceSections[0].Content, "deleteFromCadaster") ||
 		!strings.Contains(pack.SourceSections[1].Content, "removeRegulation") {

@@ -177,6 +177,10 @@ func TestRelatedProjectSelectionPrefersOperationalEvidence(t *testing.T) {
 Delete a catalog item, related jobs remain.
 
 Analyze services/catalog, libraries/integration, and services/jobs. Cover the internal contract, authentication, configuration, persistence, and tests.`
+	writeSourceFile(t, root, "CatalogController.go", "package catalog\nfunc deleteItem() {}\n")
+	writeSourceFile(t, root, "CatalogService.go", "package catalog\nfunc deleteItem() {}\n")
+	writeSourceFile(t, root, "JobPort.go", "package integration\nfunc deleteRelated() {}\n")
+	writeSourceFile(t, root, "JobRepository.go", "package jobs\nfunc findByCatalogItem() {}\n")
 
 	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
 	if err != nil {

@@ -304,27 +304,8 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		selectedSourceFactIDs[factID] = true
 	}
 	retainSelectedSourceFactIDs(&pack, selectedSourceFactIDs)
-	pack.selectedSupportKeys = contextSelectedSupportKeys(supportFactIDs, factByID)
 	retainContextSemanticSelection(&pack, includedFactIDs, acceptedEdgeIDs, concerns)
 	return finalizeContextEstimate(pack)
-}
-
-func contextSelectedSupportKeys(
-	supportFactIDs map[string]bool,
-	factByID map[string]scan.AgentContextFactRecord,
-) []string {
-	selected := map[string]bool{}
-	for factID := range supportFactIDs {
-		fact := factByID[factID]
-		if project := normalizeContextProject(fact.Project); project != "" {
-			selected[contextConcernProject+":"+project] = true
-		}
-		switch normalizedContextConcernKind(fact.Kind) {
-		case contextConcernHTTPContract, contextConcernPersistence, contextConcernAuth:
-			selected[normalizedContextConcernKind(fact.Kind)] = true
-		}
-	}
-	return contextSelectedMapKeys(selected)
 }
 
 func retainContextSemanticSelection(
@@ -2261,7 +2242,6 @@ func cloneContextPack(pack ContextPack) ContextPack {
 	pack.selectedFactIDs = append([]string(nil), pack.selectedFactIDs...)
 	pack.selectedEdgeIDs = append([]string(nil), pack.selectedEdgeIDs...)
 	pack.selectedConcernKeys = append([]string(nil), pack.selectedConcernKeys...)
-	pack.selectedSupportKeys = append([]string(nil), pack.selectedSupportKeys...)
 	return pack
 }
 

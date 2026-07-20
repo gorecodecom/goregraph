@@ -391,8 +391,9 @@ func TestMCPTaskContextPassesBudgetsToCompilerAsBareCompactJSON(t *testing.T) {
 	if len(pack.SourceSections) == 0 || !strings.Contains(pack.SourceSections[0].Content, "deleteUser") {
 		t.Fatalf("MCP source is not useful: %#v", pack.SourceSections)
 	}
-	if section := pack.SourceSections[0]; section.StartLine != 20 || section.EndLine != 20 {
-		t.Fatalf("MCP source range = %d-%d, want 20-20", section.StartLine, section.EndLine)
+	if section := pack.SourceSections[0]; section.StartLine != 20 || section.EndLine != 22 ||
+		section.RenderMode != "body" || !strings.Contains(section.Content, "service.removeUser();") {
+		t.Fatalf("MCP enriched source = %#v, want body range 20-22", section)
 	}
 	if pack.SourceCoverage != "complete" || pack.SourceUnrepresented != 0 {
 		t.Fatalf("MCP source coverage = %q / %d", pack.SourceCoverage, pack.SourceUnrepresented)

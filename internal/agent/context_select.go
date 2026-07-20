@@ -56,7 +56,8 @@ func selectContextSourceOptions(
 		return ContextPack{}, err
 	}
 
-	for _, boundary := range mandatoryContextSourceBoundaries(pack, loaded.Index, concerns, options, distances) {
+	coreBoundaries := contextCoreSourceBoundaries(pack, loaded.Index, distances)
+	for _, boundary := range mandatoryContextSourceBoundaries(loaded.Index, concerns, coreBoundaries, distances) {
 		if contextSourceBoundaryCovered(boundary, state) {
 			continue
 		}
@@ -71,6 +72,10 @@ func selectContextSourceOptions(
 		if err != nil {
 			return ContextPack{}, err
 		}
+	}
+	pack, err = enrichContextCoreSourceOptions(pack, request, options, state, coreBoundaries)
+	if err != nil {
+		return ContextPack{}, err
 	}
 
 	for len(pack.SourceSections) < MaxContextSourceSections {
@@ -89,7 +94,6 @@ func selectContextSourceOptions(
 			return ContextPack{}, err
 		}
 	}
-
 	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
 	for _, concern := range concerns {
 		if !concern.required || state.coveredConcerns[concern.key] || len(pack.SourceOmissions) >= MaxContextSourceOmissions {
@@ -186,7 +190,8 @@ func contextSourceConcernFromPack(
 		case contextConcernProject:
 			include = !isTest && normalizeContextProject(fact.Project) == project
 		case contextConcernAuth:
-			include = contextValueRequestsConcern(strings.Join([]string{fact.Search, fact.Name, fact.Qualified, fact.Summary}, " "), contextConcernAuth)
+			include = normalizedContextConcernKind(fact.Kind) == contextConcernAuth ||
+				contextValueRequestsConcern(strings.Join([]string{fact.Search, fact.Name, fact.Qualified, fact.Summary}, " "), contextConcernAuth)
 		case contextConcernPersistence:
 			include = include || normalizedContextConcernKind(fact.Kind) == contextConcernPersistence
 		case contextConcernTests:
@@ -502,24 +507,12 @@ type contextSourceBoundary struct {
 }
 
 func mandatoryContextSourceBoundaries(
-	pack ContextPack,
 	index scan.AgentContextIndexRecord,
 	concerns []contextConcern,
-	options []contextSourceOption,
+	core []contextSourceBoundary,
 	distances map[string]int,
 ) []contextSourceBoundary {
-	boundaries := []contextSourceBoundary{}
-	entryID := ""
-	entryProject := ""
-	if len(pack.Entrypoints) > 0 {
-		entryID = pack.Entrypoints[0].ID
-		entryProject = normalizeContextProject(pack.Entrypoints[0].Project)
-		boundaries = append(boundaries, contextSourceBoundary{factID: entryID})
-	}
-	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
-	for _, fact := range index.Facts {
-		factByID[fact.ID] = fact
-	}
+	boundaries := append([]contextSourceBoundary(nil), core...)
 	edges := append([]scan.AgentContextEdgeRecord(nil), index.Edges...)
 	sort.Slice(edges, func(i, j int) bool {
 		leftDistance, leftOK := distances[edges[i].FromFactID]
@@ -532,14 +525,6 @@ func mandatoryContextSourceBoundaries(
 		}
 		return contextEdgeLess(edges[i], edges[j])
 	})
-	for _, edge := range edges {
-		to := factByID[edge.ToFactID]
-		if edge.FromFactID == entryID && eligibleContextConcernFact(to) &&
-			normalizeContextProject(to.Project) == entryProject {
-			boundaries = append(boundaries, contextSourceBoundary{factID: edge.ToFactID})
-			break
-		}
-	}
 	for _, edge := range edges {
 		if normalizedContextConcernKind(edge.Kind) != contextConcernHTTPContract {
 			continue
@@ -560,6 +545,138 @@ func mandatoryContextSourceBoundaries(
 		boundaries = append(boundaries, contextSourceBoundary{project: concern.project})
 	}
 	return boundaries
+}
+
+func contextCoreSourceBoundaries(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	distances map[string]int,
+) []contextSourceBoundary {
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	entryID := ""
+	if len(pack.Entrypoints) > 0 {
+		entryID = pack.Entrypoints[0].ID
+	}
+	if _, connected := distances[entryID]; entryID == "" || !connected {
+		selected := append([]string(nil), pack.selectedSourceFactIDs...)
+		sort.Strings(selected)
+		for _, factID := range selected {
+			if distances[factID] == 0 {
+				entryID = factID
+				break
+			}
+		}
+	}
+	entry, ok := factByID[entryID]
+	if !ok {
+		return nil
+	}
+	boundaries := []contextSourceBoundary{{factID: entryID}}
+	entryProject := normalizeContextProject(entry.Project)
+	entryFile := contextPackSourceFile(entry.File)
+	type coreCandidate struct {
+		factID   string
+		distance int
+		file     string
+	}
+	candidates := []coreCandidate{}
+	for _, factID := range pack.selectedSourceFactIDs {
+		fact := factByID[factID]
+		distance, connected := distances[factID]
+		kind := normalizedContextConcernKind(fact.Kind)
+		file := contextPackSourceFile(fact.File)
+		if !connected || distance <= 0 || normalizeContextProject(fact.Project) != entryProject ||
+			file == "" || file == entryFile || kind == contextConcernTests || kind == contextConcernAuth {
+			continue
+		}
+		candidates = append(candidates, coreCandidate{factID: factID, distance: distance, file: file})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].distance != candidates[j].distance {
+			return candidates[i].distance < candidates[j].distance
+		}
+		if candidates[i].file != candidates[j].file {
+			return candidates[i].file < candidates[j].file
+		}
+		return candidates[i].factID < candidates[j].factID
+	})
+	if len(candidates) > 0 {
+		boundaries = append(boundaries, contextSourceBoundary{factID: candidates[0].factID})
+	}
+	return boundaries
+}
+
+func enrichContextCoreSourceOptions(
+	pack ContextPack,
+	request ContextRequest,
+	options []contextSourceOption,
+	state contextSourceSelectionState,
+	boundaries []contextSourceBoundary,
+) (ContextPack, error) {
+	enriched := map[string]bool{}
+	for _, boundary := range boundaries {
+		candidateKey, sectionIndex, currentMode, ok := selectedContextSourceOption(pack, options, state, boundary)
+		if !ok || enriched[candidateKey] {
+			continue
+		}
+		enriched[candidateKey] = true
+		upgrades := []contextSourceOption{}
+		for _, option := range options {
+			if contextSourceCandidateKey(option.candidate) == candidateKey &&
+				contextSourceRenderModeOrder(option.section.RenderMode) < currentMode {
+				upgrades = append(upgrades, option)
+			}
+		}
+		sort.Slice(upgrades, func(i, j int) bool {
+			left := contextSourceRenderModeOrder(upgrades[i].section.RenderMode)
+			right := contextSourceRenderModeOrder(upgrades[j].section.RenderMode)
+			if left != right {
+				return left < right
+			}
+			return contextSourceOptionLess(upgrades[i], upgrades[j])
+		})
+		for _, upgrade := range upgrades {
+			candidate := cloneContextPack(pack)
+			candidate.SourceSections[sectionIndex] = upgrade.section
+			candidate, err := finalizeContextEstimate(candidate)
+			if err != nil {
+				return ContextPack{}, err
+			}
+			fits, fitErr := contextSourcePackFits(candidate, request)
+			if fitErr != nil {
+				return ContextPack{}, fitErr
+			}
+			if fits {
+				pack = candidate
+				break
+			}
+		}
+	}
+	return pack, nil
+}
+
+func selectedContextSourceOption(
+	pack ContextPack,
+	options []contextSourceOption,
+	state contextSourceSelectionState,
+	boundary contextSourceBoundary,
+) (string, int, int, bool) {
+	for _, option := range options {
+		key := contextSourceCandidateKey(option.candidate)
+		if !state.selectedCandidates[key] ||
+			boundary.factID != "" && !contextSourceCandidateHasFact(option.candidate, boundary.factID) {
+			continue
+		}
+		for sectionIndex, section := range pack.SourceSections {
+			if section == option.section {
+				return key, sectionIndex, contextSourceRenderModeOrder(section.RenderMode), true
+			}
+		}
+	}
+	return "", 0, 0, false
 }
 
 func contextSourceBoundaryCovered(boundary contextSourceBoundary, state contextSourceSelectionState) bool {
@@ -814,10 +931,6 @@ func applyContextSourceCoverage(
 	concerns []contextConcern,
 	covered map[string]bool,
 ) {
-	selectedSupport := make(map[string]bool, len(pack.selectedSupportKeys))
-	for _, key := range pack.selectedSupportKeys {
-		selectedSupport[key] = true
-	}
 	requiredMissing := false
 	for _, concern := range concerns {
 		if concern.required && !covered[concern.key] {
@@ -826,7 +939,7 @@ func applyContextSourceCoverage(
 	}
 	for index := range pack.Concerns {
 		key := contextPublicConcernKey(pack.Concerns[index])
-		pack.Concerns[index].Covered = covered[key] || selectedSupport[key]
+		pack.Concerns[index].Covered = covered[key]
 	}
 	switch {
 	case len(pack.SourceSections) == 0:
