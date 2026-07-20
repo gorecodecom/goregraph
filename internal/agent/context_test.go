@@ -1375,6 +1375,9 @@ func TestContextEndpointCompanionRequiresUniqueRouteEvidence(t *testing.T) {
 			t.Fatalf("ambiguous non-exact companion selected %#v", got)
 		}
 	}
+	if got, ok := contextEndpointCompanion(scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{other}}, endpoint); ok {
+		t.Fatalf("single conflicting qualified companion selected %#v", got)
+	}
 	duplicateExact := exact
 	duplicateExact.ID = "duplicate-exact"
 	for _, facts := range [][]scan.AgentContextFactRecord{{exact, duplicateExact}, {duplicateExact, exact}} {
@@ -2011,6 +2014,48 @@ func TestContextSupportProjectAffinityIgnoresGenericParentFolders(t *testing.T) 
 		if got := contextSupportProjectAffinityScore(distractor, distractor.Project, aliases, explicit, represented); got != 0 {
 			t.Fatalf("generic services folder gave %q affinity score %d", distractor.Project, got)
 		}
+	}
+}
+
+func TestContextSupportProjectAffinityMatchesDelimitedServiceBasename(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "task-client", Project: "ms-common", Kind: "api_contract",
+			Name: "getAllUserTasks", Qualified: "CadasterTaskMgmtService.getAllUserTasks",
+			File: "CadasterTaskMgmtService.java", Confidence: "EXACT", Search: "user task contract",
+		},
+		{
+			ID: "regulation-client", Project: "ms-common", Kind: "api_contract",
+			Name: "getRelevantForRegulationsInCadaster", Qualified: "CadasterRegulationMgmtService.getRelevantForRegulationsInCadaster",
+			File: "CadasterRegulationMgmtService.java", Confidence: "EXACT", Search: "relevant regulation contract",
+		},
+	}}
+	aliases := map[string][]string{
+		"ms-cadastertask": {"ms-cadastertask"},
+		"ms-common":       {"ms-common"},
+	}
+	explicit := map[string]bool{"ms-cadastertask": true, "ms-common": true}
+	ranked := rankContextSupportFacts(
+		index,
+		"Relevant regulation user task requires contract. Analyze ms-cadastertask and ms-common.",
+		aliases,
+		explicit,
+		map[string]bool{"ms-cadasterregulation": true},
+	)
+
+	if len(ranked) != 2 || ranked[0].fact.ID != "task-client" {
+		t.Fatalf("delimited service affinity ranked %#v, want task client first", ranked)
+	}
+
+	delimitedAliases := map[string][]string{"service-jobs": {"service-jobs"}}
+	delimitedExplicit := map[string]bool{"service-jobs": true}
+	jobs := scan.AgentContextFactRecord{Project: "libraries/integration", Name: "JobsClient", File: "JobsClient.go"}
+	if got := contextSupportProjectAffinityScore(jobs, jobs.Project, delimitedAliases, delimitedExplicit, nil); got == 0 {
+		t.Fatal("meaningful jobs segment did not add project affinity")
+	}
+	reporting := scan.AgentContextFactRecord{Project: "services/reporting", Name: "ReportingService", File: "ReportingService.go"}
+	if got := contextSupportProjectAffinityScore(reporting, reporting.Project, delimitedAliases, delimitedExplicit, nil); got != 0 {
+		t.Fatalf("generic service prefix added project affinity score %d", got)
 	}
 }
 

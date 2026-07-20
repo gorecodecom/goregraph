@@ -912,9 +912,11 @@ func contextSupportProjectAffinityScore(
 			continue
 		}
 		for _, alias := range aliases[project] {
-			segment := compactContextIdentifier(contextProjectBasename(normalizeContextProject(alias)))
-			if len([]rune(segment)) >= 4 && strings.Contains(identifier, segment) {
-				best = 240
+			basename := contextProjectBasename(normalizeContextProject(alias))
+			for _, segment := range contextProjectIdentifierSegments(basename) {
+				if distinctiveContextProjectIdentifierSegment(segment) && strings.Contains(identifier, segment) {
+					best = 240
+				}
 			}
 		}
 	}
@@ -929,6 +931,31 @@ func compactContextIdentifier(value string) string {
 		}
 	}
 	return result.String()
+}
+
+func contextProjectIdentifierSegments(value string) []string {
+	parts := strings.FieldsFunc(strings.ToLower(value), func(current rune) bool {
+		return !unicode.IsLetter(current) && !unicode.IsDigit(current)
+	})
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
+func distinctiveContextProjectIdentifierSegment(segment string) bool {
+	if len([]rune(segment)) < 4 {
+		return false
+	}
+	switch segment {
+	case "app", "lib", "ms", "service", "services", "svc":
+		return false
+	default:
+		return true
+	}
 }
 
 func eligibleContextSupportFact(fact scan.AgentContextFactRecord) bool {
@@ -1299,10 +1326,13 @@ func contextEndpointCompanion(
 			exactMatches = append(exactMatches, fact)
 		}
 	}
-	if len(exactMatches) == 1 {
-		return exactMatches[0], true
+	if qualified != "" {
+		if len(exactMatches) == 1 {
+			return exactMatches[0], true
+		}
+		return scan.AgentContextFactRecord{}, false
 	}
-	if len(exactMatches) > 1 || len(candidates) != 1 {
+	if len(candidates) != 1 {
 		return scan.AgentContextFactRecord{}, false
 	}
 	return candidates[0], true
