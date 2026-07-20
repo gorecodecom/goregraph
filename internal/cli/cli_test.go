@@ -30,10 +30,97 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestRunHelpUsesProgressiveDisclosure(t *testing.T) {
+	for _, args := range [][]string{
+		nil,
+		{"help"},
+		{"--help"},
+		{"-h"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", args, code, stderr.String())
+		}
+		text := stdout.String()
+		for _, want := range []string{
+			"Agent context:",
+			"goregraph build agent .",
+			"goregraph context . --query",
+			"Dashboard:",
+			"goregraph dashboard open .",
+			"Diagnosis:",
+			"goregraph doctor .",
+			"goregraph help --all",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("%v help missing %q:\n%s", args, want, text)
+			}
+		}
+		for _, hidden := range []string{"scan <path>", "query <path>", "git update [path]"} {
+			if strings.Contains(text, hidden) {
+				t.Fatalf("%v standard help exposes %q:\n%s", args, hidden, text)
+			}
+		}
+		if lines := strings.Count(strings.TrimSuffix(text, "\n"), "\n") + 1; lines > 35 {
+			t.Fatalf("%v standard help has %d lines, want at most 35:\n%s", args, lines, text)
+		}
+	}
+}
+
+func TestRunAllHelpPreservesCompleteCommandCatalog(t *testing.T) {
+	for _, args := range [][]string{
+		{"help", "--all"},
+		{"--help", "--all"},
+		{"-h", "--all"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", args, code, stderr.String())
+		}
+		for _, want := range []string{
+			"Core commands:",
+			"build <target>",
+			"context <path>",
+			"dashboard",
+			"doctor <path>",
+			"workspace",
+			"mcp",
+			"Manual exploration:",
+			"query <path>",
+			"explain <path>",
+			"report <path>",
+			"Maintenance:",
+			"update",
+			"git update [path]",
+			"Compatibility:",
+			"scan <path>",
+			"Utility:",
+			"version",
+			"help",
+			"Project vs workspace builds:",
+			"standard MCP exposes only task_context",
+		} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("%v complete help missing %q:\n%s", args, want, stdout.String())
+			}
+		}
+	}
+}
+
+func TestRunHelpRejectsUnknownSelector(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"help", "--unknown"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "goregraph help") {
+		t.Fatalf("unexpected streams: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunHelpExplainsProjectAndWorkspaceBuildScopes(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
-	code := Run([]string{"help"}, &stdout, &stderr)
+	code := Run([]string{"help", "--all"}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
@@ -1346,6 +1433,31 @@ func TestRunScanHelpPrintsScanUsage(t *testing.T) {
 	}
 }
 
+func TestRunUpdateHelpDescribesUpdate(t *testing.T) {
+	for _, args := range [][]string{
+		{"update", "help"},
+		{"update", "--help"},
+		{"update", "-h"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", args, code, stderr.String())
+		}
+		for _, want := range []string{
+			"Usage: goregraph update",
+			"--target agent|dashboard|all",
+			"Refreshes the current project's selected projections",
+		} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("%v update help missing %q:\n%s", args, want, stdout.String())
+			}
+		}
+		if strings.Contains(stdout.String(), "Compatibility alias for goregraph build all") {
+			t.Fatalf("%v update help renders scan guidance:\n%s", args, stdout.String())
+		}
+	}
+}
+
 func TestRunUnknownCommandReturnsUsageError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
@@ -1573,7 +1685,7 @@ func TestGlobalAndWorkspaceHelpLeadWithCanonicalBuildsAndMarkerRules(t *testing.
 		want []string
 	}{
 		{
-			args: []string{"help"},
+			args: []string{"help", "--all"},
 			want: []string{
 				"goregraph build agent .",
 				"goregraph build dashboard .",
@@ -1588,7 +1700,7 @@ func TestGlobalAndWorkspaceHelpLeadWithCanonicalBuildsAndMarkerRules(t *testing.
 			},
 		},
 		{
-			args: []string{"workspace", "help"},
+			args: []string{"workspace", "help", "--all"},
 			want: []string{
 				"goregraph workspace build agent .",
 				"goregraph workspace build dashboard .",
@@ -1612,6 +1724,63 @@ func TestGlobalAndWorkspaceHelpLeadWithCanonicalBuildsAndMarkerRules(t *testing.
 				t.Fatalf("%v help missing %q:\n%s", test.args, want, stdout.String())
 			}
 		}
+	}
+}
+
+func TestWorkspaceHelpUsesProgressiveDisclosure(t *testing.T) {
+	for _, args := range [][]string{
+		{"workspace", "help"},
+		{"workspace", "--help"},
+		{"workspace", "-h"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", args, code, stderr.String())
+		}
+		for _, want := range []string{
+			"build <target>", "dashboard", "status", "explain", "path", "impact",
+			"goregraph workspace help --all",
+		} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("%v workspace help missing %q:\n%s", args, want, stdout.String())
+			}
+		}
+		if strings.Contains(stdout.String(), "scan-all") {
+			t.Fatalf("%v standard workspace help exposes compatibility command:\n%s", args, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceAllHelpPreservesCompleteCommandCatalog(t *testing.T) {
+	for _, args := range [][]string{
+		{"workspace", "help", "--all"},
+		{"workspace", "--help", "--all"},
+		{"workspace", "-h", "--all"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(args, &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exit code = %d, stderr=%s", args, code, stderr.String())
+		}
+		for _, want := range []string{
+			"Core commands:", "build <target>", "status", "dashboard",
+			"Exploration:", "explain", "path", "impact", "diff",
+			"Maintenance:", "scan-missing", "refresh", "clean", "git update",
+			"Compatibility:", "scan-all",
+		} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("%v complete workspace help missing %q:\n%s", args, want, stdout.String())
+			}
+		}
+	}
+}
+
+func TestWorkspaceHelpRejectsUnknownSelector(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"workspace", "help", "--unknown"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "goregraph workspace help") {
+		t.Fatalf("unexpected streams: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }
 
