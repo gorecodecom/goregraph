@@ -1,1 +1,4 @@
 .worktrees/
+
+# GoreGraph local scan output
+goregraph-out/

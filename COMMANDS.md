@@ -2,7 +2,38 @@
 
 This file lists every user-facing GoreGraph command, what it does, and common variations.
 
-## Normal agent workflow
+## Quick start
+
+### Agent context
+
+```bash
+goregraph build agent .
+goregraph context . --query "<current coding task>"
+```
+
+### Dashboard
+
+```bash
+goregraph build dashboard .
+goregraph dashboard open .
+```
+
+### Diagnosis
+
+```bash
+goregraph doctor .
+```
+
+Run `goregraph help` for this standard workflow view. Run
+`goregraph help --all` for the complete manual, maintenance, and compatibility
+command catalog. Every command also supports its own `help`, `--help`, or `-h`
+form.
+
+## Standard commands
+
+The standard CLI surface is `build`, `context`, `dashboard`, `doctor`,
+`workspace`, and `mcp`. For the normal agent workflow, build the bounded agent
+projection and request one task-specific Context Pack:
 
 ```bash
 goregraph build agent <path>
@@ -23,7 +54,7 @@ Do not use specialist GoreGraph queries or expert MCP tools.
 
 Run `goregraph doctor <path>` only when Context reports missing or stale output.
 
-## Manual compatibility and expert operations
+## Manual and expert operations
 
 The specialist query CLI remains supported for manual diagnostics and
 exploration. MCP equivalents are available only with
@@ -82,6 +113,31 @@ silently choosing a same-name class or export. `symbol-usages` returns
 All task operations accept `--limit <1-100>` and return a continuation token
 when more records are available. Pass it back with `--continue <token>`. MCP
 uses the equivalent `limit` and `continuation` fields.
+
+## Maintenance commands
+
+Maintenance operations remain fully supported without competing with the
+normal workflow in standard help:
+
+- `goregraph update [path] --target agent|dashboard|all` refreshes selected
+  project projections;
+- `goregraph git update [path]` previews or executes a safe repository update;
+- `goregraph workspace scan-missing`, `refresh`, `clean`, and `git update`
+  maintain generated workspace state and source checkouts.
+
+Use `goregraph help --all` or the command-specific help for exact options and
+safety behavior.
+
+## Compatibility aliases
+
+Existing automation remains valid:
+
+- `goregraph scan <path>` remains an alias for `goregraph build all <path>`;
+- `goregraph workspace scan-all <path>` remains an alias for
+  `goregraph workspace build all <path>`.
+
+The aliases stay documented in `goregraph help --all` and their own help, but
+are not primary choices in standard help.
 
 ## Dashboard questions
 
@@ -187,12 +243,19 @@ and merge it; clean operations do not treat it as generated output.
 
 ## `goregraph help`
 
-Shows global CLI help.
+Shows the compact, task-oriented global CLI help. It leads with the agent
+context, dashboard, and diagnosis workflows plus the core command set.
+
+`goregraph help --all` shows every core, manual, maintenance, compatibility,
+and utility command together with the project/workspace scope rules. Workspace
+help follows the same model: `goregraph workspace help` is compact and
+`goregraph workspace help --all` is complete.
 
 Use when:
 
 - you want to see available commands
 - you forgot the basic syntax
+- you need the complete expert or compatibility catalog
 
 Variations:
 
@@ -200,6 +263,10 @@ Variations:
 goregraph help
 goregraph --help
 goregraph -h
+goregraph help --all
+goregraph --help --all
+goregraph workspace help
+goregraph workspace help --all
 ```
 
 ## `goregraph build <agent|dashboard|all> [path]`

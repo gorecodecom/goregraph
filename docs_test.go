@@ -68,6 +68,8 @@ func TestCommandsReferenceDocumentsEveryUserCommand(t *testing.T) {
 	text := string(body)
 	for _, command := range []string{
 		"goregraph help",
+		"goregraph help --all",
+		"goregraph dashboard",
 		"goregraph scan",
 		"goregraph update",
 		"goregraph git update",
@@ -76,11 +78,31 @@ func TestCommandsReferenceDocumentsEveryUserCommand(t *testing.T) {
 		"goregraph explain",
 		"goregraph doctor",
 		"goregraph workspace git update",
+		"goregraph workspace help --all",
 		"goregraph mcp",
 		"goregraph version",
 	} {
 		if !strings.Contains(text, command) {
 			t.Fatalf("COMMANDS.md missing %q", command)
+		}
+	}
+}
+
+func TestCommandsReferenceExplainsProgressiveHelp(t *testing.T) {
+	body, err := os.ReadFile("COMMANDS.md")
+	if err != nil {
+		t.Fatalf("COMMANDS.md is missing: %v", err)
+	}
+	text := string(body)
+	for _, heading := range []string{
+		"## Quick start",
+		"## Standard commands",
+		"## Manual and expert operations",
+		"## Maintenance commands",
+		"## Compatibility aliases",
+	} {
+		if !strings.Contains(text, heading) {
+			t.Fatalf("COMMANDS.md missing %q", heading)
 		}
 	}
 }
