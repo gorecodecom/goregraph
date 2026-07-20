@@ -37,7 +37,7 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 		".github/workflows/ci.yml": {
 			"go test ./...",
 			"go vet ./...",
-			"gofmt",
+			"go fmt ./...",
 		},
 		".github/workflows/release.yml": {
 			"goreleaser/goreleaser-action",

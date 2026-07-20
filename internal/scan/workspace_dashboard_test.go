@@ -121,7 +121,7 @@ func TestWorkspaceDashboardAPICatalogFilterRuntime(t *testing.T) {
 		section("function apiCatalogProviderKey(service,project)", "function apiCatalogEndpointHTML(endpoint)"),
 		`const first=filteredAPICatalogEndpoints();state.apiCatalogService="";state.apiCatalogQuery="";state.apiCatalogMethods.clear();state.apiCatalogSecurity.clear();state.apiCatalogConsumers.clear();state.apiCatalogStatuses=new Set(["Coverage: PARTIAL"]);const second=filteredAPICatalogEndpoints();process.stdout.write(JSON.stringify({first:first.map(endpoint=>endpoint.id),second:second.map(endpoint=>endpoint.id),unknown:apiCatalogSecurityLabel(apiCatalog.endpoints[1]),consumer:apiCatalogConsumerSummary(apiCatalog.endpoints[0])}));`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("API Catalog filter runtime failed: %v\n%s", err, output)
 	}
@@ -214,7 +214,7 @@ func TestWorkspaceDashboardAPICatalogDetailsRuntimeRendersOneDisclosurePerVisibl
 		section("function clearAPICatalogFilters()", "wireAPICatalogFilterControls();"),
 		`wireAPICatalogFilterControls();renderAPICatalog();const count=()=>detailNodes.length,initial=count(),collapsed=!workbench.innerHTML.includes("Parameters by location");const provider=controls.get("api-catalog-provider-filter");provider.value=apiCatalogProviderKey("orders","services/orders");provider.dispatch("change");const afterProvider=count();const query=controls.get("api-catalog-search");query.value="OrderController.get";query.dispatch("input");const afterQuery=count();query.value="";query.dispatch("input");const status=controls.get("api-catalog-status-filter");status.selectedOptions=[{value:"Coverage: COMPLETE"},{value:"Resolution: Resolved"}];status.dispatch("change");const afterStatus=count();methodButtons[0].dispatch("click");const afterMethod=count();const details=detailNodes.find(node=>node.dataset.apiCatalogEndpointId==="endpoint:get");details.open=true;details.dispatch("toggle");const expanded=workbench.innerHTML.includes("Parameters by location")&&workbench.innerHTML.includes("Storefront: Bearer")&&state.apiCatalogExpanded.has("endpoint:get");renderAPICatalog();const preserved=workbench.innerHTML.includes('data-api-catalog-endpoint-id="endpoint:get" open');controls.get("clear-api-catalog-filters").dispatch("click");const afterClear=count(),traceButton=traceNodes.find(button=>button.dataset.apiCatalogTrace==="match:orders");traceButton.dispatch("click");process.stdout.write(JSON.stringify({initial,collapsed,afterProvider,afterQuery,afterMethod,afterStatus,expanded,preserved,afterClear,mode:state.mode,selected:state.selected,summary:controls.get("api-catalog-filter-summary").textContent}));`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("API Catalog details runtime failed: %v\n%s", err, output)
 	}
@@ -320,7 +320,7 @@ func TestWorkspaceDashboardAPICatalogServiceNoticesPreserveCoverageState(t *test
 		workspaceDashboardScript[from : from+to],
 		`const provider={project:"services/orders",indexed:true};const notice=coverage=>apiCatalogServiceNotices(provider,[{coverage}],1).join(" ");process.stdout.write(JSON.stringify({partial:notice("PARTIAL"),failed:notice("FAILED"),unavailable:notice("UNAVAILABLE"),unknown:notice("UNKNOWN")}));`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("API Catalog service notice runtime failed: %v\n%s", err, output)
 	}
@@ -378,7 +378,7 @@ func TestWorkspaceDashboardAPICatalogProviderCoverageAndTraceModelRuntime(t *tes
 		section("function apiCatalogProviderKey(service,project)", "function apiCatalogEndpointHTML(endpoint)"),
 		`const providers=apiCatalogProviderOptions();const a=apiCatalog.endpoints[0],b=apiCatalog.endpoints[1];state.apiCatalogService=apiCatalogProviderKey("orders","services/orders-a");state.apiCatalogStatuses=new Set(["Coverage: COMPLETE","Resolution: Resolved"]);const visible=filteredAPICatalogEndpoints();process.stdout.write(JSON.stringify({providers:providers.map(provider=>({key:provider.key,label:provider.label,project:provider.project,indexed:provider.indexed,count:provider.endpointCount})),fallback:apiCatalogProviderKey("","services/plain"),coverage:[apiCatalogCoverage(a),apiCatalogCoverage(b)],resolution:[apiCatalogResolution(a),apiCatalogResolution(b)],visible:visible.map(endpoint=>endpoint.id),trace:apiCatalogConsumerTrace(a.consumers[0]).id}));`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("API Catalog provider model runtime failed: %v\n%s", err, output)
 	}
@@ -451,7 +451,7 @@ func TestWorkspaceDashboardAPICatalogResponsiveGeometry(t *testing.T) {
 		`const {chromium}=require("playwright"),html=` + string(encodedHTML) + `;`,
 		`(async()=>{const browser=await chromium.launch({headless:true}),results=[];try{for(const viewport of [{width:760,height:900},{width:1280,height:720},{width:1440,height:900},{width:1920,height:1080}]){const page=await browser.newPage({viewport});await page.setContent(html,{waitUntil:"load"});await page.click('[data-view-mode="api-catalog"]');await page.selectOption("#api-catalog-provider-filter","service:orders|project:services/orders");await page.click(".api-catalog-endpoint summary");await page.waitForSelector(".api-catalog-details");results.push(await page.evaluate(()=>{const cells=Array.from(document.querySelectorAll(".api-catalog-endpoint-summary>span")),actions=Array.from(document.querySelectorAll(".api-catalog-trace-action,.api-catalog-details .source-actions button,.api-catalog-details .source-actions a"));return {viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,details:document.querySelectorAll(".api-catalog-endpoint[open] .api-catalog-details").length,stacked:cells.length<2||Math.abs(cells[0].getBoundingClientRect().left-cells[1].getBoundingClientRect().left)<1,actionHeights:actions.map(action=>action.getBoundingClientRect().height)};}));await page.close();}}finally{await browser.close();}process.stdout.write(JSON.stringify(results));})().catch(error=>{console.error(error);process.exit(1);});`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("rendered API Catalog geometry failed: %v\n%s", err, output)
 	}
@@ -517,7 +517,7 @@ func TestWorkspaceDashboardAPICatalogModeRuntimeDoesNotFallThroughDiagnostics(t 
 		`modeButtons.find(function(button){return button.dataset.viewMode==="api-catalog";}).click();`,
 		`process.stdout.write(JSON.stringify({mode:state.mode,catalogHidden:catalogFilters.hidden,endpointHidden:endpointFilters.hidden,help:modeHelp.textContent,catalogRendered:document.getElementById("workspace-workbench").innerHTML.includes("api-catalog-workbench"),diagnosticRenders:diagnosticRenders}));`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("API Catalog mode runtime failed: %v\n%s", err, output)
 	}
@@ -921,7 +921,7 @@ func TestWorkspaceDashboardCodeExplorerSourceLayoutGeometry(t *testing.T) {
 		`const html=` + string(encodedHTML) + `;`,
 		`(async()=>{const browser=await chromium.launch({headless:true}),results=[];try{for(const viewport of [{width:1280,height:720},{width:1440,height:900},{width:1920,height:1080}]){const page=await browser.newPage({viewport});await page.setContent(html,{waitUntil:"load"});await page.evaluate(()=>{state.mode="code-explorer";state.codeProject="services/catalog";state.codeSymbol="symbol:repository";state.codeLoading=false;state.codeError=null;renderList();renderCanvas();});await page.waitForFunction(()=>document.querySelectorAll(".source-location").length>=3);results.push(await page.evaluate(()=>{const selectors=[["inventory",".code-symbol-source>.source-location"],["summary",".code-symbol-summary>.source-location"],["details",".details .source-location"]];return {viewport:innerWidth,scrollWidth:document.documentElement.scrollWidth,locations:selectors.map(([name,selector])=>{const location=document.querySelector(selector),path=location.querySelector(":scope>.source-path"),actions=location.querySelector(":scope>.source-actions");return {name,pathBottom:path.getBoundingClientRect().bottom,actionTop:actions.getBoundingClientRect().top};})};}));await page.close();}}finally{await browser.close();}process.stdout.write(JSON.stringify(results));})().catch(error=>{console.error(error);process.exit(1);});`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("rendered Code Explorer source geometry failed: %v\n%s", err, output)
 	}
@@ -1176,7 +1176,7 @@ func TestWorkspaceDashboardCodeExplorerIncludesOnlyOutboundHTTPConsumerUsages(t 
 		`const ids=function(tab){return usages.filter(function(usage){return codeTabMatches(usage,tab);}).map(function(usage){return usage.id;}).sort();};`,
 		`process.stdout.write(JSON.stringify({all:ids("all"),direct:ids("direct"),api:ids("api"),uncertainty:ids("uncertainty"),counts:codeUsageCounts("symbol:frontend"),hasUncertaintyTab:codeTabsHTML(usages).includes('data-code-tab="uncertainty"')}));`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("Code Explorer consumer usage model failed: %v\n%s", err, output)
 	}
@@ -2745,7 +2745,7 @@ func renderedDashboardHeaderGeometries(t *testing.T, html string) []dashboardHea
 		`const contentSelectors=[["domain-header","#architecture-lane-layer .domain-title"],["service-card","#architecture-node-layer .service-node"],["relationship-badge","#architecture-label-layer .bundle-count, #architecture-label-layer .architecture-call-pill"]];`,
 		`(async()=>{const browser=await chromium.launch({headless:true}),geometries=[];try{for(const viewport of [{width:1280,height:720},{width:1440,height:900},{width:1920,height:1080}]){const page=await browser.newPage({viewport:viewport});await page.setContent(html,{waitUntil:"load"});await page.waitForFunction(()=>document.querySelectorAll("#architecture-node-layer .service-node").length>0);const measure=async scenario=>geometries.push(await page.evaluate(({headerSelectors,contentSelectors,scenario})=>{const rect=(name,element)=>{const value=element.getBoundingClientRect();return {name:name,left:value.left,right:value.right,top:value.top,bottom:value.bottom};},one=(name,selector)=>rect(name,document.querySelector(selector)),many=(name,selector)=>Array.from(document.querySelectorAll(selector)).map((element,index)=>rect(name+"-"+index,element)),svg=document.getElementById("workspace-graph");return {viewport:innerWidth,scenario:scenario,main:one("main","main"),headers:headerSelectors.map(item=>one(item[0],item[1])),content:contentSelectors.flatMap(item=>many(item[0],item[1])),scrollWidth:document.documentElement.scrollWidth,transform:document.getElementById("graph-layer").getAttribute("transform"),viewBox:svg.getAttribute("viewBox")};},{headerSelectors,contentSelectors,scenario}));await measure("unselected");await page.evaluate(()=>{const id=serviceNodes[0].id;state.selected=id;state.selections.architecture=id;state.pendingArchitectureServiceFit=null;renderList();renderCanvas();});await page.waitForFunction(()=>!document.getElementById("architecture-relationship-summary").hidden);await measure("selected");await page.close();}}finally{await browser.close();}process.stdout.write(JSON.stringify(geometries));})().catch(error=>{console.error(error);process.exit(1);});`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("rendered dashboard geometry failed: %v\n%s", err, output)
 	}
@@ -3212,7 +3212,7 @@ func TestWorkspaceDashboardArchitectureEditorFetchesOnlyAfterExplicitEntry(t *te
 		`const html=` + string(encodedHTML) + `;`,
 		`(async()=>{const browser=await chromium.launch({headless:true});try{const page=await browser.newPage({viewport:{width:1440,height:900}});await page.goto("about:blank#token=editor-secret");await page.setContent(html,{waitUntil:"load"});await page.click('[data-view-mode="architecture"]');const normalRequests=await page.evaluate(()=>globalThis.__requests.length);await page.click("#architecture-edit-layout");await page.waitForFunction(()=>globalThis.__requests.length===1&&!document.getElementById("architecture-layout-editor").hidden);const move=page.locator('[data-layout-service="services/billing"] [data-layout-action="later"]');await move.focus();await page.keyboard.press("Enter");await page.click("#architecture-save-layout");await page.waitForFunction(()=>globalThis.__requests.length===2);const result=await page.evaluate(normalRequests=>({normalRequests:normalRequests,hash:location.hash,requests:globalThis.__requests.map(request=>({url:request.url,method:request.options.method||"GET",token:request.options.headers&&request.options.headers["X-GoreGraph-Editor-Token"],body:request.options.body?JSON.parse(request.options.body):null})),status:document.getElementById("architecture-layout-status").textContent}),normalRequests);process.stdout.write(JSON.stringify(result));}finally{await browser.close();}})().catch(error=>{console.error(error);process.exit(1);});`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("rendered Architecture editor failed: %v\n%s", err, output)
 	}

@@ -200,7 +200,7 @@ func TestWorkspaceDashboardArchitectureMatrixKeepsEveryDiscoveredService(t *test
 		`const providers=(workbench.innerHTML.match(/data-matrix-provider=/g)||[]).length;`,
 		`process.stdout.write(JSON.stringify({visible:visible.length,cards:cards,providers:providers,hasLastConsumer:workbench.innerHTML.includes("service:consumer-259"),hasProvider:workbench.innerHTML.includes("service:provider")}));`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("dashboard completeness model failed: %v\n%s", err, output)
 	}
@@ -231,7 +231,7 @@ func runArchitectureModel(t *testing.T, expression string, target any) {
 		t.Skip("node is required for embedded dashboard model tests")
 	}
 	source := workspaceDashboardArchitectureModelScript + "\nprocess.stdout.write(JSON.stringify(" + expression + "));"
-	cmd := exec.Command(node, "-e", source)
+	cmd := nodeScriptCommand(node, source)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("architecture model failed: %v\n%s", err, output)
@@ -248,7 +248,7 @@ func runRequiredArchitectureModel(t *testing.T, expression string, target any) {
 		t.Fatalf("node is required for architecture editor regression tests: %v", err)
 	}
 	source := workspaceDashboardArchitectureModelScript + "\nprocess.stdout.write(JSON.stringify(" + expression + "));"
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("architecture model failed: %v\n%s", err, output)
 	}
@@ -911,7 +911,7 @@ func TestArchitectureDeferredAutoFitRestoresOriginalMatrixViewport(t *testing.T)
 		`state=freshState();state.architectureView="flow";const beforeFlowFit=fitCount;setArchitectureServiceSelection("service:orders");renderCanvas();const flow={fitCount:fitCount-beforeFlowFit,afterFit:viewport(),savedService:state.savedArchitectureServiceViewport,pending:state.pendingArchitectureServiceFit};clearArchitectureServiceState();flow.afterExit=viewport();`,
 		`process.stdout.write(JSON.stringify({original:original,cleared:cleared,left:left,flow:flow}));`,
 	}, "\n")
-	output, err := exec.Command(node, "-e", source).CombinedOutput()
+	output, err := nodeScriptCommand(node, source).CombinedOutput()
 	if err != nil {
 		t.Fatalf("dashboard state sequence failed: %v\n%s", err, output)
 	}

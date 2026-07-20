@@ -3,14 +3,30 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gorecodecom/goregraph/internal/gitupdate"
 )
+
+var cliGitFixtureTemplate struct {
+	sync.Once
+	root string
+	err  error
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if cliGitFixtureTemplate.root != "" {
+		_ = os.RemoveAll(cliGitFixtureTemplate.root)
+	}
+	os.Exit(code)
+}
 
 type cliGitFixture struct {
 	remote string
@@ -35,22 +51,96 @@ func newCLIGitFixtureAt(t *testing.T, work string) cliGitFixture {
 	if err := os.MkdirAll(filepath.Dir(work), 0o755); err != nil {
 		t.Fatalf("create work parent: %v", err)
 	}
-	cliGit(t, root, "init", "--bare", "--initial-branch=main", fixture.remote)
-	cliGit(t, root, "clone", fixture.remote, fixture.work)
-	cliGit(t, root, "clone", fixture.remote, fixture.peer)
-	configureCLIGitIdentity(t, fixture.work)
-	configureCLIGitIdentity(t, fixture.peer)
-
-	writeFile(t, fixture.work, "README.md", "initial\n")
-	cliGit(t, fixture.work, "add", "README.md")
-	cliGit(t, fixture.work, "commit", "-m", "initial")
-	cliGit(t, fixture.work, "push", "-u", "origin", "main")
-	cliGit(t, fixture.work, "remote", "set-head", "origin", "-a")
-
-	cliGit(t, fixture.peer, "fetch", "origin")
-	cliGit(t, fixture.peer, "switch", "-c", "main", "--track", "origin/main")
-	cliGit(t, fixture.peer, "remote", "set-head", "origin", "-a")
+	templateRoot := cliGitFixtureTemplateRoot(t)
+	for _, directory := range []struct {
+		source string
+		target string
+	}{
+		{source: filepath.Join(templateRoot, "remote.git"), target: fixture.remote},
+		{source: filepath.Join(templateRoot, "work"), target: fixture.work},
+		{source: filepath.Join(templateRoot, "peer"), target: fixture.peer},
+	} {
+		if err := os.CopyFS(directory.target, os.DirFS(directory.source)); err != nil {
+			t.Fatalf("copy CLI Git fixture %s: %v", filepath.Base(directory.source), err)
+		}
+	}
+	rewriteCLIFixtureOrigin(t, fixture.work, fixture.remote)
+	rewriteCLIFixtureOrigin(t, fixture.peer, fixture.remote)
 	return fixture
+}
+
+func cliGitFixtureTemplateRoot(t *testing.T) string {
+	t.Helper()
+	cliGitFixtureTemplate.Do(func() {
+		cliGitFixtureTemplate.root, cliGitFixtureTemplate.err = createCLIGitFixtureTemplate()
+	})
+	if cliGitFixtureTemplate.err != nil {
+		t.Fatalf("create CLI Git fixture template: %v", cliGitFixtureTemplate.err)
+	}
+	return cliGitFixtureTemplate.root
+}
+
+func createCLIGitFixtureTemplate() (root string, resultErr error) {
+	root, err := os.MkdirTemp("", "goregraph-cli-git-fixture-")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if resultErr != nil {
+			_ = os.RemoveAll(root)
+		}
+	}()
+
+	remote := filepath.Join(root, "remote.git")
+	work := filepath.Join(root, "work")
+	peer := filepath.Join(root, "peer")
+	for _, command := range []struct {
+		dir  string
+		args []string
+	}{
+		{dir: root, args: []string{"init", "--bare", "--initial-branch=main", remote}},
+		{dir: root, args: []string{"init", "--initial-branch=main", work}},
+		{dir: work, args: []string{"remote", "add", "-m", "main", "origin", "../remote.git"}},
+	} {
+		if _, err := runCLIFixtureGit(command.dir, command.args...); err != nil {
+			return root, err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("initial\n"), 0o600); err != nil {
+		return root, err
+	}
+	for _, command := range [][]string{
+		{"add", "README.md"},
+		{"commit", "-m", "initial"},
+		{"push", "-u", "origin", "main"},
+	} {
+		if _, err := runCLIFixtureGit(work, command...); err != nil {
+			return root, err
+		}
+	}
+	if _, err := runCLIFixtureGit(root, "clone", "remote.git", "peer"); err != nil {
+		return root, err
+	}
+	if _, err := runCLIFixtureGit(peer, "remote", "set-url", "origin", "../remote.git"); err != nil {
+		return root, err
+	}
+	return root, nil
+}
+
+func rewriteCLIFixtureOrigin(t *testing.T, repository, remote string) {
+	t.Helper()
+	configPath := filepath.Join(repository, ".git", "config")
+	contents, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read CLI Git fixture config: %v", err)
+	}
+	updated := strings.Replace(string(contents), "../remote.git", filepath.ToSlash(remote), 1)
+	if updated == string(contents) {
+		t.Fatalf("CLI Git fixture config has no relative origin: %s", configPath)
+	}
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
+		t.Fatalf("write CLI Git fixture config: %v", err)
+	}
 }
 
 func (fixture cliGitFixture) commitAndPushFromPeer(t *testing.T, contents string) string {
@@ -62,22 +152,31 @@ func (fixture cliGitFixture) commitAndPushFromPeer(t *testing.T, contents string
 	return cliGit(t, fixture.peer, "rev-parse", "HEAD")
 }
 
-func configureCLIGitIdentity(t *testing.T, dir string) {
-	t.Helper()
-	cliGit(t, dir, "config", "user.name", "GoreGraph CLI Test")
-	cliGit(t, dir, "config", "user.email", "goregraph-cli@example.invalid")
-}
-
 func cliGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	output, err := runCLIFixtureGit(dir, args...)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	return output
+}
+
+func runCLIFixtureGit(dir string, args ...string) (string, error) {
+	gitArgs := append([]string{"-c", "core.autocrlf=false", "-c", "core.hooksPath="}, args...)
+	cmd := exec.Command("git", gitArgs...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	cmd.Env = append(os.Environ(),
+		"GIT_OPTIONAL_LOCKS=0",
+		"GIT_AUTHOR_NAME=GoreGraph CLI Test",
+		"GIT_AUTHOR_EMAIL=goregraph-cli@example.invalid",
+		"GIT_COMMITTER_NAME=GoreGraph CLI Test",
+		"GIT_COMMITTER_EMAIL=goregraph-cli@example.invalid",
+	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("git %s in %s: %v\n%s", strings.Join(args, " "), dir, err, output)
+		return "", fmt.Errorf("git %s in %s: %w\n%s", strings.Join(args, " "), dir, err, output)
 	}
-	return strings.TrimSpace(string(output))
+	return strings.TrimSpace(string(output)), nil
 }
 
 func canonicalCLIPath(t *testing.T, path string) string {
@@ -105,7 +204,7 @@ func TestRunGitUpdateDefaultsToPreview(t *testing.T) {
 	for _, expected := range []string{
 		"Mode: preview",
 		"Git root: " + canonicalCLIPath(t, fixture.work),
-		"Remote: " + fixture.remote,
+		"Remote: " + filepath.ToSlash(fixture.remote),
 		"Branch before: main",
 		"Branch after: main",
 		"Commit before:",
@@ -160,7 +259,7 @@ func TestRunGitUpdateJSONMatchesStructuredResult(t *testing.T) {
 		t.Fatalf("len(Repositories) = %d, want 1", len(report.Repositories))
 	}
 	result := report.Repositories[0]
-	if result.Path != fixture.work || result.GitRoot != canonicalCLIPath(t, fixture.work) || result.Remote != fixture.remote {
+	if result.Path != fixture.work || result.GitRoot != canonicalCLIPath(t, fixture.work) || result.Remote != filepath.ToSlash(fixture.remote) {
 		t.Fatalf("repository identity = %#v", result)
 	}
 	if result.BranchBefore != "main" || result.BranchAfter != "main" {

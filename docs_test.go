@@ -14,13 +14,18 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
 Do not use specialist GoreGraph queries or expert MCP tools.`
 
+func normalizedFileContents(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.ReplaceAll(string(content), "\r\n", "\n")
+}
+
 func TestDocumentationUsesSourceBackedAssistedInstruction(t *testing.T) {
 	for _, file := range []string{"README.md", "COMMANDS.md", "docs/OUTPUTS.md", "docs/BENCHMARKING.md", "docs/RELEASE.md"} {
-		content, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(content), sourceBackedAssistedInstruction) {
+		if !strings.Contains(normalizedFileContents(t, file), sourceBackedAssistedInstruction) {
 			t.Fatalf("%s is missing the exact source-backed assisted instruction", file)
 		}
 	}
@@ -320,11 +325,7 @@ func TestDashboardDocumentationDoesNotUseStaleViewCount(t *testing.T) {
 }
 
 func TestREADMELaterWorkspaceDashboardReferenceDocumentsEditMode(t *testing.T) {
-	content, err := os.ReadFile("README.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(content)
+	text := normalizedFileContents(t, "README.md")
 	start := strings.LastIndex(text, "```bash\ngoregraph workspace dashboard [path]")
 	if start < 0 {
 		t.Fatal("README later workspace dashboard reference is missing")

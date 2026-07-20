@@ -10,9 +10,16 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+var gitFixtureTemplate struct {
+	sync.Once
+	root string
+	err  error
+}
 
 func TestMain(m *testing.M) {
 	if os.Getenv("GOREGRAPH_TEST_SSH_ARGUMENTS") != "" && filepath.Base(os.Args[0]) == "ssh" {
@@ -34,7 +41,11 @@ func TestMain(m *testing.M) {
 			os.Exit(97)
 		}
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if gitFixtureTemplate.root != "" {
+		_ = os.RemoveAll(gitFixtureTemplate.root)
+	}
+	os.Exit(code)
 }
 
 func recordSSHInvocation() {
@@ -161,47 +172,107 @@ func newGitFixture(t *testing.T) gitFixture {
 	t.Helper()
 
 	root := t.TempDir()
-	fixture := gitFixture{
+	if err := os.CopyFS(root, os.DirFS(gitFixtureTemplateRoot(t))); err != nil {
+		t.Fatalf("copy Git fixture template: %v", err)
+	}
+	return gitFixture{
 		remote: filepath.Join(root, "remote.git"),
 		work:   filepath.Join(root, "work"),
 		peer:   filepath.Join(root, "peer"),
 	}
-	git(t, root, "init", "--bare", "--initial-branch=main", fixture.remote)
-	git(t, root, "clone", fixture.remote, fixture.work)
-	git(t, root, "clone", fixture.remote, fixture.peer)
-	configureIdentity(t, fixture.work)
-	configureIdentity(t, fixture.peer)
-
-	writeFile(t, filepath.Join(fixture.work, "README.md"), "initial\n")
-	git(t, fixture.work, "add", "README.md")
-	git(t, fixture.work, "commit", "-m", "initial")
-	git(t, fixture.work, "push", "-u", "origin", "main")
-	git(t, fixture.work, "remote", "set-head", "origin", "-a")
-
-	git(t, fixture.peer, "fetch", "origin")
-	git(t, fixture.peer, "switch", "-c", "main", "--track", "origin/main")
-	git(t, fixture.peer, "remote", "set-head", "origin", "-a")
-
-	return fixture
 }
 
-func configureIdentity(t *testing.T, dir string) {
+func gitFixtureTemplateRoot(t *testing.T) string {
 	t.Helper()
-	git(t, dir, "config", "user.name", "GoreGraph Test")
-	git(t, dir, "config", "user.email", "goregraph@example.invalid")
+	gitFixtureTemplate.Do(func() {
+		gitFixtureTemplate.root, gitFixtureTemplate.err = createGitFixtureTemplate()
+	})
+	if gitFixtureTemplate.err != nil {
+		t.Fatalf("create Git fixture template: %v", gitFixtureTemplate.err)
+	}
+	return gitFixtureTemplate.root
+}
+
+func createGitFixtureTemplate() (root string, resultErr error) {
+	root, err := os.MkdirTemp("", "goregraph-git-fixture-")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if resultErr != nil {
+			_ = os.RemoveAll(root)
+		}
+	}()
+
+	remote := filepath.Join(root, "remote.git")
+	work := filepath.Join(root, "work")
+	peer := filepath.Join(root, "peer")
+	commands := []struct {
+		dir  string
+		args []string
+	}{
+		{dir: root, args: []string{"init", "--bare", "--initial-branch=main", remote}},
+		{dir: root, args: []string{"init", "--initial-branch=main", work}},
+		{dir: work, args: []string{"remote", "add", "-m", "main", "origin", "../remote.git"}},
+	}
+	for _, command := range commands {
+		if _, err := runFixtureGit(command.dir, command.args...); err != nil {
+			return root, err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("initial\n"), 0o600); err != nil {
+		return root, err
+	}
+	for _, command := range [][]string{
+		{"add", "README.md"},
+		{"commit", "-m", "initial"},
+		{"push", "-u", "origin", "main"},
+	} {
+		if _, err := runFixtureGit(work, command...); err != nil {
+			return root, err
+		}
+	}
+	if _, err := runFixtureGit(root, "clone", "remote.git", "peer"); err != nil {
+		return root, err
+	}
+	if _, err := runFixtureGit(peer, "remote", "set-url", "origin", "../remote.git"); err != nil {
+		return root, err
+	}
+	return root, nil
 }
 
 func git(t *testing.T, dir string, args ...string) string {
 	t.Helper()
+	output, err := runFixtureGit(dir, args...)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	return output
+}
 
-	cmd := exec.Command("git", args...)
+func runFixtureGit(dir string, args ...string) (string, error) {
+	gitArgs := append([]string{"-c", "core.autocrlf=false", "-c", "core.hooksPath="}, args...)
+	cmd := exec.Command("git", gitArgs...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	cmd.Env = append(os.Environ(),
+		"GIT_OPTIONAL_LOCKS=0",
+		"GIT_AUTHOR_NAME=GoreGraph Test",
+		"GIT_AUTHOR_EMAIL=goregraph@example.invalid",
+		"GIT_COMMITTER_NAME=GoreGraph Test",
+		"GIT_COMMITTER_EMAIL=goregraph@example.invalid",
+	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("git %s in %s: %v\n%s", strings.Join(args, " "), dir, err, output)
+		return "", fmt.Errorf("git %s in %s: %w\n%s", strings.Join(args, " "), dir, err, output)
 	}
-	return strings.TrimSpace(string(output))
+	return strings.TrimSpace(string(output)), nil
+}
+
+func symlinkOrSkip(t *testing.T, oldname, newname string) {
+	t.Helper()
+	if err := os.Symlink(oldname, newname); err != nil {
+		t.Skipf("symlink creation is not permitted in this environment: %v", err)
+	}
 }
 
 func (f gitFixture) commitAndPushFromPeer(t *testing.T, contents string) string {
@@ -413,11 +484,12 @@ func TestRunPropagatesGitResolverInfrastructureFailure(t *testing.T) {
 }
 
 func TestRunDeduplicatesSymlinkAliases(t *testing.T) {
+	capabilityTarget := t.TempDir()
+	symlinkOrSkip(t, capabilityTarget, filepath.Join(t.TempDir(), "capability-alias"))
+
 	fixture := newGitFixture(t)
 	alias := filepath.Join(t.TempDir(), "checkout-alias")
-	if err := os.Symlink(fixture.work, alias); err != nil {
-		t.Fatalf("create checkout symlink: %v", err)
-	}
+	symlinkOrSkip(t, fixture.work, alias)
 	expectedPaths := []string{fixture.work, alias}
 	sort.Strings(expectedPaths)
 
@@ -704,7 +776,7 @@ func TestRunPreviewDisablesLazyPromisorFetch(t *testing.T) {
 	git(t, fixture.work, "config", "remote.origin.promisor", "true")
 	git(t, fixture.work, "config", "remote.origin.partialclonefilter", "blob:none")
 	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
-	writeFile(t, globalConfig, "[remote \"origin\"]\n\tuploadpack = "+executable+"\n")
+	writeFile(t, globalConfig, "[remote \"origin\"]\n\tuploadpack = "+filepath.ToSlash(executable)+"\n")
 	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
 
 	gitDir := git(t, fixture.work, "rev-parse", "--absolute-git-dir")
@@ -755,7 +827,7 @@ func TestRunExecuteFetchesSwitchesAndFastForwards(t *testing.T) {
 	if result.CommitAfter != targetCommit || revParse(t, fixture.work, "HEAD") != targetCommit {
 		t.Fatalf("CommitAfter = %q and HEAD = %q, want %q", result.CommitAfter, revParse(t, fixture.work, "HEAD"), targetCommit)
 	}
-	if contents := readFile(t, filepath.Join(fixture.work, "README.md")); contents != "peer update\n" {
+	if contents := strings.ReplaceAll(readFile(t, filepath.Join(fixture.work, "README.md")), "\r\n", "\n"); contents != "peer update\n" {
 		t.Fatalf("README.md = %q, want peer update", contents)
 	}
 }
@@ -969,9 +1041,7 @@ func TestRunExecuteUsesBoundedNonInteractiveSSH(t *testing.T) {
 		t.Fatalf("locate test executable: %v", err)
 	}
 	fakeSSHDirectory := t.TempDir()
-	if err := os.Symlink(executable, filepath.Join(fakeSSHDirectory, "ssh")); err != nil {
-		t.Fatalf("install fake SSH: %v", err)
-	}
+	symlinkOrSkip(t, executable, filepath.Join(fakeSSHDirectory, "ssh"))
 	argumentsPath := filepath.Join(t.TempDir(), "ssh-arguments")
 	t.Setenv("GOREGRAPH_TEST_SSH_ARGUMENTS", argumentsPath)
 	t.Setenv("PATH", fakeSSHDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -1145,19 +1215,13 @@ func installGitFetchBarrier(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("locate real Git: %v", err)
 	}
-	barrierDirectory, err := os.MkdirTemp("/tmp", "goregraph-fetch-barrier-")
-	if err != nil {
-		t.Fatalf("create fetch barrier directory: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(barrierDirectory) })
+	barrierDirectory := t.TempDir()
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatalf("locate test executable: %v", err)
 	}
 	wrapperDirectory := t.TempDir()
-	if err := os.Symlink(executable, filepath.Join(wrapperDirectory, "git")); err != nil {
-		t.Fatalf("install Git fetch barrier: %v", err)
-	}
+	symlinkOrSkip(t, executable, filepath.Join(wrapperDirectory, "git"))
 	t.Setenv("GOREGRAPH_TEST_GIT_BARRIER_DIR", barrierDirectory)
 	t.Setenv("GOREGRAPH_TEST_REAL_GIT", realGit)
 	t.Setenv("PATH", wrapperDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -1175,9 +1239,7 @@ func installGitCommandLog(t *testing.T) string {
 		t.Fatalf("locate test executable: %v", err)
 	}
 	wrapperDirectory := t.TempDir()
-	if err := os.Symlink(executable, filepath.Join(wrapperDirectory, "git")); err != nil {
-		t.Fatalf("install Git command logger: %v", err)
-	}
+	symlinkOrSkip(t, executable, filepath.Join(wrapperDirectory, "git"))
 	logPath := filepath.Join(t.TempDir(), "git-commands")
 	t.Setenv("GOREGRAPH_TEST_GIT_LOG", logPath)
 	t.Setenv("GOREGRAPH_TEST_REAL_GIT", realGit)
@@ -1375,7 +1437,7 @@ func TestRunExecuteRejectsTargetFiltersWithoutInvokingThem(t *testing.T) {
 				t.Fatalf("locate test executable: %v", err)
 			}
 			globalConfig := filepath.Join(t.TempDir(), "gitconfig")
-			writeFile(t, globalConfig, "[filter \"unsafe\"]\n\t"+command+" = "+executable+"\n\trequired = true\n")
+			writeFile(t, globalConfig, "[filter \"unsafe\"]\n\t"+command+" = "+filepath.ToSlash(executable)+"\n\trequired = true\n")
 			writeFile(t, filepath.Join(fixture.peer, ".gitattributes"), "*.payload filter=unsafe\n")
 			writeFile(t, filepath.Join(fixture.peer, "remote.payload"), "remote\n")
 			git(t, fixture.peer, "add", ".gitattributes", "remote.payload")
@@ -1441,7 +1503,7 @@ func TestRunExecuteRejectsUnsafeExistingLocalTargetTreeBeforeSwitch(t *testing.T
 		t.Fatalf("locate test executable: %v", err)
 	}
 	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
-	writeFile(t, globalConfig, "[filter \"unsafe\"]\n\tsmudge = "+executable+"\n\trequired = true\n")
+	writeFile(t, globalConfig, "[filter \"unsafe\"]\n\tsmudge = "+filepath.ToSlash(executable)+"\n\trequired = true\n")
 	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
 	t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
 
@@ -1475,7 +1537,7 @@ func TestRunPreviewRejectsCommonWorktreeAttributesWithoutInvokingFilter(t *testi
 		t.Fatalf("locate test executable: %v", err)
 	}
 	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
-	writeFile(t, globalConfig, "[filter \"unsafe\"]\n\tclean = "+executable+"\n")
+	writeFile(t, globalConfig, "[filter \"unsafe\"]\n\tclean = "+filepath.ToSlash(executable)+"\n")
 	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
 	t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
 	commonDirectory := git(t, linkedWorktree, "rev-parse", "--git-common-dir")
@@ -1489,7 +1551,7 @@ func TestRunPreviewRejectsCommonWorktreeAttributesWithoutInvokingFilter(t *testi
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	assertSafetyRefusal(t, onlyResult(t, report), "info/attributes", false)
+	assertSafetyRefusal(t, onlyResult(t, report), filepath.Join("info", "attributes"), false)
 	assertMarkerAbsent(t, marker)
 }
 
@@ -1519,7 +1581,7 @@ func TestRunPreviewRejectsNestedIndexAttributesWithoutInvokingFilter(t *testing.
 				t.Fatalf("locate test executable: %v", err)
 			}
 			globalConfig := filepath.Join(t.TempDir(), "gitconfig")
-			writeFile(t, globalConfig, "[filter \"unsafe\"]\n\t"+command+" = "+executable+"\n\trequired = true\n")
+			writeFile(t, globalConfig, "[filter \"unsafe\"]\n\t"+command+" = "+filepath.ToSlash(executable)+"\n\trequired = true\n")
 			t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
 			t.Setenv("GOREGRAPH_TEST_GIT_COMMAND_MARKER", marker)
 			headBefore := revParse(t, fixture.work, "HEAD")
@@ -1569,9 +1631,7 @@ func TestRunExecuteRejectsNonSchemeRemoteHelperWithoutInvokingIt(t *testing.T) {
 		t.Fatalf("locate test executable: %v", err)
 	}
 	helperDirectory := t.TempDir()
-	if err := os.Symlink(executable, filepath.Join(helperDirectory, "git-remote-1foo")); err != nil {
-		t.Fatalf("install remote helper marker: %v", err)
-	}
+	symlinkOrSkip(t, executable, filepath.Join(helperDirectory, "git-remote-1foo"))
 	t.Setenv("PATH", helperDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
 	git(t, fixture.work, "remote", "set-url", "origin", "1foo::payload")
 	headBefore := revParse(t, fixture.work, "HEAD")

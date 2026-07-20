@@ -1320,7 +1320,7 @@ func TestResolveSourcePathRejectsUnsafePaths(t *testing.T) {
 	outside := writeSourceFile(t, t.TempDir(), "outside.java", "class Outside {}\n")
 	writeSourceFile(t, root, "src/inside.java", "class Inside {}\n")
 	if err := os.Symlink(outside, filepath.Join(root, "src", "escape.java")); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink creation is not permitted in this environment: %v", err)
 	}
 
 	tests := []struct {
@@ -1351,7 +1351,7 @@ func TestResolveSourcePathConfinesWorkspaceCandidatesToProjectRoot(t *testing.T)
 		t.Fatal(err)
 	}
 	if err := os.Symlink(secret, filepath.Join(root, "a", "link.java")); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink creation is not permitted in this environment: %v", err)
 	}
 
 	for _, candidate := range []sourceCandidate{

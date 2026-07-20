@@ -139,22 +139,6 @@ func acquireDashboardConfigLock(root string) (func() error, error) {
 			return nil, err
 		}
 		if acquired {
-			token := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
-			if err := lock.Truncate(0); err != nil {
-				_ = unlockDashboardConfigFile(lock)
-				_ = lock.Close()
-				return nil, err
-			}
-			if _, err := lock.Seek(0, io.SeekStart); err != nil {
-				_ = unlockDashboardConfigFile(lock)
-				_ = lock.Close()
-				return nil, err
-			}
-			if _, err := lock.WriteString(token); err != nil {
-				_ = unlockDashboardConfigFile(lock)
-				_ = lock.Close()
-				return nil, err
-			}
 			return func() error {
 				unlockErr := unlockDashboardConfigFile(lock)
 				closeErr := lock.Close()

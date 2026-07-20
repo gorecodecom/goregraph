@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -705,11 +706,12 @@ func TestContextMaxFilesSharesExportedMinimum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sourceText := strings.ReplaceAll(string(source), "\r\n", "\n")
 	for _, want := range []string{
 		"request.MaxFiles < MinContextMaxFiles",
 		"\n\t\t\tMinContextMaxFiles,\n\t\t\tMaxContextMaxFiles",
 	} {
-		if !strings.Contains(string(source), want) {
+		if !strings.Contains(sourceText, want) {
 			t.Fatalf("context max-files does not share bound %q", want)
 		}
 	}
@@ -3025,6 +3027,9 @@ func TestBuildContextSourceOperationalFailuresBecomeStableOmissions(t *testing.T
 		{name: "non UTF-8", body: []byte{0xff, 0xfe}, mode: 0o644, want: "source file is not UTF-8 text"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && test.name == "unreadable" {
+				t.Skip("Windows does not enforce Unix file permission bits")
+			}
 			index := scan.AgentContextIndexRecord{
 				SchemaVersion: scan.SchemaVersion,
 				Facts: []scan.AgentContextFactRecord{{
