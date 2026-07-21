@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -87,9 +89,10 @@ func runWorkspaceGitUpdate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: workspace Git update failed: %v\n", err)
 		return 1
 	}
-	targets := make([]gitupdate.Target, 0, len(plan.Items))
-	for _, item := range plan.Items {
-		targets = append(targets, gitupdate.Target{Path: item.AbsPath})
+	targets, err := workspaceGitTargets(plan)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace Git update failed: %v\n", err)
+		return 1
 	}
 	report, err := gitupdate.Run(context.Background(), targets, gitupdate.Options{
 		Execute:       parsed.execute,
@@ -100,6 +103,58 @@ func runWorkspaceGitUpdate(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return renderGitUpdateReport(stdout, stderr, parsed.format, report)
+}
+
+func workspaceGitTargets(plan scan.WorkspaceProjectScanPlanRecord) ([]gitupdate.Target, error) {
+	targets := make([]gitupdate.Target, 0, len(plan.Items))
+	for _, item := range plan.Items {
+		targets = append(targets, gitupdate.Target{Path: item.AbsPath})
+	}
+
+	workspaceRoot := filepath.FromSlash(plan.WorkspaceRoot)
+	err := filepath.WalkDir(workspaceRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if entry.Name() == ".git" {
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if info.IsDir() || info.Mode().IsRegular() {
+				targets = append(targets, gitupdate.Target{Path: filepath.ToSlash(filepath.Dir(path))})
+			}
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if path != workspaceRoot && entry.IsDir() && skipWorkspaceGitDiscoveryDir(entry.Name()) {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(targets, func(i, j int) bool { return targets[i].Path < targets[j].Path })
+	return targets, nil
+}
+
+func skipWorkspaceGitDiscoveryDir(name string) bool {
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
+	switch strings.ToLower(name) {
+	case "node_modules", "vendor", "target", "build", "dist", "coverage", "goregraph-out", ".goregraph-workspace":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseGitUpdateArguments(args []string) (gitUpdateArguments, error) {

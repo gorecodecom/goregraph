@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/gorecodecom/goregraph/internal/gitupdate"
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
 var cliGitFixtureTemplate struct {
@@ -366,6 +367,53 @@ func runWorkspaceGitJSON(t *testing.T, fixture cliWorkspaceFixture, execute bool
 		t.Fatalf("decode workspace JSON report: %v\nstdout=%s\nstderr=%s", err, stdout.String(), stderr.String())
 	}
 	return code, report, stderr.String()
+}
+
+func TestWorkspaceGitTargetsDiscoversNestedRepositories(t *testing.T) {
+	workspace := t.TempDir()
+	scanProject := filepath.Join(workspace, "projects", "service")
+	linkedRepository := filepath.Join(workspace, "linked")
+	for _, directory := range []string{
+		filepath.Join(workspace, ".git"),
+		filepath.Join(workspace, "nested", ".git"),
+		filepath.Join(workspace, ".worktrees", "checkout", ".git"),
+		filepath.Join(workspace, "node_modules", "dependency", ".git"),
+		scanProject,
+		linkedRepository,
+	} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatalf("create %s: %v", directory, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(linkedRepository, ".git"), []byte("gitdir: ../metadata\n"), 0o600); err != nil {
+		t.Fatalf("create regular .git file: %v", err)
+	}
+
+	plan := scan.WorkspaceProjectScanPlanRecord{
+		WorkspaceRoot: filepath.ToSlash(workspace),
+		Items: []scan.WorkspaceProjectScanItemRecord{
+			{AbsPath: filepath.ToSlash(scanProject)},
+		},
+	}
+	targets, err := workspaceGitTargets(plan)
+	if err != nil {
+		t.Fatalf("workspace Git targets: %v", err)
+	}
+
+	want := []string{
+		filepath.ToSlash(workspace),
+		filepath.ToSlash(linkedRepository),
+		filepath.ToSlash(filepath.Join(workspace, "nested")),
+		filepath.ToSlash(scanProject),
+	}
+	if len(targets) != len(want) {
+		t.Fatalf("targets = %#v, want paths %#v", targets, want)
+	}
+	for index, target := range targets {
+		if target.Path != want[index] {
+			t.Fatalf("targets[%d].Path = %q, want %q; targets=%#v", index, target.Path, want[index], targets)
+		}
+	}
 }
 
 func TestRunWorkspaceGitUpdateDeduplicatesRepositories(t *testing.T) {
