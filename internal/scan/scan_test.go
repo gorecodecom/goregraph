@@ -46,6 +46,44 @@ func TestRunWritesDeterministicFilesManifestAndReport(t *testing.T) {
 	}
 }
 
+func TestRunSkipsGeneratedDirectoriesAtAnyDepth(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.js", "export const main = true\n")
+	writeFile(t, root, "apps/rdbv/node_modules/.vite/deps/bundle.js", "export const dependency = true\n")
+	writeFile(t, root, "packages/library/vendor/dependency.go", "package dependency\n")
+	writeFile(t, root, "apps/portal/dist/bundle.js", "export const dist = true\n")
+	writeFile(t, root, "apps/portal/build/bundle.js", "export const build = true\n")
+	writeFile(t, root, "apps/portal/coverage/report.js", "export const coverage = true\n")
+	writeFile(t, root, "apps/portal/goregraph-out/index/files.json", "[]\n")
+	writeFile(t, root, "apps/portal/.goregraph-workspace/index/registry.json", "{}\n")
+	writeFile(t, root, "apps/portal/node_modules_backup/keep.js", "export const backup = true\n")
+	writeFile(t, root, "apps/portal/build-tools/keep.js", "export const tool = true\n")
+
+	result, err := Run(root, config.Defaults())
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.ScannedFiles != 3 {
+		t.Fatalf("ScannedFiles = %d, want 3", result.ScannedFiles)
+	}
+
+	var files []FileRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "files.json"), &files)
+	want := []string{
+		"apps/portal/build-tools/keep.js",
+		"apps/portal/node_modules_backup/keep.js",
+		"src/main.js",
+	}
+	if len(files) != len(want) {
+		t.Fatalf("files = %#v, want %#v", files, want)
+	}
+	for index := range want {
+		if files[index].Path != want[index] {
+			t.Fatalf("files[%d].Path = %q, want %q", index, files[index].Path, want[index])
+		}
+	}
+}
+
 func TestRunWritesJavaAPIContractsExactlyOnceThroughProjectOutputs(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "src/main/java/example/JobClient.java", `package example;

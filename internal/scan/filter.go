@@ -18,8 +18,26 @@ func shouldSkipPath(rel string, isDir bool, cfg config.Config, matcher gitignore
 		if rel == p || strings.HasPrefix(rel, p+"/") {
 			return true
 		}
+		if isLiteralPathSegment(p) && containsPathSegment(rel, p) {
+			return true
+		}
 	}
 	return matcher.Ignored(rel, isDir)
+}
+
+func isLiteralPathSegment(pattern string) bool {
+	return pattern != "" &&
+		!strings.Contains(pattern, "/") &&
+		!strings.ContainsAny(pattern, "*?[")
+}
+
+func containsPathSegment(rel, segment string) bool {
+	for _, candidate := range strings.Split(filepath.ToSlash(rel), "/") {
+		if candidate == segment {
+			return true
+		}
+	}
+	return false
 }
 
 func includedByPatterns(rel string, isDir bool, patterns []string) bool {
