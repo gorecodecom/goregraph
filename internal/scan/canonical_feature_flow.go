@@ -41,7 +41,7 @@ func BuildCanonicalFeatureFlow(flow WorkspaceFeatureFlowRecord) WorkspaceFeature
 	}
 	flow.Nodes = nil
 	flow.Edges = nil
-	seen := map[string]bool{}
+	nodeIndexes := map[string]int{}
 	addNode := func(node CanonicalFlowNodeRecord) string {
 		if node.Kind == "" {
 			return ""
@@ -50,10 +50,11 @@ func BuildCanonicalFeatureFlow(flow WorkspaceFeatureFlowRecord) WorkspaceFeature
 		node.Reason = firstNonEmpty(node.Reason, flow.Reason)
 		node.EvidenceIDs = uniqueSortedStrings(node.EvidenceIDs)
 		node.ID = StableWorkspaceID("feature-flow-node", flow.ID, node.Kind, node.Project, node.Service, node.Symbol, node.QualifiedName, node.File, fmt.Sprint(node.LineStart))
-		if seen[node.ID] {
+		if index, exists := nodeIndexes[node.ID]; exists {
+			flow.Nodes[index].EvidenceIDs = uniqueSortedStrings(append(flow.Nodes[index].EvidenceIDs, node.EvidenceIDs...))
 			return node.ID
 		}
-		seen[node.ID] = true
+		nodeIndexes[node.ID] = len(flow.Nodes)
 		flow.Nodes = append(flow.Nodes, node)
 		return node.ID
 	}
@@ -83,11 +84,17 @@ func BuildCanonicalFeatureFlow(flow WorkspaceFeatureFlowRecord) WorkspaceFeature
 	for _, test := range flow.Tests {
 		appendNode(CanonicalFlowNodeRecord{Kind: "test", Project: flow.BackendProject, Symbol: firstNonEmpty(test.TestMethod, test.TestClass, test.TestCase, test.TestFile), QualifiedName: qualifiedFlowName(test.TestClass, test.TestMethod), File: test.TestFile, LineStart: test.Line, LineEnd: test.Line, Confidence: test.Confidence, Reason: test.Reason})
 	}
+	edgeIndexes := map[string]int{}
 	for index := 1; index < len(ordered); index++ {
 		from, to := ordered[index-1], ordered[index]
 		target := canonicalNodeByID(flow.Nodes, to)
 		edgeType := canonicalEdgeType(target.Kind)
 		edge := CanonicalFlowEdgeRecord{ID: StableWorkspaceID("feature-flow-edge", flow.ID, from, to, edgeType), FromNodeID: from, ToNodeID: to, EdgeType: edgeType, Confidence: firstNonEmpty(target.Confidence, flow.Confidence, string(ConfidenceUnknown)), Reason: firstNonEmpty(target.Reason, flow.Reason, "Ordered canonical feature-flow stage."), EvidenceIDs: append([]string(nil), target.EvidenceIDs...), SourceAnalyzer: "workspace-reconcile"}
+		if edgeIndex, exists := edgeIndexes[edge.ID]; exists {
+			flow.Edges[edgeIndex].EvidenceIDs = uniqueSortedStrings(append(flow.Edges[edgeIndex].EvidenceIDs, edge.EvidenceIDs...))
+			continue
+		}
+		edgeIndexes[edge.ID] = len(flow.Edges)
 		flow.Edges = append(flow.Edges, edge)
 	}
 	return flow

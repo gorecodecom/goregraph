@@ -116,6 +116,61 @@ func TestDoctorAcceptsGeneratedWorkspaceAPICatalog(t *testing.T) {
 	}
 }
 
+func TestDoctorValidatesProjectAPICatalogAgainstRegisteredWorkspaceEvidence(t *testing.T) {
+	t.Run("accepts provider evidence from another indexed project", func(t *testing.T) {
+		workspace, projectRoot, catalogPath := workspaceProjectCatalogFixture(t)
+		var catalog scan.APICatalogRecord
+		readTestJSON(t, catalogPath, &catalog)
+		endpoint := catalog.Endpoints[0]
+
+		projectEvidence, available := catalogEvidenceIDs(filepath.Join(projectRoot, "goregraph-out"))
+		if !available {
+			t.Fatal("project evidence is unavailable")
+		}
+		providerOut := workspaceProjectOutputForTest(t, workspace, endpoint.ProviderProject)
+		providerEvidence, available := catalogEvidenceIDs(providerOut)
+		if !available {
+			t.Fatal("provider evidence is unavailable")
+		}
+		providerOnlyEvidence := ""
+		for _, id := range endpoint.EvidenceIDs {
+			if providerEvidence[id] && !projectEvidence[id] {
+				providerOnlyEvidence = id
+				break
+			}
+		}
+		if providerOnlyEvidence == "" {
+			t.Fatalf("endpoint has no provider-only evidence: %#v", endpoint)
+		}
+
+		result, err := Run(projectRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if containsLine(result.Lines, "FAIL api-catalog:") {
+			t.Fatalf("Doctor rejected registered provider evidence %q: %v", providerOnlyEvidence, result.Lines)
+		}
+		if !containsLine(result.Lines, "OK   api-catalog: api-catalog.json valid") {
+			t.Fatalf("Doctor did not report the project API catalog as valid: %v", result.Lines)
+		}
+	})
+
+	t.Run("rejects truly unknown evidence", func(t *testing.T) {
+		_, projectRoot, catalogPath := workspaceProjectCatalogFixture(t)
+		var catalog scan.APICatalogRecord
+		readTestJSON(t, catalogPath, &catalog)
+		endpointID := catalog.Endpoints[0].ID
+		catalog.Endpoints[0].EvidenceIDs = []string{"evidence:missing"}
+		writeTestJSON(t, catalogPath, catalog)
+
+		result, err := Run(projectRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		requireExactAPICatalogFailure(t, result, fmt.Sprintf("FAIL api-catalog: endpoint %q contains dangling evidence reference %q", endpointID, "evidence:missing"))
+	})
+}
+
 func TestDoctorRejectsWorkspaceAPICatalogDanglingEvidence(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -306,6 +361,14 @@ class OrderController {
 	}
 	layout := scan.NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace"))
 	return workspace, layout.Index("api-catalog.json")
+}
+
+func workspaceProjectCatalogFixture(t *testing.T) (string, string, string) {
+	t.Helper()
+	workspace, _ := workspaceCatalogFixture(t)
+	projectRoot := filepath.Join(workspace, "frontend", "web")
+	layout := scan.NewProjectOutputLayout(filepath.Join(projectRoot, "goregraph-out"))
+	return workspace, projectRoot, layout.Index("api-catalog.json")
 }
 
 func writeWorkspaceProjectFile(t *testing.T, root, name, contents string) {

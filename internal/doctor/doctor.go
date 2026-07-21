@@ -32,18 +32,21 @@ func Run(root string) (Result, error) {
 		return result, nil
 	}
 
-	checkProject(root, cfg, &result)
 	workspaceRoot, ok, err := scan.WorkspaceRoot(root, cfg)
 	if err != nil {
 		return Result{}, err
 	}
-	if ok && explicitWorkspaceState(workspaceRoot, cfg) {
+	if !ok || !explicitWorkspaceState(workspaceRoot, cfg) {
+		workspaceRoot = ""
+	}
+	checkProject(root, cfg, workspaceRoot, &result)
+	if workspaceRoot != "" {
 		checkWorkspace(workspaceRoot, &result)
 	}
 	return result, nil
 }
 
-func checkProject(root string, cfg config.Config, result *Result) {
+func checkProject(root string, cfg config.Config, workspaceRoot string, result *Result) {
 	out := filepath.Join(root, cfg.OutputDir)
 	if info, err := os.Stat(out); err != nil || !info.IsDir() {
 		result.fail("output", fmt.Sprintf("%s is missing", cfg.OutputDir))
@@ -68,7 +71,15 @@ func checkProject(root string, cfg config.Config, result *Result) {
 	checkAgentContextIndex(out, manifest, result)
 	checkFreshnessIntegrity(out, result)
 	checkEvidenceIntegrity(out, result)
-	checkAPICatalog(out, manifest, nil, result)
+	var registry *scan.WorkspaceRegistryRecord
+	if workspaceRoot != "" {
+		var workspaceRegistry scan.WorkspaceRegistryRecord
+		registryPath := scan.NewWorkspaceOutputLayout(filepath.Join(workspaceRoot, ".goregraph-workspace")).Index("registry.json")
+		if err := readJSON(registryPath, &workspaceRegistry); err == nil {
+			registry = &workspaceRegistry
+		}
+	}
+	checkAPICatalog(out, manifest, workspaceRoot, registry, result)
 	checkCanonicalFeatureFlows(out, result)
 	checkStaleFiles(root, manifest, result)
 	if result.Failures > 0 || result.Warnings > 0 {
@@ -330,7 +341,7 @@ func checkWorkspace(root string, result *Result) {
 	checkWorkspaceJSONFiles(out, manifest.Index.Files, result)
 	var registry scan.WorkspaceRegistryRecord
 	if err := readJSON(scan.NewWorkspaceOutputLayout(out).Index("registry.json"), &registry); err == nil {
-		checkAPICatalog(out, manifest, &registry, result)
+		checkAPICatalog(out, manifest, filepath.Dir(out), &registry, result)
 	}
 	checkAgentContextIndex(out, manifest, result)
 	if manifest.Dashboard.Complete {
@@ -341,7 +352,7 @@ func checkWorkspace(root string, result *Result) {
 	}
 }
 
-func checkAPICatalog(out string, manifest scan.Manifest, registry *scan.WorkspaceRegistryRecord, result *Result) {
+func checkAPICatalog(out string, manifest scan.Manifest, workspaceRoot string, registry *scan.WorkspaceRegistryRecord, result *Result) {
 	const catalogManifestFile = "index/api-catalog.json"
 	if !manifestListsFile(manifest.Index.Files, catalogManifestFile) {
 		return
@@ -370,7 +381,7 @@ func checkAPICatalog(out string, manifest scan.Manifest, registry *scan.Workspac
 	evidenceIDs, evidenceAvailable := catalogEvidenceIDs(out)
 	if registry != nil {
 		var err error
-		evidenceIDs, err = workspaceCatalogEvidenceIDs(filepath.Dir(out), *registry)
+		evidenceIDs, err = workspaceCatalogEvidenceIDs(workspaceRoot, *registry)
 		if err != nil {
 			result.fail("api-catalog", err.Error())
 			return
