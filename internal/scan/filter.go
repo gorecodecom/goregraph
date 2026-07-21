@@ -36,7 +36,7 @@ func isRecursiveDefaultDirectoryExclude(pattern string) bool {
 
 func containsPathSegment(rel, segment string) bool {
 	for _, candidate := range strings.Split(filepath.ToSlash(rel), "/") {
-		if candidate == segment {
+		if strings.EqualFold(candidate, segment) {
 			return true
 		}
 	}

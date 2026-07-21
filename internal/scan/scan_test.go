@@ -94,6 +94,37 @@ func TestRunSkipsGeneratedDirectoriesAtAnyDepth(t *testing.T) {
 	}
 }
 
+func TestRunSkipsGeneratedDirectoriesCaseInsensitively(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "src/main.js", "export const main = true\n")
+	writeFile(t, root, "apps/web/Node_Modules/package/index.js", "export const dependency = true\n")
+	writeFile(t, root, "apps/web/DIST/bundle.js", "export const bundle = true\n")
+	writeFile(t, root, "apps/web/Node_Modules_backup/keep.js", "export const backup = true\n")
+
+	result, err := Run(root, config.Defaults())
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.ScannedFiles != 2 {
+		t.Fatalf("ScannedFiles = %d, want 2", result.ScannedFiles)
+	}
+
+	var files []FileRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "files.json"), &files)
+	want := []string{
+		"apps/web/Node_Modules_backup/keep.js",
+		"src/main.js",
+	}
+	if len(files) != len(want) {
+		t.Fatalf("files = %#v, want %#v", files, want)
+	}
+	for index := range want {
+		if files[index].Path != want[index] {
+			t.Fatalf("files[%d].Path = %q, want %q", index, files[index].Path, want[index])
+		}
+	}
+}
+
 func TestRunKeepsNestedCustomLiteralExcludeRootRelative(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "generated/root.js", "export const root = true\n")
