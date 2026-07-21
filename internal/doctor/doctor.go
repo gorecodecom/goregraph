@@ -103,25 +103,29 @@ func loadProjectWorkspaceCatalogRegistry(workspaceRoot string) *scan.WorkspaceRe
 }
 
 func validProjectWorkspaceCatalogRegistry(workspaceRoot string, registry scan.WorkspaceRegistryRecord) bool {
-	requestedRoot, err := canonicalDoctorPath(workspaceRoot)
+	requestedRoot, err := os.Stat(workspaceRoot)
 	if err != nil {
 		return false
 	}
-	registryRoot, err := canonicalDoctorPath(registry.Root)
-	if err != nil || registryRoot != requestedRoot {
+	registryRoot, err := os.Stat(filepath.FromSlash(registry.Root))
+	if err != nil || !os.SameFile(requestedRoot, registryRoot) {
 		return false
 	}
-	projects := make(map[string]bool, len(registry.Projects))
+	projectFiles := make([]os.FileInfo, 0, len(registry.Projects))
 	for _, project := range registry.Projects {
 		projectPath, err := cleanWorkspaceRelativePath(project.Path)
 		if err != nil {
 			return false
 		}
-		projectPath = filepath.ToSlash(projectPath)
-		if projects[projectPath] {
+		projectRoot := filepath.Join(workspaceRoot, projectPath)
+		if err := requirePathWithinWorkspace(workspaceRoot, projectRoot); err != nil {
 			return false
 		}
-		projects[projectPath] = true
+		projectFile, err := os.Stat(projectRoot)
+		if err != nil || sameFileAlreadyRegistered(projectFile, projectFiles) {
+			return false
+		}
+		projectFiles = append(projectFiles, projectFile)
 		if !project.Indexed {
 			continue
 		}
@@ -134,6 +138,15 @@ func validProjectWorkspaceCatalogRegistry(workspaceRoot string, registry scan.Wo
 		}
 	}
 	return true
+}
+
+func sameFileAlreadyRegistered(candidate os.FileInfo, registered []os.FileInfo) bool {
+	for _, existing := range registered {
+		if os.SameFile(candidate, existing) {
+			return true
+		}
+	}
+	return false
 }
 
 func checkCanonicalFeatureFlows(out string, result *Result) {

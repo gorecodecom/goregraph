@@ -266,6 +266,65 @@ class UnregisteredController {
 	requireExactAPICatalogFailure(t, result, fmt.Sprintf("FAIL api-catalog: endpoint %q contains dangling evidence reference %q", endpointID, unregisteredEvidenceID))
 }
 
+func TestValidProjectWorkspaceCatalogRegistryUsesFilesystemIdentity(t *testing.T) {
+	t.Run("alternate-case workspace root", func(t *testing.T) {
+		workspace := t.TempDir()
+		alternateRoot := alternateCasePathForTest(workspace)
+		requestedInfo, err := os.Stat(workspace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		alternateInfo, err := os.Stat(alternateRoot)
+		if err != nil || !os.SameFile(requestedInfo, alternateInfo) {
+			t.Skip("filesystem does not resolve alternate-case paths to the same directory")
+		}
+		if !validProjectWorkspaceCatalogRegistry(workspace, scan.WorkspaceRegistryRecord{Root: alternateRoot}) {
+			t.Fatalf("alternate-case workspace root %q was rejected for %q", alternateRoot, workspace)
+		}
+	})
+
+	t.Run("case-variant project aliases", func(t *testing.T) {
+		workspace := t.TempDir()
+		projectPath := filepath.Join("Services", "Orders")
+		projectRoot := filepath.Join(workspace, projectPath)
+		if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		alternateProjectPath := alternateCasePathForTest(projectPath)
+		projectInfo, err := os.Stat(projectRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		alternateInfo, err := os.Stat(filepath.Join(workspace, alternateProjectPath))
+		if err != nil || !os.SameFile(projectInfo, alternateInfo) {
+			t.Skip("filesystem does not resolve case-variant project paths to the same directory")
+		}
+		registry := scan.WorkspaceRegistryRecord{
+			Root: workspace,
+			Projects: []scan.WorkspaceProjectRecord{
+				{Path: filepath.ToSlash(projectPath)},
+				{Path: filepath.ToSlash(alternateProjectPath)},
+			},
+		}
+		if validProjectWorkspaceCatalogRegistry(workspace, registry) {
+			t.Fatalf("case-variant aliases for %q were accepted", projectRoot)
+		}
+	})
+}
+
+func TestSameFileAlreadyRegistered(t *testing.T) {
+	info, err := os.Stat(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sameFileAlreadyRegistered(info, nil) {
+		t.Fatal("file was reported as already registered without a prior identity")
+	}
+	if !sameFileAlreadyRegistered(info, []os.FileInfo{info}) {
+		t.Fatal("same filesystem identity was not detected")
+	}
+}
+
 func TestDoctorRejectsWorkspaceAPICatalogDanglingEvidence(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -475,6 +534,18 @@ func writeWorkspaceProjectFile(t *testing.T, root, name, contents string) {
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func alternateCasePathForTest(path string) string {
+	for index := range path {
+		switch {
+		case path[index] >= 'a' && path[index] <= 'z':
+			return path[:index] + string(path[index]-'a'+'A') + path[index+1:]
+		case path[index] >= 'A' && path[index] <= 'Z':
+			return path[:index] + string(path[index]-'A'+'a') + path[index+1:]
+		}
+	}
+	return path
 }
 
 func workspaceProjectOutputForTest(t *testing.T, workspace, projectPath string) string {
