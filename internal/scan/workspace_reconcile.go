@@ -556,10 +556,16 @@ func discoverWorkspaceProjects(workspaceRoot, currentAbs, defaultOutput string) 
 }
 
 func walkWorkspaceProjectRoots(workspaceRoot, currentAbs, dir, group, defaultOutput string, projects map[string]WorkspaceProjectRecord) error {
+	_, err := walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defaultOutput, projects)
+	return err
+}
+
+func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defaultOutput string, projects map[string]WorkspaceProjectRecord) (bool, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return err
+		return false, err
 	}
+	foundProjectRoot := false
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() || skipWorkspaceDiscoveryDir(name) {
@@ -572,13 +578,22 @@ func walkWorkspaceProjectRoots(workspaceRoot, currentAbs, dir, group, defaultOut
 		}
 		if hasWorkspaceProjectRoot(abs, defaultOutput) {
 			addWorkspaceProject(projects, workspaceRoot, currentAbs, abs, nextGroup, defaultOutput)
+			foundProjectRoot = true
 			continue
 		}
-		if err := walkWorkspaceProjectRoots(workspaceRoot, currentAbs, abs, nextGroup, defaultOutput, projects); err != nil {
+		foundNestedProjectRoot, err := walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, abs, nextGroup, defaultOutput, projects)
+		if err != nil {
 			continue
+		}
+		if !foundNestedProjectRoot && group != "" && samePath(dir, filepath.Join(workspaceRoot, group)) {
+			addWorkspaceProject(projects, workspaceRoot, currentAbs, abs, group, defaultOutput)
+			foundNestedProjectRoot = true
+		}
+		if foundNestedProjectRoot {
+			foundProjectRoot = true
 		}
 	}
-	return nil
+	return foundProjectRoot, nil
 }
 
 func hasWorkspaceProjectRoot(abs, outputDir string) bool {

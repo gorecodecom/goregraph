@@ -1421,6 +1421,45 @@ func TestWorkspaceDiscoveryRecognizesWorkspaceRoot(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDiscoveryPreservesMarkerlessDirectGroupChildWithoutNestedProject(t *testing.T) {
+	workspace := t.TempDir()
+	writeFile(t, filepath.Join(workspace, "microservices", "legacy-service"), "README.md", "# legacy\n")
+	writeFile(t, filepath.Join(workspace, "microservices", "commerce", "orders"), "Cargo.toml", "[package]\nname='orders'\n")
+
+	projects, err := discoverWorkspaceProjects(workspace, workspace, "goregraph-out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{
+		"microservices/commerce/orders",
+		"microservices/legacy-service",
+	}, "\n")
+	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != want {
+		t.Fatalf("project paths = %q, want %q", got, want)
+	}
+}
+
+func TestWorkspaceDiscoverySkipsInfrastructureDirectories(t *testing.T) {
+	workspace := t.TempDir()
+	writeFile(t, filepath.Join(workspace, "projects", "app"), "package.json", `{"name":"app"}`)
+	for _, name := range []string{
+		"node_modules", "vendor", "target", "build", "dist", "coverage", "goregraph-out", ".worktrees",
+	} {
+		writeFile(t, filepath.Join(workspace, name, "ignored"), "package.json", `{"name":"ignored"}`)
+	}
+	if err := os.Symlink(filepath.Join(workspace, "projects", "app"), filepath.Join(workspace, "linked-project")); err != nil {
+		t.Logf("skipping symlink assertion: %v", err)
+	}
+
+	projects, err := discoverWorkspaceProjects(workspace, workspace, "goregraph-out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "projects/app" {
+		t.Fatalf("project paths = %q, want projects/app", got)
+	}
+}
+
 func workspaceProjectPaths(projects []WorkspaceProjectRecord) []string {
 	paths := make([]string, 0, len(projects))
 	for _, project := range projects {
