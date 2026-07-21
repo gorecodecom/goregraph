@@ -741,7 +741,7 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
 	}
 	printWorkspaceMissingScanPlan(stdout, plan, false)
 	scanned := 0
-	for _, item := range plan.Items {
+	for index, item := range plan.Items {
 		projectCfg, err := config.Load(item.AbsPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
@@ -756,13 +756,21 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
 				return 1
 			}
 		}
-		result, err := scan.Run(item.AbsPath, projectCfg)
+		_, err = runWorkspaceProjectWithProgress(
+			stdout,
+			stderr,
+			index+1,
+			len(plan.Items),
+			item.Project,
+			defaultWorkspaceProgressClock(),
+			func() (scan.Result, error) {
+				return scan.Run(item.AbsPath, projectCfg)
+			},
+		)
 		if err != nil {
-			fmt.Fprintf(stderr, "error: scanning %s failed: %v\n", item.Project, err)
 			return 1
 		}
 		scanned++
-		fmt.Fprintf(stdout, "- Scanned `%s` (%d files, skipped %d)\n", item.Project, result.ScannedFiles, result.SkippedFiles)
 	}
 	if loaded.UpdateGitignore {
 		if _, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot); err != nil {
@@ -840,7 +848,7 @@ Workspace detection:
 		return 0
 	}
 	scanned := 0
-	for _, item := range plan.Items {
+	for index, item := range plan.Items {
 		projectCfg, err := config.Load(item.AbsPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
@@ -859,13 +867,21 @@ Workspace detection:
 				fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(item.AbsPath, ".gitignore"))
 			}
 		}
-		result, err := scan.RunBuild(item.AbsPath, projectCfg, target)
+		_, err = runWorkspaceProjectWithProgress(
+			stdout,
+			stderr,
+			index+1,
+			len(plan.Items),
+			item.Project,
+			defaultWorkspaceProgressClock(),
+			func() (scan.Result, error) {
+				return scan.RunBuild(item.AbsPath, projectCfg, target)
+			},
+		)
 		if err != nil {
-			fmt.Fprintf(stderr, "error: scanning %s failed: %v\n", item.Project, err)
 			return 1
 		}
 		scanned++
-		fmt.Fprintf(stdout, "- Scanned `%s` (%d files, skipped %d)\n", item.Project, result.ScannedFiles, result.SkippedFiles)
 	}
 	loaded.Workspace = true
 	loaded.WorkspaceRoot = plan.WorkspaceRoot

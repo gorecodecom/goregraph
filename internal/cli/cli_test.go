@@ -657,7 +657,7 @@ class TaskController {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Scanned 1 missing workspace project") || !strings.Contains(stdout.String(), "microservices/ms-task") {
+	if !strings.Contains(stdout.String(), "Scanned 1 missing workspace project") || !strings.Contains(stdout.String(), "Completed [1/1] microservices/ms-task") {
 		t.Fatalf("execute output missing scan summary:\n%s", stdout.String())
 	}
 	if _, err := os.Stat(filepath.Join(task, "goregraph-out", "manifest.json")); err != nil {
@@ -706,9 +706,9 @@ class CadasterController {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
-	for _, project := range []string{"frontend/frontend-monorepo", "microservices/ms-cadaster", "microservices/ms-task"} {
-		if !strings.Contains(stdout.String(), "Scanned `"+project+"`") {
-			t.Fatalf("scan-all output missing %s:\n%s", project, stdout.String())
+	for index, project := range []string{"frontend/frontend-monorepo", "microservices/ms-cadaster", "microservices/ms-task"} {
+		if !strings.Contains(stdout.String(), fmt.Sprintf("Completed [%d/3] %s", index+1, project)) {
+			t.Fatalf("scan-all output missing progress for %s:\n%s", project, stdout.String())
 		}
 	}
 	for _, out := range []string{
