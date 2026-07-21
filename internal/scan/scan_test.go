@@ -59,13 +59,17 @@ func TestRunSkipsGeneratedDirectoriesAtAnyDepth(t *testing.T) {
 	writeFile(t, root, "apps/portal/.gitignore", "local-output/\n")
 	writeFile(t, root, "apps/portal/node_modules_backup/keep.js", "export const backup = true\n")
 	writeFile(t, root, "apps/portal/build-tools/keep.js", "export const tool = true\n")
+	writeFile(t, root, "apps/portal/coverage-data/keep.js", "export const coverageData = true\n")
+	writeFile(t, root, "apps/portal/dist-assets/keep.js", "export const distAsset = true\n")
+	writeFile(t, root, "apps/portal/goregraph-output/keep.js", "export const output = true\n")
+	writeFile(t, root, "packages/library/vendor-tools/keep.go", "package vendortools\n")
 
 	result, err := Run(root, config.Defaults())
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if result.ScannedFiles != 4 {
-		t.Fatalf("ScannedFiles = %d, want 4", result.ScannedFiles)
+	if result.ScannedFiles != 8 {
+		t.Fatalf("ScannedFiles = %d, want 8", result.ScannedFiles)
 	}
 
 	var files []FileRecord
@@ -73,9 +77,42 @@ func TestRunSkipsGeneratedDirectoriesAtAnyDepth(t *testing.T) {
 	want := []string{
 		"apps/portal/.gitignore",
 		"apps/portal/build-tools/keep.js",
+		"apps/portal/coverage-data/keep.js",
+		"apps/portal/dist-assets/keep.js",
+		"apps/portal/goregraph-output/keep.js",
 		"apps/portal/node_modules_backup/keep.js",
+		"packages/library/vendor-tools/keep.go",
 		"src/main.js",
 	}
+	if len(files) != len(want) {
+		t.Fatalf("files = %#v, want %#v", files, want)
+	}
+	for index := range want {
+		if files[index].Path != want[index] {
+			t.Fatalf("files[%d].Path = %q, want %q", index, files[index].Path, want[index])
+		}
+	}
+}
+
+func TestRunKeepsNestedCustomLiteralExcludeRootRelative(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "generated/root.js", "export const root = true\n")
+	writeFile(t, root, "src/generated/nested.js", "export const nested = true\n")
+	writeFile(t, root, "src/generated-tools/lookalike.js", "export const lookalike = true\n")
+
+	cfg := config.Defaults()
+	cfg.Exclude = append(cfg.Exclude, "generated/")
+	result, err := Run(root, cfg)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if result.ScannedFiles != 2 {
+		t.Fatalf("ScannedFiles = %d, want 2", result.ScannedFiles)
+	}
+
+	var files []FileRecord
+	readJSON(t, filepath.Join(root, "goregraph-out", "files.json"), &files)
+	want := []string{"src/generated-tools/lookalike.js", "src/generated/nested.js"}
 	if len(files) != len(want) {
 		t.Fatalf("files = %#v, want %#v", files, want)
 	}

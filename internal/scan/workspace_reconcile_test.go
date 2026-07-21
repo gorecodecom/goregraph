@@ -2,6 +2,7 @@ package scan
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1450,6 +1451,122 @@ func TestWorkspaceDiscoverySkipsInfrastructureDirectories(t *testing.T) {
 	if err := os.Symlink(filepath.Join(workspace, "projects", "app"), filepath.Join(workspace, "linked-project")); err != nil {
 		t.Logf("skipping symlink assertion: %v", err)
 	}
+
+	projects, err := discoverWorkspaceProjects(workspace, workspace, "goregraph-out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "projects/app" {
+		t.Fatalf("project paths = %q, want projects/app", got)
+	}
+}
+
+func TestWorkspaceDiscoveryPropagatesNestedReadErrors(t *testing.T) {
+	workspace := t.TempDir()
+	blocked := filepath.Join(workspace, "projects", "blocked")
+	writeFile(t, filepath.Join(workspace, "projects", "app"), "package.json", `{"name":"app"}`)
+	if err := os.MkdirAll(blocked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	readErr := errors.New("injected read failure")
+	originalReadDir := workspaceReadDir
+	workspaceReadDir = func(dir string) ([]os.DirEntry, error) {
+		if samePath(dir, blocked) {
+			return nil, readErr
+		}
+		return originalReadDir(dir)
+	}
+	t.Cleanup(func() {
+		workspaceReadDir = originalReadDir
+	})
+
+	_, err := discoverWorkspaceProjects(workspace, workspace, "goregraph-out")
+	if !errors.Is(err, readErr) {
+		t.Fatalf("discoverWorkspaceProjects error = %v, want injected read failure", err)
+	}
+	if !strings.Contains(err.Error(), blocked) {
+		t.Fatalf("discoverWorkspaceProjects error = %q, want path %q", err, blocked)
+	}
+}
+
+func TestWorkspaceDiscoveryRequiresRegularMarkerFiles(t *testing.T) {
+	for _, marker := range []string{"package.json", "go.mod", "example.gemspec", "example.sln", "example.csproj"} {
+		t.Run(marker, func(t *testing.T) {
+			workspace := t.TempDir()
+			candidate := filepath.Join(workspace, "projects", "container")
+			if err := os.MkdirAll(filepath.Join(candidate, marker), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(candidate, "nested"), "package.json", `{"name":"nested"}`)
+
+			projects, err := discoverWorkspaceProjects(workspace, workspace, "goregraph-out")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "projects/container/nested" {
+				t.Fatalf("project paths = %q, want projects/container/nested", got)
+			}
+		})
+	}
+}
+
+func TestWorkspaceDiscoveryRejectsInvalidProjectOutputManifests(t *testing.T) {
+	tests := []struct {
+		name     string
+		scope    string
+		complete bool
+		corrupt  bool
+	}{
+		{name: "corrupt", corrupt: true},
+		{name: "incomplete", scope: "project"},
+		{name: "wrong-scope", scope: "workspace", complete: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			candidate := filepath.Join(workspace, "projects", "container")
+			if test.corrupt {
+				writeFile(t, candidate, "goregraph-out/manifest.json", "{")
+			} else {
+				manifest := OutputManifest{
+					Tool:   ToolName,
+					Schema: SchemaVersion,
+					Scope:  test.scope,
+					Index:  ProjectionStatus{Complete: test.complete},
+				}
+				if err := writeJSON(NewProjectOutputLayout(filepath.Join(candidate, "goregraph-out")).Manifest, manifest); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeFile(t, filepath.Join(candidate, "nested"), "package.json", `{"name":"nested"}`)
+
+			projects, err := discoverWorkspaceProjects(workspace, workspace, "goregraph-out")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "projects/container/nested" {
+				t.Fatalf("project paths = %q, want projects/container/nested", got)
+			}
+		})
+	}
+}
+
+func TestWorkspaceDiscoveryRecognizesValidProjectOutputManifest(t *testing.T) {
+	workspace := t.TempDir()
+	project := filepath.Join(workspace, "projects", "app")
+	manifest := OutputManifest{
+		Tool:        ToolName,
+		Schema:      SchemaVersion,
+		Scope:       "project",
+		OutputDir:   "goregraph-out",
+		ProjectRoot: "app",
+		Index:       ProjectionStatus{Complete: true},
+	}
+	if err := writeJSON(NewProjectOutputLayout(filepath.Join(project, "goregraph-out")).Manifest, manifest); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(project, "nested"), "package.json", `{"name":"nested"}`)
 
 	projects, err := discoverWorkspaceProjects(workspace, workspace, "goregraph-out")
 	if err != nil {

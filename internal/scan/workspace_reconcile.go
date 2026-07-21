@@ -13,6 +13,7 @@ import (
 )
 
 var workspaceGroupDirs = []string{"frontend", "frontends", "microservices", "services", "backends"}
+var workspaceReadDir = os.ReadDir
 
 type workspaceIndexProject struct {
 	record             WorkspaceProjectRecord
@@ -561,9 +562,9 @@ func walkWorkspaceProjectRoots(workspaceRoot, currentAbs, dir, group, defaultOut
 }
 
 func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defaultOutput string, projects map[string]WorkspaceProjectRecord) (bool, error) {
-	entries, err := os.ReadDir(dir)
+	entries, err := workspaceReadDir(dir)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("read workspace directory %s: %w", dir, err)
 	}
 	foundProjectRoot := false
 	for _, entry := range entries {
@@ -583,7 +584,7 @@ func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defau
 		}
 		foundNestedProjectRoot, err := walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, abs, nextGroup, defaultOutput, projects)
 		if err != nil {
-			continue
+			return false, err
 		}
 		if !foundNestedProjectRoot && group != "" && samePath(dir, filepath.Join(workspaceRoot, group)) {
 			addWorkspaceProject(projects, workspaceRoot, currentAbs, abs, group, defaultOutput)
@@ -752,19 +753,23 @@ func hasProjectMarker(abs, outputDir string) bool {
 		"build.sbt", "Package.swift", "Gemfile", "CMakeLists.txt",
 		"meson.build", "goregraph.yml",
 	} {
-		if workspaceFileExists(filepath.Join(abs, name)) {
+		if workspaceRegularFileExists(filepath.Join(abs, name)) {
 			return true
 		}
 	}
 	entries, _ := os.ReadDir(abs)
 	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
 		for _, pattern := range []string{"*.gemspec", "*.sln", "*.csproj"} {
-			if matched, _ := filepath.Match(pattern, entry.Name()); matched && !entry.IsDir() {
+			if matched, _ := filepath.Match(pattern, entry.Name()); matched {
 				return true
 			}
 		}
 	}
-	return workspaceFileExists(filepath.Join(abs, outputDir, "manifest.json"))
+	return validProjectOutput(filepath.Join(abs, outputDir))
 }
 
 func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexProject, error) {
@@ -3863,4 +3868,9 @@ func samePath(left, right string) bool {
 func workspaceFileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func workspaceRegularFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }

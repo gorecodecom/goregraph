@@ -18,17 +18,20 @@ func shouldSkipPath(rel string, isDir bool, cfg config.Config, matcher gitignore
 		if rel == p || strings.HasPrefix(rel, p+"/") {
 			return true
 		}
-		if isDir && isLiteralPathSegment(p) && containsPathSegment(rel, p) {
+		if isDir && isRecursiveDefaultDirectoryExclude(p) && containsPathSegment(rel, p) {
 			return true
 		}
 	}
 	return matcher.Ignored(rel, isDir)
 }
 
-func isLiteralPathSegment(pattern string) bool {
-	return pattern != "" &&
-		!strings.Contains(pattern, "/") &&
-		!strings.ContainsAny(pattern, "*?[")
+func isRecursiveDefaultDirectoryExclude(pattern string) bool {
+	switch pattern {
+	case ".git", "node_modules", "vendor", "target", "build", "dist", "coverage", ".idea", ".vscode", "goregraph-out", ".goregraph-workspace":
+		return true
+	default:
+		return false
+	}
 }
 
 func containsPathSegment(rel, segment string) bool {

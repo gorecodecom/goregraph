@@ -39,17 +39,37 @@ func BenchmarkResolveScriptSymbolFactsLargeUnresolvedProject(b *testing.B) {
 		{Path: "src/provider.ts", Language: "typescript"},
 		{Path: "src/consumer.ts", Language: "typescript"},
 	}
-	facts := ProjectSymbolFacts{}
-	for i := 0; i < 1000; i++ {
-		facts.References = append(facts.References, RichRelationRecord{
-			ID: "reference-" + strconv.Itoa(i), From: "src/consumer.ts",
-			Type: "calls_export", Language: "typescript",
-			TargetModule: "./provider", TargetExport: "Missing" + strconv.Itoa(i),
-		})
+	scenarios := []struct {
+		name           string
+		repeatedExport bool
+	}{
+		{name: "unique-unresolved"},
+		{name: "repeated-export", repeatedExport: true},
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		benchmarkScriptFacts = ResolveScriptSymbolFacts(files, nil, nil, facts)
+	for _, scenario := range scenarios {
+		for _, size := range []int{250, 500, 1000, 2000} {
+			b.Run(scenario.name+"/size-"+strconv.Itoa(size), func(b *testing.B) {
+				facts := ProjectSymbolFacts{}
+				if scenario.repeatedExport {
+					facts = ExtractScriptSymbolFacts(files[0], "export function shared() {}\n")
+				}
+				for i := 0; i < size; i++ {
+					targetExport := "Missing" + strconv.Itoa(i)
+					if scenario.repeatedExport {
+						targetExport = "shared"
+					}
+					facts.References = append(facts.References, RichRelationRecord{
+						ID: "reference-" + strconv.Itoa(i), From: "src/consumer.ts",
+						Type: "calls_export", Language: "typescript",
+						TargetModule: "./provider", TargetExport: targetExport,
+					})
+				}
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					benchmarkScriptFacts = ResolveScriptSymbolFacts(files, nil, nil, facts)
+				}
+			})
+		}
 	}
 }
 
