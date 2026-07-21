@@ -1181,6 +1181,9 @@ auto-detection, an explicit `--workspace <path>`, or a permanent
 directory is removable output, not the persistent marker, and the build command
 does not create `.goregraph-workspace.yml`.
 
+Git repositories and supported project manifests are discovered automatically.
+Once a project root is detected, nested manifests remain part of that project.
+
 ## `goregraph workspace scan-all [path]`
 
 Compatibility alias for `goregraph workspace build all [path]`.
@@ -1224,6 +1227,9 @@ Do not rely on generated `.goregraph-workspace/` output for later detection:
 `workspace clean --execute` removes it. Use `--workspace`, a grouped layout, or
 the permanent `.goregraph-workspace.yml` marker; `workspace clean` does not
 remove that YAML marker.
+
+Git repositories and supported project manifests are discovered automatically.
+Once a project root is detected, nested manifests remain part of that project.
 
 ## `goregraph workspace clean [path]`
 

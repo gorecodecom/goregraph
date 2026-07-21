@@ -813,6 +813,8 @@ Scans each discovered project once and reconciles the workspace once after the p
 Workspace detection:
   GoreGraph detects common grouped frontend/services layouts. Otherwise use
   --workspace <path> or add .goregraph-workspace.yml to the workspace root.
+  Git repositories and supported project manifests are discovered automatically.
+  Once a project root is detected, nested manifests remain part of that project.
   A scan does not create .goregraph-workspace.yml. The generated
   .goregraph-workspace/ is removable generated output, not a persistent marker.
 `)
@@ -1646,6 +1648,8 @@ Examples:
 Workspace detection:
   Common grouped frontend/services layouts are detected automatically. Otherwise
   use --workspace <path> or add .goregraph-workspace.yml to the workspace root.
+  Git repositories and supported project manifests are discovered automatically.
+  Once a project root is detected, nested manifests remain part of that project.
   Scans each discovered project once and reconciles once after the project loop.
   scan-all is the compatibility alias for workspace build all.
   A build or scan does not create .goregraph-workspace.yml. The generated

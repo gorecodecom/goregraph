@@ -93,6 +93,23 @@ func TestCommandsReferenceDocumentsEveryUserCommand(t *testing.T) {
 	}
 }
 
+func TestCommandsReferenceDocumentsWorkspaceProjectBoundaries(t *testing.T) {
+	body, err := os.ReadFile("COMMANDS.md")
+	if err != nil {
+		t.Fatalf("COMMANDS.md is missing: %v", err)
+	}
+	for _, want := range []string{
+		"Git repositories and supported project manifests",
+		"discovered automatically",
+		"Once a project root is detected",
+		"nested manifests remain part of that project",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("COMMANDS.md is missing %q", want)
+		}
+	}
+}
+
 func TestCommandsReferenceExplainsProgressiveHelp(t *testing.T) {
 	body, err := os.ReadFile("COMMANDS.md")
 	if err != nil {

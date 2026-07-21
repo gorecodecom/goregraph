@@ -1811,7 +1811,7 @@ func TestWorkspaceUsageAndDashboardHelpMatchCanonicalActions(t *testing.T) {
 	}
 }
 
-func TestWorkspaceScanAllHelpDocumentsOneReconciliationAndMarkerOwnership(t *testing.T) {
+func TestWorkspaceScanAllHelpDocumentsOneReconciliationAndProjectBoundaries(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := Run([]string{"workspace", "scan-all", "help"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("workspace scan-all help exit code = %d, stderr=%s", code, stderr.String())
@@ -1823,9 +1823,30 @@ func TestWorkspaceScanAllHelpDocumentsOneReconciliationAndMarkerOwnership(t *tes
 		".goregraph-workspace.yml",
 		"does not create .goregraph-workspace.yml",
 		".goregraph-workspace/ is removable generated output",
+		"Git repositories and supported project manifests",
+		"discovered automatically",
+		"Once a project root is detected",
+		"nested manifests remain part of that project",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("workspace scan-all help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceCompleteHelpDocumentsProjectBoundaries(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"workspace", "help", "--all"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("complete workspace help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Git repositories and supported project manifests",
+		"discovered automatically",
+		"Once a project root is detected",
+		"nested manifests remain part of that project",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("complete workspace help missing %q:\n%s", want, stdout.String())
 		}
 	}
 }
