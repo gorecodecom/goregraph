@@ -18,7 +18,7 @@ func shouldSkipPath(rel string, isDir bool, cfg config.Config, matcher gitignore
 		if rel == p || strings.HasPrefix(rel, p+"/") {
 			return true
 		}
-		if isLiteralPathSegment(p) && containsPathSegment(rel, p) {
+		if isDir && isLiteralPathSegment(p) && containsPathSegment(rel, p) {
 			return true
 		}
 	}

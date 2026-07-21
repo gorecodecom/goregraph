@@ -56,6 +56,7 @@ func TestRunSkipsGeneratedDirectoriesAtAnyDepth(t *testing.T) {
 	writeFile(t, root, "apps/portal/coverage/report.js", "export const coverage = true\n")
 	writeFile(t, root, "apps/portal/goregraph-out/index/files.json", "[]\n")
 	writeFile(t, root, "apps/portal/.goregraph-workspace/index/registry.json", "{}\n")
+	writeFile(t, root, "apps/portal/.gitignore", "local-output/\n")
 	writeFile(t, root, "apps/portal/node_modules_backup/keep.js", "export const backup = true\n")
 	writeFile(t, root, "apps/portal/build-tools/keep.js", "export const tool = true\n")
 
@@ -63,13 +64,14 @@ func TestRunSkipsGeneratedDirectoriesAtAnyDepth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if result.ScannedFiles != 3 {
-		t.Fatalf("ScannedFiles = %d, want 3", result.ScannedFiles)
+	if result.ScannedFiles != 4 {
+		t.Fatalf("ScannedFiles = %d, want 4", result.ScannedFiles)
 	}
 
 	var files []FileRecord
 	readJSON(t, filepath.Join(root, "goregraph-out", "files.json"), &files)
 	want := []string{
+		"apps/portal/.gitignore",
 		"apps/portal/build-tools/keep.js",
 		"apps/portal/node_modules_backup/keep.js",
 		"src/main.js",
