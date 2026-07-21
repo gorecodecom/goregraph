@@ -541,32 +541,10 @@ func workspaceGroupCounts(dir string) (int, int) {
 
 func discoverWorkspaceProjects(workspaceRoot, currentAbs, defaultOutput string) ([]WorkspaceProjectRecord, error) {
 	projectsByPath := map[string]WorkspaceProjectRecord{}
-	for _, group := range workspaceGroupDirs {
-		groupPath := filepath.Join(workspaceRoot, group)
-		entries, err := os.ReadDir(groupPath)
-		if err != nil {
-			continue
-		}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			abs := filepath.Join(groupPath, entry.Name())
-			addWorkspaceProject(projectsByPath, workspaceRoot, currentAbs, abs, group, defaultOutput)
-		}
-	}
-
-	entries, err := os.ReadDir(workspaceRoot)
-	if err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() || isWorkspaceGroup(entry.Name()) || strings.HasPrefix(entry.Name(), ".") {
-				continue
-			}
-			abs := filepath.Join(workspaceRoot, entry.Name())
-			if hasProjectMarker(abs, defaultOutput) {
-				addWorkspaceProject(projectsByPath, workspaceRoot, currentAbs, abs, "", defaultOutput)
-			}
-		}
+	if hasWorkspaceProjectRoot(workspaceRoot, defaultOutput) {
+		addWorkspaceProject(projectsByPath, workspaceRoot, currentAbs, workspaceRoot, "", defaultOutput)
+	} else if err := walkWorkspaceProjectRoots(workspaceRoot, currentAbs, workspaceRoot, "", defaultOutput, projectsByPath); err != nil {
+		return nil, err
 	}
 
 	projects := make([]WorkspaceProjectRecord, 0, len(projectsByPath))
@@ -575,6 +553,51 @@ func discoverWorkspaceProjects(workspaceRoot, currentAbs, defaultOutput string) 
 	}
 	sort.Slice(projects, func(i, j int) bool { return projects[i].Path < projects[j].Path })
 	return projects, nil
+}
+
+func walkWorkspaceProjectRoots(workspaceRoot, currentAbs, dir, group, defaultOutput string, projects map[string]WorkspaceProjectRecord) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() || skipWorkspaceDiscoveryDir(name) {
+			continue
+		}
+		abs := filepath.Join(dir, name)
+		nextGroup := group
+		if isWorkspaceGroup(name) {
+			nextGroup = name
+		}
+		if hasWorkspaceProjectRoot(abs, defaultOutput) {
+			addWorkspaceProject(projects, workspaceRoot, currentAbs, abs, nextGroup, defaultOutput)
+			continue
+		}
+		if err := walkWorkspaceProjectRoots(workspaceRoot, currentAbs, abs, nextGroup, defaultOutput, projects); err != nil {
+			continue
+		}
+	}
+	return nil
+}
+
+func hasWorkspaceProjectRoot(abs, outputDir string) bool {
+	if info, err := os.Lstat(filepath.Join(abs, ".git")); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
+		return true
+	}
+	return hasProjectMarker(abs, outputDir)
+}
+
+func skipWorkspaceDiscoveryDir(name string) bool {
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
+	switch strings.ToLower(name) {
+	case "node_modules", "vendor", "target", "build", "dist", "coverage", "goregraph-out":
+		return true
+	default:
+		return false
+	}
 }
 
 func addWorkspaceProject(projects map[string]WorkspaceProjectRecord, workspaceRoot, currentAbs, abs, group, defaultOutput string) {
@@ -707,9 +730,23 @@ func isWorkspaceGroup(name string) bool {
 }
 
 func hasProjectMarker(abs, outputDir string) bool {
-	for _, name := range []string{"package.json", "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "go.mod", "pyproject.toml", "requirements.txt", "setup.py", "Cargo.toml", "composer.json", "goregraph.yml"} {
+	for _, name := range []string{
+		"package.json", "pom.xml", "build.gradle", "build.gradle.kts",
+		"settings.gradle", "settings.gradle.kts", "go.mod", "pyproject.toml",
+		"requirements.txt", "setup.py", "Cargo.toml", "composer.json",
+		"build.sbt", "Package.swift", "Gemfile", "CMakeLists.txt",
+		"meson.build", "goregraph.yml",
+	} {
 		if workspaceFileExists(filepath.Join(abs, name)) {
 			return true
+		}
+	}
+	entries, _ := os.ReadDir(abs)
+	for _, entry := range entries {
+		for _, pattern := range []string{"*.gemspec", "*.sln", "*.csproj"} {
+			if matched, _ := filepath.Match(pattern, entry.Name()); matched && !entry.IsDir() {
+				return true
+			}
 		}
 	}
 	return workspaceFileExists(filepath.Join(abs, outputDir, "manifest.json"))

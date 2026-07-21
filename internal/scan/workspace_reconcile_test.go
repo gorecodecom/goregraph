@@ -1344,6 +1344,91 @@ func TestWorkspaceDiscoveryDoesNotRequireWekaGroupsOrServicePrefixes(t *testing.
 	assertWorkspaceProjectKindAndService(t, projects, "catalog-api", "backend", "catalog-api")
 }
 
+func TestWorkspaceDiscoveryStopsAtProjectBoundaries(t *testing.T) {
+	workspace := t.TempDir()
+	monorepo := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	if err := os.MkdirAll(filepath.Join(monorepo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, monorepo, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, monorepo, "apps/portal/package.json", `{"name":"portal"}`)
+	writeFile(t, filepath.Join(workspace, "microservices", "commerce", "orders"), "Cargo.toml", "[package]\nname='orders'\n")
+	writeFile(t, filepath.Join(workspace, "frontend", ".worktrees", "temporary"), "package.json", `{"name":"temporary"}`)
+
+	projects, err := discoverWorkspaceProjects(workspace, monorepo, "goregraph-out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{
+		"frontend/frontend-monorepo",
+		"microservices/commerce/orders",
+	}, "\n")
+	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != want {
+		t.Fatalf("project paths = %q, want %q", got, want)
+	}
+}
+
+func TestWorkspaceDiscoveryRecognizesLinkedWorktreeGitFile(t *testing.T) {
+	workspace := t.TempDir()
+	project := filepath.Join(workspace, "services", "linked")
+	writeFile(t, project, ".git", "gitdir: ../.git/worktrees/linked\n")
+	writeFile(t, project, "README.md", "# linked\n")
+
+	projects, err := discoverWorkspaceProjects(workspace, project, "goregraph-out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "services/linked" {
+		t.Fatalf("project paths = %q, want services/linked", got)
+	}
+}
+
+func TestWorkspaceDiscoveryRecognizesProjectMarkers(t *testing.T) {
+	markers := []string{
+		"package.json", "pom.xml", "build.gradle", "build.gradle.kts",
+		"settings.gradle", "settings.gradle.kts", "go.mod", "pyproject.toml",
+		"requirements.txt", "setup.py", "Cargo.toml", "composer.json",
+		"build.sbt", "Package.swift", "Gemfile", "example.gemspec",
+		"CMakeLists.txt", "meson.build", "example.sln", "example.csproj",
+		"goregraph.yml",
+	}
+	for _, marker := range markers {
+		t.Run(marker, func(t *testing.T) {
+			workspace := t.TempDir()
+			project := filepath.Join(workspace, "projects", "app")
+			writeFile(t, project, marker, "marker\n")
+			projects, err := discoverWorkspaceProjects(workspace, project, "goregraph-out")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "projects/app" {
+				t.Fatalf("project paths = %q, want projects/app", got)
+			}
+		})
+	}
+}
+
+func TestWorkspaceDiscoveryRecognizesWorkspaceRoot(t *testing.T) {
+	workspace := t.TempDir()
+	writeFile(t, workspace, "go.mod", "module example.com/root\n")
+	writeFile(t, workspace, "services/nested/package.json", `{"name":"nested"}`)
+	projects, err := discoverWorkspaceProjects(workspace, workspace, "goregraph-out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 1 || projects[0].AbsPath != filepath.ToSlash(workspace) {
+		t.Fatalf("projects = %#v, want workspace root once", projects)
+	}
+}
+
+func workspaceProjectPaths(projects []WorkspaceProjectRecord) []string {
+	paths := make([]string, 0, len(projects))
+	for _, project := range projects {
+		paths = append(paths, project.Path)
+	}
+	return paths
+}
+
 func assertWorkspaceProjectKindAndService(t *testing.T, projects []WorkspaceProjectRecord, path, kind, service string) {
 	t.Helper()
 	for _, project := range projects {
