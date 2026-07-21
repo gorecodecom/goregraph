@@ -1774,7 +1774,8 @@ func ResolveScriptSymbolFacts(files []FileRecord, packages []NodePackageRecord, 
 		locals:       map[string]map[string][]RichSymbolRecord{},
 		packages:     append([]NodePackageRecord(nil), packages...),
 		configs:      configs,
-		facts:        facts,
+		references:   newScriptReferenceIndex(facts.References),
+		exportMemo:   map[scriptExportMemoKey]scriptExportResolution{},
 	}
 	for _, file := range files {
 		resolver.files[path.Clean(strings.ReplaceAll(file.Path, `\`, "/"))] = true
@@ -1886,7 +1887,59 @@ type scriptFactResolver struct {
 	locals       map[string]map[string][]RichSymbolRecord
 	packages     []NodePackageRecord
 	configs      map[string]ScriptResolutionConfig
-	facts        ProjectSymbolFacts
+	references   scriptReferenceIndex
+	exportMemo   map[scriptExportMemoKey]scriptExportResolution
+}
+
+type scriptReferenceIndex struct {
+	localExports  map[string]map[string][]RichRelationRecord
+	imports       map[string]map[string][]RichRelationRecord
+	reexports     map[string]map[string][]RichRelationRecord
+	starReexports map[string][]RichRelationRecord
+}
+
+func newScriptReferenceIndex(references []RichRelationRecord) scriptReferenceIndex {
+	index := scriptReferenceIndex{
+		localExports:  map[string]map[string][]RichRelationRecord{},
+		imports:       map[string]map[string][]RichRelationRecord{},
+		reexports:     map[string]map[string][]RichRelationRecord{},
+		starReexports: map[string][]RichRelationRecord{},
+	}
+	for _, reference := range references {
+		switch {
+		case reference.Type == "exports_local":
+			name := reference.scriptExportAlias
+			if name == "" {
+				name = reference.TargetExport
+			}
+			appendScriptReferenceIndex(index.localExports, reference.From, name, reference)
+		case strings.HasPrefix(reference.Type, "imports_"):
+			appendScriptReferenceIndex(index.imports, reference.From, reference.scriptLocalName, reference)
+		case reference.Type == "reexports_all":
+			index.starReexports[reference.From] = append(index.starReexports[reference.From], reference)
+		case strings.HasPrefix(reference.Type, "reexports_"):
+			name := reference.scriptExportAlias
+			if name == "" {
+				name = reference.TargetExport
+			}
+			appendScriptReferenceIndex(index.reexports, reference.From, name, reference)
+		}
+	}
+	return index
+}
+
+func appendScriptReferenceIndex(
+	index map[string]map[string][]RichRelationRecord,
+	file, name string,
+	reference RichRelationRecord,
+) {
+	if file == "" || name == "" {
+		return
+	}
+	if index[file] == nil {
+		index[file] = map[string][]RichRelationRecord{}
+	}
+	index[file][name] = append(index[file][name], reference)
 }
 
 type scriptReferenceResolution struct {
@@ -1911,6 +1964,17 @@ type scriptExportResolution struct {
 	candidates []RichSymbolRecord
 	cyclic     bool
 	ambiguous  bool
+}
+
+type scriptExportMemoKey struct {
+	file       string
+	exportName string
+	capability scriptSymbolCapability
+}
+
+func cloneScriptExportResolution(value scriptExportResolution) scriptExportResolution {
+	value.candidates = append([]RichSymbolRecord(nil), value.candidates...)
+	return value
 }
 
 func (resolver scriptFactResolver) resolveReference(reference RichRelationRecord) scriptReferenceResolution {
@@ -1986,6 +2050,16 @@ func filterScriptDeclarationsByCapability(declarations []RichSymbolRecord, requi
 }
 
 func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, exportName string, required scriptSymbolCapability, visited map[string]bool) scriptExportResolution {
+	memoKey := scriptExportMemoKey{file: module.file, exportName: exportName, capability: required}
+	if cached, ok := resolver.exportMemo[memoKey]; ok {
+		return cloneScriptExportResolution(cached)
+	}
+	complete := func(value scriptExportResolution) scriptExportResolution {
+		if !value.cyclic {
+			resolver.exportMemo[memoKey] = cloneScriptExportResolution(value)
+		}
+		return value
+	}
 	key := module.file + "\x00" + exportName + "\x00" + string(rune(required))
 	if visited[key] {
 		return scriptExportResolution{cyclic: true}
@@ -1993,23 +2067,13 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 	visited[key] = true
 	defer delete(visited, key)
 	if direct := filterScriptDeclarationsByCapability(resolver.declarations[module.file][exportName], required); len(direct) > 0 {
-		return scriptExportResolution{candidates: append([]RichSymbolRecord(nil), direct...)}
+		return complete(scriptExportResolution{candidates: append([]RichSymbolRecord(nil), direct...)})
 	}
 	var result []RichSymbolRecord
 	cyclic := false
 	ambiguous := false
 	moduleFile := module.file
-	for _, reference := range resolver.facts.References {
-		if reference.From != moduleFile || reference.Type != "exports_local" {
-			continue
-		}
-		publicExport := reference.scriptExportAlias
-		if publicExport == "" {
-			publicExport = reference.TargetExport
-		}
-		if publicExport != exportName {
-			continue
-		}
+	for _, reference := range resolver.references.localExports[moduleFile][exportName] {
 		if required == scriptValueCapability && reference.scriptTypeOnly {
 			continue
 		}
@@ -2018,11 +2082,8 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 		if len(localCandidates) > 0 {
 			continue
 		}
-		for _, imported := range resolver.facts.References {
-			if imported.From != moduleFile ||
-				!strings.HasPrefix(imported.Type, "imports_") ||
-				imported.scriptLocalName != reference.TargetExport ||
-				imported.TargetModule == "" ||
+		for _, imported := range resolver.references.imports[moduleFile][reference.TargetExport] {
+			if imported.TargetModule == "" ||
 				imported.TargetExport == "" {
 				continue
 			}
@@ -2044,26 +2105,16 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 		}
 	}
 	if result = dedupeScriptDeclarations(result); len(result) > 0 {
-		return scriptExportResolution{candidates: result, cyclic: cyclic, ambiguous: ambiguous}
+		return complete(scriptExportResolution{candidates: result, cyclic: cyclic, ambiguous: ambiguous})
 	}
-	for _, reference := range resolver.facts.References {
-		if reference.From != moduleFile || !strings.HasPrefix(reference.Type, "reexports_") {
-			continue
-		}
+	reexports := resolver.references.reexports[moduleFile][exportName]
+	if exportName != "default" {
+		reexports = append(reexports, resolver.references.starReexports[moduleFile]...)
+	}
+	for _, reference := range reexports {
 		sourceExport := reference.TargetExport
-		publicExport := reference.scriptExportAlias
 		if reference.Type == "reexports_all" {
-			if exportName == "default" {
-				continue
-			}
 			sourceExport = exportName
-			publicExport = exportName
-		}
-		if publicExport == "" {
-			publicExport = sourceExport
-		}
-		if publicExport != exportName {
-			continue
 		}
 		if required == scriptValueCapability && reference.scriptTypeOnly {
 			continue
@@ -2081,7 +2132,7 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 			ambiguous = ambiguous || resolved.ambiguous
 		}
 	}
-	return scriptExportResolution{candidates: dedupeScriptDeclarations(result), cyclic: cyclic, ambiguous: ambiguous}
+	return complete(scriptExportResolution{candidates: dedupeScriptDeclarations(result), cyclic: cyclic, ambiguous: ambiguous})
 }
 
 func (resolver scriptFactResolver) resolveModule(fromFile, specifier, condition string) scriptModuleResolution {

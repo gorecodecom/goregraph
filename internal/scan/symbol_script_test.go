@@ -4,12 +4,54 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/gitignore"
 )
+
+func TestScriptReferenceIndexGroupsExportsImportsAndReexports(t *testing.T) {
+	references := []RichRelationRecord{
+		{From: "src/index.ts", Type: "exports_local", TargetExport: "local", scriptExportAlias: "public"},
+		{From: "src/index.ts", Type: "imports_value", TargetExport: "remote", scriptLocalName: "local"},
+		{From: "src/index.ts", Type: "reexports_value", TargetExport: "remote", scriptExportAlias: "public"},
+		{From: "src/index.ts", Type: "reexports_all", TargetModule: "./shared"},
+	}
+
+	index := newScriptReferenceIndex(references)
+	if len(index.localExports["src/index.ts"]["public"]) != 1 {
+		t.Fatalf("local export index = %#v", index.localExports)
+	}
+	if len(index.imports["src/index.ts"]["local"]) != 1 {
+		t.Fatalf("import index = %#v", index.imports)
+	}
+	if len(index.reexports["src/index.ts"]["public"]) != 1 || len(index.starReexports["src/index.ts"]) != 1 {
+		t.Fatalf("re-export indexes = %#v / %#v", index.reexports, index.starReexports)
+	}
+}
+
+var benchmarkScriptFacts ProjectSymbolFacts
+
+func BenchmarkResolveScriptSymbolFactsLargeUnresolvedProject(b *testing.B) {
+	files := []FileRecord{
+		{Path: "src/provider.ts", Language: "typescript"},
+		{Path: "src/consumer.ts", Language: "typescript"},
+	}
+	facts := ProjectSymbolFacts{}
+	for i := 0; i < 1000; i++ {
+		facts.References = append(facts.References, RichRelationRecord{
+			ID: "reference-" + strconv.Itoa(i), From: "src/consumer.ts",
+			Type: "calls_export", Language: "typescript",
+			TargetModule: "./provider", TargetExport: "Missing" + strconv.Itoa(i),
+		})
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		benchmarkScriptFacts = ResolveScriptSymbolFacts(files, nil, nil, facts)
+	}
+}
 
 func TestExtractScriptCanonicalDeclarations(t *testing.T) {
 	body := `
