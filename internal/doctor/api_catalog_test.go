@@ -116,6 +116,87 @@ func TestDoctorAcceptsGeneratedWorkspaceAPICatalog(t *testing.T) {
 	}
 }
 
+func TestDoctorRejectsWorkspaceAPICatalogRegistryMissingFromManifest(t *testing.T) {
+	workspace, _ := workspaceCatalogFixture(t)
+	manifestPath := filepath.Join(workspace, ".goregraph-workspace", "manifest.json")
+	var manifest scan.Manifest
+	readTestJSON(t, manifestPath, &manifest)
+	manifest.Index.Files = withoutManifestFile(manifest.Index.Files, "index/registry.json")
+	writeTestJSON(t, manifestPath, manifest)
+
+	result, err := Run(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRejectedWorkspaceRegistry(
+		t,
+		result,
+		"FAIL api-catalog: workspace manifest does not declare index/registry.json",
+	)
+}
+
+func TestDoctorRejectsWorkspaceAPICatalogRegistryRootMismatch(t *testing.T) {
+	workspace, _ := workspaceCatalogFixture(t)
+	registryPath := scan.NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace")).Index("registry.json")
+	var registry scan.WorkspaceRegistryRecord
+	readTestJSON(t, registryPath, &registry)
+	registry.Root = filepath.ToSlash(t.TempDir())
+	writeTestJSON(t, registryPath, registry)
+
+	result, err := Run(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRejectedWorkspaceRegistry(
+		t,
+		result,
+		"FAIL api-catalog: registry.json does not match requested workspace and unique project filesystem identities",
+	)
+}
+
+func TestDoctorRejectsWorkspaceAPICatalogRegistryDuplicateFilesystemAlias(t *testing.T) {
+	workspace, _ := workspaceCatalogFixture(t)
+	registryPath := scan.NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace")).Index("registry.json")
+	var registry scan.WorkspaceRegistryRecord
+	readTestJSON(t, registryPath, &registry)
+	if len(registry.Projects) == 0 {
+		t.Fatal("workspace registry has no projects")
+	}
+
+	project := registry.Projects[0]
+	projectRoot := filepath.Join(workspace, filepath.FromSlash(project.Path))
+	projectInfo, err := os.Stat(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliasPath := alternateCasePathForTest(filepath.FromSlash(project.Path))
+	aliasInfo, err := os.Stat(filepath.Join(workspace, aliasPath))
+	if err != nil || !os.SameFile(projectInfo, aliasInfo) {
+		aliasPath = "project-alias"
+		if err := os.Symlink(projectRoot, filepath.Join(workspace, aliasPath)); err != nil {
+			t.Skip("filesystem supports neither case-variant nor symlink project aliases")
+		}
+		aliasInfo, err = os.Stat(filepath.Join(workspace, aliasPath))
+		if err != nil || !os.SameFile(projectInfo, aliasInfo) {
+			t.Skip("filesystem did not resolve the project alias to the same directory")
+		}
+	}
+	alias := project
+	alias.Path = filepath.ToSlash(aliasPath)
+	registry.Projects = append(registry.Projects, alias)
+	writeTestJSON(t, registryPath, registry)
+
+	result, err := Run(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRejectedWorkspaceRegistry(
+		t,
+		result,
+		"FAIL api-catalog: registry.json does not match requested workspace and unique project filesystem identities",
+	)
+}
+
 func TestDoctorValidatesProjectAPICatalogAgainstRegisteredWorkspaceEvidence(t *testing.T) {
 	t.Run("accepts provider evidence from another indexed project", func(t *testing.T) {
 		workspace, projectRoot, catalogPath := workspaceProjectCatalogFixture(t)
@@ -657,4 +738,12 @@ func requireExactAPICatalogFailure(t *testing.T, result Result, want string) {
 		}
 	}
 	t.Fatalf("Doctor did not report exact API catalog failure %q: %v", want, result.Lines)
+}
+
+func requireRejectedWorkspaceRegistry(t *testing.T, result Result, want string) {
+	t.Helper()
+	requireExactAPICatalogFailure(t, result, want)
+	if containsLine(result.Lines, "OK   api-catalog: api-catalog.json valid") {
+		t.Fatalf("Doctor trusted a rejected workspace registry: %v", result.Lines)
+	}
 }

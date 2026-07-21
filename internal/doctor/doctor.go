@@ -401,9 +401,8 @@ func checkWorkspace(root string, result *Result) {
 	}
 	checkGeneratedFiles(out, manifest, result)
 	checkWorkspaceJSONFiles(out, manifest.Index.Files, result)
-	var registry scan.WorkspaceRegistryRecord
-	if err := readJSON(scan.NewWorkspaceOutputLayout(out).Index("registry.json"), &registry); err == nil {
-		checkAPICatalog(out, manifest, filepath.Dir(out), &registry, result)
+	if registry := loadWorkspaceAPICatalogRegistry(root, out, manifest, result); registry != nil {
+		checkAPICatalog(out, manifest, root, registry, result)
 	}
 	checkAgentContextIndex(out, manifest, result)
 	if manifest.Dashboard.Complete {
@@ -412,6 +411,30 @@ func checkWorkspace(root string, result *Result) {
 	if dashboardConfigValid {
 		checkStaleWorkspaceDashboardServices(out, dashboardConfig, result)
 	}
+}
+
+func loadWorkspaceAPICatalogRegistry(
+	workspaceRoot, out string,
+	manifest scan.Manifest,
+	result *Result,
+) *scan.WorkspaceRegistryRecord {
+	if !manifestListsFile(manifest.Index.Files, "index/registry.json") {
+		result.fail("api-catalog", "workspace manifest does not declare index/registry.json")
+		return nil
+	}
+	var registry scan.WorkspaceRegistryRecord
+	if err := readJSON(scan.NewWorkspaceOutputLayout(out).Index("registry.json"), &registry); err != nil {
+		return nil
+	}
+	if !validProjectWorkspaceCatalogRegistry(workspaceRoot, registry) {
+		message := "registry.json does not match requested workspace and unique project filesystem identities"
+		if _, err := workspaceCatalogEvidenceIDs(workspaceRoot, registry); err != nil {
+			message = err.Error()
+		}
+		result.fail("api-catalog", message)
+		return nil
+	}
+	return &registry
 }
 
 func checkAPICatalog(out string, manifest scan.Manifest, workspaceRoot string, registry *scan.WorkspaceRegistryRecord, result *Result) {
