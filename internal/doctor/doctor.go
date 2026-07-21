@@ -71,20 +71,69 @@ func checkProject(root string, cfg config.Config, workspaceRoot string, result *
 	checkAgentContextIndex(out, manifest, result)
 	checkFreshnessIntegrity(out, result)
 	checkEvidenceIntegrity(out, result)
-	var registry *scan.WorkspaceRegistryRecord
-	if workspaceRoot != "" {
-		var workspaceRegistry scan.WorkspaceRegistryRecord
-		registryPath := scan.NewWorkspaceOutputLayout(filepath.Join(workspaceRoot, ".goregraph-workspace")).Index("registry.json")
-		if err := readJSON(registryPath, &workspaceRegistry); err == nil {
-			registry = &workspaceRegistry
-		}
-	}
+	registry := loadProjectWorkspaceCatalogRegistry(workspaceRoot)
 	checkAPICatalog(out, manifest, workspaceRoot, registry, result)
 	checkCanonicalFeatureFlows(out, result)
 	checkStaleFiles(root, manifest, result)
 	if result.Failures > 0 || result.Warnings > 0 {
 		result.fix("goregraph scan " + root)
 	}
+}
+
+func loadProjectWorkspaceCatalogRegistry(workspaceRoot string) *scan.WorkspaceRegistryRecord {
+	if workspaceRoot == "" {
+		return nil
+	}
+	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
+	layout := scan.NewWorkspaceOutputLayout(workspaceOut)
+	var manifest scan.Manifest
+	if err := readJSON(layout.Manifest, &manifest); err != nil ||
+		manifest.Tool != scan.ToolName ||
+		manifest.Schema != scan.SchemaVersion ||
+		manifest.Scope != "workspace" ||
+		!manifest.Index.Complete ||
+		!manifestListsFile(manifest.Index.Files, "index/registry.json") {
+		return nil
+	}
+	var registry scan.WorkspaceRegistryRecord
+	if err := readJSON(layout.Index("registry.json"), &registry); err != nil || !validProjectWorkspaceCatalogRegistry(workspaceRoot, registry) {
+		return nil
+	}
+	return &registry
+}
+
+func validProjectWorkspaceCatalogRegistry(workspaceRoot string, registry scan.WorkspaceRegistryRecord) bool {
+	requestedRoot, err := canonicalDoctorPath(workspaceRoot)
+	if err != nil {
+		return false
+	}
+	registryRoot, err := canonicalDoctorPath(registry.Root)
+	if err != nil || registryRoot != requestedRoot {
+		return false
+	}
+	projects := make(map[string]bool, len(registry.Projects))
+	for _, project := range registry.Projects {
+		projectPath, err := cleanWorkspaceRelativePath(project.Path)
+		if err != nil {
+			return false
+		}
+		projectPath = filepath.ToSlash(projectPath)
+		if projects[projectPath] {
+			return false
+		}
+		projects[projectPath] = true
+		if !project.Indexed {
+			continue
+		}
+		outputDir := project.OutputDir
+		if outputDir == "" {
+			outputDir = "goregraph-out"
+		}
+		if _, err := workspaceProjectEvidencePath(workspaceRoot, project.Path, outputDir); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func checkCanonicalFeatureFlows(out string, result *Result) {

@@ -171,6 +171,101 @@ func TestDoctorValidatesProjectAPICatalogAgainstRegisteredWorkspaceEvidence(t *t
 	})
 }
 
+func TestDoctorDoesNotTrustWorkspaceRegistryMissingFromManifest(t *testing.T) {
+	workspace, projectRoot, catalogPath := workspaceProjectCatalogFixture(t)
+	var catalog scan.APICatalogRecord
+	readTestJSON(t, catalogPath, &catalog)
+	endpoint := &catalog.Endpoints[0]
+
+	projectEvidence, available := catalogEvidenceIDs(filepath.Join(projectRoot, "goregraph-out"))
+	if !available {
+		t.Fatal("project evidence is unavailable")
+	}
+	providerOut := workspaceProjectOutputForTest(t, workspace, endpoint.ProviderProject)
+	providerEvidence, available := catalogEvidenceIDs(providerOut)
+	if !available {
+		t.Fatal("provider evidence is unavailable")
+	}
+	providerOnlyEvidence := ""
+	for _, id := range endpoint.EvidenceIDs {
+		if providerEvidence[id] && !projectEvidence[id] {
+			providerOnlyEvidence = id
+			break
+		}
+	}
+	if providerOnlyEvidence == "" {
+		t.Fatalf("endpoint has no provider-only evidence: %#v", endpoint)
+	}
+	endpoint.EvidenceIDs = []string{providerOnlyEvidence}
+	writeTestJSON(t, catalogPath, catalog)
+
+	manifestPath := filepath.Join(workspace, ".goregraph-workspace", "manifest.json")
+	var manifest scan.Manifest
+	readTestJSON(t, manifestPath, &manifest)
+	manifest.Index.Files = withoutManifestFile(manifest.Index.Files, "index/registry.json")
+	writeTestJSON(t, manifestPath, manifest)
+
+	result, err := Run(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireExactAPICatalogFailure(t, result, fmt.Sprintf("FAIL api-catalog: endpoint %q contains dangling evidence reference %q", endpoint.ID, providerOnlyEvidence))
+}
+
+func TestDoctorRejectsUnregisteredWorkspaceProjectEvidence(t *testing.T) {
+	workspace, projectRoot, catalogPath := workspaceProjectCatalogFixture(t)
+	unregisteredRoot := filepath.Join(workspace, "services", "unregistered")
+	writeWorkspaceProjectFile(t, unregisteredRoot, "pom.xml", `<project><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>unregistered</artifactId><version>1</version></project>`)
+	writeWorkspaceProjectFile(t, unregisteredRoot, "src/main/java/example/UnregisteredController.java", `package example;
+@RestController
+class UnregisteredController {
+  @GetMapping("/unregistered")
+  String get() { return "ok"; }
+}`)
+	projectConfig := config.Defaults()
+	projectConfig.Workspace = false
+	if _, err := scan.RunBuild(unregisteredRoot, projectConfig, scan.BuildTargetAgent); err != nil {
+		t.Fatal(err)
+	}
+
+	unregisteredOut := filepath.Join(unregisteredRoot, "goregraph-out")
+	manifestPath := filepath.Join(unregisteredOut, "manifest.json")
+	var manifest scan.Manifest
+	readTestJSON(t, manifestPath, &manifest)
+	if manifest.Tool != scan.ToolName || manifest.Schema != scan.SchemaVersion || manifest.Scope != "project" || !manifest.Index.Complete || !manifestListsFile(manifest.Index.Files, "index/evidence.json") {
+		t.Fatalf("unregistered project manifest is invalid: %#v", manifest)
+	}
+
+	evidencePath := scan.NewProjectOutputLayout(unregisteredOut).Index("evidence.json")
+	var evidence []scan.EvidenceRecord
+	readTestJSON(t, evidencePath, &evidence)
+	if len(evidence) == 0 || evidence[0].ID == "" {
+		t.Fatalf("unregistered project has no generated evidence: %#v", evidence)
+	}
+	unregisteredEvidenceID := evidence[0].ID
+
+	registryPath := scan.NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace")).Index("registry.json")
+	var registry scan.WorkspaceRegistryRecord
+	readTestJSON(t, registryPath, &registry)
+	for _, project := range registry.Projects {
+		if filepath.ToSlash(project.Path) == "services/unregistered" {
+			t.Fatal("unregistered project unexpectedly appears in workspace registry")
+		}
+	}
+
+	var catalog scan.APICatalogRecord
+	readTestJSON(t, catalogPath, &catalog)
+	endpointID := catalog.Endpoints[0].ID
+	catalog.Endpoints[0].EvidenceIDs = []string{unregisteredEvidenceID}
+	writeTestJSON(t, catalogPath, catalog)
+
+	result, err := Run(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireExactAPICatalogFailure(t, result, fmt.Sprintf("FAIL api-catalog: endpoint %q contains dangling evidence reference %q", endpointID, unregisteredEvidenceID))
+}
+
 func TestDoctorRejectsWorkspaceAPICatalogDanglingEvidence(t *testing.T) {
 	tests := []struct {
 		name    string
