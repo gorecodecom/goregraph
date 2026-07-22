@@ -189,6 +189,7 @@ func TestSearchReadsWorkspaceOverlayAliases(t *testing.T) {
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
 	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
 		"  return fetch(`/cadasters/${id}`);\n"+
 		"}\n")
@@ -245,6 +246,7 @@ func TestSearchReadsWorkspaceRootOverlayAliases(t *testing.T) {
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
 	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
 		"  return fetch(`/cadasters/${id}`);\n"+
 		"}\n")
