@@ -91,3 +91,29 @@ process.stdout.write(JSON.stringify({key,initial,leftHidden,restored,bothHidden,
 		t.Fatalf("storage fallback is not safe: malformed=%#v blocked=%#v", got.Malformed, got.Blocked)
 	}
 }
+
+func TestWorkspaceDashboardCodeExplorerGroupsAreCollapsible(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion},
+		WorkspaceServiceMapRecord{SchemaVersion: SchemaVersion},
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+
+	for _, want := range []string{
+		`codeExpandedGroups:new Set()`,
+		`function codeGroupIsOpen(group,records)`,
+		`data-code-group="`,
+		`class="code-symbol-group-toggle"`,
+		`aria-expanded="`,
+		`aria-controls="`,
+		`records.length+" symbols"`,
+		`class="code-symbol-group-body"`,
+		`.code-symbol-group-toggle:focus-visible`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("Code Explorer disclosure contract missing %q", want)
+		}
+	}
+}
