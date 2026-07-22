@@ -25,6 +25,26 @@ func TestBuildWorkspaceArchitectureLayoutUsesFirstDifferentiatingProductionNames
 	}
 }
 
+func TestBuildWorkspaceArchitectureLayoutUsesRepositoryBoundaryForMultiPackageProject(t *testing.T) {
+	project := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Name: "frontend-monorepo", Kind: "frontend"}
+	namespaces := []WorkspaceProjectNamespaceRecord{
+		{Project: project.Path, Namespace: "@example/designsystem", PackageUnit: "@example/designsystem", Language: "javascript", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: project.Path, Namespace: "@example/designsystem", PackageUnit: "@example/designsystem", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: project.Path, Namespace: "@example/portal", PackageUnit: "@example/portal", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
+	}
+
+	layout := BuildWorkspaceArchitectureLayout(
+		WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{project}},
+		namespaces,
+		WorkspaceDashboardConfig{Schema: 1},
+	)
+
+	service := layout.Service(project.Path)
+	if service.GroupID != "frontend:frontend" || service.Source != "workspace_path" || service.Confidence != "PARTIAL" {
+		t.Fatalf("multi-package layout = %#v", service)
+	}
+}
+
 func TestBuildWorkspaceArchitectureLayoutKeepsDifferentiationAcrossRootFamiliesAndPermutations(t *testing.T) {
 	projects := []WorkspaceProjectRecord{
 		{Path: "services/orders", Name: "orders", Kind: "backend"},
@@ -124,8 +144,8 @@ func TestBuildWorkspaceArchitectureLayoutAggregatesCoherentSiblingPackages(t *te
 			name:    "java",
 			project: WorkspaceProjectRecord{Path: "services/orders", Name: "orders", Kind: "backend"},
 			namespaces: []WorkspaceProjectNamespaceRecord{
-				{Project: "services/orders", Namespace: "org.example.commerce.api", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
-				{Project: "services/orders", Namespace: "org.example.commerce.domain", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+				{Project: "services/orders", Namespace: "org.example.commerce.api", PackageUnit: "org.example:orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+				{Project: "services/orders", Namespace: "org.example.commerce.domain", PackageUnit: "org.example:orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
 			},
 			want: "org.example.commerce",
 		},
@@ -133,8 +153,8 @@ func TestBuildWorkspaceArchitectureLayoutAggregatesCoherentSiblingPackages(t *te
 			name:    "typescript",
 			project: WorkspaceProjectRecord{Path: "apps/store", Name: "store", Kind: "frontend"},
 			namespaces: []WorkspaceProjectNamespaceRecord{
-				{Project: "apps/store", Namespace: "@example/commerce/api", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
-				{Project: "apps/store", Namespace: "@example/commerce/domain", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
+				{Project: "apps/store", Namespace: "@example/commerce/api", PackageUnit: "@example/commerce", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
+				{Project: "apps/store", Namespace: "@example/commerce/domain", PackageUnit: "@example/commerce", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
 			},
 			want: "@example.commerce",
 		},
@@ -235,7 +255,11 @@ func TestBuildWorkspaceArchitectureLayoutKeepsManualOrderAndPlacesNewServices(t 
 	}}
 	registry := WorkspaceRegistryRecord{Projects: []WorkspaceProjectRecord{{Path: "services/orders"}, {Path: "services/new"}}}
 
-	layout := BuildWorkspaceArchitectureLayout(registry, nil, config)
+	namespaces := []WorkspaceProjectNamespaceRecord{
+		{Project: "services/orders", Namespace: "@example/orders", PackageUnit: "@example/orders", Source: "production_package"},
+		{Project: "services/orders", Namespace: "@example/shared", PackageUnit: "@example/shared", Source: "production_package"},
+	}
+	layout := BuildWorkspaceArchitectureLayout(registry, namespaces, config)
 
 	if !layout.Service("services/orders").Manual || layout.Groups[0].Label != "Core" {
 		t.Fatalf("manual layout lost: %#v", layout)

@@ -139,10 +139,11 @@ func workspaceProductionNamespaceEvidence(projects []WorkspaceProjectRecord, nam
 	for _, project := range projects {
 		knownProjects[project.Path] = project
 	}
+	multiPackageProjects := workspaceMultiPackageProjects(namespaces)
 	candidates := make(map[string][]workspaceNamespaceEvidence)
 	for _, namespace := range namespaces {
 		project, known := knownProjects[namespace.Project]
-		if !known || !strings.EqualFold(strings.TrimSpace(namespace.Source), "production_package") {
+		if !known || multiPackageProjects[namespace.Project] || !strings.EqualFold(strings.TrimSpace(namespace.Source), "production_package") {
 			continue
 		}
 		segments := workspaceProjectNamespaceSegments(project, workspaceNamespaceSegments(namespace.Namespace))
@@ -189,6 +190,25 @@ func workspaceProductionNamespaceEvidence(projects []WorkspaceProjectRecord, nam
 		}
 	}
 	return evidence
+}
+
+func workspaceMultiPackageProjects(namespaces []WorkspaceProjectNamespaceRecord) map[string]bool {
+	units := map[string]map[string]bool{}
+	for _, namespace := range namespaces {
+		unit := strings.TrimSpace(namespace.PackageUnit)
+		if unit == "" || !strings.EqualFold(strings.TrimSpace(namespace.Source), "production_package") {
+			continue
+		}
+		if units[namespace.Project] == nil {
+			units[namespace.Project] = map[string]bool{}
+		}
+		units[namespace.Project][unit] = true
+	}
+	multiPackage := map[string]bool{}
+	for project, projectUnits := range units {
+		multiPackage[project] = len(projectUnits) > 1
+	}
+	return multiPackage
 }
 
 func workspaceNamespaceSegments(namespace string) []string {

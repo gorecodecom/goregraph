@@ -18,9 +18,10 @@ func TestWorkspaceProjectNamespacesUsesProductionSymbols(t *testing.T) {
 	indexed := []workspaceIndexProject{{
 		record: WorkspaceProjectRecord{Path: "services/orders"},
 		symbols: []RichSymbolRecord{
-			{Language: "java", File: "src/main/java/org/example/orders/Order.java", Package: "org.example.commerce.orders", WorkspacePackage: "ignored", Module: "ignored", Confidence: ConfidenceExact},
-			{Language: "java", File: "src/main/java/org/example/orders/OrderService.java", Package: "org.example.commerce.orders", Confidence: ConfidenceExact},
+			{Language: "java", File: "src/main/java/org/example/orders/Order.java", Package: "org.example.commerce.orders", WorkspacePackage: "ignored", Artifact: "org.example:orders", Module: "ignored", Confidence: ConfidenceExact},
+			{Language: "java", File: "src/main/java/org/example/orders/OrderService.java", Package: "org.example.commerce.orders", Artifact: "org.example:orders", Confidence: ConfidenceExact},
 			{Language: "typescript", File: "src/domain/order.ts", WorkspacePackage: "@example/commerce/orders", Module: "ignored", Confidence: ConfidenceExact},
+			{Language: "typescript", File: "src/shared/ui.ts", WorkspacePackage: "@example/shared/ui", Module: "ignored", Confidence: ConfidenceExact},
 			{Language: "go", File: "internal/orders.go", Module: "example.com/commerce/orders", Confidence: ConfidenceExact},
 			{Language: "java", File: "src/test/java/org/example/orders/OrderTest.java", Package: "org.example.tests.orders", Confidence: ConfidenceExact},
 			{Language: "go", File: "internal/orders_test.go", Module: "example.com/tests/orders", Confidence: ConfidenceExact},
@@ -32,9 +33,10 @@ func TestWorkspaceProjectNamespacesUsesProductionSymbols(t *testing.T) {
 
 	got := workspaceProjectNamespaces(indexed)
 	want := []WorkspaceProjectNamespaceRecord{
-		{Project: "services/orders", Namespace: "@example/commerce/orders", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/orders", Namespace: "@example/commerce/orders", PackageUnit: "@example/commerce/orders", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/orders", Namespace: "@example/shared/ui", PackageUnit: "@example/shared/ui", Language: "typescript", Source: "production_package", Confidence: "EXTRACTED"},
 		{Project: "services/orders", Namespace: "example.com/commerce/orders", Language: "go", Source: "production_package", Confidence: "EXTRACTED"},
-		{Project: "services/orders", Namespace: "org.example.commerce.orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
+		{Project: "services/orders", Namespace: "org.example.commerce.orders", PackageUnit: "org.example:orders", Language: "java", Source: "production_package", Confidence: "EXTRACTED"},
 	}
 
 	if !reflect.DeepEqual(got, want) {

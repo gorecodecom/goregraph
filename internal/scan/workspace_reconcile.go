@@ -867,18 +867,19 @@ func workspaceProjectNamespaces(indexed []workspaceIndexProject) []WorkspaceProj
 			if !isWorkspaceProductionNamespacePath(project.record, symbol.File, symbol.Kind) {
 				continue
 			}
-			namespace := strings.TrimSpace(firstNonEmpty(symbol.Package, symbol.WorkspacePackage, symbol.Module))
+			namespace, packageUnit := workspaceProjectSymbolNamespace(symbol)
 			if namespace == "" {
 				continue
 			}
 			record := WorkspaceProjectNamespaceRecord{
-				Project:    project.record.Path,
-				Namespace:  namespace,
-				Language:   symbol.Language,
-				Source:     "production_package",
-				Confidence: "EXTRACTED",
+				Project:     project.record.Path,
+				Namespace:   namespace,
+				PackageUnit: packageUnit,
+				Language:    symbol.Language,
+				Source:      "production_package",
+				Confidence:  "EXTRACTED",
 			}
-			key := record.Project + "\x00" + record.Namespace + "\x00" + record.Language
+			key := record.Project + "\x00" + record.Namespace + "\x00" + record.PackageUnit + "\x00" + record.Language
 			if seen[key] {
 				continue
 			}
@@ -893,9 +894,22 @@ func workspaceProjectNamespaces(indexed []workspaceIndexProject) []WorkspaceProj
 		if records[i].Namespace != records[j].Namespace {
 			return records[i].Namespace < records[j].Namespace
 		}
+		if records[i].PackageUnit != records[j].PackageUnit {
+			return records[i].PackageUnit < records[j].PackageUnit
+		}
 		return records[i].Language < records[j].Language
 	})
 	return records
+}
+
+func workspaceProjectSymbolNamespace(symbol RichSymbolRecord) (string, string) {
+	if namespace := strings.TrimSpace(symbol.Package); namespace != "" {
+		return namespace, strings.TrimSpace(symbol.Artifact)
+	}
+	if namespace := strings.TrimSpace(symbol.WorkspacePackage); namespace != "" {
+		return namespace, namespace
+	}
+	return strings.TrimSpace(symbol.Module), ""
 }
 
 func isWorkspaceProductionNamespacePath(project WorkspaceProjectRecord, file, kind string) bool {

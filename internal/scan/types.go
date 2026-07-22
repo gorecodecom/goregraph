@@ -910,11 +910,12 @@ type WorkspaceArchitectureGroupRecord struct {
 }
 
 type WorkspaceProjectNamespaceRecord struct {
-	Project    string `json:"project"`
-	Namespace  string `json:"namespace"`
-	Language   string `json:"language"`
-	Source     string `json:"source"`
-	Confidence string `json:"confidence"`
+	Project     string `json:"project"`
+	Namespace   string `json:"namespace"`
+	PackageUnit string `json:"package_unit,omitempty"`
+	Language    string `json:"language"`
+	Source      string `json:"source"`
+	Confidence  string `json:"confidence"`
 }
 
 type WorkspaceArchitectureServiceLayoutRecord struct {
