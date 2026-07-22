@@ -1062,8 +1062,9 @@ project markers alone; pass `--workspace <path>` or add an empty
 
 ## `goregraph workspace git update [path]`
 
-Previews or executes safe Git updates for every project discovered in the
-workspace containing `[path]`. The path defaults to `.`.
+Previews or executes safe Git updates for every unique Git repository in the
+workspace containing `[path]`, including repositories that are not eligible
+scan projects. The path defaults to `.`.
 
 Examples:
 
@@ -1181,8 +1182,13 @@ auto-detection, an explicit `--workspace <path>`, or a permanent
 directory is removable output, not the persistent marker, and the build command
 does not create `.goregraph-workspace.yml`.
 
-Git repositories and supported project manifests are discovered automatically.
-Once a project root is detected, nested manifests remain part of that project.
+Automatic workspace scans require a supported project/build marker at the
+project root. A `.git` directory alone identifies a repository for Git
+operations but is not a scan project. Add a project-local `goregraph.yml` to
+opt a non-standard project into automatic discovery. An explicit
+`goregraph build <target> <path>` can still scan a deliberately selected
+markerless directory. Once a project root is detected, nested manifests remain
+part of that project.
 
 ## `goregraph workspace scan-all [path]`
 

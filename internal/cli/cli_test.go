@@ -429,7 +429,14 @@ func TestWorkspaceHelpExplainsFlatWorkspaceDetection(t *testing.T) {
 		if code := Run(args, &stdout, &stderr); code != 0 {
 			t.Fatalf("%v exit code = %d, want 0; stderr=%s", args, code, stderr.String())
 		}
-		for _, want := range []string{".goregraph-workspace.yml", "--workspace"} {
+		for _, want := range []string{
+			".goregraph-workspace.yml",
+			"--workspace",
+			"project/build marker",
+			".git alone",
+			"goregraph.yml",
+			"explicit project build",
+		} {
 			if !strings.Contains(stdout.String(), want) {
 				t.Fatalf("%v help output missing %q:\n%s", args, want, stdout.String())
 			}
@@ -572,8 +579,10 @@ func TestRunScanNoWorkspaceSkipsWorkspaceRegistry(t *testing.T) {
 func TestRunWorkspaceStatusPrintsDetectedProjects(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "weka")
 	root := filepath.Join(workspace, "frontend", "frontend-monorepo")
+	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, root, "package.json", `{"name":"frontend-monorepo"}`)
-	writeFile(t, filepath.Join(workspace, "microservices", "ms-cadaster"), "README.md", "# ms-cadaster\n")
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
+	writeFile(t, cadaster, "README.md", "# ms-cadaster\n")
 	var stdout, stderr bytes.Buffer
 
 	code := Run([]string{"workspace", "status", root}, &stdout, &stderr)
@@ -591,6 +600,7 @@ func TestRunWorkspaceScanMissingDryRunShowsPlanWithoutScanning(t *testing.T) {
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	task := filepath.Join(workspace, "microservices", "ms-task")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, task, "pom.xml", `<project><artifactId>ms-task</artifactId></project>`)
 	writeFile(t, frontend, "src/api/tasks.js", "export function loadTask(id) {\n"+
 		"  return fetch(`/tasks/${id}`);\n"+
 		"}\n")
@@ -627,6 +637,7 @@ func TestRunWorkspaceScanMissingExecuteScansTopMissingService(t *testing.T) {
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	task := filepath.Join(workspace, "microservices", "ms-task")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, task, "pom.xml", `<project><artifactId>ms-task</artifactId></project>`)
 	writeFile(t, frontend, "src/api/tasks.js", "export function loadTask(id) {\n"+
 		"  return fetch(`/tasks/${id}`);\n"+
 		"}\n")
@@ -678,6 +689,8 @@ func TestRunWorkspaceScanAllScansDiscoveredWorkspaceProjects(t *testing.T) {
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	task := filepath.Join(workspace, "microservices", "ms-task")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
+	writeFile(t, task, "pom.xml", `<project><artifactId>ms-task</artifactId></project>`)
 	writeFile(t, frontend, ".gitignore", "dist/\n")
 	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
 		"  return fetch(`/cadasters/${id}`);\n"+
@@ -824,6 +837,7 @@ func TestRunWorkspaceCleanDryRunAndExecuteRemovesGeneratedWorkspaceOutput(t *tes
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
 	writeFile(t, cadaster, "README.md", "# ms-cadaster\n")
 	var scanOut, scanErr bytes.Buffer
 	if code := Run([]string{"workspace", "scan-all", workspace, "--no-update-gitignore"}, &scanOut, &scanErr); code != 0 {
@@ -1823,8 +1837,10 @@ func TestWorkspaceScanAllHelpDocumentsOneReconciliationAndProjectBoundaries(t *t
 		".goregraph-workspace.yml",
 		"does not create .goregraph-workspace.yml",
 		".goregraph-workspace/ is removable generated output",
-		"Git repositories and supported project manifests",
-		"discovered automatically",
+		"project/build marker",
+		".git alone",
+		"goregraph.yml",
+		"explicit project build",
 		"Once a project root is detected",
 		"nested manifests remain part of that project",
 	} {
@@ -1840,8 +1856,10 @@ func TestWorkspaceCompleteHelpDocumentsProjectBoundaries(t *testing.T) {
 		t.Fatalf("complete workspace help exit code = %d, stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"Git repositories and supported project manifests",
-		"discovered automatically",
+		"project/build marker",
+		".git alone",
+		"goregraph.yml",
+		"explicit project build",
 		"Once a project root is detected",
 		"nested manifests remain part of that project",
 	} {

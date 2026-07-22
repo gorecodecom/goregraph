@@ -813,7 +813,10 @@ Scans each discovered project once and reconciles the workspace once after the p
 Workspace detection:
   GoreGraph detects common grouped frontend/services layouts. Otherwise use
   --workspace <path> or add .goregraph-workspace.yml to the workspace root.
-  Git repositories and supported project manifests are discovered automatically.
+  Automatic workspace scans require a project/build marker. A .git alone
+  identifies a repository for Git operations but is not a scan project.
+  Use a project-local goregraph.yml to opt in a non-standard project. An
+  explicit project build can still scan a deliberately selected markerless directory.
   Once a project root is detected, nested manifests remain part of that project.
   A scan does not create .goregraph-workspace.yml. The generated
   .goregraph-workspace/ is removable generated output, not a persistent marker.
@@ -1576,6 +1579,10 @@ MCP behavior:
 Workspace detection:
   Workspace commands require a detected grouped layout, --workspace <path>, or
   .goregraph-workspace.yml at the workspace root.
+  Automatic workspace scans require a project/build marker. A .git alone
+  identifies a repository for Git operations but is not a scan project.
+  Use a project-local goregraph.yml to opt in a non-standard project. An
+  explicit project build can still scan a deliberately selected markerless directory.
   A build or scan does not create .goregraph-workspace.yml. The generated
   .goregraph-workspace/ is removable generated output, not a persistent marker.
 `)
@@ -1648,7 +1655,10 @@ Examples:
 Workspace detection:
   Common grouped frontend/services layouts are detected automatically. Otherwise
   use --workspace <path> or add .goregraph-workspace.yml to the workspace root.
-  Git repositories and supported project manifests are discovered automatically.
+  Automatic workspace scans require a project/build marker. A .git alone
+  identifies a repository for Git operations but is not a scan project.
+  Use a project-local goregraph.yml to opt in a non-standard project. An
+  explicit project build can still scan a deliberately selected markerless directory.
   Once a project root is detected, nested manifests remain part of that project.
   Scans each discovered project once and reconciles once after the project loop.
   scan-all is the compatibility alias for workspace build all.

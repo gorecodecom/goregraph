@@ -392,6 +392,13 @@ may refresh a detected workspace overlay from existing sibling indexes, but it
 never scans those sibling projects; add `--no-workspace` to skip that overlay
 refresh as well.
 
+Automatic workspace scans require a supported project/build marker at the
+project root. A `.git` directory alone identifies a repository for Git
+operations but is not a scan project. Add a project-local `goregraph.yml` to
+opt a non-standard project into automatic discovery. An explicit
+`goregraph build <target> <path>` can still scan a deliberately selected
+markerless directory.
+
 Workspace-wide commands recognize common group layouts such as `frontend/`,
 `microservices/`, `services/`, and `backends/`. A flat directory containing
 sibling projects needs an explicit workspace root:

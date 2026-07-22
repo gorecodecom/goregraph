@@ -388,6 +388,13 @@ func TestWorkspaceGitTargetsDiscoversNestedRepositories(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(linkedRepository, ".git"), []byte("gitdir: ../metadata\n"), 0o600); err != nil {
 		t.Fatalf("create regular .git file: %v", err)
 	}
+	for _, repository := range []string{workspace, filepath.Join(workspace, "nested"), linkedRepository} {
+		for _, marker := range []string{"package.json", "pom.xml", "go.mod", "goregraph.yml"} {
+			if _, err := os.Stat(filepath.Join(repository, marker)); !os.IsNotExist(err) {
+				t.Fatalf("Git-only repository %s unexpectedly has marker %s: %v", repository, marker, err)
+			}
+		}
+	}
 
 	plan := scan.WorkspaceProjectScanPlanRecord{
 		WorkspaceRoot: filepath.ToSlash(workspace),
