@@ -44,6 +44,9 @@ func TestWorkspaceWritesFreshnessIndex(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/users\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package users\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

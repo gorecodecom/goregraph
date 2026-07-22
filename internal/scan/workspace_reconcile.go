@@ -542,7 +542,7 @@ func workspaceGroupCounts(dir string) (int, int) {
 
 func discoverWorkspaceProjects(workspaceRoot, currentAbs, defaultOutput string) ([]WorkspaceProjectRecord, error) {
 	projectsByPath := map[string]WorkspaceProjectRecord{}
-	if hasWorkspaceProjectRoot(workspaceRoot, defaultOutput) {
+	if hasWorkspaceProjectRoot(workspaceRoot) {
 		addWorkspaceProject(projectsByPath, workspaceRoot, currentAbs, workspaceRoot, "", defaultOutput)
 	} else if err := walkWorkspaceProjectRoots(workspaceRoot, currentAbs, workspaceRoot, "", defaultOutput, projectsByPath); err != nil {
 		return nil, err
@@ -577,7 +577,7 @@ func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defau
 		if isWorkspaceGroup(name) {
 			nextGroup = name
 		}
-		if hasWorkspaceProjectRoot(abs, defaultOutput) {
+		if hasWorkspaceProjectRoot(abs) {
 			addWorkspaceProject(projects, workspaceRoot, currentAbs, abs, nextGroup, defaultOutput)
 			foundProjectRoot = true
 			continue
@@ -586,10 +586,6 @@ func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defau
 		if err != nil {
 			return false, err
 		}
-		if !foundNestedProjectRoot && group != "" && samePath(dir, filepath.Join(workspaceRoot, group)) {
-			addWorkspaceProject(projects, workspaceRoot, currentAbs, abs, group, defaultOutput)
-			foundNestedProjectRoot = true
-		}
 		if foundNestedProjectRoot {
 			foundProjectRoot = true
 		}
@@ -597,11 +593,8 @@ func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defau
 	return foundProjectRoot, nil
 }
 
-func hasWorkspaceProjectRoot(abs, outputDir string) bool {
-	if info, err := os.Lstat(filepath.Join(abs, ".git")); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
-		return true
-	}
-	return hasProjectMarker(abs, outputDir)
+func hasWorkspaceProjectRoot(abs string) bool {
+	return hasProjectMarker(abs)
 }
 
 func skipWorkspaceDiscoveryDir(name string) bool {
@@ -745,7 +738,7 @@ func isWorkspaceGroup(name string) bool {
 	return false
 }
 
-func hasProjectMarker(abs, outputDir string) bool {
+func hasProjectMarker(abs string) bool {
 	for _, name := range []string{
 		"package.json", "pom.xml", "build.gradle", "build.gradle.kts",
 		"settings.gradle", "settings.gradle.kts", "go.mod", "pyproject.toml",
@@ -769,7 +762,7 @@ func hasProjectMarker(abs, outputDir string) bool {
 			}
 		}
 	}
-	return validProjectOutput(filepath.Join(abs, outputDir))
+	return false
 }
 
 func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexProject, error) {

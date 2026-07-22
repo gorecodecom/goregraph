@@ -1249,6 +1249,8 @@ func TestScanCreatesWorkspaceRegistryWithIndexedAndNotIndexedProjects(t *testing
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	task := filepath.Join(workspace, "microservices", "ms-task")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
+	writeFile(t, task, "pom.xml", `<project><artifactId>ms-task</artifactId></project>`)
 	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
 		"  return fetch(`/cadasters/${id}`);\n"+
 		"}\n")
@@ -1278,6 +1280,7 @@ func TestWorkspaceRootPrefersParentWithFrontendAndMicroservices(t *testing.T) {
 	nestedFrontends := filepath.Join(workspace, "frontend", "frontends")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
 	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
 		"  return fetch(`/cadasters/${id}`);\n"+
 		"}\n")
@@ -1369,7 +1372,7 @@ func TestWorkspaceDiscoveryStopsAtProjectBoundaries(t *testing.T) {
 	}
 }
 
-func TestWorkspaceDiscoveryRecognizesLinkedWorktreeGitFile(t *testing.T) {
+func TestWorkspaceDiscoveryIgnoresGitOnlyRepository(t *testing.T) {
 	workspace := t.TempDir()
 	project := filepath.Join(workspace, "services", "linked")
 	writeFile(t, project, ".git", "gitdir: ../.git/worktrees/linked\n")
@@ -1379,8 +1382,26 @@ func TestWorkspaceDiscoveryRecognizesLinkedWorktreeGitFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "services/linked" {
-		t.Fatalf("project paths = %q, want services/linked", got)
+	if len(projects) != 0 {
+		t.Fatalf("projects = %#v, want none", projects)
+	}
+}
+
+func TestWorkspaceDiscoveryFindsMarkedProjectInsideGitOnlyRepository(t *testing.T) {
+	workspace := t.TempDir()
+	repository := filepath.Join(workspace, "repositories", "container")
+	if err := os.MkdirAll(filepath.Join(repository, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, repository, "README.md", "# container\n")
+	writeFile(t, filepath.Join(repository, "apps", "api"), "go.mod", "module example.com/api\n")
+
+	projects, err := discoverWorkspaceProjects(workspace, workspace, "goregraph-out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "repositories/container/apps/api" {
+		t.Fatalf("project paths = %q, want repositories/container/apps/api", got)
 	}
 }
 
@@ -1422,7 +1443,7 @@ func TestWorkspaceDiscoveryRecognizesWorkspaceRoot(t *testing.T) {
 	}
 }
 
-func TestWorkspaceDiscoveryPreservesMarkerlessDirectGroupChildWithoutNestedProject(t *testing.T) {
+func TestWorkspaceDiscoveryIgnoresMarkerlessDirectGroupChild(t *testing.T) {
 	workspace := t.TempDir()
 	writeFile(t, filepath.Join(workspace, "microservices", "legacy-service"), "README.md", "# legacy\n")
 	writeFile(t, filepath.Join(workspace, "microservices", "commerce", "orders"), "Cargo.toml", "[package]\nname='orders'\n")
@@ -1431,10 +1452,7 @@ func TestWorkspaceDiscoveryPreservesMarkerlessDirectGroupChildWithoutNestedProje
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := strings.Join([]string{
-		"microservices/commerce/orders",
-		"microservices/legacy-service",
-	}, "\n")
+	want := "microservices/commerce/orders"
 	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != want {
 		t.Fatalf("project paths = %q, want %q", got, want)
 	}
@@ -1552,7 +1570,7 @@ func TestWorkspaceDiscoveryRejectsInvalidProjectOutputManifests(t *testing.T) {
 	}
 }
 
-func TestWorkspaceDiscoveryRecognizesValidProjectOutputManifest(t *testing.T) {
+func TestWorkspaceDiscoveryDoesNotUseValidProjectOutputManifestAsMarker(t *testing.T) {
 	workspace := t.TempDir()
 	project := filepath.Join(workspace, "projects", "app")
 	manifest := OutputManifest{
@@ -1572,8 +1590,8 @@ func TestWorkspaceDiscoveryRecognizesValidProjectOutputManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "projects/app" {
-		t.Fatalf("project paths = %q, want projects/app", got)
+	if got := strings.Join(workspaceProjectPaths(projects), "\n"); got != "projects/app/nested" {
+		t.Fatalf("project paths = %q, want projects/app/nested", got)
 	}
 }
 
@@ -1619,6 +1637,7 @@ func TestLaterBackendScanRefreshesExistingFrontendWorkspaceOverlay(t *testing.T)
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
 	writeFile(t, frontend, "src/api/cadasterservice.js", "export function loadCadaster(id) {\n"+
 		"  return fetch(`/cadasters/${id}`);\n"+
 		"}\n")
@@ -1754,6 +1773,7 @@ func TestWorkspaceDiagnosticsDoNotKeepIndexedMissingRoutesAsUnscanned(t *testing
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	task := filepath.Join(workspace, "microservices", "ms-task")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, task, "pom.xml", `<project><artifactId>ms-task</artifactId></project>`)
 	writeFile(t, frontend, "src/api/taskservice.js", "export function loadTask(id) {\n"+
 		"  return fetch(`/task/${id}`);\n"+
 		"}\n")
@@ -2181,6 +2201,7 @@ func TestWorkspaceFeatureFlowsConnectFrontendBackendServiceAndTests(t *testing.T
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
 	writeFile(t, frontend, "apps/portal/src/api/cadasterservice.js", "export function importCadaster(id) {\n"+
 		"  return fetch(`/cadasters/${id}/import`, { method: 'POST' });\n"+
 		"}\n")
@@ -2292,6 +2313,7 @@ func TestWorkspaceFeatureFlowsIncludeFrontendRouteComponentAndAPICall(t *testing
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
 	writeFile(t, frontend, "apps/portal/src/routes.jsx", `import { Route } from "react-router-dom";
 import { CadasterPage } from "./pages/CadasterPage";
 
@@ -3392,6 +3414,7 @@ func TestWorkspaceFeatureFlowsExplainMissingFrontendRouteContext(t *testing.T) {
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
 	writeFile(t, frontend, "apps/portal/src/api/cadasterservice.js", "import { GetHelper } from '../utils/requestHelper';\n\n"+
 		"export function loadCadaster(dispatch, id) {\n"+
 		"  return GetHelper(dispatch, `/cadasters/${id}`);\n"+
@@ -3537,6 +3560,7 @@ func TestWorkspaceStatusDetectsWorkspaceRootItself(t *testing.T) {
 	frontend := filepath.Join(workspace, "frontend", "frontend-monorepo")
 	cadaster := filepath.Join(workspace, "microservices", "ms-cadaster")
 	writeFile(t, frontend, "package.json", `{"name":"frontend-monorepo"}`)
+	writeFile(t, cadaster, "pom.xml", `<project><artifactId>ms-cadaster</artifactId></project>`)
 	writeFile(t, cadaster, "README.md", "# ms-cadaster\n")
 
 	status, err := WorkspaceStatus(workspace, config.Defaults())
