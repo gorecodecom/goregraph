@@ -32,6 +32,7 @@ func Defaults() Config {
 		Workspace:        true,
 		Exclude: []string{
 			".git/",
+			".worktrees/",
 			"node_modules/",
 			"vendor/",
 			"target/",

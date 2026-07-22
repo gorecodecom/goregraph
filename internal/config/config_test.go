@@ -25,7 +25,7 @@ func TestDefaultsMatchMVPSafetyModel(t *testing.T) {
 		t.Fatalf("MaxFileSizeBytes = %d, want %d", cfg.MaxFileSizeBytes, 512*1024)
 	}
 
-	for _, pattern := range []string{".git/", "node_modules/", "target/", "build/", "dist/", "coverage/", ".idea/", ".vscode/", ".gitignore", "goregraph-out/", ".goregraph-workspace/"} {
+	for _, pattern := range []string{".git/", ".worktrees/", "node_modules/", "target/", "build/", "dist/", "coverage/", ".idea/", ".vscode/", ".gitignore", "goregraph-out/", ".goregraph-workspace/"} {
 		if !cfg.HasExclude(pattern) {
 			t.Fatalf("default excludes missing %q", pattern)
 		}

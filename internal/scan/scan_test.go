@@ -56,6 +56,7 @@ func TestRunSkipsGeneratedDirectoriesAtAnyDepth(t *testing.T) {
 	writeFile(t, root, "apps/portal/coverage/report.js", "export const coverage = true\n")
 	writeFile(t, root, "apps/portal/goregraph-out/index/files.json", "[]\n")
 	writeFile(t, root, "apps/portal/.goregraph-workspace/index/registry.json", "{}\n")
+	writeFile(t, root, "apps/portal/.worktrees/feature/src/copied.js", "export const copied = true\n")
 	writeFile(t, root, "apps/portal/.gitignore", "local-output/\n")
 	writeFile(t, root, "apps/portal/node_modules_backup/keep.js", "export const backup = true\n")
 	writeFile(t, root, "apps/portal/build-tools/keep.js", "export const tool = true\n")

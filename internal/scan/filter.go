@@ -27,7 +27,7 @@ func shouldSkipPath(rel string, isDir bool, cfg config.Config, matcher gitignore
 
 func isRecursiveDefaultDirectoryExclude(pattern string) bool {
 	switch pattern {
-	case ".git", "node_modules", "vendor", "target", "build", "dist", "coverage", ".idea", ".vscode", "goregraph-out", ".goregraph-workspace":
+	case ".git", ".worktrees", "node_modules", "vendor", "target", "build", "dist", "coverage", ".idea", ".vscode", "goregraph-out", ".goregraph-workspace":
 		return true
 	default:
 		return false
