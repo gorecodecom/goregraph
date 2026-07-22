@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-const workspaceDashboardShell = `<div class="shell">
-<aside class="side">
+const workspaceDashboardShell = `<div class="shell" id="workspace-shell">
+<aside class="side" id="workspace-sidebar">
 <h1>GoreGraph Workspace</h1>
 <div class="summary"><div class="metric"><strong id="service-count">0</strong><span>services</span></div><div class="metric"><strong id="edge-count">0</strong><span>relations</span></div><div class="metric"><strong id="trace-count">0</strong><span>traces</span></div><div class="metric"><strong id="contract-count">0</strong><span>contracts</span></div></div>
 <h2>View</h2>
@@ -66,6 +66,8 @@ const workspaceDashboardShell = `<div class="shell">
 </div>
 </aside>
 <main>
+<button type="button" id="toggle-left-panel" class="panel-toggle panel-toggle-left" aria-controls="workspace-sidebar" aria-expanded="true" aria-label="Hide navigation panel"><span aria-hidden="true">‹</span></button>
+<button type="button" id="toggle-right-panel" class="panel-toggle panel-toggle-right" aria-controls="details" aria-expanded="true" aria-label="Hide details panel"><span aria-hidden="true">›</span></button>
 <nav id="architecture-view-tabs" class="architecture-tabs" aria-label="Architecture presentation">
 <button type="button" data-architecture-view="flow" aria-pressed="true">Flow</button>
 <button type="button" data-architecture-view="matrix" aria-pressed="false">Matrix</button>
