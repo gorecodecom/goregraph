@@ -1602,6 +1602,10 @@ func TestContextSourceTestsRecognizeLanguageNeutralExecutableBodies(t *testing.T
 			name:    "TypeScript assertion with nested empty callback",
 			content: `expect(fn(() => {})).toThrow()`,
 		},
+		{
+			name:    "TypeScript inline wrapper with nested empty callback",
+			content: `test("throws", () => { expect(fn(() => {})).toThrow(); });`,
+		},
 	}
 	concern := newContextConcern(contextConcernTests, "services/catalog", true, nil, "")
 	for _, test := range tests {

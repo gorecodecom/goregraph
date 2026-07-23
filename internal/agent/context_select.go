@@ -1000,25 +1000,62 @@ func contextSourceTestLineIsEmptyInlineWrapper(line string) bool {
 	if !isTestWrapper {
 		return false
 	}
-	if strings.Contains(normalized, "=>{}") {
-		return true
+
+	wrapperStart := strings.IndexByte(line, '(')
+	if wrapperStart < 0 {
+		return false
 	}
-	searchFrom := 0
-	for searchFrom < len(line) {
-		index := strings.Index(line[searchFrom:], "function")
-		if index < 0 {
-			return false
-		}
-		index += searchFrom
-		end := index + len("function")
-		if isWholeSourceToken(line, index, end) {
-			callback := strings.Join(strings.Fields(line[end:]), "")
-			if body := strings.IndexByte(callback, '{'); body >= 0 &&
-				strings.HasPrefix(callback[body:], "{}") {
-				return true
+	callbackStart := -1
+	parenthesisDepth, bracketDepth, braceDepth := 1, 0, 0
+	for index := wrapperStart + 1; index < len(line); index++ {
+		switch line[index] {
+		case '(':
+			parenthesisDepth++
+		case ')':
+			parenthesisDepth--
+		case '[':
+			bracketDepth++
+		case ']':
+			bracketDepth--
+		case '{':
+			braceDepth++
+		case '}':
+			braceDepth--
+		default:
+			if parenthesisDepth != 1 || bracketDepth != 0 || braceDepth != 0 {
+				continue
+			}
+			if strings.HasPrefix(line[index:], "=>") {
+				callbackStart = index + len("=>")
+			} else if strings.HasPrefix(line[index:], "function") &&
+				isWholeSourceToken(line, index, index+len("function")) {
+				callbackStart = index + len("function")
 			}
 		}
-		searchFrom = end
+		if callbackStart >= 0 || parenthesisDepth == 0 {
+			break
+		}
+	}
+	if callbackStart < 0 {
+		return false
+	}
+
+	bodyOffset := strings.IndexByte(line[callbackStart:], '{')
+	if bodyOffset < 0 {
+		return false
+	}
+	bodyStart := callbackStart + bodyOffset
+	depth := 0
+	for index := bodyStart; index < len(line); index++ {
+		switch line[index] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(line[bodyStart+1:index]) == ""
+			}
+		}
 	}
 	return false
 }
