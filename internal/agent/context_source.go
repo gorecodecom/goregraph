@@ -801,23 +801,82 @@ func javaAccessorGenerationEnabled(
 		if start < 1 || end < start || end > len(codeLines) {
 			return false
 		}
-		value := strings.ToLower(strings.Join(codeLines[start-1:end], "\n"))
-		if strings.Contains(value, "@data") || strings.Contains(value, ".data") {
-			return true
+		annotations := []string{"Data"}
+		if getter {
+			annotations = append(annotations, "Getter", "Value")
 		}
-		if getter && (strings.Contains(value, "@getter") ||
-			strings.Contains(value, ".getter") ||
-			strings.Contains(value, "@value") ||
-			strings.Contains(value, ".value")) {
-			return true
+		if setter {
+			annotations = append(annotations, "Setter")
 		}
-		return setter && (strings.Contains(value, "@setter") || strings.Contains(value, ".setter"))
+		for _, annotation := range annotations {
+			if javaLombokAnnotationApplied(codeLines, start, end, annotation) {
+				return true
+			}
+		}
+		return false
 	}
 	if hasApplicableAnnotation(sourceAnnotationStart(codeLines, owner.Line), owner.Line) {
 		return true
 	}
 	return field.Line > 0 &&
 		hasApplicableAnnotation(sourceAnnotationStart(codeLines, field.Line), field.Line)
+}
+
+func javaLombokAnnotationApplied(
+	codeLines []string,
+	start int,
+	end int,
+	annotation string,
+) bool {
+	qualified := "@lombok." + annotation
+	simple := "@" + annotation
+	simpleImported := javaImportsLombokAnnotation(codeLines, annotation)
+	for lineNumber := start; lineNumber <= end; lineNumber++ {
+		line := codeLines[lineNumber-1]
+		if containsJavaAnnotationToken(line, qualified) ||
+			simpleImported && containsJavaAnnotationToken(line, simple) {
+			return true
+		}
+	}
+	return false
+}
+
+func javaImportsLombokAnnotation(codeLines []string, annotation string) bool {
+	want := "import lombok." + annotation + ";"
+	for _, line := range codeLines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == want || trimmed == "import lombok.*;" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsJavaAnnotationToken(line, annotation string) bool {
+	searchFrom := 0
+	for searchFrom <= len(line) {
+		index := strings.Index(line[searchFrom:], annotation)
+		if index < 0 {
+			return false
+		}
+		start := searchFrom + index
+		end := start + len(annotation)
+		beforeSafe := start == 0
+		if !beforeSafe {
+			previous, _ := utf8.DecodeLastRuneInString(line[:start])
+			beforeSafe = unicode.IsSpace(previous)
+		}
+		afterSafe := end == len(line)
+		if !afterSafe {
+			next, _ := utf8.DecodeRuneInString(line[end:])
+			afterSafe = !isSourceIdentifierRune(next) && next != '.'
+		}
+		if beforeSafe && afterSafe {
+			return true
+		}
+		searchFrom = end
+	}
+	return false
 }
 
 func javaGeneratedAccessorFieldName(identifier string) (string, bool, bool) {
@@ -866,7 +925,7 @@ func javaFieldDeclarationLike(
 		return true
 	}
 	fieldType := fields[len(fields)-1]
-	return fieldType == "boolean" || fieldType == "Boolean"
+	return fieldType == "boolean"
 }
 
 func contextIdentifier(candidate sourceCandidate) string {

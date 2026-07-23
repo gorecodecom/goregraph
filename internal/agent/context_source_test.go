@@ -454,6 +454,7 @@ func TestRenderSourceCandidateKeepsIndexedConstructorOverClassDeclaration(t *tes
 
 func TestRenderSourceCandidateRelocatesGeneratedAccessorToBackingField(t *testing.T) {
 	lines := []string{
+		"import lombok.Getter;",
 		"@Getter",
 		"public class ApplicationConfig {",
 		"  private boolean showErrorsInResponse;",
@@ -461,7 +462,7 @@ func TestRenderSourceCandidateRelocatesGeneratedAccessorToBackingField(t *testin
 		"}",
 	}
 	candidate := sourceCandidate{
-		Path: "ApplicationConfig.java", StartLine: 2, Kind: "symbol",
+		Path: "ApplicationConfig.java", StartLine: 3, Kind: "symbol",
 		Name:      "isUserLicensesParallelBatching",
 		Qualified: "ApplicationConfig.isUserLicensesParallelBatching",
 	}
@@ -474,15 +475,16 @@ func TestRenderSourceCandidateRelocatesGeneratedAccessorToBackingField(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if section.StartLine != 4 || section.EndLine != 4 ||
+	if section.StartLine != 5 || section.EndLine != 5 ||
 		section.SourceState != "relocated_current" ||
-		section.Content != "4\t  private boolean userLicensesParallelBatching;" {
+		section.Content != "5\t  private boolean userLicensesParallelBatching;" {
 		t.Fatalf("generated accessor section = %#v", section)
 	}
 }
 
 func TestRenderSourceCandidateRejectsAmbiguousGeneratedAccessorFields(t *testing.T) {
 	lines := []string{
+		"import lombok.Getter;",
 		"@Getter",
 		"class FirstConfig {",
 		"  private boolean enabled;",
@@ -490,7 +492,7 @@ func TestRenderSourceCandidateRejectsAmbiguousGeneratedAccessorFields(t *testing
 		"}",
 	}
 	candidate := sourceCandidate{
-		Path: "Config.java", StartLine: 1, Kind: "symbol",
+		Path: "Config.java", StartLine: 3, Kind: "symbol",
 		Name: "isEnabled", Qualified: "FirstConfig.isEnabled",
 	}
 
@@ -512,6 +514,7 @@ func TestRenderSourceCandidateRejectsGeneratedAccessorFieldOutsideOwner(t *testi
 		{
 			name: "local variable",
 			lines: []string{
+				"import lombok.Getter;",
 				"@Getter",
 				"class FirstConfig {",
 				"  void load() {",
@@ -523,6 +526,7 @@ func TestRenderSourceCandidateRejectsGeneratedAccessorFieldOutsideOwner(t *testi
 		{
 			name: "sibling class",
 			lines: []string{
+				"import lombok.Getter;",
 				"@Getter",
 				"class FirstConfig {",
 				"}",
@@ -534,6 +538,7 @@ func TestRenderSourceCandidateRejectsGeneratedAccessorFieldOutsideOwner(t *testi
 		{
 			name: "nested class",
 			lines: []string{
+				"import lombok.Getter;",
 				"@Getter",
 				"class FirstConfig {",
 				"  class NestedConfig {",
@@ -547,7 +552,7 @@ func TestRenderSourceCandidateRejectsGeneratedAccessorFieldOutsideOwner(t *testi
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			candidate := sourceCandidate{
-				Path: "Config.java", StartLine: 2, Kind: "symbol",
+				Path: "Config.java", StartLine: 3, Kind: "symbol",
 				Name: "isEnabled", Qualified: "FirstConfig.isEnabled",
 			}
 			_, err := renderSourceCandidate(
@@ -559,6 +564,62 @@ func TestRenderSourceCandidateRejectsGeneratedAccessorFieldOutsideOwner(t *testi
 				t.Fatalf("renderSourceCandidate() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestRenderSourceCandidateRejectsNonLombokAccessorAnnotations(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+	}{
+		{name: "Spring Value", annotation: `@Value("${enabled}")`},
+		{name: "suffix match", annotation: "@Target.GetterLike"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			lines := []string{
+				"class ApplicationConfig {",
+				"  " + test.annotation,
+				"  private boolean enabled;",
+				"}",
+			}
+			candidate := sourceCandidate{
+				Path: "ApplicationConfig.java", StartLine: 1, Kind: "symbol",
+				Name: "getEnabled", Qualified: "ApplicationConfig.getEnabled",
+			}
+			_, err := renderSourceCandidate(
+				candidate,
+				sourceFile{Path: candidate.Path, Lines: lines},
+				"signature",
+			)
+			if err == nil || err.Error() != "indexed symbol is absent from current source" {
+				t.Fatalf("renderSourceCandidate() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestRenderSourceCandidateRejectsBooleanIsAccessorForBoxedField(t *testing.T) {
+	lines := []string{
+		"import lombok.Getter;",
+		"@Getter",
+		"class ApplicationConfig {",
+		"  private Boolean enabled;",
+		"}",
+	}
+	candidate := sourceCandidate{
+		Path: "ApplicationConfig.java", StartLine: 3, Kind: "symbol",
+		Name: "isEnabled", Qualified: "ApplicationConfig.isEnabled",
+	}
+
+	_, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: lines},
+		"signature",
+	)
+	if err == nil || err.Error() != "indexed symbol is absent from current source" {
+		t.Fatalf("renderSourceCandidate() error = %v", err)
 	}
 }
 
