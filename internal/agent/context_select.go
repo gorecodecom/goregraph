@@ -433,7 +433,7 @@ func appendContextSourceCandidateOptions(
 		if err != nil {
 			return 0, err
 		}
-		concernKeys, required := contextSourceOptionConcerns(optionCandidate, concerns)
+		concernKeys, required := contextSourceOptionConcerns(optionCandidate, section, concerns)
 		projectKey := ""
 		if optionCandidate.Role != "test" {
 			projectKey = normalizeContextProject(optionCandidate.Project)
@@ -838,7 +838,11 @@ func contextSourceCandidateFactIDs(candidate sourceCandidate) []string {
 	return []string{candidate.FactID}
 }
 
-func contextSourceOptionConcerns(candidate sourceCandidate, concerns []contextConcern) ([]string, bool) {
+func contextSourceOptionConcerns(
+	candidate sourceCandidate,
+	section ContextSourceSection,
+	concerns []contextConcern,
+) ([]string, bool) {
 	factIDs := make(map[string]bool)
 	for _, factID := range contextSourceCandidateFactIDs(candidate) {
 		factIDs[factID] = true
@@ -860,6 +864,9 @@ func contextSourceOptionConcerns(candidate sourceCandidate, concerns []contextCo
 			covered = candidate.Role != "test" && normalizeContextProject(candidate.Project) == concern.project
 		}
 		if !covered {
+			covered = contextSourceSectionSupportsConcern(section, concern)
+		}
+		if !covered {
 			continue
 		}
 		keys = append(keys, concern.key)
@@ -867,6 +874,76 @@ func contextSourceOptionConcerns(candidate sourceCandidate, concerns []contextCo
 	}
 	sort.Strings(keys)
 	return keys, required
+}
+
+func contextSourceSectionSupportsConcern(
+	section ContextSourceSection,
+	concern contextConcern,
+) bool {
+	if concern.project != "" &&
+		normalizeContextProject(section.Project) != concern.project {
+		return false
+	}
+	if section.Role == "test" {
+		return concern.kind == contextConcernTests
+	}
+
+	content := strings.ToLower(section.Content)
+	switch concern.kind {
+	case contextConcernAuth:
+		return contextSourceContainsAny(content,
+			"@securityrequirement",
+			".authenticated(",
+			"authorization",
+			"basicauth",
+			"oauth2",
+			"securityfilterchain",
+		)
+	case contextConcernConfiguration:
+		return contextSourceContainsAny(content,
+			"@configurationproperties",
+			"@value(",
+			"connecttimeout",
+			"readtimeout",
+			"maxretries",
+		)
+	case contextConcernResilience:
+		return contextSourceContainsAny(content,
+			"@retryable",
+			"maxattempts",
+			"recover",
+			"retrytemplate",
+			"timeout",
+		)
+	case contextConcernPersistence:
+		return contextSourceContainsAny(content,
+			"@transactional",
+			"entitymanager",
+			"jparepository",
+			"repository.",
+		)
+	case contextConcernSideEffects:
+		return contextSourceContainsAny(content,
+			"mailservice.",
+			"protocolservice.",
+			"trackingservice.",
+			"eventpublisher.",
+			"log.",
+		)
+	case contextConcernTests:
+		return contextSourceContainsAny(content, "@test", "describe(", "it(", "test(")
+	default:
+		return false
+	}
+}
+
+func contextSourceContainsAny(content string, values ...string) bool {
+	for _, value := range values {
+		if strings.Contains(content, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func contextSourceCandidateDistance(candidate sourceCandidate, distances map[string]int) int {

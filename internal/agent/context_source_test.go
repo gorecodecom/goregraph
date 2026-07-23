@@ -1282,6 +1282,104 @@ func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
 	}
 }
 
+func TestContextSourceOptionConcernsUseRenderedResilienceEvidence(t *testing.T) {
+	candidate := sourceCandidate{
+		FactID: "contract", FactIDs: []string{"contract"},
+		Project: "libraries/integration", Role: "contract",
+	}
+	section := ContextSourceSection{
+		Project: "libraries/integration",
+		Path:    "src/main/java/example/JobClient.java",
+		Role:    "contract",
+		Content: "73\t  @Retryable(maxAttemptsExpression = \"${jobs.max-retries}\")\n" +
+			"74\t  public List<Job> listJobs() {",
+	}
+	concerns := []contextConcern{
+		newContextConcern(
+			contextConcernResilience,
+			"",
+			true,
+			nil,
+			"requested resilience evidence",
+		),
+	}
+
+	keys, required := contextSourceOptionConcerns(candidate, section, concerns)
+	if !required || len(keys) != 1 || keys[0] != contextConcernResilience {
+		t.Fatalf("rendered resilience concerns = %v, required %v", keys, required)
+	}
+}
+
+func TestContextSourceOptionConcernsKeepRenderedEvidenceProjectScoped(t *testing.T) {
+	candidate := sourceCandidate{
+		FactID: "contract", FactIDs: []string{"contract"},
+		Project: "libraries/integration", Role: "contract",
+	}
+	section := ContextSourceSection{
+		Project: "libraries/integration",
+		Path:    "src/main/java/example/JobClient.java",
+		Role:    "contract",
+		Content: "17\t@ConfigurationProperties(prefix = \"jobs\")\n" +
+			"18\tpublic class JobClientConfig {",
+	}
+	concerns := []contextConcern{
+		newContextConcern(
+			contextConcernConfiguration,
+			"services/jobs",
+			true,
+			nil,
+			"requested configuration evidence",
+		),
+	}
+
+	keys, required := contextSourceOptionConcerns(candidate, section, concerns)
+	if required || len(keys) != 0 {
+		t.Fatalf("cross-project rendered concerns = %v, required %v", keys, required)
+	}
+}
+
+func TestContextSourceSectionSupportsOperationalConcerns(t *testing.T) {
+	tests := []struct {
+		name    string
+		kind    string
+		role    string
+		content string
+	}{
+		{name: "authentication", kind: contextConcernAuth, content: "authorize.anyRequest().authenticated();"},
+		{name: "configuration", kind: contextConcernConfiguration, content: "@ConfigurationProperties(prefix = \"jobs\")"},
+		{name: "resilience", kind: contextConcernResilience, content: "@Retryable(maxAttempts = 3)"},
+		{name: "persistence", kind: contextConcernPersistence, content: "taskRepository.delete(task);"},
+		{name: "side effects", kind: contextConcernSideEffects, content: "protocolService.writeProtocol(id, text);"},
+		{name: "tests", kind: contextConcernTests, role: "test", content: "@Test"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			section := ContextSourceSection{
+				Project: "services/jobs",
+				Role:    test.role,
+				Content: test.content,
+			}
+			concern := newContextConcern(test.kind, "services/jobs", true, nil, "")
+			if !contextSourceSectionSupportsConcern(section, concern) {
+				t.Fatalf("section %q did not support concern %q", test.content, test.kind)
+			}
+		})
+	}
+
+	typeOnly := ContextSourceSection{
+		Project: "services/jobs",
+		Role:    "call_chain",
+		Content: "public class JobMailService extends BaseService {",
+	}
+	if contextSourceSectionSupportsConcern(
+		typeOnly,
+		newContextConcern(contextConcernSideEffects, "services/jobs", true, nil, ""),
+	) {
+		t.Fatal("type-only mail service signature counted as side-effect evidence")
+	}
+}
+
 func TestContextSourceConcernsKeepNonPublicPlannedDuplicatesOptional(t *testing.T) {
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 		{
