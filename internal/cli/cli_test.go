@@ -1876,6 +1876,8 @@ func TestWorkspaceHelpUsesProgressiveDisclosure(t *testing.T) {
 		for _, want := range []string{
 			"build <target>", "dashboard", "status", "explain", "path", "impact",
 			"goregraph workspace help --all",
+			"--workspace <path>",
+			".goregraph-workspace.yml",
 		} {
 			if !strings.Contains(stdout.String(), want) {
 				t.Fatalf("%v workspace help missing %q:\n%s", args, want, stdout.String())

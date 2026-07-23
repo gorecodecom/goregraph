@@ -1658,6 +1658,10 @@ Exploration:
   path             Show a graph path between two workspace targets
   impact           Show affected features for changed files
 
+Workspace detection:
+  Grouped layouts are detected automatically. For flat layouts, use
+  --workspace <path> or add .goregraph-workspace.yml to the workspace root.
+
 More workspace commands and compatibility aliases:
   goregraph workspace help --all
 
