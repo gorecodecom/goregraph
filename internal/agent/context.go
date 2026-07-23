@@ -250,7 +250,7 @@ func contextRequestedContractGap(
 	index scan.AgentContextIndexRecord,
 ) *ContextUncertainty {
 	query := contextSelectionQuery(pack)
-	if pack.SourceCoverage != "complete" || !contextQueryRequestsMissingContract(query) {
+	if !contextQueryRequestsMissingContract(query) {
 		return nil
 	}
 	contractCovered := false
@@ -264,15 +264,27 @@ func contextRequestedContractGap(
 		return nil
 	}
 	method := contextRequestedHTTPMethod(query)
+	if method == "" && len(pack.Endpoints) == 1 {
+		method = strings.ToUpper(strings.TrimSpace(pack.Endpoints[0].HTTPMethod))
+	}
 	if method == "" {
 		return nil
+	}
+	selectedContracts := contextLocationIDs(pack.Contracts)
+	primaryProjects := make(map[string]bool, len(pack.Endpoints))
+	for _, endpoint := range pack.Endpoints {
+		primaryProjects[normalizeContextProject(endpoint.Provider)] = true
 	}
 	for _, fact := range index.Facts {
 		if normalizedContextConcernKind(fact.Kind) != contextConcernHTTPContract {
 			continue
 		}
+		if primaryProjects[normalizeContextProject(fact.Project)] && !selectedContracts[fact.ID] {
+			continue
+		}
 		if strings.EqualFold(strings.TrimSpace(fact.HTTPMethod), method) &&
-			contextRetryFactMatchesAction(fact, index, query) {
+			contextRetryFactMatchesAction(fact, index, query) &&
+			(selectedContracts[fact.ID] || contextContractDomainScore(fact, query) >= 2) {
 			return nil
 		}
 	}
@@ -296,6 +308,30 @@ func contextQueryRequestsMissingContract(query string) bool {
 		}
 	}
 	return false
+}
+
+func contextContractDomainScore(fact scan.AgentContextFactRecord, query string) int {
+	queryTokens := contextConcernDomainQueryTokens(contextExpandedTokenSet(query))
+	for _, generic := range []string{
+		"current", "id", "internal", "missing", "path", "related", "required",
+		"service", "services",
+	} {
+		delete(queryTokens, generic)
+	}
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.Search,
+		fact.HTTPMethod,
+		fact.Path,
+	}, " "))
+	score := 0
+	for token := range queryTokens {
+		if factTokens[token] {
+			score++
+		}
+	}
+	return score
 }
 
 func contextRequestedHTTPMethod(query string) string {

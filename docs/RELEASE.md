@@ -129,11 +129,12 @@ calls at or below 70% of baseline, assisted median source reads at or below 50%
 of baseline, a nonzero baseline source-read median, and no repeated full
 Context Pack in assisted transcripts. It also requires zero
 `included_source_rereads` across assisted transcripts. This metric counts a
-terminal tool item once when it reads or searches a path after that path was
-supplied by a complete Context Pack; reads before the pack and paths from
-partial packs do not count. The analyzer distinguishes a compact `duplicate_of`
-response, which is retained as diagnostic evidence, from a repeated full
-payload reusing a prior full `context_id`; only the latter fails that gate.
+terminal tool item once when it reads or searches source supplied by an earlier
+Context Pack. Complete packs protect every included path; partial packs protect
+their included line ranges, so non-overlapping range reads remain allowed. The
+analyzer distinguishes a compact `duplicate_of` response, which is retained as
+diagnostic evidence, from a repeated full payload reusing a prior full
+`context_id`; only the latter fails that gate.
 
 GoreGraph remains offline, explicit, dependency-free, and watcher-free.
 

@@ -33,7 +33,7 @@ func selectContextSourceOptions(
 	request ContextRequest,
 ) (ContextPack, error) {
 	concerns := contextSourceConcerns(pack, loaded.Index)
-	candidates := contextSourceCandidates(pack, loaded.Index)
+	candidates := contextSourceCandidatesForConcerns(pack, loaded.Index, concerns)
 	distances := contextSourcePathDistances(pack, loaded.Index)
 	options, failures, err := contextSourceRenderOptions(pack, loaded, candidates, concerns, distances)
 	if err != nil {
@@ -117,6 +117,9 @@ func selectContextSourceOptions(
 		if fits {
 			pack = candidate
 		}
+	}
+	if pack.SourceCoverage == "complete" {
+		pack.SourceUnrepresented = 0
 	}
 	return finalizeContextPackWithinBudget(pack, request)
 }
@@ -643,12 +646,6 @@ func mandatoryContextSourceBoundaries(
 		)
 		break
 	}
-	for _, concern := range concerns {
-		if !concern.required || concern.kind != contextConcernProject {
-			continue
-		}
-		boundaries = append(boundaries, contextSourceBoundary{project: concern.project})
-	}
 	return boundaries
 }
 
@@ -661,11 +658,17 @@ func contextCoreSourceBoundaries(
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
+	selectedFacts := make(map[string]bool, len(pack.selectedSourceFactIDs))
+	for _, factID := range pack.selectedSourceFactIDs {
+		selectedFacts[factID] = true
+	}
 	entryID := ""
 	if len(pack.Entrypoints) > 0 {
 		entryID = pack.Entrypoints[0].ID
+	} else {
+		entryID = contextEndpointHandlerFactID(pack, index, selectedFacts)
 	}
-	if _, connected := distances[entryID]; entryID == "" || !connected {
+	if entryID == "" {
 		selected := append([]string(nil), pack.selectedSourceFactIDs...)
 		sort.Strings(selected)
 		for _, factID := range selected {
@@ -682,18 +685,10 @@ func contextCoreSourceBoundaries(
 	boundaries := []contextSourceBoundary{{factID: entryID}}
 	entryProject := normalizeContextProject(entry.Project)
 	entryFile := contextPackSourceFile(entry.File)
-	selectedFacts := make(map[string]bool, len(pack.selectedSourceFactIDs))
-	for _, factID := range pack.selectedSourceFactIDs {
-		selectedFacts[factID] = true
-	}
-	selectedEdges := make(map[string]bool, len(pack.selectedEdgeIDs))
-	for _, edgeID := range pack.selectedEdgeIDs {
-		selectedEdges[edgeID] = true
-	}
 	localCallTargets := make(map[string]bool)
 	for _, edge := range index.Edges {
 		kind := strings.ToLower(strings.TrimSpace(edge.Kind))
-		if !selectedEdges[edge.ID] || !selectedFacts[edge.FromFactID] || !selectedFacts[edge.ToFactID] ||
+		if !selectedFacts[edge.FromFactID] || !selectedFacts[edge.ToFactID] ||
 			(kind != "call" && kind != "calls" && kind != "use") {
 			continue
 		}
@@ -708,9 +703,12 @@ func contextCoreSourceBoundaries(
 	for _, factID := range pack.selectedSourceFactIDs {
 		fact := factByID[factID]
 		distance, connected := distances[factID]
+		if !connected {
+			distance = maximumContextPathHops + 1
+		}
 		kind := strings.ToLower(strings.TrimSpace(fact.Kind))
 		file := contextPackSourceFile(fact.File)
-		if !connected || distance <= 0 || normalizeContextProject(fact.Project) != entryProject ||
+		if distance <= 0 || normalizeContextProject(fact.Project) != entryProject ||
 			file == "" || file == entryFile || !localCallTargets[factID] ||
 			(kind != "symbol" && kind != "backend_handler") || contextFactUsesTestSource(fact) {
 			continue
@@ -730,6 +728,51 @@ func contextCoreSourceBoundaries(
 		boundaries = append(boundaries, contextSourceBoundary{factID: candidates[0].factID})
 	}
 	return boundaries
+}
+
+func contextEndpointHandlerFactID(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	selectedFacts map[string]bool,
+) string {
+	if len(pack.Endpoints) == 0 {
+		return ""
+	}
+	endpoint := pack.Endpoints[0]
+	outgoing := make(map[string]bool)
+	for _, edge := range index.Edges {
+		kind := strings.ToLower(strings.TrimSpace(edge.Kind))
+		if selectedFacts[edge.FromFactID] && selectedFacts[edge.ToFactID] &&
+			(kind == "call" || kind == "calls" || kind == "use") {
+			outgoing[edge.FromFactID] = true
+		}
+	}
+	candidates := []scan.AgentContextFactRecord{}
+	for _, fact := range index.Facts {
+		if !selectedFacts[fact.ID] ||
+			normalizeContextProject(fact.Project) != normalizeContextProject(endpoint.Provider) ||
+			contextPackSourceFile(fact.File) != contextPackSourceFile(endpoint.File) ||
+			strings.TrimSpace(fact.Qualified) != strings.TrimSpace(endpoint.Handler) ||
+			fact.Line != endpoint.Line {
+			continue
+		}
+		candidates = append(candidates, fact)
+	}
+	sort.Slice(candidates, func(left, right int) bool {
+		if outgoing[candidates[left].ID] != outgoing[candidates[right].ID] {
+			return outgoing[candidates[left].ID]
+		}
+		leftEndpoint := strings.EqualFold(candidates[left].Kind, "api_endpoint")
+		rightEndpoint := strings.EqualFold(candidates[right].Kind, "api_endpoint")
+		if leftEndpoint != rightEndpoint {
+			return !leftEndpoint
+		}
+		return candidates[left].ID < candidates[right].ID
+	})
+	if len(candidates) == 0 {
+		return ""
+	}
+	return candidates[0].ID
 }
 
 func enrichContextCoreSourceOptions(

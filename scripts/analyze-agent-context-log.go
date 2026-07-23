@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -23,7 +24,8 @@ type event struct {
 type metrics struct {
 	toolCalls, goregraphCalls, fullPacks, compactPacks, repeatedPacks int
 	navigationCalls, sourceReadCalls, includedSourceRereads           int
-	sourcePaths, completePackSourcePaths                              map[string]struct{}
+	sourcePaths                                                       map[string]struct{}
+	includedSourceRanges                                              []sourceRange
 }
 
 type analysis struct {
@@ -35,7 +37,14 @@ type parsedContextPack struct {
 	contextID      string
 	duplicateOf    string
 	sourceCoverage string
-	sourcePaths    []string
+	sourceRanges   []sourceRange
+}
+
+type sourceRange struct {
+	path       string
+	startLine  int
+	endLine    int
+	allContent bool
 }
 
 func main() {
@@ -96,8 +105,7 @@ func analyze(path string) (analysis, error) {
 	}
 	defer file.Close()
 	result := analysis{metrics: metrics{
-		sourcePaths:             make(map[string]struct{}),
-		completePackSourcePaths: make(map[string]struct{}),
+		sourcePaths: make(map[string]struct{}),
 	}}
 	completed := make(map[string]string)
 	fullIDs := make(map[string]struct{})
@@ -181,7 +189,7 @@ func processCompleted(raw json.RawMessage, completed map[string]string, fullIDs 
 	case "mcp_tool_call":
 		contextCall = stringValue(item, "tool") == "task_context" || stringValue(item, "name") == "task_context"
 	case "file_change":
-		recorded, included := recordSourcePath(stringValue(item, "path"), metrics)
+		recorded, included := recordSourcePath(stringValue(item, "path"), 0, 0, metrics)
 		if recorded {
 			metrics.navigationCalls++
 			metrics.sourceReadCalls++
@@ -426,7 +434,7 @@ func recordSearchTargets(words []string, metrics *metrics) (bool, bool) {
 			patternSeen = true
 			continue
 		}
-		recorded, included := recordSourcePath(word, metrics)
+		recorded, included := recordSourcePath(word, 0, 0, metrics)
 		found = recorded || found
 		includedReread = includedReread || included
 	}
@@ -440,7 +448,7 @@ func recordFindTargets(words []string, metrics *metrics) (bool, bool) {
 		case "-name", "-iname", "-path", "-ipath", "-type", "-exec", "-execdir", "-ok", "-okdir", "-print", "-print0", "-delete", "-quit":
 			return found, includedReread
 		}
-		recorded, included := recordSourcePath(word, metrics)
+		recorded, included := recordSourcePath(word, 0, 0, metrics)
 		found = recorded || found
 		includedReread = includedReread || included
 	}
@@ -450,11 +458,13 @@ func recordFindTargets(words []string, metrics *metrics) (bool, bool) {
 func recordReadTargets(command string, words []string, metrics *metrics) (bool, bool) {
 	scriptRequired, scriptSeen, optionValue, endOptions, found := command == "sed", false, false, false, false
 	includedReread := false
+	startLine, endLine := 0, 0
 	for _, word := range words {
 		if optionValue {
 			optionValue = false
 			if command == "sed" {
 				scriptSeen = true
+				startLine, endLine = sedSourceRange(word)
 			}
 			continue
 		}
@@ -467,7 +477,12 @@ func recordReadTargets(command string, words []string, metrics *metrics) (bool, 
 				optionValue = true
 				continue
 			}
-			if command == "sed" && (strings.HasPrefix(word, "-e") || strings.HasPrefix(word, "-f")) && len(word) > 2 {
+			if command == "sed" && strings.HasPrefix(word, "-e") && len(word) > 2 {
+				scriptSeen = true
+				startLine, endLine = sedSourceRange(word[2:])
+				continue
+			}
+			if command == "sed" && strings.HasPrefix(word, "-f") && len(word) > 2 {
 				scriptSeen = true
 				continue
 			}
@@ -477,13 +492,38 @@ func recordReadTargets(command string, words []string, metrics *metrics) (bool, 
 		}
 		if scriptRequired && !scriptSeen {
 			scriptSeen = true
+			startLine, endLine = sedSourceRange(word)
 			continue
 		}
-		recorded, included := recordSourcePath(word, metrics)
+		recorded, included := recordSourcePath(word, startLine, endLine, metrics)
 		found = recorded || found
 		includedReread = includedReread || included
 	}
 	return found, includedReread
+}
+
+func sedSourceRange(script string) (int, int) {
+	script = strings.TrimSpace(script)
+	if len(script) == 0 || script[len(script)-1] != 'p' {
+		return 0, 0
+	}
+	address := strings.TrimSpace(strings.TrimSuffix(script, "p"))
+	parts := strings.Split(address, ",")
+	if len(parts) > 2 {
+		return 0, 0
+	}
+	start, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil || start <= 0 {
+		return 0, 0
+	}
+	end := start
+	if len(parts) == 2 {
+		end, err = strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err != nil || end < start {
+			return 0, 0
+		}
+	}
+	return start, end
 }
 
 func optionTakesValue(command, option string) bool {
@@ -501,7 +541,7 @@ func optionTakesValue(command, option string) bool {
 	return false
 }
 
-func recordSourcePath(path string, metrics *metrics) (bool, bool) {
+func recordSourcePath(path string, startLine, endLine int, metrics *metrics) (bool, bool) {
 	path = normalizeRecordedSourcePath(path)
 	if path == "" || strings.ContainsAny(path, "*?[") {
 		return false, false
@@ -510,12 +550,21 @@ func recordSourcePath(path string, metrics *metrics) (bool, bool) {
 		return false, false
 	}
 	metrics.sourcePaths[path] = struct{}{}
-	for includedPath := range metrics.completePackSourcePaths {
-		if sameSourcePath(path, includedPath) {
+	for _, included := range metrics.includedSourceRanges {
+		if sameSourcePath(path, included.path) &&
+			sourceRangesOverlap(startLine, endLine, included) {
 			return true, true
 		}
 	}
 	return true, false
+}
+
+func sourceRangesOverlap(readStart, readEnd int, included sourceRange) bool {
+	if included.allContent || readStart <= 0 || readEnd <= 0 ||
+		included.startLine <= 0 || included.endLine <= 0 {
+		return true
+	}
+	return readStart <= included.endLine && included.startLine <= readEnd
 }
 
 func normalizeRecordedSourcePath(path string) string {
@@ -552,12 +601,11 @@ func recordContextPack(item map[string]json.RawMessage, fullIDs map[string]struc
 		if pack.contextID == "" {
 			continue
 		}
-		if pack.sourceCoverage == "complete" {
-			for _, path := range pack.sourcePaths {
-				path = normalizeRecordedSourcePath(path)
-				if path != "" {
-					metrics.completePackSourcePaths[path] = struct{}{}
-				}
+		for _, included := range pack.sourceRanges {
+			included.path = normalizeRecordedSourcePath(included.path)
+			included.allContent = pack.sourceCoverage == "complete"
+			if included.path != "" {
+				metrics.includedSourceRanges = append(metrics.includedSourceRanges, included)
 			}
 		}
 		if pack.duplicateOf != "" {
@@ -607,8 +655,10 @@ func parseContextPack(text string) parsedContextPack {
 		DuplicateOf    string `json:"duplicate_of"`
 		SourceCoverage string `json:"source_coverage"`
 		SourceSections []struct {
-			Project string `json:"project"`
-			Path    string `json:"path"`
+			Project   string `json:"project"`
+			Path      string `json:"path"`
+			StartLine int    `json:"start_line"`
+			EndLine   int    `json:"end_line"`
 		} `json:"source_sections"`
 	}
 	if json.Unmarshal([]byte(text), &jsonPack) == nil && jsonPack.ContextID != "" {
@@ -616,14 +666,16 @@ func parseContextPack(text string) parsedContextPack {
 			contextID:      jsonPack.ContextID,
 			duplicateOf:    jsonPack.DuplicateOf,
 			sourceCoverage: jsonPack.SourceCoverage,
-			sourcePaths:    make([]string, 0, len(jsonPack.SourceSections)),
+			sourceRanges:   make([]sourceRange, 0, len(jsonPack.SourceSections)),
 		}
 		for _, section := range jsonPack.SourceSections {
 			path := section.Path
 			if section.Project != "" {
 				path = strings.TrimSuffix(section.Project, "/") + "/" + strings.TrimPrefix(path, "/")
 			}
-			pack.sourcePaths = append(pack.sourcePaths, path)
+			pack.sourceRanges = append(pack.sourceRanges, sourceRange{
+				path: path, startLine: section.StartLine, endLine: section.EndLine,
+			})
 		}
 		return pack
 	}
@@ -651,42 +703,53 @@ func parseContextPack(text string) parsedContextPack {
 		if !inSourceSections || !strings.HasPrefix(line, "### ") {
 			continue
 		}
-		if path := markdownSourcePath(line); path != "" {
-			pack.sourcePaths = append(pack.sourcePaths, path)
+		if section := markdownSourceRange(line); section.path != "" {
+			pack.sourceRanges = append(pack.sourceRanges, section)
 		}
 	}
 	return pack
 }
 
-func markdownSourcePath(line string) string {
+func markdownSourceRange(line string) sourceRange {
 	start := strings.IndexByte(line, '`')
 	if start < 0 {
-		return ""
+		return sourceRange{}
 	}
 	rest := line[start+1:]
 	end := strings.IndexByte(rest, '`')
 	if end < 0 {
-		return ""
+		return sourceRange{}
 	}
-	return stripSourceLineRange(rest[:end])
+	return parseSourceLineRange(rest[:end])
 }
 
-func stripSourceLineRange(path string) string {
+func parseSourceLineRange(path string) sourceRange {
 	colon := strings.LastIndexByte(path, ':')
 	if colon < 0 {
-		return path
+		return sourceRange{path: path}
 	}
 	suffix := path[colon+1:]
 	parts := strings.Split(suffix, "-")
 	if len(parts) > 2 {
-		return path
+		return sourceRange{path: path}
 	}
 	for _, part := range parts {
 		if part == "" || strings.IndexFunc(part, func(current rune) bool {
 			return current < '0' || current > '9'
 		}) >= 0 {
-			return path
+			return sourceRange{path: path}
 		}
 	}
-	return path[:colon]
+	startLine, err := strconv.Atoi(parts[0])
+	if err != nil || startLine <= 0 {
+		return sourceRange{path: path}
+	}
+	endLine := startLine
+	if len(parts) == 2 {
+		endLine, err = strconv.Atoi(parts[1])
+		if err != nil || endLine < startLine {
+			return sourceRange{path: path}
+		}
+	}
+	return sourceRange{path: path[:colon], startLine: startLine, endLine: endLine}
 }

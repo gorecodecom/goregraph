@@ -3573,6 +3573,88 @@ func TestContextRetryAllowsOnlyConcreteUnselectedExactAnchors(t *testing.T) {
 	}
 }
 
+func TestContextRetryAnchorRejectsDescriptiveQualifiedEvidence(t *testing.T) {
+	fact := scan.AgentContextFactRecord{
+		Kind:      "endpoint_security",
+		Qualified: "DELETE /job-management/jobs/{id} bearer",
+		File:      "SecurityConfig.java",
+	}
+	if anchor := contextRetryAnchor(fact); anchor != "SecurityConfig.java" {
+		t.Fatalf("retry anchor = %q, want source file", anchor)
+	}
+}
+
+func TestContextRequestedContractGapIgnoresUnrelatedDeleteContract(t *testing.T) {
+	pack := ContextPack{
+		Query:          missingContractEnglishQuery,
+		SourceCoverage: "partial",
+		Concerns: []ContextConcern{{
+			Kind: contextConcernHTTPContract, Project: "libraries/job-client", Covered: true,
+		}},
+		Contracts: []ContextLocation{{
+			ID: "jobs-get", Project: "libraries/job-client", Kind: "api_contract",
+			Label: "GET /job-management/jobs",
+		}},
+		Endpoints: []ContextEndpoint{{
+			Provider: "services/catalog", HTTPMethod: "DELETE", Path: "/catalog/items/{itemId}",
+		}},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "jobs-get", Project: "libraries/job-client", Kind: "api_contract",
+			Name: "GET /job-management/jobs", Qualified: "JobClient.listJobs",
+			HTTPMethod: "GET", Path: "/job-management/jobs",
+		},
+		{
+			ID: "unrelated-delete", Project: "libraries/job-client", Kind: "api_contract",
+			Name: "DELETE /users/{id}", Qualified: "UserClient.deleteUser",
+			HTTPMethod: "DELETE", Path: "/users/{id}",
+		},
+	}}
+
+	gap := contextRequestedContractGap(pack, index)
+	if gap == nil || gap.Scope != "requested_http_contract" {
+		t.Fatalf("missing contract gap suppressed by unrelated contract: %#v", gap)
+	}
+}
+
+func TestContextRequestedContractGapIgnoresRealisticUnrelatedContract(t *testing.T) {
+	const query = "Analysiere, warum beim Entfernen einer Vorschrift aus einem Kataster verbundene Aufgaben bestehen bleiben. Bestimme benötigte Aufrufketten über ms-cadasterregulation, ms-cadastertask und ms-common sowie den internen API-Vertrag."
+	unrelated := scan.AgentContextFactRecord{
+		ID: "unrelated-delete", Project: "ms-common", Kind: "api_contract",
+		Name: "DELETE /", Qualified: "UserMgmtService.deleteTemplateUser",
+		HTTPMethod: "DELETE", Path: "/",
+	}
+	if score := contextContractDomainScore(unrelated, query); score >= 2 {
+		t.Fatalf("unrelated contract domain score = %d, want below 2", score)
+	}
+	pack := ContextPack{
+		Query:          query,
+		SourceCoverage: "partial",
+		Concerns: []ContextConcern{{
+			Kind: contextConcernHTTPContract, Project: "ms-common", Covered: true,
+		}},
+		Contracts: []ContextLocation{{
+			ID: "tasks-get", Project: "ms-common", Kind: "api_contract", Label: "GET /",
+		}},
+		Endpoints: []ContextEndpoint{{
+			Provider: "ms-cadasterregulation", HTTPMethod: "DELETE",
+			Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+		}},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "tasks-get", Project: "ms-common", Kind: "api_contract",
+			Name: "GET /", Qualified: "CadasterTaskMgmtService.getAllUserTasks",
+			HTTPMethod: "GET", Path: "/",
+		},
+		unrelated,
+	}}
+	if gap := contextRequestedContractGap(pack, index); gap == nil {
+		t.Fatal("realistic unrelated contract suppressed missing contract gap")
+	}
+}
+
 func TestFinalizeContextSourceDecision(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -3656,7 +3738,7 @@ func TestContextRetryPermissionRanksActualOmissions(t *testing.T) {
 	}
 
 	allowed, anchors := contextRetryPermission(pack, index)
-	if !allowed || len(anchors) == 0 || anchors[0] != "ClientConfig.deleteClientConfig" {
+	if !allowed || !reflect.DeepEqual(anchors, []string{"ClientConfig.deleteClientConfig"}) {
 		t.Fatalf("retry permission = %v / %#v", allowed, anchors)
 	}
 }

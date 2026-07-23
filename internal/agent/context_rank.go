@@ -395,9 +395,16 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 		}
 	}
 	candidates = rankContextRetryCandidates(candidates)
+	hasOmissionMatch := false
+	for _, candidate := range candidates {
+		hasOmissionMatch = hasOmissionMatch || candidate.omissionMatch
+	}
 	anchors := make([]string, 0, 3)
 	seen := map[string]bool{}
 	for _, candidate := range candidates {
+		if hasOmissionMatch && !candidate.omissionMatch {
+			continue
+		}
 		if seen[candidate.anchor] {
 			continue
 		}
@@ -624,7 +631,8 @@ func contextRetryAnchor(fact scan.AgentContextFactRecord) string {
 	if method, route := strings.TrimSpace(fact.HTTPMethod), strings.TrimSpace(fact.Path); method != "" && route != "" {
 		return strings.ToUpper(method) + " " + route
 	}
-	if qualified := strings.TrimSpace(fact.Qualified); qualified != "" {
+	if qualified := strings.TrimSpace(fact.Qualified); qualified != "" &&
+		!strings.ContainsFunc(qualified, unicode.IsSpace) {
 		return qualified
 	}
 	return strings.TrimSpace(fact.File)

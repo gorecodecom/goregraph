@@ -87,6 +87,26 @@ func TestMissingContractChangeAnalysisEnglishGermanParity(t *testing.T) {
 	}
 }
 
+func TestSourceConcernCandidatesRequireDomainEvidence(t *testing.T) {
+	queryTokens := contextExpandedTokenSet(
+		"cadaster task configuration persistence side effects mail retry",
+	)
+	generic := scan.AgentContextFactRecord{
+		ID: "generic", Project: "libraries/client", Kind: "symbol",
+		Name: "MailProperties", Search: "mail properties",
+	}
+	taskConfig := scan.AgentContextFactRecord{
+		ID: "task-config", Project: "libraries/client", Kind: "symbol",
+		Name: "CadasterTaskMgmtConfig", Search: "cadaster task configuration",
+	}
+
+	domainTokens := contextConcernDomainQueryTokens(queryTokens)
+	if contextSourceFactMatchesDomain(generic, domainTokens) ||
+		!contextSourceFactMatchesDomain(taskConfig, domainTokens) {
+		t.Fatalf("domain matching accepted generic source or rejected task config")
+	}
+}
+
 type missingContractContextSnapshot struct {
 	FactIDs        []string
 	ConcernKeys    []string

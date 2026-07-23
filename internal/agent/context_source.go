@@ -155,6 +155,191 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 	return merged
 }
 
+const maximumContextSourceConcernCandidates = 4
+
+func contextSourceCandidatesForConcerns(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	concerns []contextConcern,
+) []sourceCandidate {
+	selected := make(map[string]bool, len(pack.selectedSourceFactIDs))
+	for _, factID := range pack.selectedSourceFactIDs {
+		selected[factID] = true
+	}
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	aliases := contextProjectAliases(index.Facts, index.Coverage)
+	explicitProjects := contextExplicitProjects(contextSelectionQuery(pack), aliases)
+	domainTokens := contextProjectDomainQueryTokens(
+		contextSelectionQuery(pack),
+		aliases,
+		explicitProjects,
+	)
+	anchorTokens := contextSourceAnchorTokens(pack, factByID)
+	for _, concern := range concerns {
+		if !concern.required ||
+			concern.kind == contextConcernEntrypoint ||
+			concern.kind == contextConcernPrimaryPath ||
+			concern.kind == contextConcernProject {
+			continue
+		}
+		facts := make([]scan.AgentContextFactRecord, 0, len(concern.candidateFactIDs))
+		for _, factID := range concern.candidateFactIDs {
+			fact, ok := factByID[factID]
+			if !ok || strings.TrimSpace(fact.File) == "" || contextPackSourceFile(fact.File) == "" {
+				continue
+			}
+			facts = append(facts, fact)
+		}
+		domainFacts := make([]scan.AgentContextFactRecord, 0, len(facts))
+		for _, fact := range facts {
+			if contextSourceFactMatchesDomain(fact, domainTokens) {
+				domainFacts = append(domainFacts, fact)
+			}
+		}
+		if len(domainFacts) > 0 {
+			facts = domainFacts
+		}
+		sort.Slice(facts, func(left, right int) bool {
+			return contextSourceConcernFactLess(
+				facts[left],
+				facts[right],
+				concern,
+				contextSelectionQuery(pack),
+				anchorTokens,
+			)
+		})
+		limit := len(facts)
+		if limit > maximumContextSourceConcernCandidates {
+			limit = maximumContextSourceConcernCandidates
+		}
+		for _, fact := range facts[:limit] {
+			selected[fact.ID] = true
+		}
+	}
+
+	expanded := pack
+	expanded.selectedSourceFactIDs = make([]string, 0, len(selected))
+	for factID := range selected {
+		expanded.selectedSourceFactIDs = append(expanded.selectedSourceFactIDs, factID)
+	}
+	sort.Strings(expanded.selectedSourceFactIDs)
+	return contextSourceCandidates(expanded, index)
+}
+
+func contextSourceFactMatchesDomain(
+	fact scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+) bool {
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
+		fact.Search,
+		fact.Name,
+		fact.Qualified,
+		fact.Summary,
+	}, " "))
+	for token := range domainTokens {
+		if factTokens[token] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextSourceAnchorTokens(
+	pack ContextPack,
+	factByID map[string]scan.AgentContextFactRecord,
+) map[string]bool {
+	result := make(map[string]bool)
+	for _, contract := range pack.Contracts {
+		fact, ok := factByID[contract.ID]
+		if !ok {
+			continue
+		}
+		for token := range contextExpandedTokenSet(strings.Join([]string{
+			fact.Name,
+			fact.Qualified,
+			fact.Search,
+		}, " ")) {
+			result[token] = true
+		}
+	}
+	return result
+}
+
+func contextSourceConcernFactLess(
+	left,
+	right scan.AgentContextFactRecord,
+	concern contextConcern,
+	query string,
+	anchorTokens map[string]bool,
+) bool {
+	leftScore := contextSourceConcernFactScore(left, concern, query, anchorTokens)
+	rightScore := contextSourceConcernFactScore(right, concern, query, anchorTokens)
+	if leftScore != rightScore {
+		return leftScore > rightScore
+	}
+	if left.Project != right.Project {
+		return left.Project < right.Project
+	}
+	if left.File != right.File {
+		return left.File < right.File
+	}
+	if left.Line != right.Line {
+		return left.Line < right.Line
+	}
+	return left.ID < right.ID
+}
+
+func contextSourceConcernFactScore(
+	fact scan.AgentContextFactRecord,
+	concern contextConcern,
+	query string,
+	anchorTokens map[string]bool,
+) int {
+	score := 10 * contextRetrySemanticScore(fact, query)
+	factKind := normalizedContextConcernKind(fact.Kind)
+	if factKind == concern.kind {
+		score += 100
+	}
+	value := strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		filepath.Base(fact.File),
+		fact.Search,
+		fact.Summary,
+	}, " ")
+	if contextValueRequestsConcern(value, concern.kind) {
+		score += 60
+	}
+	if concern.kind != contextConcernEntrypoint &&
+		concern.kind != contextConcernHTTPContract &&
+		(strings.TrimSpace(fact.HTTPMethod) != "" || strings.TrimSpace(fact.Path) != "") {
+		score -= 40
+	}
+	switch strings.ToUpper(strings.TrimSpace(fact.Confidence)) {
+	case "EXACT":
+		score += 20
+	case "RESOLVED", "EXTRACTED":
+		score += 10
+	}
+	if contextGenericPersistenceFact(fact) {
+		score -= 30
+	}
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.Search,
+	}, " "))
+	for token := range anchorTokens {
+		if factTokens[token] {
+			score += 15
+		}
+	}
+	return score
+}
+
 func contextLocationIDs(locations []ContextLocation) map[string]bool {
 	result := make(map[string]bool, len(locations))
 	for _, location := range locations {

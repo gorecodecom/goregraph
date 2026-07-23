@@ -1324,6 +1324,105 @@ func TestContextSourceOptionsRespectFileBudget(t *testing.T) {
 	}
 }
 
+func TestContextSourceOptionsIncludeUnselectedRequiredConcernEvidence(t *testing.T) {
+	root := t.TempDir()
+	writeSourceFile(t, root, "services/catalog/CatalogController.go", "package catalog\n\nfunc listCatalog() {}\n")
+	writeSourceFile(t, root, "libraries/client/ClientConfig.go", "package client\n\ntype ClientConfig struct{}\n")
+	pack := ContextPack{
+		Schema:       1,
+		Query:        "GET /catalog. Analyze libraries/client job client configuration.",
+		Confidence:   "EXACT",
+		BudgetTokens: DefaultContextBudgetTokens,
+		Concerns: []ContextConcern{
+			{Kind: contextConcernEntrypoint, Covered: true},
+			{Kind: contextConcernConfiguration, Project: "libraries/client", Covered: false},
+		},
+		Entrypoints: []ContextLocation{{
+			ID: "route", Project: "services/catalog", File: "CatalogController.go",
+		}},
+		selectedSourceFactIDs: []string{"route"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "route", Project: "services/catalog", Kind: "route", Name: "listCatalog",
+			Qualified:  "listCatalog",
+			HTTPMethod: "GET", Path: "/catalog", File: "CatalogController.go",
+			Line: 3, EndLine: 3, Search: "catalog", Confidence: "EXACT",
+		},
+		{
+			ID: "client-config", Project: "libraries/client", Kind: "symbol", Name: "ClientConfig",
+			Qualified: "client.ClientConfig", File: "ClientConfig.go",
+			Line: 3, EndLine: 3, Search: "job client configuration", Confidence: "EXACT",
+		},
+	}}
+
+	got, err := attachContextSource(
+		pack,
+		loadedContextIndex{ScopeRoot: root, Workspace: true, Index: index},
+		ContextRequest{BudgetTokens: DefaultContextBudgetTokens, MaxFiles: DefaultContextMaxFiles},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundConfig := false
+	for _, section := range got.SourceSections {
+		foundConfig = foundConfig ||
+			section.Project == "libraries/client" && section.Path == "ClientConfig.go"
+	}
+	if !foundConfig {
+		t.Fatalf("required unselected concern source missing: %#v", got.SourceSections)
+	}
+	if got.SourceCoverage != "complete" {
+		t.Fatalf("source coverage = %q, omissions %#v", got.SourceCoverage, got.SourceOmissions)
+	}
+}
+
+func TestContextCoreSourceBoundariesFollowEndpointHandlerCall(t *testing.T) {
+	pack := ContextPack{
+		Endpoints: []ContextEndpoint{{
+			Provider: "services/catalog", HTTPMethod: "DELETE", Path: "/catalog/{id}",
+			Handler: "CatalogController.deleteItem", File: "CatalogController.java", Line: 20,
+		}},
+		selectedSourceFactIDs: []string{"decoy", "endpoint", "handler", "service"},
+	}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "decoy", Project: "services/jobs", Kind: "route",
+				Name: "deleteJob", Qualified: "JobController.deleteJob",
+				File: "JobController.java", Line: 15,
+			},
+			{
+				ID: "endpoint", Project: "services/catalog", Kind: "api_endpoint",
+				Qualified: "CatalogController.deleteItem", HTTPMethod: "DELETE", Path: "/catalog/{id}",
+				File: "CatalogController.java", Line: 20,
+			},
+			{
+				ID: "handler", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", Qualified: "CatalogController.deleteItem",
+				File: "CatalogController.java", Line: 20,
+			},
+			{
+				ID: "service", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", Qualified: "CatalogService.deleteItem",
+				File: "CatalogService.java", Line: 40,
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "handler-service", FromFactID: "handler", ToFactID: "service", Kind: "call",
+		}},
+	}
+
+	boundaries := contextCoreSourceBoundaries(pack, index, map[string]int{"decoy": 0})
+	foundService := false
+	for _, boundary := range boundaries {
+		foundService = foundService || boundary.factID == "service"
+	}
+	if !foundService {
+		t.Fatalf("endpoint handler call target missing from core boundaries: %#v", boundaries)
+	}
+}
+
 func TestContextSourceOptionsRetainFactRolesWithoutMetadataLocations(t *testing.T) {
 	pack := ContextPack{
 		Query:                 "inspect production path",

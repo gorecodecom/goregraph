@@ -107,9 +107,10 @@ tool-call, raw-navigation, and source-read totals for each variant. The analyzer
 deduplicates source paths and retains counts only; it does not retain source
 content. It counts only unique terminal tool items from the Codex JSONL event
 lifecycle, including unsuccessful tools. `included_source_rereads` counts a
-terminal tool item once when it reads or searches a source path after that path
-was supplied by a Context Pack with `source_coverage: complete`. Reads before
-the pack and paths from partial packs do not count.
+terminal tool item once when it reads or searches source already supplied by an
+earlier Context Pack. Complete packs protect every included source path. Partial
+packs protect included line ranges, so only overlapping or whole-file reads
+count; reads of other ranges and reads before the pack do not count.
 
 ## Token gate
 

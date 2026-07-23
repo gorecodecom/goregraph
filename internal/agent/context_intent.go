@@ -403,6 +403,40 @@ func contextExplicitProjectConcernCandidates(
 	return orderedContextConcernIDs(result)
 }
 
+func contextConcernDomainQueryTokens(queryTokens map[string]bool) map[string]bool {
+	result := make(map[string]bool, len(queryTokens))
+	for token := range queryTokens {
+		result[token] = true
+	}
+	vocabulary := make([]string, 0)
+	for _, tokens := range contextConcernVocabulary {
+		vocabulary = append(vocabulary, tokens...)
+	}
+	for token := range contextExpandedTokenSet(strings.Join(vocabulary, " ")) {
+		delete(result, token)
+	}
+	if len(result) == 0 {
+		return queryTokens
+	}
+	return result
+}
+
+func contextProjectDomainQueryTokens(
+	query string,
+	aliases map[string][]string,
+	explicitProjects map[string]bool,
+) map[string]bool {
+	result := contextConcernDomainQueryTokens(contextExpandedTokenSet(query))
+	for project := range explicitProjects {
+		for _, alias := range aliases[project] {
+			for token := range contextExpandedTokenSet(alias) {
+				delete(result, token)
+			}
+		}
+	}
+	return result
+}
+
 func contextProjectSemanticQueryTokens(
 	query string,
 	aliases map[string][]string,
