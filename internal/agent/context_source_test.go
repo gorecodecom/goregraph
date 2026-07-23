@@ -1423,6 +1423,72 @@ func TestContextCoreSourceBoundariesFollowEndpointHandlerCall(t *testing.T) {
 	}
 }
 
+func TestContextCoreSourceBoundariesIncludeSelectedRelatedProjectFile(t *testing.T) {
+	pack := ContextPack{
+		Endpoints: []ContextEndpoint{{
+			Provider: "services/catalog", HTTPMethod: "DELETE", Path: "/catalog/{id}",
+			Handler: "CatalogController.deleteItem", File: "CatalogController.java", Line: 20,
+		}},
+		Files: []ContextFile{{
+			Project: "services/jobs", Path: "JobManagementController.java",
+			StartLine: 30, EndLine: 30, Role: "related_project",
+		}},
+		selectedSourceFactIDs: []string{"handler", "jobs-controller"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "handler", Project: "services/catalog", Kind: "symbol",
+			Name: "deleteItem", Qualified: "CatalogController.deleteItem",
+			File: "CatalogController.java", Line: 20,
+		},
+		{
+			ID: "jobs-controller", Project: "services/jobs", Kind: "symbol",
+			Name: "listJobs", Qualified: "JobManagementController.listJobs",
+			File: "JobManagementController.java", Line: 30,
+		},
+	}}
+
+	boundaries := contextCoreSourceBoundaries(pack, index, nil)
+	foundRelated := false
+	for _, boundary := range boundaries {
+		foundRelated = foundRelated || boundary.factID == "jobs-controller"
+	}
+	if !foundRelated {
+		t.Fatalf("selected related project file missing from core boundaries: %#v", boundaries)
+	}
+}
+
+func TestContextCoreSourceBoundariesIncludeSelectedContract(t *testing.T) {
+	pack := ContextPack{
+		Entrypoints: []ContextLocation{{
+			ID: "handler", Project: "services/catalog", File: "CatalogController.java",
+		}},
+		Contracts: []ContextLocation{{
+			ID: "job-client", Project: "libraries/jobs", File: "JobClient.java",
+		}},
+		selectedSourceFactIDs: []string{"handler", "job-client"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "handler", Project: "services/catalog", Kind: "symbol",
+			Name: "deleteItem", File: "CatalogController.java", Line: 20,
+		},
+		{
+			ID: "job-client", Project: "libraries/jobs", Kind: "api_contract",
+			Name: "GET /jobs", Qualified: "JobClient.listJobs", File: "JobClient.java", Line: 30,
+		},
+	}}
+
+	boundaries := contextCoreSourceBoundaries(pack, index, nil)
+	foundContract := false
+	for _, boundary := range boundaries {
+		foundContract = foundContract || boundary.factID == "job-client"
+	}
+	if !foundContract {
+		t.Fatalf("selected contract missing from core boundaries: %#v", boundaries)
+	}
+}
+
 func TestContextSourceOptionsRetainFactRolesWithoutMetadataLocations(t *testing.T) {
 	pack := ContextPack{
 		Query:                 "inspect production path",
@@ -1482,11 +1548,12 @@ func TestContextSourceConcernCoverage(t *testing.T) {
 				{Kind: contextConcernProject, Project: "services/provider", Covered: true},
 			},
 			Entrypoints:           []ContextLocation{{ID: "route", Project: "app", File: "route.go"}},
-			selectedSourceFactIDs: []string{"route", "provider"},
+			selectedSourceFactIDs: []string{"route", "provider", "provider-backup"},
 		}
 		loaded := loadedContextIndex{ScopeRoot: root, Index: scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 			{ID: "route", Project: "app", Kind: "symbol", Name: "route", File: "route.go", Line: 1, EndLine: 1},
 			{ID: "provider", Project: "services/provider", Kind: "symbol", Name: "provider", File: "Provider.go", Line: 1, EndLine: 1},
+			{ID: "provider-backup", Project: "services/provider", Kind: "symbol", Name: "providerBackup", File: "ProviderBackup.go", Line: 1, EndLine: 1},
 		}}}
 
 		got, err := attachContextSource(pack, loaded, ContextRequest{BudgetTokens: DefaultContextBudgetTokens})
@@ -1501,6 +1568,9 @@ func TestContextSourceConcernCoverage(t *testing.T) {
 		}
 		if got.Concerns[0].Covered != true || got.Concerns[1].Covered != false {
 			t.Fatalf("public concern coverage = %#v", got.Concerns)
+		}
+		if got.SourceUnrepresented != 1 {
+			t.Fatalf("source unrepresented = %d, want one uncovered required concern", got.SourceUnrepresented)
 		}
 	})
 

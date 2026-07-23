@@ -107,6 +107,59 @@ func TestSourceConcernCandidatesRequireDomainEvidence(t *testing.T) {
 	}
 }
 
+func TestSourceAnchorTokensIncludeSelectedEndpoint(t *testing.T) {
+	pack := ContextPack{Endpoints: []ContextEndpoint{{
+		HTTPMethod: "DELETE",
+		Path:       "/cadasters/{cadasterId}/regulations/{objectId}",
+		Handler:    "CadasterRegulationController.deleteFromCadaster",
+	}}}
+
+	anchors := contextSourceAnchorTokens(pack, nil)
+	for _, want := range []string{"cadaster", "regulation", "object"} {
+		if !anchors[want] {
+			t.Fatalf("selected endpoint anchor %q missing from %#v", want, anchors)
+		}
+	}
+}
+
+func TestSourceConcernScoreDoesNotTreatSearchTextAsAnchorIdentity(t *testing.T) {
+	concern := newContextConcern(contextConcernPersistence, "services/tasks", true, nil, "")
+	anchors := contextExpandedTokenSet("cadaster regulation object")
+	relevant := scan.AgentContextFactRecord{
+		Project: "services/tasks", Kind: "persistence",
+		Name: "findByCadasterIdAndObjectId", Qualified: "TaskRepository.findByCadasterIdAndObjectId",
+		File: "TaskRepository.java", Search: "persistence", Confidence: "EXACT",
+	}
+	searchOnly := scan.AgentContextFactRecord{
+		Project: "services/tasks", Kind: "persistence",
+		Name: "findByCadasterIdAndUserId", Qualified: "CadasterRepository.findByCadasterIdAndUserId",
+		File: "CadasterRepository.java", Search: "persistence cadaster regulation object", Confidence: "EXACT",
+	}
+
+	relevantScore := contextSourceConcernFactScore(relevant, concern, "persistence", anchors)
+	searchOnlyScore := contextSourceConcernFactScore(searchOnly, concern, "persistence", anchors)
+	if relevantScore <= searchOnlyScore {
+		t.Fatalf("identity score %d did not beat search-only score %d", relevantScore, searchOnlyScore)
+	}
+}
+
+func TestSupportRouteMatchesRequestedActionWithoutExactFuturePath(t *testing.T) {
+	route := scan.AgentContextFactRecord{
+		ID: "task-delete", Project: "services/tasks", Kind: "route",
+		Name: "DELETE /task-management/tasks/{taskId}", HTTPMethod: "DELETE",
+		Path: "/task-management/tasks/{taskId}", Confidence: "EXACT",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{route}}
+	operational, score := contextSupportOperationalScore(
+		newContextForwardUtility(index),
+		route,
+		"Wenn ein Eintrag entfernt wird, müssen verbundene Aufgaben gelöscht werden.",
+	)
+	if !operational || score <= 0 {
+		t.Fatalf("same-action support route = operational %v score %d", operational, score)
+	}
+}
+
 type missingContractContextSnapshot struct {
 	FactIDs        []string
 	ConcernKeys    []string

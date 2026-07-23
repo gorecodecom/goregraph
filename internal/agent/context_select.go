@@ -727,6 +727,49 @@ func contextCoreSourceBoundaries(
 	if len(candidates) > 0 {
 		boundaries = append(boundaries, contextSourceBoundary{factID: candidates[0].factID})
 	}
+	boundaryFactIDs := make(map[string]bool, len(boundaries))
+	for _, boundary := range boundaries {
+		boundaryFactIDs[boundary.factID] = true
+	}
+	for _, contract := range pack.Contracts {
+		if contract.ID == "" || !selectedFacts[contract.ID] || boundaryFactIDs[contract.ID] {
+			continue
+		}
+		if _, exists := factByID[contract.ID]; !exists {
+			continue
+		}
+		boundaries = append(boundaries, contextSourceBoundary{factID: contract.ID})
+		boundaryFactIDs[contract.ID] = true
+	}
+	for _, file := range pack.Files {
+		if !strings.Contains(file.Role, "related_project") {
+			continue
+		}
+		matches := []scan.AgentContextFactRecord{}
+		for _, fact := range index.Facts {
+			if !selectedFacts[fact.ID] ||
+				normalizeContextProject(fact.Project) != normalizeContextProject(file.Project) ||
+				contextPackSourceFile(fact.File) != contextPackSourceFile(file.Path) {
+				continue
+			}
+			if file.StartLine > 0 && fact.Line > 0 &&
+				(fact.Line < file.StartLine || file.EndLine > 0 && fact.Line > file.EndLine) {
+				continue
+			}
+			matches = append(matches, fact)
+		}
+		sort.Slice(matches, func(left, right int) bool {
+			if matches[left].Line != matches[right].Line {
+				return matches[left].Line < matches[right].Line
+			}
+			return matches[left].ID < matches[right].ID
+		})
+		if len(matches) == 0 || boundaryFactIDs[matches[0].ID] {
+			continue
+		}
+		boundaries = append(boundaries, contextSourceBoundary{factID: matches[0].ID})
+		boundaryFactIDs[matches[0].ID] = true
+	}
 	return boundaries
 }
 
@@ -1121,6 +1164,12 @@ func applyContextSourceCoverage(
 	for index := range pack.Concerns {
 		key := contextPublicConcernKey(pack.Concerns[index])
 		pack.Concerns[index].Covered = covered[key]
+	}
+	pack.SourceUnrepresented = 0
+	for _, concern := range pack.Concerns {
+		if !concern.Covered {
+			pack.SourceUnrepresented++
+		}
 	}
 	switch {
 	case len(pack.SourceSections) == 0:

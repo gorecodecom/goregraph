@@ -252,18 +252,23 @@ func contextSourceAnchorTokens(
 	factByID map[string]scan.AgentContextFactRecord,
 ) map[string]bool {
 	result := make(map[string]bool)
+	add := func(values ...string) {
+		for token := range contextExpandedTokenSet(strings.Join(values, " ")) {
+			result[token] = true
+		}
+	}
+	for _, endpoint := range pack.Endpoints {
+		add(endpoint.HTTPMethod, endpoint.Path, endpoint.Handler)
+	}
+	for _, entrypoint := range pack.Entrypoints {
+		add(entrypoint.Label, entrypoint.File)
+	}
 	for _, contract := range pack.Contracts {
 		fact, ok := factByID[contract.ID]
 		if !ok {
 			continue
 		}
-		for token := range contextExpandedTokenSet(strings.Join([]string{
-			fact.Name,
-			fact.Qualified,
-			fact.Search,
-		}, " ")) {
-			result[token] = true
-		}
+		add(fact.Name, fact.Qualified)
 	}
 	return result
 }
@@ -330,7 +335,9 @@ func contextSourceConcernFactScore(
 	factTokens := contextExpandedTokenSet(strings.Join([]string{
 		fact.Name,
 		fact.Qualified,
-		fact.Search,
+		filepath.Base(fact.File),
+		fact.HTTPMethod,
+		fact.Path,
 	}, " "))
 	for token := range anchorTokens {
 		if factTokens[token] {

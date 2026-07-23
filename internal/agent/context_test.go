@@ -3743,6 +3743,45 @@ func TestContextRetryPermissionRanksActualOmissions(t *testing.T) {
 	}
 }
 
+func TestContextRetryPermissionRejectsUnrenderableOmission(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "route", Project: "services/catalog", Kind: "route",
+			Name: "DELETE /items/{id}", HTTPMethod: "DELETE", Path: "/items/{id}",
+			File: "CatalogController.java", Confidence: "EXACT",
+		},
+		{
+			ID: "auth-omitted", Project: "libraries/client", Kind: "authentication",
+			Name: "authenticated", Qualified: "ClientSecurity.authenticated",
+			File: "SecurityConfig.java", Search: "delete item authentication", Confidence: "EXACT",
+		},
+		{
+			ID: "auth-other", Project: "libraries/client", Kind: "authentication",
+			Name: "parallelBatchAuthentication", Qualified: "ApplicationConfig.parallelBatchAuthentication",
+			File: "ApplicationConfig.java", Search: "delete item authentication", Confidence: "EXACT",
+		},
+	}}
+	pack := ContextPack{
+		Query: "DELETE /items/{id}; inspect libraries/client authentication",
+		Concerns: []ContextConcern{
+			{Kind: contextConcernEntrypoint, Covered: true},
+			{Kind: contextConcernAuth, Project: "libraries/client", Covered: false},
+		},
+		SourceSections: []ContextSourceSection{{
+			Project: "services/catalog", Path: "CatalogController.java",
+		}},
+		SourceOmissions: []ContextSourceOmission{{
+			Project: "libraries/client", Path: "SecurityConfig.java",
+			Role: "call_chain", Reason: "indexed symbol has no unique declaration-like occurrence",
+		}},
+		selectedFactIDs: []string{"route"},
+	}
+
+	if allowed, anchors := contextRetryPermission(pack, index); allowed || len(anchors) != 0 {
+		t.Fatalf("unrenderable omission retry = %v / %#v", allowed, anchors)
+	}
+}
+
 func TestContextRetryPermissionRejectsOppositeAction(t *testing.T) {
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 		{

@@ -107,16 +107,18 @@ and the signed manual rubric outside the repository. The harness supplies
 Call goregraph context once with the complete task before reading indexed source.
 Treat source_sections as current source already read; do not re-read or grep included ranges.
 If source_coverage is complete, continue from the included source without another navigation read.
-If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; report pathless omissions as uncertainty without broad source discovery.
+Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
 
 The source sections replace reads of included ranges, and `source_coverage` is authoritative.
-Omissions are the normal reason to read afterward;
-`source_unrepresented` reports bounded omission detail, while uncovered entries
-in `files` remain navigation metadata when coverage is partial or none.
+Exact paths in `source_omissions` are the only normal reason to read afterward;
+pathless omissions become uncertainty. `source_unrepresented` counts visible
+required concerns without selected source, while `files` remain metadata rather
+than automatic fallback scope.
 
 The complete-session tokens are the target; the `turn.completed` usage total is
 authoritative for the release gate. Context Pack `estimated_tokens` values are

@@ -373,9 +373,11 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 		}
 		for _, factID := range concern.candidateFactIDs {
 			fact, exists := factByID[factID]
+			omissionMatch := exists && contextRetryFactMatchesOmission(pack, fact)
 			if !exists || selected[factID] ||
 				normalizeContextProject(public.Project) != "" &&
 					normalizeContextProject(fact.Project) != normalizeContextProject(public.Project) ||
+				len(pack.SourceOmissions) > 0 && !omissionMatch ||
 				!contextRetryFactMatchesAction(fact, index, selectionQuery) ||
 				!contextRetryFactHasSourceEvidence(pack, fact) {
 				continue
@@ -387,7 +389,7 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 			candidates = append(candidates, rankedContextRetryCandidate{
 				fact:           fact,
 				anchor:         anchor,
-				omissionMatch:  contextRetryFactMatchesOmission(pack, fact),
+				omissionMatch:  omissionMatch,
 				qualifiedMatch: contextRetryQualifiedMatchesQuery(fact, selectionQuery),
 				semanticScore:  contextRetrySemanticScore(fact, selectionQuery),
 				confidence:     contextRetryConfidenceRank(fact.Confidence),
@@ -457,8 +459,12 @@ func contextRetryFactHasSourceEvidence(
 	if strings.TrimSpace(fact.File) == "" {
 		return false
 	}
-	if contextRetryFactMatchesOmission(pack, fact) {
-		return true
+	for _, omission := range pack.SourceOmissions {
+		if normalizeContextProject(omission.Project) != normalizeContextProject(fact.Project) ||
+			contextRetryPath(omission.Path) != contextRetryPath(fact.File) {
+			continue
+		}
+		return strings.Contains(strings.ToLower(omission.Reason), "budget")
 	}
 	for _, section := range pack.SourceSections {
 		if normalizeContextProject(section.Project) == normalizeContextProject(fact.Project) &&
@@ -1243,6 +1249,16 @@ func contextSupportOperationalScore(
 		if contextEndpointMethodAndPathMatchQuery(fact, contextPrimaryQuery(query)) {
 			score += 180
 			operational = true
+		} else {
+			requestedActions := contextActionFamilies(query, contextRequestedHTTPMethod(query))
+			factActions := contextActionFamilies(
+				strings.Join([]string{fact.Name, fact.Qualified, fact.HTTPMethod, fact.Path}, " "),
+				fact.HTTPMethod,
+			)
+			if contextActionFamiliesOverlap(requestedActions, factActions) {
+				score += 120
+				operational = true
+			}
 		}
 	case "api_contract":
 		score += 120

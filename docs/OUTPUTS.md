@@ -214,19 +214,21 @@ Standard MCP exposes exactly one tool, `task_context`, with equivalent values.
 Call goregraph context once with the complete task before reading indexed source.
 Treat source_sections as current source already read; do not re-read or grep included ranges.
 If source_coverage is complete, continue from the included source without another navigation read.
-If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; report pathless omissions as uncertainty without broad source discovery.
+Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
 
 The source sections replace reads of included ranges. `source_coverage` is authoritative:
-`source_omissions` are the normal reason to read afterward, and
-`source_unrepresented` reports bounded omission detail. Uncovered entries in
-`files` remain navigation metadata when coverage is partial or none. The “at
-most twice” ceiling applies to Context retrieval for one coding task. Context
-token estimates are approximate; complete-session tokens are the target for the
-benchmark gate.
+exact paths in `source_omissions` are the only normal reason to
+read source afterward, and pathless omissions become reported uncertainty.
+`source_unrepresented` counts visible required concerns without selected source;
+`files` remain metadata rather than automatic fallback scope. A second Context
+call is allowed only when `retry_allowed` is true and must carry one returned
+anchor plus the first `context_id`. Context token estimates are approximate;
+complete-session tokens are the target for the benchmark gate.
 
 The Context Pack `query` field is the normalized request text verbatim when it
 is at most 256 runes and its JSON encoding, including quotes and escapes, is at

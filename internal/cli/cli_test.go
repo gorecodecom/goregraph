@@ -1723,9 +1723,10 @@ func TestContextHelpDocumentsBoundedAgentWorkflow(t *testing.T) {
 	const assistedInstruction = `Call goregraph context once with the complete task before reading indexed source.
 Treat source_sections as current source already read; do not re-read or grep included ranges.
 If source_coverage is complete, continue from the included source without another navigation read.
-If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; report pathless omissions as uncertainty without broad source discovery.
+Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.`
 
 	var stdout, stderr bytes.Buffer
@@ -1752,7 +1753,7 @@ Do not use specialist GoreGraph queries or expert MCP tools.`
 }
 
 func TestQueryAndReportHelpDocumentManualCompatibilityAndDashboardPath(t *testing.T) {
-	const sourceBackedGuidance = "Agents should use goregraph context: when source_coverage is complete, continue from source_sections without another navigation read; when source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections."
+	const sourceBackedGuidance = "Agents should use goregraph context: when source_coverage is complete, continue from source_sections without another navigation read; when source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions and never inventory repositories."
 
 	var stdout, stderr bytes.Buffer
 	if code := Run([]string{"query", "help"}, &stdout, &stderr); code != 0 {

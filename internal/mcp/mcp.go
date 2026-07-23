@@ -113,7 +113,7 @@ func tools(options Options) []map[string]any {
 func taskContextTool() map[string]any {
 	return map[string]any{
 		"name":        "task_context",
-		"description": "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Treat source_sections as already read. When source_coverage is absent, partial, or none, inspect only relevant uncovered ranges. If fallback_required is true, inspect source directly. Call at most twice per task.",
+		"description": "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Treat source_sections as already read. For partial or missing coverage, inspect only exact project/path entries in source_omissions and never inventory repositories. Retry only when retry_allowed is true, with one retry_anchor and previous_context_id.",
 		"inputSchema": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -133,9 +133,10 @@ func serverInstructions() string {
 	return `Call goregraph context once with the complete task before reading indexed source.
 Treat source_sections as current source already read; do not re-read or grep included ranges.
 If source_coverage is complete, continue from the included source without another navigation read.
-If source_coverage is partial or none, read only relevant uncovered ranges named by source_omissions or files not represented by source_sections.
+If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; report pathless omissions as uncertainty without broad source discovery.
+Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
-At most one narrower retry may use an exact route, qualified symbol, or file returned by the first call; never use a call-chain label.
+Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.`
 }
 
