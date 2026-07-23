@@ -578,7 +578,7 @@ func buildSpringIndex(sources []JavaSourceRecord) SpringIndex {
 	}
 
 	index.DTOs = springDTORecords(sources)
-	applyGlobalSpringAuth(&index, springGlobalAuthRecords(sources))
+	applyScopedSpringAuth(&index, springAuthScopes(sources, constants))
 	sortSpringIndex(&index)
 	return index
 }
@@ -1044,9 +1044,17 @@ func openAPISecurityRequirementNames(annotation JavaAnnotationRecord) []string {
 	return result
 }
 
-func springGlobalAuthRecords(sources []JavaSourceRecord) []AuthRecord {
-	seen := map[string]bool{}
-	var records []AuthRecord
+type springAuthScope struct {
+	Paths      []string
+	Auth       []AuthRecord
+	Order      int
+	File       string
+	Line       int
+	Confidence string
+}
+
+func springAuthScopes(sources []JavaSourceRecord, constants map[string]string) []springAuthScope {
+	var scopes []springAuthScope
 	for _, source := range sources {
 		if !springSecurityProductionSource(source) {
 			continue
@@ -1055,14 +1063,110 @@ func springGlobalAuthRecords(sources []JavaSourceRecord) []AuthRecord {
 			if !springSecurityConfigurationMethod(source, method) {
 				continue
 			}
-			for _, auth := range method.Auth {
-				key := authRecordSortKey(auth)
-				if seen[key] {
+			scope := springAuthScope{
+				Auth:       append([]AuthRecord(nil), method.Auth...),
+				Order:      springSecurityOrder(method.Annotations),
+				File:       method.File,
+				Line:       method.Line,
+				Confidence: "EXACT",
+			}
+			hasMatcher := false
+			unresolvedMatcher := false
+			for _, call := range method.Calls {
+				if call.Method != "securityMatcher" {
 					continue
 				}
-				seen[key] = true
-				records = append(records, auth)
+				hasMatcher = true
+				if len(call.Arguments) == 0 {
+					unresolvedMatcher = true
+					continue
+				}
+				for _, argument := range call.Arguments {
+					alternatives := javaResolvedPathAlternatives(argument, constants, nil, nil, 0)
+					if len(alternatives) == 0 {
+						unresolvedMatcher = true
+						continue
+					}
+					for _, alternative := range alternatives {
+						path, ok := springSecurityMatcherPath(alternative)
+						if !ok {
+							unresolvedMatcher = true
+							continue
+						}
+						scope.Paths = append(scope.Paths, path)
+					}
+				}
 			}
+			scope.Paths = catalogUniqueSortedStrings(scope.Paths)
+			if hasMatcher && len(scope.Paths) == 0 || unresolvedMatcher {
+				scope.Confidence = "PARTIAL"
+			}
+			sort.Slice(scope.Auth, func(left, right int) bool {
+				return authRecordSortKey(scope.Auth[left]) < authRecordSortKey(scope.Auth[right])
+			})
+			if len(scope.Auth) > 0 {
+				scopes = append(scopes, scope)
+			}
+		}
+	}
+	sort.Slice(scopes, func(left, right int) bool {
+		if scopes[left].Order != scopes[right].Order {
+			return scopes[left].Order < scopes[right].Order
+		}
+		if strings.Join(scopes[left].Paths, "\x00") != strings.Join(scopes[right].Paths, "\x00") {
+			return strings.Join(scopes[left].Paths, "\x00") < strings.Join(scopes[right].Paths, "\x00")
+		}
+		if scopes[left].File != scopes[right].File {
+			return scopes[left].File < scopes[right].File
+		}
+		return scopes[left].Line < scopes[right].Line
+	})
+	return scopes
+}
+
+func springSecurityOrder(annotations []JavaAnnotationRecord) int {
+	order := int(^uint(0) >> 1)
+	for _, annotation := range annotations {
+		if annotation.Name != "Order" {
+			continue
+		}
+		value := firstNonEmpty(annotation.Attributes["value"], annotation.Arguments)
+		if parsed, err := strconv.Atoi(strings.TrimSpace(value)); err == nil {
+			return parsed
+		}
+	}
+	return order
+}
+
+func springSecurityMatcherPath(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" || !strings.HasPrefix(value, "/") {
+		return "", false
+	}
+	if strings.Contains(strings.TrimSuffix(value, "/**"), "*") {
+		return "", false
+	}
+	if strings.HasSuffix(value, "/**") {
+		prefix := strings.TrimSuffix(value, "/**")
+		if prefix == "" {
+			return "/**", true
+		}
+		return strings.TrimSuffix(normalizeSpringPath(prefix), "/") + "/**", true
+	}
+	return normalizeSpringPath(value), true
+}
+
+func springGlobalAuthRecords(sources []JavaSourceRecord) []AuthRecord {
+	seen := map[string]bool{}
+	var records []AuthRecord
+	for _, scope := range springAuthScopes(sources, springConstantIndex(sources)) {
+		for _, auth := range scope.Auth {
+			key := authRecordSortKey(auth)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			records = append(records, auth)
 		}
 	}
 	sort.Slice(records, func(left, right int) bool {
@@ -1102,16 +1206,135 @@ func authRecordSortKey(record AuthRecord) string {
 	return strings.Join([]string{record.Kind, record.Expression, record.Source, record.Confidence, filepath.ToSlash(record.File), strconv.Itoa(record.Line)}, "\x00")
 }
 
-func applyGlobalSpringAuth(index *SpringIndex, global []AuthRecord) {
-	if len(global) == 0 {
+func applyScopedSpringAuth(index *SpringIndex, scopes []springAuthScope) {
+	if len(scopes) == 0 {
 		return
 	}
-	for i := range index.Endpoints {
-		index.Endpoints[i].Auth = append(index.Endpoints[i].Auth, global...)
-		sort.Slice(index.Endpoints[i].Auth, func(left, right int) bool {
-			return authRecordSortKey(index.Endpoints[i].Auth[left]) < authRecordSortKey(index.Endpoints[i].Auth[right])
-		})
+	for endpointIndex := range index.Endpoints {
+		selected, partial := matchingSpringAuthScopes(index.Endpoints[endpointIndex].Path, scopes)
+		var scoped []AuthRecord
+		for _, scope := range selected {
+			for _, auth := range scope.Auth {
+				if partial || scope.Confidence == "PARTIAL" {
+					auth.Confidence = "PARTIAL"
+				}
+				scoped = append(scoped, auth)
+			}
+		}
+		index.Endpoints[endpointIndex].Auth = mergeSpringAuthRecords(
+			index.Endpoints[endpointIndex].Auth,
+			scoped,
+		)
 	}
+}
+
+func matchingSpringAuthScopes(path string, scopes []springAuthScope) ([]springAuthScope, bool) {
+	type scopeMatch struct {
+		scope       springAuthScope
+		specificity int
+	}
+	var matches []scopeMatch
+	for _, scope := range scopes {
+		best := -1
+		for _, matcher := range scope.Paths {
+			if specificity := springSecurityMatcherSpecificity(path, matcher); specificity > best {
+				best = specificity
+			}
+		}
+		if best >= 0 {
+			matches = append(matches, scopeMatch{scope: scope, specificity: best})
+		}
+	}
+	if len(matches) == 0 {
+		for _, scope := range scopes {
+			if len(scope.Paths) == 0 && scope.Confidence != "PARTIAL" {
+				matches = append(matches, scopeMatch{scope: scope})
+			}
+		}
+	}
+	if len(matches) == 0 {
+		for _, scope := range scopes {
+			if len(scope.Paths) == 0 && scope.Confidence == "PARTIAL" {
+				matches = append(matches, scopeMatch{scope: scope})
+			}
+		}
+	}
+	if len(matches) == 0 {
+		return nil, false
+	}
+
+	bestOrder := matches[0].scope.Order
+	bestSpecificity := matches[0].specificity
+	for _, match := range matches[1:] {
+		if match.scope.Order < bestOrder ||
+			match.scope.Order == bestOrder && match.specificity > bestSpecificity {
+			bestOrder = match.scope.Order
+			bestSpecificity = match.specificity
+		}
+	}
+	var selected []springAuthScope
+	for _, match := range matches {
+		if match.scope.Order == bestOrder && match.specificity == bestSpecificity {
+			selected = append(selected, match.scope)
+		}
+	}
+	return selected, springAuthScopesConflict(selected)
+}
+
+func springSecurityMatcherSpecificity(path, matcher string) int {
+	path = normalizeSpringPath(path)
+	matcher = normalizeSpringPath(matcher)
+	if strings.HasSuffix(matcher, "/**") {
+		prefix := strings.TrimSuffix(matcher, "/**")
+		if prefix == "" || path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return len(prefix)
+		}
+		return -1
+	}
+	if path == matcher {
+		return len(matcher) + 1
+	}
+	return -1
+}
+
+func springAuthScopesConflict(scopes []springAuthScope) bool {
+	if len(scopes) < 2 {
+		return false
+	}
+	first := springAuthPolicyKey(scopes[0].Auth)
+	for _, scope := range scopes[1:] {
+		if springAuthPolicyKey(scope.Auth) != first {
+			return true
+		}
+	}
+	return false
+}
+
+func springAuthPolicyKey(records []AuthRecord) string {
+	parts := make([]string, 0, len(records))
+	for _, record := range records {
+		parts = append(parts, record.Kind+"\x00"+record.Expression)
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "\x01")
+}
+
+func mergeSpringAuthRecords(existing, scoped []AuthRecord) []AuthRecord {
+	records := append(append([]AuthRecord(nil), existing...), scoped...)
+	seen := map[string]bool{}
+	result := make([]AuthRecord, 0, len(records))
+	for _, record := range records {
+		key := authRecordSortKey(record)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, record)
+	}
+	sort.Slice(result, func(left, right int) bool {
+		return authRecordSortKey(result[left]) < authRecordSortKey(result[right])
+	})
+	return result
 }
 
 func openAPIResponseType(annotations []JavaAnnotationRecord) string {

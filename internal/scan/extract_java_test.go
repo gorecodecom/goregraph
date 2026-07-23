@@ -364,6 +364,138 @@ class Security {
 	}
 }
 
+func TestBuildSpringIndexScopesSecurityFilterChainsByPath(t *testing.T) {
+	routes := extractJavaSource(FileRecord{Path: "src/main/java/example/Routes.java", Language: "java"}, `package example;
+final class Routes {
+  static final String INTERNAL = "/internal";
+}`)
+	application := extractJavaSource(FileRecord{Path: "src/main/java/example/Application.java", Language: "java"}, `package example;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+
+@RestController
+class Controller {
+  @GetMapping("/public/status")
+  String publicStatus() { return "ok"; }
+
+  @GetMapping("/internal/jobs")
+  String internalJobs() { return "ok"; }
+
+  @GetMapping("/other")
+  String other() { return "ok"; }
+}
+
+@Configuration
+class Security {
+  @Order(1)
+  SecurityFilterChain publicApi(HttpSecurity http) {
+    http.securityMatcher("/public/**");
+    routes.permitAll();
+    return http.build();
+  }
+
+  @Order(2)
+  SecurityFilterChain internalApi(HttpSecurity http) {
+    http.securityMatcher(Routes.INTERNAL + "/**");
+    routes.authenticated();
+    http.httpBasic();
+    return http.build();
+  }
+
+  @Order(0)
+  SecurityFilterChain unresolved(HttpSecurity http) {
+    http.securityMatcher(dynamicMatcher());
+    routes.x509();
+    return http.build();
+  }
+
+  SecurityFilterChain fallback(HttpSecurity http) {
+    routes.hasRole("USER");
+    http.oauth2ResourceServer();
+    return http.build();
+  }
+}`)
+
+	sources := []JavaSourceRecord{application, routes}
+	scopes := springAuthScopes(sources, springConstantIndex(sources))
+	partialFound := false
+	for _, scope := range scopes {
+		if scope.Confidence != "PARTIAL" {
+			continue
+		}
+		for _, auth := range scope.Auth {
+			if auth.Kind == "x509" {
+				partialFound = true
+			}
+		}
+	}
+	if !partialFound {
+		t.Fatalf("unresolved matcher scope was not retained as partial: %#v", scopes)
+	}
+
+	index := buildSpringIndex(sources)
+	tests := []struct {
+		path     string
+		want     []string
+		excluded []string
+	}{
+		{
+			path: "/public/status", want: []string{"permit_all"},
+			excluded: []string{"authenticated", "http_basic", "has_role", "oauth2_resource_server", "x509"},
+		},
+		{
+			path: "/internal/jobs", want: []string{"authenticated", "http_basic"},
+			excluded: []string{"permit_all", "has_role", "oauth2_resource_server", "x509"},
+		},
+		{
+			path: "/other", want: []string{"has_role", "oauth2_resource_server"},
+			excluded: []string{"permit_all", "authenticated", "http_basic", "x509"},
+		},
+	}
+	for _, test := range tests {
+		endpoint, ok := findSpringEndpointForTest(index.Endpoints, "GET", test.path)
+		if !ok {
+			t.Fatalf("missing endpoint %s: %#v", test.path, index.Endpoints)
+		}
+		for _, kind := range test.want {
+			if !hasAuthKind(endpoint.Auth, kind) {
+				t.Fatalf("%s missing %s auth: %#v", test.path, kind, endpoint.Auth)
+			}
+		}
+		for _, kind := range test.excluded {
+			if hasAuthKind(endpoint.Auth, kind) {
+				t.Fatalf("%s received unrelated %s auth: %#v", test.path, kind, endpoint.Auth)
+			}
+		}
+	}
+}
+
+func TestApplyScopedSpringAuthMarksEqualConflictsPartial(t *testing.T) {
+	index := SpringIndex{Endpoints: []SpringEndpointRecord{{
+		HTTPMethod: "GET", Path: "/internal/jobs",
+	}}}
+	scopes := []springAuthScope{
+		{
+			Paths: []string{"/internal/**"}, Order: 1, Confidence: "EXACT",
+			Auth: []AuthRecord{{Kind: "permit_all", Confidence: "EXTRACTED", File: "A.java", Line: 1}},
+		},
+		{
+			Paths: []string{"/internal/**"}, Order: 1, Confidence: "EXACT",
+			Auth: []AuthRecord{{Kind: "authenticated", Confidence: "EXTRACTED", File: "B.java", Line: 1}},
+		},
+	}
+
+	applyScopedSpringAuth(&index, scopes)
+	if len(index.Endpoints[0].Auth) != 2 {
+		t.Fatalf("conflicting scoped auth = %#v", index.Endpoints[0].Auth)
+	}
+	for _, auth := range index.Endpoints[0].Auth {
+		if auth.Confidence != "PARTIAL" {
+			t.Fatalf("conflicting auth remained exact: %#v", index.Endpoints[0].Auth)
+		}
+	}
+}
+
 func TestSpringGlobalSecurityAuthRequiresProductionSpringSecurityMethodContext(t *testing.T) {
 	ordinary := extractJavaSource(FileRecord{Path: "src/main/java/OrderService.java", Language: "java"}, `class OrderService {
   void update() {
