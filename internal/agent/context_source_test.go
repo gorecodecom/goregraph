@@ -1540,6 +1540,36 @@ func TestContextSourceTestsRequireExecutableRenderedBody(t *testing.T) {
 	}
 }
 
+func TestContextSourceOptionConcernsRequireExecutableExactTestEvidence(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernTests,
+		"services/jobs",
+		true,
+		[]string{"job-delete-test"},
+		"requested test evidence",
+	)
+	candidate := sourceCandidate{
+		FactID: "job-delete-test", FactIDs: []string{"job-delete-test"},
+		Project: "services/jobs", Role: "test",
+	}
+
+	signature := ContextSourceSection{
+		Project: "services/jobs", Role: "test", RenderMode: "signature",
+		Content: "@Test\n@WithJwtTestUser\nvoid deletesJob() {",
+	}
+	if keys, _ := contextSourceOptionConcerns(candidate, signature, []contextConcern{concern}, scan.AgentContextIndexRecord{}); len(keys) != 0 {
+		t.Fatalf("signature-only exact test fact covered tests: %v", keys)
+	}
+
+	body := ContextSourceSection{
+		Project: "services/jobs", Role: "test", RenderMode: "declaration_body",
+		Content: "@Test\n@WithJwtTestUser\nvoid deletesJob() {\n  mockMvc.perform(delete(\"/jobs/1\")).andExpect(status().isNoContent());\n}",
+	}
+	if keys, required := contextSourceOptionConcerns(candidate, body, []contextConcern{concern}, scan.AgentContextIndexRecord{}); !required || !reflect.DeepEqual(keys, []string{concern.key}) {
+		t.Fatalf("executable exact test fact concerns = %v, required %v", keys, required)
+	}
+}
+
 func TestContextSourceSectionSupportsOperationalConcerns(t *testing.T) {
 	tests := []struct {
 		name       string

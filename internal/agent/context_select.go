@@ -871,7 +871,7 @@ func contextSourceOptionConcerns(
 			normalizeContextProject(candidate.Project) != concern.project {
 			covered = false
 		}
-		if covered && contextSourceCrossCuttingFamily(concern.kind) {
+		if covered && (contextSourceCrossCuttingFamily(concern.kind) || concern.kind == contextConcernTests) {
 			covered = contextSourceSectionSupportsConcern(section, concern)
 		}
 		if concern.kind == contextConcernProject {
