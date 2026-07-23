@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -313,6 +314,24 @@ func contextSourceRenderOptions(
 				}
 			}
 		}
+		if candidateOptions == 0 {
+			if owner, ok := contextInheritedOwnerCandidate(loaded.Index, candidate); ok {
+				_, renderErr = appendContextSourceCandidateOptions(
+					&options,
+					failures,
+					verifiedFacts,
+					pack,
+					loaded.Index,
+					owner,
+					file,
+					concerns,
+					distances,
+				)
+				if renderErr != nil {
+					return nil, nil, renderErr
+				}
+			}
+		}
 		for factID := range verifiedFacts {
 			delete(failures, factID)
 		}
@@ -333,7 +352,7 @@ func appendContextSourceCandidateOptions(
 	distances map[string]int,
 ) (int, error) {
 	added := 0
-	for _, mode := range []string{"body", "focused", "signature"} {
+	for _, mode := range []string{"declaration_body", "body", "focused", "signature"} {
 		section, renderErr := renderSourceCandidate(candidate, file, mode)
 		if renderErr != nil {
 			contextSourceRecordFailure(failures, candidate, stableContextSourceOmissionReason(renderErr))
@@ -418,6 +437,14 @@ func verifiedContextSourceFactIDs(
 		if !ok {
 			continue
 		}
+		if candidate.SourceState == "inherited_owner_current" {
+			if contextInheritedFactMatchesOwner(fact, candidate) {
+				verified = append(verified, factID)
+			} else {
+				rejected[factID] = "indexed inherited owner does not match current source"
+			}
+			continue
+		}
 		raw := sourceCandidate{
 			FactID: fact.ID, FactIDs: []string{fact.ID}, Project: fact.Project, Path: fact.File,
 			StartLine: fact.Line, EndLine: fact.EndLine, Role: contextSourceRole(pack, fact),
@@ -433,6 +460,84 @@ func verifiedContextSourceFactIDs(
 		}
 	}
 	return orderedContextConcernIDs(verified), rejected
+}
+
+func contextInheritedOwnerCandidate(
+	index scan.AgentContextIndexRecord,
+	candidate sourceCandidate,
+) (sourceCandidate, bool) {
+	if len(contextSourceCandidateFactIDs(candidate)) != 1 {
+		return sourceCandidate{}, false
+	}
+	factID := contextSourceCandidateFactIDs(candidate)[0]
+	var inherited scan.AgentContextFactRecord
+	for _, fact := range index.Facts {
+		if fact.ID == factID {
+			inherited = fact
+			break
+		}
+	}
+	if inherited.ID == "" || !contextGenericPersistenceFact(inherited) {
+		return sourceCandidate{}, false
+	}
+	ownerQualified := contextQualifiedOwner(inherited.Qualified)
+	if ownerQualified == "" {
+		return sourceCandidate{}, false
+	}
+	ownerShort := ownerQualified
+	if separator := strings.LastIndex(ownerShort, "."); separator >= 0 {
+		ownerShort = ownerShort[separator+1:]
+	}
+
+	var owner scan.AgentContextFactRecord
+	matches := 0
+	for _, fact := range index.Facts {
+		if normalizeContextProject(fact.Project) != normalizeContextProject(inherited.Project) ||
+			filepath.ToSlash(fact.File) != filepath.ToSlash(inherited.File) ||
+			normalizedContextConcernKind(fact.Kind) == contextConcernPersistence {
+			continue
+		}
+		if strings.TrimSpace(fact.Qualified) != ownerQualified &&
+			strings.TrimSpace(fact.Name) != ownerShort {
+			continue
+		}
+		owner = fact
+		matches++
+	}
+	if matches != 1 {
+		return sourceCandidate{}, false
+	}
+	result := candidate
+	result.Name = firstNonEmptyContext(owner.Name, ownerShort)
+	result.Qualified = firstNonEmptyContext(owner.Qualified, ownerQualified)
+	result.StartLine = owner.Line
+	result.EndLine = owner.EndLine
+	result.SourceState = "inherited_owner_current"
+	return result, true
+}
+
+func contextInheritedFactMatchesOwner(
+	fact scan.AgentContextFactRecord,
+	owner sourceCandidate,
+) bool {
+	return contextGenericPersistenceFact(fact) &&
+		normalizeContextProject(fact.Project) == normalizeContextProject(owner.Project) &&
+		filepath.ToSlash(fact.File) == filepath.ToSlash(owner.Path) &&
+		contextQualifiedOwner(fact.Qualified) == strings.TrimSpace(owner.Qualified)
+}
+
+func contextQualifiedOwner(qualified string) string {
+	qualified = strings.TrimSpace(qualified)
+	separatorIndex := -1
+	for _, separator := range []string{"::", "#", "."} {
+		if index := strings.LastIndex(qualified, separator); index > separatorIndex {
+			separatorIndex = index
+		}
+	}
+	if separatorIndex <= 0 {
+		return ""
+	}
+	return strings.TrimSpace(qualified[:separatorIndex])
 }
 
 func contextSourceRole(pack ContextPack, fact scan.AgentContextFactRecord) string {
@@ -635,7 +740,7 @@ func enrichContextCoreSourceOptions(
 	boundaries []contextSourceBoundary,
 ) (ContextPack, error) {
 	var err error
-	for _, mode := range []string{"focused", "body"} {
+	for _, mode := range []string{"declaration_body", "focused", "body"} {
 		pack, err = enrichContextCoreSourceMode(pack, request, options, state, boundaries, mode)
 		if err != nil {
 			return ContextPack{}, err
@@ -1075,11 +1180,13 @@ func contextSourceOptionLess(left, right contextSourceOption) bool {
 
 func contextSourceRenderModeOrder(mode string) int {
 	switch mode {
-	case "body":
+	case "declaration_body":
 		return 0
-	case "focused":
+	case "body":
 		return 1
-	default:
+	case "focused":
 		return 2
+	default:
+		return 3
 	}
 }

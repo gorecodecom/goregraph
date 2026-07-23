@@ -17,17 +17,18 @@ import (
 )
 
 type sourceCandidate struct {
-	FactID    string
-	FactIDs   []string
-	Project   string
-	Path      string
-	StartLine int
-	EndLine   int
-	Role      string
-	Kind      string
-	Name      string
-	Qualified string
-	Priority  int
+	FactID      string
+	FactIDs     []string
+	Project     string
+	Path        string
+	StartLine   int
+	EndLine     int
+	Role        string
+	Kind        string
+	Name        string
+	Qualified   string
+	SourceState string
+	Priority    int
 }
 
 type sourceFile struct {
@@ -333,9 +334,20 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 	}
 
 	rangeStart, rangeEnd := verifiedSourceRange(candidate, len(file.Lines), declaration.Line, state)
-	renderStart, renderEnd, err := sourceRenderRange(file.Lines, codeLines, declaration, rangeStart, rangeEnd, mode)
+	renderStart, renderEnd, err := sourceRenderRange(
+		file.Path,
+		file.Lines,
+		codeLines,
+		declaration,
+		rangeStart,
+		rangeEnd,
+		mode,
+	)
 	if err != nil {
 		return ContextSourceSection{}, err
+	}
+	if candidate.SourceState != "" {
+		state = candidate.SourceState
 	}
 	return ContextSourceSection{
 		Project:     candidate.Project,
@@ -783,6 +795,7 @@ func clampSourceLine(line, lineCount int) int {
 }
 
 func sourceRenderRange(
+	path string,
 	lines []string,
 	codeLines []string,
 	declaration sourceOccurrence,
@@ -791,6 +804,14 @@ func sourceRenderRange(
 	mode string,
 ) (int, int, error) {
 	switch mode {
+	case "declaration_body":
+		if start, end, ok := sourceDeclarationBodyRange(path, lines, codeLines, declaration); ok {
+			if end-start+1 > 120 {
+				return 0, 0, fmt.Errorf("source declaration body exceeds 120 lines")
+			}
+			return start, end, nil
+		}
+		return 0, 0, fmt.Errorf("source declaration body is unavailable")
 	case "body":
 		if verifiedEnd-verifiedStart+1 > 120 {
 			return 0, 0, fmt.Errorf("source body exceeds 120 lines")
@@ -811,6 +832,98 @@ func sourceRenderRange(
 	default:
 		return 0, 0, fmt.Errorf("unsupported source render mode %q", mode)
 	}
+}
+
+func sourceDeclarationBodyRange(
+	path string,
+	lines []string,
+	codeLines []string,
+	declaration sourceOccurrence,
+) (int, int, bool) {
+	if declaration.Line < 1 || declaration.Line > len(lines) {
+		return 0, 0, false
+	}
+	start := sourceAnnotationStart(codeLines, declaration.Line)
+	if strings.EqualFold(filepath.Ext(path), ".py") {
+		end, ok := sourceIndentedDeclarationEnd(lines, codeLines, declaration.Line)
+		return start, end, ok
+	}
+
+	depth := 0
+	foundBody := false
+	for lineNumber := declaration.Line; lineNumber <= len(codeLines); lineNumber++ {
+		line := codeLines[lineNumber-1]
+		offset := 0
+		if lineNumber == declaration.Line {
+			offset = declaration.End
+		}
+		for index := offset; index < len(line); index++ {
+			switch line[index] {
+			case '{':
+				depth++
+				foundBody = true
+			case '}':
+				if !foundBody || depth == 0 {
+					return 0, 0, false
+				}
+				depth--
+				if depth == 0 {
+					return start, lineNumber, true
+				}
+			}
+		}
+		if lineNumber-start+1 > 120 {
+			return 0, 0, false
+		}
+	}
+	return 0, 0, false
+}
+
+func sourceIndentedDeclarationEnd(lines, codeLines []string, declarationLine int) (int, bool) {
+	declaration := lines[declarationLine-1]
+	codeDeclaration := strings.TrimSpace(codeLines[declarationLine-1])
+	declarationIndent := sourceLeadingIndent(declaration)
+	colon := strings.LastIndex(codeDeclaration, ":")
+	if colon < 0 {
+		return 0, false
+	}
+	if strings.TrimSpace(codeDeclaration[colon+1:]) != "" {
+		return declarationLine, true
+	}
+	end := declarationLine
+	hasBody := false
+	for lineNumber := declarationLine + 1; lineNumber <= len(lines); lineNumber++ {
+		line := lines[lineNumber-1]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			end = lineNumber
+			continue
+		}
+		if sourceLeadingIndent(line) <= declarationIndent {
+			break
+		}
+		hasBody = true
+		end = lineNumber
+		if end-declarationLine+1 > 120 {
+			return 0, false
+		}
+	}
+	return end, hasBody
+}
+
+func sourceLeadingIndent(value string) int {
+	indent := 0
+	for _, current := range value {
+		switch current {
+		case ' ':
+			indent++
+		case '\t':
+			indent += 4
+		default:
+			return indent
+		}
+	}
+	return indent
 }
 
 func sourceSignatureEnd(lines []string, declaration sourceOccurrence, maximumEnd int) int {

@@ -35,6 +35,174 @@ func TestRenderSourceCandidateKeepsCurrentIndexedDeclaration(t *testing.T) {
 	}
 }
 
+func TestRenderSourceCandidateUsesCompactDeclarationBody(t *testing.T) {
+	lines := []string{
+		"package users;",
+		"@Override",
+		"public void deleteUser() {",
+		"    if (enabled) {",
+		`        logger.info("ignored braces {}");`,
+		"    }",
+		"}",
+		"public void unrelated() {}",
+	}
+	candidate := sourceCandidate{
+		Project: "users", Path: "src/UserService.java", StartLine: 3, EndLine: 3,
+		Role: "call_chain", Kind: "symbol", Name: "deleteUser",
+	}
+
+	section, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: lines},
+		"declaration_body",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 2 || section.EndLine != 7 {
+		t.Fatalf("compact declaration range = %d-%d, want 2-7", section.StartLine, section.EndLine)
+	}
+	if section.RenderMode != "declaration_body" ||
+		!strings.Contains(section.Content, "logger.info") ||
+		strings.Contains(section.Content, "unrelated") {
+		t.Fatalf("compact declaration section = %#v", section)
+	}
+
+	cases := []struct {
+		name      string
+		path      string
+		lines     []string
+		candidate sourceCandidate
+		wantStart int
+		wantEnd   int
+		want      string
+		excluded  string
+	}{
+		{
+			name: "Go nested composite literal", path: "users.go",
+			lines: []string{
+				"package users",
+				"func deleteUser() {",
+				"    values := map[string]any{",
+				`        "nested": struct{ Enabled bool }{Enabled: true},`,
+				"    }",
+				"    _ = values",
+				"}",
+				"func unrelated() {}",
+			},
+			candidate: sourceCandidate{Path: "users.go", Name: "deleteUser", StartLine: 2, EndLine: 2},
+			wantStart: 2, wantEnd: 7, want: "values :=", excluded: "unrelated",
+		},
+		{
+			name: "TypeScript masked braces", path: "users.ts",
+			lines: []string{
+				"export function deleteUser() {",
+				`  const message = "ignored braces {}";`,
+				"  // ignored closing brace }",
+				"  removeUser();",
+				"}",
+				"export function unrelated() {}",
+			},
+			candidate: sourceCandidate{Path: "users.ts", Name: "deleteUser", StartLine: 1, EndLine: 1},
+			wantStart: 1, wantEnd: 5, want: "removeUser", excluded: "unrelated",
+		},
+		{
+			name: "Python indented body", path: "users.py",
+			lines: []string{
+				"@transactional",
+				"def delete_user():",
+				"    if enabled:",
+				"        remove_user()",
+				"",
+				"def unrelated():",
+				"    pass",
+			},
+			candidate: sourceCandidate{Path: "users.py", Name: "delete_user", StartLine: 2, EndLine: 2},
+			wantStart: 1, wantEnd: 5, want: "remove_user", excluded: "unrelated",
+		},
+		{
+			name: "Python one-line suite", path: "users.py",
+			lines: []string{
+				"def delete_user(): pass",
+				"def unrelated(): pass",
+			},
+			candidate: sourceCandidate{Path: "users.py", Name: "delete_user", StartLine: 1, EndLine: 1},
+			wantStart: 1, wantEnd: 1, want: "pass", excluded: "unrelated",
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, err := renderSourceCandidate(
+				testCase.candidate,
+				sourceFile{Path: testCase.path, Lines: testCase.lines},
+				"declaration_body",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.StartLine != testCase.wantStart || got.EndLine != testCase.wantEnd ||
+				!strings.Contains(got.Content, testCase.want) ||
+				strings.Contains(got.Content, testCase.excluded) {
+				t.Fatalf("compact declaration section = %#v", got)
+			}
+		})
+	}
+}
+
+func TestContextSourceUsesVerifiedInheritedOwner(t *testing.T) {
+	root := t.TempDir()
+	const project = "services/jobs"
+	const sourcePath = "src/main/java/example/JobRepository.java"
+	writeSourceFile(t, root, filepath.Join(project, sourcePath), `package example;
+interface JobRepository extends CrudRepository<JobEntity, Long> {
+    List<JobEntity> findByCatalogItem(long catalogId, long itemId);
+}
+`)
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "owner", Project: project, Kind: "symbol", Name: "JobRepository",
+			Qualified: "JobRepository", File: sourcePath, Line: 2, EndLine: 4, Confidence: "EXACT",
+		},
+		{
+			ID: "inherited", Project: project, Kind: "persistence", Name: "findAll",
+			Qualified: "JobRepository.findAll", File: sourcePath, Line: 2, EndLine: 2,
+			Confidence: "RESOLVED", Summary: "inherited repository method",
+		},
+	}}
+	pack := ContextPack{
+		Schema: 3, Query: "inspect services/jobs repository persistence", Confidence: "EXACT",
+		BudgetTokens: DefaultContextBudgetTokens,
+		Concerns: []ContextConcern{{
+			Kind: contextConcernPersistence, Project: project, Covered: true,
+		}},
+		Persistence:           []ContextLocation{{ID: "inherited", Project: project, File: sourcePath}},
+		selectedSourceFactIDs: []string{"inherited"},
+	}
+
+	got, err := attachContextSource(
+		pack,
+		loadedContextIndex{ScopeRoot: root, Workspace: true, Index: index},
+		ContextRequest{BudgetTokens: DefaultContextBudgetTokens},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.SourceSections) != 1 {
+		t.Fatalf("inherited owner source sections = %#v, omissions %#v", got.SourceSections, got.SourceOmissions)
+	}
+	section := got.SourceSections[0]
+	if section.SourceState != "inherited_owner_current" {
+		t.Fatalf("source state = %q", section.SourceState)
+	}
+	if !strings.Contains(section.Content, "interface JobRepository") ||
+		strings.Contains(section.Content, "findAll(") {
+		t.Fatalf("owner declaration evidence is not honest:\n%s", section.Content)
+	}
+	if got.SourceCoverage != "complete" || len(got.SourceOmissions) != 0 {
+		t.Fatalf("inherited owner coverage = %q / %#v", got.SourceCoverage, got.SourceOmissions)
+	}
+}
+
 func TestRenderSourceCandidateRelocatesUniqueDeclaration(t *testing.T) {
 	lines := []string{
 		"package users;",
@@ -583,15 +751,13 @@ func TestContextSourceOptionsEvaluateEveryFittingRenderMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	modes := []string{}
-	previousCost := int(^uint(0) >> 1)
 	for _, option := range options {
 		modes = append(modes, option.section.RenderMode)
-		if option.estimated <= 0 || option.estimated > previousCost {
-			t.Fatalf("option costs are not precomputed from detailed to compact: %#v", options)
+		if option.estimated <= 0 {
+			t.Fatalf("option cost was not precomputed: %#v", options)
 		}
-		previousCost = option.estimated
 	}
-	if strings.Join(modes, ",") != "body,focused,signature" {
+	if strings.Join(modes, ",") != "declaration_body,body,focused,signature" {
 		t.Fatalf("render option order = %v", modes)
 	}
 
@@ -617,7 +783,7 @@ func TestContextSourceOptionsEvaluateEveryFittingRenderMode(t *testing.T) {
 	for _, option := range fitting {
 		fittingModes = append(fittingModes, option.section.RenderMode)
 	}
-	if strings.Join(fittingModes, ",") != "body,focused,signature" {
+	if strings.Join(fittingModes, ",") != "declaration_body,body,focused,signature" {
 		t.Fatalf("fitting render modes = %v", fittingModes)
 	}
 	mandatory, ok, err := smallestFittingContextSourceOption(
