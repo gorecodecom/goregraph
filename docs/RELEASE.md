@@ -105,20 +105,23 @@ and the signed manual rubric outside the repository. The harness supplies
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.
-Treat source_sections as current source already read; do not re-read or grep included ranges.
-If source_coverage is complete, continue from the included source without another navigation read.
-If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; report pathless omissions as uncertainty without broad source discovery.
+Treat source_sections as current source already read; never re-read, grep, or widen an included range.
+If source_coverage is complete, run no source-reading commands on indexed project files. Answer only from source_sections and mark details absent from them as unknown.
+If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; do not inspect other files or widen ranges. Report pathless omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
 
-The source sections replace reads of included ranges, and `source_coverage` is authoritative.
-Exact paths in `source_omissions` are the only normal reason to read afterward;
-pathless omissions become uncertainty. `source_unrepresented` counts visible
-required concerns without selected source, while `files` remain metadata rather
-than automatic fallback scope.
+The source sections replace reads of included ranges, and `source_coverage` is authoritative:
+with complete coverage, run no source-reading commands on indexed project files;
+answer only from `source_sections` and mark absent details as unknown. With partial
+or none coverage, inspect only exact project/path entries in `source_omissions`;
+do not inspect other files or widen ranges, and report pathless omissions as
+uncertainty.
+`source_unrepresented` counts visible required concerns without selected source,
+while `files` remain metadata rather than automatic fallback scope.
 
 The complete-session tokens are the target; the `turn.completed` usage total is
 authoritative for the release gate. Context Pack `estimated_tokens` values are

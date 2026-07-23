@@ -212,9 +212,9 @@ Standard MCP exposes exactly one tool, `task_context`, with equivalent values.
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.
-Treat source_sections as current source already read; do not re-read or grep included ranges.
-If source_coverage is complete, continue from the included source without another navigation read.
-If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; report pathless omissions as uncertainty without broad source discovery.
+Treat source_sections as current source already read; never re-read, grep, or widen an included range.
+If source_coverage is complete, run no source-reading commands on indexed project files. Answer only from source_sections and mark details absent from them as unknown.
+If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; do not inspect other files or widen ranges. Report pathless omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
@@ -222,8 +222,11 @@ Do not use specialist GoreGraph queries or expert MCP tools.
 ```
 
 The source sections replace reads of included ranges. `source_coverage` is authoritative:
-exact paths in `source_omissions` are the only normal reason to
-read source afterward, and pathless omissions become reported uncertainty.
+with complete coverage, run no source-reading commands on indexed project files;
+answer only from `source_sections` and mark absent details as unknown. With partial
+or none coverage, inspect only exact project/path entries in `source_omissions`;
+do not inspect other files or widen ranges, and report pathless omissions as
+uncertainty.
 `source_unrepresented` counts visible required concerns without selected source;
 `files` remain metadata rather than automatic fallback scope. A second Context
 call is allowed only when `retry_allowed` is true and must carry one returned
@@ -238,8 +241,7 @@ distinct domain-model families and two distinct persistence families may retain
 the diversity preference. `source_coverage: complete` still means that every
 required concern has current source, not that every candidate was serialized.
 The hard limits remain 4,000 tokens, 12 files, and 12 source sections; complete
-coverage continues to forbid reconstructive repository reads outside the
-supplied source sections.
+coverage permits no source-reading commands on indexed project files.
 
 The Context Pack `query` field is the normalized request text verbatim when it
 is at most 256 runes and its JSON encoding, including quotes and escapes, is at
