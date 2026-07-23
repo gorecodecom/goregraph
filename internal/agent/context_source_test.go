@@ -1198,6 +1198,230 @@ func TestContextSourceOptionsUseSpecifiedTieBreakersWithoutPriority(t *testing.T
 	}
 }
 
+func TestSmallestFittingContextSourceOptionPrefersProjectEvidenceQuality(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job task types and lookup attributes",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens}
+	concerns := []contextConcern{
+		newContextConcern(contextConcernProject, "services/jobs", true, []string{"model", "generic"}, "project"),
+	}
+	state := contextSourceSelectionState{
+		selectedCandidates: map[string]bool{},
+		selectedFactIDs:    map[string]bool{},
+		selectedProjects:   map[string]bool{},
+		coveredConcerns:    map[string]bool{},
+		coveredRoles:       map[string]bool{},
+	}
+	model := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "model", Project: "services/jobs", Path: "CatalogJobEntity.java",
+			Role: "call_chain", Kind: "symbol", Name: "CatalogJobEntity",
+		},
+		section: ContextSourceSection{
+			Project: "services/jobs", Path: "CatalogJobEntity.java", StartLine: 1, EndLine: 4,
+			Role: "call_chain", RenderMode: "declaration_body",
+			Content: "class CatalogJobEntity {\nlong catalogId;\nlong itemId;\n}",
+		},
+		estimated:   100,
+		concernKeys: []string{contextConcernProject + ":services/jobs"},
+		projectKey:  "services/jobs",
+	}
+	generic := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "generic", Project: "services/jobs", Path: "MailProperties.java",
+			Role: "call_chain", Kind: "configuration", Name: "MailProperties",
+		},
+		section: ContextSourceSection{
+			Project: "services/jobs", Path: "MailProperties.java", StartLine: 1, EndLine: 1,
+			Role: "call_chain", RenderMode: "signature", Content: "enum MailProperties",
+		},
+		estimated:   10,
+		concernKeys: []string{contextConcernProject + ":services/jobs"},
+		projectKey:  "services/jobs",
+	}
+
+	got, ok, err := smallestFittingContextSourceOption(
+		pack,
+		request,
+		[]contextSourceOption{generic, model},
+		concerns,
+		state,
+		contextSourceBoundary{project: "services/jobs"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got.candidate.FactID != "model" {
+		t.Fatalf("project boundary selected %#v, want informative model", got)
+	}
+
+	modelSignature := model
+	modelSignature.section.RenderMode = "signature"
+	modelSignature.section.Content = "class CatalogJobEntity"
+	modelSignature.estimated = 10
+	got, ok, err = smallestFittingContextSourceOption(
+		pack,
+		request,
+		[]contextSourceOption{model, modelSignature},
+		concerns,
+		state,
+		contextSourceBoundary{factID: "model"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got.section.RenderMode != "signature" {
+		t.Fatalf("exact boundary did not retain cost-first rendering: %#v", got)
+	}
+}
+
+func TestContextSourceUtilityPrefersDomainEvidenceOverGenericSignatures(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job task types and lookup attributes",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens}
+	concerns := []contextConcern{
+		newContextConcern(contextConcernDomainModel, "", true, []string{"model"}, "models"),
+		newContextConcern(contextConcernProject, "services/jobs", true, []string{"model", "generic"}, "project"),
+	}
+	state := contextSourceSelectionState{
+		selectedCandidates: map[string]bool{},
+		selectedFactIDs:    map[string]bool{},
+		selectedProjects:   map[string]bool{},
+		coveredConcerns:    map[string]bool{},
+		coveredRoles:       map[string]bool{},
+	}
+	model := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "model", Project: "services/jobs", Path: "CatalogJobEntity.java",
+			Role: "call_chain", Kind: "symbol", Name: "CatalogJobEntity",
+		},
+		section: ContextSourceSection{
+			Project: "services/jobs", Path: "CatalogJobEntity.java", StartLine: 1, EndLine: 4,
+			Role: "call_chain", RenderMode: "declaration_body",
+			Content: "class CatalogJobEntity {\nlong catalogId;\nlong itemId;\n}",
+		},
+		estimated: 120, concernKeys: []string{
+			contextConcernDomainModel,
+			contextConcernProject + ":services/jobs",
+		},
+		projectKey: "services/jobs",
+	}
+	generic := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "generic", Project: "services/jobs", Path: "MailProperties.java",
+			Role: "call_chain", Kind: "configuration", Name: "MailProperties",
+		},
+		section: ContextSourceSection{
+			Project: "services/jobs", Path: "MailProperties.java", StartLine: 1, EndLine: 1,
+			Role: "call_chain", RenderMode: "signature", Content: "enum MailProperties",
+		},
+		estimated:   10,
+		concernKeys: []string{contextConcernProject + ":services/jobs"},
+		projectKey:  "services/jobs",
+	}
+
+	got, _, found, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{generic, model},
+		concerns,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || got.candidate.FactID != "model" {
+		t.Fatalf("source utility selected %#v, want domain model", got)
+	}
+}
+
+func TestContextSourceUtilityRetainsSecondDomainAndPersistenceEvidence(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job task types lookup attributes persistence",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens}
+	state := contextSourceSelectionState{
+		selectedCandidates: map[string]bool{},
+		selectedFactIDs:    map[string]bool{},
+		selectedProjects:   map[string]bool{"services/jobs": true},
+		coveredConcerns: map[string]bool{
+			contextConcernDomainModel:                true,
+			contextConcernProject + ":services/jobs": true,
+			contextConcernPersistence:                true,
+		},
+		coveredRoles: map[string]bool{
+			"call_chain":  true,
+			"persistence": true,
+		},
+	}
+	option := func(id, path, role, kind, name, mode, content string, estimated int) contextSourceOption {
+		return contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: id, Project: "services/jobs", Path: path,
+				Role: role, Kind: kind, Name: name, Qualified: name,
+			},
+			section: ContextSourceSection{
+				Project: "services/jobs", Path: path, StartLine: 1, EndLine: 2,
+				Role: role, RenderMode: mode, Content: content,
+			},
+			estimated: estimated, projectKey: "services/jobs",
+		}
+	}
+	secondModel := option(
+		"change-model", "CatalogChangeJobEntity.java", "call_chain", "symbol",
+		"CatalogChangeJobEntity", "declaration_body",
+		"class CatalogChangeJobEntity { long changeId; }", 100,
+	)
+	genericConfig := option(
+		"generic-config", "MailProperties.java", "call_chain", "configuration",
+		"MailProperties", "signature", "enum MailProperties", 10,
+	)
+	got, _, found, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{genericConfig, secondModel},
+		nil,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || got.candidate.FactID != "change-model" {
+		t.Fatalf("second domain model lost to generic signature: %#v", got)
+	}
+
+	declaredRepository := option(
+		"change-repository", "CatalogChangeJobRepository.java", "persistence", "persistence",
+		"CatalogChangeJobRepository.findByCatalogIdAndItemId", "declaration_body",
+		"findByCatalogIdAndItemId(long catalogId, long itemId)", 60,
+	)
+	genericRepository := option(
+		"generic-repository", "ARepository.java", "persistence", "persistence",
+		"findAll", "signature", "findAll()", 10,
+	)
+	got, _, found, err = contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{genericRepository, declaredRepository},
+		nil,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || got.candidate.FactID != "change-repository" {
+		t.Fatalf("second declared repository lost to generic persistence: %#v", got)
+	}
+}
+
 func TestContextSourceOptionsRecoverFromStaleMergedAnchor(t *testing.T) {
 	root := t.TempDir()
 	lines := numberedSourceLines(12)

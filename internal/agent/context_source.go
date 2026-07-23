@@ -54,11 +54,12 @@ type sourceOccurrence struct {
 }
 
 var contextSourceRolePriority = map[string]int{
-	"entrypoint":  0,
-	"call_chain":  1,
-	"contract":    2,
-	"persistence": 3,
-	"test":        4,
+	"entrypoint":   0,
+	"call_chain":   1,
+	"domain_model": 2,
+	"contract":     3,
+	"persistence":  4,
+	"test":         5,
 }
 
 func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecord) []sourceCandidate {
@@ -71,6 +72,7 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 	persistenceIDs := contextLocationIDs(pack.Persistence)
 	testIDs := contextLocationIDs(pack.Tests)
 	includeTests := contextQueryRequestsTests(contextSelectionQuery(pack))
+	domainModelTokens := contextSourceDomainModelTokens(pack, index)
 
 	candidates := make([]sourceCandidate, 0, len(pack.selectedSourceFactIDs))
 	for _, id := range pack.selectedSourceFactIDs {
@@ -93,6 +95,8 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 				}
 			case entrypointIDs[id]:
 				role = "entrypoint"
+			case contextDomainModelFact(fact, domainModelTokens):
+				role = contextConcernDomainModel
 			case contractIDs[id] || strings.EqualFold(fact.Kind, "api_contract"):
 				role = "contract"
 			case persistenceIDs[id] || normalizedContextConcernKind(fact.Kind) == contextConcernPersistence:

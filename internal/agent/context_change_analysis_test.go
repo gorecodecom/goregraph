@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	missingContractEnglishQuery = "When DELETE /catalog/items/{itemId} removes an item in services/catalog, plan cleanup of related jobs through libraries/job-client and services/jobs. Cover the current path, missing HTTP contract, authentication, configuration, retry behavior, persistence, side effects, and tests."
-	missingContractGermanQuery  = "Wenn DELETE /catalog/items/{itemId} einen Eintrag in services/catalog löscht, plane das Entfernen verbundener Aufgaben über libraries/job-client und services/jobs. Berücksichtige aktuellen Pfad, fehlenden HTTP-Vertrag, Authentifizierung, Konfiguration, Wiederholung, Persistenz, Nebenwirkungen und Tests."
+	missingContractEnglishQuery = "When DELETE /catalog/items/{itemId} removes an item in services/catalog, plan cleanup of related jobs through libraries/job-client and services/jobs. Cover the current path, missing HTTP contract, task types and lookup attributes, authentication, configuration, retry behavior, persistence, side effects, and tests."
+	missingContractGermanQuery  = "Wenn DELETE /catalog/items/{itemId} einen Eintrag in services/catalog löscht, plane das Entfernen verbundener Aufgaben über libraries/job-client und services/jobs. Berücksichtige aktuellen Pfad, fehlenden HTTP-Vertrag, Aufgabenarten und Suchattribute, Authentifizierung, Konfiguration, Wiederholung, Persistenz, Nebenwirkungen und Tests."
 )
 
 func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
@@ -36,7 +36,7 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 	for _, factID := range []string{
 		"catalog-route", "catalog-operations", "catalog-repository",
 		"job-client", "job-contract", "job-config", "job-auth", "job-retry",
-		"jobs-route", "jobs-service", "jobs-finder", "jobs-side-effect", "jobs-test",
+		"jobs-route", "jobs-service",
 	} {
 		if !selected[factID] {
 			t.Errorf("required evidence %q not selected", factID)
@@ -44,6 +44,31 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 	}
 	if selected["jobs-find-all"] {
 		t.Error("generic inherited findAll displaced the declared finder")
+	}
+	paths := contextSourcePathSet(pack)
+	for _, path := range []string{
+		"src/main/java/example/CatalogJobEntity.java",
+		"src/main/java/example/CatalogChangeJobEntity.java",
+		"src/main/java/example/CatalogJobRepository.java",
+		"src/main/java/example/CatalogChangeJobRepository.java",
+	} {
+		if !paths[path] {
+			t.Errorf("required domain evidence %q missing from %#v", path, pack.SourceSections)
+		}
+	}
+	for _, identity := range []string{"catalogId", "itemId", "changeId"} {
+		if !contextSourceContainsStableIdentity(pack, identity) {
+			t.Errorf("lookup identity %q missing from source sections", identity)
+		}
+	}
+	for _, path := range []string{
+		"src/main/java/example/MailProperties.java",
+		"src/main/java/example/AsyncExceptionHandler.java",
+		"src/main/java/example/CatalogTopicRepository.java",
+	} {
+		if paths[path] {
+			t.Errorf("generic distractor %q displaced domain evidence", path)
+		}
 	}
 	if !contextHasUncertainty(pack, "requested_http_contract") {
 		t.Fatalf("missing contract uncertainty = %#v", pack.Uncertainties)
@@ -107,6 +132,33 @@ func TestSourceConcernCandidatesRequireDomainEvidence(t *testing.T) {
 	}
 }
 
+func TestExplicitProjectConcernCandidatesRequireDomainIdentity(t *testing.T) {
+	queryTokens := contextExpandedTokenSet(
+		"job configuration side effects mail",
+	)
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "generic-mail", Project: "libraries/client", Kind: "configuration",
+			Name: "MailProperties", Search: "mail configuration",
+		},
+		{
+			ID: "job-mail", Project: "libraries/client", Kind: "symbol",
+			Name: "JobHousekeeping", Search: "job mail side effect",
+		},
+	}
+
+	candidates := contextExplicitProjectConcernCandidates(
+		queryTokens,
+		"libraries/client",
+		contextConcernSideEffects,
+		facts,
+		map[string]bool{},
+	)
+	if !reflect.DeepEqual(candidates, []string{"job-mail"}) {
+		t.Fatalf("side-effect candidates = %v, want domain-specific evidence", candidates)
+	}
+}
+
 func TestSourceAnchorTokensIncludeSelectedEndpoint(t *testing.T) {
 	pack := ContextPack{Endpoints: []ContextEndpoint{{
 		HTTPMethod: "DELETE",
@@ -154,6 +206,7 @@ func TestSupportRouteMatchesRequestedActionWithoutExactFuturePath(t *testing.T) 
 		newContextForwardUtility(index),
 		route,
 		"Wenn ein Eintrag entfernt wird, müssen verbundene Aufgaben gelöscht werden.",
+		nil,
 	)
 	if !operational || score <= 0 {
 		t.Fatalf("same-action support route = operational %v score %d", operational, score)
@@ -168,6 +221,8 @@ type missingContractContextSnapshot struct {
 	Fallback       bool
 	Retry          bool
 	SourceCoverage string
+	SourcePaths    []string
+	SourceModes    []string
 }
 
 func missingContractContextSnapshotForPack(pack ContextPack) missingContractContextSnapshot {
@@ -176,9 +231,15 @@ func missingContractContextSnapshotForPack(pack ContextPack) missingContractCont
 	concernKeys := append([]string(nil), pack.selectedConcernKeys...)
 	sort.Strings(concernKeys)
 	sourceRoles := make([]string, 0, len(pack.SourceSections))
+	sourcePaths := make([]string, 0, len(pack.SourceSections))
+	sourceModes := make([]string, 0, len(pack.SourceSections))
 	for _, section := range pack.SourceSections {
 		sourceRoles = append(sourceRoles, section.Project+":"+section.Role)
+		sourcePaths = append(sourcePaths, section.Project+":"+section.Path)
+		sourceModes = append(sourceModes, section.Project+":"+section.Path+":"+section.RenderMode)
 	}
+	sort.Strings(sourcePaths)
+	sort.Strings(sourceModes)
 	entrypointID := ""
 	if len(pack.Entrypoints) == 1 {
 		entrypointID = pack.Entrypoints[0].ID
@@ -191,6 +252,8 @@ func missingContractContextSnapshotForPack(pack ContextPack) missingContractCont
 		Fallback:       pack.FallbackRequired,
 		Retry:          pack.RetryAllowed,
 		SourceCoverage: pack.SourceCoverage,
+		SourcePaths:    sourcePaths,
+		SourceModes:    sourceModes,
 	}
 }
 
@@ -211,6 +274,23 @@ func contextHasUncertainty(pack ContextPack, scope string) bool {
 	return false
 }
 
+func contextSourcePathSet(pack ContextPack) map[string]bool {
+	result := make(map[string]bool, len(pack.SourceSections))
+	for _, section := range pack.SourceSections {
+		result[section.Path] = true
+	}
+	return result
+}
+
+func contextSourceContainsStableIdentity(pack ContextPack, value string) bool {
+	for _, section := range pack.SourceSections {
+		if strings.Contains(section.Content, value) {
+			return true
+		}
+	}
+	return false
+}
+
 func writeMissingContractContextFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -223,15 +303,22 @@ func writeMissingContractContextFixture(t *testing.T) string {
 			{ID: "catalog-repository", Project: "services/catalog", Kind: "persistence", Name: "deleteById", Qualified: "CatalogRepository.deleteById", File: "src/main/java/example/CatalogRepository.java", Line: 5, EndLine: 7, Confidence: "RESOLVED", Search: "delete catalog item persistence"},
 			{ID: "job-client", Project: "libraries/job-client", Kind: "symbol", Name: "listJobs", Qualified: "JobClient.listJobs", File: "src/main/java/example/JobClient.java", Line: 14, EndLine: 20, Confidence: "EXACT", Search: "job task client configuration authentication retry"},
 			{ID: "job-contract", Project: "libraries/job-client", Kind: "api_contract", Name: "GET /job-management/jobs", Qualified: "JobClient.listJobs", HTTPMethod: "GET", Path: "/job-management/jobs", File: "src/main/java/example/JobClient.java", Line: 16, EndLine: 18, Confidence: "RESOLVED", Search: "job task client contract"},
-			{ID: "job-config", Project: "libraries/job-client", Kind: "configuration", Name: "getAllJobsPath", Qualified: "JobClientConfig.getAllJobsPath", File: "src/main/java/example/JobClientConfig.java", Line: 10, EndLine: 13, Confidence: "EXACT", Search: "job task client configuration base url"},
-			{ID: "job-auth", Project: "libraries/job-client", Kind: "authentication", Name: "basicAuthentication", Qualified: "JobClientAuth.basicAuthentication", File: "src/main/java/example/JobClientAuth.java", Line: 7, EndLine: 10, Confidence: "EXACT", Search: "job task client basic authentication"},
-			{ID: "job-retry", Project: "libraries/job-client", Kind: "resilience", Name: "retryPolicy", Qualified: "JobClientRetry.retryPolicy", File: "src/main/java/example/JobClientRetry.java", Line: 7, EndLine: 12, Confidence: "EXACT", Search: "job task retry exception handling resilience"},
+			{ID: "job-config", Project: "libraries/job-client", Kind: "configuration", Name: "getAllJobsPath", Qualified: "JobClient.listJobs", File: "src/main/java/example/JobClient.java", Line: 14, EndLine: 20, Confidence: "EXACT", Search: "job task client configuration base url"},
+			{ID: "job-auth", Project: "libraries/job-client", Kind: "authentication", Name: "basicAuthentication", Qualified: "JobClient.listJobs", File: "src/main/java/example/JobClient.java", Line: 14, EndLine: 20, Confidence: "EXACT", Search: "job task client basic authentication"},
+			{ID: "job-retry", Project: "libraries/job-client", Kind: "resilience", Name: "retryPolicy", Qualified: "JobClient.listJobs", File: "src/main/java/example/JobClient.java", Line: 14, EndLine: 20, Confidence: "EXACT", Search: "job task retry exception handling resilience"},
 			{ID: "jobs-route", Project: "services/jobs", Kind: "route", Name: "GET /job-management/jobs", Qualified: "JobManagementController.listJobs", HTTPMethod: "GET", Path: "/job-management/jobs", File: "src/main/java/example/JobManagementController.java", Line: 10, EndLine: 14, Confidence: "EXACT", Search: "job task management endpoint"},
 			{ID: "jobs-service", Project: "services/jobs", Kind: "symbol", Name: "listJobs", Qualified: "JobService.listJobs", File: "src/main/java/example/JobService.java", Line: 12, EndLine: 18, Confidence: "EXACT", Search: "job task management service side effect"},
-			{ID: "jobs-finder", Project: "services/jobs", Kind: "persistence", Name: "findByCatalogIdAndItemId", Qualified: "JobRepository.findByCatalogIdAndItemId", File: "src/main/java/example/JobRepository.java", Line: 7, EndLine: 8, Confidence: "EXACT", Search: "job task catalog item finder persistence"},
-			{ID: "jobs-find-all", Project: "services/jobs", Kind: "persistence", Name: "findAll", Qualified: "JobRepository.findAll", File: "src/main/java/example/JobRepository.java", Line: 6, EndLine: 6, Confidence: "RESOLVED", Search: "job repository inherited find all persistence"},
+			{ID: "jobs-finder", Project: "services/jobs", Kind: "persistence", Name: "findByCatalogIdAndItemId", Qualified: "CatalogJobRepository.findByCatalogIdAndItemId", File: "src/main/java/example/CatalogJobRepository.java", Line: 7, EndLine: 9, Confidence: "EXACT", Search: "regular job task catalog item finder persistence"},
+			{ID: "jobs-find-all", Project: "services/jobs", Kind: "persistence", Name: "findAll", Qualified: "CatalogJobRepository.findAll", File: "src/main/java/example/CatalogJobRepository.java", Line: 6, EndLine: 6, Confidence: "RESOLVED", Search: "job repository inherited find all persistence"},
 			{ID: "jobs-side-effect", Project: "services/jobs", Kind: "symbol", Name: "publishDeletion", Qualified: "JobHousekeeping.publishDeletion", File: "src/main/java/example/JobHousekeeping.java", Line: 8, EndLine: 13, Confidence: "EXACT", Search: "job task deletion logging mail user information side effect"},
 			{ID: "jobs-test", Project: "services/jobs", Kind: "test", Name: "listJobs", Qualified: "JobManagementControllerTest.listJobs", File: "src/test/java/example/JobManagementControllerTest.java", Line: 10, EndLine: 18, Confidence: "EXACT", Search: "job task management test"},
+			{ID: "regular-job-model", Project: "services/jobs", Kind: "symbol", Name: "CatalogJobEntity", Qualified: "example.CatalogJobEntity", File: "src/main/java/example/CatalogJobEntity.java", Line: 8, EndLine: 12, Confidence: "EXACT", Search: "regular job task model catalogId itemId"},
+			{ID: "change-job-model", Project: "services/jobs", Kind: "symbol", Name: "CatalogChangeJobEntity", Qualified: "example.CatalogChangeJobEntity", File: "src/main/java/example/CatalogChangeJobEntity.java", Line: 8, EndLine: 12, Confidence: "EXACT", Search: "change job task model catalogId itemId changeId"},
+			{ID: "change-job-repository", Project: "services/jobs", Kind: "persistence", Name: "findByCatalogIdAndItemId", Qualified: "CatalogChangeJobRepository.findByCatalogIdAndItemId", File: "src/main/java/example/CatalogChangeJobRepository.java", Line: 7, EndLine: 9, Confidence: "EXACT", Search: "change job task catalog item persistence"},
+			{ID: "regular-comment-repository", Project: "services/jobs", Kind: "persistence", Name: "findByJobIdOrderByCreated", Qualified: "CatalogJobCommentRepository.findByJobIdOrderByCreated", File: "src/main/java/example/CatalogJobCommentRepository.java", Line: 7, EndLine: 8, Confidence: "EXACT", Search: "regular job comment dependency persistence"},
+			{ID: "generic-mail-properties", Project: "libraries/job-client", Kind: "configuration", Name: "MailProperties", Qualified: "example.MailProperties", File: "src/main/java/example/MailProperties.java", Line: 8, EndLine: 8, Confidence: "EXACT", Search: "mail configuration"},
+			{ID: "generic-async-handler", Project: "libraries/job-client", Kind: "resilience", Name: "AsyncExceptionHandler", Qualified: "example.AsyncExceptionHandler", File: "src/main/java/example/AsyncExceptionHandler.java", Line: 8, EndLine: 8, Confidence: "EXACT", Search: "exception handling resilience"},
+			{ID: "unrelated-topic-repository", Project: "services/catalog", Kind: "persistence", Name: "findTopic", Qualified: "CatalogTopicRepository.findTopic", File: "src/main/java/example/CatalogTopicRepository.java", Line: 7, EndLine: 8, Confidence: "EXACT", Search: "catalog topic persistence"},
 		},
 		Edges: []scan.AgentContextEdgeRecord{
 			{ID: "current-1", FromFactID: "catalog-route", ToFactID: "catalog-operations", Kind: "call", Confidence: "EXACT"},
@@ -253,5 +340,48 @@ func writeMissingContractContextFixture(t *testing.T) string {
 	for path, facts := range factsByPath {
 		writeContextSourceFile(t, root, path, crossServiceSource(".java", path, facts))
 	}
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("libraries/job-client", "src/main/java/example/JobClient.java"),
+		contextJobClientFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("services/jobs", "src/main/java/example/CatalogJobEntity.java"),
+		contextDomainModelFixtureSource("CatalogJobEntity", "", "catalogId", "itemId"),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("services/jobs", "src/main/java/example/CatalogChangeJobEntity.java"),
+		contextDomainModelFixtureSource("CatalogChangeJobEntity", "CatalogJobEntity", "catalogId", "itemId", "changeId"),
+	)
 	return root
+}
+
+func contextJobClientFixtureSource() string {
+	lines := numberedSourceLines(24)
+	lines[13] = "@Retryable(retryFor = JobClientException.class)"
+	lines[14] = "List<JobPayload> listJobs(String catalogId) {"
+	lines[15] = "  String path = configuration.getAllJobsPath();"
+	lines[16] = "  HttpHeaders headers = basicAuthentication(configuration.credentials());"
+	lines[17] = "  return restClient.get(path, headers, catalogId);"
+	lines[18] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextDomainModelFixtureSource(name, parent string, fields ...string) string {
+	lines := numberedSourceLines(20)
+	declaration := "class " + name
+	if parent != "" {
+		declaration += " extends " + parent
+	}
+	lines[7] = declaration + " {"
+	for index, field := range fields {
+		lines[8+index] = "  long " + field + ";"
+	}
+	lines[8+len(fields)] = "}"
+	return strings.Join(lines, "\n") + "\n"
 }
