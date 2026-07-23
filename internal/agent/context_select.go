@@ -915,7 +915,8 @@ func contextSourceSectionSupportsConcern(
 		return concern.kind == contextConcernTests
 	}
 
-	content := strings.ToLower(section.Content)
+	semanticContent := contextSourceSemanticContent(section.Content)
+	content := strings.ToLower(semanticContent)
 	switch concern.kind {
 	case contextConcernAuth:
 		return contextSourceContainsAny(content,
@@ -928,7 +929,7 @@ func contextSourceSectionSupportsConcern(
 			"securityfilterchain",
 		)
 	case contextConcernConfiguration:
-		return contextValueRequestsConcern(section.Content, contextConcernConfiguration) ||
+		return contextValueRequestsConcern(semanticContent, contextConcernConfiguration) ||
 			contextSourceContainsAny(content,
 				"@configurationproperties",
 				"@value(",
@@ -968,6 +969,20 @@ func contextSourceSectionSupportsConcern(
 	default:
 		return false
 	}
+}
+
+func contextSourceSemanticContent(content string) string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	for index, line := range lines {
+		prefix, source, found := strings.Cut(line, "\t")
+		if !found {
+			continue
+		}
+		if _, err := strconv.Atoi(strings.TrimSpace(prefix)); err == nil {
+			lines[index] = source
+		}
+	}
+	return strings.Join(sourceCodeMask(lines), "\n")
 }
 
 func contextSourceContainsAny(content string, values ...string) bool {

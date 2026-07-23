@@ -1390,6 +1390,23 @@ func TestContextSourceSectionSupportsOperationalConcerns(t *testing.T) {
 	}
 }
 
+func TestContextSourceSectionIgnoresOperationalMarkersOutsideCode(t *testing.T) {
+	section := ContextSourceSection{
+		Project: "services/jobs",
+		Path:    "JobService.java",
+		Role:    "call_chain",
+		Content: "10\t// @Retryable(maxAttempts = 3)\n" +
+			"11\tString example = \"protocolService.writeProtocol(id, text)\";\n" +
+			"12\tvoid deleteJob() {}",
+	}
+	for _, kind := range []string{contextConcernResilience, contextConcernSideEffects} {
+		concern := newContextConcern(kind, "services/jobs", true, nil, "")
+		if contextSourceSectionSupportsConcern(section, concern) {
+			t.Fatalf("non-code marker counted as %q evidence", kind)
+		}
+	}
+}
+
 func TestContextSourceConcernsKeepNonPublicPlannedDuplicatesOptional(t *testing.T) {
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 		{
