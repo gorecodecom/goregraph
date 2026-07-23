@@ -13,6 +13,7 @@ type javaPathIndex struct {
 type javaIndexedPathExpression struct {
 	expression string
 	constants  map[string]string
+	baseURLs   map[string]bool
 }
 
 func buildJavaAPIContracts(sources []JavaSourceRecord) []APIContractRecord {
@@ -90,41 +91,55 @@ func javaImperativeAPIContracts(source JavaSourceRecord, paths javaPathIndex) []
 			if !isBoundJavaSpringClient(request) {
 				continue
 			}
-			path, resolution := resolveJavaContractPath(request, source, method, paths)
-			record := APIContractRecord{
-				Language:   "java",
-				Package:    source.Package,
-				HTTPMethod: request.HTTPMethod,
-				Path:       path,
-				RawPath:    strings.TrimSpace(request.PathExpression),
-				Auth:       javaClientAuthentication(source, method),
-				Caller:     method.Owner + "." + method.Name,
-				File:       source.File,
-				Line:       request.Line,
+			alternatives, resolution := resolveJavaContractPaths(request, source, method, paths)
+			if len(alternatives) == 0 {
+				alternatives = []string{""}
 			}
-			switch resolution {
-			case "getter":
-				record.Confidence = "RESOLVED"
-				record.ConfidenceScore = 0.9
-				record.Reason = fmt.Sprintf("spring %s receiver with statically resolved path getter", request.ClientKind)
-			case "resolved":
-				record.Confidence = "RESOLVED"
-				record.ConfidenceScore = 0.9
-				record.Reason = fmt.Sprintf("spring %s receiver with statically resolved path expression", request.ClientKind)
-			case "exact":
-				record.Confidence = "EXACT"
-				record.ConfidenceScore = 1
-				record.Reason = fmt.Sprintf("spring %s receiver with statically resolved path", request.ClientKind)
-			default:
-				record.UnsafeDynamic = true
-				record.Confidence = "PARTIAL"
-				record.ConfidenceScore = 0.5
-				record.Reason = fmt.Sprintf("spring %s receiver with unresolved dynamic path", request.ClientKind)
+			for _, alternative := range alternatives {
+				path, query := "", ""
+				var queryParams []QueryParamRecord
+				unsafeDynamic := false
+				if strings.TrimSpace(alternative) != "" {
+					path, query, queryParams, unsafeDynamic = normalizeAPIPathDetails(alternative)
+				}
+				record := APIContractRecord{
+					Language:    "java",
+					Package:     source.Package,
+					HTTPMethod:  request.HTTPMethod,
+					Path:        path,
+					RawPath:     strings.TrimSpace(request.PathExpression),
+					Query:       query,
+					QueryParams: queryParams,
+					Auth:        javaClientAuthentication(source, method),
+					Caller:      method.Owner + "." + method.Name,
+					File:        source.File,
+					Line:        request.Line,
+				}
+				switch resolution {
+				case "getter":
+					record.Confidence = "RESOLVED"
+					record.ConfidenceScore = 0.9
+					record.Reason = fmt.Sprintf("spring %s receiver with statically resolved path getter", request.ClientKind)
+				case "resolved":
+					record.Confidence = "RESOLVED"
+					record.ConfidenceScore = 0.9
+					record.Reason = fmt.Sprintf("spring %s receiver with statically resolved path expression", request.ClientKind)
+				case "exact":
+					record.Confidence = "EXACT"
+					record.ConfidenceScore = 1
+					record.Reason = fmt.Sprintf("spring %s receiver with statically resolved path", request.ClientKind)
+				default:
+					record.UnsafeDynamic = true
+					record.Confidence = "PARTIAL"
+					record.ConfidenceScore = 0.5
+					record.Reason = fmt.Sprintf("spring %s receiver with unresolved dynamic path", request.ClientKind)
+				}
+				record.UnsafeDynamic = record.UnsafeDynamic || unsafeDynamic
+				if javaMethodIsRetryable(source, method) {
+					record.Reason += "; retryable method"
+				}
+				records = append(records, record)
 			}
-			if javaMethodIsRetryable(source, method) {
-				record.Reason += "; retryable method"
-			}
-			records = append(records, record)
 		}
 	}
 	return records
@@ -141,6 +156,7 @@ func buildJavaPathIndex(sources []JavaSourceRecord) javaPathIndex {
 			index.getters[key] = append(index.getters[key], javaIndexedPathExpression{
 				expression: strings.TrimSpace(method.ReturnExpression),
 				constants:  source.Constants,
+				baseURLs:   javaConfigurationBaseURLExpressions(source, method),
 			})
 		}
 	}
@@ -193,6 +209,12 @@ func sortAPIContracts(records []APIContractRecord) {
 		}
 		if left.Path != right.Path {
 			return left.Path < right.Path
+		}
+		if left.Query != right.Query {
+			return left.Query < right.Query
+		}
+		if javaQueryParamsKey(left.QueryParams) != javaQueryParamsKey(right.QueryParams) {
+			return javaQueryParamsKey(left.QueryParams) < javaQueryParamsKey(right.QueryParams)
 		}
 		if left.Caller != right.Caller {
 			return left.Caller < right.Caller
@@ -320,48 +342,282 @@ func isBoundJavaSpringClient(request JavaHTTPCallRecord) bool {
 	}
 }
 
-func resolveJavaContractPath(request JavaHTTPCallRecord, source JavaSourceRecord, method JavaMethodRecord, paths javaPathIndex) (string, string) {
+func resolveJavaContractPaths(request JavaHTTPCallRecord, source JavaSourceRecord, method JavaMethodRecord, paths javaPathIndex) ([]string, string) {
 	expression := strings.TrimSpace(request.PathExpression)
 	if expression == "" && request.Path != "" {
-		return normalizeAPIPath(request.Path), "exact"
+		return []string{request.Path}, "exact"
 	}
 	if value, ok := method.StringVars[expression]; ok {
-		return normalizeAPIPath(value), "exact"
+		return []string{value}, "exact"
 	}
 	if value, ok := source.Constants[expression]; ok {
-		return normalizeAPIPath(value), "exact"
+		return []string{value}, "exact"
 	}
 	if value, ok := method.StringExpressions[expression]; ok {
-		if path, ok := javaResolvedPathExpression(value, source.Constants, method.StringExpressions, javaConfigurationBaseURLExpressions(source, method), 0); ok {
-			return normalizeAPIPath(path), "resolved"
+		if alternatives := javaRequestPathAlternatives(value, source, method, paths, 0); len(alternatives) > 0 {
+			return alternatives, "resolved"
 		}
 	}
 	if receiver, getter, ok := javaZeroArgumentGetterCall(expression); ok {
-		receiverType := javaDeclaredReceiverType(source, method, receiver)
-		if candidates := paths.getters[javaGetterIndexKey(receiverType, getter)]; receiverType != "" && len(candidates) == 1 {
-			if path, ok := javaResolvedPathExpression(candidates[0].expression, candidates[0].constants, nil, nil, 0); ok {
-				return normalizeAPIPath(path), "getter"
-			}
+		if alternatives := javaGetterPathAlternatives(receiver, getter, source, method, paths, 0); len(alternatives) > 0 {
+			return alternatives, "getter"
 		}
-		return "", "partial"
+		return nil, "partial"
 	}
 	if len(splitTopLevel(expression, '+')) > 1 {
-		if path, ok := javaResolvedPathExpression(expression, source.Constants, method.StringExpressions, javaConfigurationBaseURLExpressions(source, method), 0); ok {
-			return normalizeAPIPath(path), "resolved"
+		if alternatives := javaResolvedPathAlternatives(
+			expression,
+			source.Constants,
+			method.StringExpressions,
+			javaConfigurationBaseURLExpressions(source, method),
+			0,
+		); len(alternatives) > 0 {
+			return alternatives, "resolved"
 		}
-		return "", "partial"
+		return nil, "partial"
 	}
 	if request.Path != "" {
 		resolution := "exact"
 		if strings.Contains(request.Path, "{dynamic}") {
 			resolution = "resolved"
 		}
-		return normalizeAPIPath(request.Path), resolution
+		return []string{request.Path}, resolution
 	}
-	if path, ok := javaResolvedPathExpression(expression, source.Constants, method.StringExpressions, javaConfigurationBaseURLExpressions(source, method), 0); ok {
-		return normalizeAPIPath(path), "resolved"
+	if alternatives := javaRequestPathAlternatives(expression, source, method, paths, 0); len(alternatives) > 0 {
+		return alternatives, "resolved"
 	}
-	return "", "partial"
+	return nil, "partial"
+}
+
+func javaRequestPathAlternatives(
+	expression string,
+	source JavaSourceRecord,
+	method JavaMethodRecord,
+	paths javaPathIndex,
+	depth int,
+) []string {
+	if depth > 8 {
+		return nil
+	}
+	expression = strings.TrimSpace(expression)
+	if value, ok := method.StringExpressions[expression]; ok && strings.TrimSpace(value) != expression {
+		return javaRequestPathAlternatives(value, source, method, paths, depth+1)
+	}
+	if branches, ok := javaTernaryBranches(expression); ok {
+		alternatives := make([]string, 0, len(branches))
+		for _, branch := range branches {
+			alternatives = append(alternatives, javaRequestPathAlternatives(branch, source, method, paths, depth+1)...)
+			if len(alternatives) > 4 {
+				return nil
+			}
+		}
+		return javaUniquePathAlternatives(alternatives)
+	}
+	if javaTopLevelTernaryQuestion(expression) >= 0 {
+		return nil
+	}
+	if receiver, getter, ok := javaZeroArgumentGetterCall(expression); ok {
+		return javaGetterPathAlternatives(receiver, getter, source, method, paths, depth+1)
+	}
+	return javaResolvedPathAlternatives(
+		expression,
+		source.Constants,
+		method.StringExpressions,
+		javaConfigurationBaseURLExpressions(source, method),
+		depth+1,
+	)
+}
+
+func javaGetterPathAlternatives(
+	receiver string,
+	getter string,
+	source JavaSourceRecord,
+	method JavaMethodRecord,
+	paths javaPathIndex,
+	depth int,
+) []string {
+	receiverType := javaDeclaredReceiverType(source, method, receiver)
+	candidates := paths.getters[javaGetterIndexKey(receiverType, getter)]
+	if receiverType == "" || len(candidates) != 1 {
+		return nil
+	}
+	candidate := candidates[0]
+	return javaResolvedPathAlternatives(
+		candidate.expression,
+		candidate.constants,
+		nil,
+		candidate.baseURLs,
+		depth+1,
+	)
+}
+
+func javaResolvedPathAlternatives(
+	expression string,
+	constants, locals map[string]string,
+	baseURLs map[string]bool,
+	depth int,
+) []string {
+	if depth > 8 {
+		return nil
+	}
+	expression = strings.TrimSpace(expression)
+	if value, ok := locals[expression]; ok && strings.TrimSpace(value) != expression {
+		return javaResolvedPathAlternatives(value, constants, locals, baseURLs, depth+1)
+	}
+	if branches, ok := javaTernaryBranches(expression); ok {
+		alternatives := make([]string, 0, len(branches))
+		for _, branch := range branches {
+			alternatives = append(alternatives, javaResolvedPathAlternatives(branch, constants, locals, baseURLs, depth+1)...)
+			if len(alternatives) > 4 {
+				return nil
+			}
+		}
+		return javaUniquePathAlternatives(alternatives)
+	}
+	if javaTopLevelTernaryQuestion(expression) >= 0 {
+		return nil
+	}
+	if path, ok := javaResolvedPathExpression(expression, constants, locals, baseURLs, depth+1); ok {
+		return []string{path}
+	}
+	return nil
+}
+
+func javaTernaryBranches(expression string) ([]string, bool) {
+	question := javaTopLevelTernaryQuestion(expression)
+	if question < 0 {
+		return nil, false
+	}
+	parentheses, braces, brackets := 0, 0, 0
+	nestedTernaries := 0
+	quote := byte(0)
+	escaped := false
+	for index := question + 1; index < len(expression); index++ {
+		current := expression[index]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if current == '\\' {
+				escaped = true
+				continue
+			}
+			if current == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch current {
+		case '\'', '"':
+			quote = current
+		case '(':
+			parentheses++
+		case ')':
+			if parentheses > 0 {
+				parentheses--
+			}
+		case '{':
+			braces++
+		case '}':
+			if braces > 0 {
+				braces--
+			}
+		case '[':
+			brackets++
+		case ']':
+			if brackets > 0 {
+				brackets--
+			}
+		case '?':
+			if parentheses == 0 && braces == 0 && brackets == 0 {
+				nestedTernaries++
+			}
+		case ':':
+			if parentheses != 0 || braces != 0 || brackets != 0 {
+				continue
+			}
+			if nestedTernaries > 0 {
+				nestedTernaries--
+				continue
+			}
+			left := strings.TrimSpace(expression[question+1 : index])
+			right := strings.TrimSpace(expression[index+1:])
+			if left == "" || right == "" {
+				return nil, false
+			}
+			return []string{left, right}, true
+		}
+	}
+	return nil, false
+}
+
+func javaTopLevelTernaryQuestion(expression string) int {
+	parentheses, braces, brackets := 0, 0, 0
+	quote := byte(0)
+	escaped := false
+	for index := 0; index < len(expression); index++ {
+		current := expression[index]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if current == '\\' {
+				escaped = true
+				continue
+			}
+			if current == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch current {
+		case '\'', '"':
+			quote = current
+		case '(':
+			parentheses++
+		case ')':
+			if parentheses > 0 {
+				parentheses--
+			}
+		case '{':
+			braces++
+		case '}':
+			if braces > 0 {
+				braces--
+			}
+		case '[':
+			brackets++
+		case ']':
+			if brackets > 0 {
+				brackets--
+			}
+		case '?':
+			if parentheses == 0 && braces == 0 && brackets == 0 {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+func javaUniquePathAlternatives(values []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ReplaceAll(strings.TrimSpace(value), "//", "/")
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	if len(result) > 4 {
+		return nil
+	}
+	return result
 }
 
 func javaResolvedPathExpression(expression string, constants, locals map[string]string, baseURLs map[string]bool, depth int) (string, bool) {
@@ -430,11 +686,23 @@ func javaConfigurationBaseURLExpressions(source JavaSourceRecord, method JavaMet
 	result := map[string]bool{}
 	valueImported := javaHasImport(source.Imports, "org.springframework.beans.factory.annotation.Value")
 	configurationPropertiesImported := javaHasImport(source.Imports, "org.springframework.boot.context.properties.ConfigurationProperties")
+	configurationOwner := false
+	if configurationPropertiesImported {
+		for _, javaType := range source.Types {
+			if javaType.Name == method.Owner && javaAnnotationsContain(javaType.Annotations, "ConfigurationProperties") {
+				configurationOwner = true
+				break
+			}
+		}
+	}
 	for _, field := range source.Fields {
-		if field.Owner != method.Owner || !javaHasImportedConfigurationAnnotation(field.Annotations, valueImported, configurationPropertiesImported) {
+		if field.Owner != method.Owner {
 			continue
 		}
-		result[field.Name] = true
+		if javaHasImportedConfigurationAnnotation(field.Annotations, valueImported, configurationPropertiesImported) ||
+			configurationOwner && javaConfigurationBaseURLField(field) {
+			result[field.Name] = true
+		}
 	}
 	for _, parameter := range method.Parameters {
 		if javaHasImportedConfigurationAnnotation(parameter.Annotations, valueImported, configurationPropertiesImported) {
@@ -442,6 +710,12 @@ func javaConfigurationBaseURLExpressions(source JavaSourceRecord, method JavaMet
 		}
 	}
 	return result
+}
+
+func javaConfigurationBaseURLField(field JavaFieldRecord) bool {
+	name := strings.ToLower(strings.TrimSpace(field.Name))
+	return !field.Final && cleanJavaType(field.Type) == "String" &&
+		(strings.Contains(name, "baseurl") || strings.Contains(name, "base_url") || name == "url")
 }
 
 func javaHasImportedConfigurationAnnotation(annotations []JavaAnnotationRecord, valueImported, configurationPropertiesImported bool) bool {
@@ -560,7 +834,18 @@ func dedupeJavaAPIContracts(records []APIContractRecord) []APIContractRecord {
 	result := make([]APIContractRecord, 0, len(records))
 	seen := map[string]bool{}
 	for _, record := range records {
-		key := fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%s", record.File, record.Line, record.HTTPMethod, record.Path, record.RawPath, record.Caller, record.Reason)
+		key := fmt.Sprintf(
+			"%s\x00%d\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s",
+			record.File,
+			record.Line,
+			record.HTTPMethod,
+			record.Path,
+			record.RawPath,
+			record.Query,
+			javaQueryParamsKey(record.QueryParams),
+			record.Caller,
+			record.Reason,
+		)
 		if seen[key] {
 			continue
 		}
@@ -568,4 +853,13 @@ func dedupeJavaAPIContracts(records []APIContractRecord) []APIContractRecord {
 		result = append(result, record)
 	}
 	return result
+}
+
+func javaQueryParamsKey(params []QueryParamRecord) string {
+	parts := make([]string, 0, len(params))
+	for _, param := range params {
+		parts = append(parts, param.Name+"="+param.Value)
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, "&")
 }

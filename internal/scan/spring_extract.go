@@ -505,12 +505,9 @@ func catalogUniqueSortedStrings(values []string) []string {
 func buildSpringIndex(sources []JavaSourceRecord) SpringIndex {
 	typeByName := map[string]JavaTypeRecord{}
 	fileByType := map[string]string{}
-	constants := map[string]string{}
+	constants := springConstantIndex(sources)
 	securitySchemes := openAPISecuritySchemes(sources)
 	for _, source := range sources {
-		for name, value := range source.Constants {
-			constants[name] = value
-		}
 		for _, typ := range source.Types {
 			typeByName[typ.Name] = typ
 			fileByType[typ.Name] = typ.File
@@ -584,6 +581,72 @@ func buildSpringIndex(sources []JavaSourceRecord) SpringIndex {
 	applyGlobalSpringAuth(&index, springGlobalAuthRecords(sources))
 	sortSpringIndex(&index)
 	return index
+}
+
+func springConstantIndex(sources []JavaSourceRecord) map[string]string {
+	type constantDeclaration struct {
+		name      string
+		owner     string
+		qualified string
+		value     string
+	}
+	ordered := append([]JavaSourceRecord(nil), sources...)
+	sort.Slice(ordered, func(left, right int) bool {
+		if ordered[left].File != ordered[right].File {
+			return ordered[left].File < ordered[right].File
+		}
+		return ordered[left].Package < ordered[right].Package
+	})
+
+	declarations := make([]constantDeclaration, 0)
+	seen := map[string]bool{}
+	for _, source := range ordered {
+		fields := append([]JavaFieldRecord(nil), source.Fields...)
+		sort.Slice(fields, func(left, right int) bool {
+			if fields[left].Owner != fields[right].Owner {
+				return fields[left].Owner < fields[right].Owner
+			}
+			return fields[left].Name < fields[right].Name
+		})
+		for _, field := range fields {
+			value, ok := source.Constants[field.Name]
+			if !ok || strings.TrimSpace(field.Owner) == "" {
+				continue
+			}
+			qualified := field.Owner + "." + field.Name
+			if source.Package != "" {
+				qualified = source.Package + "." + qualified
+			}
+			key := qualified + "\x00" + value
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			declarations = append(declarations, constantDeclaration{
+				name: field.Name, owner: field.Owner, qualified: qualified, value: value,
+			})
+		}
+	}
+	sort.Slice(declarations, func(left, right int) bool {
+		if declarations[left].qualified != declarations[right].qualified {
+			return declarations[left].qualified < declarations[right].qualified
+		}
+		return declarations[left].value < declarations[right].value
+	})
+
+	nameCounts := map[string]int{}
+	for _, declaration := range declarations {
+		nameCounts[declaration.name]++
+	}
+	result := map[string]string{}
+	for _, declaration := range declarations {
+		result[declaration.owner+"."+declaration.name] = declaration.value
+		result[declaration.qualified] = declaration.value
+		if nameCounts[declaration.name] == 1 {
+			result[declaration.name] = declaration.value
+		}
+	}
+	return result
 }
 
 func springComponentKind(annotations []JavaAnnotationRecord) string {

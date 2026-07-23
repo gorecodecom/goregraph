@@ -25,6 +25,7 @@ var (
 	javaHTTPChainReceiverRE   = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$`)
 	javaStringLiteralRE       = regexp.MustCompile(`"([^"]*)"`)
 	javaStringVarLineRE       = regexp.MustCompile(`^\s*(?:final\s+)?String\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);\s*$`)
+	javaStringVarStartRE      = regexp.MustCompile(`^(?:final\s+)?String\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$`)
 	javaLocalTypeLineRE       = regexp.MustCompile(`^\s*(?:final\s+)?([A-Za-z_][A-Za-z0-9_$.<>?, ]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*.+;\s*$`)
 	javaReturnExpressionRE    = regexp.MustCompile(`^\s*return\s+(.+);\s*$`)
 	javaSecurityCallRE        = regexp.MustCompile(`\.(permitAll|authenticated|hasRole|hasAnyRole|hasAuthority|hasAnyAuthority|httpBasic|oauth2ResourceServer|oauth2Login|formLogin|x509)\s*\(([^)]*)\)`)
@@ -173,7 +174,10 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			if match := javaReturnExpressionRE.FindStringSubmatch(strings.TrimSpace(literalLines[index])); len(match) == 2 {
 				last.ReturnExpression = strings.TrimSpace(match[1])
 			}
-			last.StringExpressions = mergeJavaStringExpressions(last.StringExpressions, extractJavaStringExpression(strings.TrimSpace(literalLines[index])))
+			last.StringExpressions = mergeJavaStringExpressions(
+				last.StringExpressions,
+				extractJavaStringExpressionAt(literalLines, index),
+			)
 			last.StringVars = mergeJavaStringVars(last.StringVars, extractJavaStringVars(strings.TrimSpace(literalLines[index])))
 			last.ConstructedTypes = append(last.ConstructedTypes, extractJavaConstructedTypes(lexicalLines[index])...)
 			last.Calls = append(last.Calls, extractJavaCallsWithSource(lexicalLines[index], literalLines[index], lineNo)...)
@@ -1258,6 +1262,34 @@ func extractJavaStringExpression(line string) map[string]string {
 		return nil
 	}
 	return map[string]string{match[1]: strings.TrimSpace(match[2])}
+}
+
+func extractJavaStringExpressionAt(lines []string, index int) map[string]string {
+	if index < 0 || index >= len(lines) {
+		return nil
+	}
+	if expression := extractJavaStringExpression(strings.TrimSpace(lines[index])); expression != nil {
+		return expression
+	}
+	start := strings.TrimSpace(lines[index])
+	match := javaStringVarStartRE.FindStringSubmatch(start)
+	if len(match) != 3 || strings.HasSuffix(start, ";") {
+		return nil
+	}
+	name := match[1]
+	parts := []string{strings.TrimSpace(match[2])}
+	for lineIndex := index + 1; lineIndex < len(lines) && lineIndex <= index+11; lineIndex++ {
+		line := strings.TrimSpace(lines[lineIndex])
+		if line == "" {
+			continue
+		}
+		complete := strings.HasSuffix(line, ";")
+		parts = append(parts, strings.TrimSpace(strings.TrimSuffix(line, ";")))
+		if complete {
+			return map[string]string{name: strings.TrimSpace(strings.Join(parts, " "))}
+		}
+	}
+	return nil
 }
 
 func mergeJavaStringExpressions(existing, next map[string]string) map[string]string {

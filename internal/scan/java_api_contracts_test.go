@@ -288,6 +288,161 @@ class AlternatePathProvider {
 	}
 }
 
+func TestBuildSpringIndexResolvesQualifiedCrossFileConstants(t *testing.T) {
+	routes := extractJavaSource(FileRecord{Path: "src/main/java/example/Routes.java", Language: "java"}, `package example;
+final class Routes {
+  static final String BASE_PATH = "/job-management";
+}`)
+	controller := extractJavaSource(FileRecord{Path: "src/main/java/example/JobController.java", Language: "java"}, `package example;
+@RestController
+@RequestMapping(Routes.BASE_PATH)
+final class JobController {
+  @GetMapping("/jobs")
+  List<Job> listJobs() { return List.of(); }
+}`)
+
+	index := buildSpringIndex([]JavaSourceRecord{controller, routes})
+	endpoint, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/job-management/jobs")
+	if !ok || endpoint.Controller != "JobController" {
+		t.Fatalf("qualified cross-file route was not resolved: %#v", index.Endpoints)
+	}
+}
+
+func TestSpringConstantIndexOmitsAmbiguousSimpleAliases(t *testing.T) {
+	first := extractJavaSource(FileRecord{Path: "src/main/java/one/Routes.java", Language: "java"}, `package one;
+final class Routes {
+  static final String BASE_PATH = "/one";
+}`)
+	second := extractJavaSource(FileRecord{Path: "src/main/java/two/Paths.java", Language: "java"}, `package two;
+final class Paths {
+  static final String BASE_PATH = "/two";
+}`)
+
+	constants := springConstantIndex([]JavaSourceRecord{second, first})
+	if _, exists := constants["BASE_PATH"]; exists {
+		t.Fatalf("ambiguous simple constant alias was retained: %#v", constants)
+	}
+	if constants["Routes.BASE_PATH"] != "/one" || constants["one.Routes.BASE_PATH"] != "/one" ||
+		constants["Paths.BASE_PATH"] != "/two" || constants["two.Paths.BASE_PATH"] != "/two" {
+		t.Fatalf("qualified constant aliases = %#v", constants)
+	}
+}
+
+func TestJavaImperativeContractResolvesConfigurationGetterBaseURL(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `package example;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.web.client.RestClient;
+
+@ConfigurationProperties("jobs")
+final class JobClientConfig {
+  String baseUrl;
+  static final String BASE_PATH = "/job-management";
+  static final String ALL_JOBS = "/jobs";
+
+  String getAllJobsPath() {
+    return baseUrl + BASE_PATH + ALL_JOBS;
+  }
+}
+
+final class JobClient {
+  private final JobClientConfig config;
+  private final RestClient restClient;
+
+  void list() {
+    restClient.get().uri(config.getAllJobsPath()).retrieve();
+  }
+}`)
+
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 || records[0].Path != "/job-management/jobs" ||
+		records[0].Query != "" || records[0].Confidence != "RESOLVED" {
+		t.Fatalf("configuration getter contracts = %#v", records)
+	}
+}
+
+func TestJavaImperativeContractResolvesBoundedTernaryLocal(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `package example;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.web.client.RestClient;
+
+@ConfigurationProperties("jobs")
+final class JobClientConfig {
+  String baseUrl;
+  static final String BASE_PATH = "/job-management";
+  static final String ALL_JOBS = "/jobs";
+  static final String ACTIVE_JOBS = "/jobs?status=active";
+
+  String getAllJobsPath() {
+    return baseUrl + BASE_PATH + ALL_JOBS;
+  }
+
+  String getActiveJobsPath() {
+    return baseUrl + BASE_PATH + ACTIVE_JOBS;
+  }
+}
+
+final class JobClient {
+  private final JobClientConfig config;
+  private final RestClient restClient;
+
+  void list(String status) {
+    String url = status.isEmpty()
+        ? config.getAllJobsPath()
+        : config.getActiveJobsPath();
+    restClient.get().uri(url).retrieve();
+  }
+}`)
+
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 2 {
+		t.Fatalf("bounded ternary contracts = %#v, want two", records)
+	}
+	wantQueries := map[string]bool{"": true, "status=active": true}
+	for _, record := range records {
+		if record.Path != "/job-management/jobs" || record.Confidence != "RESOLVED" ||
+			!wantQueries[record.Query] {
+			t.Fatalf("bounded ternary contract = %#v", record)
+		}
+		delete(wantQueries, record.Query)
+	}
+	if len(wantQueries) != 0 {
+		t.Fatalf("missing ternary query alternatives: %#v", wantQueries)
+	}
+}
+
+func TestJavaImperativeContractResolvesDistinctTernaryPaths(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
+final class JobClient {
+  private final RestClient restClient;
+  void list(boolean jobs) {
+    String url = jobs ? "/jobs" : "/tasks";
+    restClient.get().uri(url).retrieve();
+  }
+}`)
+
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 2 || records[0].Path != "/jobs" || records[1].Path != "/tasks" {
+		t.Fatalf("distinct ternary paths = %#v", records)
+	}
+}
+
+func TestJavaImperativeContractRejectsMoreThanFourTernaryAlternatives(t *testing.T) {
+	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
+final class JobClient {
+  private final RestClient restClient;
+  void list(boolean one, boolean two, boolean three, boolean four) {
+    String url = one ? "/one" : two ? "/two" : three ? "/three" : four ? "/four" : "/five";
+    restClient.get().uri(url).retrieve();
+  }
+}`)
+
+	records := buildJavaAPIContracts([]JavaSourceRecord{source})
+	if len(records) != 1 || records[0].Path != "" ||
+		records[0].Confidence != "PARTIAL" || !records[0].UnsafeDynamic {
+		t.Fatalf("unbounded ternary was resolved: %#v", records)
+	}
+}
+
 func TestBuildJavaAPIContractsResolvesConstantConcatenation(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestTemplate;
 class JobClient {
