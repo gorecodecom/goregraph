@@ -99,7 +99,9 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 				role = contextConcernDomainModel
 			case contractIDs[id] || strings.EqualFold(fact.Kind, "api_contract"):
 				role = "contract"
-			case persistenceIDs[id] || normalizedContextConcernKind(fact.Kind) == contextConcernPersistence:
+			case persistenceIDs[id] ||
+				normalizedContextConcernKind(fact.Kind) == contextConcernPersistence ||
+				contextPersistenceOwnerFact(fact):
 				role = "persistence"
 			}
 		}
@@ -181,10 +183,10 @@ func contextSourceCandidatesForConcerns(
 		aliases,
 		explicitProjects,
 	)
+	requestedModelIDs := contextRequestedDomainModelIDs(pack, index)
 	anchorTokens := contextSourceAnchorTokens(pack, factByID)
 	for _, concern := range concerns {
-		if !concern.required ||
-			concern.kind == contextConcernEntrypoint ||
+		if concern.kind == contextConcernEntrypoint ||
 			concern.kind == contextConcernPrimaryPath ||
 			concern.kind == contextConcernProject {
 			continue
@@ -206,6 +208,25 @@ func contextSourceCandidatesForConcerns(
 		if len(domainFacts) > 0 {
 			facts = domainFacts
 		}
+		bestBySource := make(map[string]scan.AgentContextFactRecord, len(facts))
+		for _, fact := range facts {
+			key := normalizeContextProject(fact.Project) + "\x00" + contextPackSourceFile(fact.File)
+			current, found := bestBySource[key]
+			if !found || contextSourceConcernFactLess(
+				fact,
+				current,
+				concern,
+				contextSelectionQuery(pack),
+				anchorTokens,
+				index,
+			) {
+				bestBySource[key] = fact
+			}
+		}
+		facts = facts[:0]
+		for _, fact := range bestBySource {
+			facts = append(facts, fact)
+		}
 		sort.Slice(facts, func(left, right int) bool {
 			return contextSourceConcernFactLess(
 				facts[left],
@@ -213,14 +234,37 @@ func contextSourceCandidatesForConcerns(
 				concern,
 				contextSelectionQuery(pack),
 				anchorTokens,
+				index,
 			)
 		})
 		limit := len(facts)
 		if limit > maximumContextSourceConcernCandidates {
 			limit = maximumContextSourceConcernCandidates
 		}
+		selectedForConcern := make(map[string]bool, limit+2)
 		for _, fact := range facts[:limit] {
 			selected[fact.ID] = true
+			selectedForConcern[fact.ID] = true
+		}
+		if concern.kind == contextConcernPersistence {
+			paired := 0
+			for _, fact := range facts {
+				if selectedForConcern[fact.ID] ||
+					!contextPersistenceFactMatchesRequestedDomainModel(
+						pack,
+						index,
+						fact,
+						requestedModelIDs,
+					) {
+					continue
+				}
+				selected[fact.ID] = true
+				selectedForConcern[fact.ID] = true
+				paired++
+				if paired == 2 {
+					break
+				}
+			}
 		}
 	}
 
@@ -283,9 +327,10 @@ func contextSourceConcernFactLess(
 	concern contextConcern,
 	query string,
 	anchorTokens map[string]bool,
+	index scan.AgentContextIndexRecord,
 ) bool {
-	leftScore := contextSourceConcernFactScore(left, concern, query, anchorTokens)
-	rightScore := contextSourceConcernFactScore(right, concern, query, anchorTokens)
+	leftScore := contextSourceConcernFactScoreWithIndex(left, concern, query, anchorTokens, index)
+	rightScore := contextSourceConcernFactScoreWithIndex(right, concern, query, anchorTokens, index)
 	if leftScore != rightScore {
 		return leftScore > rightScore
 	}
@@ -307,7 +352,35 @@ func contextSourceConcernFactScore(
 	query string,
 	anchorTokens map[string]bool,
 ) int {
+	return contextSourceConcernFactScoreWithIndex(
+		fact,
+		concern,
+		query,
+		anchorTokens,
+		scan.AgentContextIndexRecord{},
+	)
+}
+
+func contextSourceConcernFactScoreWithIndex(
+	fact scan.AgentContextFactRecord,
+	concern contextConcern,
+	query string,
+	anchorTokens map[string]bool,
+	index scan.AgentContextIndexRecord,
+) int {
 	score := 10 * contextRetrySemanticScore(fact, query)
+	domainTokens := make(map[string]bool)
+	for token := range contextConcernDomainQueryTokens(contextExpandedTokenSet(query)) {
+		domainTokens[token] = true
+	}
+	for token := range contextTokenSet(concern.project) {
+		delete(domainTokens, token)
+	}
+	score += 80 * contextStableFactIdentityMatchCount(fact, domainTokens)
+	if concern.kind == contextConcernPersistence &&
+		contextPersistenceMatchesPrimaryDomainModel(index, fact, domainTokens) {
+		score += 260
+	}
 	factKind := normalizedContextConcernKind(fact.Kind)
 	if factKind == concern.kind {
 		score += 100
@@ -335,6 +408,15 @@ func contextSourceConcernFactScore(
 	}
 	if contextGenericPersistenceFact(fact) {
 		score -= 30
+	}
+	if concern.kind == contextConcernPersistence && contextPersistenceOwnerFact(fact) {
+		score += 100
+	}
+	if concern.kind == contextConcernPersistence && contextDomainModelDependencyFact(fact) {
+		score -= 60
+	}
+	if concern.kind == contextConcernPersistence && contextPersistenceDerivedOwnerFact(fact) {
+		score -= 60
 	}
 	factTokens := contextExpandedTokenSet(strings.Join([]string{
 		fact.Name,
@@ -503,15 +585,23 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 
 	declaration := sourceOccurrence{}
 	state := ""
+	indexedDeclarations := make([]sourceOccurrence, 0)
+	exactIndexedDeclarations := make([]sourceOccurrence, 0, 1)
 	for _, occurrence := range declarations {
 		if occurrence.Line < indexedStart || occurrence.Line > indexedEnd {
 			continue
 		}
-		if state != "" {
-			state = ""
-			break
+		indexedDeclarations = append(indexedDeclarations, occurrence)
+		if occurrence.Line == candidate.StartLine {
+			exactIndexedDeclarations = append(exactIndexedDeclarations, occurrence)
 		}
-		declaration = occurrence
+	}
+	switch {
+	case len(exactIndexedDeclarations) == 1:
+		declaration = exactIndexedDeclarations[0]
+		state = "indexed_range_current"
+	case len(indexedDeclarations) == 1:
+		declaration = indexedDeclarations[0]
 		state = "indexed_range_current"
 	}
 	if state == "" && len(declarations) == 1 {

@@ -3,6 +3,7 @@ package agent
 import (
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gorecodecom/goregraph/internal/scan"
@@ -31,6 +32,7 @@ type contextConcern struct {
 	required         bool
 	candidateFactIDs []string
 	reason           string
+	rank             int
 }
 
 func planContextConcerns(
@@ -116,13 +118,21 @@ func planContextConcerns(
 				if len(candidates) == 0 {
 					continue
 				}
-				concerns = append(concerns, newContextConcern(
+				concern := newContextConcern(
 					kind,
 					project,
 					true,
 					candidates,
 					"requested adjacent "+strings.ReplaceAll(kind, "_", " ")+" evidence",
-				))
+				)
+				concern.rank = contextScopedConcernRank(
+					query,
+					project,
+					kind,
+					candidates,
+					index.Facts,
+				)
+				concerns = append(concerns, concern)
 				scopedConcernKinds[kind] = true
 			}
 		}
@@ -220,7 +230,50 @@ func contextConcernLess(left, right contextConcern) bool {
 	if leftPriority != rightPriority {
 		return leftPriority < rightPriority
 	}
+	if left.kind == right.kind && left.rank != right.rank {
+		return left.rank > right.rank
+	}
 	return left.key < right.key
+}
+
+func contextScopedConcernRank(
+	query string,
+	project string,
+	kind string,
+	candidateFactIDs []string,
+	facts []scan.AgentContextFactRecord,
+) int {
+	domainTokens := make(map[string]bool)
+	for token := range contextConcernDomainQueryTokens(contextExpandedTokenSet(query)) {
+		domainTokens[token] = true
+	}
+	for token := range contextTokenSet(project) {
+		delete(domainTokens, token)
+	}
+	candidates := make(map[string]bool, len(candidateFactIDs))
+	for _, factID := range candidateFactIDs {
+		candidates[factID] = true
+	}
+	best := 0
+	sourceIndex := scan.AgentContextIndexRecord{Facts: facts}
+	for _, fact := range facts {
+		if !candidates[fact.ID] {
+			continue
+		}
+		score := 100 * contextStableFactIdentityMatchCount(fact, domainTokens)
+		if kind == contextConcernPersistence &&
+			contextPersistenceMatchesPrimaryDomainModel(sourceIndex, fact, domainTokens) {
+			score += 1000
+		}
+		if normalizedContextConcernKind(fact.Kind) == kind {
+			score += 30
+		}
+		score += 10 * contextDomainModelConfidenceScore(fact.Confidence)
+		if score > best {
+			best = score
+		}
+	}
+	return best
 }
 
 func contextConcernPriority(concern contextConcern) int {
@@ -410,7 +463,13 @@ func contextExplicitProjectConcernCandidates(
 	reachable map[string]bool,
 ) []string {
 	result := []string{}
-	domainTokens := contextConcernDomainQueryTokens(queryTokens)
+	domainTokens := make(map[string]bool)
+	for token := range contextConcernDomainQueryTokens(queryTokens) {
+		domainTokens[token] = true
+	}
+	for token := range contextTokenSet(project) {
+		delete(domainTokens, token)
+	}
 	for _, fact := range facts {
 		if normalizeContextProject(fact.Project) != project || reachable[fact.ID] {
 			continue
@@ -436,7 +495,7 @@ func contextExplicitProjectConcernCandidates(
 				continue
 			}
 		}
-		factTokens := contextTokenSet(strings.Join([]string{
+		factTokens := contextExpandedTokenSet(strings.Join([]string{
 			fact.Search,
 			fact.Name,
 			fact.Qualified,
@@ -530,6 +589,11 @@ func contextDomainModelFact(
 	if contextFactUsesTestSource(fact) || contextPackSourceFile(fact.File) == "" || len(domainTokens) == 0 {
 		return false
 	}
+	switch strings.ToLower(strings.TrimSpace(fact.Kind)) {
+	case "symbol", "class", "interface", "record", "struct", "type":
+	default:
+		return false
+	}
 	identity := compactContextIdentifier(firstNonEmptyContext(fact.Qualified, fact.Name))
 	modelShape := false
 	for _, suffix := range contextDomainModelSuffixes {
@@ -585,41 +649,129 @@ func contextDomainModelConcernCandidates(
 		}
 		candidates = append(candidates, fact)
 	}
-	sort.Slice(candidates, func(i, j int) bool {
-		leftMatches := contextStableFactIdentityMatchCount(candidates[i], domainTokens)
-		rightMatches := contextStableFactIdentityMatchCount(candidates[j], domainTokens)
-		if leftMatches != rightMatches {
-			return leftMatches > rightMatches
-		}
-		leftShape := contextDomainModelShapeScore(candidates[i])
-		rightShape := contextDomainModelShapeScore(candidates[j])
-		if leftShape != rightShape {
-			return leftShape > rightShape
-		}
-		leftConfidence := contextDomainModelConfidenceScore(candidates[i].Confidence)
-		rightConfidence := contextDomainModelConfidenceScore(candidates[j].Confidence)
-		if leftConfidence != rightConfidence {
-			return leftConfidence > rightConfidence
-		}
-		if candidates[i].Project != candidates[j].Project {
-			return candidates[i].Project < candidates[j].Project
-		}
-		if candidates[i].File != candidates[j].File {
-			return candidates[i].File < candidates[j].File
-		}
-		if candidates[i].Line != candidates[j].Line {
-			return candidates[i].Line < candidates[j].Line
-		}
-		return candidates[i].ID < candidates[j].ID
-	})
-	if len(candidates) > 4 {
-		candidates = candidates[:4]
-	}
-	result := make([]string, 0, len(candidates))
+	bestBySource := make(map[string]scan.AgentContextFactRecord, len(candidates))
 	for _, candidate := range candidates {
+		key := strings.Join([]string{
+			normalizeContextProject(candidate.Project),
+			contextPackSourceFile(candidate.File),
+			strconv.Itoa(candidate.Line),
+			compactContextIdentifier(candidate.Name),
+		}, "\x00")
+		current, found := bestBySource[key]
+		if !found || contextDomainModelCandidateLess(candidate, current, domainTokens) {
+			bestBySource[key] = candidate
+		}
+	}
+	candidates = candidates[:0]
+	for _, candidate := range bestBySource {
+		candidates = append(candidates, candidate)
+	}
+	primaryModelsByProject := make(map[string]int)
+	variantCountsByProject := make(map[string]map[string]int)
+	for _, candidate := range candidates {
+		if contextPrimaryDomainModelFact(candidate) {
+			project := normalizeContextProject(candidate.Project)
+			primaryModelsByProject[project]++
+			if contextDomainModelShapeScore(candidate) >= 100 {
+				if variantCountsByProject[project] == nil {
+					variantCountsByProject[project] = make(map[string]int)
+				}
+				variantCountsByProject[project][contextDomainModelVariantStem(candidate)]++
+			}
+		}
+	}
+	primaryVariantsByProject := make(map[string]int)
+	for project, variants := range variantCountsByProject {
+		for _, count := range variants {
+			primaryVariantsByProject[project] = max(primaryVariantsByProject[project], count)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		leftProject := normalizeContextProject(candidates[i].Project)
+		rightProject := normalizeContextProject(candidates[j].Project)
+		leftProjectCount := primaryVariantsByProject[leftProject]
+		rightProjectCount := primaryVariantsByProject[rightProject]
+		if leftProjectCount != rightProjectCount {
+			return leftProjectCount > rightProjectCount
+		}
+		leftVariantCount := variantCountsByProject[leftProject][contextDomainModelVariantStem(candidates[i])]
+		rightVariantCount := variantCountsByProject[rightProject][contextDomainModelVariantStem(candidates[j])]
+		if leftVariantCount != rightVariantCount {
+			return leftVariantCount > rightVariantCount
+		}
+		return contextDomainModelCandidateLess(candidates[i], candidates[j], domainTokens)
+	})
+	selected := make([]scan.AgentContextFactRecord, 0, min(len(candidates), 4))
+	selectedByProject := make(map[string]int)
+	selectedVariantByProject := make(map[string]string)
+	for _, candidate := range candidates {
+		project := normalizeContextProject(candidate.Project)
+		if primaryModelsByProject[project] > 0 && !contextPrimaryDomainModelFact(candidate) {
+			continue
+		}
+		projectLimit := 1
+		if primaryVariantsByProject[project] >= 2 {
+			projectLimit = 2
+		}
+		variant := contextDomainModelVariantStem(candidate)
+		if selectedByProject[project] > 0 && selectedVariantByProject[project] != variant {
+			continue
+		}
+		if selectedByProject[project] >= projectLimit {
+			continue
+		}
+		selected = append(selected, candidate)
+		selectedByProject[project]++
+		selectedVariantByProject[project] = variant
+		if len(selected) == 4 {
+			break
+		}
+	}
+	result := make([]string, 0, len(selected))
+	for _, candidate := range selected {
 		result = append(result, candidate.ID)
 	}
 	return result
+}
+
+func contextDomainModelVariantStem(fact scan.AgentContextFactRecord) string {
+	identity := compactContextIdentifier(firstNonEmptyContext(fact.Name, fact.Qualified))
+	for _, suffix := range contextDomainModelSuffixes {
+		identity = strings.TrimSuffix(identity, suffix)
+	}
+	return strings.ReplaceAll(identity, "change", "")
+}
+
+func contextDomainModelCandidateLess(
+	left,
+	right scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+) bool {
+	leftShape := contextDomainModelShapeScore(left)
+	rightShape := contextDomainModelShapeScore(right)
+	if leftShape != rightShape {
+		return leftShape > rightShape
+	}
+	leftMatches := contextStableFactIdentityMatchCount(left, domainTokens)
+	rightMatches := contextStableFactIdentityMatchCount(right, domainTokens)
+	if leftMatches != rightMatches {
+		return leftMatches > rightMatches
+	}
+	leftConfidence := contextDomainModelConfidenceScore(left.Confidence)
+	rightConfidence := contextDomainModelConfidenceScore(right.Confidence)
+	if leftConfidence != rightConfidence {
+		return leftConfidence > rightConfidence
+	}
+	if left.Project != right.Project {
+		return left.Project < right.Project
+	}
+	if left.File != right.File {
+		return left.File < right.File
+	}
+	if left.Line != right.Line {
+		return left.Line < right.Line
+	}
+	return left.ID < right.ID
 }
 
 func contextDomainModelShapeScore(fact scan.AgentContextFactRecord) int {
@@ -638,7 +790,49 @@ func contextDomainModelShapeScore(fact scan.AgentContextFactRecord) int {
 	if strings.HasPrefix(name, "base") || strings.HasPrefix(name, "abstract") {
 		score -= 40
 	}
+	if contextDomainModelDependencyFact(fact) {
+		score -= 30
+	}
+	if contextDerivedDomainModelFact(fact) {
+		score -= 30
+	}
 	return score
+}
+
+func contextDomainModelDependencyFact(fact scan.AgentContextFactRecord) bool {
+	identityTokens := contextTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		filepath.Base(fact.File),
+	}, " "))
+	for _, qualifier := range []string{"audit", "comment", "detail", "event", "history", "key", "log", "metadata"} {
+		if identityTokens[qualifier] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextPrimaryDomainModelFact(fact scan.AgentContextFactRecord) bool {
+	name := strings.ToLower(strings.TrimSpace(fact.Name))
+	return !strings.HasPrefix(name, "base") &&
+		!strings.HasPrefix(name, "abstract") &&
+		!contextDomainModelDependencyFact(fact) &&
+		!contextDerivedDomainModelFact(fact)
+}
+
+func contextDerivedDomainModelFact(fact scan.AgentContextFactRecord) bool {
+	identity := compactContextIdentifier(firstNonEmptyContext(fact.Name, fact.Qualified))
+	if strings.HasSuffix(identity, "ventity") {
+		return true
+	}
+	tokens := contextTokenSet(strings.Join([]string{fact.Name, fact.Qualified}, " "))
+	for _, qualifier := range []string{"projection", "readmodel", "view"} {
+		if tokens[qualifier] {
+			return true
+		}
+	}
+	return false
 }
 
 func contextDomainModelConfidenceScore(confidence string) int {

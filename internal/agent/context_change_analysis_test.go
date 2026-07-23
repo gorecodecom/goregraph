@@ -134,22 +134,22 @@ func TestSourceConcernCandidatesRequireDomainEvidence(t *testing.T) {
 
 func TestExplicitProjectConcernCandidatesRequireDomainIdentity(t *testing.T) {
 	queryTokens := contextExpandedTokenSet(
-		"job configuration side effects mail",
+		"libraries/common job configuration side effects mail",
 	)
 	facts := []scan.AgentContextFactRecord{
 		{
-			ID: "generic-mail", Project: "libraries/client", Kind: "configuration",
-			Name: "MailProperties", Search: "mail configuration",
+			ID: "generic-mail", Project: "libraries/common", Kind: "configuration",
+			Name: "MailProperties", Search: "common mail configuration",
 		},
 		{
-			ID: "job-mail", Project: "libraries/client", Kind: "symbol",
-			Name: "JobHousekeeping", Search: "job mail side effect",
+			ID: "job-mail", Project: "libraries/common", Kind: "symbol",
+			Name: "JobHousekeeping", Search: "common job mail side effect",
 		},
 	}
 
 	candidates := contextExplicitProjectConcernCandidates(
 		queryTokens,
-		"libraries/client",
+		"libraries/common",
 		contextConcernSideEffects,
 		facts,
 		map[string]bool{},

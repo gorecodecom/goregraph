@@ -137,6 +137,30 @@ func TestPlanContextConcernsSelectsRequestedDomainModels(t *testing.T) {
 			Search: "catalog change job task model item identifier",
 		},
 		{
+			ID: "change-model-copy-a", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJobEntity", Qualified: "CatalogChangeJobEntity",
+			File: "CatalogChangeJobEntity.java", Confidence: "EXACT",
+			Search: "catalog change job task model item identifier",
+		},
+		{
+			ID: "change-model-copy-b", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJobEntity", Qualified: "example.CatalogChangeJobEntity",
+			File: "CatalogChangeJobEntity.java", Confidence: "EXACT",
+			Search: "catalog change job task model item identifier",
+		},
+		{
+			ID: "change-model-copy-c", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJobEntity", Qualified: "CatalogChangeJobEntity",
+			File: "CatalogChangeJobEntity.java", Confidence: "EXACT",
+			Search: "catalog change job task model item identifier",
+		},
+		{
+			ID: "comment-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobCommentEntity", Qualified: "example.CatalogJobCommentEntity",
+			File: "CatalogJobCommentEntity.java", Confidence: "EXACT",
+			Search: "catalog job task comment model item identifier",
+		},
+		{
 			ID: "mail-properties", Project: "services/jobs", Kind: "configuration",
 			Name: "MailProperties", File: "MailProperties.java", Confidence: "EXACT",
 			Search: "mail configuration",
@@ -161,10 +185,158 @@ func TestPlanContextConcernsSelectsRequestedDomainModels(t *testing.T) {
 		!slices.Contains(domain.candidateFactIDs, "change-model") {
 		t.Fatalf("domain-model candidates = %#v", domain.candidateFactIDs)
 	}
+	if len(domain.candidateFactIDs) != 2 {
+		t.Fatalf("duplicate index facts consumed domain-model slots: %#v", domain.candidateFactIDs)
+	}
 	for _, generic := range []string{"mail-properties", "async-handler"} {
 		if slices.Contains(domain.candidateFactIDs, generic) {
 			t.Errorf("generic source %q classified as domain model", generic)
 		}
+	}
+	if slices.Contains(domain.candidateFactIDs, "comment-model") {
+		t.Errorf("dependent comment model displaced a primary requested type: %#v", domain.candidateFactIDs)
+	}
+}
+
+func TestDomainModelConcernCandidatesRepresentExplicitProjects(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{}
+	for _, name := range []string{"Alpha", "Beta", "Delta", "Gamma", "Omega"} {
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: name, Project: "services/jobs-a", Kind: "symbol",
+			Name:       "CatalogJob" + name + "Entity",
+			File:       "CatalogJob" + name + "Entity.java",
+			Confidence: "EXACT",
+		})
+	}
+	facts = append(facts, scan.AgentContextFactRecord{
+		ID: "other-project", Project: "services/jobs-b", Kind: "symbol",
+		Name: "CatalogJobEntity", File: "CatalogJobEntity.java", Confidence: "EXACT",
+	})
+	aliases := contextProjectAliases(facts, nil)
+	query := "Analyze services/jobs-a and services/jobs-b catalog job task types and lookup attributes."
+
+	candidates := contextDomainModelConcernCandidates(
+		query,
+		aliases,
+		contextExplicitProjects(query, aliases),
+		facts,
+	)
+	if !slices.Contains(candidates, "other-project") {
+		t.Fatalf("one explicit project monopolized domain-model candidates: %#v", candidates)
+	}
+}
+
+func TestDomainModelConcernCandidatesPreferProjectWithPrimaryVariants(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "entry-model", Project: "services/catalog", Kind: "symbol",
+			Name: "CatalogJobEntity", File: "CatalogJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "entry-comment", Project: "services/catalog", Kind: "symbol",
+			Name: "CatalogJobCommentEntity", File: "CatalogJobCommentEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "regular", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity", File: "CatalogJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "change", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJobEntity", File: "CatalogChangeJobEntity.java", Confidence: "EXACT",
+		},
+	}
+	aliases := contextProjectAliases(facts, nil)
+	query := "Analyze services/catalog and services/jobs catalog job task types and lookup attributes."
+
+	candidates := contextDomainModelConcernCandidates(
+		query,
+		aliases,
+		contextExplicitProjects(query, aliases),
+		facts,
+	)
+	if len(candidates) < 2 || candidates[0] != "change" || candidates[1] != "regular" {
+		t.Fatalf("project with two primary variants was not preferred: %#v", candidates)
+	}
+}
+
+func TestDomainModelConcernCandidatesIgnoreMethodsReturningModels(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity", File: "CatalogJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "service-method", Project: "services/jobs", Kind: "persistence",
+			Name: "getCatalogJobEntity", Qualified: "CatalogJobService.getCatalogJobEntity",
+			File: "CatalogJobService.java", Confidence: "EXACT",
+		},
+	}
+	aliases := contextProjectAliases(facts, nil)
+	query := "Analyze services/jobs catalog job task types and lookup attributes."
+
+	candidates := contextDomainModelConcernCandidates(
+		query,
+		aliases,
+		contextExplicitProjects(query, aliases),
+		facts,
+	)
+	if !reflect.DeepEqual(candidates, []string{"model"}) {
+		t.Fatalf("model-returning method was classified as a domain model: %#v", candidates)
+	}
+}
+
+func TestDomainModelConcernCandidatesSkipDependenciesWhenPrimaryExists(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "primary", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity", File: "CatalogJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "comment", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobCommentEntity", File: "CatalogJobCommentEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "request", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobTopicRequest",
+			File: "CatalogJobTopicRequest.java", Confidence: "EXACT",
+		},
+	}
+	aliases := contextProjectAliases(facts, nil)
+	query := "Analyze services/jobs catalog job topic task types and lookup attributes."
+
+	candidates := contextDomainModelConcernCandidates(
+		query,
+		aliases,
+		contextExplicitProjects(query, aliases),
+		facts,
+	)
+	if !reflect.DeepEqual(candidates, []string{"primary"}) {
+		t.Fatalf("dependent model remained beside a primary model: %#v", candidates)
+	}
+}
+
+func TestDomainModelConcernCandidatesRequireRelatedVariantsForSecondSlot(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "job", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity", File: "CatalogJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "topic", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogTopicEntity", File: "CatalogTopicEntity.java", Confidence: "EXACT",
+		},
+	}
+	aliases := contextProjectAliases(facts, nil)
+	query := "Analyze services/jobs catalog job topic task types and lookup attributes."
+
+	candidates := contextDomainModelConcernCandidates(
+		query,
+		aliases,
+		contextExplicitProjects(query, aliases),
+		facts,
+	)
+	if !reflect.DeepEqual(candidates, []string{"job"}) {
+		t.Fatalf("unrelated entities occupied variant slots: %#v", candidates)
 	}
 }
 
@@ -209,6 +381,67 @@ func TestPublicContextConcernsRepresentEveryRequestedKindBeforeDuplicates(t *tes
 	slices.Reverse(reversed)
 	if got := publicContextConcerns(reversed); !reflect.DeepEqual(got, public) {
 		t.Fatalf("public concerns changed with input order:\nforward: %#v\nreverse: %#v", public, got)
+	}
+}
+
+func TestPublicContextConcernsPreferHigherRankWithinKind(t *testing.T) {
+	low := newContextConcern(
+		contextConcernPersistence,
+		"services/a",
+		true,
+		[]string{"low"},
+		"requested",
+	)
+	low.rank = 10
+	high := newContextConcern(
+		contextConcernPersistence,
+		"services/b",
+		true,
+		[]string{"high"},
+		"requested",
+	)
+	high.rank = 20
+
+	public := publicContextConcerns([]contextConcern{low, high})
+	if len(public) != 2 || public[0].Project != "services/b" {
+		t.Fatalf("higher-ranked representative did not come first: %#v", public)
+	}
+}
+
+func TestScopedPersistenceRankPrefersRepositoryMatchingPrimaryModel(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity", File: "CatalogJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "paired", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobRepository", File: "CatalogJobRepository.java", Confidence: "EXACT",
+		},
+		{
+			ID: "adjacent", Project: "services/catalog", Kind: "symbol",
+			Name: "CatalogJobChangeHistoryRepository",
+			File: "CatalogJobChangeHistoryRepository.java", Confidence: "EXACT",
+		},
+	}
+	query := "Analyze services/catalog and services/jobs catalog job change history task types, lookup attributes, and persistence."
+
+	paired := contextScopedConcernRank(
+		query,
+		"services/jobs",
+		contextConcernPersistence,
+		[]string{"paired"},
+		facts,
+	)
+	adjacent := contextScopedConcernRank(
+		query,
+		"services/catalog",
+		contextConcernPersistence,
+		[]string{"adjacent"},
+		facts,
+	)
+	if paired <= adjacent {
+		t.Fatalf("paired repository rank %d <= adjacent repository rank %d", paired, adjacent)
 	}
 }
 

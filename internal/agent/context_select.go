@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gorecodecom/goregraph/internal/scan"
@@ -20,6 +21,10 @@ type contextSourceOption struct {
 	candidateQuality int
 	quality          int
 	evidenceFamily   string
+	stableMatches    int
+	matchesModel     bool
+	modelMatchSet    bool
+	requestedModel   bool
 	profiled         bool
 }
 
@@ -156,18 +161,40 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 		plannedByKey[concern.key] = index
 	}
 
-	concerns := append([]contextConcern(nil), planned...)
+	if len(pack.Concerns) == 0 {
+		sort.Slice(planned, func(i, j int) bool { return planned[i].key < planned[j].key })
+		return planned
+	}
+	concerns := make([]contextConcern, 0, len(pack.Concerns))
+	added := make(map[string]bool, len(pack.Concerns))
 	for _, public := range pack.Concerns {
 		key := contextPublicConcernKey(public)
-		selected := contextSourceConcernFromPack(pack, index, public)
-		if plannedIndex, ok := plannedByKey[key]; ok {
-			concerns[plannedIndex].candidateFactIDs = orderedContextConcernIDs(append(
-				concerns[plannedIndex].candidateFactIDs,
-				selected.candidateFactIDs...,
-			))
+		if added[key] {
 			continue
 		}
-		concerns = append(concerns, selected)
+		selected := contextSourceConcernFromPack(pack, index, public)
+		if plannedIndex, ok := plannedByKey[key]; ok {
+			concern := planned[plannedIndex]
+			concern.candidateFactIDs = orderedContextConcernIDs(append(
+				concern.candidateFactIDs,
+				selected.candidateFactIDs...,
+			))
+			concerns = append(concerns, concern)
+		} else {
+			concerns = append(concerns, selected)
+		}
+		added[key] = true
+	}
+	for _, concern := range planned {
+		if added[concern.key] ||
+			concern.kind == contextConcernEntrypoint ||
+			concern.kind == contextConcernPrimaryPath ||
+			concern.kind == contextConcernProject {
+			continue
+		}
+		concern.required = false
+		concerns = append(concerns, concern)
+		added[concern.key] = true
 	}
 	sort.Slice(concerns, func(i, j int) bool { return concerns[i].key < concerns[j].key })
 	return concerns
@@ -291,6 +318,7 @@ func contextSourceRenderOptions(
 ) ([]contextSourceOption, map[string]string, error) {
 	options := []contextSourceOption{}
 	failures := make(map[string]string)
+	requestedModelIDs := contextRequestedDomainModelIDs(pack, loaded.Index)
 	for _, candidate := range candidates {
 		path, err := resolveSourcePath(loaded, candidate)
 		if err != nil {
@@ -313,6 +341,7 @@ func contextSourceRenderOptions(
 			file,
 			concerns,
 			distances,
+			requestedModelIDs,
 		)
 		if renderErr != nil {
 			return nil, nil, renderErr
@@ -333,6 +362,7 @@ func contextSourceRenderOptions(
 					file,
 					concerns,
 					distances,
+					requestedModelIDs,
 				)
 				if renderErr != nil {
 					return nil, nil, renderErr
@@ -351,6 +381,7 @@ func contextSourceRenderOptions(
 					file,
 					concerns,
 					distances,
+					requestedModelIDs,
 				)
 				if renderErr != nil {
 					return nil, nil, renderErr
@@ -375,6 +406,7 @@ func appendContextSourceCandidateOptions(
 	file sourceFile,
 	concerns []contextConcern,
 	distances map[string]int,
+	requestedModelIDs map[string]bool,
 ) (int, error) {
 	added := 0
 	for _, mode := range []string{"declaration_body", "body", "focused", "signature"} {
@@ -412,8 +444,20 @@ func appendContextSourceCandidateOptions(
 			pathDistance: contextSourceCandidateDistance(optionCandidate, distances),
 		}
 		option.evidenceFamily = contextSourceEvidenceFamily(pack, index, option)
+		option.matchesModel = contextPersistenceMatchesRequestedDomainModel(
+			pack,
+			index,
+			option,
+			requestedModelIDs,
+		)
+		option.modelMatchSet = true
+		option.requestedModel = contextSourceCandidateHasRequestedModel(
+			option.candidate,
+			requestedModelIDs,
+		)
 		option.candidateQuality = contextSourceCandidateQuality(pack, index, option)
 		option.quality = contextSourceOptionQuality(pack, index, option)
+		option.stableMatches = contextSourceStableDomainMatches(pack, index, option)
 		option.profiled = true
 		*options = append(*options, option)
 		added++
@@ -519,8 +563,7 @@ func contextInheritedOwnerCandidate(
 		ownerShort = ownerShort[separator+1:]
 	}
 
-	var owner scan.AgentContextFactRecord
-	matches := 0
+	owners := make(map[string]scan.AgentContextFactRecord)
 	for _, fact := range index.Facts {
 		if normalizeContextProject(fact.Project) != normalizeContextProject(inherited.Project) ||
 			filepath.ToSlash(fact.File) != filepath.ToSlash(inherited.File) ||
@@ -531,15 +574,32 @@ func contextInheritedOwnerCandidate(
 			strings.TrimSpace(fact.Name) != ownerShort {
 			continue
 		}
-		owner = fact
-		matches++
+		key := strings.Join([]string{
+			normalizeContextProject(fact.Project),
+			filepath.ToSlash(fact.File),
+			strconv.Itoa(fact.Line),
+			compactContextIdentifier(fact.Name),
+		}, "\x00")
+		current, found := owners[key]
+		if !found ||
+			strings.TrimSpace(fact.Qualified) == ownerQualified &&
+				strings.TrimSpace(current.Qualified) != ownerQualified ||
+			strings.TrimSpace(fact.Qualified) == strings.TrimSpace(current.Qualified) &&
+				contextDomainModelConfidenceScore(fact.Confidence) >
+					contextDomainModelConfidenceScore(current.Confidence) {
+			owners[key] = fact
+		}
 	}
-	if matches != 1 {
+	if len(owners) != 1 {
 		return sourceCandidate{}, false
+	}
+	var owner scan.AgentContextFactRecord
+	for _, candidateOwner := range owners {
+		owner = candidateOwner
 	}
 	result := candidate
 	result.Name = firstNonEmptyContext(owner.Name, ownerShort)
-	result.Qualified = firstNonEmptyContext(owner.Qualified, ownerQualified)
+	result.Qualified = ownerQualified
 	result.StartLine = owner.Line
 	result.EndLine = owner.EndLine
 	result.SourceState = "inherited_owner_current"
@@ -587,11 +647,185 @@ func contextSourceRole(
 		return contextConcernDomainModel
 	case contextLocationIDs(pack.Contracts)[fact.ID] || strings.EqualFold(fact.Kind, "api_contract"):
 		return "contract"
-	case contextLocationIDs(pack.Persistence)[fact.ID] || normalizedContextConcernKind(fact.Kind) == contextConcernPersistence:
+	case contextLocationIDs(pack.Persistence)[fact.ID] ||
+		normalizedContextConcernKind(fact.Kind) == contextConcernPersistence ||
+		contextPersistenceOwnerFact(fact):
 		return "persistence"
 	default:
 		return "call_chain"
 	}
+}
+
+func contextPersistenceOwnerFact(fact scan.AgentContextFactRecord) bool {
+	if contextFactUsesTestSource(fact) || contextPackSourceFile(fact.File) == "" {
+		return false
+	}
+	for _, identity := range contextPersistenceOwnerIdentities(fact) {
+		if strings.HasSuffix(identity, "repository") {
+			return true
+		}
+	}
+	return false
+}
+
+func contextPersistenceDerivedOwnerFact(fact scan.AgentContextFactRecord) bool {
+	if !contextPersistenceOwnerFact(fact) {
+		return false
+	}
+	for _, identity := range contextPersistenceOwnerIdentities(fact) {
+		if strings.HasSuffix(identity, "vrepository") {
+			return true
+		}
+	}
+	tokens := contextTokenSet(strings.Join([]string{fact.Name, fact.Qualified}, " "))
+	for _, qualifier := range []string{"projection", "readmodel", "view"} {
+		if tokens[qualifier] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextPersistenceOwnerIdentities(fact scan.AgentContextFactRecord) []string {
+	base := filepath.Base(fact.File)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	return []string{
+		compactContextIdentifier(fact.Name),
+		compactContextIdentifier(contextQualifiedOwner(fact.Qualified)),
+		compactContextIdentifier(base),
+	}
+}
+
+func contextPersistenceMatchesPrimaryDomainModel(
+	index scan.AgentContextIndexRecord,
+	fact scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+) bool {
+	return contextPersistenceMatchesDomainModel(index, fact, domainTokens, nil)
+}
+
+func contextPersistenceMatchesSelectedDomainModel(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	fact scan.AgentContextFactRecord,
+) bool {
+	return contextPersistenceFactMatchesRequestedDomainModel(
+		pack,
+		index,
+		fact,
+		contextRequestedDomainModelIDs(pack, index),
+	)
+}
+
+func contextRequestedDomainModelIDs(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+) map[string]bool {
+	domainTokens := contextSourceDomainModelTokens(pack, index)
+	selected := make(map[string]bool, len(pack.selectedSourceFactIDs))
+	for _, factID := range pack.selectedSourceFactIDs {
+		selected[factID] = true
+	}
+	selectedModels := make(map[string]bool)
+	for _, model := range index.Facts {
+		if selected[model.ID] && contextDomainModelFact(model, domainTokens) {
+			selectedModels[model.ID] = true
+		}
+	}
+	if seed, ok := contextConcernPlanningSeed(index, contextSelectionQuery(pack)); ok {
+		for _, concern := range planContextConcerns(contextSelectionQuery(pack), index, seed) {
+			if concern.kind != contextConcernDomainModel {
+				continue
+			}
+			for _, factID := range concern.candidateFactIDs {
+				selectedModels[factID] = true
+			}
+		}
+	}
+	return selectedModels
+}
+
+func contextPersistenceMatchesRequestedDomainModel(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	option contextSourceOption,
+	requestedModelIDs map[string]bool,
+) bool {
+	for _, fact := range contextSourceOptionFacts(index, option) {
+		if contextPersistenceFactMatchesRequestedDomainModel(
+			pack,
+			index,
+			fact,
+			requestedModelIDs,
+		) {
+			return true
+		}
+	}
+	return false
+}
+
+func contextSourceCandidateHasRequestedModel(
+	candidate sourceCandidate,
+	requestedModelIDs map[string]bool,
+) bool {
+	for _, factID := range contextSourceCandidateFactIDs(candidate) {
+		if requestedModelIDs[factID] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextPersistenceFactMatchesRequestedDomainModel(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	fact scan.AgentContextFactRecord,
+	requestedModelIDs map[string]bool,
+) bool {
+	domainTokens := contextSourceDomainModelTokens(pack, index)
+	if len(requestedModelIDs) == 0 {
+		return contextPersistenceMatchesPrimaryDomainModel(index, fact, domainTokens)
+	}
+	return contextPersistenceMatchesDomainModel(index, fact, domainTokens, requestedModelIDs)
+}
+
+func contextPersistenceMatchesDomainModel(
+	index scan.AgentContextIndexRecord,
+	fact scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+	allowedModels map[string]bool,
+) bool {
+	repositoryStems := make(map[string]bool)
+	for _, identity := range contextPersistenceOwnerIdentities(fact) {
+		if !strings.HasSuffix(identity, "repository") {
+			continue
+		}
+		stem := strings.TrimSuffix(identity, "repository")
+		if stem != "" {
+			repositoryStems[stem] = true
+		}
+	}
+	if len(repositoryStems) == 0 {
+		return false
+	}
+	project := normalizeContextProject(fact.Project)
+	for _, model := range index.Facts {
+		if len(allowedModels) > 0 && !allowedModels[model.ID] ||
+			normalizeContextProject(model.Project) != project ||
+			!contextDomainModelFact(model, domainTokens) ||
+			!contextPrimaryDomainModelFact(model) ||
+			contextStableFactIdentityMatchCount(model, domainTokens) < 2 {
+			continue
+		}
+		identity := compactContextIdentifier(firstNonEmptyContext(model.Name, model.Qualified))
+		for _, suffix := range contextDomainModelSuffixes {
+			identity = strings.TrimSuffix(identity, suffix)
+		}
+		if repositoryStems[identity] {
+			return true
+		}
+	}
+	return false
 }
 
 func contextSourceCandidateFactIDs(candidate sourceCandidate) []string {
@@ -612,6 +846,9 @@ func contextSourceOptionConcerns(candidate sourceCandidate, concerns []contextCo
 	keys := []string{}
 	required := false
 	for _, concern := range concerns {
+		if !concern.required {
+			continue
+		}
 		covered := false
 		for _, factID := range concern.candidateFactIDs {
 			if factIDs[factID] {
@@ -715,6 +952,9 @@ func contextSourceCandidateQuality(
 	stableMatches := 0
 	confidence := 0
 	genericPersistence := false
+	dependentDomainModel := false
+	dependentPersistence := false
+	derivedPersistence := false
 	for _, fact := range facts {
 		stableMatches = max(
 			stableMatches,
@@ -722,17 +962,43 @@ func contextSourceCandidateQuality(
 		)
 		confidence = max(confidence, contextSourceConfidenceQuality(fact.Confidence))
 		genericPersistence = genericPersistence || contextGenericPersistenceFact(fact)
+		dependentDomainModel = dependentDomainModel || contextDomainModelDependencyFact(fact)
+		dependentPersistence = dependentPersistence ||
+			family == contextConcernPersistence && contextDomainModelDependencyFact(fact)
+		derivedPersistence = derivedPersistence ||
+			family == contextConcernPersistence && contextPersistenceDerivedOwnerFact(fact)
 	}
 	stableMatches = min(stableMatches, 3)
 	quality := 60*stableMatches + confidence
 	switch family {
 	case contextConcernDomainModel:
 		quality += 260
+		if dependentDomainModel {
+			quality -= 180
+		}
 	case contextConcernPersistence:
 		if genericPersistence {
 			quality -= 180
 		} else {
 			quality += 220
+		}
+		if dependentPersistence {
+			quality -= 180
+		}
+		if derivedPersistence {
+			quality -= 180
+		}
+		matchesModel := option.matchesModel
+		if !option.modelMatchSet {
+			for _, fact := range facts {
+				if contextPersistenceMatchesPrimaryDomainModel(index, fact, domainTokens) {
+					matchesModel = true
+					break
+				}
+			}
+		}
+		if matchesModel {
+			quality += 260
 		}
 	}
 	if contextSourceOptionActionAligned(pack, option) {
@@ -813,6 +1079,19 @@ func contextSourceStableDomainMatches(
 	return matches
 }
 
+func contextSourceMatchesPrimaryDomainModel(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	option contextSourceOption,
+) bool {
+	return contextPersistenceMatchesRequestedDomainModel(
+		pack,
+		index,
+		option,
+		contextRequestedDomainModelIDs(pack, index),
+	)
+}
+
 func contextSourceCrossCuttingFamily(family string) bool {
 	switch family {
 	case contextConcernAuth, contextConcernConfiguration, contextConcernResilience, contextConcernSideEffects:
@@ -855,6 +1134,13 @@ func contextSourceEffectiveEvidenceFamily(pack ContextPack, option contextSource
 		return option.evidenceFamily
 	}
 	return contextSourceEvidenceFamily(pack, scan.AgentContextIndexRecord{}, option)
+}
+
+func contextSourceEffectiveStableDomainMatches(pack ContextPack, option contextSourceOption) int {
+	if option.profiled {
+		return option.stableMatches
+	}
+	return contextSourceStableDomainMatches(pack, scan.AgentContextIndexRecord{}, option)
 }
 
 func contextSourceEvidenceFamilyLimit(family string) int {
@@ -1301,11 +1587,14 @@ func contextSourceOptionFits(
 	concerns []contextConcern,
 	state contextSourceSelectionState,
 ) (bool, error) {
-	if len(pack.SourceSections) >= MaxContextSourceSections {
+	reusesSection := contextSourceSectionAlreadyPresent(pack, option.section)
+	if len(pack.SourceSections) >= MaxContextSourceSections && !reusesSection {
 		return false, nil
 	}
 	candidate := cloneContextPack(pack)
-	candidate.SourceSections = append(candidate.SourceSections, option.section)
+	if !reusesSection {
+		candidate.SourceSections = append(candidate.SourceSections, option.section)
+	}
 	if candidate.SourceUnrepresented > 0 {
 		candidate.SourceUnrepresented--
 	}
@@ -1325,6 +1614,22 @@ func contextSourceOptionFits(
 		return false, err
 	}
 	return contextSourcePackFits(candidate, request)
+}
+
+func contextSourceSectionAlreadyPresent(pack ContextPack, section ContextSourceSection) bool {
+	project := normalizeContextProject(section.Project)
+	path := contextPackSourceFile(section.Path)
+	content := strings.TrimSpace(section.Content)
+	for _, current := range pack.SourceSections {
+		if normalizeContextProject(current.Project) == project &&
+			contextPackSourceFile(current.Path) == path &&
+			current.StartLine == section.StartLine &&
+			current.EndLine == section.EndLine &&
+			strings.TrimSpace(current.Content) == content {
+			return true
+		}
+	}
+	return false
 }
 
 func contextSourceFileCount(pack ContextPack) int {
@@ -1367,7 +1672,9 @@ func addContextSourceOption(
 	concerns []contextConcern,
 	state contextSourceSelectionState,
 ) (ContextPack, contextSourceSelectionState, error) {
-	pack.SourceSections = append(pack.SourceSections, option.section)
+	if !contextSourceSectionAlreadyPresent(pack, option.section) {
+		pack.SourceSections = append(pack.SourceSections, option.section)
+	}
 	if pack.SourceUnrepresented > 0 {
 		pack.SourceUnrepresented--
 	}
@@ -1383,8 +1690,14 @@ func addContextSourceOption(
 		state.selectedEvidenceFamilies = make(map[string]int)
 	}
 	family := contextSourceEffectiveEvidenceFamily(pack, option)
-	familyKey := option.projectKey + "\x00" + family
-	state.selectedEvidenceFamilies[familyKey]++
+	countFamily := true
+	if family == contextConcernDomainModel || family == contextConcernPersistence {
+		countFamily = option.candidate.Role == family
+	}
+	if countFamily {
+		familyKey := option.projectKey + "\x00" + family
+		state.selectedEvidenceFamilies[familyKey]++
+	}
 	if option.projectKey != "" {
 		state.selectedProjects[option.projectKey] = true
 	}
@@ -1460,19 +1773,60 @@ func contextSourceUtilityOption(
 			connected = 1
 		}
 		family := contextSourceEffectiveEvidenceFamily(pack, option)
+		if family == contextConcernDomainModel &&
+			option.profiled &&
+			!option.requestedModel &&
+			!contextSourceOptionAddsConcernKind(option, state, contextConcernDomainModel) {
+			continue
+		}
+		if family == contextConcernPersistence &&
+			option.profiled &&
+			!option.matchesModel &&
+			!contextSourceOptionAddsConcernKind(option, state, contextConcernPersistence) {
+			continue
+		}
 		familyKey := option.projectKey + "\x00" + family
+		familyCount := state.selectedEvidenceFamilies[familyKey]
+		if newConcerns == 0 && newProjects == 0 && newRoles == 0 {
+			if family != contextConcernDomainModel && family != contextConcernPersistence ||
+				familyCount >= contextSourceEvidenceFamilyLimit(family) ||
+				contextSourceEffectiveStableDomainMatches(pack, option) < 2 ||
+				family == contextConcernPersistence && option.profiled && !option.matchesModel {
+				continue
+			}
+		}
 		familyBonus := 0
-		if state.selectedEvidenceFamilies[familyKey] < contextSourceEvidenceFamilyLimit(family) {
+		if familyCount < contextSourceEvidenceFamilyLimit(family) {
 			familyBonus = 260
+		}
+		cost := option.estimated
+		if contextSourceSectionAlreadyPresent(pack, option.section) {
+			cost = 0
 		}
 		utility := 1200*newConcerns + 300*newProjects + 150*newRoles + 80*connected +
 			familyBonus + contextSourceEffectiveQuality(pack, option) -
-			option.estimated - 25*option.pathDistance
+			cost - 25*option.pathDistance
 		if !found || utility > bestUtility || utility == bestUtility && contextSourceOptionLess(option, best) {
 			best, bestUtility, found = option, utility, true
 		}
 	}
 	return best, bestUtility, found, nil
+}
+
+func contextSourceOptionAddsConcernKind(
+	option contextSourceOption,
+	state contextSourceSelectionState,
+	kind string,
+) bool {
+	for _, key := range option.concernKeys {
+		if state.coveredConcerns[key] {
+			continue
+		}
+		if key == kind || strings.HasPrefix(key, kind+":") {
+			return true
+		}
+	}
+	return false
 }
 
 func contextSourceOptionHasConcern(option contextSourceOption, key string) bool {

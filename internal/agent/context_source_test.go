@@ -274,6 +274,30 @@ func TestRenderSourceCandidateRejectsAmbiguousDeclaration(t *testing.T) {
 	}
 }
 
+func TestRenderSourceCandidateUsesIndexedTypeDeclarationBeforeConstructor(t *testing.T) {
+	candidate := sourceCandidate{
+		Path: "CatalogJobEntity.java", StartLine: 2,
+		Kind: "symbol", Name: "CatalogJobEntity",
+	}
+	section, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: []string{
+			"@Entity",
+			"public class CatalogJobEntity {",
+			"  public CatalogJobEntity(long catalogId) {}",
+			"}",
+		}},
+		"declaration_body",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 1 || section.EndLine != 4 ||
+		!strings.Contains(section.Content, "class CatalogJobEntity") {
+		t.Fatalf("indexed type declaration = %#v", section)
+	}
+}
+
 func TestRenderSourceCandidateRejectsOldCallAfterDeclarationRename(t *testing.T) {
 	candidate := sourceCandidate{Path: "UserService.java", StartLine: 1, EndLine: 3, Kind: "symbol", Name: "deleteUser"}
 	_, err := renderSourceCandidate(candidate, sourceFile{Path: candidate.Path, Lines: []string{
@@ -1183,6 +1207,126 @@ func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
 	}
 }
 
+func TestContextSourceConcernsKeepNonPublicPlannedDuplicatesOptional(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "route", Project: "services/catalog", Kind: "route",
+			Name: "DELETE /catalog/items/{id}", HTTPMethod: "DELETE",
+			Path: "/catalog/items/{id}", File: "CatalogController.go",
+			Search: "delete catalog item",
+		},
+		{
+			ID: "repo-a", Project: "services/jobs-a", Kind: "persistence",
+			Name: "findByCatalogId", File: "JobRepositoryA.go",
+			Search: "catalog job persistence",
+		},
+		{
+			ID: "repo-b", Project: "services/jobs-b", Kind: "persistence",
+			Name: "findByCatalogId", File: "JobRepositoryB.go",
+			Search: "catalog job persistence",
+		},
+	}}
+	pack := ContextPack{
+		Query: "Delete a catalog item. Analyze services/catalog, services/jobs-a, and services/jobs-b for job persistence.",
+		Concerns: []ContextConcern{
+			{Kind: contextConcernEntrypoint},
+			{Kind: contextConcernPrimaryPath},
+			{Kind: contextConcernProject, Project: "services/catalog"},
+			{Kind: contextConcernProject, Project: "services/jobs-a"},
+			{Kind: contextConcernProject, Project: "services/jobs-b"},
+			{Kind: contextConcernPersistence, Project: "services/jobs-a"},
+		},
+		Entrypoints:           []ContextLocation{{ID: "route"}},
+		selectedSourceFactIDs: []string{"route", "repo-a", "repo-b"},
+	}
+
+	concerns := contextSourceConcerns(pack, index)
+	found := false
+	for _, concern := range concerns {
+		if concern.key == contextConcernPersistence+":services/jobs-b" {
+			found = true
+			if concern.required {
+				t.Fatalf("non-public planned concern became a source requirement: %#v", concerns)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("non-public planned concern was unavailable for optional evidence: %#v", concerns)
+	}
+}
+
+func TestContextSourceConcernCandidatesDoNotLetOneFileConsumeTheCap(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{}
+	candidateIDs := []string{}
+	for index := range 4 {
+		id := fmt.Sprintf("change-%d", index)
+		candidateIDs = append(candidateIDs, id)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Project: "services/jobs", Kind: "persistence",
+			Name: "findByCatalogId", Qualified: "CatalogChangeJobRepository.findByCatalogId",
+			File: "CatalogChangeJobRepository.java", Confidence: "EXACT",
+			Search: "catalog job persistence",
+		})
+	}
+	candidateIDs = append(candidateIDs, "regular", "builder")
+	facts = append(
+		facts,
+		scan.AgentContextFactRecord{
+			ID: "regular", Project: "services/jobs", Kind: "persistence",
+			Name: "findByCatalogId", Qualified: "CatalogJobRepository.findByCatalogId",
+			File: "CatalogJobRepository.java", Confidence: "EXACT",
+			Search: "catalog job persistence",
+		},
+		scan.AgentContextFactRecord{
+			ID: "builder", Project: "services/jobs", Kind: "persistence",
+			Name: "builder", Qualified: "CatalogJobEntity.builder",
+			File: "CatalogJobEntity.java", Confidence: "EXACT",
+			Search: "catalog job persistence",
+		},
+	)
+	pack := ContextPack{
+		Query: "Analyze services/jobs catalog job persistence and lookup attributes.",
+	}
+	concerns := []contextConcern{
+		newContextConcern(
+			contextConcernPersistence,
+			"services/jobs",
+			true,
+			candidateIDs,
+			"persistence",
+		),
+	}
+
+	candidates := contextSourceCandidatesForConcerns(
+		pack,
+		scan.AgentContextIndexRecord{Facts: facts},
+		concerns,
+	)
+	paths := map[string]bool{}
+	for _, candidate := range candidates {
+		paths[candidate.Path] = true
+	}
+	for _, path := range []string{"CatalogChangeJobRepository.java", "CatalogJobRepository.java"} {
+		if !paths[path] {
+			t.Fatalf("source concern cap omitted %q: %#v", path, candidates)
+		}
+	}
+}
+
+func TestContextSourceRoleRecognizesRepositoryOwner(t *testing.T) {
+	fact := scan.AgentContextFactRecord{
+		ID: "repository-owner", Project: "services/jobs", Kind: "symbol",
+		Name: "CatalogJobRepository", Qualified: "example.CatalogJobRepository",
+		File: "CatalogJobRepository.java",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{fact}}
+	pack := ContextPack{Query: "Analyze catalog job persistence and lookup attributes."}
+
+	if role := contextSourceRole(pack, index, fact); role != contextConcernPersistence {
+		t.Fatalf("repository owner role = %q, want persistence", role)
+	}
+}
+
 func TestContextSourceOptionsUseSpecifiedTieBreakersWithoutPriority(t *testing.T) {
 	entrypoint := contextSourceOption{
 		candidate: sourceCandidate{FactID: "z", Role: "entrypoint", Priority: 99},
@@ -1422,6 +1566,488 @@ func TestContextSourceUtilityRetainsSecondDomainAndPersistenceEvidence(t *testin
 	}
 }
 
+func TestAddContextSourceOptionReusesIdenticalRenderedSection(t *testing.T) {
+	section := ContextSourceSection{
+		Project: "libraries/client", Path: "JobClient.java",
+		StartLine: 10, EndLine: 15, Role: "contract",
+		RenderMode: "declaration_body", Content: "void listJobs() {}",
+	}
+	pack := ContextPack{
+		Schema: 1, Query: "job client configuration", Confidence: "EXACT",
+		BudgetTokens:   DefaultContextBudgetTokens,
+		SourceSections: []ContextSourceSection{section},
+	}
+	option := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "config", Project: "libraries/client", Path: "JobClient.java",
+			Role: "call_chain", Kind: "configuration", Name: "listJobs",
+		},
+		section: ContextSourceSection{
+			Project: "libraries/client", Path: "JobClient.java",
+			StartLine: 10, EndLine: 15, Role: "call_chain",
+			RenderMode: "declaration_body", Content: "void listJobs() {}",
+		},
+		estimated:   30,
+		concernKeys: []string{contextConcernConfiguration + ":libraries/client"},
+		projectKey:  "libraries/client",
+	}
+	concerns := []contextConcern{
+		newContextConcern(
+			contextConcernConfiguration,
+			"libraries/client",
+			true,
+			[]string{"config"},
+			"configuration",
+		),
+	}
+	state := contextSourceSelectionState{
+		selectedCandidates:       map[string]bool{},
+		selectedFactIDs:          map[string]bool{},
+		selectedProjects:         map[string]bool{"libraries/client": true},
+		coveredConcerns:          map[string]bool{},
+		coveredRoles:             map[string]bool{"contract": true},
+		selectedEvidenceFamilies: map[string]int{},
+	}
+
+	got, gotState, err := addContextSourceOption(
+		pack,
+		ContextRequest{BudgetTokens: DefaultContextBudgetTokens},
+		option,
+		concerns,
+		state,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.SourceSections) != 1 {
+		t.Fatalf("identical rendered source was duplicated: %#v", got.SourceSections)
+	}
+	if !gotState.coveredConcerns[contextConcernConfiguration+":libraries/client"] {
+		t.Fatalf("reused source did not cover its additional concern: %#v", gotState.coveredConcerns)
+	}
+}
+
+func TestAddContextSourceOptionCountsOnlySpecializedEvidenceRoles(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "job persistence", Confidence: "EXACT",
+		BudgetTokens: DefaultContextBudgetTokens,
+	}
+	option := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "service", Project: "services/jobs", Path: "JobService.java",
+			Role: "call_chain", Kind: "persistence", Name: "loadJobs",
+		},
+		section: ContextSourceSection{
+			Project: "services/jobs", Path: "JobService.java",
+			StartLine: 1, EndLine: 2, Role: "call_chain",
+			RenderMode: "declaration_body", Content: "void loadJobs() {}",
+		},
+		estimated: 30, projectKey: "services/jobs",
+		evidenceFamily: contextConcernPersistence, profiled: true,
+	}
+	state := contextSourceSelectionState{
+		selectedCandidates:       map[string]bool{},
+		selectedFactIDs:          map[string]bool{},
+		selectedProjects:         map[string]bool{},
+		coveredConcerns:          map[string]bool{},
+		coveredRoles:             map[string]bool{},
+		selectedEvidenceFamilies: map[string]int{},
+	}
+
+	_, gotState, err := addContextSourceOption(
+		pack,
+		ContextRequest{BudgetTokens: DefaultContextBudgetTokens},
+		option,
+		nil,
+		state,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := gotState.selectedEvidenceFamilies["services/jobs\x00"+contextConcernPersistence]; got != 0 {
+		t.Fatalf("call-chain evidence consumed %d persistence slots", got)
+	}
+}
+
+func TestContextSourceUtilitySkipsCoveredCrossCuttingEvidence(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job task types lookup attributes configuration",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens}
+	state := contextSourceSelectionState{
+		selectedCandidates: map[string]bool{},
+		selectedFactIDs:    map[string]bool{},
+		selectedProjects:   map[string]bool{"libraries/client": true},
+		coveredConcerns: map[string]bool{
+			contextConcernConfiguration + ":libraries/client": true,
+			contextConcernProject + ":libraries/client":       true,
+		},
+		coveredRoles: map[string]bool{"call_chain": true},
+		selectedEvidenceFamilies: map[string]int{
+			"libraries/client\x00" + contextConcernConfiguration: 1,
+		},
+	}
+	generic := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "generic-config", Project: "libraries/client",
+			Path: "MailProperties.java", Role: "call_chain",
+			Kind: "configuration", Name: "MailProperties",
+		},
+		section: ContextSourceSection{
+			Project: "libraries/client", Path: "MailProperties.java",
+			StartLine: 1, EndLine: 12, Role: "call_chain",
+			RenderMode: "declaration_body", Content: "enum MailProperties { TO, CC, BCC }",
+		},
+		estimated: 80, projectKey: "libraries/client",
+		evidenceFamily: contextConcernConfiguration, quality: 220, profiled: true,
+	}
+
+	got, utility, found, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{generic},
+		nil,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatalf("covered cross-cutting option retained with utility %d: %#v", utility, got)
+	}
+}
+
+func TestContextSourceUtilityPrefersPrimaryModelOverDependentModel(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job task types and lookup attributes",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens}
+	state := contextSourceSelectionState{
+		selectedCandidates:       map[string]bool{},
+		selectedFactIDs:          map[string]bool{},
+		selectedProjects:         map[string]bool{},
+		coveredConcerns:          map[string]bool{contextConcernDomainModel: true},
+		coveredRoles:             map[string]bool{contextConcernDomainModel: true},
+		selectedEvidenceFamilies: map[string]int{},
+	}
+	option := func(id, project, name string) contextSourceOption {
+		return contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: id, Project: project, Path: name + ".java",
+				Role: contextConcernDomainModel, Kind: "symbol",
+				Name: name, Qualified: "example." + name,
+			},
+			section: ContextSourceSection{
+				Project: project, Path: name + ".java",
+				StartLine: 1, EndLine: 1, Role: contextConcernDomainModel,
+				RenderMode: "signature", Content: "class " + name,
+			},
+			estimated: 20, projectKey: project,
+		}
+	}
+	dependent := option("comment", "services/a", "CatalogJobCommentEntity")
+	primary := option("change", "services/b", "CatalogChangeJobEntity")
+
+	got, _, found, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{dependent, primary},
+		nil,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || got.candidate.FactID != "change" {
+		t.Fatalf("dependent model displaced a primary domain type: %#v", got)
+	}
+}
+
+func TestContextSourceUtilityPrefersPrimaryRepositoryOverDependency(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job persistence and lookup attributes",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens}
+	state := contextSourceSelectionState{
+		selectedCandidates:       map[string]bool{},
+		selectedFactIDs:          map[string]bool{},
+		selectedProjects:         map[string]bool{"services/jobs": true},
+		coveredConcerns:          map[string]bool{contextConcernPersistence: true},
+		coveredRoles:             map[string]bool{},
+		selectedEvidenceFamilies: map[string]int{},
+	}
+	option := func(id, name string) contextSourceOption {
+		return contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: id, Project: "services/jobs", Path: name + ".java",
+				Role: contextConcernPersistence, Kind: contextConcernPersistence,
+				Name: "findByCatalogId", Qualified: name + ".findByCatalogId",
+			},
+			section: ContextSourceSection{
+				Project: "services/jobs", Path: name + ".java",
+				StartLine: 1, EndLine: 1, Role: contextConcernPersistence,
+				RenderMode: "signature", Content: "findByCatalogId(long catalogId)",
+			},
+			estimated: 20, projectKey: "services/jobs",
+		}
+	}
+	dependent := option("comment", "CatalogJobCommentRepository")
+	primary := option("regular", "CatalogJobRepository")
+	view := option("view", "UserJobVRepository")
+	primaryQuality := contextSourceCandidateQuality(
+		pack,
+		scan.AgentContextIndexRecord{},
+		primary,
+	)
+	viewQuality := contextSourceCandidateQuality(
+		pack,
+		scan.AgentContextIndexRecord{},
+		view,
+	)
+	if primaryQuality <= viewQuality {
+		t.Fatalf("primary repository quality %d <= derived view %d", primaryQuality, viewQuality)
+	}
+
+	got, _, found, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{dependent, primary, view},
+		nil,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || got.candidate.FactID != "regular" {
+		t.Fatalf("dependent repository displaced a primary owner: %#v", got)
+	}
+}
+
+func TestContextSourceUtilitySkipsWeakOptionalPersistence(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job persistence and lookup attributes",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens}
+	state := contextSourceSelectionState{
+		selectedCandidates:       map[string]bool{},
+		selectedFactIDs:          map[string]bool{},
+		selectedProjects:         map[string]bool{"libraries/common": true},
+		coveredConcerns:          map[string]bool{contextConcernPersistence: true},
+		coveredRoles:             map[string]bool{contextConcernPersistence: true},
+		selectedEvidenceFamilies: map[string]int{},
+	}
+	weak := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "protocol", Project: "libraries/common",
+			Path: "CatalogProtocolRepository.java",
+			Role: contextConcernPersistence, Kind: "symbol",
+			Name:      "CatalogProtocolRepository",
+			Qualified: "example.CatalogProtocolRepository",
+		},
+		section: ContextSourceSection{
+			Project: "libraries/common", Path: "CatalogProtocolRepository.java",
+			StartLine: 1, EndLine: 2, Role: contextConcernPersistence,
+			RenderMode: "declaration_body",
+			Content:    "interface CatalogProtocolRepository extends Repository<ProtocolEntity> {}",
+		},
+		estimated: 40, projectKey: "libraries/common",
+	}
+
+	got, utility, found, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{weak},
+		nil,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatalf("weak optional persistence retained with utility %d: %#v", utility, got)
+	}
+}
+
+func TestContextSourceUtilitySkipsOptionalRepositoryWithoutModelPair(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job persistence and lookup attributes",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens}
+	state := contextSourceSelectionState{
+		selectedCandidates:       map[string]bool{},
+		selectedFactIDs:          map[string]bool{},
+		selectedProjects:         map[string]bool{"services/jobs": true},
+		coveredConcerns:          map[string]bool{contextConcernPersistence: true},
+		coveredRoles:             map[string]bool{},
+		selectedEvidenceFamilies: map[string]int{},
+	}
+	adjacent := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "state", Project: "services/jobs",
+			Path: "CatalogJobStateRepository.java",
+			Role: contextConcernPersistence, Kind: "symbol",
+			Name:      "CatalogJobStateRepository",
+			Qualified: "example.CatalogJobStateRepository",
+		},
+		section: ContextSourceSection{
+			Project: "services/jobs", Path: "CatalogJobStateRepository.java",
+			StartLine: 1, EndLine: 2, Role: contextConcernPersistence,
+			RenderMode: "declaration_body",
+			Content:    "interface CatalogJobStateRepository extends Repository<StateEntity> {}",
+		},
+		estimated: 40, projectKey: "services/jobs",
+		evidenceFamily: contextConcernPersistence, stableMatches: 3,
+		quality: 700, profiled: true,
+	}
+
+	got, utility, found, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{adjacent},
+		nil,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatalf("unpaired optional persistence retained with utility %d: %#v", utility, got)
+	}
+}
+
+func TestContextSourceUtilitySkipsUnrequestedDomainModel(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job task types and lookup attributes",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens}
+	state := contextSourceSelectionState{
+		selectedCandidates:       map[string]bool{},
+		selectedFactIDs:          map[string]bool{},
+		selectedProjects:         map[string]bool{"services/jobs": true},
+		coveredConcerns:          map[string]bool{contextConcernDomainModel: true},
+		coveredRoles:             map[string]bool{},
+		selectedEvidenceFamilies: map[string]int{},
+	}
+	comment := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "comment", Project: "services/jobs",
+			Path: "CatalogJobCommentEntity.java",
+			Role: contextConcernDomainModel, Kind: "symbol",
+			Name: "CatalogJobCommentEntity",
+		},
+		section: ContextSourceSection{
+			Project: "services/jobs", Path: "CatalogJobCommentEntity.java",
+			StartLine: 1, EndLine: 2, Role: contextConcernDomainModel,
+			RenderMode: "declaration_body",
+			Content:    "class CatalogJobCommentEntity {}",
+		},
+		estimated: 30, projectKey: "services/jobs",
+		evidenceFamily: contextConcernDomainModel, stableMatches: 3,
+		quality: 700, profiled: true,
+	}
+
+	got, utility, found, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{comment},
+		nil,
+		state,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found {
+		t.Fatalf("unrequested domain model retained with utility %d: %#v", utility, got)
+	}
+}
+
+func TestContextSourceCandidateQualityPrefersRepositoryMatchingPrimaryModel(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job task types, lookup attributes, and persistence",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity", File: "CatalogJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "primary", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobRepository", File: "CatalogJobRepository.java", Confidence: "EXACT",
+		},
+		{
+			ID: "state", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobStateRepository", File: "CatalogJobStateRepository.java", Confidence: "EXACT",
+		},
+	}}
+	option := func(id, name string) contextSourceOption {
+		return contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: id, FactIDs: []string{id}, Project: "services/jobs",
+				Path: name + ".java", Role: contextConcernPersistence,
+				Kind: "symbol", Name: name, Qualified: "example." + name,
+			},
+			section: ContextSourceSection{
+				Project: "services/jobs", Path: name + ".java",
+				Role: contextConcernPersistence, RenderMode: "signature",
+				Content: "interface " + name,
+			},
+			projectKey: "services/jobs",
+		}
+	}
+	primary := contextSourceCandidateQuality(pack, index, option("primary", "CatalogJobRepository"))
+	state := contextSourceCandidateQuality(pack, index, option("state", "CatalogJobStateRepository"))
+	if primary <= state {
+		t.Fatalf("matching repository quality %d <= adjacent owner %d", primary, state)
+	}
+}
+
+func TestPersistencePairUsesSelectedDomainModels(t *testing.T) {
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job task types, lookup attributes, and persistence",
+		Confidence:            "EXACT",
+		BudgetTokens:          DefaultContextBudgetTokens,
+		selectedSourceFactIDs: []string{"requested-model"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "requested-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity", File: "CatalogJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "adjacent-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogTopicEntity", File: "CatalogTopicEntity.java", Confidence: "EXACT",
+		},
+	}}
+	requested := scan.AgentContextFactRecord{
+		Project: "services/jobs", Kind: "symbol",
+		Name: "CatalogJobRepository", File: "CatalogJobRepository.java",
+	}
+	adjacent := scan.AgentContextFactRecord{
+		Project: "services/jobs", Kind: "symbol",
+		Name: "CatalogTopicRepository", File: "CatalogTopicRepository.java",
+	}
+
+	if !contextPersistenceMatchesSelectedDomainModel(pack, index, requested) {
+		t.Fatal("repository matching the selected domain model was rejected")
+	}
+	if contextPersistenceMatchesSelectedDomainModel(pack, index, adjacent) {
+		t.Fatal("repository matching only an unselected adjacent model was retained")
+	}
+}
+
 func TestContextSourceOptionsRecoverFromStaleMergedAnchor(t *testing.T) {
 	root := t.TempDir()
 	lines := numberedSourceLines(12)
@@ -1456,6 +2082,44 @@ func TestContextSourceOptionsRecoverFromStaleMergedAnchor(t *testing.T) {
 	if len(got.SourceSections) != 1 || !strings.Contains(got.SourceSections[0].Content, "currentNeighbor") ||
 		got.SourceCoverage != "complete" || len(got.SourceOmissions) != 0 || !got.Concerns[0].Covered {
 		t.Fatalf("current neighbor was suppressed by stale merged anchor: %#v", got)
+	}
+}
+
+func TestContextInheritedOwnerCandidateDeduplicatesEquivalentOwners(t *testing.T) {
+	candidate := sourceCandidate{
+		FactID: "find-all", FactIDs: []string{"find-all"},
+		Project: "services/jobs", Path: "CatalogJobRepository.java",
+		StartLine: 17, Role: contextConcernPersistence,
+		Kind: contextConcernPersistence, Name: "findAll",
+		Qualified: "CatalogJobRepository.findAll",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "find-all", Project: "services/jobs", Kind: contextConcernPersistence,
+			Name: "findAll", Qualified: "CatalogJobRepository.findAll",
+			File: "CatalogJobRepository.java", Line: 17,
+		},
+		{
+			ID: "owner-short", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobRepository", Qualified: "CatalogJobRepository",
+			File: "CatalogJobRepository.java", Line: 17,
+		},
+		{
+			ID: "owner-full", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobRepository", Qualified: "example.CatalogJobRepository",
+			File: "CatalogJobRepository.java", Line: 17, Confidence: "EXACT",
+		},
+	}}
+
+	owner, ok := contextInheritedOwnerCandidate(index, candidate)
+	if !ok {
+		t.Fatal("equivalent indexed owner declarations were treated as ambiguous")
+	}
+	if owner.Name != "CatalogJobRepository" ||
+		owner.Qualified != "CatalogJobRepository" ||
+		owner.StartLine != 17 ||
+		owner.SourceState != "inherited_owner_current" {
+		t.Fatalf("inherited owner = %#v", owner)
 	}
 }
 
