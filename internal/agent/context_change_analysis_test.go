@@ -95,6 +95,37 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 			pack.SourceOmissions,
 		)
 	}
+	for _, concern := range pack.Concerns {
+		if !concern.Covered || !contextSourceCrossCuttingFamily(concern.Kind) {
+			continue
+		}
+		supported := false
+		internalConcern := newContextConcern(
+			concern.Kind,
+			normalizeContextProject(concern.Project),
+			true,
+			nil,
+			concern.Reason,
+		)
+		for _, section := range pack.SourceSections {
+			if contextSourceSectionSupportsConcern(section, internalConcern) {
+				supported = true
+				break
+			}
+		}
+		if !supported {
+			t.Errorf("covered concern lacks actionable rendered source: %#v", concern)
+		}
+	}
+	for _, section := range pack.SourceSections {
+		if section.Role != "test" {
+			continue
+		}
+		if section.RenderMode == "signature" ||
+			!contextSourceSectionHasExecutableTest(section, contextSourceSemanticContent(section.Content)) {
+			t.Errorf("test source lacks executable rendered body: %#v", section)
+		}
+	}
 	if pack.EstimatedTokens > DefaultContextBudgetTokens ||
 		len(pack.SourceSections) > MaxContextSourceSections ||
 		len(pack.Files) > DefaultContextMaxFiles {
@@ -486,6 +517,12 @@ func writeMissingContractContextFixture(t *testing.T) string {
 	writeContextSourceFile(
 		t,
 		root,
+		filepath.Join("services/jobs", "src/test/java/example/JobManagementControllerTest.java"),
+		contextJobManagementControllerTestFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
 		filepath.Join("services/jobs", "src/main/java/example/CatalogJobEntity.java"),
 		contextDomainModelFixtureSource("CatalogJobEntity", "", "catalogId", "itemId"),
 	)
@@ -506,6 +543,15 @@ func contextJobClientFixtureSource() string {
 	lines[16] = "  HttpHeaders headers = basicAuthentication(configuration.credentials());"
 	lines[17] = "  return restClient.get(path, headers, catalogId);"
 	lines[18] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextJobManagementControllerTestFixtureSource() string {
+	lines := numberedSourceLines(20)
+	lines[9] = "@Test"
+	lines[10] = "void listJobs() {"
+	lines[11] = "  assert true;"
+	lines[12] = "}"
 	return strings.Join(lines, "\n") + "\n"
 }
 

@@ -1812,6 +1812,7 @@ func TestSmallestFittingContextSourceOptionPrefersProjectEvidenceQuality(t *test
 	modelSignature.section.RenderMode = "signature"
 	modelSignature.section.Content = "class CatalogJobEntity"
 	modelSignature.estimated = 10
+	modelSignature.concernKeys = nil
 	got, ok, err = smallestFittingContextSourceOption(
 		pack,
 		request,
@@ -1823,8 +1824,52 @@ func TestSmallestFittingContextSourceOptionPrefersProjectEvidenceQuality(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ok || got.section.RenderMode != "signature" {
-		t.Fatalf("exact boundary did not retain cost-first rendering: %#v", got)
+	if !ok || got.section.RenderMode != "declaration_body" {
+		t.Fatalf("exact boundary did not prefer required concern evidence: %#v", got)
+	}
+}
+
+func TestSmallestFittingContextSourceOptionPrefersActionableFactEvidence(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernConfiguration,
+		"libraries/jobs",
+		true,
+		[]string{"config"},
+		"requested configuration",
+	)
+	candidate := sourceCandidate{
+		FactID: "config", FactIDs: []string{"config"},
+		Project: "libraries/jobs", Path: "JobConfig.java",
+	}
+	signature := contextSourceOption{
+		candidate: candidate,
+		section:   ContextSourceSection{Project: "libraries/jobs", Path: "JobConfig.java", RenderMode: "signature", Content: "class JobConfig {"},
+		estimated: 10, projectKey: "libraries/jobs",
+	}
+	body := contextSourceOption{
+		candidate: candidate,
+		section:   ContextSourceSection{Project: "libraries/jobs", Path: "JobConfig.java", RenderMode: "declaration_body", Content: "String path = configuration.getJobsPath();"},
+		estimated: 30, projectKey: "libraries/jobs",
+		concernKeys: []string{concern.key}, required: true,
+	}
+	state := contextSourceSelectionState{
+		selectedCandidates:       map[string]bool{},
+		selectedFactIDs:          map[string]bool{},
+		selectedProjects:         map[string]bool{},
+		coveredConcerns:          map[string]bool{},
+		coveredRoles:             map[string]bool{},
+		selectedEvidenceFamilies: map[string]int{},
+	}
+	got, found, err := smallestFittingContextSourceOption(
+		ContextPack{Schema: 1, Query: "jobs configuration", BudgetTokens: DefaultContextBudgetTokens},
+		ContextRequest{BudgetTokens: DefaultContextBudgetTokens, MaxFiles: DefaultContextMaxFiles},
+		[]contextSourceOption{signature, body},
+		[]contextConcern{concern},
+		state,
+		contextSourceBoundary{factID: "config"},
+	)
+	if err != nil || !found || got.section.RenderMode != "declaration_body" {
+		t.Fatalf("mandatory actionable option = %#v, found %v, err %v", got, found, err)
 	}
 }
 

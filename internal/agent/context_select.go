@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1670,7 +1671,13 @@ func smallestFittingContextSourceOption(
 		}
 		better := option.estimated < best.estimated ||
 			option.estimated == best.estimated && contextSourceOptionLess(option, best)
-		if boundary.project != "" {
+		if boundary.factID != "" {
+			optionGain := contextSourceBoundaryConcernGain(option, boundary, concerns, state)
+			bestGain := contextSourceBoundaryConcernGain(best, boundary, concerns, state)
+			if optionGain != bestGain {
+				better = optionGain > bestGain
+			}
+		} else if boundary.project != "" {
 			better = betterContextProjectBoundaryOption(pack, option, best)
 		}
 		if !found || better {
@@ -1678,6 +1685,31 @@ func smallestFittingContextSourceOption(
 		}
 	}
 	return best, found, nil
+}
+
+func contextSourceBoundaryConcernGain(
+	option contextSourceOption,
+	boundary contextSourceBoundary,
+	concerns []contextConcern,
+	state contextSourceSelectionState,
+) int {
+	if boundary.factID == "" {
+		return 0
+	}
+	optionKeys := make(map[string]bool, len(option.concernKeys))
+	for _, key := range option.concernKeys {
+		optionKeys[key] = true
+	}
+	gain := 0
+	for _, concern := range concerns {
+		if !concern.required || state.coveredConcerns[concern.key] ||
+			!optionKeys[concern.key] ||
+			!slices.Contains(concern.candidateFactIDs, boundary.factID) {
+			continue
+		}
+		gain++
+	}
+	return gain
 }
 
 func betterContextProjectBoundaryOption(
