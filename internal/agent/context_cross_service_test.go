@@ -430,7 +430,19 @@ func crossServiceSource(extension, sourcePath string, facts []scan.AgentContextF
 		lines[1] = "type " + fixtureType + " struct{}"
 	}
 	for _, fact := range facts {
-		lines[fact.Line-1] = crossServiceSourceDeclaration(extension, fixtureType, crossServiceFactIdentifier(fact))
+		if fact.ID == "client" {
+			lines[fact.Line-1] = crossServiceOperationalClientDeclaration(
+				extension,
+				fixtureType,
+				crossServiceFactIdentifier(fact),
+			)
+			continue
+		}
+		lines[fact.Line-1] = crossServiceSourceDeclaration(
+			extension,
+			fixtureType,
+			crossServiceFactIdentifier(fact),
+		)
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
@@ -474,5 +486,26 @@ func crossServiceSourceDeclaration(extension, fixtureType, identifier string) st
 		return "def " + identifier + "(): pass"
 	default:
 		return "    void " + identifier + "() {}"
+	}
+}
+
+func crossServiceOperationalClientDeclaration(
+	extension,
+	fixtureType,
+	identifier string,
+) string {
+	switch extension {
+	case ".go":
+		return "func (" + fixtureType + ") " + identifier +
+			"() { retryTemplate.Execute(client.WithBasicAuth(config.Timeout())) }"
+	case ".ts":
+		return "export function " + identifier +
+			"() { retryTemplate.execute(client.withBasicAuth(config.timeout())); }"
+	case ".py":
+		return "def " + identifier +
+			"(): retry_template.execute(client.with_basic_auth(config.timeout()))"
+	default:
+		return "    void " + identifier +
+			"() { retryTemplate.execute(() -> client.withBasicAuth(config.timeout())); }"
 	}
 }

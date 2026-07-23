@@ -61,6 +61,19 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 			t.Errorf("lookup identity %q missing from source sections", identity)
 		}
 	}
+	for _, operationalEvidence := range []string{
+		"@Retryable",
+		"configuration.getAllJobsPath",
+		"basicAuthentication",
+		"publishDeletion",
+	} {
+		if !contextSourceContainsStableIdentity(pack, operationalEvidence) {
+			t.Errorf("operational evidence %q missing from source sections", operationalEvidence)
+		}
+	}
+	if !paths["src/main/java/example/JobHousekeeping.java"] {
+		t.Errorf("side-effect method source missing from %#v", pack.SourceSections)
+	}
 	for _, path := range []string{
 		"src/main/java/example/MailProperties.java",
 		"src/main/java/example/AsyncExceptionHandler.java",
@@ -192,6 +205,115 @@ func TestSourceConcernScoreDoesNotTreatSearchTextAsAnchorIdentity(t *testing.T) 
 	searchOnlyScore := contextSourceConcernFactScore(searchOnly, concern, "persistence", anchors)
 	if relevantScore <= searchOnlyScore {
 		t.Fatalf("identity score %d did not beat search-only score %d", relevantScore, searchOnlyScore)
+	}
+}
+
+func TestPublicConfigurationConcernPrefersDomainConfigHolder(t *testing.T) {
+	seed := scan.AgentContextFactRecord{
+		ID: "route", Project: "services/regulations", Kind: "route",
+		Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+		HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+		File: "RegulationController.java", Confidence: "EXACT",
+		Search: "delete cadaster regulation object",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		seed,
+		{
+			ID: "application-accessor", Project: "services/tasks", Kind: "symbol",
+			Name: "isParallelBatching", Qualified: "ApplicationConfig.isParallelBatching",
+			File: "ApplicationConfig.java", Confidence: "EXACT",
+			Search: "cadaster task configuration parallel batching",
+		},
+		{
+			ID: "task-client-config", Project: "libraries/common", Kind: "symbol",
+			Name: "CadasterTaskMgmtConfig", Qualified: "example.CadasterTaskMgmtConfig",
+			File: "CadasterTaskMgmtConfig.java", Confidence: "EXACT",
+			Search: "cadaster task management configuration base url credentials timeout retries",
+		},
+	}}
+	query := "Delete a cadaster regulation and its tasks across services/regulations, services/tasks, and libraries/common. Cover configuration."
+
+	concerns := publicContextConcerns(planContextConcerns(query, index, seed))
+	for _, concern := range concerns {
+		if concern.Kind != contextConcernConfiguration {
+			continue
+		}
+		if concern.Project != "libraries/common" {
+			t.Fatalf("configuration concern project = %q, want domain config holder: %#v", concern.Project, concerns)
+		}
+		return
+	}
+	t.Fatalf("configuration concern missing: %#v", concerns)
+}
+
+func TestScopedConfigurationRankRewardsConfigHolderOverAccessor(t *testing.T) {
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "application-accessor", Project: "services/tasks", Kind: "symbol",
+			Name: "isParallelBatching", Qualified: "CadasterTaskApplicationConfig.isParallelBatching",
+			File: "CadasterTaskApplicationConfig.java", Confidence: "EXACT",
+			Search: "cadaster task configuration parallel batching",
+		},
+		{
+			ID: "task-client-config", Project: "libraries/common", Kind: "symbol",
+			Name: "CadasterTaskMgmtConfig", Qualified: "example.CadasterTaskMgmtConfig",
+			File: "CadasterTaskMgmtConfig.java", Confidence: "EXACT",
+			Search: "cadaster task management configuration",
+		},
+	}
+	query := "cadaster task configuration"
+
+	accessorRank := contextScopedConcernRank(
+		query,
+		"services/tasks",
+		contextConcernConfiguration,
+		[]string{"application-accessor"},
+		facts,
+	)
+	configHolderRank := contextScopedConcernRank(
+		query,
+		"libraries/common",
+		contextConcernConfiguration,
+		[]string{"task-client-config"},
+		facts,
+	)
+	if configHolderRank <= accessorRank {
+		t.Fatalf("config holder rank %d <= generated accessor rank %d", configHolderRank, accessorRank)
+	}
+}
+
+func TestSideEffectConcernCandidatesIncludeSameActionProductionMethod(t *testing.T) {
+	queryTokens := contextExpandedTokenSet(
+		"delete cadaster regulation tasks with mail protocol logging and user information side effects",
+	)
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "mail-type", Project: "services/tasks", Kind: "symbol",
+			Name: "CadasterTaskMailService", Qualified: "example.CadasterTaskMailService",
+			File: "CadasterTaskMailService.java", Confidence: "EXACT",
+			Search: "cadaster task mail side effect",
+		},
+		{
+			ID: "delete-method", Project: "services/tasks", Kind: "symbol",
+			Name: "deleteCadasterTask", Qualified: "CadasterTaskService.deleteCadasterTask",
+			File: "CadasterTaskService.java", Confidence: "EXACT",
+			Search: "delete cadaster regulation task",
+		},
+	}
+
+	candidates := contextExplicitProjectConcernCandidates(
+		queryTokens,
+		"services/tasks",
+		contextConcernSideEffects,
+		facts,
+		map[string]bool{},
+	)
+	found := false
+	for _, candidate := range candidates {
+		found = found || candidate == "delete-method"
+	}
+	if !found {
+		t.Fatalf("same-action production method missing from side-effect candidates: %v", candidates)
 	}
 }
 

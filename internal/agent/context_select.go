@@ -433,7 +433,12 @@ func appendContextSourceCandidateOptions(
 		if err != nil {
 			return 0, err
 		}
-		concernKeys, required := contextSourceOptionConcerns(optionCandidate, section, concerns)
+		concernKeys, required := contextSourceOptionConcerns(
+			optionCandidate,
+			section,
+			concerns,
+			index,
+		)
 		projectKey := ""
 		if optionCandidate.Role != "test" {
 			projectKey = normalizeContextProject(optionCandidate.Project)
@@ -842,10 +847,15 @@ func contextSourceOptionConcerns(
 	candidate sourceCandidate,
 	section ContextSourceSection,
 	concerns []contextConcern,
+	index scan.AgentContextIndexRecord,
 ) ([]string, bool) {
 	factIDs := make(map[string]bool)
 	for _, factID := range contextSourceCandidateFactIDs(candidate) {
 		factIDs[factID] = true
+	}
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
 	}
 	keys := []string{}
 	required := false
@@ -858,6 +868,23 @@ func contextSourceOptionConcerns(
 			if factIDs[factID] {
 				covered = true
 				break
+			}
+		}
+		if covered && concern.project != "" &&
+			normalizeContextProject(candidate.Project) != concern.project {
+			covered = false
+		}
+		if covered && contextSourceCrossCuttingFamily(concern.kind) {
+			exactKind := false
+			for factID := range factIDs {
+				fact, ok := factByID[factID]
+				if ok && normalizedContextConcernKind(fact.Kind) == concern.kind {
+					exactKind = true
+					break
+				}
+			}
+			if !exactKind {
+				covered = contextSourceSectionSupportsConcern(section, concern)
 			}
 		}
 		if concern.kind == contextConcernProject {
@@ -896,23 +923,28 @@ func contextSourceSectionSupportsConcern(
 			".authenticated(",
 			"authorization",
 			"basicauth",
+			"basic_auth",
 			"oauth2",
 			"securityfilterchain",
 		)
 	case contextConcernConfiguration:
-		return contextSourceContainsAny(content,
-			"@configurationproperties",
-			"@value(",
-			"connecttimeout",
-			"readtimeout",
-			"maxretries",
-		)
+		return contextValueRequestsConcern(section.Content, contextConcernConfiguration) ||
+			contextSourceContainsAny(content,
+				"@configurationproperties",
+				"@value(",
+				"configuration.",
+				"config.",
+				"connecttimeout",
+				"readtimeout",
+				"maxretries",
+			)
 	case contextConcernResilience:
 		return contextSourceContainsAny(content,
 			"@retryable",
 			"maxattempts",
 			"recover",
 			"retrytemplate",
+			"retry_template",
 			"timeout",
 		)
 	case contextConcernPersistence:
@@ -929,6 +961,7 @@ func contextSourceSectionSupportsConcern(
 			"trackingservice.",
 			"eventpublisher.",
 			"log.",
+			" publish",
 		)
 	case contextConcernTests:
 		return contextSourceContainsAny(content, "@test", "describe(", "it(", "test(")
@@ -1010,6 +1043,12 @@ func contextSourceEvidenceFamily(
 			return contextConcernSideEffects
 		case contextConcernTests:
 			return contextConcernTests
+		}
+	}
+	for _, key := range option.concernKeys {
+		kind, _, _ := strings.Cut(key, ":")
+		if contextSourceCrossCuttingFamily(kind) {
+			return kind
 		}
 	}
 	if contextSourceOptionActionAligned(pack, option) {
@@ -1101,8 +1140,7 @@ func contextSourceOptionQuality(
 	}
 	family := contextSourceEvidenceFamily(pack, index, option)
 	if option.section.RenderMode == "signature" &&
-		contextSourceCrossCuttingFamily(family) &&
-		contextSourceStableDomainMatches(pack, index, option) == 0 {
+		contextSourceCrossCuttingFamily(family) {
 		quality -= 320
 	}
 	return max(-500, min(quality, 1000))

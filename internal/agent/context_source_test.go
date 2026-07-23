@@ -1304,7 +1304,12 @@ func TestContextSourceOptionConcernsUseRenderedResilienceEvidence(t *testing.T) 
 		),
 	}
 
-	keys, required := contextSourceOptionConcerns(candidate, section, concerns)
+	keys, required := contextSourceOptionConcerns(
+		candidate,
+		section,
+		concerns,
+		scan.AgentContextIndexRecord{},
+	)
 	if !required || len(keys) != 1 || keys[0] != contextConcernResilience {
 		t.Fatalf("rendered resilience concerns = %v, required %v", keys, required)
 	}
@@ -1332,7 +1337,12 @@ func TestContextSourceOptionConcernsKeepRenderedEvidenceProjectScoped(t *testing
 		),
 	}
 
-	keys, required := contextSourceOptionConcerns(candidate, section, concerns)
+	keys, required := contextSourceOptionConcerns(
+		candidate,
+		section,
+		concerns,
+		scan.AgentContextIndexRecord{},
+	)
 	if required || len(keys) != 0 {
 		t.Fatalf("cross-project rendered concerns = %v, required %v", keys, required)
 	}
@@ -2002,6 +2012,41 @@ func TestContextSourceUtilityPrefersPrimaryRepositoryOverDependency(t *testing.T
 	}
 }
 
+func TestContextSourceOptionQualityPenalizesCrossCuttingTypeSignature(t *testing.T) {
+	pack := ContextPack{
+		Query: "Delete catalog jobs. Cover task types, fields, mail, protocol, and side effects.",
+	}
+	fact := scan.AgentContextFactRecord{
+		ID: "mail-type", Project: "services/jobs", Kind: "symbol",
+		Name: "CatalogJobMailService", Qualified: "example.CatalogJobMailService",
+		File: "CatalogJobMailService.java", Confidence: "EXACT",
+		Search: "catalog job mail side effects",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{fact}}
+	option := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: fact.ID, FactIDs: []string{fact.ID},
+			Project: fact.Project, Path: fact.File, Role: "call_chain",
+			Kind: fact.Kind, Name: fact.Name, Qualified: fact.Qualified,
+		},
+		section: ContextSourceSection{
+			Project: fact.Project, Path: fact.File, Role: "call_chain",
+			RenderMode: "signature", Content: "public class CatalogJobMailService {",
+		},
+		concernKeys: []string{contextConcernSideEffects + ":services/jobs"},
+	}
+
+	candidateQuality := contextSourceCandidateQuality(pack, index, option)
+	optionQuality := contextSourceOptionQuality(pack, index, option)
+	if optionQuality >= candidateQuality {
+		t.Fatalf(
+			"cross-cutting type signature quality = %d, want below candidate quality %d",
+			optionQuality,
+			candidateQuality,
+		)
+	}
+}
+
 func TestContextSourceUtilitySkipsWeakOptionalPersistence(t *testing.T) {
 	pack := ContextPack{
 		Schema: 1, Query: "catalog job persistence and lookup attributes",
@@ -2388,7 +2433,12 @@ func TestContextSourceOptionsRespectFileBudget(t *testing.T) {
 func TestContextSourceOptionsIncludeUnselectedRequiredConcernEvidence(t *testing.T) {
 	root := t.TempDir()
 	writeSourceFile(t, root, "services/catalog/CatalogController.go", "package catalog\n\nfunc listCatalog() {}\n")
-	writeSourceFile(t, root, "libraries/client/ClientConfig.go", "package client\n\ntype ClientConfig struct{}\n")
+	writeSourceFile(
+		t,
+		root,
+		"libraries/client/ClientConfig.go",
+		"package client\n\ntype ClientConfig struct {\n\tTimeout int\n}\n",
+	)
 	pack := ContextPack{
 		Schema:       1,
 		Query:        "GET /catalog. Analyze libraries/client job client configuration.",
@@ -2434,7 +2484,12 @@ func TestContextSourceOptionsIncludeUnselectedRequiredConcernEvidence(t *testing
 		t.Fatalf("required unselected concern source missing: %#v", got.SourceSections)
 	}
 	if got.SourceCoverage != "complete" {
-		t.Fatalf("source coverage = %q, omissions %#v", got.SourceCoverage, got.SourceOmissions)
+		t.Fatalf(
+			"source coverage = %q, omissions %#v, sections %#v",
+			got.SourceCoverage,
+			got.SourceOmissions,
+			got.SourceSections,
+		)
 	}
 }
 

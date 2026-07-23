@@ -268,6 +268,7 @@ func contextScopedConcernRank(
 		if normalizedContextConcernKind(fact.Kind) == kind {
 			score += 30
 		}
+		score += contextConcernFactShapeScore(fact, kind)
 		score += 10 * contextDomainModelConfidenceScore(fact.Confidence)
 		if score > best {
 			best = score
@@ -491,7 +492,13 @@ func contextExplicitProjectConcernCandidates(
 				fact.Path,
 				fact.Summary,
 			}, " ")
-			if factKind != kind && !contextValueRequestsConcern(value, kind) {
+			matchesConcern := factKind == kind || contextValueRequestsConcern(value, kind)
+			if !matchesConcern &&
+				kind == contextConcernSideEffects &&
+				contextConcernActionAligned(queryTokens, fact) {
+				matchesConcern = true
+			}
+			if !matchesConcern {
 				continue
 			}
 		}
@@ -511,6 +518,39 @@ func contextExplicitProjectConcernCandidates(
 		}
 	}
 	return orderedContextConcernIDs(result)
+}
+
+func contextConcernActionAligned(
+	queryTokens map[string]bool,
+	fact scan.AgentContextFactRecord,
+) bool {
+	requested := contextActionFamilies(strings.Join(mapContextConcernKeys(queryTokens), " "), "")
+	candidate := contextActionFamilies(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.HTTPMethod,
+		fact.Path,
+	}, " "), fact.HTTPMethod)
+	return len(requested) > 0 && contextActionFamiliesOverlap(requested, candidate)
+}
+
+func contextConcernFactShapeScore(
+	fact scan.AgentContextFactRecord,
+	kind string,
+) int {
+	if kind != contextConcernConfiguration {
+		return 0
+	}
+	name := compactContextIdentifier(fact.Name)
+	for _, suffix := range []string{"config", "configuration", "properties"} {
+		if strings.HasSuffix(name, suffix) {
+			return 120
+		}
+	}
+	if _, _, accessor := javaGeneratedAccessorFieldName(fact.Name); accessor {
+		return -80
+	}
+	return 0
 }
 
 func contextConcernDomainQueryTokens(queryTokens map[string]bool) map[string]bool {

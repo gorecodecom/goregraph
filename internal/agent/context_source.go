@@ -385,6 +385,11 @@ func contextSourceConcernFactScoreWithIndex(
 	if factKind == concern.kind {
 		score += 100
 	}
+	score += contextConcernFactShapeScore(fact, concern.kind)
+	if concern.kind == contextConcernSideEffects &&
+		contextConcernActionAligned(contextExpandedTokenSet(query), fact) {
+		score += 140
+	}
 	value := strings.Join([]string{
 		fact.Name,
 		fact.Qualified,
