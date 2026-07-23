@@ -2345,6 +2345,7 @@ func writeCLIContextFixture(t *testing.T, neighbors int) string {
 		Generated:     "generated",
 		Facts: []scan.AgentContextFactRecord{{
 			ID: "route", Project: "api", Kind: "route", Name: "users route",
+			Qualified: "UserController.deleteUser",
 			HTTPMethod: "DELETE", Path: "/users/{id}", File: "UserController.java",
 			Line: 20, EndLine: 28, Confidence: "EXACT", Search: "GET /users DELETE /users/{id}",
 		}},
@@ -2353,18 +2354,20 @@ func writeCLIContextFixture(t *testing.T, neighbors int) string {
 		id := "neighbor-" + string(rune('a'+number))
 		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
 			ID: id, Project: "api", Kind: "symbol", Name: id,
-			File: id + ".go", Confidence: "EXACT",
+			Qualified: strings.ReplaceAll(id, "-", ""), File: id + ".go", Confidence: "EXACT",
 		})
 		index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
 			ID: "edge-" + id, FromFactID: "route", ToFactID: id,
 			FromLabel: "route", ToLabel: id, Kind: "call", Confidence: "EXACT",
 		})
+		writeFile(t, root, id+".go", "package api\n\nfunc "+strings.ReplaceAll(id, "-", "")+"() {}\n")
 	}
 	body, err := json.Marshal(index)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, root, "goregraph-out/agent/context-index.json", string(body))
+	writeFile(t, root, "UserController.java", strings.Repeat("// padding\n", 19)+"public void deleteUser() {\n\tservice.removeUser();\n}\n")
 	return root
 }
 
@@ -2450,6 +2453,8 @@ func writeCLIEndpointContextFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	writeFile(t, root, "goregraph-out/agent/context-index.json", string(body))
+	writeFile(t, root, "services/orders/src/OrderController.java",
+		strings.Repeat("// padding\n", 19)+"public OrderResponse get() {\n\treturn service.getOrder();\n}\n")
 	return root
 }
 

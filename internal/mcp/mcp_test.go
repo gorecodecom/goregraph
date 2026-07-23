@@ -392,8 +392,8 @@ func TestMCPTaskContextPassesBudgetsToCompilerAsBareCompactJSON(t *testing.T) {
 		t.Fatalf("MCP source is not useful: %#v", pack.SourceSections)
 	}
 	if section := pack.SourceSections[0]; section.StartLine != 20 || section.EndLine != 22 ||
-		section.RenderMode != "body" || !strings.Contains(section.Content, "service.removeUser();") {
-		t.Fatalf("MCP enriched source = %#v, want body range 20-22", section)
+		section.RenderMode != "declaration_body" || !strings.Contains(section.Content, "service.removeUser();") {
+		t.Fatalf("MCP enriched source = %#v, want declaration body range 20-22", section)
 	}
 	if pack.SourceCoverage != "complete" || pack.SourceUnrepresented != 0 {
 		t.Fatalf("MCP source coverage = %q / %d", pack.SourceCoverage, pack.SourceUnrepresented)
@@ -666,6 +666,8 @@ func writeMCPEndpointContextFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	writeFile(t, root, "goregraph-out/agent/context-index.json", string(body))
+	writeFile(t, root, "services/orders/src/OrderController.java",
+		strings.Repeat("// padding\n", 19)+"public OrderResponse get() {\n\treturn service.getOrder();\n}\n")
 	return root
 }
 
