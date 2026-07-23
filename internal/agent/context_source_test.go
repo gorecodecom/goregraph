@@ -452,6 +452,81 @@ func TestRenderSourceCandidateKeepsIndexedConstructorOverClassDeclaration(t *tes
 	}
 }
 
+func TestRenderSourceCandidateRelocatesGeneratedAccessorToBackingField(t *testing.T) {
+	lines := []string{
+		"@Getter",
+		"public class ApplicationConfig {",
+		"  private boolean showErrorsInResponse;",
+		"  private boolean userLicensesParallelBatching;",
+		"}",
+	}
+	candidate := sourceCandidate{
+		Path: "ApplicationConfig.java", StartLine: 2, Kind: "symbol",
+		Name:      "isUserLicensesParallelBatching",
+		Qualified: "ApplicationConfig.isUserLicensesParallelBatching",
+	}
+
+	section, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: lines},
+		"signature",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 4 || section.EndLine != 4 ||
+		section.SourceState != "relocated_current" ||
+		section.Content != "4\t  private boolean userLicensesParallelBatching;" {
+		t.Fatalf("generated accessor section = %#v", section)
+	}
+}
+
+func TestRenderSourceCandidateRejectsAmbiguousGeneratedAccessorFields(t *testing.T) {
+	lines := []string{
+		"class FirstConfig {",
+		"  private boolean enabled;",
+		"}",
+		"class SecondConfig {",
+		"  private boolean enabled;",
+		"}",
+	}
+	candidate := sourceCandidate{
+		Path: "Config.java", StartLine: 1, Kind: "symbol",
+		Name: "isEnabled", Qualified: "FirstConfig.isEnabled",
+	}
+
+	_, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: lines},
+		"signature",
+	)
+	if err == nil || err.Error() != "indexed symbol is ambiguous in current source" {
+		t.Fatalf("renderSourceCandidate() error = %v", err)
+	}
+}
+
+func TestRenderSourceCandidateDoesNotRelocateGeneratedAccessorOutsideJava(t *testing.T) {
+	lines := []string{
+		"type ApplicationConfig struct {",
+		"  userLicensesParallelBatching bool",
+		"}",
+	}
+	candidate := sourceCandidate{
+		Path: "config.go", StartLine: 1, Kind: "symbol",
+		Name:      "isUserLicensesParallelBatching",
+		Qualified: "ApplicationConfig.isUserLicensesParallelBatching",
+	}
+
+	_, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: lines},
+		"signature",
+	)
+	if err == nil || err.Error() != "indexed symbol is absent from current source" {
+		t.Fatalf("renderSourceCandidate() error = %v", err)
+	}
+}
+
 func TestRenderSourceCandidateRejectsIdentifiersOutsideCode(t *testing.T) {
 	candidate := sourceCandidate{Path: "source", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
 	for _, line := range []string{

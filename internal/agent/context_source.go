@@ -608,6 +608,21 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 		declaration = declarations[0]
 		state = "relocated_current"
 	}
+	if state == "" && len(occurrences) == 0 {
+		if fields, accessor := javaGeneratedAccessorFieldDeclarations(
+			file.Path,
+			codeLines,
+			identifier,
+		); accessor {
+			switch {
+			case len(fields) == 1:
+				declaration = fields[0]
+				state = "relocated_current"
+			case len(fields) > 1:
+				return ContextSourceSection{}, fmt.Errorf("indexed symbol is ambiguous in current source")
+			}
+		}
+	}
 	if state == "" {
 		switch {
 		case len(occurrences) == 0:
@@ -645,6 +660,82 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 		SourceState: state,
 		Content:     renderNumberedSource(file.Lines, renderStart, renderEnd),
 	}, nil
+}
+
+func javaGeneratedAccessorFieldDeclarations(
+	path string,
+	codeLines []string,
+	identifier string,
+) ([]sourceOccurrence, bool) {
+	if !strings.EqualFold(filepath.Ext(path), ".java") {
+		return nil, false
+	}
+	field, booleanAccessor, ok := javaGeneratedAccessorFieldName(identifier)
+	if !ok {
+		return nil, false
+	}
+	occurrences := identifierOccurrences(codeLines, field)
+	declarations := make([]sourceOccurrence, 0, len(occurrences))
+	for _, occurrence := range occurrences {
+		if javaFieldDeclarationLike(
+			codeLines[occurrence.Line-1],
+			occurrence.Start,
+			occurrence.End,
+			booleanAccessor,
+		) {
+			declarations = append(declarations, occurrence)
+		}
+	}
+	return declarations, true
+}
+
+func javaGeneratedAccessorFieldName(identifier string) (string, bool, bool) {
+	prefix := ""
+	booleanAccessor := false
+	switch {
+	case strings.HasPrefix(identifier, "is"):
+		prefix = "is"
+		booleanAccessor = true
+	case strings.HasPrefix(identifier, "get"):
+		prefix = "get"
+	case strings.HasPrefix(identifier, "set"):
+		prefix = "set"
+	default:
+		return "", false, false
+	}
+	suffix := strings.TrimPrefix(identifier, prefix)
+	if suffix == "" {
+		return "", false, false
+	}
+	first, width := utf8.DecodeRuneInString(suffix)
+	if first == utf8.RuneError || !unicode.IsUpper(first) {
+		return "", false, false
+	}
+	return string(unicode.ToLower(first)) + suffix[width:], booleanAccessor, true
+}
+
+func javaFieldDeclarationLike(
+	line string,
+	start int,
+	end int,
+	booleanAccessor bool,
+) bool {
+	prefix := strings.TrimSpace(line[:start])
+	suffix := strings.TrimSpace(line[end:])
+	if prefix == "" || sourcePrefixIsUnsafe(prefix) ||
+		strings.ContainsAny(prefix, "(){};,") ||
+		!strings.HasPrefix(suffix, ";") && !strings.HasPrefix(suffix, "=") {
+		return false
+	}
+	fields := strings.Fields(prefix)
+	if len(fields) == 0 || !conservativeCallablePrefix(".java", prefix) {
+		return false
+	}
+	if !booleanAccessor {
+		return true
+	}
+	fieldType := fields[len(fields)-1]
+	return fieldType == "boolean" || fieldType == "Boolean"
 }
 
 func contextIdentifier(candidate sourceCandidate) string {
