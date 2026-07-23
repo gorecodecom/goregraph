@@ -617,7 +617,7 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 		if fields, accessor := javaGeneratedAccessorFieldDeclarations(
 			file.Path,
 			codeLines,
-			identifier,
+			candidate,
 		); accessor {
 			switch {
 			case len(fields) == 1:
@@ -670,15 +670,25 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 func javaGeneratedAccessorFieldDeclarations(
 	path string,
 	codeLines []string,
-	identifier string,
+	candidate sourceCandidate,
 ) ([]sourceOccurrence, bool) {
 	if !strings.EqualFold(filepath.Ext(path), ".java") {
 		return nil, false
 	}
+	identifier := contextIdentifier(candidate)
 	field, booleanAccessor, ok := javaGeneratedAccessorFieldName(identifier)
 	if !ok {
 		return nil, false
 	}
+	owner, ok := javaAccessorOwnerIdentifier(candidate)
+	if !ok {
+		return nil, true
+	}
+	owners := javaTypeDeclarationOccurrences(codeLines, owner)
+	if len(owners) != 1 {
+		return nil, true
+	}
+	ownerDeclaration := owners[0]
 	occurrences := identifierOccurrences(codeLines, field)
 	declarations := make([]sourceOccurrence, 0, len(occurrences))
 	for _, occurrence := range occurrences {
@@ -687,11 +697,127 @@ func javaGeneratedAccessorFieldDeclarations(
 			occurrence.Start,
 			occurrence.End,
 			booleanAccessor,
-		) {
+		) && javaDirectOwnerField(codeLines, ownerDeclaration, occurrence) &&
+			javaAccessorGenerationEnabled(codeLines, ownerDeclaration, occurrence, identifier) {
 			declarations = append(declarations, occurrence)
 		}
 	}
 	return declarations, true
+}
+
+func javaAccessorOwnerIdentifier(candidate sourceCandidate) (string, bool) {
+	qualified := strings.TrimSpace(candidate.Qualified)
+	identifier := contextIdentifier(candidate)
+	if qualified == "" || identifier == "" {
+		return "", false
+	}
+	for _, suffix := range []string{"." + identifier, "#" + identifier, "::" + identifier} {
+		if strings.HasSuffix(qualified, suffix) {
+			qualified = strings.TrimSuffix(qualified, suffix)
+			break
+		}
+	}
+	if qualified == "" {
+		return "", false
+	}
+	for _, separator := range []string{".", "#", "::", "$"} {
+		if index := strings.LastIndex(qualified, separator); index >= 0 {
+			qualified = qualified[index+len(separator):]
+		}
+	}
+	qualified = strings.TrimSpace(qualified)
+	return qualified, qualified != ""
+}
+
+func javaTypeDeclarationOccurrences(
+	codeLines []string,
+	identifier string,
+) []sourceOccurrence {
+	occurrences := identifierOccurrences(codeLines, identifier)
+	declarations := make([]sourceOccurrence, 0, len(occurrences))
+	for _, occurrence := range occurrences {
+		prefix := codeLines[occurrence.Line-1][:occurrence.Start]
+		keyword, index := lastDeclarationKeyword(prefix)
+		if index < 0 ||
+			(keyword != "class" && keyword != "interface" &&
+				keyword != "record" && keyword != "enum") ||
+			strings.TrimSpace(prefix[index+len(keyword):]) != "" {
+			continue
+		}
+		declarations = append(declarations, occurrence)
+	}
+	return declarations
+}
+
+func javaDirectOwnerField(
+	codeLines []string,
+	owner sourceOccurrence,
+	field sourceOccurrence,
+) bool {
+	if field.Line < owner.Line ||
+		field.Line == owner.Line && field.Start <= owner.End {
+		return false
+	}
+	depth := 0
+	foundOwnerBody := false
+	for lineNumber := owner.Line; lineNumber <= field.Line; lineNumber++ {
+		line := codeLines[lineNumber-1]
+		start := 0
+		end := len(line)
+		if lineNumber == owner.Line {
+			start = owner.End
+		}
+		if lineNumber == field.Line {
+			end = field.Start
+		}
+		for index := start; index < end; index++ {
+			switch line[index] {
+			case '{':
+				depth++
+				foundOwnerBody = true
+			case '}':
+				depth--
+				if depth < 0 || foundOwnerBody && depth == 0 {
+					return false
+				}
+			}
+		}
+	}
+	return foundOwnerBody && depth == 1
+}
+
+func javaAccessorGenerationEnabled(
+	codeLines []string,
+	owner sourceOccurrence,
+	field sourceOccurrence,
+	identifier string,
+) bool {
+	getter := strings.HasPrefix(identifier, "get") || strings.HasPrefix(identifier, "is")
+	setter := strings.HasPrefix(identifier, "set")
+	if !getter && !setter {
+		return false
+	}
+	hasApplicableAnnotation := func(start, end int) bool {
+		if start < 1 || end < start || end > len(codeLines) {
+			return false
+		}
+		value := strings.ToLower(strings.Join(codeLines[start-1:end], "\n"))
+		if strings.Contains(value, "@data") || strings.Contains(value, ".data") {
+			return true
+		}
+		if getter && (strings.Contains(value, "@getter") ||
+			strings.Contains(value, ".getter") ||
+			strings.Contains(value, "@value") ||
+			strings.Contains(value, ".value")) {
+			return true
+		}
+		return setter && (strings.Contains(value, "@setter") || strings.Contains(value, ".setter"))
+	}
+	if hasApplicableAnnotation(sourceAnnotationStart(codeLines, owner.Line), owner.Line) {
+		return true
+	}
+	return field.Line > 0 &&
+		hasApplicableAnnotation(sourceAnnotationStart(codeLines, field.Line), field.Line)
 }
 
 func javaGeneratedAccessorFieldName(identifier string) (string, bool, bool) {

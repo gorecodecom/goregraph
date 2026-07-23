@@ -541,14 +541,14 @@ func contextConcernFactShapeScore(
 	if kind != contextConcernConfiguration {
 		return 0
 	}
+	if _, _, accessor := javaGeneratedAccessorFieldName(fact.Name); accessor {
+		return -80
+	}
 	name := compactContextIdentifier(fact.Name)
 	for _, suffix := range []string{"config", "configuration", "properties"} {
 		if strings.HasSuffix(name, suffix) {
 			return 120
 		}
-	}
-	if _, _, accessor := javaGeneratedAccessorFieldName(fact.Name); accessor {
-		return -80
 	}
 	return 0
 }

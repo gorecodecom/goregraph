@@ -912,7 +912,9 @@ func contextSourceSectionSupportsConcern(
 		return false
 	}
 	if section.Role == "test" {
-		return concern.kind == contextConcernTests
+		if concern.kind != contextConcernTests {
+			return false
+		}
 	}
 
 	semanticContent := contextSourceSemanticContent(section.Content)

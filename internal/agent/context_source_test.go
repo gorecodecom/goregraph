@@ -483,10 +483,9 @@ func TestRenderSourceCandidateRelocatesGeneratedAccessorToBackingField(t *testin
 
 func TestRenderSourceCandidateRejectsAmbiguousGeneratedAccessorFields(t *testing.T) {
 	lines := []string{
+		"@Getter",
 		"class FirstConfig {",
 		"  private boolean enabled;",
-		"}",
-		"class SecondConfig {",
 		"  private boolean enabled;",
 		"}",
 	}
@@ -501,6 +500,85 @@ func TestRenderSourceCandidateRejectsAmbiguousGeneratedAccessorFields(t *testing
 		"signature",
 	)
 	if err == nil || err.Error() != "indexed symbol is ambiguous in current source" {
+		t.Fatalf("renderSourceCandidate() error = %v", err)
+	}
+}
+
+func TestRenderSourceCandidateRejectsGeneratedAccessorFieldOutsideOwner(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+	}{
+		{
+			name: "local variable",
+			lines: []string{
+				"@Getter",
+				"class FirstConfig {",
+				"  void load() {",
+				"    boolean enabled;",
+				"  }",
+				"}",
+			},
+		},
+		{
+			name: "sibling class",
+			lines: []string{
+				"@Getter",
+				"class FirstConfig {",
+				"}",
+				"class SecondConfig {",
+				"  private boolean enabled;",
+				"}",
+			},
+		},
+		{
+			name: "nested class",
+			lines: []string{
+				"@Getter",
+				"class FirstConfig {",
+				"  class NestedConfig {",
+				"    private boolean enabled;",
+				"  }",
+				"}",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := sourceCandidate{
+				Path: "Config.java", StartLine: 2, Kind: "symbol",
+				Name: "isEnabled", Qualified: "FirstConfig.isEnabled",
+			}
+			_, err := renderSourceCandidate(
+				candidate,
+				sourceFile{Path: candidate.Path, Lines: test.lines},
+				"signature",
+			)
+			if err == nil || err.Error() != "indexed symbol is absent from current source" {
+				t.Fatalf("renderSourceCandidate() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestRenderSourceCandidateRequiresGeneratedAccessorAnnotation(t *testing.T) {
+	lines := []string{
+		"class ApplicationConfig {",
+		"  private boolean enabled;",
+		"}",
+	}
+	candidate := sourceCandidate{
+		Path: "ApplicationConfig.java", StartLine: 1, Kind: "symbol",
+		Name: "isEnabled", Qualified: "ApplicationConfig.isEnabled",
+	}
+
+	_, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: lines},
+		"signature",
+	)
+	if err == nil || err.Error() != "indexed symbol is absent from current source" {
 		t.Fatalf("renderSourceCandidate() error = %v", err)
 	}
 }
@@ -1404,6 +1482,19 @@ func TestContextSourceSectionIgnoresOperationalMarkersOutsideCode(t *testing.T) 
 		if contextSourceSectionSupportsConcern(section, concern) {
 			t.Fatalf("non-code marker counted as %q evidence", kind)
 		}
+	}
+}
+
+func TestContextSourceSectionDoesNotTreatTestRoleAsTestEvidence(t *testing.T) {
+	section := ContextSourceSection{
+		Project: "services/jobs",
+		Path:    "JobTestFixture.java",
+		Role:    "test",
+		Content: "10\tclass JobTestFixture {",
+	}
+	concern := newContextConcern(contextConcernTests, "services/jobs", true, nil, "")
+	if contextSourceSectionSupportsConcern(section, concern) {
+		t.Fatal("test-role helper counted as executable test evidence")
 	}
 }
 

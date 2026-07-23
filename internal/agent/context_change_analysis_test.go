@@ -282,6 +282,21 @@ func TestScopedConfigurationRankRewardsConfigHolderOverAccessor(t *testing.T) {
 	}
 }
 
+func TestConfigurationFactShapePenalizesAccessorBeforeSuffixBonus(t *testing.T) {
+	holder := scan.AgentContextFactRecord{
+		Name: "CadasterTaskConfig", File: "CadasterTaskConfig.java",
+	}
+	accessor := scan.AgentContextFactRecord{
+		Name: "getTaskConfig", File: "CadasterTaskClient.java",
+	}
+
+	holderScore := contextConcernFactShapeScore(holder, contextConcernConfiguration)
+	accessorScore := contextConcernFactShapeScore(accessor, contextConcernConfiguration)
+	if accessorScore >= 0 || holderScore <= accessorScore {
+		t.Fatalf("configuration shape scores = holder %d, accessor %d", holderScore, accessorScore)
+	}
+}
+
 func TestSideEffectConcernCandidatesIncludeSameActionProductionMethod(t *testing.T) {
 	queryTokens := contextExpandedTokenSet(
 		"delete cadaster regulation tasks with mail protocol logging and user information side effects",
