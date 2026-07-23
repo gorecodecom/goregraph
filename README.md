@@ -1064,7 +1064,7 @@ The benchmark consumes Codex JSONL logs and distinguishes compact
 are retained as diagnostic evidence, while a repeated full `context_id` fails
 the release gate.
 
-The exact one-line baseline instruction, seven-line assisted instruction,
+The exact one-line baseline instruction, eight-line assisted instruction,
 execution protocol, rubric, and dashboard-only decision when a gate fails are
 defined in [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md). A failed gate blocks
 the 1.3.0 release.

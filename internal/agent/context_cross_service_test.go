@@ -181,7 +181,7 @@ Analyze services/catalog, libraries/integration, and services/jobs. Cover the in
 	writeSourceFile(t, root, "CatalogController.go", "package catalog\nfunc deleteItem() {}\n")
 	writeSourceFile(t, root, "CatalogService.go", "package catalog\nfunc deleteItem() {}\n")
 	writeSourceFile(t, root, "JobPort.go", "package integration\nfunc deleteRelated() {}\n")
-	writeSourceFile(t, root, "JobRepository.go", "package jobs\nfunc findByCatalogItem() {}\n")
+	writeSourceFile(t, root, "JobRepository.go", "package jobs\nfunc findByCatalogItem() { repository.delete() }\n")
 
 	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
 	if err != nil {
@@ -411,6 +411,15 @@ func crossServiceContextFacts(extension string) []scan.AgentContextFactRecord {
 	}
 	for index := range facts {
 		facts[index].File = strings.TrimSuffix(facts[index].File, ".java") + extension
+		if facts[index].ID != "test" {
+			continue
+		}
+		switch extension {
+		case ".go":
+			facts[index].Name = "TestDeletes"
+		case ".py":
+			facts[index].Name = "test_deletes"
+		}
 	}
 	return facts
 }
@@ -428,10 +437,27 @@ func crossServiceSource(extension, sourcePath string, facts []scan.AgentContextF
 		lines[len(lines)-1] = "}"
 	case ".go":
 		lines[1] = "type " + fixtureType + " struct{}"
+		for _, fact := range facts {
+			if fact.ID == "test" {
+				lines[1] = `import "testing"`
+				lines[2] = "type " + fixtureType + " struct{}"
+				break
+			}
+		}
 	}
 	for _, fact := range facts {
 		if fact.ID == "test" {
 			for offset, line := range crossServiceExecutableTestDeclaration(
+				extension,
+				fixtureType,
+				crossServiceFactIdentifier(fact),
+			) {
+				lines[fact.Line-1+offset] = line
+			}
+			continue
+		}
+		if fact.Kind == contextConcernPersistence {
+			for offset, line := range crossServicePersistenceDeclaration(
 				extension,
 				fixtureType,
 				crossServiceFactIdentifier(fact),
@@ -502,29 +528,57 @@ func crossServiceSourceDeclaration(extension, fixtureType, identifier string) st
 func crossServiceExecutableTestDeclaration(extension, fixtureType, identifier string) []string {
 	switch extension {
 	case ".go":
+		testName := identifier
+		if testName != "" && !strings.HasPrefix(testName, "Test") {
+			testName = strings.ToUpper(testName[:1]) + testName[1:]
+			testName = "Test" + testName
+		}
 		return []string{
-			"func (" + fixtureType + ") " + identifier + "() {",
-			"    test();",
+			"func " + testName + "(t *testing.T) {",
+			"    got := deleteItem()",
+			"    if got == nil {",
+			`        t.Fatal("expected deleted item")`,
+			"    }",
 			"}",
 		}
 	case ".ts":
 		return []string{
-			"export function " + identifier + "() {",
-			"  test();",
-			"}",
+			`test("` + identifier + `", function ` + identifier + `() {`,
+			"  const result = deleteItem();",
+			"  expect(result).toBeDefined();",
+			"});",
 		}
 	case ".py":
+		testName := identifier
+		if !strings.HasPrefix(testName, "test_") {
+			testName = "test_" + testName
+		}
 		return []string{
-			"def " + identifier + "():",
-			"    test()",
-			"    assert True",
+			"def " + testName + "():",
+			"    result = delete_item()",
+			"    assert result",
 		}
 	default:
 		return []string{
+			"    @Test",
 			"    void " + identifier + "() {",
-			"        test();",
+			"        Object result = deleteItem();",
+			"        assertNotNull(result);",
 			"    }",
 		}
+	}
+}
+
+func crossServicePersistenceDeclaration(extension, fixtureType, identifier string) []string {
+	switch extension {
+	case ".go":
+		return []string{"func (" + fixtureType + ") " + identifier + "() { repository.delete() }"}
+	case ".ts":
+		return []string{"export function " + identifier + "() { repository.delete(); }"}
+	case ".py":
+		return []string{"def " + identifier + "(): repository.delete()"}
+	default:
+		return []string{"    void " + identifier + "() { repository.delete(); }"}
 	}
 }
 

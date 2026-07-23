@@ -96,7 +96,7 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 		)
 	}
 	for _, concern := range pack.Concerns {
-		if !concern.Covered || !contextSourceCrossCuttingFamily(concern.Kind) {
+		if !concern.Covered || !contextSourceRequiresRenderedConcernEvidence(concern.Kind) {
 			continue
 		}
 		supported := false

@@ -871,7 +871,7 @@ func contextSourceOptionConcerns(
 			normalizeContextProject(candidate.Project) != concern.project {
 			covered = false
 		}
-		if covered && (contextSourceCrossCuttingFamily(concern.kind) || concern.kind == contextConcernTests) {
+		if covered && contextSourceRequiresRenderedConcernEvidence(concern.kind) {
 			covered = contextSourceSectionSupportsConcern(section, concern)
 		}
 		if concern.kind == contextConcernProject {
@@ -942,8 +942,11 @@ func contextSourceSectionSupportsConcern(
 			"@transactional",
 			"entitymanager",
 			"jparepository",
+			"crudrepository",
 			"repository.",
-		)
+		) || section.Role == contextConcernPersistence &&
+			section.RenderMode != "signature" &&
+			contextSourceContainsAny(content, ".delete(", ".remove(")
 	case contextConcernSideEffects:
 		return contextSourceContainsAny(content,
 			"mailservice.",
@@ -954,7 +957,7 @@ func contextSourceSectionSupportsConcern(
 			" publish",
 		)
 	case contextConcernTests:
-		return contextSourceContainsAny(content, "@test", "describe(", "it(", "test(") &&
+		return section.Role == "test" &&
 			contextSourceSectionHasExecutableTest(section, semanticContent)
 	default:
 		return false
@@ -968,15 +971,78 @@ func contextSourceSectionHasExecutableTest(section ContextSourceSection, content
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "@") ||
-			line == "{" || line == "}" || strings.HasSuffix(line, "{") {
+			line == "{" || line == "}" || strings.HasSuffix(line, "{") ||
+			strings.HasSuffix(line, ":") ||
+			contextSourceTestDeclarationLine(line) {
 			continue
 		}
-		if strings.HasSuffix(line, ";") ||
-			strings.HasPrefix(line, "assert ") ||
-			strings.Contains(line, "assert(") ||
-			strings.Contains(line, "expect(") ||
-			strings.Contains(line, ".andexpect(") ||
-			strings.HasPrefix(line, "await ") {
+		if contextSourceTestLineHasAssignment(line) ||
+			contextSourceTestLineHasCall(line) ||
+			strings.HasPrefix(line, "assert ") {
+			return true
+		}
+	}
+	return false
+}
+
+func contextSourceTestDeclarationLine(line string) bool {
+	for _, prefix := range []string{
+		"package ",
+		"import ",
+		"class ",
+		"interface ",
+		"type ",
+		"struct ",
+		"enum ",
+		"func ",
+		"def ",
+		"function ",
+		"export function ",
+	} {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return line == "pass"
+}
+
+func contextSourceTestLineHasAssignment(line string) bool {
+	if strings.Contains(line, ":=") {
+		return true
+	}
+	for index := 0; index < len(line); index++ {
+		if line[index] != '=' {
+			continue
+		}
+		var previous, next byte
+		if index > 0 {
+			previous = line[index-1]
+		}
+		if index+1 < len(line) {
+			next = line[index+1]
+		}
+		if previous != '=' && previous != '!' && previous != '<' && previous != '>' &&
+			next != '=' && next != '>' {
+			return true
+		}
+	}
+	return false
+}
+
+func contextSourceTestLineHasCall(line string) bool {
+	open := strings.IndexByte(line, '(')
+	if open < 0 || !strings.Contains(line[open+1:], ")") {
+		return false
+	}
+	before := strings.TrimSpace(line[:open])
+	if before == "" {
+		return false
+	}
+	if strings.Contains(before, ".") || len(strings.Fields(before)) == 1 {
+		return true
+	}
+	for _, prefix := range []string{"return ", "throw ", "await ", "go ", "defer "} {
+		if strings.HasPrefix(before, prefix) {
 			return true
 		}
 	}
@@ -1237,6 +1303,20 @@ func contextSourceMatchesPrimaryDomainModel(
 func contextSourceCrossCuttingFamily(family string) bool {
 	switch family {
 	case contextConcernAuth, contextConcernConfiguration, contextConcernResilience, contextConcernSideEffects:
+		return true
+	default:
+		return false
+	}
+}
+
+func contextSourceRequiresRenderedConcernEvidence(kind string) bool {
+	switch kind {
+	case contextConcernAuth,
+		contextConcernConfiguration,
+		contextConcernResilience,
+		contextConcernPersistence,
+		contextConcernSideEffects,
+		contextConcernTests:
 		return true
 	default:
 		return false

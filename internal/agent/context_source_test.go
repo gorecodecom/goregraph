@@ -1521,6 +1521,39 @@ func TestContextSourceOptionConcernsRequireRenderedCrossCuttingEvidence(t *testi
 	}
 }
 
+func TestContextSourceOptionConcernsRequireRenderedExactPersistenceEvidence(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernPersistence,
+		"services/jobs",
+		true,
+		[]string{"repository"},
+		"requested persistence",
+	)
+	candidate := sourceCandidate{
+		FactID: "repository", FactIDs: []string{"repository"},
+		Project: "services/jobs", Role: "persistence",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{{
+		ID: "repository", Project: "services/jobs", Kind: contextConcernPersistence,
+	}}}
+
+	signature := ContextSourceSection{
+		Project: "services/jobs", Role: "persistence", RenderMode: "signature",
+		Content: "void deleteRelatedJobs();",
+	}
+	if keys, _ := contextSourceOptionConcerns(candidate, signature, []contextConcern{concern}, index); len(keys) != 0 {
+		t.Fatalf("semantically empty exact persistence fact covered persistence: %v", keys)
+	}
+
+	body := ContextSourceSection{
+		Project: "services/jobs", Role: "persistence", RenderMode: "declaration_body",
+		Content: "repository.delete(job);",
+	}
+	if keys, required := contextSourceOptionConcerns(candidate, body, []contextConcern{concern}, index); !required || !reflect.DeepEqual(keys, []string{concern.key}) {
+		t.Fatalf("actionable exact persistence evidence = %v, required %v", keys, required)
+	}
+}
+
 func TestContextSourceTestsRequireExecutableRenderedBody(t *testing.T) {
 	concern := newContextConcern(contextConcernTests, "services/jobs", true, nil, "")
 	signature := ContextSourceSection{
@@ -1537,6 +1570,82 @@ func TestContextSourceTestsRequireExecutableRenderedBody(t *testing.T) {
 	}
 	if !contextSourceSectionSupportsConcern(body, concern) {
 		t.Fatal("executable test body was rejected")
+	}
+}
+
+func TestContextSourceTestsRecognizeLanguageNeutralExecutableBodies(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "Go assignment",
+			content: "func TestDeleteItem(t *testing.T) {\n  got := deleteItem()\n}",
+		},
+		{
+			name:    "Go call",
+			content: "func TestDeleteItem(t *testing.T) {\n  t.Fatalf(\"delete failed\")\n}",
+		},
+		{
+			name:    "Python assignment",
+			content: "def test_delete_item():\n    result = delete_item()",
+		},
+		{
+			name:    "Python assertion",
+			content: "def test_delete_item():\n    assert result",
+		},
+	}
+	concern := newContextConcern(contextConcernTests, "services/catalog", true, nil, "")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			section := ContextSourceSection{
+				Project:    "services/catalog",
+				Role:       "test",
+				RenderMode: "declaration_body",
+				Content:    test.content,
+			}
+			if !contextSourceSectionSupportsConcern(section, concern) {
+				t.Fatalf("executable test body was rejected: %q", test.content)
+			}
+		})
+	}
+}
+
+func TestContextSourceTestsRejectNonExecutableBodies(t *testing.T) {
+	tests := []struct {
+		name       string
+		renderMode string
+		content    string
+	}{
+		{
+			name:       "signature",
+			renderMode: "signature",
+			content:    "func TestDeleteItem(t *testing.T)",
+		},
+		{
+			name:       "empty Go body",
+			renderMode: "declaration_body",
+			content:    "func TestDeleteItem(t *testing.T) {\n  // no operation\n}",
+		},
+		{
+			name:       "empty Python body",
+			renderMode: "declaration_body",
+			content:    "def test_delete_item():\n    # no operation\n    pass",
+		},
+	}
+	concern := newContextConcern(contextConcernTests, "services/catalog", true, nil, "")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			section := ContextSourceSection{
+				Project:    "services/catalog",
+				Role:       "test",
+				RenderMode: test.renderMode,
+				Content:    test.content,
+			}
+			if contextSourceSectionSupportsConcern(section, concern) {
+				t.Fatalf("non-executable test body was accepted: %q", test.content)
+			}
+		})
 	}
 }
 
@@ -2568,7 +2677,7 @@ func TestPersistencePairUsesSelectedDomainModels(t *testing.T) {
 func TestContextSourceOptionsRecoverFromStaleMergedAnchor(t *testing.T) {
 	root := t.TempDir()
 	lines := numberedSourceLines(12)
-	lines[9] = "func currentNeighbor() {}"
+	lines[9] = "func currentNeighbor() { repository.delete() }"
 	writeSourceFile(t, root, "shared.go", strings.Join(lines, "\n")+"\n")
 	pack := ContextPack{
 		Schema: 1, Query: "current neighbor persistence", Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
