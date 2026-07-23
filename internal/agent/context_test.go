@@ -101,6 +101,10 @@ func TestContextExpandedTokenSet(t *testing.T) {
 		"Nebenwirkungen":      {"side_effect", "side_effects"},
 		"Fehlerbehandlung":    {"exception", "resilience"},
 		"Benutzerinformation": {"side_effects", "user_information"},
+		"Aufgabenarten":       {"task_type", "task_types", "type", "types"},
+		"Suchattribute":       {"attribute", "attributes", "field", "fields", "identifier", "identifiers"},
+		"task types":          {"task_type", "task_types", "type", "types"},
+		"lookup attributes":   {"attribute", "attributes", "field", "fields", "identifier", "identifiers"},
 	} {
 		t.Run(value, func(t *testing.T) {
 			got := contextExpandedTokenSet(value)
@@ -110,6 +114,143 @@ func TestContextExpandedTokenSet(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPlanContextConcernsSelectsRequestedDomainModels(t *testing.T) {
+	seed := scan.AgentContextFactRecord{
+		ID: "route", Project: "services/catalog", Kind: "route",
+		Name: "DELETE /catalog/items/{itemId}", Search: "delete catalog item",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		seed,
+		{
+			ID: "regular-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity", Qualified: "example.CatalogJobEntity",
+			File: "CatalogJobEntity.java", Confidence: "EXACT",
+			Search: "catalog job task model item identifier",
+		},
+		{
+			ID: "change-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJobEntity", Qualified: "example.CatalogChangeJobEntity",
+			File: "CatalogChangeJobEntity.java", Confidence: "EXACT",
+			Search: "catalog change job task model item identifier",
+		},
+		{
+			ID: "mail-properties", Project: "services/jobs", Kind: "configuration",
+			Name: "MailProperties", File: "MailProperties.java", Confidence: "EXACT",
+			Search: "mail configuration",
+		},
+		{
+			ID: "async-handler", Project: "services/jobs", Kind: "resilience",
+			Name: "AsyncExceptionHandler", File: "AsyncExceptionHandler.java", Confidence: "EXACT",
+			Search: "exception resilience",
+		},
+	}}
+
+	concerns := planContextConcerns(
+		"Analyze services/catalog and services/jobs catalog job task types and lookup attributes.",
+		index,
+		seed,
+	)
+	domain, ok := findContextConcern(concerns, "domain_model")
+	if !ok {
+		t.Fatalf("domain-model concern missing from %#v", concerns)
+	}
+	if !slices.Contains(domain.candidateFactIDs, "regular-model") ||
+		!slices.Contains(domain.candidateFactIDs, "change-model") {
+		t.Fatalf("domain-model candidates = %#v", domain.candidateFactIDs)
+	}
+	for _, generic := range []string{"mail-properties", "async-handler"} {
+		if slices.Contains(domain.candidateFactIDs, generic) {
+			t.Errorf("generic source %q classified as domain model", generic)
+		}
+	}
+}
+
+func TestPublicContextConcernsRepresentEveryRequestedKindBeforeDuplicates(t *testing.T) {
+	concerns := []contextConcern{
+		newContextConcern(contextConcernEntrypoint, "", true, []string{"route"}, "entrypoint"),
+		newContextConcern(contextConcernPrimaryPath, "", true, []string{"route"}, "path"),
+		newContextConcern(contextConcernProject, "services/catalog", true, []string{"route"}, "project"),
+		newContextConcern(contextConcernProject, "services/jobs", true, []string{"job"}, "project"),
+		newContextConcern(contextConcernProject, "libraries/client", true, []string{"client"}, "project"),
+	}
+	kinds := []string{
+		"domain_model",
+		contextConcernHTTPContract,
+		contextConcernAuth,
+		contextConcernConfiguration,
+		contextConcernResilience,
+		contextConcernPersistence,
+		contextConcernSideEffects,
+		contextConcernTests,
+	}
+	for _, kind := range kinds {
+		concerns = append(
+			concerns,
+			newContextConcern(kind, "libraries/client", true, []string{kind + "-client"}, "requested"),
+			newContextConcern(kind, "services/jobs", true, []string{kind + "-jobs"}, "requested"),
+		)
+	}
+
+	public := publicContextConcerns(concerns)
+	for _, kind := range kinds {
+		found := false
+		for _, concern := range public {
+			found = found || concern.Kind == kind
+		}
+		if !found {
+			t.Errorf("requested concern kind %q missing from %#v", kind, public)
+		}
+	}
+
+	reversed := append([]contextConcern(nil), concerns...)
+	slices.Reverse(reversed)
+	if got := publicContextConcerns(reversed); !reflect.DeepEqual(got, public) {
+		t.Fatalf("public concerns changed with input order:\nforward: %#v\nreverse: %#v", public, got)
+	}
+}
+
+func TestRankContextSupportFactsPrefersRequestedDomainModels(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "regular-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity", Qualified: "example.CatalogJobEntity",
+			File: "CatalogJobEntity.java", Confidence: "EXACT",
+			Search: "catalog job task model item identifier",
+		},
+		{
+			ID: "change-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJobEntity", Qualified: "example.CatalogChangeJobEntity",
+			File: "CatalogChangeJobEntity.java", Confidence: "EXACT",
+			Search: "catalog change job task model item identifier",
+		},
+		{
+			ID: "repository", Project: "services/jobs", Kind: "persistence",
+			Name: "findByCatalogIdAndItemId", Qualified: "CatalogJobRepository.findByCatalogIdAndItemId",
+			File: "CatalogJobRepository.java", Confidence: "EXACT",
+			Search: "catalog job task item persistence",
+		},
+	}}
+	query := "Analyze services/jobs catalog job task types, lookup attributes, and persistence."
+	aliases := contextProjectAliases(index.Facts, nil)
+	ranked := rankContextSupportFacts(
+		index,
+		query,
+		aliases,
+		contextExplicitProjects(query, aliases),
+		map[string]bool{"services/catalog": true},
+	)
+	selected := selectContextSupportFacts(ranked, map[string]bool{"services/catalog": true})
+	selectedIDs := map[string]bool{}
+	for _, candidate := range selected {
+		selectedIDs[candidate.fact.ID] = true
+	}
+	for _, factID := range []string{"regular-model", "change-model", "repository"} {
+		if !selectedIDs[factID] {
+			t.Errorf("requested support fact %q missing from %#v", factID, selected)
+		}
 	}
 }
 
@@ -480,7 +621,7 @@ func TestPlanContextConcernsReportsMissingProjectCoverageAsUncovered(t *testing.
 	}
 }
 
-func TestPlanContextConcernsSerializesAtMostTwelveWithRequiredDeterministicTies(t *testing.T) {
+func TestPlanContextConcernsSerializesAtMostFourteenWithRequiredDeterministicTies(t *testing.T) {
 	concerns := []contextConcern{
 		{key: "optional:b", kind: "optional", candidateFactIDs: []string{"b"}},
 		{key: "required:m", kind: "required_m", required: true, candidateFactIDs: []string{"m"}},
@@ -503,13 +644,17 @@ func TestPlanContextConcernsSerializesAtMostTwelveWithRequiredDeterministicTies(
 
 	forward := publicContextConcerns(concerns)
 	backward := publicContextConcerns(reversed)
-	if len(forward) != 12 || !reflect.DeepEqual(forward, backward) {
+	if len(forward) != maximumPublicContextConcerns || !reflect.DeepEqual(forward, backward) {
 		t.Fatalf("bounded deterministic concern metadata = %#v / %#v", forward, backward)
 	}
+	required := 0
 	for _, concern := range forward {
-		if !strings.HasPrefix(concern.Kind, "required_") {
-			t.Fatalf("optional concern displaced a required concern: %#v", forward)
+		if strings.HasPrefix(concern.Kind, "required_") {
+			required++
 		}
+	}
+	if required != 13 {
+		t.Fatalf("optional concern displaced required metadata: %#v", forward)
 	}
 }
 

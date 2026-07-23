@@ -206,6 +206,10 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 
 	projectAliases := contextProjectAliases(index.Facts, index.Coverage)
 	explicitProjects := contextExplicitProjects(request.Query, projectAliases)
+	var domainModelTokens map[string]bool
+	if contextQueryRequestsConcern(request.Query, contextConcernDomainModel) {
+		domainModelTokens = contextDomainModelQueryTokens(request.Query, projectAliases, explicitProjects)
+	}
 	representedProjects := contextRepresentedProjects(pack, includedFactIDs, factByID)
 	supportFactIDs := map[string]bool{}
 	supportProjectCounts := map[string]int{}
@@ -221,7 +225,7 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			continue
 		}
 		if supportProjectCounts[project] > 0 {
-			role := contextSupportRole(index, relatedFact)
+			role := contextSupportRole(index, relatedFact, domainModelTokens)
 			if role != "" && supportProjectRoles[project][role] {
 				continue
 			}
@@ -263,7 +267,7 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			if supportProjectCounts[project] == 1 {
 				acceptedSupportProjects++
 			}
-			if role := contextSupportRole(index, relatedFact); role != "" {
+			if role := contextSupportRole(index, relatedFact, domainModelTokens); role != "" {
 				if supportProjectRoles[project] == nil {
 					supportProjectRoles[project] = map[string]bool{}
 				}
@@ -1045,6 +1049,10 @@ func rankContextSupportFacts(
 	}
 	queryTokens := contextExpandedTokens(supportQuery)
 	requestedTokens := contextSupportRequestedTokens(query)
+	var domainModelTokens map[string]bool
+	if contextQueryRequestsConcern(query, contextConcernDomainModel) {
+		domainModelTokens = contextDomainModelQueryTokens(query, aliases, explicitProjects)
+	}
 	utility := newContextForwardUtility(index)
 	ranked := make([]rankedContextSupportFact, 0, len(index.Facts))
 	for _, fact := range index.Facts {
@@ -1073,7 +1081,12 @@ func rankContextSupportFacts(
 				requestedMatches++
 			}
 		}
-		operational, operationalScore := contextSupportOperationalScore(utility, fact, query)
+		operational, operationalScore := contextSupportOperationalScore(
+			utility,
+			fact,
+			query,
+			domainModelTokens,
+		)
 		operationalScore += contextSupportProjectAffinityScore(
 			fact,
 			project,
@@ -1088,7 +1101,7 @@ func rankContextSupportFacts(
 			semanticMatches:    semanticMatches,
 			requestedMatches:   requestedMatches,
 			operational:        operational,
-			role:               contextSupportRole(index, fact),
+			role:               contextSupportRole(index, fact, domainModelTokens),
 			genericPersistence: contextGenericPersistenceFact(fact),
 			score: contextSupportFactScore(fact, semanticMatches) +
 				requestedMatches*scorePerMatchedTerm/2 + operationalScore,
@@ -1240,6 +1253,7 @@ func contextSupportOperationalScore(
 	utility *contextForwardUtility,
 	fact scan.AgentContextFactRecord,
 	query string,
+	domainModelTokens map[string]bool,
 ) (bool, int) {
 	kind := strings.ToLower(strings.TrimSpace(fact.Kind))
 	score := 0
@@ -1302,6 +1316,11 @@ func contextSupportOperationalScore(
 			operational = true
 		}
 	}
+	if contextQueryRequestsConcern(query, contextConcernDomainModel) &&
+		contextDomainModelFact(fact, domainModelTokens) {
+		score += 180
+		operational = true
+	}
 
 	value := strings.Join([]string{fact.Search, fact.Name, fact.Qualified, fact.Summary}, " ")
 	for _, concernKind := range []string{
@@ -1331,7 +1350,11 @@ func contextSupportOperationalScore(
 func contextSupportRole(
 	index scan.AgentContextIndexRecord,
 	fact scan.AgentContextFactRecord,
+	domainModelTokens map[string]bool,
 ) string {
+	if contextDomainModelFact(fact, domainModelTokens) {
+		return contextConcernDomainModel
+	}
 	switch normalizedContextConcernKind(fact.Kind) {
 	case contextConcernHTTPContract:
 		return "contract"
@@ -1400,6 +1423,7 @@ var contextSupportRoleOrder = []string{
 	"contract",
 	"provider",
 	"service",
+	contextConcernDomainModel,
 	contextConcernConfiguration,
 	contextConcernAuth,
 	contextConcernResilience,
@@ -1935,6 +1959,10 @@ func contextFirstParagraph(value string) string {
 var contextIntentTokenAliases = map[string][]string{
 	"aufgabe":             {"job", "jobs", "task", "tasks"},
 	"aufgaben":            {"job", "jobs", "task", "tasks"},
+	"aufgabenart":         {"task_type", "task_types", "type", "types"},
+	"aufgabenarten":       {"task_type", "task_types", "type", "types"},
+	"attribute":           {"attributes", "field", "fields", "identifier", "identifiers"},
+	"attributes":          {"attribute", "field", "fields", "identifier", "identifiers"},
 	"authentifizierung":   {"auth", "authentication"},
 	"benutzerinformation": {"side_effects", "user_information"},
 	"contract":            {"contracts"},
@@ -1951,8 +1979,12 @@ var contextIntentTokenAliases = map[string][]string{
 	"protokollierung":     {"logging", "side_effects"},
 	"retries":             {"resilience", "retry"},
 	"retry":               {"resilience", "retries"},
+	"suchattribut":        {"attribute", "attributes", "field", "fields", "identifier", "identifiers"},
+	"suchattribute":       {"attribute", "attributes", "field", "fields", "identifier", "identifiers"},
 	"task":                {"job", "jobs", "tasks"},
 	"tasks":               {"job", "jobs", "task"},
+	"type":                {"task_type", "task_types", "types"},
+	"types":               {"task_type", "task_types", "type"},
 	"vertrag":             {"contract", "contracts"},
 	"verträge":            {"contract", "contracts"},
 	"wiederholung":        {"resilience", "retry"},

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -11,6 +12,7 @@ const (
 	contextConcernEntrypoint    = "entrypoint"
 	contextConcernPrimaryPath   = "primary_path"
 	contextConcernProject       = "project"
+	contextConcernDomainModel   = "domain_model"
 	contextConcernHTTPContract  = "http_contract"
 	contextConcernAuth          = "authentication"
 	contextConcernConfiguration = "configuration"
@@ -19,7 +21,7 @@ const (
 	contextConcernSideEffects   = "side_effects"
 	contextConcernTests         = "tests"
 
-	maximumPublicContextConcerns = 12
+	maximumPublicContextConcerns = 14
 )
 
 type contextConcern struct {
@@ -71,6 +73,23 @@ func planContextConcerns(
 			reason,
 		))
 	}
+	if contextQueryRequestsConcern(query, contextConcernDomainModel) {
+		candidates := contextDomainModelConcernCandidates(
+			query,
+			aliases,
+			explicitProjects,
+			index.Facts,
+		)
+		if len(candidates) > 0 {
+			concerns = append(concerns, newContextConcern(
+				contextConcernDomainModel,
+				"",
+				true,
+				candidates,
+				"requested domain types and lookup attributes",
+			))
+		}
+	}
 
 	scopedConcernKinds := map[string]bool{}
 	if len(explicitProjects) > 0 {
@@ -88,7 +107,7 @@ func planContextConcerns(
 					continue
 				}
 				candidates := contextExplicitProjectConcernCandidates(
-					semanticQueryTokens,
+					contextExpandedTokenSet(query),
 					project,
 					kind,
 					index.Facts,
@@ -241,12 +260,43 @@ func publicContextConcerns(concerns []contextConcern) []ContextConcern {
 		}
 		return contextConcernLess(ordered[i], ordered[j])
 	})
-	if len(ordered) > maximumPublicContextConcerns {
-		ordered = ordered[:maximumPublicContextConcerns]
+	selected := make([]contextConcern, 0, min(len(ordered), maximumPublicContextConcerns))
+	selectedKeys := make(map[string]bool, maximumPublicContextConcerns)
+	appendConcern := func(concern contextConcern) {
+		if len(selected) >= maximumPublicContextConcerns || selectedKeys[concern.key] {
+			return
+		}
+		selected = append(selected, concern)
+		selectedKeys[concern.key] = true
+	}
+	for _, concern := range ordered {
+		if contextConcernPriority(concern) <= 2 {
+			appendConcern(concern)
+		}
+	}
+	for _, kind := range []string{
+		contextConcernDomainModel,
+		contextConcernHTTPContract,
+		contextConcernAuth,
+		contextConcernConfiguration,
+		contextConcernResilience,
+		contextConcernPersistence,
+		contextConcernSideEffects,
+		contextConcernTests,
+	} {
+		for _, concern := range ordered {
+			if concern.kind == kind {
+				appendConcern(concern)
+				break
+			}
+		}
+	}
+	for _, concern := range ordered {
+		appendConcern(concern)
 	}
 
-	result := make([]ContextConcern, 0, len(ordered))
-	for _, concern := range ordered {
+	result := make([]ContextConcern, 0, len(selected))
+	for _, concern := range selected {
 		result = append(result, ContextConcern{
 			Kind:    concern.kind,
 			Project: concern.project,
@@ -360,6 +410,7 @@ func contextExplicitProjectConcernCandidates(
 	reachable map[string]bool,
 ) []string {
 	result := []string{}
+	domainTokens := contextConcernDomainQueryTokens(queryTokens)
 	for _, fact := range facts {
 		if normalizeContextProject(fact.Project) != project || reachable[fact.ID] {
 			continue
@@ -393,7 +444,7 @@ func contextExplicitProjectConcernCandidates(
 			fact.Path,
 			fact.Summary,
 		}, " "))
-		for token := range queryTokens {
+		for token := range domainTokens {
 			if factTokens[token] {
 				result = append(result, fact.ID)
 				break
@@ -408,12 +459,15 @@ func contextConcernDomainQueryTokens(queryTokens map[string]bool) map[string]boo
 	for token := range queryTokens {
 		result[token] = true
 	}
-	vocabulary := make([]string, 0)
 	for _, tokens := range contextConcernVocabulary {
-		vocabulary = append(vocabulary, tokens...)
-	}
-	for token := range contextExpandedTokenSet(strings.Join(vocabulary, " ")) {
-		delete(result, token)
+		for _, vocabularyToken := range tokens {
+			if strings.HasPrefix(vocabularyToken, "task_") {
+				continue
+			}
+			for token := range contextExpandedTokenSet(vocabularyToken) {
+				delete(result, token)
+			}
+		}
 	}
 	if len(result) == 0 {
 		return queryTokens
@@ -435,6 +489,167 @@ func contextProjectDomainQueryTokens(
 		}
 	}
 	return result
+}
+
+func contextDomainModelQueryTokens(
+	query string,
+	aliases map[string][]string,
+	explicitProjects map[string]bool,
+) map[string]bool {
+	result := contextExpandedTokenSet(query)
+	for _, vocabulary := range contextConcernVocabulary {
+		for _, token := range vocabulary {
+			delete(result, token)
+		}
+	}
+	for project := range explicitProjects {
+		for _, alias := range aliases[project] {
+			for token := range contextTokenSet(alias) {
+				delete(result, token)
+			}
+		}
+	}
+	for _, generic := range []string{
+		"analyze", "analysis", "and", "attribute", "attributes", "cover", "delete", "entity", "entities",
+		"field", "fields", "identifier", "identifiers", "lookup", "model", "models", "plan",
+		"remove", "service", "services", "task_type", "task_types", "the", "through", "type", "types",
+	} {
+		delete(result, generic)
+	}
+	return result
+}
+
+var contextDomainModelSuffixes = []string{
+	"dto", "entity", "model", "payload", "projection", "record", "request", "response",
+}
+
+func contextDomainModelFact(
+	fact scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+) bool {
+	if contextFactUsesTestSource(fact) || contextPackSourceFile(fact.File) == "" || len(domainTokens) == 0 {
+		return false
+	}
+	identity := compactContextIdentifier(firstNonEmptyContext(fact.Qualified, fact.Name))
+	modelShape := false
+	for _, suffix := range contextDomainModelSuffixes {
+		if strings.HasSuffix(identity, suffix) {
+			modelShape = true
+			break
+		}
+	}
+	return modelShape && contextStableFactIdentityMatchCount(fact, domainTokens) > 0
+}
+
+func contextStableFactIdentityMatchCount(
+	fact scan.AgentContextFactRecord,
+	tokens map[string]bool,
+) int {
+	identity := strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		filepath.Base(fact.File),
+		fact.HTTPMethod,
+		fact.Path,
+	}, " ")
+	identityTokens := contextExpandedTokenSet(identity)
+	compactIdentity := compactContextIdentifier(identity)
+	matches := 0
+	for token := range tokens {
+		if identityTokens[token] {
+			matches++
+			continue
+		}
+		if len([]rune(token)) >= 4 && strings.Contains(compactIdentity, compactContextIdentifier(token)) {
+			matches++
+		}
+	}
+	return matches
+}
+
+func contextDomainModelConcernCandidates(
+	query string,
+	aliases map[string][]string,
+	explicitProjects map[string]bool,
+	facts []scan.AgentContextFactRecord,
+) []string {
+	domainTokens := contextDomainModelQueryTokens(query, aliases, explicitProjects)
+	if len(domainTokens) == 0 || len(explicitProjects) == 0 {
+		return nil
+	}
+	candidates := make([]scan.AgentContextFactRecord, 0)
+	for _, fact := range facts {
+		if !explicitProjects[normalizeContextProject(fact.Project)] ||
+			!contextDomainModelFact(fact, domainTokens) {
+			continue
+		}
+		candidates = append(candidates, fact)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		leftMatches := contextStableFactIdentityMatchCount(candidates[i], domainTokens)
+		rightMatches := contextStableFactIdentityMatchCount(candidates[j], domainTokens)
+		if leftMatches != rightMatches {
+			return leftMatches > rightMatches
+		}
+		leftShape := contextDomainModelShapeScore(candidates[i])
+		rightShape := contextDomainModelShapeScore(candidates[j])
+		if leftShape != rightShape {
+			return leftShape > rightShape
+		}
+		leftConfidence := contextDomainModelConfidenceScore(candidates[i].Confidence)
+		rightConfidence := contextDomainModelConfidenceScore(candidates[j].Confidence)
+		if leftConfidence != rightConfidence {
+			return leftConfidence > rightConfidence
+		}
+		if candidates[i].Project != candidates[j].Project {
+			return candidates[i].Project < candidates[j].Project
+		}
+		if candidates[i].File != candidates[j].File {
+			return candidates[i].File < candidates[j].File
+		}
+		if candidates[i].Line != candidates[j].Line {
+			return candidates[i].Line < candidates[j].Line
+		}
+		return candidates[i].ID < candidates[j].ID
+	})
+	if len(candidates) > 4 {
+		candidates = candidates[:4]
+	}
+	result := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		result = append(result, candidate.ID)
+	}
+	return result
+}
+
+func contextDomainModelShapeScore(fact scan.AgentContextFactRecord) int {
+	identity := strings.ToLower(firstNonEmptyContext(fact.Qualified, fact.Name))
+	score := 0
+	for _, suffix := range []string{"entity", "model", "projection", "record"} {
+		if strings.HasSuffix(compactContextIdentifier(identity), suffix) {
+			score = 100
+			break
+		}
+	}
+	if score == 0 {
+		score = 40
+	}
+	name := strings.ToLower(strings.TrimSpace(fact.Name))
+	if strings.HasPrefix(name, "base") || strings.HasPrefix(name, "abstract") {
+		score -= 40
+	}
+	return score
+}
+
+func contextDomainModelConfidenceScore(confidence string) int {
+	switch strings.ToUpper(strings.TrimSpace(confidence)) {
+	case "EXACT":
+		return 2
+	case "RESOLVED", "EXTRACTED":
+		return 1
+	default:
+		return 0
+	}
 }
 
 func contextProjectSemanticQueryTokens(
@@ -526,6 +741,11 @@ func contextValueRequestsConcern(value, kind string) bool {
 }
 
 var contextConcernVocabulary = map[string][]string{
+	contextConcernDomainModel: {
+		"attribute", "attributes", "entity", "entities", "field", "fields",
+		"identifier", "identifiers", "model", "models", "task_type", "task_types",
+		"type", "types",
+	},
 	contextConcernHTTPContract: {
 		"api", "apis", "client", "clients", "contract", "contracts",
 	},
@@ -551,6 +771,8 @@ var contextConcernVocabulary = map[string][]string{
 
 func normalizedContextConcernKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "domain_model":
+		return contextConcernDomainModel
 	case "api_contract", "http_contract":
 		return contextConcernHTTPContract
 	case "authentication", "requires_auth", "security":
