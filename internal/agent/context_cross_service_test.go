@@ -93,8 +93,9 @@ func TestContextSelectionIsLanguageNeutral(t *testing.T) {
 		"regular-repository", "route", "service", "test",
 	}
 	wantConcernKeys := []string{
-		"authentication", "entrypoint", "http_contract", "persistence", "primary_path",
+		"authentication", "configuration", "entrypoint", "http_contract", "persistence", "primary_path",
 		"project:libraries/shared-model", "project:services/catalog", "project:services/jobs",
+		"resilience", "tests:services/catalog",
 	}
 
 	var baseline contextSelectionSnapshot
@@ -201,8 +202,8 @@ Analyze services/catalog, libraries/integration, and services/jobs. Cover the in
 		covered[contextPublicConcernKey(concern)] = concern.Covered
 	}
 	for _, key := range []string{
-		contextConcernHTTPContract,
-		contextConcernPersistence,
+		contextConcernHTTPContract + ":libraries/integration",
+		contextConcernPersistence + ":services/jobs",
 		contextConcernProject + ":libraries/integration",
 		contextConcernProject + ":services/jobs",
 	} {

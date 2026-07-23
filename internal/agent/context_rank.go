@@ -11,22 +11,23 @@ import (
 )
 
 const (
-	scoreExactRoute                      = 1000
-	scoreEmbeddedExact                   = scoreExactRoute + 100
-	scoreExactQualified                  = 900
-	scoreExactName                       = 800
-	scoreAllTerms                        = 500
-	scorePerMatchedTerm                  = 60
-	scoreRouteKind                       = 80
-	scoreSymbolKind                      = 60
-	scoreTestKind                        = 20
-	scoreExactConfidence                 = 30
-	scoreResolvedConfidence              = 15
-	minimumContextSeedScore              = 180
-	maximumContextUncertainty            = 3
-	maximumContextConsumers              = 8
-	maximumContextSupportingProjects     = 2
-	maximumContextSupportFactsPerProject = 2
+	scoreExactRoute                           = 1000
+	scoreEmbeddedExact                        = scoreExactRoute + 100
+	scoreExactQualified                       = 900
+	scoreExactName                            = 800
+	scoreAllTerms                             = 500
+	scorePerMatchedTerm                       = 60
+	scoreRouteKind                            = 80
+	scoreSymbolKind                           = 60
+	scoreTestKind                             = 20
+	scoreExactConfidence                      = 30
+	scoreResolvedConfidence                   = 15
+	minimumContextSeedScore                   = 180
+	maximumContextUncertainty                 = 3
+	maximumContextConsumers                   = 8
+	maximumContextSupportingProjects          = 2
+	maximumContextSupportFactsPerProject      = 5
+	maximumContextSupportCandidatesPerProject = 8
 )
 
 const (
@@ -47,13 +48,15 @@ type rankedContextFact struct {
 }
 
 type rankedContextSupportFact struct {
-	fact             scan.AgentContextFactRecord
-	project          string
-	explicit         bool
-	semanticMatches  int
-	requestedMatches int
-	operational      bool
-	score            int
+	fact               scan.AgentContextFactRecord
+	project            string
+	explicit           bool
+	semanticMatches    int
+	requestedMatches   int
+	operational        bool
+	role               string
+	genericPersistence bool
+	score              int
 }
 
 func compileContextPack(index scan.AgentContextIndexRecord, request ContextRequest) (ContextPack, error) {
@@ -218,8 +221,8 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			continue
 		}
 		if supportProjectCounts[project] > 0 {
-			role := contextSupportStructuralRole(index, relatedFact)
-			if role == "" || role != contextConcernPersistence && supportProjectRoles[project][role] {
+			role := contextSupportRole(index, relatedFact)
+			if role != "" && supportProjectRoles[project][role] {
 				continue
 			}
 		}
@@ -260,7 +263,7 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			if supportProjectCounts[project] == 1 {
 				acceptedSupportProjects++
 			}
-			if role := contextSupportStructuralRole(index, relatedFact); role != "" {
+			if role := contextSupportRole(index, relatedFact); role != "" {
 				if supportProjectRoles[project] == nil {
 					supportProjectRoles[project] = map[string]bool{}
 				}
@@ -798,7 +801,7 @@ func rankContextSupportFacts(
 	if strings.TrimSpace(supportQuery) == "" {
 		supportQuery = query
 	}
-	queryTokens := contextQueryTokens(supportQuery)
+	queryTokens := contextExpandedTokens(supportQuery)
 	requestedTokens := contextSupportRequestedTokens(query)
 	utility := newContextForwardUtility(index)
 	ranked := make([]rankedContextSupportFact, 0, len(index.Facts))
@@ -837,12 +840,14 @@ func rankContextSupportFacts(
 			representedProjects,
 		)
 		ranked = append(ranked, rankedContextSupportFact{
-			fact:             fact,
-			project:          project,
-			explicit:         explicitProjects[project],
-			semanticMatches:  semanticMatches,
-			requestedMatches: requestedMatches,
-			operational:      operational,
+			fact:               fact,
+			project:            project,
+			explicit:           explicitProjects[project],
+			semanticMatches:    semanticMatches,
+			requestedMatches:   requestedMatches,
+			operational:        operational,
+			role:               contextSupportRole(index, fact),
+			genericPersistence: contextGenericPersistenceFact(fact),
 			score: contextSupportFactScore(fact, semanticMatches) +
 				requestedMatches*scorePerMatchedTerm/2 + operationalScore,
 		})
@@ -851,6 +856,11 @@ func rankContextSupportFacts(
 		left, right := ranked[i], ranked[j]
 		if left.explicit != right.explicit {
 			return left.explicit
+		}
+		if left.role == contextConcernPersistence &&
+			right.role == contextConcernPersistence &&
+			left.genericPersistence != right.genericPersistence {
+			return !left.genericPersistence
 		}
 		if left.score != right.score {
 			return left.score > right.score
@@ -882,10 +892,10 @@ func rankContextSupportFacts(
 
 func contextSupportRequestedTokens(query string) map[string]bool {
 	requested := make(map[string]bool)
-	for _, token := range contextQueryTokens(query) {
+	for _, token := range contextExpandedTokens(query) {
 		requested[token] = true
 	}
-	for _, token := range contextQueryTokens(contextPrimaryQuery(query)) {
+	for _, token := range contextExpandedTokens(contextPrimaryQuery(query)) {
 		delete(requested, token)
 	}
 	return requested
@@ -960,8 +970,11 @@ func distinctiveContextProjectIdentifierSegment(segment string) bool {
 
 func eligibleContextSupportFact(fact scan.AgentContextFactRecord) bool {
 	kind := strings.ToLower(strings.TrimSpace(fact.Kind))
-	if contextCapabilityForKind(kind) == "tests" || strings.Contains(kind, "generated") || strings.Contains(kind, "metadata") {
+	if strings.Contains(kind, "generated") || strings.Contains(kind, "metadata") {
 		return false
+	}
+	if normalizedContextConcernKind(kind) == contextConcernTests {
+		return strings.EqualFold(kind, "test") && contextPackSourceFile(fact.File) != ""
 	}
 	return !contextFactUsesTestSource(fact) && contextPackSourceFile(fact.File) != ""
 }
@@ -1013,18 +1026,45 @@ func contextSupportOperationalScore(
 		if contextQueryRequestsConcern(query, contextConcernAuth) {
 			score += 100
 		}
+	case "configuration", "config":
+		score += 140
+		operational = true
+		if contextQueryRequestsConcern(query, contextConcernConfiguration) {
+			score += 100
+		}
+	case "resilience", "retry":
+		score += 140
+		operational = true
+		if contextQueryRequestsConcern(query, contextConcernResilience) {
+			score += 100
+		}
+	case "side_effect", "side_effects":
+		score += 140
+		operational = true
+		if contextQueryRequestsConcern(query, contextConcernSideEffects) {
+			score += 100
+		}
+	case "test":
+		if contextQueryRequestsConcern(query, contextConcernTests) {
+			score += 100
+			operational = true
+		}
 	}
 
 	value := strings.Join([]string{fact.Search, fact.Name, fact.Qualified, fact.Summary}, " ")
-	if contextQueryRequestsConcern(query, contextConcernAuth) &&
-		contextValueRequestsConcern(value, contextConcernAuth) {
-		score += 100
-		operational = true
-	}
-	if contextQueryRequestsConcern(query, contextConcernPersistence) &&
-		contextValueRequestsConcern(value, contextConcernPersistence) {
-		score += 100
-		operational = true
+	for _, concernKind := range []string{
+		contextConcernAuth,
+		contextConcernConfiguration,
+		contextConcernResilience,
+		contextConcernPersistence,
+		contextConcernSideEffects,
+		contextConcernTests,
+	} {
+		if contextQueryRequestsConcern(query, concernKind) &&
+			contextValueRequestsConcern(value, concernKind) {
+			score += 100
+			operational = true
+		}
 	}
 	graphUtility := utility.score(fact.ID)
 	if graphUtility > 0 {
@@ -1036,55 +1076,91 @@ func contextSupportOperationalScore(
 	return operational, score
 }
 
-func contextSupportStructuralRole(
+func contextSupportRole(
 	index scan.AgentContextIndexRecord,
 	fact scan.AgentContextFactRecord,
 ) string {
 	switch normalizedContextConcernKind(fact.Kind) {
 	case contextConcernHTTPContract:
-		return contextConcernHTTPContract
+		return "contract"
+	case contextConcernConfiguration:
+		return contextConcernConfiguration
+	case contextConcernResilience:
+		return contextConcernResilience
 	case contextConcernPersistence:
 		return contextConcernPersistence
 	case contextConcernAuth:
 		return contextConcernAuth
+	case contextConcernSideEffects:
+		return contextConcernSideEffects
+	case contextConcernTests:
+		return contextConcernTests
 	}
-	roles := map[string]bool{}
+	identifier := strings.ToLower(strings.Join([]string{fact.Name, fact.Qualified}, " "))
+	if strings.Contains(identifier, "client") {
+		return "client"
+	}
+	if strings.EqualFold(fact.Kind, "route") || strings.EqualFold(fact.Kind, "api_endpoint") {
+		return "provider"
+	}
 	for _, edge := range index.Edges {
 		if edge.FromFactID != fact.ID {
 			continue
 		}
 		switch normalizedContextConcernKind(edge.Kind) {
-		case contextConcernHTTPContract:
-			roles[contextConcernHTTPContract] = true
-		case contextConcernPersistence:
-			roles[contextConcernPersistence] = true
-		case contextConcernAuth:
-			roles[contextConcernAuth] = true
-		default:
-			switch strings.ToLower(strings.TrimSpace(edge.Kind)) {
-			case "call", "consumes_endpoint", "extends", "implements", "use":
-				roles["call"] = true
-			}
+		case contextConcernHTTPContract, contextConcernPersistence, contextConcernAuth:
+			return "service"
+		}
+		switch strings.ToLower(strings.TrimSpace(edge.Kind)) {
+		case "call", "consumes_endpoint", "extends", "implements", "use":
+			return "service"
 		}
 	}
-	for _, role := range []string{
-		contextConcernHTTPContract,
-		contextConcernPersistence,
+	value := strings.Join([]string{fact.Search, fact.Name, fact.Qualified, fact.Summary}, " ")
+	for _, kind := range []string{
+		contextConcernConfiguration,
 		contextConcernAuth,
-		"call",
+		contextConcernResilience,
+		contextConcernPersistence,
+		contextConcernSideEffects,
 	} {
-		if roles[role] {
-			return role
+		if contextValueRequestsConcern(value, kind) {
+			return kind
 		}
 	}
 	return ""
+}
+
+func contextGenericPersistenceFact(fact scan.AgentContextFactRecord) bool {
+	if normalizedContextConcernKind(fact.Kind) != contextConcernPersistence {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(fact.Name)) {
+	case "count", "deleteall", "existsbyid", "findall", "findbyid", "save", "saveall":
+		return true
+	default:
+		return strings.Contains(strings.ToLower(fact.Summary), "inherited")
+	}
+}
+
+var contextSupportRoleOrder = []string{
+	"client",
+	"contract",
+	"provider",
+	"service",
+	contextConcernConfiguration,
+	contextConcernAuth,
+	contextConcernResilience,
+	contextConcernPersistence,
+	contextConcernSideEffects,
+	contextConcernTests,
 }
 
 func selectContextSupportFacts(
 	ranked []rankedContextSupportFact,
 	representedProjects map[string]bool,
 ) []rankedContextSupportFact {
-	selected := make([]rankedContextSupportFact, 0, len(ranked))
+	eligible := make([]rankedContextSupportFact, 0, len(ranked))
 	for _, candidate := range ranked {
 		matchesTask := candidate.semanticMatches >= 2
 		if candidate.explicit {
@@ -1100,7 +1176,38 @@ func selectContextSupportFacts(
 			strings.EqualFold(candidate.fact.Kind, "route")) && !candidate.operational {
 			continue
 		}
+		eligible = append(eligible, candidate)
+	}
+
+	selected := make([]rankedContextSupportFact, 0, len(eligible))
+	selectedIDs := map[string]bool{}
+	projectCounts := map[string]int{}
+	trySelect := func(candidate rankedContextSupportFact) {
+		if selectedIDs[candidate.fact.ID] ||
+			projectCounts[candidate.project] >= maximumContextSupportCandidatesPerProject {
+			return
+		}
 		selected = append(selected, candidate)
+		selectedIDs[candidate.fact.ID] = true
+		projectCounts[candidate.project]++
+	}
+	for _, role := range contextSupportRoleOrder {
+		for _, candidate := range eligible {
+			if candidate.role == role {
+				trySelect(candidate)
+			}
+		}
+	}
+	projectsWithStructuredEvidence := map[string]bool{}
+	for _, candidate := range selected {
+		if candidate.role != "" {
+			projectsWithStructuredEvidence[candidate.project] = true
+		}
+	}
+	for _, candidate := range eligible {
+		if candidate.role == "" && !projectsWithStructuredEvidence[candidate.project] {
+			trySelect(candidate)
+		}
 	}
 	return selected
 }
@@ -1488,6 +1595,29 @@ func contextQueryTokens(value string) []string {
 	return result
 }
 
+func contextExpandedTokenSet(value string) map[string]bool {
+	result := make(map[string]bool)
+	for _, token := range contextQueryTokens(value) {
+		result[token] = true
+	}
+	for _, token := range contextTokens(value) {
+		for _, alias := range contextIntentTokenAliases[token] {
+			result[alias] = true
+		}
+	}
+	return result
+}
+
+func contextExpandedTokens(value string) []string {
+	tokens := contextExpandedTokenSet(value)
+	result := make([]string, 0, len(tokens))
+	for token := range tokens {
+		result = append(result, token)
+	}
+	sort.Strings(result)
+	return result
+}
+
 func contextPrimaryQuery(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -1548,6 +1678,33 @@ func contextFirstParagraph(value string) string {
 		parts = append(parts, line)
 	}
 	return strings.Join(parts, " ")
+}
+
+var contextIntentTokenAliases = map[string][]string{
+	"aufgabe":             {"job", "jobs", "task", "tasks"},
+	"aufgaben":            {"job", "jobs", "task", "tasks"},
+	"authentifizierung":   {"auth", "authentication"},
+	"benutzerinformation": {"side_effects", "user_information"},
+	"contract":            {"contracts"},
+	"contracts":           {"contract"},
+	"effect":              {"side_effect", "side_effects"},
+	"effects":             {"side_effect", "side_effects"},
+	"fehlerbehandlung":    {"exception", "resilience"},
+	"job":                 {"jobs", "task", "tasks"},
+	"jobs":                {"job", "task", "tasks"},
+	"konfiguration":       {"config", "configuration"},
+	"nebenwirkung":        {"side_effect", "side_effects"},
+	"nebenwirkungen":      {"side_effect", "side_effects"},
+	"persistenz":          {"persistence", "repository"},
+	"protokollierung":     {"logging", "side_effects"},
+	"retries":             {"resilience", "retry"},
+	"retry":               {"resilience", "retries"},
+	"task":                {"job", "jobs", "tasks"},
+	"tasks":               {"job", "jobs", "task"},
+	"vertrag":             {"contract", "contracts"},
+	"verträge":            {"contract", "contracts"},
+	"wiederholung":        {"resilience", "retry"},
+	"wiederholungen":      {"resilience", "retry"},
 }
 
 var contextQueryTokenAliases = map[string][]string{

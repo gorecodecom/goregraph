@@ -8,15 +8,18 @@ import (
 )
 
 const (
-	contextConcernEntrypoint   = "entrypoint"
-	contextConcernPrimaryPath  = "primary_path"
-	contextConcernProject      = "project"
-	contextConcernHTTPContract = "http_contract"
-	contextConcernAuth         = "authentication"
-	contextConcernPersistence  = "persistence"
-	contextConcernTests        = "tests"
+	contextConcernEntrypoint    = "entrypoint"
+	contextConcernPrimaryPath   = "primary_path"
+	contextConcernProject       = "project"
+	contextConcernHTTPContract  = "http_contract"
+	contextConcernAuth          = "authentication"
+	contextConcernConfiguration = "configuration"
+	contextConcernResilience    = "resilience"
+	contextConcernPersistence   = "persistence"
+	contextConcernSideEffects   = "side_effects"
+	contextConcernTests         = "tests"
 
-	maximumPublicContextConcerns = 8
+	maximumPublicContextConcerns = 12
 )
 
 type contextConcern struct {
@@ -69,6 +72,43 @@ func planContextConcerns(
 		))
 	}
 
+	scopedConcernKinds := map[string]bool{}
+	if len(explicitProjects) > 0 {
+		for _, project := range projects {
+			for _, kind := range []string{
+				contextConcernHTTPContract,
+				contextConcernAuth,
+				contextConcernConfiguration,
+				contextConcernResilience,
+				contextConcernPersistence,
+				contextConcernSideEffects,
+				contextConcernTests,
+			} {
+				if !contextQueryRequestsConcern(query, kind) {
+					continue
+				}
+				candidates := contextExplicitProjectConcernCandidates(
+					semanticQueryTokens,
+					project,
+					kind,
+					index.Facts,
+					reachableFactIDs,
+				)
+				if len(candidates) == 0 {
+					continue
+				}
+				concerns = append(concerns, newContextConcern(
+					kind,
+					project,
+					true,
+					candidates,
+					"requested adjacent "+strings.ReplaceAll(kind, "_", " ")+" evidence",
+				))
+				scopedConcernKinds[kind] = true
+			}
+		}
+	}
+
 	contractFactIDs := []string{}
 	for _, edge := range reachableEdges {
 		if normalizedContextConcernKind(edge.Kind) != contextConcernHTTPContract {
@@ -76,7 +116,8 @@ func planContextConcerns(
 		}
 		contractFactIDs = append(contractFactIDs, edge.FromFactID, edge.ToFactID)
 	}
-	if contextQueryRequestsConcern(query, contextConcernHTTPContract) || len(contractFactIDs) > 0 {
+	if !scopedConcernKinds[contextConcernHTTPContract] &&
+		(contextQueryRequestsConcern(query, contextConcernHTTPContract) || len(contractFactIDs) > 0) {
 		concerns = append(concerns, newContextConcern(
 			contextConcernHTTPContract,
 			"",
@@ -89,7 +130,8 @@ func planContextConcerns(
 	authCandidates := contextConcernFactCandidates(index.Facts, reachableFactIDs, contextConcernAuth)
 	authCandidates = append(authCandidates, contextConcernEdgeCandidates(reachableEdges, contextConcernAuth)...)
 	authCandidates = orderedContextConcernIDs(authCandidates)
-	if contextQueryRequestsConcern(query, contextConcernAuth) || len(authCandidates) > 0 {
+	if !scopedConcernKinds[contextConcernAuth] &&
+		(contextQueryRequestsConcern(query, contextConcernAuth) || len(authCandidates) > 0) {
 		concerns = append(concerns, newContextConcern(
 			contextConcernAuth,
 			"",
@@ -99,13 +141,35 @@ func planContextConcerns(
 		))
 	}
 
+	for _, kind := range []string{
+		contextConcernConfiguration,
+		contextConcernResilience,
+		contextConcernSideEffects,
+	} {
+		if scopedConcernKinds[kind] {
+			continue
+		}
+		candidates := contextConcernFactCandidates(index.Facts, reachableFactIDs, kind)
+		if !contextQueryRequestsConcern(query, kind) && len(candidates) == 0 {
+			continue
+		}
+		concerns = append(concerns, newContextConcern(
+			kind,
+			"",
+			true,
+			candidates,
+			"requested or reachable "+strings.ReplaceAll(kind, "_", " ")+" evidence",
+		))
+	}
+
 	persistenceCandidates := contextConcernFactCandidates(index.Facts, reachableFactIDs, contextConcernPersistence)
 	persistenceCandidates = append(
 		persistenceCandidates,
 		contextConcernEdgeCandidates(reachableEdges, contextConcernPersistence)...,
 	)
 	persistenceCandidates = orderedContextConcernIDs(persistenceCandidates)
-	if contextQueryRequestsConcern(query, contextConcernPersistence) || len(persistenceCandidates) > 0 {
+	if !scopedConcernKinds[contextConcernPersistence] &&
+		(contextQueryRequestsConcern(query, contextConcernPersistence) || len(persistenceCandidates) > 0) {
 		concerns = append(concerns, newContextConcern(
 			contextConcernPersistence,
 			"",
@@ -115,7 +179,7 @@ func planContextConcerns(
 		))
 	}
 
-	if contextQueryRequestsConcern(query, contextConcernTests) {
+	if !scopedConcernKinds[contextConcernTests] && contextQueryRequestsConcern(query, contextConcernTests) {
 		concerns = append(concerns, newContextConcern(
 			contextConcernTests,
 			"",
@@ -126,9 +190,31 @@ func planContextConcerns(
 	}
 
 	sort.Slice(concerns, func(i, j int) bool {
-		return concerns[i].key < concerns[j].key
+		return contextConcernLess(concerns[i], concerns[j])
 	})
 	return concerns
+}
+
+func contextConcernLess(left, right contextConcern) bool {
+	leftPriority := contextConcernPriority(left)
+	rightPriority := contextConcernPriority(right)
+	if leftPriority != rightPriority {
+		return leftPriority < rightPriority
+	}
+	return left.key < right.key
+}
+
+func contextConcernPriority(concern contextConcern) int {
+	switch concern.kind {
+	case contextConcernEntrypoint:
+		return 0
+	case contextConcernPrimaryPath:
+		return 1
+	case contextConcernProject:
+		return 2
+	default:
+		return 3
+	}
 }
 
 func newContextConcern(kind, project string, required bool, candidateFactIDs []string, reason string) contextConcern {
@@ -153,7 +239,7 @@ func publicContextConcerns(concerns []contextConcern) []ContextConcern {
 		if ordered[i].required != ordered[j].required {
 			return ordered[i].required
 		}
-		return ordered[i].key < ordered[j].key
+		return contextConcernLess(ordered[i], ordered[j])
 	})
 	if len(ordered) > maximumPublicContextConcerns {
 		ordered = ordered[:maximumPublicContextConcerns]
@@ -266,12 +352,63 @@ func semanticContextProjectFacts(
 	return orderedContextConcernIDs(result)
 }
 
+func contextExplicitProjectConcernCandidates(
+	queryTokens map[string]bool,
+	project string,
+	kind string,
+	facts []scan.AgentContextFactRecord,
+	reachable map[string]bool,
+) []string {
+	result := []string{}
+	for _, fact := range facts {
+		if normalizeContextProject(fact.Project) != project || reachable[fact.ID] {
+			continue
+		}
+		factKind := normalizedContextConcernKind(fact.Kind)
+		if kind == contextConcernTests {
+			if factKind != contextConcernTests {
+				continue
+			}
+		} else {
+			if !eligibleContextConcernFact(fact) {
+				continue
+			}
+			value := strings.Join([]string{
+				fact.Search,
+				fact.Name,
+				fact.Qualified,
+				fact.HTTPMethod,
+				fact.Path,
+				fact.Summary,
+			}, " ")
+			if factKind != kind && !contextValueRequestsConcern(value, kind) {
+				continue
+			}
+		}
+		factTokens := contextTokenSet(strings.Join([]string{
+			fact.Search,
+			fact.Name,
+			fact.Qualified,
+			fact.HTTPMethod,
+			fact.Path,
+			fact.Summary,
+		}, " "))
+		for token := range queryTokens {
+			if factTokens[token] {
+				result = append(result, fact.ID)
+				break
+			}
+		}
+	}
+	return orderedContextConcernIDs(result)
+}
+
 func contextProjectSemanticQueryTokens(
 	query string,
 	aliases map[string][]string,
 	explicitProjects map[string]bool,
 ) map[string]bool {
-	queryTokens := contextTokenSet(query)
+	queryTokens := contextExpandedTokenSet(query)
 	for project := range explicitProjects {
 		for _, alias := range aliases[project] {
 			for token := range contextTokenSet(alias) {
@@ -345,7 +482,7 @@ func contextQueryRequestsConcern(query, kind string) bool {
 }
 
 func contextValueRequestsConcern(value, kind string) bool {
-	tokens := contextTokenSet(value)
+	tokens := contextExpandedTokenSet(value)
 	for _, token := range contextConcernVocabulary[kind] {
 		if tokens[token] {
 			return true
@@ -361,8 +498,17 @@ var contextConcernVocabulary = map[string][]string{
 	contextConcernAuth: {
 		"auth", "authenticate", "authentication", "authorization", "credential", "credentials", "security",
 	},
+	contextConcernConfiguration: {
+		"config", "configuration", "properties", "property",
+	},
+	contextConcernResilience: {
+		"exception", "resilience", "retries", "retry", "timeout",
+	},
 	contextConcernPersistence: {
 		"database", "persistence", "persistent", "repositories", "repository", "storage", "store",
+	},
+	contextConcernSideEffects: {
+		"event", "logging", "mail", "notification", "side_effect", "side_effects", "user_information",
 	},
 	contextConcernTests: {
 		"spec", "specs", "test", "testing", "tests",
@@ -375,8 +521,14 @@ func normalizedContextConcernKind(kind string) string {
 		return contextConcernHTTPContract
 	case "authentication", "requires_auth", "security":
 		return contextConcernAuth
+	case "config", "configuration":
+		return contextConcernConfiguration
+	case "resilience", "retry":
+		return contextConcernResilience
 	case "persistence":
 		return contextConcernPersistence
+	case "side_effect", "side_effects":
+		return contextConcernSideEffects
 	case "test", "test_target":
 		return contextConcernTests
 	default:

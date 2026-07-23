@@ -91,6 +91,101 @@ func TestPlanContextConcernsAlwaysRequiresEntrypointAndPrimaryPath(t *testing.T)
 	}
 }
 
+func TestContextExpandedTokenSet(t *testing.T) {
+	for value, want := range map[string][]string{
+		"Aufgaben":            {"job", "jobs", "task", "tasks"},
+		"Authentifizierung":   {"auth", "authentication"},
+		"Konfiguration":       {"config", "configuration"},
+		"Wiederholung":        {"resilience", "retry"},
+		"Persistenz":          {"persistence", "repository"},
+		"Nebenwirkungen":      {"side_effect", "side_effects"},
+		"Fehlerbehandlung":    {"exception", "resilience"},
+		"Benutzerinformation": {"side_effects", "user_information"},
+	} {
+		t.Run(value, func(t *testing.T) {
+			got := contextExpandedTokenSet(value)
+			for _, token := range want {
+				if !got[token] {
+					t.Errorf("expanded tokens for %q miss %q: %#v", value, token, got)
+				}
+			}
+		})
+	}
+}
+
+func TestPlanContextConcernsMatchesGermanOperationalTask(t *testing.T) {
+	seed := scan.AgentContextFactRecord{
+		ID: "route", Project: "services/catalog", Kind: "route", Search: "delete catalog item",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		seed,
+		{ID: "client", Project: "libraries/job-client", Kind: "api_contract", Search: "job task client contract"},
+		{ID: "auth", Project: "libraries/job-client", Kind: "authentication", Search: "job task authentication"},
+		{ID: "config", Project: "libraries/job-client", Kind: "configuration", Search: "job task configuration"},
+		{ID: "retry", Project: "libraries/job-client", Kind: "resilience", Search: "job task retry resilience"},
+		{ID: "store", Project: "services/jobs", Kind: "persistence", Search: "job task repository persistence"},
+		{ID: "effect", Project: "services/jobs", Kind: "side_effects", Search: "job task logging side effects"},
+	}}
+	english := planContextConcerns(
+		"Analyze services/catalog, libraries/job-client, and services/jobs for related jobs, HTTP contracts, authentication, configuration, retries, persistence, and side effects.",
+		index,
+		seed,
+	)
+	german := planContextConcerns(
+		"Analysiere services/catalog, libraries/job-client und services/jobs für verbundene Aufgaben, HTTP-Verträge, Authentifizierung, Konfiguration, Wiederholungen, Persistenz und Nebenwirkungen.",
+		index,
+		seed,
+	)
+
+	if got, want := contextConcernKeys(german), contextConcernKeys(english); !reflect.DeepEqual(got, want) {
+		t.Fatalf("German concern keys = %#v, want %#v", got, want)
+	}
+}
+
+func TestPlanContextConcernsScopesOperationalEvidenceToExplicitProjects(t *testing.T) {
+	seed := scan.AgentContextFactRecord{
+		ID: "route", Project: "services/catalog", Kind: "route", Search: "delete catalog item",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		seed,
+		{ID: "auth-client", Project: "libraries/job-client", Kind: "authentication", Search: "job authentication"},
+		{ID: "auth-provider", Project: "services/jobs", Kind: "authentication", Search: "job authentication"},
+		{ID: "config-client", Project: "libraries/job-client", Kind: "configuration", Search: "job configuration"},
+		{ID: "store-provider", Project: "services/jobs", Kind: "persistence", Search: "job persistence repository"},
+	}}
+
+	concerns := planContextConcerns(
+		"Analyze services/catalog, libraries/job-client, and services/jobs authentication, configuration, and persistence for related jobs.",
+		index,
+		seed,
+	)
+	for key, wantID := range map[string]string{
+		"authentication:libraries/job-client": "auth-client",
+		"authentication:services/jobs":        "auth-provider",
+		"configuration:libraries/job-client":  "config-client",
+		"persistence:services/jobs":           "store-provider",
+	} {
+		concern, ok := findContextConcern(concerns, key)
+		if !ok || !reflect.DeepEqual(concern.candidateFactIDs, []string{wantID}) {
+			t.Errorf("project concern %q = %#v, want %q", key, concern, wantID)
+		}
+	}
+	for _, key := range []string{contextConcernAuth, contextConcernConfiguration, contextConcernPersistence} {
+		if concern, ok := findContextConcern(concerns, key); ok {
+			t.Errorf("global concern duplicated scoped concern %q: %#v", key, concern)
+		}
+	}
+}
+
+func contextConcernKeys(concerns []contextConcern) []string {
+	result := make([]string, 0, len(concerns))
+	for _, concern := range concerns {
+		result = append(result, concern.key)
+	}
+	sort.Strings(result)
+	return result
+}
+
 func TestPlanContextConcernsRequiresSemanticExplicitProjects(t *testing.T) {
 	seed := scan.AgentContextFactRecord{ID: "route", Project: "services/catalog", Kind: "route", Search: "delete catalog item"}
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
@@ -388,9 +483,14 @@ func TestPlanContextConcernsReportsMissingProjectCoverageAsUncovered(t *testing.
 	}
 }
 
-func TestPlanContextConcernsSerializesAtMostEightWithRequiredDeterministicTies(t *testing.T) {
+func TestPlanContextConcernsSerializesAtMostTwelveWithRequiredDeterministicTies(t *testing.T) {
 	concerns := []contextConcern{
 		{key: "optional:b", kind: "optional", candidateFactIDs: []string{"b"}},
+		{key: "required:m", kind: "required_m", required: true, candidateFactIDs: []string{"m"}},
+		{key: "required:l", kind: "required_l", required: true, candidateFactIDs: []string{"l"}},
+		{key: "required:k", kind: "required_k", required: true, candidateFactIDs: []string{"k"}},
+		{key: "required:j", kind: "required_j", required: true, candidateFactIDs: []string{"j"}},
+		{key: "required:i", kind: "required_i", required: true, candidateFactIDs: []string{"i"}},
 		{key: "required:h", kind: "required_h", required: true, candidateFactIDs: []string{"h"}},
 		{key: "required:g", kind: "required_g", required: true, candidateFactIDs: []string{"g"}},
 		{key: "required:f", kind: "required_f", required: true, candidateFactIDs: []string{"f"}},
@@ -406,7 +506,7 @@ func TestPlanContextConcernsSerializesAtMostEightWithRequiredDeterministicTies(t
 
 	forward := publicContextConcerns(concerns)
 	backward := publicContextConcerns(reversed)
-	if len(forward) != 8 || !reflect.DeepEqual(forward, backward) {
+	if len(forward) != 12 || !reflect.DeepEqual(forward, backward) {
 		t.Fatalf("bounded deterministic concern metadata = %#v / %#v", forward, backward)
 	}
 	for _, concern := range forward {
@@ -1938,12 +2038,12 @@ func TestBuildContextAddsSupportingFactsFromNamedProjects(t *testing.T) {
 	if len(pack.CallChain) != 1 || pack.CallChain[0].From != "DELETE /catalog/{catalogId}/entries/{entryId}" || pack.CallChain[0].To != "deleteEntry" {
 		t.Fatalf("support selection changed the primary chain: %#v", pack.CallChain)
 	}
-	for _, path := range []string{"CatalogController.go", "CatalogService.go", "JobsClient.go", "JobReference.go"} {
+	for _, path := range []string{"CatalogController.go", "CatalogService.go", "JobsClient.go", "JobsRetry.go", "JobReference.go"} {
 		if !contextPackHasFile(pack, path) {
 			t.Fatalf("named project file %q missing from context: %#v", path, pack.Files)
 		}
 	}
-	for _, path := range []string{"JobsRetry.go", "JobsTarget.go", "Reporting.go", "src/test/JobsClient_test.go", "api-catalog.json", "SharedModelMetadata.go"} {
+	for _, path := range []string{"JobsTarget.go", "Reporting.go", "src/test/JobsClient_test.go", "api-catalog.json", "SharedModelMetadata.go"} {
 		if contextPackHasFile(pack, path) {
 			t.Fatalf("ineligible support file %q leaked into context: %#v", path, pack.Files)
 		}
@@ -1994,6 +2094,100 @@ func TestContextSupportSelectionUsesPrimaryQueryAcrossPromptFormats(t *testing.T
 	if want := []string{"relevant"}; !reflect.DeepEqual(baseline, want) {
 		t.Fatalf("support selection = %#v, want %#v", baseline, want)
 	}
+}
+
+func TestSelectContextSupportFactsBalancesRequestedRoles(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{ID: "client", Project: "libraries/job-client", Kind: "symbol", Name: "JobClient.listJobs", File: "JobClient.go", Search: "job task client", Confidence: "EXACT"},
+			{ID: "contract", Project: "libraries/job-client", Kind: "api_contract", Name: "GET /jobs", File: "JobClient.go", Search: "job task contract", Confidence: "RESOLVED"},
+			{ID: "config", Project: "libraries/job-client", Kind: "configuration", Name: "JobClientConfig", File: "JobClientConfig.go", Search: "job task configuration", Confidence: "EXACT"},
+			{ID: "auth", Project: "libraries/job-client", Kind: "authentication", Name: "basicAuthentication", File: "JobClientAuth.go", Search: "job task authentication", Confidence: "EXACT"},
+			{ID: "retry", Project: "libraries/job-client", Kind: "resilience", Name: "retryPolicy", File: "JobClientRetry.go", Search: "job task retry resilience", Confidence: "EXACT"},
+			{ID: "provider", Project: "services/jobs", Kind: "route", Name: "GET /jobs", File: "JobController.go", Search: "job task endpoint", Confidence: "EXACT"},
+			{ID: "service", Project: "services/jobs", Kind: "symbol", Name: "JobService.listJobs", File: "JobService.go", Search: "job task service", Confidence: "EXACT"},
+			{ID: "finder", Project: "services/jobs", Kind: "persistence", Name: "findByCatalogItem", File: "JobRepository.go", Search: "job task persistence", Confidence: "EXACT"},
+			{ID: "effect", Project: "services/jobs", Kind: "side_effects", Name: "publishDeletion", File: "JobEvents.go", Search: "job task side effects", Confidence: "EXACT"},
+			{ID: "test", Project: "services/jobs", Kind: "test", Name: "listsJobs", File: "src/test/JobController_test.go", Search: "job task test", Confidence: "EXACT"},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "client-contract", FromFactID: "client", ToFactID: "contract", Kind: "call"},
+			{ID: "provider-service", FromFactID: "provider", ToFactID: "service", Kind: "call"},
+			{ID: "service-finder", FromFactID: "service", ToFactID: "finder", Kind: "persistence"},
+			{ID: "service-effect", FromFactID: "service", ToFactID: "effect", Kind: "call"},
+			{ID: "test-provider", FromFactID: "test", ToFactID: "provider", Kind: "test_target"},
+		},
+	}
+	query := "Analyze libraries/job-client and services/jobs job task client contract authentication configuration retry persistence side effects and tests."
+	aliases := contextProjectAliases(index.Facts, nil)
+	ranked := rankContextSupportFacts(
+		index,
+		query,
+		aliases,
+		contextExplicitProjects(query, aliases),
+		map[string]bool{"services/catalog": true},
+	)
+	selected := selectContextSupportFacts(ranked, map[string]bool{"services/catalog": true})
+	got := make(map[string][]string)
+	for _, candidate := range selected {
+		got[candidate.project] = append(got[candidate.project], candidate.role)
+	}
+	for project := range got {
+		sort.Strings(got[project])
+	}
+	want := map[string][]string{
+		"libraries/job-client": {"authentication", "client", "configuration", "contract", "resilience"},
+		"services/jobs":        {"persistence", "provider", "service", "side_effects", "tests"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("balanced support roles = %#v, want %#v", got, want)
+	}
+}
+
+func TestRankContextSupportFactsPrefersDeclaredPersistence(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "generic", Project: "services/jobs", Kind: "persistence", Name: "findAll", Qualified: "JobRepository.findAll", File: "JobRepository.go", Search: "job task persistence", Confidence: "EXACT", Summary: "inherited repository method"},
+		{ID: "finder", Project: "services/jobs", Kind: "persistence", Name: "findByCatalogItem", Qualified: "JobRepository.findByCatalogItem", File: "JobRepository.go", Search: "job task persistence", Confidence: "EXACT"},
+	}}
+	query := "Analyze services/jobs job task persistence."
+	aliases := contextProjectAliases(index.Facts, nil)
+	ranked := rankContextSupportFacts(
+		index,
+		query,
+		aliases,
+		contextExplicitProjects(query, aliases),
+		map[string]bool{"services/catalog": true},
+	)
+	if len(ranked) != 2 || ranked[0].fact.ID != "finder" {
+		t.Fatalf("persistence ranking = %#v, want declared finder first", ranked)
+	}
+}
+
+func TestSelectRelatedContextProductionIsDeterministic(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "client", Project: "libraries/job-client", Kind: "symbol", Name: "JobClient", File: "JobClient.go", Search: "job task client", Confidence: "EXACT"},
+		{ID: "contract", Project: "libraries/job-client", Kind: "api_contract", Name: "GET /jobs", File: "JobClient.go", Search: "job task contract", Confidence: "RESOLVED"},
+		{ID: "repository", Project: "services/jobs", Kind: "persistence", Name: "findByCatalogItem", File: "JobRepository.go", Search: "job task persistence", Confidence: "EXACT"},
+	}}
+	query := "Analyze libraries/job-client and services/jobs job task client contract persistence."
+	selected := map[string]bool{"route": true}
+
+	forward := selectRelatedContextProduction(index, query, selected, nil)
+	reversedIndex := index
+	reversedIndex.Facts = append([]scan.AgentContextFactRecord(nil), index.Facts...)
+	slices.Reverse(reversedIndex.Facts)
+	backward := selectRelatedContextProduction(reversedIndex, query, selected, nil)
+	if !reflect.DeepEqual(contextFactIDs(forward), contextFactIDs(backward)) {
+		t.Fatalf("related support changed with input order: %#v / %#v", forward, backward)
+	}
+}
+
+func contextFactIDs(facts []scan.AgentContextFactRecord) []string {
+	result := make([]string, 0, len(facts))
+	for _, fact := range facts {
+		result = append(result, fact.ID)
+	}
+	return result
 }
 
 func TestContextSupportProjectAffinityIgnoresGenericParentFolders(t *testing.T) {
