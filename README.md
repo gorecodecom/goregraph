@@ -233,8 +233,8 @@ For human exploration:
 
 ```bash
 goregraph workspace build dashboard .
-goregraph workspace dashboard path .
-goregraph workspace dashboard open .
+goregraph dashboard .
+goregraph dashboard open .
 ```
 
 `path` prints and `open` opens the generated static dashboard. That export is
@@ -242,9 +242,11 @@ offline and read-only; neither command starts a server. To organize the
 Architecture view, run the local editor explicitly:
 
 ```bash
-goregraph workspace dashboard edit .
+goregraph dashboard edit .
 ```
 
+The static dashboard's **Edit layout** button shows the same command, so the
+editing workflow remains discoverable without starting a server automatically.
 Only `edit` starts an authenticated loopback server. Automatic groups come from
 production package/module evidence. In the editor, group labels and group order
 can be changed, and services can be reordered or moved between groups by
@@ -520,12 +522,19 @@ goregraph scan <path> --workspace <workspace-root>
 Build a project while forcing the workspace root used for sibling discovery.
 
 ```bash
+goregraph dashboard .
 goregraph dashboard path [path]
 goregraph dashboard open [path]
+goregraph dashboard edit [path]
 ```
 
-Print the project `goregraph-out/dashboard/` path, or open its primary
-`dashboard/report.md`. This does not create an interactive project dashboard.
+Resolve an existing project dashboard first, then fall back to the generated
+workspace dashboard when the selected path belongs to a workspace. The bare
+form and `path` print the resolved path; `open` directly opens the project
+`dashboard/report.md` or workspace `workspace-map.html`. If neither exists,
+GoreGraph reports the build command needed to create one. `edit` opens the
+authenticated local editor for the workspace dashboard; it never edits the
+generated static file directly.
 
 ```bash
 goregraph workspace dashboard [path]

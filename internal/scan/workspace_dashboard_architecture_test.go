@@ -545,6 +545,46 @@ func TestArchitectureLoadedConfigControlsManualFlagsAndExactPayload(t *testing.T
 	}
 }
 
+func TestArchitectureDraftPreservesDetectedGroupingEvidence(t *testing.T) {
+	var result struct {
+		PackageGroupSource        string
+		PackageGroupConfidence    string
+		PackageServiceSource      string
+		PackageServiceConfidence  string
+		FallbackGroupSource       string
+		FallbackGroupConfidence   string
+		FallbackServiceSource     string
+		FallbackServiceConfidence string
+	}
+	runArchitectureModel(t, `(()=>{
+		const nodes=[
+			{id:"service:orders",label:"Orders",project:"services/orders",domain:"commerce",domain_source:"production_package",domain_confidence:"EXTRACTED"},
+			{id:"service:frontend",label:"Frontend",project:"frontend/app",domain:"frontend:frontend",domain_source:"workspace_path",domain_confidence:"PARTIAL"}
+		],groups=[
+			{id:"commerce",label:"Commerce",order:0,source:"production_package",confidence:"EXTRACTED"},
+			{id:"frontend:frontend",label:"Frontend",order:1,source:"workspace_path",confidence:"PARTIAL"}
+		],draft=architectureDraftFromConfigData(nodes,groups,architectureEmptyConfig()),packageGroup=draft.groups.find(group=>group.id==="commerce"),fallbackGroup=draft.groups.find(group=>group.id==="frontend:frontend");
+		return {
+			PackageGroupSource:packageGroup.source,
+			PackageGroupConfidence:packageGroup.confidence,
+			PackageServiceSource:packageGroup.services[0].source,
+			PackageServiceConfidence:packageGroup.services[0].confidence,
+			FallbackGroupSource:fallbackGroup.source,
+			FallbackGroupConfidence:fallbackGroup.confidence,
+			FallbackServiceSource:fallbackGroup.services[0].source,
+			FallbackServiceConfidence:fallbackGroup.services[0].confidence
+		};
+	})()`, &result)
+	if result.PackageGroupSource != "production_package" || result.PackageGroupConfidence != "EXTRACTED" ||
+		result.PackageServiceSource != "production_package" || result.PackageServiceConfidence != "EXTRACTED" {
+		t.Fatalf("package grouping evidence = %#v", result)
+	}
+	if result.FallbackGroupSource != "workspace_path" || result.FallbackGroupConfidence != "PARTIAL" ||
+		result.FallbackServiceSource != "workspace_path" || result.FallbackServiceConfidence != "PARTIAL" {
+		t.Fatalf("fallback grouping evidence = %#v", result)
+	}
+}
+
 func TestArchitectureEditorThreeWayRebasePreservesUnrelatedRemoteChanges(t *testing.T) {
 	var result struct {
 		GroupOrder        []string

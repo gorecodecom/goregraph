@@ -395,34 +395,88 @@ Only edit starts an authenticated loopback server. It saves layout choices in
 func runDashboard(args []string, stdout, stderr io.Writer) int {
 	action := "path"
 	root := "."
-	if len(args) > 0 && (args[0] == "path" || args[0] == "open") {
+	if len(args) > 0 && (args[0] == "path" || args[0] == "open" || args[0] == "edit") {
 		action = args[0]
 		args = args[1:]
 	}
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, "Usage: goregraph dashboard path|open [path]\n")
+		fmt.Fprint(stdout, `Usage: goregraph dashboard path|open|edit [path]
+
+GoreGraph resolves an existing project dashboard first and falls back to the
+generated workspace dashboard. path prints the resolved dashboard path.
+open opens its primary file in the configured browser.
+edit starts the authenticated local editor for the workspace dashboard.
+`)
 		return 0
 	}
 	if len(args) > 0 {
 		root = args[0]
+	}
+	if action == "edit" {
+		return runWorkspaceDashboard([]string{"edit", root}, stdout, stderr)
 	}
 	cfg, err := config.Load(root)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
-	layout := scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir))
-	path := filepath.Join(layout.Root, "dashboard")
-	openPath := layout.Dashboard("report.md")
+	path, openPath, err := resolveDashboardPaths(root, cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: resolving dashboard path failed: %v\n", err)
+		return 1
+	}
 	if action == "open" {
-		if err := openGeneratedPath(openPath); err != nil {
+		absOpenPath, err := filepath.Abs(openPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: resolving dashboard file failed: %v\n", err)
+			return 1
+		}
+		if err := openGeneratedPath(absOpenPath); err != nil {
 			fmt.Fprintf(stderr, "error: opening dashboard failed: %v\n", err)
 			return 1
 		}
 	}
-	abs, _ := filepath.Abs(path)
 	fmt.Fprintf(stdout, "%s\n", abs)
 	return 0
+}
+
+func resolveDashboardPaths(root string, cfg config.Config) (string, string, error) {
+	projectLayout := scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir))
+	projectPath := filepath.Join(projectLayout.Root, "dashboard")
+	projectFile := projectLayout.Dashboard("report.md")
+	if regularFileExists(projectFile) {
+		return projectPath, projectFile, nil
+	}
+
+	workspaceRoot, ok, err := scan.WorkspaceRoot(root, cfg)
+	if err != nil {
+		return "", "", fmt.Errorf("detect workspace dashboard: %w", err)
+	}
+	if ok {
+		workspaceFile := scan.NewWorkspaceOutputLayout(
+			filepath.Join(workspaceRoot, ".goregraph-workspace"),
+		).Dashboard("workspace-map.html")
+		if regularFileExists(workspaceFile) {
+			return workspaceFile, workspaceFile, nil
+		}
+	}
+
+	return "", "", fmt.Errorf(
+		"dashboard not found for %s; run goregraph build dashboard %s or goregraph workspace build dashboard %s",
+		root,
+		root,
+		root,
+	)
+}
+
+func regularFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func openGeneratedPath(path string) error {
@@ -1464,7 +1518,7 @@ Common workflows:
 Core commands:
   build <target>    Build agent, dashboard, or all project projections
   context <path>    Build one deterministic, budgeted Context Pack
-  dashboard         Print or open the generated project dashboard
+  dashboard         Print, open, or edit the applicable dashboard
   doctor <path>     Check generated output health
   workspace         Build and inspect workspace-wide projections
   mcp               Start standard MCP with task_context only
@@ -1485,7 +1539,7 @@ Usage: goregraph <command> [options]
 Core commands:
   build <target>    Build agent, dashboard, or all project projections
   context <path>    Build one deterministic, budgeted Context Pack
-  dashboard         Print or open the generated project dashboard
+  dashboard         Print, open, or edit the applicable dashboard
   doctor <path>     Check generated output health
   workspace         Show, scan, clean, and inspect workspace projects
   mcp               Start standard MCP with task_context only
@@ -1509,6 +1563,8 @@ Utility:
 Examples:
   goregraph build agent .
   goregraph build dashboard .
+  goregraph dashboard open .
+  goregraph dashboard edit .
   goregraph build all .
   goregraph update . --target agent
   goregraph scan .
@@ -1566,6 +1622,7 @@ Project vs workspace builds:
   and all builds.
 
 Dashboard editing:
+  dashboard edit starts the workspace editor for the selected path.
   workspace dashboard path prints the generated static dashboard file.
   workspace dashboard open opens that static read-only file.
   workspace dashboard edit changes layout and grouping configuration.

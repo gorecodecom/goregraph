@@ -3160,6 +3160,34 @@ func TestWorkspaceDashboardArchitectureEditorIsExplicitAndAccessible(t *testing.
 	}
 }
 
+func TestWorkspaceDashboardStaticArchitectureEditExplainsHowToStartEditor(t *testing.T) {
+	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
+		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, denseArchitectureFixture(),
+		WorkspaceEndpointTraceIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion},
+		WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion},
+	)
+	for _, want := range []string{
+		`id="architecture-edit-help"`, `id="architecture-edit-command"`,
+		`goregraph dashboard edit .`, `id="architecture-copy-edit-command"`,
+		`id="architecture-close-edit-help"`, `navigator.clipboard.writeText`,
+		`showModal()`, `Package evidence · `, `Repository boundary · `,
+		`badge.className="architecture-layout-badge manual"`,
+		`.architecture-edit-help{width:min(560px,calc(100vw - 32px));border:1px solid var(--color-border);border-radius:6px`,
+		`@media (max-width:480px){.architecture-tabs button{min-width:0;padding:0 8px;font-size:12px}`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("static dashboard missing architecture edit guidance %q", want)
+		}
+	}
+	if strings.Contains(html, `id="architecture-edit-layout" hidden`) || strings.Contains(html, `id="architecture-edit-layout" disabled`) {
+		t.Fatal("architecture edit entry must be visible and enabled in the static dashboard")
+	}
+	if strings.Contains(html, `.architecture-edit-help{width:min(560px,calc(100vw - 32px));border:1px solid var(--color-border);border-radius:6px;background:var(--color-surface);color:var(--color-text);padding:0;box-shadow:`) {
+		t.Fatal("architecture edit guidance must follow the flat, shadow-free dashboard design system")
+	}
+}
+
 func TestWorkspaceDashboardArchitectureEditorHasModalLifecycleContracts(t *testing.T) {
 	html := RenderWorkspaceDashboardHTMLWithCodeExplorer(
 		WorkspaceGraphRecord{SchemaVersion: SchemaVersion}, denseArchitectureFixture(),

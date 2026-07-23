@@ -72,8 +72,22 @@ const workspaceDashboardShell = `<div class="shell" id="workspace-shell">
 <button type="button" data-architecture-view="flow" aria-pressed="true">Flow</button>
 <button type="button" data-architecture-view="matrix" aria-pressed="false">Matrix</button>
 <button type="button" data-architecture-view="selected" aria-pressed="false" disabled>Selected service</button>
-<button type="button" id="architecture-edit-layout" hidden disabled>Edit layout</button>
+<button type="button" id="architecture-edit-layout">Edit layout</button>
 </nav>
+<dialog id="architecture-edit-help" aria-labelledby="architecture-edit-help-title">
+<div class="architecture-edit-help-content">
+<p class="workbench-kicker">Editable workspace view</p>
+<h1 id="architecture-edit-help-title">Open the local Architecture editor</h1>
+<p>The generated dashboard is a read-only file. Run this command from the workspace root to rename groups, reorder them, and move services safely:</p>
+<label for="architecture-edit-command">Command</label>
+<div class="architecture-edit-command">
+<input id="architecture-edit-command" value="goregraph dashboard edit ." readonly>
+<button type="button" id="architecture-copy-edit-command">Copy</button>
+</div>
+<p id="architecture-edit-help-status" class="architecture-edit-help-status" aria-live="polite">The editor runs locally and writes only .goregraph-dashboard.json when you save.</p>
+<button type="button" id="architecture-close-edit-help">Close</button>
+</div>
+</dialog>
 <p id="architecture-layout-notice" class="architecture-layout-notice" aria-live="polite" tabindex="-1" hidden></p>
 <div class="canvas-tools">
 <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>

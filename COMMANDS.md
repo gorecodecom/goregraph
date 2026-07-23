@@ -14,8 +14,17 @@ goregraph context . --query "<current coding task>"
 ### Dashboard
 
 ```bash
+# Build the current project's reports
 goregraph build dashboard .
+
+# Or build the complete workspace dashboard
+goregraph workspace build dashboard .
+
+# Open whichever existing dashboard applies
 goregraph dashboard open .
+
+# Edit workspace Architecture grouping locally
+goregraph dashboard edit .
 ```
 
 ### Diagnosis
@@ -482,21 +491,40 @@ Important behavior:
 - does not install hooks, watch files, or run in the background
 - returns a non-zero exit code if the refresh fails
 
-## `goregraph dashboard path|open [path]`
+## `goregraph dashboard path|open|edit [path]`
 
-Locates or opens the generated human-facing project dashboard. Build it first
-with `goregraph build dashboard [path]` or `goregraph build all [path]`.
+Locates or opens the dashboard that applies to the selected path. GoreGraph
+uses an existing project dashboard first. If none exists and the path belongs
+to a workspace with a generated dashboard, it automatically uses
+`.goregraph-workspace/dashboard/workspace-map.html`.
 
-Examples:
+Open the applicable dashboard directly:
 
 ```bash
-goregraph dashboard path .
 goregraph dashboard open .
 ```
 
-`path` prints `<configured-output>/dashboard/`. `open` opens the primary
-`dashboard/report.md` entry point. Project dashboards are Markdown reports;
-the interactive Code Explorer is part of the workspace dashboard.
+Print the resolved path without opening it:
+
+```bash
+goregraph dashboard path .
+```
+
+Start the authenticated local Architecture editor:
+
+```bash
+goregraph dashboard edit .
+```
+
+For a project, `path` prints `<configured-output>/dashboard/` and `open` opens
+`dashboard/report.md`. For a workspace fallback, both actions resolve the
+generated `workspace-map.html`; `open` launches the interactive Code Explorer.
+`edit` deliberately targets the workspace dashboard, starts the loopback-only
+editor, and saves confirmed layout choices to `.goregraph-dashboard.json`.
+The static dashboard's **Edit layout** button displays this command instead of
+pretending that a read-only file can save changes.
+If neither dashboard exists, GoreGraph reports which project or workspace build
+command creates it instead of printing a hypothetical path.
 
 ## `goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12]`
 
@@ -1355,8 +1383,10 @@ Important behavior:
 - long implementation traces start with readable cards at 100%; drag or wheel navigation explores the path, while **Fit** shows the complete overview
 
 The editor derives automatic Architecture groups from production package/module
-evidence. It supports drag-and-drop plus keyboard controls for group order,
-service order, and service placement, and allows group labels to be renamed.
+evidence and shows whether each assignment is **Package evidence**,
+**Repository boundary**, or **Manual**. It supports drag-and-drop plus keyboard
+controls for group order, service order, and service placement, and allows
+group labels to be renamed.
 Save writes intentional overrides to the workspace-root
 `.goregraph-dashboard.json`; Discard restores the saved layout, and Reset to
 detected removes architecture overrides after confirmation. Rebuilds merge that
