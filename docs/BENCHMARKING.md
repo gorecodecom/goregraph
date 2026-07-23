@@ -144,6 +144,13 @@ After both token conditions pass, all structural conditions must pass:
 4. The sum of `included_source_rereads` across assisted transcripts must be
    zero.
 
+Content quality is enforced by deterministic Context Pack regressions rather
+than by benchmark-specific filenames in the transcript analyzer. Those
+regressions require requested `domain_model` evidence, prefer informative
+declaration bodies with stable domain identity, and allow up to two distinct
+domain-model and persistence families per project. The analyzer's efficiency
+gates and schema remain environment-neutral.
+
 `compact_duplicate_packs` records responses with `duplicate_of`. These compact
 responses are expected diagnostic evidence and do not fail the benchmark. A
 later full payload that reuses a previously full `context_id` is instead counted

@@ -230,6 +230,17 @@ call is allowed only when `retry_allowed` is true and must carry one returned
 anchor plus the first `context_id`. Context token estimates are approximate;
 complete-session tokens are the target for the benchmark gate.
 
+The `domain_model` concern and source role identify current source for
+explicitly requested types, entities, payloads, identifiers, or lookup
+attributes. The selector prefers declaration bodies with stable domain identity
+over unrelated one-line cross-cutting signatures. Within one project, up to two
+distinct domain-model families and two distinct persistence families may retain
+the diversity preference. `source_coverage: complete` still means that every
+required concern has current source, not that every candidate was serialized.
+The hard limits remain 4,000 tokens, 12 files, and 12 source sections; complete
+coverage continues to forbid reconstructive repository reads outside the
+supplied source sections.
+
 The Context Pack `query` field is the normalized request text verbatim when it
 is at most 256 runes and its JSON encoding, including quotes and escapes, is at
 most 256 bytes; otherwise it is a compact primary-task summary. The complete

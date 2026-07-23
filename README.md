@@ -294,6 +294,17 @@ read afterward, while pathless omissions become uncertainty.
 `source_unrepresented` counts visible required concerns without selected source;
 `files` remain metadata rather than automatic fallback scope.
 
+When a task explicitly asks about types, entities, payloads, identifiers, or
+lookup attributes, the Context Pack exposes that intent as `domain_model`.
+Source selection prefers informative declaration bodies with stable
+task-domain identity over unrelated one-line cross-cutting signatures. It may
+retain up to two distinct domain-model and persistence evidence families per
+project. `source_coverage: complete` means every required concern has current
+source; it does not mean that every indexed candidate was serialized. The
+default limits remain 4,000 tokens, 12 files, and 12 source sections, and
+complete coverage still does not permit reconstructive reads outside the
+supplied sections.
+
 ### Update source safely before scanning
 
 For a single repository, preview the update first and execute it explicitly after
