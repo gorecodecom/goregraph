@@ -241,6 +241,10 @@ goregraph dashboard open .
 offline and read-only; neither command starts a server. To organize the
 Architecture view, run the local editor explicitly:
 
+`goregraph workspace dashboard path .` and
+`goregraph workspace dashboard open .` remain the explicit workspace-only
+compatibility forms when scripts must avoid automatic project-first resolution.
+
 ```bash
 goregraph dashboard edit .
 ```
