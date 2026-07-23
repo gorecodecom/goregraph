@@ -213,8 +213,112 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	if err != nil {
 		return ContextPack{}, err
 	}
+	pack = finalizeContextSourceDecision(pack, loaded.Index)
 	pack.RetryAllowed, pack.RetryAnchors = contextRetryPermission(pack, loaded.Index)
 	return finalizeContextPackWithinBudget(pack, request)
+}
+
+func finalizeContextSourceDecision(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+) ContextPack {
+	for _, concern := range pack.Concerns {
+		if concern.Covered {
+			continue
+		}
+		switch normalizedContextConcernKind(concern.Kind) {
+		case contextConcernEntrypoint, contextConcernPrimaryPath:
+			pack.FallbackRequired = true
+		}
+	}
+	if gap := contextRequestedContractGap(pack, index); gap != nil &&
+		len(pack.Uncertainties) < maximumContextUncertainty &&
+		!contextUncertaintyExists(pack.Uncertainties, gap.Scope, gap.Reason) {
+		pack.Uncertainties = append(pack.Uncertainties, *gap)
+		sort.Slice(pack.Uncertainties, func(left, right int) bool {
+			if pack.Uncertainties[left].Scope != pack.Uncertainties[right].Scope {
+				return pack.Uncertainties[left].Scope < pack.Uncertainties[right].Scope
+			}
+			return pack.Uncertainties[left].Reason < pack.Uncertainties[right].Reason
+		})
+	}
+	return pack
+}
+
+func contextRequestedContractGap(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+) *ContextUncertainty {
+	query := contextSelectionQuery(pack)
+	if pack.SourceCoverage != "complete" || !contextQueryRequestsMissingContract(query) {
+		return nil
+	}
+	contractCovered := false
+	for _, concern := range pack.Concerns {
+		if normalizedContextConcernKind(concern.Kind) == contextConcernHTTPContract && concern.Covered {
+			contractCovered = true
+			break
+		}
+	}
+	if !contractCovered || len(pack.Contracts) == 0 {
+		return nil
+	}
+	method := contextRequestedHTTPMethod(query)
+	if method == "" {
+		return nil
+	}
+	for _, fact := range index.Facts {
+		if normalizedContextConcernKind(fact.Kind) != contextConcernHTTPContract {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(fact.HTTPMethod), method) &&
+			contextRetryFactMatchesAction(fact, index, query) {
+			return nil
+		}
+	}
+	return &ContextUncertainty{
+		Scope:  "requested_http_contract",
+		Reason: "no indexed HTTP contract matches the requested operation; included contracts are adjacent current implementation evidence",
+	}
+}
+
+func contextQueryRequestsMissingContract(query string) bool {
+	lower := strings.ToLower(query)
+	if !contextQueryRequestsConcern(query, contextConcernHTTPContract) {
+		return false
+	}
+	for _, marker := range []string{
+		"missing", "absent", "future contract", "required contract",
+		"fehlend", "zukünftig", "künftig", "benötigt",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func contextRequestedHTTPMethod(query string) string {
+	for _, anchor := range contextQueryAnchors(contextPrimaryQuery(query)) {
+		fields := strings.Fields(anchor)
+		if len(fields) >= 2 && contextHTTPVerbs[strings.ToUpper(fields[0])] {
+			return strings.ToUpper(fields[0])
+		}
+	}
+	return ""
+}
+
+func contextUncertaintyExists(
+	uncertainties []ContextUncertainty,
+	scope string,
+	reason string,
+) bool {
+	for _, uncertainty := range uncertainties {
+		if uncertainty.Scope == scope && uncertainty.Reason == reason {
+			return true
+		}
+	}
+	return false
 }
 
 func contextIdentity(freshness string, factIDs, edgeIDs, concernKeys []string) string {

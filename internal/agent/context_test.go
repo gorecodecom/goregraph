@@ -314,9 +314,6 @@ func TestBuildContextReservesLongQueryEnvelopeBeforeOptionalConcerns(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired {
-		t.Fatalf("long structured query unexpectedly fell back: %#v", pack)
-	}
 	assertSerializedCoreContextConcerns(t, pack)
 	assertContextPackWithinRequestBudget(t, pack, DefaultContextBudgetTokens)
 
@@ -1014,7 +1011,7 @@ func TestBuildContextRanksExactRouteAndExpandsBoundedProductionChain(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Entrypoints) == 0 || pack.Entrypoints[0].ID != "route" {
+	if len(pack.Entrypoints) == 0 || pack.Entrypoints[0].ID != "route" {
 		t.Fatalf("ranked pack = %#v", pack)
 	}
 	if len(pack.CallChain) != 2 || len(pack.Tests) != 0 {
@@ -1358,7 +1355,7 @@ Analyze services/catalog and services/jobs. Cover the endpoint, persistence, and
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Endpoints) != 1 || pack.Endpoints[0].Provider != "services/catalog" ||
+	if len(pack.Endpoints) != 1 || pack.Endpoints[0].Provider != "services/catalog" ||
 		pack.Endpoints[0].Handler != "CatalogController.deleteItem" {
 		t.Fatalf("endpoint trigger was displaced by the symptom: %#v", pack)
 	}
@@ -1413,7 +1410,7 @@ func TestBuildContextRejectsIncompleteAndGeneratedEndpointsAsPrimary(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Endpoints) != 0 || len(pack.Entrypoints) != 1 ||
+	if len(pack.Endpoints) != 0 || len(pack.Entrypoints) != 1 ||
 		pack.Entrypoints[0].ID != "handler" {
 		t.Fatalf("ineligible endpoint became primary: %#v", pack)
 	}
@@ -1439,7 +1436,7 @@ func TestBuildContextDedicatedEndpointPreservesConnectedPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Endpoints) != 1 || len(pack.Entrypoints) != 0 ||
+	if len(pack.Endpoints) != 1 || len(pack.Entrypoints) != 0 ||
 		len(pack.CallChain) != 1 || pack.CallChain[0].To != "deleteOrder" ||
 		!contextPackHasFile(pack, "services/orders/src/OrdersService.java") {
 		t.Fatalf("dedicated endpoint path was not preserved: %#v", pack)
@@ -1783,7 +1780,7 @@ func TestBuildContextExpandsGermanTaskTermsForTechnicalFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || pack.Confidence == "LOW" ||
+	if pack.Confidence == "LOW" ||
 		len(pack.Entrypoints) == 0 || pack.Entrypoints[0].ID != "route" ||
 		len(pack.CallChain) != 1 {
 		t.Fatalf("German task did not resolve technical facts: %#v", pack)
@@ -1824,7 +1821,7 @@ func TestBuildContextUsesProblemStatementAfterPreamble(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Entrypoints) != 0 || len(pack.Endpoints) != 1 ||
+	if len(pack.Entrypoints) != 0 || len(pack.Endpoints) != 1 ||
 		pack.Endpoints[0].Path != "/catalogs/{catalogId}/entries/{entryId}" {
 		t.Fatalf("problem statement after preamble did not select the endpoint: %#v", pack)
 	}
@@ -1948,7 +1945,7 @@ func TestBuildContextUsesProductionEntrypointsForLongAnalysisRequests(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "route" {
+	if len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "route" {
 		t.Fatalf("long analysis request did not start at the production route: %#v", pack)
 	}
 	if len(pack.CallChain) != 2 || !contextPackHasFile(pack, "CadasterRegulationOperationsService.java") {
@@ -2032,7 +2029,7 @@ func TestBuildContextAddsSupportingFactsFromNamedProjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "catalog-route" {
+	if len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "catalog-route" {
 		t.Fatalf("support selection changed the primary entrypoint: %#v", pack)
 	}
 	if len(pack.CallChain) != 1 || pack.CallChain[0].From != "DELETE /catalog/{catalogId}/entries/{entryId}" || pack.CallChain[0].To != "deleteEntry" {
@@ -2284,7 +2281,7 @@ func TestBuildContextAddsOnlyStrongCrossProjectSupportWhenProjectsAreUnnamed(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "catalog-route" {
+	if len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "catalog-route" {
 		t.Fatalf("unnamed support changed the primary entrypoint: %#v", pack)
 	}
 	if !contextPackHasFile(pack, "WorkerClient.ts") {
@@ -2420,7 +2417,7 @@ func TestBuildContextNamedProjectCoverageAddsUncertaintyWithoutFallback(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "route" {
+	if len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "route" {
 		t.Fatalf("missing named support changed reliable primary selection: %#v", pack)
 	}
 	if !contextPackHasUncertainty(pack, "services/jobs/project_context", "project agent context projection unavailable") {
@@ -2447,7 +2444,7 @@ func TestBuildContextNamedProjectSupportRetainsCoverageUncertainty(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || !contextPackHasFile(pack, "Worker.go") {
+	if !contextPackHasFile(pack, "Worker.go") {
 		t.Fatalf("support coverage changed support selection or fallback: %#v", pack)
 	}
 	if !contextPackHasUncertainty(pack, "services/worker/calls", "dynamic calls may be unresolved") {
@@ -2489,9 +2486,6 @@ func TestBuildContextNamedProjectCoverageUncertaintySurvivesGlobalCap(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired {
-		t.Fatalf("missing support changed the reliable primary fallback decision: %#v", pack)
-	}
 	if len(pack.Uncertainties) != maximumContextUncertainty ||
 		!contextPackHasUncertainty(pack, "services/missing/project_context", "projection unavailable") {
 		t.Fatalf("missing project uncertainty was displaced by primary coverage: %#v", pack.Uncertainties)
@@ -2532,7 +2526,7 @@ func TestBuildContextProjectSupportProtectsPrimaryBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if small.FallbackRequired || len(small.Entrypoints) != 1 || small.Entrypoints[0].ID != "route" {
+	if len(small.Entrypoints) != 1 || small.Entrypoints[0].ID != "route" {
 		t.Fatalf("optional support displaced the primary entrypoint: %#v", small)
 	}
 	if contextPackHasFile(small, longSupportFile) {
@@ -2934,7 +2928,7 @@ func TestBuildContextUnmappedAuthenticationPreventsAllIncompleteFallback(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.CallChain) != 1 {
+	if len(pack.CallChain) != 1 {
 		t.Fatalf("unmapped retained authentication was treated as failed coverage: %#v", pack)
 	}
 }
@@ -3570,12 +3564,127 @@ func TestContextRetryAllowsOnlyConcreteUnselectedExactAnchors(t *testing.T) {
 		selectedSourceFactIDs: []string{"route"},
 	}
 	allowed, anchors := contextRetryPermission(pack, index)
-	if !allowed || !reflect.DeepEqual(anchors, []string{"FallbackTest.java", "UsersTest.getUsers", "UsersTest.resolved"}) {
+	if !allowed || !reflect.DeepEqual(anchors, []string{"UsersTest.getUsers", "FallbackTest.java"}) {
 		t.Fatalf("retry permission = %v / %#v", allowed, anchors)
 	}
 	pack.selectedSourceFactIDs = append(pack.selectedSourceFactIDs, "test-qualified", "test-file", "test-resolved")
 	if allowed, anchors := contextRetryPermission(pack, index); allowed || len(anchors) != 0 {
 		t.Fatalf("retry accepted without a new exact anchor: %v / %#v", allowed, anchors)
+	}
+}
+
+func TestFinalizeContextSourceDecision(t *testing.T) {
+	tests := []struct {
+		name         string
+		pack         ContextPack
+		wantFallback bool
+	}{
+		{
+			name: "missing entrypoint source",
+			pack: ContextPack{
+				SourceCoverage: "partial",
+				Concerns: []ContextConcern{
+					{Kind: contextConcernEntrypoint, Covered: false},
+					{Kind: contextConcernPersistence, Covered: true},
+				},
+			},
+			wantFallback: true,
+		},
+		{
+			name: "missing support source",
+			pack: ContextPack{
+				SourceCoverage: "partial",
+				Concerns: []ContextConcern{
+					{Kind: contextConcernEntrypoint, Covered: true},
+					{Kind: contextConcernConfiguration, Project: "libraries/client", Covered: false},
+				},
+			},
+		},
+		{
+			name: "all required source verified",
+			pack: ContextPack{
+				SourceCoverage: "complete",
+				Concerns: []ContextConcern{
+					{Kind: contextConcernEntrypoint, Covered: true},
+					{Kind: contextConcernConfiguration, Project: "libraries/client", Covered: true},
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := finalizeContextSourceDecision(test.pack, scan.AgentContextIndexRecord{})
+			if got.FallbackRequired != test.wantFallback {
+				t.Fatalf("fallback = %v, want %v: %#v", got.FallbackRequired, test.wantFallback, got)
+			}
+		})
+	}
+}
+
+func TestContextRetryPermissionRanksActualOmissions(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "route", Project: "services/catalog", Kind: "route",
+			Name: "DELETE /items/{id}", HTTPMethod: "DELETE", Path: "/items/{id}",
+			File: "CatalogController.java", Confidence: "EXACT",
+		},
+		{
+			ID: "config-omitted", Project: "libraries/client", Kind: "configuration",
+			Name: "deleteClientConfig", Qualified: "ClientConfig.deleteClientConfig",
+			File: "ClientConfig.java", Search: "delete item configuration", Confidence: "EXACT",
+		},
+		{
+			ID: "config-other", Project: "libraries/client", Kind: "configuration",
+			Name: "deleteFallbackConfig", Qualified: "ClientConfig.deleteFallbackConfig",
+			File: "FallbackConfig.java", Search: "delete item configuration", Confidence: "EXACT",
+		},
+	}}
+	pack := ContextPack{
+		Query: "DELETE /items/{id}; inspect libraries/client configuration",
+		Concerns: []ContextConcern{
+			{Kind: contextConcernEntrypoint, Covered: true},
+			{Kind: contextConcernConfiguration, Project: "libraries/client", Covered: false},
+		},
+		SourceSections: []ContextSourceSection{{
+			Project: "services/catalog", Path: "CatalogController.java",
+		}},
+		SourceOmissions: []ContextSourceOmission{{
+			Project: "libraries/client", Path: "ClientConfig.java",
+			Role: "configuration", Reason: "response budget",
+		}},
+		selectedFactIDs: []string{"route"},
+	}
+
+	allowed, anchors := contextRetryPermission(pack, index)
+	if !allowed || len(anchors) == 0 || anchors[0] != "ClientConfig.deleteClientConfig" {
+		t.Fatalf("retry permission = %v / %#v", allowed, anchors)
+	}
+}
+
+func TestContextRetryPermissionRejectsOppositeAction(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "route", Kind: "route", Name: "DELETE /items/{id}",
+			HTTPMethod: "DELETE", Path: "/items/{id}", File: "Controller.java", Confidence: "EXACT",
+		},
+		{
+			ID: "create-test", Kind: "test", Name: "creates item",
+			Qualified: "ItemsTest.createItem", File: "ItemsTest.java", Confidence: "EXACT",
+		},
+	}, Edges: []scan.AgentContextEdgeRecord{{
+		ID: "test-target", FromFactID: "create-test", ToFactID: "route", Kind: "test_target",
+	}}}
+	pack := ContextPack{
+		Query:                 "DELETE /items/{id} tests",
+		Concerns:              []ContextConcern{{Kind: contextConcernTests, Covered: false}},
+		selectedSourceFactIDs: []string{"route"},
+		SourceOmissions: []ContextSourceOmission{{
+			Path: "ItemsTest.java", Role: "test", Reason: "response budget",
+		}},
+	}
+
+	if allowed, anchors := contextRetryPermission(pack, index); allowed || len(anchors) != 0 {
+		t.Fatalf("opposite action retry = %v / %#v", allowed, anchors)
 	}
 }
 

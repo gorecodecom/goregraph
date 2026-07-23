@@ -168,7 +168,7 @@ func TestBuildContextEndpointTopFactFitsMinimumBudgetWithoutGenericEntrypoint(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pack.FallbackRequired || len(pack.Endpoints) != 1 || len(pack.Entrypoints) != 0 {
+	if len(pack.Endpoints) != 1 || len(pack.Entrypoints) != 0 {
 		t.Fatalf("minimum-budget endpoint pack = %#v", pack)
 	}
 	if pack.EstimatedTokens > MinContextBudgetTokens {

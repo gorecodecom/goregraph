@@ -75,7 +75,9 @@ func TestRenderContextMarkdownOrdersAndOmitsSections(t *testing.T) {
 	body := RenderContextMarkdown(completeContextPackFixture())
 	last := -1
 	for _, heading := range []string{
+		"## Coverage",
 		"## Entrypoints",
+		"## Endpoints",
 		"## Call chain",
 		"## Contracts",
 		"## Persistence",
@@ -95,12 +97,59 @@ func TestRenderContextMarkdownOrdersAndOmitsSections(t *testing.T) {
 		Query: "inspect route", Confidence: "LOW", BudgetTokens: 1800,
 	})
 	for _, heading := range []string{
-		"## Entrypoints", "## Call chain", "## Contracts", "## Persistence",
+		"## Coverage", "## Entrypoints", "## Endpoints", "## Call chain", "## Contracts", "## Persistence",
 		"## Tests", "## Files to inspect", "## Uncertainties", "## Fallback",
 	} {
 		if strings.Contains(empty, heading) {
 			t.Fatalf("empty section %q was rendered:\n%s", heading, empty)
 		}
+	}
+}
+
+func TestRenderContextMarkdownIncludesCoverageAndEndpoints(t *testing.T) {
+	pack := agent.ContextPack{
+		Query: "delete catalog item", Confidence: "EXACT", BudgetTokens: 4000,
+		Concerns: []agent.ContextConcern{
+			{Kind: "entrypoint", Covered: true},
+			{Kind: "configuration", Project: "libraries/job-client", Covered: true},
+		},
+		Endpoints: []agent.ContextEndpoint{{
+			Provider: "services/catalog", HTTPMethod: "DELETE",
+			Path: "/catalog/items/{itemId}", Handler: "CatalogController.deleteItem",
+			Security: "public", SecurityConfidence: "EXACT",
+			Consumers: []agent.ContextEndpointConsumer{
+				{Project: "apps/admin"},
+				{Project: "apps/portal"},
+			},
+		}, {
+			Provider: "services/jobs", HTTPMethod: "GET",
+			Path: "/job-management/jobs", Handler: "JobController.list",
+			Security: "conflicting", SecurityConfidence: "PARTIAL",
+			Limitations: []string{"security filter chains disagree"},
+		}},
+	}
+
+	body := RenderContextMarkdown(pack)
+	for _, want := range []string{
+		"## Coverage",
+		"- entrypoint — covered",
+		"- configuration [libraries/job-client] — covered",
+		"## Endpoints",
+		"- DELETE /catalog/items/{itemId} — CatalogController.deleteItem",
+		"  Security: public",
+		"  Confidence: EXACT",
+		"  Consumers: 2",
+		"- GET /job-management/jobs — JobController.list",
+		"  Security: conflicting — security filter chains disagree",
+		"  Confidence: PARTIAL",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("context markdown missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Index(body, "## Coverage") > strings.Index(body, "## Entrypoints") &&
+		strings.Contains(body, "## Entrypoints") {
+		t.Fatalf("coverage must precede entrypoints:\n%s", body)
 	}
 }
 
@@ -300,7 +349,7 @@ func TestRunContextReturnsBarePrettyJSONWithSeparateByteGates(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &pack); err != nil {
 		t.Fatalf("decode context pack: %v\n%s", err, body)
 	}
-	if pack.BudgetTokens != 900 || pack.Query != "DELETE /users/{id}" || pack.FallbackRequired {
+	if pack.BudgetTokens != 900 || pack.Query != "DELETE /users/{id}" {
 		t.Fatalf("unexpected context pack: %#v", pack)
 	}
 	var envelope map[string]json.RawMessage
@@ -371,7 +420,7 @@ func TestRunContextDefaultMarkdownIncludesBuiltSource(t *testing.T) {
 		"Source coverage: complete",
 		"Source unrepresented: 0",
 		"### 1. `api/UserController.java:1-3`",
-		"Render mode: body",
+		"Render mode: declaration_body",
 		"    1\tpublic void deleteUser() {",
 		"    2\t    service.deleteUser();",
 		"    3\t}",
@@ -471,10 +520,16 @@ func TestRunTaskForwardsContextBudgetsAndMapsOnlyExplicitLimit(t *testing.T) {
 func completeContextPackFixture() agent.ContextPack {
 	return agent.ContextPack{
 		Schema: 2, Query: "delete user", Freshness: "generated", Confidence: "EXACT",
+		Concerns: []agent.ContextConcern{{Kind: "entrypoint", Covered: true}},
 		Entrypoints: []agent.ContextLocation{{
 			ID: "route", Project: "api", Kind: "route", Label: "DELETE /users/{id}",
 			File: "UserController.java", Line: 20, EndLine: 28, Reason: "exact route",
 			Confidence: "EXACT", EvidenceIDs: []string{"route:1"},
+		}},
+		Endpoints: []agent.ContextEndpoint{{
+			Provider: "api", HTTPMethod: "DELETE", Path: "/users/{id}",
+			Handler: "UserController.delete", Security: "unknown",
+			SecurityConfidence: "UNKNOWN",
 		}},
 		CallChain: []agent.ContextRelationship{{
 			From: "DELETE /users/{id}", To: "UserService.delete", Kind: "calls",

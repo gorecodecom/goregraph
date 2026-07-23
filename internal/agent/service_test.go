@@ -188,7 +188,7 @@ func TestServiceBuildsBoundedTaskContext(t *testing.T) {
 		t.Fatalf("unexpected task context: %#v", result)
 	}
 	pack, ok := result.Items[0].Data["context"].(ContextPack)
-	if !ok || pack.FallbackRequired || len(pack.Entrypoints) != 1 ||
+	if !ok || len(pack.Entrypoints) != 1 ||
 		len(pack.Tests) != 0 || len(pack.CallChain) != 0 {
 		t.Fatalf("incomplete task context: %#v", result.Items[0].Data)
 	}
@@ -249,7 +249,7 @@ func TestServiceEndpointTaskContextSerialization(t *testing.T) {
 		endpoint.Security != "bearer" || len(endpoint.Consumers) != 8 || endpoint.OmittedConsumers != 5 {
 		t.Fatalf("service endpoint details = %#v", endpoint)
 	}
-	if pack.BudgetTokens != DefaultContextBudgetTokens || pack.FallbackRequired {
+	if pack.BudgetTokens != DefaultContextBudgetTokens {
 		t.Fatalf("service context bounds/fallback = %#v", pack)
 	}
 

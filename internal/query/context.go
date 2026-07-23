@@ -77,7 +77,9 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		}
 	}
 
+	lines = appendContextConcernSection(lines, pack.Concerns)
 	lines = appendContextLocationSection(lines, "Entrypoints", pack.Entrypoints)
+	lines = appendContextEndpointSection(lines, pack.Endpoints)
 	if len(pack.CallChain) > 0 {
 		entries := make([]string, 0, len(pack.CallChain))
 		for _, relationship := range pack.CallChain {
@@ -146,6 +148,103 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		lines = append(lines, "", "## Fallback", "- "+reason)
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func appendContextConcernSection(
+	lines []string,
+	concerns []agent.ContextConcern,
+) []string {
+	entries := make([]string, 0, len(concerns))
+	for _, concern := range concerns {
+		kind := contextInline(concern.Kind)
+		if kind == "" {
+			continue
+		}
+		label := kind
+		if project := contextInline(concern.Project); project != "" {
+			label += " [" + project + "]"
+		}
+		status := "uncovered"
+		if concern.Covered {
+			status = "covered"
+		}
+		entry := "- " + label + " — " + status
+		if reason := contextInline(concern.Reason); reason != "" {
+			entry += " — " + reason
+		}
+		entries = append(entries, entry)
+	}
+	if len(entries) == 0 {
+		return lines
+	}
+	lines = append(lines, "", "## Coverage")
+	return append(lines, entries...)
+}
+
+func appendContextEndpointSection(
+	lines []string,
+	endpoints []agent.ContextEndpoint,
+) []string {
+	entries := make([][]string, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		method := contextInline(endpoint.HTTPMethod)
+		path := contextInline(endpoint.Path)
+		if method == "" && path == "" {
+			continue
+		}
+		label := strings.TrimSpace(method + " " + path)
+		if handler := contextInline(endpoint.Handler); handler != "" {
+			label += " — " + handler
+		}
+		entry := []string{"- " + label}
+		details := make([]string, 0, 3)
+		security := contextInline(endpoint.Security)
+		limitations := make([]string, 0, len(endpoint.Limitations))
+		for _, limitation := range endpoint.Limitations {
+			if value := contextInline(limitation); value != "" {
+				limitations = append(limitations, value)
+			}
+		}
+		if security != "" {
+			detail := "  Security: " + security
+			if len(limitations) > 0 {
+				detail += " — " + strings.Join(limitations, "; ")
+			}
+			details = append(details, detail)
+		} else if len(limitations) > 0 {
+			details = append(details, "  Limitations: "+strings.Join(limitations, "; "))
+		}
+		if confidence := contextInline(endpoint.SecurityConfidence); confidence != "" {
+			details = append(details, "  Confidence: "+confidence)
+		}
+		consumers := len(endpoint.Consumers) + endpoint.OmittedConsumers
+		if consumers > 0 {
+			detail := fmt.Sprintf("  Consumers: %d", consumers)
+			if endpoint.OmittedConsumers > 0 {
+				detail += fmt.Sprintf(" (%d omitted)", endpoint.OmittedConsumers)
+			}
+			details = append(details, detail)
+		} else if endpoint.RequestType != "" || endpoint.ResponseType != "" {
+			details = append(details, fmt.Sprintf(
+				"  Types: %s → %s",
+				contextInline(endpoint.RequestType),
+				contextInline(endpoint.ResponseType),
+			))
+		}
+		if len(details) > 3 {
+			details = details[:3]
+		}
+		entry = append(entry, details...)
+		entries = append(entries, entry)
+	}
+	if len(entries) == 0 {
+		return lines
+	}
+	lines = append(lines, "", "## Endpoints")
+	for _, entry := range entries {
+		lines = append(lines, entry...)
+	}
+	return lines
 }
 
 func appendContextSourceSections(

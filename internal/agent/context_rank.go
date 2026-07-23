@@ -337,7 +337,7 @@ func contextSelectedMapKeys(selected map[string]bool) []string {
 }
 
 func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord) (bool, []string) {
-	if len(pack.Concerns) == 0 {
+	if pack.FallbackRequired || len(pack.Concerns) == 0 {
 		return false, nil
 	}
 	selectionQuery := contextSelectionQuery(pack)
@@ -362,8 +362,7 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
-	anchors := []string{}
-	seen := map[string]bool{}
+	candidates := []rankedContextRetryCandidate{}
 	for _, public := range pack.Concerns {
 		if public.Covered {
 			continue
@@ -374,22 +373,251 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 		}
 		for _, factID := range concern.candidateFactIDs {
 			fact, exists := factByID[factID]
-			if !exists || selected[factID] {
+			if !exists || selected[factID] ||
+				normalizeContextProject(public.Project) != "" &&
+					normalizeContextProject(fact.Project) != normalizeContextProject(public.Project) ||
+				!contextRetryFactMatchesAction(fact, index, selectionQuery) ||
+				!contextRetryFactHasSourceEvidence(pack, fact) {
 				continue
 			}
 			anchor := contextRetryAnchor(fact)
-			if anchor == "" || seen[anchor] {
+			if anchor == "" {
 				continue
 			}
-			seen[anchor] = true
-			anchors = append(anchors, anchor)
+			candidates = append(candidates, rankedContextRetryCandidate{
+				fact:           fact,
+				anchor:         anchor,
+				omissionMatch:  contextRetryFactMatchesOmission(pack, fact),
+				qualifiedMatch: contextRetryQualifiedMatchesQuery(fact, selectionQuery),
+				semanticScore:  contextRetrySemanticScore(fact, selectionQuery),
+				confidence:     contextRetryConfidenceRank(fact.Confidence),
+			})
 		}
 	}
-	sort.Strings(anchors)
+	candidates = rankContextRetryCandidates(candidates)
+	anchors := make([]string, 0, 3)
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		if seen[candidate.anchor] {
+			continue
+		}
+		seen[candidate.anchor] = true
+		anchors = append(anchors, candidate.anchor)
+		if len(anchors) == 3 {
+			break
+		}
+	}
 	if len(anchors) > 3 {
 		anchors = anchors[:3]
 	}
 	return len(anchors) > 0, anchors
+}
+
+type rankedContextRetryCandidate struct {
+	fact           scan.AgentContextFactRecord
+	anchor         string
+	omissionMatch  bool
+	qualifiedMatch bool
+	semanticScore  int
+	confidence     int
+}
+
+func rankContextRetryCandidates(
+	candidates []rankedContextRetryCandidate,
+) []rankedContextRetryCandidate {
+	sort.Slice(candidates, func(left, right int) bool {
+		if candidates[left].omissionMatch != candidates[right].omissionMatch {
+			return candidates[left].omissionMatch
+		}
+		if candidates[left].qualifiedMatch != candidates[right].qualifiedMatch {
+			return candidates[left].qualifiedMatch
+		}
+		if candidates[left].semanticScore != candidates[right].semanticScore {
+			return candidates[left].semanticScore > candidates[right].semanticScore
+		}
+		if candidates[left].confidence != candidates[right].confidence {
+			return candidates[left].confidence > candidates[right].confidence
+		}
+		return candidates[left].fact.ID < candidates[right].fact.ID
+	})
+	return candidates
+}
+
+func contextRetryFactHasSourceEvidence(
+	pack ContextPack,
+	fact scan.AgentContextFactRecord,
+) bool {
+	if strings.TrimSpace(fact.File) == "" {
+		return false
+	}
+	if contextRetryFactMatchesOmission(pack, fact) {
+		return true
+	}
+	for _, section := range pack.SourceSections {
+		if normalizeContextProject(section.Project) == normalizeContextProject(fact.Project) &&
+			contextRetryPath(section.Path) == contextRetryPath(fact.File) {
+			return true
+		}
+	}
+	return true
+}
+
+func contextRetryFactMatchesOmission(
+	pack ContextPack,
+	fact scan.AgentContextFactRecord,
+) bool {
+	for _, omission := range pack.SourceOmissions {
+		if normalizeContextProject(omission.Project) == normalizeContextProject(fact.Project) &&
+			contextRetryPath(omission.Path) == contextRetryPath(fact.File) {
+			return true
+		}
+	}
+	return false
+}
+
+func contextRetryPath(value string) string {
+	return strings.TrimPrefix(strings.ReplaceAll(strings.TrimSpace(value), "\\", "/"), "./")
+}
+
+func contextRetryQualifiedMatchesQuery(
+	fact scan.AgentContextFactRecord,
+	query string,
+) bool {
+	qualified := normalizeContextTerm(fact.Qualified)
+	if qualified == "" {
+		return false
+	}
+	for _, anchor := range contextQueryAnchors(query) {
+		if normalizeContextTerm(anchor) == qualified {
+			return true
+		}
+	}
+	return false
+}
+
+func contextRetrySemanticScore(
+	fact scan.AgentContextFactRecord,
+	query string,
+) int {
+	queryTokens := contextExpandedTokenSet(query)
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.Search,
+		fact.HTTPMethod,
+		fact.Path,
+	}, " "))
+	score := 0
+	for token := range queryTokens {
+		if factTokens[token] {
+			score++
+		}
+	}
+	return score
+}
+
+func contextRetryConfidenceRank(confidence string) int {
+	switch strings.ToUpper(strings.TrimSpace(confidence)) {
+	case "EXACT":
+		return 3
+	case "RESOLVED":
+		return 2
+	case "PARTIAL":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func contextRetryFactMatchesAction(
+	fact scan.AgentContextFactRecord,
+	index scan.AgentContextIndexRecord,
+	query string,
+) bool {
+	requested := contextActionFamilies(query, contextRequestedHTTPMethod(query))
+	if len(requested) == 0 {
+		return true
+	}
+	factActions := contextActionFamilies(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.Search,
+		fact.HTTPMethod,
+		fact.Path,
+	}, " "), fact.HTTPMethod)
+	if len(factActions) > 0 {
+		return contextActionFamiliesOverlap(requested, factActions)
+	}
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, candidate := range index.Facts {
+		factByID[candidate.ID] = candidate
+	}
+	for _, edge := range index.Edges {
+		adjacentID := ""
+		switch fact.ID {
+		case edge.FromFactID:
+			adjacentID = edge.ToFactID
+		case edge.ToFactID:
+			adjacentID = edge.FromFactID
+		}
+		if adjacentID == "" {
+			continue
+		}
+		adjacent, ok := factByID[adjacentID]
+		if !ok {
+			continue
+		}
+		actions := contextActionFamilies(strings.Join([]string{
+			adjacent.Name,
+			adjacent.Qualified,
+			adjacent.Search,
+			adjacent.HTTPMethod,
+			adjacent.Path,
+		}, " "), adjacent.HTTPMethod)
+		if contextActionFamiliesOverlap(requested, actions) {
+			return true
+		}
+	}
+	return false
+}
+
+func contextActionFamilies(value, httpMethod string) map[string]bool {
+	tokens := contextExpandedTokenSet(value)
+	result := map[string]bool{}
+	families := map[string][]string{
+		"create": {"add", "create", "insert", "new", "post"},
+		"delete": {"delete", "remove"},
+		"read":   {"fetch", "find", "get", "list", "load", "read"},
+		"update": {"change", "edit", "modify", "patch", "put", "update"},
+	}
+	for family, aliases := range families {
+		for _, alias := range aliases {
+			if tokens[alias] {
+				result[family] = true
+				break
+			}
+		}
+	}
+	switch strings.ToUpper(strings.TrimSpace(httpMethod)) {
+	case "POST":
+		result["create"] = true
+	case "DELETE":
+		result["delete"] = true
+	case "GET", "HEAD":
+		result["read"] = true
+	case "PUT", "PATCH":
+		result["update"] = true
+	}
+	return result
+}
+
+func contextActionFamiliesOverlap(left, right map[string]bool) bool {
+	for family := range left {
+		if right[family] {
+			return true
+		}
+	}
+	return false
 }
 
 func contextRetryAnchor(fact scan.AgentContextFactRecord) string {
