@@ -1594,6 +1594,14 @@ func TestContextSourceTestsRecognizeLanguageNeutralExecutableBodies(t *testing.T
 			name:    "Python assertion",
 			content: "def test_delete_item():\n    assert result",
 		},
+		{
+			name:    "TypeScript non-empty inline callback",
+			content: `test("deletes item", () => { expect(result).toBeDefined(); });`,
+		},
+		{
+			name:    "TypeScript assertion with nested empty callback",
+			content: `expect(fn(() => {})).toThrow()`,
+		},
 	}
 	concern := newContextConcern(contextConcernTests, "services/catalog", true, nil, "")
 	for _, test := range tests {
@@ -1621,6 +1629,21 @@ func TestContextSourceTestsRejectNonExecutableBodies(t *testing.T) {
 			name:       "signature",
 			renderMode: "signature",
 			content:    "func TestDeleteItem(t *testing.T)",
+		},
+		{
+			name:       "empty Java body",
+			renderMode: "declaration_body",
+			content:    "@Test\nvoid deletesItem() {\n}",
+		},
+		{
+			name:       "empty TypeScript arrow body",
+			renderMode: "declaration_body",
+			content:    `test("deletes item", () => {});`,
+		},
+		{
+			name:       "empty TypeScript function body",
+			renderMode: "declaration_body",
+			content:    `test("deletes item", function deletesItem() {});`,
 		},
 		{
 			name:       "empty Go body",

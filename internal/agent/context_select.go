@@ -976,11 +976,49 @@ func contextSourceSectionHasExecutableTest(section ContextSourceSection, content
 			contextSourceTestDeclarationLine(line) {
 			continue
 		}
+		if contextSourceTestLineIsEmptyInlineWrapper(line) {
+			continue
+		}
 		if contextSourceTestLineHasAssignment(line) ||
 			contextSourceTestLineHasCall(line) ||
 			strings.HasPrefix(line, "assert ") {
 			return true
 		}
+	}
+	return false
+}
+
+func contextSourceTestLineIsEmptyInlineWrapper(line string) bool {
+	normalized := strings.Join(strings.Fields(line), "")
+	isTestWrapper := false
+	for _, prefix := range []string{"test(", "it(", "describe("} {
+		if strings.HasPrefix(normalized, prefix) {
+			isTestWrapper = true
+			break
+		}
+	}
+	if !isTestWrapper {
+		return false
+	}
+	if strings.Contains(normalized, "=>{}") {
+		return true
+	}
+	searchFrom := 0
+	for searchFrom < len(line) {
+		index := strings.Index(line[searchFrom:], "function")
+		if index < 0 {
+			return false
+		}
+		index += searchFrom
+		end := index + len("function")
+		if isWholeSourceToken(line, index, end) {
+			callback := strings.Join(strings.Fields(line[end:]), "")
+			if body := strings.IndexByte(callback, '{'); body >= 0 &&
+				strings.HasPrefix(callback[body:], "{}") {
+				return true
+			}
+		}
+		searchFrom = end
 	}
 	return false
 }
