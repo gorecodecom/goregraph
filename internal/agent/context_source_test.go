@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1487,27 +1488,81 @@ func TestContextSourceOptionConcernsKeepRenderedEvidenceProjectScoped(t *testing
 	}
 }
 
+func TestContextSourceOptionConcernsRequireRenderedCrossCuttingEvidence(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernConfiguration,
+		"libraries/jobs",
+		true,
+		[]string{"config"},
+		"requested configuration",
+	)
+	candidate := sourceCandidate{
+		FactID: "config", FactIDs: []string{"config"},
+		Project: "libraries/jobs", Role: "call_chain",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{{
+		ID: "config", Project: "libraries/jobs", Kind: contextConcernConfiguration,
+	}}}
+
+	signature := ContextSourceSection{
+		Project: "libraries/jobs", RenderMode: "signature",
+		Content: "public class JobConfig {",
+	}
+	if keys, _ := contextSourceOptionConcerns(candidate, signature, []contextConcern{concern}, index); len(keys) != 0 {
+		t.Fatalf("type-only exact fact covered configuration: %v", keys)
+	}
+
+	body := ContextSourceSection{
+		Project: "libraries/jobs", RenderMode: "declaration_body",
+		Content: "String path = configuration.getJobsPath();",
+	}
+	if keys, required := contextSourceOptionConcerns(candidate, body, []contextConcern{concern}, index); !required || !reflect.DeepEqual(keys, []string{concern.key}) {
+		t.Fatalf("actionable configuration evidence = %v, required %v", keys, required)
+	}
+}
+
+func TestContextSourceTestsRequireExecutableRenderedBody(t *testing.T) {
+	concern := newContextConcern(contextConcernTests, "services/jobs", true, nil, "")
+	signature := ContextSourceSection{
+		Project: "services/jobs", Role: "test", RenderMode: "signature",
+		Content: "@Test\nvoid deletesJob() {",
+	}
+	if contextSourceSectionSupportsConcern(signature, concern) {
+		t.Fatal("test signature counted as executable evidence")
+	}
+
+	body := ContextSourceSection{
+		Project: "services/jobs", Role: "test", RenderMode: "declaration_body",
+		Content: "@Test\nvoid deletesJob() {\n  mockMvc.perform(delete(\"/jobs/1\")).andExpect(status().isNoContent());\n}",
+	}
+	if !contextSourceSectionSupportsConcern(body, concern) {
+		t.Fatal("executable test body was rejected")
+	}
+}
+
 func TestContextSourceSectionSupportsOperationalConcerns(t *testing.T) {
 	tests := []struct {
-		name    string
-		kind    string
-		role    string
-		content string
+		name       string
+		kind       string
+		role       string
+		renderMode string
+		content    string
 	}{
 		{name: "authentication", kind: contextConcernAuth, content: "authorize.anyRequest().authenticated();"},
 		{name: "configuration", kind: contextConcernConfiguration, content: "@ConfigurationProperties(prefix = \"jobs\")"},
 		{name: "resilience", kind: contextConcernResilience, content: "@Retryable(maxAttempts = 3)"},
 		{name: "persistence", kind: contextConcernPersistence, content: "taskRepository.delete(task);"},
 		{name: "side effects", kind: contextConcernSideEffects, content: "protocolService.writeProtocol(id, text);"},
-		{name: "tests", kind: contextConcernTests, role: "test", content: "@Test"},
+		{name: "tests", kind: contextConcernTests, role: "test", renderMode: "declaration_body", content: "@Test\nvoid deletesJob() {\n  assert true;\n}"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			section := ContextSourceSection{
-				Project: "services/jobs",
-				Role:    test.role,
-				Content: test.content,
+				Project:    "services/jobs",
+				Role:       test.role,
+				RenderMode: test.renderMode,
+				Content:    test.content,
 			}
 			concern := newContextConcern(test.kind, "services/jobs", true, nil, "")
 			if !contextSourceSectionSupportsConcern(section, concern) {

@@ -853,10 +853,6 @@ func contextSourceOptionConcerns(
 	for _, factID := range contextSourceCandidateFactIDs(candidate) {
 		factIDs[factID] = true
 	}
-	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
-	for _, fact := range index.Facts {
-		factByID[fact.ID] = fact
-	}
 	keys := []string{}
 	required := false
 	for _, concern := range concerns {
@@ -875,17 +871,7 @@ func contextSourceOptionConcerns(
 			covered = false
 		}
 		if covered && contextSourceCrossCuttingFamily(concern.kind) {
-			exactKind := false
-			for factID := range factIDs {
-				fact, ok := factByID[factID]
-				if ok && normalizedContextConcernKind(fact.Kind) == concern.kind {
-					exactKind = true
-					break
-				}
-			}
-			if !exactKind {
-				covered = contextSourceSectionSupportsConcern(section, concern)
-			}
+			covered = contextSourceSectionSupportsConcern(section, concern)
 		}
 		if concern.kind == contextConcernProject {
 			covered = candidate.Role != "test" && normalizeContextProject(candidate.Project) == concern.project
@@ -931,7 +917,7 @@ func contextSourceSectionSupportsConcern(
 			"securityfilterchain",
 		)
 	case contextConcernConfiguration:
-		return contextValueRequestsConcern(semanticContent, contextConcernConfiguration) ||
+		return section.RenderMode != "signature" && contextValueRequestsConcern(semanticContent, contextConcernConfiguration) ||
 			contextSourceContainsAny(content,
 				"@configurationproperties",
 				"@value(",
@@ -967,10 +953,33 @@ func contextSourceSectionSupportsConcern(
 			" publish",
 		)
 	case contextConcernTests:
-		return contextSourceContainsAny(content, "@test", "describe(", "it(", "test(")
+		return contextSourceContainsAny(content, "@test", "describe(", "it(", "test(") &&
+			contextSourceSectionHasExecutableTest(section, semanticContent)
 	default:
 		return false
 	}
+}
+
+func contextSourceSectionHasExecutableTest(section ContextSourceSection, content string) bool {
+	if section.RenderMode == "signature" {
+		return false
+	}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "@") ||
+			line == "{" || line == "}" || strings.HasSuffix(line, "{") {
+			continue
+		}
+		if strings.HasSuffix(line, ";") ||
+			strings.HasPrefix(line, "assert ") ||
+			strings.Contains(line, "assert(") ||
+			strings.Contains(line, "expect(") ||
+			strings.Contains(line, ".andexpect(") ||
+			strings.HasPrefix(line, "await ") {
+			return true
+		}
+	}
+	return false
 }
 
 func contextSourceSemanticContent(content string) string {
