@@ -99,14 +99,17 @@ stdout log, separate stderr log, and a colocated analyzer result outside the
 workspace. Its `summary.tsv` has this schema:
 
 ```text
-variant run tokens tool_calls goregraph_calls full_context_packs compact_duplicate_packs repeated_full_packs raw_navigation_calls source_read_calls unique_source_files log
+variant run tokens tool_calls goregraph_calls full_context_packs compact_duplicate_packs repeated_full_packs raw_navigation_calls source_read_calls included_source_rereads unique_source_files log
 ```
 
 Release evaluation uses the integer median of the three end-to-end token,
 tool-call, raw-navigation, and source-read totals for each variant. The analyzer
 deduplicates source paths and retains counts only; it does not retain source
 content. It counts only unique terminal tool items from the Codex JSONL event
-lifecycle, including unsuccessful tools.
+lifecycle, including unsuccessful tools. `included_source_rereads` counts a
+terminal tool item once when it reads or searches a source path after that path
+was supplied by a Context Pack with `source_coverage: complete`. Reads before
+the pack and paths from partial packs do not count.
 
 ## Token gate
 
@@ -136,6 +139,8 @@ After both token conditions pass, all structural conditions must pass:
    median. A zero baseline source-read median is invalid benchmark input because
    it cannot measure source-replacement savings.
 3. No assisted transcript may contain a repeated full Context Pack.
+4. The sum of `included_source_rereads` across assisted transcripts must be
+   zero.
 
 `compact_duplicate_packs` records responses with `duplicate_of`. These compact
 responses are expected diagnostic evidence and do not fail the benchmark. A
@@ -145,15 +150,12 @@ earlier ambiguous single duplicate-pack column.
 
 ## Latest diagnostic evidence
 
-A single diagnostic pair recorded 159,739 baseline tokens and 141,259 assisted
-tokens: an 18,480-token reduction (11.57%). It still missed the 80% token gate,
-and the assisted transcript made 48 tool calls versus 34 baseline calls. That
-tool-call regression also fails the 70% structural gate.
-
-This is diagnostic evidence, not release evidence. It is not a controlled
-three-by-three result and has no matched 12-point quality rubric. A release run
-must isolate skills in the invocation for both treatments; prompt text must not
-be used to disable skills for only one variant.
+The latest diagnostic pair recorded 169,913 baseline tokens and 166,833
+assisted tokens, a 3,080-token reduction (1.81%). The assisted run made 31 shell
+executions versus 28 baseline executions, a 10.71% increase. This is diagnostic
+evidence only, not controlled three-by-three release proof. A release run must
+isolate skills in the invocation for both treatments; prompt text must not be
+used to disable skills for only one variant.
 
 ## Twelve-point quality rubric
 

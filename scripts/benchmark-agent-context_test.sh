@@ -51,7 +51,11 @@ case "$prompt" in
   *"Treat source_sections as current source already read"*)
     printf 'a\n' >>"$FAKE_ORDER"
     tokens=${FAKE_ASSISTED_TOKENS:-80000}
-    emit_command 'goregraph context /work --query route' '# Context Pack\n\nContext ID: assisted-pack\n'
+    context_pack='# Context Pack\n\nContext ID: assisted-pack\n'
+    if [ "${FAKE_ASSISTED_INCLUDED_REREAD:-0}" = "1" ]; then
+      context_pack='# Context Pack\n\nContext ID: assisted-pack\nSource coverage: complete\n\n## Source sections\n\n### 1. `src/Service.java:1-40`\n'
+    fi
+    emit_command 'goregraph context /work --query route' "$context_pack"
     emit_command 'sed -n 1,40p /work/src/Service.java'
     emit_command 'sed -n 41,80p /work/src/Worker.go'
     emit_command 'make test'
@@ -145,6 +149,7 @@ run_harness() {
     FAKE_ASSISTED_EXTRA_SOURCE_READS=${FAKE_ASSISTED_EXTRA_SOURCE_READS:-0} \
     FAKE_ASSISTED_COMPACT_DUPLICATE=${FAKE_ASSISTED_COMPACT_DUPLICATE:-0} \
     FAKE_ASSISTED_REPEATED_FULL=${FAKE_ASSISTED_REPEATED_FULL:-0} \
+    FAKE_ASSISTED_INCLUDED_REREAD=${FAKE_ASSISTED_INCLUDED_REREAD:-0} \
     /bin/bash "$harness" \
       --workspace "$temporary_directory/workspace" \
       --prompt "$temporary_directory/base-prompt.txt" \
@@ -159,11 +164,11 @@ run_harness() {
 run_harness pass >/dev/null
 actual_order=$(tr -d '\n' <"$temporary_directory/pass.order")
 [ "$actual_order" = "baabba" ] || fail "run order = $actual_order, want baabba"
-grep -q $'^variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tunique_source_files\tlog$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tincluded_source_rereads\tunique_source_files\tlog$' "$temporary_directory/pass/summary.tsv" ||
   fail "summary schema missing"
-grep -q $'^baseline\tmedian\t100000\t10\t-\t-\t-\t-\t6\t4\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^baseline\tmedian\t100000\t10\t-\t-\t-\t-\t6\t4\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
   fail "baseline median missing"
-grep -q $'^assisted\tmedian\t80000\t6\t-\t-\t-\t-\t2\t2\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^assisted\tmedian\t80000\t6\t-\t-\t-\t-\t2\t2\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
   fail "assisted median missing"
 [ -s "$temporary_directory/pass/assisted-1.log.metrics.tsv" ] ||
   fail "analyzer result was not retained"
@@ -175,7 +180,7 @@ export FAKE_ASSISTED_TOKENS
 if run_harness over-eighty >/dev/null 2>&1; then
   fail "80% plus one token passed"
 fi
-grep -q $'^assisted\tmedian\t80001\t6\t-\t-\t-\t-\t2\t2\t-\t-$' "$temporary_directory/over-eighty/summary.tsv" ||
+grep -q $'^assisted\tmedian\t80001\t6\t-\t-\t-\t-\t2\t2\t-\t-\t-$' "$temporary_directory/over-eighty/summary.tsv" ||
   fail "failed gate did not retain median evidence"
 unset FAKE_ASSISTED_TOKENS
 
@@ -192,6 +197,13 @@ if run_harness over-source-read-gate >/dev/null 2>&1; then
   fail "source-read gate passed"
 fi
 unset FAKE_ASSISTED_EXTRA_SOURCE_READS
+
+FAKE_ASSISTED_INCLUDED_REREAD=1
+export FAKE_ASSISTED_INCLUDED_REREAD
+if run_harness included-source-reread >/dev/null 2>&1; then
+  fail "included source reread passed"
+fi
+unset FAKE_ASSISTED_INCLUDED_REREAD
 
 FAKE_ASSISTED_COMPACT_DUPLICATE=1
 export FAKE_ASSISTED_COMPACT_DUPLICATE

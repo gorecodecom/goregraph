@@ -85,8 +85,9 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
 - an assisted median no greater than 80% of the matched baseline median and no
   greater than 116,560 tokens against the recorded 145,700-token baseline;
 - an assisted tool-call median no greater than 70% of the matched baseline,
-  an assisted source-read median no greater than 50%, and no repeated full
-  Context Pack in an assisted transcript;
+  an assisted source-read median no greater than 50%, no repeated full Context
+  Pack, and no read of source already supplied by a complete Context Pack in an
+  assisted transcript;
 - a manually completed and signed external 12-point evidence rubric whose
   assisted quality score is greater than or equal to the baseline score.
 
@@ -126,10 +127,13 @@ Pack calls and may not fall back to specialist GoreGraph queries.
 The benchmark also requires structural navigation savings: assisted median tool
 calls at or below 70% of baseline, assisted median source reads at or below 50%
 of baseline, a nonzero baseline source-read median, and no repeated full
-Context Pack in assisted transcripts. The analyzer distinguishes a compact
-`duplicate_of` response, which is retained as diagnostic evidence, from a
-repeated full payload reusing a prior full `context_id`; only the latter fails
-the gate.
+Context Pack in assisted transcripts. It also requires zero
+`included_source_rereads` across assisted transcripts. This metric counts a
+terminal tool item once when it reads or searches a path after that path was
+supplied by a complete Context Pack; reads before the pack and paths from
+partial packs do not count. The analyzer distinguishes a compact `duplicate_of`
+response, which is retained as diagnostic evidence, from a repeated full
+payload reusing a prior full `context_id`; only the latter fails that gate.
 
 GoreGraph remains offline, explicit, dependency-free, and watcher-free.
 
@@ -139,9 +143,10 @@ not release 1.3.0. Keep the dashboard, remove the standard MCP integration from
 release documentation, and decide explicitly whether to ship dashboard-only or
 continue Context-ranking work in a later version.
 
-The latest diagnostic pair (159,739 baseline, 141,259 assisted) saved 11.57%,
-but regressed from 34 to 48 tool calls. It fails the token and structural gates
-and is diagnostic evidence only, not release proof. A fresh controlled
+The latest diagnostic pair recorded 169,913 baseline tokens and 166,833
+assisted tokens, a 3,080-token reduction (1.81%). The assisted run made 31 shell
+executions versus 28 baseline executions, a 10.71% increase. This is diagnostic
+evidence only, not controlled three-by-three release proof. A fresh controlled
 three-by-three run with the matched 12-point rubric remains required.
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.

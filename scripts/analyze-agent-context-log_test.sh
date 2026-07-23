@@ -48,12 +48,31 @@ cat >"$temporary_directory/transcript.jsonl" <<'EOF'
 {"type":"turn.completed","usage":{"input_tokens":60000,"cached_input_tokens":10000,"output_tokens":30000,"total_tokens":100000}}
 EOF
 
-expected_header=$'tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tunique_source_files'
+expected_header=$'tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tincluded_source_rereads\tunique_source_files'
 header=$(bash "$analyzer" --header "$temporary_directory/transcript.jsonl")
 [ "$header" = "$expected_header" ] || fail "header = $header"
 
 row=$(bash "$analyzer" "$temporary_directory/transcript.jsonl")
-[ "$row" = $'21\t4\t2\t1\t1\t13\t8\t13' ] || fail "row = $row"
+[ "$row" = $'21\t4\t2\t1\t1\t13\t8\t0\t13' ] || fail "row = $row"
+
+cat >"$temporary_directory/included-rereads.jsonl" <<'EOF'
+{"type":"item.completed","item":{"id":"before-pack","type":"command_execution","command":"cat /work/services/catalog/src/CatalogService.java","exit_code":0}}
+{"type":"item.completed","item":{"id":"json-pack","type":"mcp_tool_call","tool":"task_context","result":{"content":[{"type":"text","text":"{\"context_id\":\"json-complete\",\"source_coverage\":\"complete\",\"source_sections\":[{\"project\":\"services/catalog\",\"path\":\"src/CatalogService.java\"}]}"}]}}}
+{"type":"item.completed","item":{"id":"json-reread","type":"command_execution","command":"sed -n '1,20p' /work/services/catalog/src/CatalogService.java","exit_code":0}}
+{"type":"item.completed","item":{"id":"json-reread","type":"command_execution","command":"sed -n '1,20p' /work/services/catalog/src/CatalogService.java","exit_code":0}}
+{"type":"item.completed","item":{"id":"markdown-pack","type":"command_execution","command":"goregraph context /work --query jobs","aggregated_output":"# GoreGraph Context\n\nContext ID: markdown-complete\nSource coverage: complete\n\n## Source sections\n\n### 1. `services/jobs/src/JobService.java:10-20`\n"}}
+{"type":"item.completed","item":{"id":"markdown-reread","type":"command_execution","command":"rg -n delete /work/services/jobs/src/JobService.java","exit_code":0}}
+{"type":"item.completed","item":{"id":"partial-pack","type":"mcp_tool_call","tool":"task_context","result":{"content":[{"type":"text","text":"{\"context_id\":\"json-partial\",\"source_coverage\":\"partial\",\"source_sections\":[{\"project\":\"services/worker\",\"path\":\"src/Worker.go\"}],\"source_omissions\":[{\"project\":\"services/worker\",\"path\":\"src/Missing.go\"}]}"}]}}}
+{"type":"item.completed","item":{"id":"partial-read","type":"command_execution","command":"cat /work/services/worker/src/Missing.go","exit_code":0}}
+{"type":"turn.completed","usage":{"total_tokens":100}}
+EOF
+
+reread_row=$(bash "$analyzer" "$temporary_directory/included-rereads.jsonl")
+IFS=$'\t' read -r _ _ _ _ _ _ _ included_rereads _ extra <<EOF
+$reread_row
+EOF
+[ -z "${extra:-}" ] || fail "included reread row has extra fields: $reread_row"
+[ "$included_rereads" = "2" ] || fail "included source rereads = $included_rereads, row = $reread_row"
 
 cat >"$temporary_directory/fallback-usage.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"search","type":"web_search","query":"route"}}

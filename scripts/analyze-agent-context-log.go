@@ -12,7 +12,7 @@ import (
 	"unicode"
 )
 
-const header = "tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tunique_source_files"
+const header = "tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tincluded_source_rereads\tunique_source_files"
 
 type event struct {
 	Type  string
@@ -21,13 +21,21 @@ type event struct {
 }
 
 type metrics struct {
-	toolCalls, goregraphCalls, fullPacks, compactPacks, repeatedPacks, navigationCalls, sourceReadCalls int
-	sourcePaths                                                                                         map[string]struct{}
+	toolCalls, goregraphCalls, fullPacks, compactPacks, repeatedPacks int
+	navigationCalls, sourceReadCalls, includedSourceRereads           int
+	sourcePaths, completePackSourcePaths                              map[string]struct{}
 }
 
 type analysis struct {
 	metrics metrics
 	tokens  int64
+}
+
+type parsedContextPack struct {
+	contextID      string
+	duplicateOf    string
+	sourceCoverage string
+	sourcePaths    []string
 }
 
 func main() {
@@ -47,10 +55,11 @@ func main() {
 		fmt.Println(result.tokens)
 		return
 	}
-	fmt.Printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+	fmt.Printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
 		result.metrics.toolCalls, result.metrics.goregraphCalls, result.metrics.fullPacks,
 		result.metrics.compactPacks, result.metrics.repeatedPacks, result.metrics.navigationCalls,
-		result.metrics.sourceReadCalls, len(result.metrics.sourcePaths))
+		result.metrics.sourceReadCalls, result.metrics.includedSourceRereads,
+		len(result.metrics.sourcePaths))
 }
 
 func die(err error) {
@@ -86,7 +95,10 @@ func analyze(path string) (analysis, error) {
 		return analysis{}, err
 	}
 	defer file.Close()
-	result := analysis{metrics: metrics{sourcePaths: make(map[string]struct{})}}
+	result := analysis{metrics: metrics{
+		sourcePaths:             make(map[string]struct{}),
+		completePackSourcePaths: make(map[string]struct{}),
+	}}
 	completed := make(map[string]string)
 	fullIDs := make(map[string]struct{})
 	scanner := bufio.NewScanner(file)
@@ -158,20 +170,26 @@ func processCompleted(raw json.RawMessage, completed map[string]string, fullIDs 
 	}
 	metrics.toolCalls++
 	contextCall := false
+	includedReread := false
 	switch itemType {
 	case "command_execution":
 		command, err := unwrapCommand(stringValue(item, "command"))
 		if err != nil {
 			return false, err
 		}
-		contextCall = classifyCommand(command, metrics)
+		contextCall, includedReread = classifyCommand(command, metrics)
 	case "mcp_tool_call":
 		contextCall = stringValue(item, "tool") == "task_context" || stringValue(item, "name") == "task_context"
 	case "file_change":
-		if recordSourcePath(stringValue(item, "path"), metrics) {
+		recorded, included := recordSourcePath(stringValue(item, "path"), metrics)
+		if recorded {
 			metrics.navigationCalls++
 			metrics.sourceReadCalls++
 		}
+		includedReread = included
+	}
+	if includedReread {
+		metrics.includedSourceRereads++
 	}
 	if contextCall {
 		metrics.goregraphCalls++
@@ -308,17 +326,18 @@ func shellWords(command string) ([]string, error) {
 	return words, nil
 }
 
-func classifyCommand(command string, metrics *metrics) bool {
+func classifyCommand(command string, metrics *metrics) (bool, bool) {
 	words, err := shellWords(command)
 	if err != nil || len(words) == 0 {
-		return false
+		return false, false
 	}
-	contextCall, navigation, sourceRead := false, false, false
+	contextCall, navigation, sourceRead, includedReread := false, false, false, false
 	for _, segment := range shellSegments(words) {
-		context, navigates, reads := classifySimpleCommand(segment, metrics)
+		context, navigates, reads, included := classifySimpleCommand(segment, metrics)
 		contextCall = contextCall || context
 		navigation = navigation || navigates
 		sourceRead = sourceRead || reads
+		includedReread = includedReread || included
 	}
 	if navigation {
 		metrics.navigationCalls++
@@ -326,7 +345,7 @@ func classifyCommand(command string, metrics *metrics) bool {
 	if sourceRead {
 		metrics.sourceReadCalls++
 	}
-	return contextCall
+	return contextCall, includedReread
 }
 
 func shellSegments(words []string) [][]string {
@@ -348,26 +367,29 @@ func shellSegments(words []string) [][]string {
 	return segments
 }
 
-func classifySimpleCommand(words []string, metrics *metrics) (bool, bool, bool) {
+func classifySimpleCommand(words []string, metrics *metrics) (bool, bool, bool, bool) {
 	if len(words) == 0 {
-		return false, false, false
+		return false, false, false, false
 	}
 	switch words[0] {
 	case "goregraph":
-		return len(words) > 1 && words[1] == "context", false, false
+		return len(words) > 1 && words[1] == "context", false, false, false
 	case "rg", "grep":
-		return false, recordSearchTargets(words[1:], metrics), false
+		recorded, included := recordSearchTargets(words[1:], metrics)
+		return false, recorded, false, included
 	case "find":
-		return false, recordFindTargets(words[1:], metrics), false
+		recorded, included := recordFindTargets(words[1:], metrics)
+		return false, recorded, false, included
 	case "sed", "nl", "cat", "head", "tail":
-		reads := recordReadTargets(words[0], words[1:], metrics)
-		return false, reads, reads
+		reads, included := recordReadTargets(words[0], words[1:], metrics)
+		return false, reads, reads, included
 	}
-	return false, false, false
+	return false, false, false, false
 }
 
-func recordSearchTargets(words []string, metrics *metrics) bool {
-	patternSeen, optionValue, optionIsPattern, endOptions, found := false, false, false, false, false
+func recordSearchTargets(words []string, metrics *metrics) (bool, bool) {
+	patternSeen, optionValue, optionIsPattern, endOptions := false, false, false, false
+	found, includedReread := false, false
 	for _, word := range words {
 		if optionValue {
 			if optionIsPattern {
@@ -404,25 +426,30 @@ func recordSearchTargets(words []string, metrics *metrics) bool {
 			patternSeen = true
 			continue
 		}
-		found = recordSourcePath(word, metrics) || found
+		recorded, included := recordSourcePath(word, metrics)
+		found = recorded || found
+		includedReread = includedReread || included
 	}
-	return found
+	return found, includedReread
 }
 
-func recordFindTargets(words []string, metrics *metrics) bool {
-	found := false
+func recordFindTargets(words []string, metrics *metrics) (bool, bool) {
+	found, includedReread := false, false
 	for _, word := range words {
 		switch word {
 		case "-name", "-iname", "-path", "-ipath", "-type", "-exec", "-execdir", "-ok", "-okdir", "-print", "-print0", "-delete", "-quit":
-			return found
+			return found, includedReread
 		}
-		found = recordSourcePath(word, metrics) || found
+		recorded, included := recordSourcePath(word, metrics)
+		found = recorded || found
+		includedReread = includedReread || included
 	}
-	return found
+	return found, includedReread
 }
 
-func recordReadTargets(command string, words []string, metrics *metrics) bool {
+func recordReadTargets(command string, words []string, metrics *metrics) (bool, bool) {
 	scriptRequired, scriptSeen, optionValue, endOptions, found := command == "sed", false, false, false, false
+	includedReread := false
 	for _, word := range words {
 		if optionValue {
 			optionValue = false
@@ -452,9 +479,11 @@ func recordReadTargets(command string, words []string, metrics *metrics) bool {
 			scriptSeen = true
 			continue
 		}
-		found = recordSourcePath(word, metrics) || found
+		recorded, included := recordSourcePath(word, metrics)
+		found = recorded || found
+		includedReread = includedReread || included
 	}
-	return found
+	return found, includedReread
 }
 
 func optionTakesValue(command, option string) bool {
@@ -472,19 +501,36 @@ func optionTakesValue(command, option string) bool {
 	return false
 }
 
-func recordSourcePath(path string, metrics *metrics) bool {
-	path = strings.Trim(path, "\"'(),;:")
+func recordSourcePath(path string, metrics *metrics) (bool, bool) {
+	path = normalizeRecordedSourcePath(path)
 	if path == "" || strings.ContainsAny(path, "*?[") {
-		return false
+		return false, false
 	}
+	if !isSourcePath(path) {
+		return false, false
+	}
+	metrics.sourcePaths[path] = struct{}{}
+	for includedPath := range metrics.completePackSourcePaths {
+		if sameSourcePath(path, includedPath) {
+			return true, true
+		}
+	}
+	return true, false
+}
+
+func normalizeRecordedSourcePath(path string) string {
+	path = filepath.ToSlash(strings.TrimSpace(strings.Trim(path, "\"'(),;:")))
 	for strings.HasPrefix(path, "./") {
 		path = strings.TrimPrefix(path, "./")
 	}
-	if !isSourcePath(path) {
-		return false
-	}
-	metrics.sourcePaths[path] = struct{}{}
-	return true
+	return path
+}
+
+func sameSourcePath(readPath, includedPath string) bool {
+	readPath = normalizeRecordedSourcePath(readPath)
+	includedPath = normalizeRecordedSourcePath(includedPath)
+	return readPath == includedPath ||
+		strings.HasSuffix(readPath, "/"+includedPath)
 }
 
 func isSourcePath(path string) bool {
@@ -502,17 +548,25 @@ func recordContextPack(item map[string]json.RawMessage, fullIDs map[string]struc
 		return err
 	}
 	for _, text := range texts {
-		contextID, duplicateOf := parseContextPack(text)
-		if contextID == "" {
+		pack := parseContextPack(text)
+		if pack.contextID == "" {
 			continue
 		}
-		if duplicateOf != "" {
+		if pack.sourceCoverage == "complete" {
+			for _, path := range pack.sourcePaths {
+				path = normalizeRecordedSourcePath(path)
+				if path != "" {
+					metrics.completePackSourcePaths[path] = struct{}{}
+				}
+			}
+		}
+		if pack.duplicateOf != "" {
 			metrics.compactPacks++
-		} else if _, exists := fullIDs[contextID]; exists {
+		} else if _, exists := fullIDs[pack.contextID]; exists {
 			metrics.repeatedPacks++
 		} else {
 			metrics.fullPacks++
-			fullIDs[contextID] = struct{}{}
+			fullIDs[pack.contextID] = struct{}{}
 		}
 		break
 	}
@@ -547,19 +601,92 @@ func contextTexts(item map[string]json.RawMessage) ([]string, error) {
 	return texts, nil
 }
 
-func parseContextPack(text string) (string, string) {
-	var jsonPack map[string]json.RawMessage
-	if json.Unmarshal([]byte(text), &jsonPack) == nil && stringValue(jsonPack, "context_id") != "" {
-		return stringValue(jsonPack, "context_id"), stringValue(jsonPack, "duplicate_of")
+func parseContextPack(text string) parsedContextPack {
+	var jsonPack struct {
+		ContextID      string `json:"context_id"`
+		DuplicateOf    string `json:"duplicate_of"`
+		SourceCoverage string `json:"source_coverage"`
+		SourceSections []struct {
+			Project string `json:"project"`
+			Path    string `json:"path"`
+		} `json:"source_sections"`
 	}
-	contextID, duplicateOf := "", ""
+	if json.Unmarshal([]byte(text), &jsonPack) == nil && jsonPack.ContextID != "" {
+		pack := parsedContextPack{
+			contextID:      jsonPack.ContextID,
+			duplicateOf:    jsonPack.DuplicateOf,
+			sourceCoverage: jsonPack.SourceCoverage,
+			sourcePaths:    make([]string, 0, len(jsonPack.SourceSections)),
+		}
+		for _, section := range jsonPack.SourceSections {
+			path := section.Path
+			if section.Project != "" {
+				path = strings.TrimSuffix(section.Project, "/") + "/" + strings.TrimPrefix(path, "/")
+			}
+			pack.sourcePaths = append(pack.sourcePaths, path)
+		}
+		return pack
+	}
+
+	pack := parsedContextPack{}
+	inSourceSections := false
 	for _, line := range strings.Split(text, "\n") {
 		if strings.HasPrefix(line, "Context ID:") {
-			contextID = strings.TrimSpace(strings.TrimPrefix(line, "Context ID:"))
+			pack.contextID = strings.TrimSpace(strings.TrimPrefix(line, "Context ID:"))
 		}
 		if strings.HasPrefix(line, "Duplicate of:") {
-			duplicateOf = strings.TrimSpace(strings.TrimPrefix(line, "Duplicate of:"))
+			pack.duplicateOf = strings.TrimSpace(strings.TrimPrefix(line, "Duplicate of:"))
+		}
+		if strings.HasPrefix(line, "Source coverage:") {
+			pack.sourceCoverage = strings.TrimSpace(strings.TrimPrefix(line, "Source coverage:"))
+		}
+		if line == "## Source sections" {
+			inSourceSections = true
+			continue
+		}
+		if inSourceSections && strings.HasPrefix(line, "## ") {
+			inSourceSections = false
+			continue
+		}
+		if !inSourceSections || !strings.HasPrefix(line, "### ") {
+			continue
+		}
+		if path := markdownSourcePath(line); path != "" {
+			pack.sourcePaths = append(pack.sourcePaths, path)
 		}
 	}
-	return contextID, duplicateOf
+	return pack
+}
+
+func markdownSourcePath(line string) string {
+	start := strings.IndexByte(line, '`')
+	if start < 0 {
+		return ""
+	}
+	rest := line[start+1:]
+	end := strings.IndexByte(rest, '`')
+	if end < 0 {
+		return ""
+	}
+	return stripSourceLineRange(rest[:end])
+}
+
+func stripSourceLineRange(path string) string {
+	colon := strings.LastIndexByte(path, ':')
+	if colon < 0 {
+		return path
+	}
+	suffix := path[colon+1:]
+	parts := strings.Split(suffix, "-")
+	if len(parts) > 2 {
+		return path
+	}
+	for _, part := range parts {
+		if part == "" || strings.IndexFunc(part, func(current rune) bool {
+			return current < '0' || current > '9'
+		}) >= 0 {
+			return path
+		}
+	}
+	return path[:colon]
 }
