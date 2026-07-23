@@ -430,6 +430,16 @@ func crossServiceSource(extension, sourcePath string, facts []scan.AgentContextF
 		lines[1] = "type " + fixtureType + " struct{}"
 	}
 	for _, fact := range facts {
+		if fact.ID == "test" {
+			for offset, line := range crossServiceExecutableTestDeclaration(
+				extension,
+				fixtureType,
+				crossServiceFactIdentifier(fact),
+			) {
+				lines[fact.Line-1+offset] = line
+			}
+			continue
+		}
 		if fact.ID == "client" {
 			lines[fact.Line-1] = crossServiceOperationalClientDeclaration(
 				extension,
@@ -486,6 +496,35 @@ func crossServiceSourceDeclaration(extension, fixtureType, identifier string) st
 		return "def " + identifier + "(): pass"
 	default:
 		return "    void " + identifier + "() {}"
+	}
+}
+
+func crossServiceExecutableTestDeclaration(extension, fixtureType, identifier string) []string {
+	switch extension {
+	case ".go":
+		return []string{
+			"func (" + fixtureType + ") " + identifier + "() {",
+			"    test();",
+			"}",
+		}
+	case ".ts":
+		return []string{
+			"export function " + identifier + "() {",
+			"  test();",
+			"}",
+		}
+	case ".py":
+		return []string{
+			"def " + identifier + "():",
+			"    test()",
+			"    assert True",
+		}
+	default:
+		return []string{
+			"    void " + identifier + "() {",
+			"        test();",
+			"    }",
+		}
 	}
 }
 
