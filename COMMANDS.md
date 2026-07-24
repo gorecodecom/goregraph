@@ -53,6 +53,7 @@ The equivalent standard MCP tool is `task_context`.
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.
+If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
 If source_coverage is complete, run no source-reading commands on indexed project files. Answer only from source_sections and mark details absent from them as unknown.
 If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; do not inspect other files or widen ranges. Report pathless omissions as uncertainty.
@@ -554,6 +555,7 @@ hashed into `context_id`.
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.
+If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
 If source_coverage is complete, run no source-reading commands on indexed project files. Answer only from source_sections and mark details absent from them as unknown.
 If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; do not inspect other files or widen ranges. Report pathless omissions as uncertainty.
@@ -1505,6 +1507,7 @@ use its first Context Pack directly.
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.
+If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
 If source_coverage is complete, run no source-reading commands on indexed project files. Answer only from source_sections and mark details absent from them as unknown.
 If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; do not inspect other files or widen ranges. Report pathless omissions as uncertainty.

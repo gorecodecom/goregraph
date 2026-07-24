@@ -279,6 +279,7 @@ goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-f
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.
+If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
 If source_coverage is complete, run no source-reading commands on indexed project files. Answer only from source_sections and mark details absent from them as unknown.
 If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; do not inspect other files or widen ranges. Report pathless omissions as uncertainty.
@@ -1016,6 +1017,7 @@ hash.
 
 ```text
 Call goregraph context once with the complete task before reading indexed source.
+If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
 If source_coverage is complete, run no source-reading commands on indexed project files. Answer only from source_sections and mark details absent from them as unknown.
 If source_coverage is partial or none, inspect only exact project/path entries listed in source_omissions; do not inspect other files or widen ranges. Report pathless omissions as uncertainty.
@@ -1064,7 +1066,7 @@ The benchmark consumes Codex JSONL logs and distinguishes compact
 are retained as diagnostic evidence, while a repeated full `context_id` fails
 the release gate.
 
-The exact one-line baseline instruction, eight-line assisted instruction,
+The exact one-line baseline instruction, nine-line assisted instruction,
 execution protocol, rubric, and dashboard-only decision when a gate fails are
 defined in [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md). A failed gate blocks
 the 1.3.0 release.
