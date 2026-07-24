@@ -1082,18 +1082,20 @@ func springAuthScopes(sources []JavaSourceRecord, constants map[string]string) [
 					continue
 				}
 				for _, argument := range call.Arguments {
-					alternatives := javaResolvedPathAlternatives(argument, constants, nil, nil, 0)
-					if len(alternatives) == 0 {
-						unresolvedMatcher = true
-						continue
-					}
-					for _, alternative := range alternatives {
-						path, ok := springSecurityMatcherPath(alternative)
-						if !ok {
+					for _, expression := range springSecurityMatcherExpressions(argument) {
+						alternatives := javaResolvedPathAlternatives(expression, constants, nil, nil, 0)
+						if len(alternatives) == 0 {
 							unresolvedMatcher = true
 							continue
 						}
-						scope.Paths = append(scope.Paths, path)
+						for _, alternative := range alternatives {
+							path, ok := springSecurityMatcherPath(alternative)
+							if !ok {
+								unresolvedMatcher = true
+								continue
+							}
+							scope.Paths = append(scope.Paths, path)
+						}
 					}
 				}
 			}
@@ -1122,6 +1124,24 @@ func springAuthScopes(sources []JavaSourceRecord, constants map[string]string) [
 		return scopes[left].Line < scopes[right].Line
 	})
 	return scopes
+}
+
+func springSecurityMatcherExpressions(argument string) []string {
+	argument = strings.TrimSpace(argument)
+	marker := strings.LastIndex(argument, ".matcher(")
+	if marker < 0 {
+		return []string{argument}
+	}
+	open := marker + len(".matcher")
+	arguments := javaCallArguments(argument, open)
+	if len(arguments) != 1 {
+		return []string{argument}
+	}
+	close := matchingJavaParen(argument, open)
+	if close != len(argument)-1 {
+		return []string{argument}
+	}
+	return []string{strings.TrimSpace(arguments[0])}
 }
 
 func springSecurityOrder(annotations []JavaAnnotationRecord) int {

@@ -15,6 +15,7 @@ var (
 	javaAnnotationLineRE      = regexp.MustCompile(`^\s*@([A-Za-z_][A-Za-z0-9_.]*)(?:\((.*)\))?\s*$`)
 	javaConstantLineRE        = regexp.MustCompile(`^\s*(?:public|protected|private)?\s*static\s+final\s+String\s+([A-Za-z0-9_]+)\s*=\s*"([^"]*)"\s*;`)
 	javaCallRE                = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+	javaChainedMatcherRE      = regexp.MustCompile(`^\s*\.securityMatcher\s*\(`)
 	javaNewCallRE             = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*\)\.([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
 	javaConstructorTypeRE     = regexp.MustCompile(`\bnew\s+([A-Za-z_][A-Za-z0-9_$.]*)\s*\(`)
 	javaBareCallRE            = regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
@@ -917,6 +918,14 @@ func extractJavaCalls(line string, lineNo int) []JavaCallRecord {
 
 func extractJavaCallsWithSource(scanLine, argumentLine string, lineNo int) []JavaCallRecord {
 	var calls []JavaCallRecord
+	if location := javaChainedMatcherRE.FindStringIndex(scanLine); len(location) == 2 {
+		open := strings.Index(scanLine[location[0]:location[1]], "(") + location[0]
+		calls = append(calls, JavaCallRecord{
+			Method:    "securityMatcher",
+			Line:      lineNo,
+			Arguments: javaCallArguments(argumentLine, open),
+		})
+	}
 	for _, match := range javaNewCallRE.FindAllStringSubmatch(scanLine, -1) {
 		if len(match) == 3 {
 			calls = append(calls, JavaCallRecord{TargetOwner: match[1], Method: match[2], Line: lineNo})

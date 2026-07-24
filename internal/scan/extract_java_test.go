@@ -470,6 +470,83 @@ class Security {
 	}
 }
 
+func TestBuildSpringIndexScopesPathPatternSecurityMatchers(t *testing.T) {
+	routes := extractJavaSource(FileRecord{
+		Path: "src/main/java/example/Routes.java", Language: "java",
+	}, `package example;
+final class Routes {
+  static final String PUBLIC = "/api";
+  static final String INTERNAL = "/management";
+}`)
+	application := extractJavaSource(FileRecord{
+		Path: "src/main/java/example/Application.java", Language: "java",
+	}, `package example;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+
+@RestController
+class Controller {
+  @GetMapping("/api/jobs")
+  String jobs() { return "ok"; }
+
+  @DeleteMapping("/management/jobs/{id}")
+  void deleteJob() {}
+}
+
+@Configuration
+class Security {
+  @Order(1)
+  SecurityFilterChain publicApi(HttpSecurity http) {
+    return http
+      .securityMatcher(PathPatternRequestMatcher.withDefaults().matcher(Routes.PUBLIC + "/**"))
+      .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
+      .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
+      .build();
+  }
+
+  @Order(2)
+  SecurityFilterChain management(HttpSecurity http) {
+    return http
+      .securityMatcher(Routes.INTERNAL + "/**")
+      .authorizeHttpRequests(authorize -> authorize.anyRequest().hasRole("TECHNICAL_USER"))
+      .httpBasic(Customizer.withDefaults())
+      .build();
+  }
+}`)
+
+	sources := []JavaSourceRecord{application, routes}
+	scopes := springAuthScopes(sources, springConstantIndex(sources))
+	index := buildSpringIndex(sources)
+	public, ok := findSpringEndpointForTest(index.Endpoints, "GET", "/api/jobs")
+	if !ok || !hasAuthKind(public.Auth, "oauth2_resource_server") ||
+		hasAuthKind(public.Auth, "http_basic") {
+		t.Fatalf("public endpoint security = %#v; scopes = %#v", public.Auth, scopes)
+	}
+	internal, ok := findSpringEndpointForTest(index.Endpoints, "DELETE", "/management/jobs/{id}")
+	if !ok || !hasAuthKind(internal.Auth, "http_basic") ||
+		hasAuthKind(internal.Auth, "oauth2_resource_server") {
+		t.Fatalf("management endpoint security = %#v; scopes = %#v", internal.Auth, scopes)
+	}
+}
+
+func TestSpringSecurityMatcherExpressionsRemainConservative(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{`Routes.INTERNAL + "/**"`, []string{`Routes.INTERNAL + "/**"`}},
+		{`factory.matcher(Routes.INTERNAL + "/**")`, []string{`Routes.INTERNAL + "/**"`}},
+		{`factory.matcher(a, b)`, []string{`factory.matcher(a, b)`}},
+		{`factory.matcher(dynamic()).orElse(other)`, []string{`factory.matcher(dynamic()).orElse(other)`}},
+	}
+	for _, test := range tests {
+		if got := springSecurityMatcherExpressions(test.input); !reflect.DeepEqual(got, test.want) {
+			t.Errorf("%q => %#v, want %#v", test.input, got, test.want)
+		}
+	}
+}
+
 func TestApplyScopedSpringAuthMarksEqualConflictsPartial(t *testing.T) {
 	index := SpringIndex{Endpoints: []SpringEndpointRecord{{
 		HTTPMethod: "GET", Path: "/internal/jobs",
