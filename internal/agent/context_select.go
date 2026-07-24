@@ -164,7 +164,7 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 
 	if len(pack.Concerns) == 0 {
 		sort.Slice(planned, func(i, j int) bool { return planned[i].key < planned[j].key })
-		return planned
+		return expandContextEvidenceConcerns(pack, index, planned)
 	}
 	concerns := make([]contextConcern, 0, len(pack.Concerns))
 	added := make(map[string]bool, len(pack.Concerns))
@@ -193,12 +193,234 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 			concern.kind == contextConcernProject {
 			continue
 		}
-		concern.required = false
+		concern.required = contextRequiredEvidenceConcern(pack, index, concern)
 		concerns = append(concerns, concern)
 		added[concern.key] = true
 	}
 	sort.Slice(concerns, func(i, j int) bool { return concerns[i].key < concerns[j].key })
-	return concerns
+	return expandContextEvidenceConcerns(pack, index, concerns)
+}
+
+func contextEvidenceProjectRoles(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+) (map[string]bool, map[string]bool, map[string]bool) {
+	endpointProjects := map[string]bool{}
+	for _, endpoint := range pack.Endpoints {
+		endpointProjects[normalizeContextProject(endpoint.Provider)] = true
+	}
+	contractProjects := map[string]bool{}
+	for _, contract := range pack.Contracts {
+		contractProjects[normalizeContextProject(contract.Project)] = true
+	}
+	modelProjects := map[string]bool{}
+	requestedModels := contextRequestedDomainModelIDs(pack, index)
+	for _, fact := range index.Facts {
+		if requestedModels[fact.ID] {
+			modelProjects[normalizeContextProject(fact.Project)] = true
+		}
+	}
+	return endpointProjects, contractProjects, modelProjects
+}
+
+func contextRequiredEvidenceConcern(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	concern contextConcern,
+) bool {
+	endpointProjects, contractProjects, modelProjects :=
+		contextEvidenceProjectRoles(pack, index)
+	switch concern.kind {
+	case contextConcernAuth:
+		return endpointProjects[concern.project] ||
+			contractProjects[concern.project] ||
+			modelProjects[concern.project]
+	case contextConcernConfiguration, contextConcernResilience, contextConcernHTTPContract:
+		return contractProjects[concern.project]
+	case contextConcernPersistence, contextConcernSideEffects, contextConcernTests:
+		return modelProjects[concern.project]
+	default:
+		return concern.required
+	}
+}
+
+func expandContextEvidenceConcerns(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	concerns []contextConcern,
+) []contextConcern {
+	queryTokens := contextExpandedTokenSet(contextSelectionQuery(pack))
+	requestedModels := contextRequestedDomainModelIDs(pack, index)
+	endpointProjects, contractProjects, modelProjects :=
+		contextEvidenceProjectRoles(pack, index)
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	contractFactIDs := map[string][]string{}
+	for _, contract := range pack.Contracts {
+		project := normalizeContextProject(contract.Project)
+		contractFactIDs[project] = append(contractFactIDs[project], contract.ID)
+	}
+
+	result := make([]contextConcern, 0, len(concerns)+len(requestedModels))
+	for _, concern := range concerns {
+		switch concern.kind {
+		case contextConcernAuth:
+			added := false
+			if contractProjects[concern.project] {
+				candidates := orderedContextConcernIDs(append(
+					append([]string(nil), concern.candidateFactIDs...),
+					contractFactIDs[concern.project]...,
+				))
+				result = append(result, newContextEvidenceConcern(
+					concern,
+					"client_transport",
+					candidates,
+					"client transport authentication",
+				))
+				added = true
+			}
+			if endpointProjects[concern.project] || modelProjects[concern.project] {
+				result = append(result, newContextEvidenceConcern(
+					concern,
+					"server_policy",
+					concern.candidateFactIDs,
+					"server authentication policy",
+				))
+				added = true
+			}
+			if !added {
+				result = append(result, concern)
+			}
+		case contextConcernConfiguration:
+			if !contractProjects[concern.project] {
+				result = append(result, concern)
+				continue
+			}
+			result = append(
+				result,
+				newContextEvidenceConcern(
+					concern,
+					"binding",
+					concern.candidateFactIDs,
+					"client configuration binding",
+				),
+				newContextEvidenceConcern(
+					concern,
+					"consumer",
+					orderedContextConcernIDs(append(
+						append([]string(nil), concern.candidateFactIDs...),
+						contractFactIDs[concern.project]...,
+					)),
+					"client configuration consumption",
+				),
+			)
+		case contextConcernResilience:
+			if !contractProjects[concern.project] {
+				result = append(result, concern)
+				continue
+			}
+			candidates := orderedContextConcernIDs(append(
+				append([]string(nil), concern.candidateFactIDs...),
+				contractFactIDs[concern.project]...,
+			))
+			added := false
+			for _, facet := range []string{"retry_policy", "recovery"} {
+				if !contextEvidenceFacetRequested(
+					contextConcernResilience,
+					facet,
+					queryTokens,
+				) {
+					continue
+				}
+				reason := "client retry policy"
+				if facet == "recovery" {
+					reason = "client recovery behavior"
+				}
+				result = append(result, newContextEvidenceConcern(
+					concern,
+					facet,
+					candidates,
+					reason,
+				))
+				added = true
+			}
+			if !added {
+				result = append(result, concern)
+			}
+		case contextConcernPersistence:
+			modelIDs := make([]string, 0, len(requestedModels))
+			for modelID := range requestedModels {
+				model := factByID[modelID]
+				if concern.project == "" ||
+					normalizeContextProject(model.Project) == concern.project {
+					modelIDs = append(modelIDs, modelID)
+				}
+			}
+			sort.Strings(modelIDs)
+			if len(modelIDs) == 0 {
+				result = append(result, concern)
+				continue
+			}
+			domainTokens := contextSourceDomainModelTokens(pack, index)
+			for _, modelID := range modelIDs {
+				candidates := []string{}
+				for _, factID := range concern.candidateFactIDs {
+					fact, ok := factByID[factID]
+					if ok && contextPersistenceMatchesDomainModel(
+						index,
+						fact,
+						domainTokens,
+						map[string]bool{modelID: true},
+					) {
+						candidates = append(candidates, factID)
+					}
+				}
+				result = append(result, newContextEvidenceConcern(
+					concern,
+					"model:"+modelID,
+					candidates,
+					"persistence for requested model "+factByID[modelID].Name,
+				))
+			}
+		case contextConcernSideEffects:
+			if concern.project != "" && !modelProjects[concern.project] {
+				result = append(result, concern)
+				continue
+			}
+			added := false
+			facets := contextEvidenceFacetVocabulary[contextConcernSideEffects]
+			names := make([]string, 0, len(facets))
+			for name := range facets {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				if !contextEvidenceFacetRequested(
+					contextConcernSideEffects,
+					name,
+					queryTokens,
+				) {
+					continue
+				}
+				result = append(result, newContextEvidenceConcern(
+					concern,
+					name,
+					concern.candidateFactIDs,
+					"requested "+name+" side effects",
+				))
+				added = true
+			}
+			if !added {
+				result = append(result, concern)
+			}
+		default:
+			result = append(result, concern)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].key < result[j].key })
+	return result
 }
 
 func contextPublicConcernKey(concern ContextConcern) string {
@@ -2180,15 +2402,30 @@ func applyContextSourceCoverage(
 	concerns []contextConcern,
 	covered map[string]bool,
 ) {
+	publicCovered := map[string]bool{}
+	publicSeen := map[string]bool{}
 	requiredMissing := false
 	for _, concern := range concerns {
-		if concern.required && !covered[concern.key] {
+		if !concern.required {
+			continue
+		}
+		publicKey := firstNonEmptyContext(concern.publicKey, concern.key)
+		if !publicSeen[publicKey] {
+			publicSeen[publicKey] = true
+			publicCovered[publicKey] = true
+		}
+		if !covered[concern.key] {
+			publicCovered[publicKey] = false
 			requiredMissing = true
 		}
 	}
 	for index := range pack.Concerns {
 		key := contextPublicConcernKey(pack.Concerns[index])
-		pack.Concerns[index].Covered = covered[key]
+		if publicSeen[key] {
+			pack.Concerns[index].Covered = publicCovered[key]
+		} else {
+			pack.Concerns[index].Covered = covered[key]
+		}
 	}
 	pack.SourceUnrepresented = 0
 	for _, concern := range pack.Concerns {

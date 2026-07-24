@@ -117,6 +117,35 @@ func TestContextExpandedTokenSet(t *testing.T) {
 	}
 }
 
+func TestContextEvidenceFacetsRecognizeBenchmarkLanguage(t *testing.T) {
+	tokens := contextExpandedTokenSet(
+		"Retry-Logik und Fehlerbehandlung sowie Protokollierung, E-Mail und Benutzerinformationen",
+	)
+	for _, test := range []struct {
+		kind  string
+		facet string
+	}{
+		{contextConcernResilience, "retry_policy"},
+		{contextConcernResilience, "recovery"},
+		{contextConcernSideEffects, "mail"},
+		{contextConcernSideEffects, "audit"},
+		{contextConcernSideEffects, "user_information"},
+	} {
+		if !contextEvidenceFacetRequested(test.kind, test.facet, tokens) {
+			t.Errorf("benchmark vocabulary missed %s#%s", test.kind, test.facet)
+		}
+	}
+
+	english := contextExpandedTokenSet("mail, audit, and user information")
+	if !contextEvidenceFacetRequested(
+		contextConcernSideEffects,
+		"user_information",
+		english,
+	) {
+		t.Fatal("English user information phrase was not recognized")
+	}
+}
+
 func TestPlanContextConcernsSelectsRequestedDomainModels(t *testing.T) {
 	seed := scan.AgentContextFactRecord{
 		ID: "route", Project: "services/catalog", Kind: "route",

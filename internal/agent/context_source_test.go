@@ -11,6 +11,209 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
+func TestApplyContextSourceCoverageRequiresEveryInternalFacet(t *testing.T) {
+	base := newContextConcern(
+		contextConcernPersistence,
+		"services/jobs",
+		true,
+		[]string{"regular-repository", "change-repository"},
+		"requested persistence",
+	)
+	regular := newContextEvidenceConcern(
+		base, "model:regular-job", []string{"regular-repository"}, "regular job persistence",
+	)
+	change := newContextEvidenceConcern(
+		base, "model:change-job", []string{"change-repository"}, "change job persistence",
+	)
+	pack := ContextPack{
+		Concerns: []ContextConcern{{
+			Kind: contextConcernPersistence, Project: "services/jobs",
+		}},
+		SourceSections: []ContextSourceSection{{
+			Project: "services/jobs", Path: "RegularRepository.java",
+		}},
+	}
+
+	applyContextSourceCoverage(
+		&pack,
+		[]contextConcern{regular, change},
+		map[string]bool{regular.key: true},
+	)
+	if pack.SourceCoverage != "partial" || pack.Concerns[0].Covered {
+		t.Fatalf("one of two persistence facets reported complete: %#v", pack)
+	}
+
+	applyContextSourceCoverage(
+		&pack,
+		[]contextConcern{regular, change},
+		map[string]bool{regular.key: true, change.key: true},
+	)
+	if pack.SourceCoverage != "complete" || !pack.Concerns[0].Covered {
+		t.Fatalf("all persistence facets did not aggregate: %#v", pack)
+	}
+}
+
+func TestExpandContextEvidenceConcernsScopesOperationalBoundaries(t *testing.T) {
+	pack, index := contextEvidenceExpansionFixture()
+	concerns := []contextConcern{
+		newContextConcern(
+			contextConcernAuth,
+			"libraries/job-client",
+			true,
+			[]string{"job-contract"},
+			"client authentication",
+		),
+		newContextConcern(
+			contextConcernAuth,
+			"services/jobs",
+			true,
+			[]string{"jobs-security"},
+			"server authentication",
+		),
+		newContextConcern(
+			contextConcernConfiguration,
+			"libraries/job-client",
+			true,
+			[]string{"job-config"},
+			"configuration",
+		),
+		newContextConcern(
+			contextConcernResilience,
+			"libraries/job-client",
+			true,
+			[]string{"job-contract"},
+			"resilience",
+		),
+		newContextConcern(
+			contextConcernSideEffects,
+			"services/jobs",
+			true,
+			[]string{"jobs-side-effects"},
+			"side effects",
+		),
+	}
+
+	got := expandContextEvidenceConcerns(pack, index, concerns)
+	for _, key := range []string{
+		contextConcernAuth + ":libraries/job-client#client_transport",
+		contextConcernAuth + ":services/jobs#server_policy",
+		contextConcernConfiguration + ":libraries/job-client#binding",
+		contextConcernConfiguration + ":libraries/job-client#consumer",
+		contextConcernResilience + ":libraries/job-client#retry_policy",
+		contextConcernResilience + ":libraries/job-client#recovery",
+		contextConcernSideEffects + ":services/jobs#mail",
+		contextConcernSideEffects + ":services/jobs#audit",
+		contextConcernSideEffects + ":services/jobs#user_information",
+	} {
+		if _, ok := findContextConcern(got, key); !ok {
+			t.Errorf("expanded concern %q missing from %#v", key, got)
+		}
+	}
+}
+
+func TestExpandContextEvidenceConcernsTracksPersistencePerRequestedModel(t *testing.T) {
+	pack, index := contextEvidenceExpansionFixture()
+	base := newContextConcern(
+		contextConcernPersistence,
+		"services/jobs",
+		true,
+		[]string{"regular-repository", "change-repository"},
+		"persistence",
+	)
+
+	got := expandContextEvidenceConcerns(pack, index, []contextConcern{base})
+	for key, wantCandidate := range map[string]string{
+		contextConcernPersistence + ":services/jobs#model:regular-model": "regular-repository",
+		contextConcernPersistence + ":services/jobs#model:change-model":  "change-repository",
+	} {
+		concern, ok := findContextConcern(got, key)
+		if !ok || !reflect.DeepEqual(concern.candidateFactIDs, []string{wantCandidate}) {
+			t.Errorf("%q = %#v, want candidate %q", key, concern, wantCandidate)
+		}
+	}
+}
+
+func TestPublicContextConcernsDeduplicatesEvidenceFacets(t *testing.T) {
+	base := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{"jobs-side-effects"},
+		"side effects",
+	)
+	public := publicContextConcerns([]contextConcern{
+		newContextEvidenceConcern(base, "mail", base.candidateFactIDs, "mail"),
+		newContextEvidenceConcern(base, "audit", base.candidateFactIDs, "audit"),
+	})
+	if len(public) != 1 ||
+		public[0].Kind != contextConcernSideEffects ||
+		public[0].Project != "services/jobs" {
+		t.Fatalf("public facets were not aggregated: %#v", public)
+	}
+}
+
+func contextEvidenceExpansionFixture() (ContextPack, scan.AgentContextIndexRecord) {
+	query := "delete catalog item change job task types with authentication, configuration, " +
+		"retry and error recovery plus mail, audit, and user information"
+	pack := ContextPack{
+		Query:          query,
+		selectionQuery: query,
+		Endpoints: []ContextEndpoint{{
+			Provider: "services/catalog", HTTPMethod: "DELETE",
+			Path: "/catalog/items/{itemId}",
+		}},
+		Contracts: []ContextLocation{{
+			ID: "job-contract", Project: "libraries/job-client", Kind: "api_contract",
+		}},
+		selectedSourceFactIDs: []string{"regular-model", "change-model"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "catalog-route", Project: "services/catalog", Kind: "route",
+			Name: "DELETE /catalog/items/{itemId}", HTTPMethod: "DELETE",
+			Path: "/catalog/items/{itemId}", File: "CatalogController.java",
+		},
+		{
+			ID: "job-contract", Project: "libraries/job-client", Kind: "api_contract",
+			Name: "GET /jobs", Qualified: "JobClient.getJobs",
+			File: "JobClient.java",
+		},
+		{
+			ID: "job-config", Project: "libraries/job-client", Kind: "configuration",
+			Name: "JobClientConfig", File: "JobClientConfig.java",
+		},
+		{
+			ID: "jobs-security", Project: "services/jobs", Kind: "endpoint_security",
+			Name: "basic", File: "SecurityConfig.java",
+		},
+		{
+			ID: "jobs-side-effects", Project: "services/jobs", Kind: "symbol",
+			Name: "deleteJobs", Qualified: "JobService.deleteJobs", File: "JobService.java",
+		},
+		{
+			ID: "regular-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogItemJobEntity", Qualified: "example.CatalogItemJobEntity",
+			File: "CatalogItemJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "change-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogItemChangeJobEntity", Qualified: "example.CatalogItemChangeJobEntity",
+			File: "CatalogItemChangeJobEntity.java", Confidence: "EXACT",
+		},
+		{
+			ID: "regular-repository", Project: "services/jobs", Kind: "persistence",
+			Name: "CatalogItemJobRepository", Qualified: "example.CatalogItemJobRepository",
+			File: "CatalogItemJobRepository.java", Confidence: "EXACT",
+		},
+		{
+			ID: "change-repository", Project: "services/jobs", Kind: "persistence",
+			Name: "CatalogItemChangeJobRepository", Qualified: "example.CatalogItemChangeJobRepository",
+			File: "CatalogItemChangeJobRepository.java", Confidence: "EXACT",
+		},
+	}}
+	return pack, index
+}
+
 func TestRenderSourceCandidateKeepsCurrentIndexedDeclaration(t *testing.T) {
 	lines := numberedSourceLines(12)
 	lines[9] = "    public void deleteUser() {"
@@ -1404,9 +1607,12 @@ func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
 	concerns := contextSourceConcerns(pack, index)
 	candidates := map[string]map[string]bool{}
 	for _, concern := range concerns {
-		candidates[concern.key] = map[string]bool{}
+		publicKey := firstNonEmptyContext(concern.publicKey, concern.key)
+		if candidates[publicKey] == nil {
+			candidates[publicKey] = map[string]bool{}
+		}
 		for _, factID := range concern.candidateFactIDs {
-			candidates[concern.key][factID] = true
+			candidates[publicKey][factID] = true
 		}
 	}
 	for key, factID := range map[string]string{

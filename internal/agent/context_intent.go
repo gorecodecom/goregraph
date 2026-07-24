@@ -27,6 +27,8 @@ const (
 
 type contextConcern struct {
 	key              string
+	publicKey        string
+	facet            string
 	kind             string
 	project          string
 	required         bool
@@ -298,12 +300,59 @@ func newContextConcern(kind, project string, required bool, candidateFactIDs []s
 	}
 	return contextConcern{
 		key:              key,
+		publicKey:        key,
 		kind:             kind,
 		project:          project,
 		required:         required,
 		candidateFactIDs: orderedContextConcernIDs(candidateFactIDs),
 		reason:           strings.TrimSpace(reason),
 	}
+}
+
+func newContextEvidenceConcern(
+	base contextConcern,
+	facet string,
+	candidateFactIDs []string,
+	reason string,
+) contextConcern {
+	base.publicKey = firstNonEmptyContext(base.publicKey, base.key)
+	base.facet = strings.TrimSpace(facet)
+	base.key = base.publicKey + "#" + base.facet
+	base.candidateFactIDs = orderedContextConcernIDs(candidateFactIDs)
+	base.reason = strings.TrimSpace(reason)
+	return base
+}
+
+var contextEvidenceFacetVocabulary = map[string]map[string][]string{
+	contextConcernConfiguration: {
+		"binding":  {"config", "configuration", "konfiguration", "properties"},
+		"consumer": {"client", "consumer", "vertrag", "contract"},
+	},
+	contextConcernResilience: {
+		"retry_policy": {"retry", "wiederholung"},
+		"recovery":     {"error", "exception", "fehler", "fehlerbehandlung", "recover", "recovery"},
+	},
+	contextConcernSideEffects: {
+		"mail":             {"email", "mail", "mails"},
+		"audit":            {"audit", "logging", "protocol", "protokollierung", "tracking"},
+		"user_information": {"benutzerinformation", "benutzerinformationen", "user_information", "userinfo"},
+	},
+}
+
+func contextEvidenceFacetRequested(
+	kind string,
+	facet string,
+	queryTokens map[string]bool,
+) bool {
+	for _, token := range contextEvidenceFacetVocabulary[kind][facet] {
+		if queryTokens[token] {
+			return true
+		}
+	}
+	return kind == contextConcernSideEffects &&
+		facet == "user_information" &&
+		queryTokens["user"] &&
+		queryTokens["information"]
 }
 
 func publicContextConcerns(concerns []contextConcern) []ContextConcern {
@@ -317,11 +366,15 @@ func publicContextConcerns(concerns []contextConcern) []ContextConcern {
 	selected := make([]contextConcern, 0, min(len(ordered), maximumPublicContextConcerns))
 	selectedKeys := make(map[string]bool, maximumPublicContextConcerns)
 	appendConcern := func(concern contextConcern) {
-		if len(selected) >= maximumPublicContextConcerns || selectedKeys[concern.key] {
+		publicKey := firstNonEmptyContext(concern.publicKey, concern.key)
+		if len(selected) >= maximumPublicContextConcerns || selectedKeys[publicKey] {
 			return
 		}
+		concern.key = publicKey
+		concern.publicKey = publicKey
+		concern.facet = ""
 		selected = append(selected, concern)
-		selectedKeys[concern.key] = true
+		selectedKeys[publicKey] = true
 	}
 	for _, concern := range ordered {
 		if contextConcernPriority(concern) <= 2 {
