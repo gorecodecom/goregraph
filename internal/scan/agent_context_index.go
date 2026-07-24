@@ -646,9 +646,17 @@ func (builder *agentContextBuilder) addAPIContractFacts(contracts []APIContractR
 		contractPath := normalizeAPIPath(contract.Path)
 		file := contextPathKey(contract.File)
 		name := strings.TrimSpace(method + " " + contractPath)
-		summary := ""
+		authKinds := compactContractAuthKinds(contract.Auth)
+		reason := compactCatalogValue(strings.TrimSpace(contract.Reason))
+		summaryParts := []string{}
 		if contract.ServiceCandidate != "" {
-			summary = "calls " + contract.ServiceCandidate
+			summaryParts = append(summaryParts, "calls "+contract.ServiceCandidate)
+		}
+		if len(authKinds) > 0 {
+			summaryParts = append(summaryParts, "auth "+strings.Join(authKinds, ", "))
+		}
+		if reason != "" {
+			summaryParts = append(summaryParts, reason)
 		}
 		fact := AgentContextFactRecord{
 			Kind:        "api_contract",
@@ -658,7 +666,7 @@ func (builder *agentContextBuilder) addAPIContractFacts(contracts []APIContractR
 			Path:        contractPath,
 			File:        file,
 			Line:        contract.Line,
-			Summary:     summary,
+			Summary:     strings.Join(summaryParts, "; "),
 			Confidence:  contract.Confidence,
 			EvidenceIDs: builder.evidenceIDs(file, contract.Line, nil),
 			Search: compactContextSearch(
@@ -666,12 +674,26 @@ func (builder *agentContextBuilder) addAPIContractFacts(contracts []APIContractR
 				contractPath,
 				contract.Caller,
 				contract.ServiceCandidate,
+				strings.Join(authKinds, " "),
+				reason,
 				contextFileBase(file),
 				contextFileStem(file),
 			),
 		}
 		builder.contractFactIDs[index] = builder.addFact(fact)
 	}
+}
+
+func compactContractAuthKinds(auth []AuthRecord) []string {
+	kinds := make([]string, 0, len(auth))
+	for _, record := range auth {
+		kind := strings.ToLower(strings.TrimSpace(record.Kind))
+		if compactCatalogConsumerAuthKind(kind) {
+			kinds = append(kinds, kind)
+		}
+	}
+	sort.Strings(kinds)
+	return orderedContextStrings(kinds)
 }
 
 func (builder *agentContextBuilder) addRelationEdges(relations []RichRelationRecord) {

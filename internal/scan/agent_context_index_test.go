@@ -279,6 +279,55 @@ func TestBuildProjectAgentContextIndexCompactsFlowsTestsContractsAndCoverage(t *
 	}
 }
 
+func TestProjectAgentContextIndexPreservesContractOperationalSignals(t *testing.T) {
+	index := BuildProjectAgentContextIndex(
+		"libraries/jobs",
+		"fixed",
+		nil,
+		nil,
+		[]RichSymbolRecord{{
+			ID: "client", Name: "JobMgmtClient",
+			QualifiedName: "example.JobMgmtClient",
+			Kind:          "class", File: "src/JobMgmtClient.java", Line: 10,
+		}},
+		nil,
+		nil,
+		[]APIContractRecord{{
+			HTTPMethod: "GET",
+			Caller:     "JobMgmtClient.getJobs",
+			File:       "src/JobMgmtClient.java",
+			Line:       42,
+			Confidence: "PARTIAL",
+			Reason:     "spring RestClient receiver with unresolved dynamic path; retryable method",
+			Auth: []AuthRecord{{
+				Kind:       "basic",
+				Expression: "service-user,super-secret",
+				Source:     "spring_client_interceptor",
+				Confidence: "EXTRACTED",
+			}},
+		}},
+		nil,
+		nil,
+	)
+
+	fact := findContextFactByQualified(index.Facts, "JobMgmtClient.getJobs")
+	if fact.Kind != "api_contract" ||
+		!strings.Contains(fact.Summary, "auth basic") ||
+		!strings.Contains(fact.Summary, "retryable") ||
+		!strings.Contains(fact.Search, "basic") ||
+		!strings.Contains(fact.Search, "retryable") {
+		t.Fatalf("contract operational signals = %#v", fact)
+	}
+	body, err := json.Marshal(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "service-user") ||
+		strings.Contains(string(body), "super-secret") {
+		t.Fatalf("compact context leaked credential expressions: %s", body)
+	}
+}
+
 func TestProjectAgentContextLinksJavaCallerToContract(t *testing.T) {
 	const contractPath = "/job-management/catalogs/{catalogId}/items/{itemId}"
 	symbols := []RichSymbolRecord{
