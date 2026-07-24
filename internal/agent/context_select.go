@@ -2585,10 +2585,14 @@ func contextSourceEvidenceOmissions(
 			continue
 		}
 		omission := contextSourceConcernOmission(concern, candidates, failures)
-		key := "0facet\x00" + normalizeContextProject(omission.Project) + "\x00" +
+		pathRank := "1"
+		if contextPackSourceFile(omission.Path) != "" {
+			pathRank = "0"
+		}
+		key := pathRank + "\x000facet\x00" + normalizeContextProject(omission.Project) + "\x00" +
 			contextPackSourceFile(omission.Path) + "\x00" + omission.Role
 		if concern.facet == "" {
-			key = "1concern\x00" + normalizeContextProject(omission.Project) + "\x00" +
+			key = pathRank + "\x001concern\x00" + normalizeContextProject(omission.Project) + "\x00" +
 				contextPackSourceFile(omission.Path) + "\x00" + omission.Role + "\x00" +
 				omission.Reason
 		}

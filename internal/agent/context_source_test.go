@@ -107,6 +107,46 @@ func TestContextSourceEvidenceOmissionsCoalesceFacetsByPath(t *testing.T) {
 	}
 }
 
+func TestContextSourceEvidenceOmissionsPrioritizeIndexedPaths(t *testing.T) {
+	pathlessBase := newContextConcern(
+		contextConcernPersistence,
+		"services/a",
+		true,
+		nil,
+		"pathless persistence",
+	)
+	pathBoundBase := newContextConcern(
+		contextConcernSideEffects,
+		"services/z",
+		true,
+		[]string{"service"},
+		"path-bound side effects",
+	)
+	concerns := []contextConcern{
+		newContextEvidenceConcern(
+			pathlessBase,
+			"model:missing",
+			nil,
+			"pathless persistence",
+		),
+		newContextEvidenceConcern(
+			pathBoundBase,
+			"mail",
+			[]string{"service"},
+			"path-bound mail",
+		),
+	}
+	candidates := []sourceCandidate{{
+		FactID: "service", FactIDs: []string{"service"},
+		Project: "services/z", Path: "src/JobService.java", Role: "call_chain",
+	}}
+
+	got := contextSourceEvidenceOmissions(concerns, candidates, nil, map[string]bool{})
+	if len(got) != 2 || got[0].Path != "src/JobService.java" || got[1].Path != "" {
+		t.Fatalf("omission priority = %#v", got)
+	}
+}
+
 func TestExpandContextEvidenceConcernsScopesOperationalBoundaries(t *testing.T) {
 	pack, index := contextEvidenceExpansionFixture()
 	concerns := []contextConcern{
