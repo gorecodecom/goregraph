@@ -215,7 +215,11 @@ func contextEvidenceProjectRoles(
 	requestedModels := contextRequestedDomainModelIDs(pack, index)
 	for _, fact := range index.Facts {
 		if requestedModels[fact.ID] {
-			modelProjects[normalizeContextProject(fact.Project)] = true
+			project := normalizeContextProject(fact.Project)
+			if contractProjects[project] && !endpointProjects[project] {
+				continue
+			}
+			modelProjects[project] = true
 		}
 	}
 	return endpointProjects, contractProjects, modelProjects

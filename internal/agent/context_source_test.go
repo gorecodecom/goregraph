@@ -205,6 +205,41 @@ func TestExpandContextEvidenceConcernsScopesOperationalBoundaries(t *testing.T) 
 	}
 }
 
+func TestContextEvidenceProjectRolesExcludeClientOnlyModels(t *testing.T) {
+	query := "catalog item job task types and lookup attributes"
+	pack := ContextPack{
+		Query:          query,
+		selectionQuery: query,
+		Endpoints: []ContextEndpoint{{
+			Provider: "services/catalog", HTTPMethod: "DELETE",
+			Path: "/catalog/items/{itemId}",
+		}},
+		Contracts: []ContextLocation{{
+			ID: "job-contract", Project: "libraries/job-client", Kind: "api_contract",
+		}},
+		selectedSourceFactIDs: []string{"client-response"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "job-contract", Project: "libraries/job-client", Kind: "api_contract",
+			Name: "GET /jobs", File: "JobClient.java",
+		},
+		{
+			ID: "client-response", Project: "libraries/job-client", Kind: "symbol",
+			Name: "CatalogItemJobResponse", Qualified: "example.CatalogItemJobResponse",
+			File: "CatalogItemJobResponse.java", Confidence: "EXACT",
+		},
+	}}
+
+	_, contractProjects, modelProjects := contextEvidenceProjectRoles(pack, index)
+	if !contractProjects["libraries/job-client"] {
+		t.Fatal("client project lost its contract role")
+	}
+	if modelProjects["libraries/job-client"] {
+		t.Fatal("client-only transport model became a server domain owner")
+	}
+}
+
 func TestExpandContextEvidenceConcernsTracksPersistencePerRequestedModel(t *testing.T) {
 	pack, index := contextEvidenceExpansionFixture()
 	base := newContextConcern(
