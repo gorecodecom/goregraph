@@ -33,6 +33,7 @@ const (
 const (
 	noAuthEvidenceDetected                 = "No auth evidence detected"
 	contextEndpointProviderAmbiguityReason = "matching endpoint provider is ambiguous; include the provider project or service"
+	contextEndpointActionMismatchReason    = "matching production endpoints do not align with the requested primary action"
 )
 
 type rankedContextFact struct {
@@ -603,7 +604,10 @@ func contextActionFamilies(value, httpMethod string) map[string]bool {
 	result := map[string]bool{}
 	families := map[string][]string{
 		"create": {"add", "create", "insert", "new", "post"},
-		"delete": {"delete", "remove"},
+		"delete": {
+			"delete", "deleted", "deletes", "deleting", "deletion", "deletions",
+			"remove", "removed", "removes", "removing", "removal", "removals",
+		},
 		"read":   {"fetch", "find", "get", "list", "load", "read"},
 		"update": {"change", "edit", "modify", "patch", "put", "update"},
 	}
@@ -1606,15 +1610,24 @@ func selectContextEndpoint(
 	query string,
 ) (rankedContextFact, bool, string) {
 	candidates := make([]rankedContextFact, 0)
+	requestedActions := contextEndpointRequestedActions(query)
+	actionMismatch := false
 	for _, candidate := range ranked {
 		if candidate.score < minimumContextSeedScore ||
 			!eligibleContextEndpoint(candidate.fact) ||
 			!contextEndpointRouteMatchesQuery(candidate.fact, query) {
 			continue
 		}
+		if !contextEndpointActionAligned(candidate, requestedActions) {
+			actionMismatch = true
+			continue
+		}
 		candidates = append(candidates, candidate)
 	}
 	if len(candidates) == 0 {
+		if actionMismatch && contextQueryRequestsEndpoint(query, ranked) {
+			return rankedContextFact{}, false, contextEndpointActionMismatchReason
+		}
 		return rankedContextFact{}, false, ""
 	}
 	utility := newContextForwardUtility(index)
@@ -1667,6 +1680,61 @@ func selectContextEndpoint(
 		return rankedContextFact{}, false, contextEndpointProviderAmbiguityReason
 	}
 	return providers[bestProvider][0], true, ""
+}
+
+func contextEndpointRequestedActions(query string) map[string]bool {
+	primaryQuery := contextPrimaryQuery(query)
+	actions := contextActionFamilies(primaryQuery, contextRequestedHTTPMethod(query))
+	for _, anchor := range contextQueryAnchors(query) {
+		for action := range contextActionFamilies(anchor, "") {
+			actions[action] = true
+		}
+	}
+	if actions["read"] &&
+		(actions["create"] || actions["delete"] || actions["update"]) {
+		delete(actions, "read")
+	}
+	return actions
+}
+
+func contextQueryRequestsEndpoint(query string, ranked []rankedContextFact) bool {
+	for _, candidate := range ranked {
+		if candidate.exactClass == 0 ||
+			strings.EqualFold(candidate.fact.Kind, "api_endpoint") {
+			continue
+		}
+		switch candidate.reason {
+		case "exact qualified name", "exact name",
+			"embedded exact qualified name", "embedded exact name":
+			return false
+		}
+	}
+	tokens := contextExpandedTokenSet(query)
+	for _, token := range []string{"endpoint", "endpunkt", "http", "rest", "route"} {
+		if tokens[token] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextEndpointActionAligned(
+	candidate rankedContextFact,
+	requestedActions map[string]bool,
+) bool {
+	if len(requestedActions) == 0 || contextEndpointExplicitAnchor(candidate) {
+		return true
+	}
+	candidateActions := contextActionFamilies(
+		strings.Join([]string{
+			candidate.fact.Name,
+			candidate.fact.Qualified,
+			candidate.fact.HTTPMethod,
+			candidate.fact.Path,
+		}, " "),
+		candidate.fact.HTTPMethod,
+	)
+	return contextActionFamiliesOverlap(requestedActions, candidateActions)
 }
 
 func contextEndpointExplicitAnchor(candidate rankedContextFact) bool {
@@ -2001,8 +2069,12 @@ var contextQueryTokenAliases = map[string][]string{
 	"entfernen":          {"delete", "remove"},
 	"entfernt":           {"delete", "remove"},
 	"entfernung":         {"delete", "remove"},
+	"gelöschte":          {"delete", "remove"},
+	"gelöschten":         {"delete", "remove"},
 	"gelöscht":           {"delete", "remove"},
 	"loeschen":           {"delete", "remove"},
+	"löschung":           {"delete", "remove"},
+	"löschungen":         {"delete", "remove"},
 	"löschen":            {"delete", "remove"},
 	"löscht":             {"delete", "remove"},
 	"verbunden":          {"related"},

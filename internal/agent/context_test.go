@@ -2128,6 +2128,188 @@ func TestBuildContextEndpointSecurityConfidenceRequiresExactRoute(t *testing.T) 
 	}
 }
 
+func TestSelectContextEndpointKeepsPrimaryDeleteActionAcrossEquivalentQueries(t *testing.T) {
+	index := contextEndpointActionAlignmentFixture()
+	queries := map[string]string{
+		"German":            "Historische, ausschließlich lesende Ursachenanalyse über ms-cadasterregulation, ms-cadastertask und ms-common: Beim Entfernen einer Vorschrift aus einem Kataster bleiben verbundene Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt und die bestehende Aufrufkette. Implementiere nichts.",
+		"English read-only": "Read-only cross-repository root-cause analysis, no implementation: In ms-cadasterregulation, when a regulation is removed from a cadaster, tasks linked to that regulation remain. Determine the public REST endpoint that removes a regulation and the current call chain.",
+		"English find":      "Find the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
+		"English read":      "Read the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
+		"English determine": "Determine the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
+		"English removals":  "Find the public REST endpoint for removals of regulations from cadasters when linked tasks remain.",
+		"English deletions": "Find the public REST endpoint for deletions of regulations from cadasters when linked tasks remain.",
+		"German deletion":   "Bei der Löschung einer Vorschrift aus einem Kataster bleiben verbundene Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt.",
+		"German deleted":    "Bei gelöschten Vorschriften bleiben verbundene Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt der Operation.",
+	}
+
+	for name, query := range queries {
+		t.Run(name, func(t *testing.T) {
+			endpoint, ok, reason := selectContextEndpoint(
+				index,
+				rankContextFacts(index.Facts, query),
+				query,
+			)
+			if !ok || reason != "" {
+				t.Fatalf("endpoint selection failed: ok=%v reason=%q", ok, reason)
+			}
+			if endpoint.fact.ID != "delete-endpoint" {
+				t.Fatalf(
+					"selected endpoint = %s %s, want DELETE regulation endpoint",
+					endpoint.fact.HTTPMethod,
+					endpoint.fact.Path,
+				)
+			}
+		})
+	}
+}
+
+func TestSelectContextEndpointRejectsActionMismatchedRoute(t *testing.T) {
+	index := contextEndpointActionAlignmentFixture()
+	index.Facts = index.Facts[1:2]
+	index.Edges = nil
+	for name, query := range map[string]string{
+		"English REST endpoint": "Find the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
+		"German endpoint":       "Ermittle den öffentlichen Endpunkt für die Löschung einer Vorschrift aus einem Kataster.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			endpoint, ok, reason := selectContextEndpoint(
+				index,
+				rankContextFacts(index.Facts, query),
+				query,
+			)
+			if ok {
+				t.Fatalf("selected action-mismatched endpoint: %#v", endpoint.fact)
+			}
+			if !strings.Contains(reason, "action") {
+				t.Fatalf("fallback reason = %q, want action mismatch", reason)
+			}
+		})
+	}
+}
+
+func TestSelectContextEndpointDoesNotMaskExactSymbolWithActionMismatch(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "put-endpoint", Project: "ms-cadasterregulation", Kind: "api_endpoint",
+				Name:       "PUT /cadasters/{cadasterId}/cachetareas",
+				Qualified:  "CadasterRegulationController.putRegulationTopicsOfCadaster",
+				HTTPMethod: "PUT", Path: "/cadasters/{cadasterId}/cachetareas",
+				File: "Controller.java", Confidence: "EXACT",
+				Search: "ms-cadasterregulation PUT regulation topics",
+			},
+			{
+				ID: "delete-symbol", Project: "ms-cadasterregulation", Kind: "symbol",
+				Name:       "deleteRegulationFromCadaster",
+				Qualified:  "CadasterRegulationEndpoint.deleteRegulationFromCadaster",
+				File:       "OperationsService.java",
+				Line:       2,
+				Confidence: "EXACT",
+				Search:     "delete regulation from cadaster",
+			},
+		},
+	}
+	query := "CadasterRegulationEndpoint.deleteRegulationFromCadaster"
+	ranked := rankContextFacts(index.Facts, query)
+	if len(ranked) == 0 || ranked[0].fact.ID != "delete-symbol" {
+		t.Fatalf("exact symbol was not the top-ranked fact: %#v", ranked)
+	}
+
+	endpoint, ok, reason := selectContextEndpoint(index, ranked, query)
+	if ok || reason != "" {
+		t.Fatalf(
+			"endpoint mismatch masked exact symbol: endpoint=%#v ok=%v reason=%q",
+			endpoint.fact,
+			ok,
+			reason,
+		)
+	}
+}
+
+func TestContextActionFamiliesRecognizeInflectedDeleteActions(t *testing.T) {
+	for _, action := range []string{
+		"deleted",
+		"deletes",
+		"deleting",
+		"deletion",
+		"deletions",
+		"removed",
+		"removes",
+		"removing",
+		"removal",
+		"removals",
+		"Löschung",
+		"gelöschte",
+		"gelöschten",
+	} {
+		t.Run(action, func(t *testing.T) {
+			if !contextActionFamilies("regulation "+action, "")["delete"] {
+				t.Fatalf("%q was not normalized to the delete action", action)
+			}
+		})
+	}
+}
+
+func contextEndpointActionAlignmentFixture() scan.AgentContextIndexRecord {
+	return scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "delete-endpoint", Project: "ms-cadasterregulation", Kind: "api_endpoint",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId:.+}",
+				Qualified:  "CadasterRegulationController.deleteFromCadaster",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId:.+}",
+				File: "CadasterRegulationController.java", Confidence: "EXACT",
+				Search: "ms-cadasterregulation DELETE cadaster regulation",
+			},
+			{
+				ID: "put-endpoint", Project: "ms-cadasterregulation", Kind: "api_endpoint",
+				Name:       "PUT /cadasters/{cadasterId}/cachetareas",
+				Qualified:  "CadasterRegulationController.putRegulationTopicsOfCadaster",
+				HTTPMethod: "PUT", Path: "/cadasters/{cadasterId}/cachetareas",
+				File: "CadasterRegulationController.java", Confidence: "EXACT",
+				Search: "ms-cadasterregulation PUT regulation topics SaveCachetAreaToCadasterRequest",
+			},
+			{
+				ID: "get-endpoint", Project: "ms-cadasterregulation", Kind: "api_endpoint",
+				Name:       "GET /cadasters/{cadasterId}/regulations",
+				Qualified:  "CadasterRegulationController.getRegulations",
+				HTTPMethod: "GET", Path: "/cadasters/{cadasterId}/regulations",
+				File: "CadasterRegulationController.java", Confidence: "EXACT",
+				Search: "ms-cadasterregulation GET cadaster regulations",
+			},
+			{
+				ID: "delete-service", Project: "ms-cadasterregulation", Kind: "symbol",
+				Name: "deleteRegulationFromCadaster", File: "OperationsService.java",
+			},
+			{
+				ID: "put-service", Project: "ms-cadasterregulation", Kind: "symbol",
+				Name: "setCachetAreaToCadaster", File: "CachetAreasService.java",
+			},
+			{
+				ID: "put-persistence", Project: "ms-cadasterregulation", Kind: "persistence",
+				Name: "saveCachetAreas", File: "CachetAreaRepository.java",
+			},
+			{
+				ID: "get-service", Project: "ms-cadasterregulation", Kind: "symbol",
+				Name: "getRegulations", File: "RegulationService.java",
+			},
+			{
+				ID: "get-persistence", Project: "ms-cadasterregulation", Kind: "persistence",
+				Name: "findRegulations", File: "RegulationRepository.java",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "delete-call", FromFactID: "delete-endpoint", ToFactID: "delete-service", Kind: "call"},
+			{ID: "put-call", FromFactID: "put-endpoint", ToFactID: "put-service", Kind: "call"},
+			{ID: "put-persistence", FromFactID: "put-service", ToFactID: "put-persistence", Kind: "persistence"},
+			{ID: "get-call", FromFactID: "get-endpoint", ToFactID: "get-service", Kind: "call"},
+			{ID: "get-persistence", FromFactID: "get-service", ToFactID: "get-persistence", Kind: "persistence"},
+		},
+	}
+}
+
 func TestBuildContextExpandsGermanTaskTermsForTechnicalFacts(t *testing.T) {
 	query := "Wenn eine Vorschrift aus einem Kataster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
