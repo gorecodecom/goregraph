@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -26,6 +27,7 @@ const (
 	MaxContextSourceOmissions          = 3
 	MaxContextSourceFileBytes          = 2 * 1024 * 1024
 	contextQueryJSONBudgetBytes        = 256
+	finalContextBudgetFallbackReason   = "source evidence and final decision metadata exceed the requested budget"
 )
 
 type ContextRequest struct {
@@ -203,18 +205,176 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 		pack.SourceCoverage = "none"
 		return finalizeContextPackWithinBudget(pack, request)
 	}
-	metadataPack := pack
-	pack, err = attachContextSource(pack, loaded, request)
-	if err != nil && request.BudgetTokens == MinContextBudgetTokens {
-		compact := metadataPack
-		compact.Files = nil
-		pack, err = attachContextSource(compact, loaded, request)
-	}
+	return attachContextSourceWithinFinalBudget(pack, loaded, request)
+}
+
+func attachContextSourceWithinFinalBudget(
+	metadataPack ContextPack,
+	loaded loadedContextIndex,
+	request ContextRequest,
+) (ContextPack, error) {
+	sourceRequest := request
+	reserve, err := contextFinalDecisionBudgetReserve(metadataPack, loaded.Index)
 	if err != nil {
 		return ContextPack{}, err
 	}
-	pack = finalizeContextSourceDecision(pack, loaded.Index)
-	pack.RetryAllowed, pack.RetryAnchors = contextRetryPermission(pack, loaded.Index)
+	if reserve > 0 && sourceRequest.BudgetTokens-reserve >= MinContextBudgetTokens {
+		sourceRequest.BudgetTokens -= reserve
+	}
+	var finalUncertainties []ContextUncertainty
+	for range 8 {
+		pack, err := attachContextSource(metadataPack, loaded, sourceRequest)
+		if err != nil &&
+			sourceRequest.BudgetTokens == request.BudgetTokens &&
+			request.BudgetTokens == MinContextBudgetTokens {
+			compact := metadataPack
+			compact.Files = nil
+			pack, err = attachContextSource(compact, loaded, sourceRequest)
+		}
+		if err != nil {
+			if errors.Is(err, errContextPackBudget) {
+				return finalContextBudgetFallback(
+					metadataPack,
+					loaded.Index,
+					request,
+					finalUncertainties,
+				)
+			}
+			return ContextPack{}, err
+		}
+
+		pack = finalizeContextSourceDecision(pack, loaded.Index)
+		pack.RetryAllowed, pack.RetryAnchors = contextRetryPermission(pack, loaded.Index)
+		pack, err = finalizeContextEstimate(pack)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		fits, err := contextSourcePackFits(pack, request)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		if fits {
+			return pack, nil
+		}
+		finalUncertainties = append([]ContextUncertainty(nil), pack.Uncertainties...)
+
+		reduction, err := contextFinalDecisionBudgetReduction(pack, request)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		nextBudget := sourceRequest.BudgetTokens - reduction
+		if nextBudget < MinContextBudgetTokens || nextBudget >= sourceRequest.BudgetTokens {
+			break
+		}
+		sourceRequest.BudgetTokens = nextBudget
+	}
+	return finalContextBudgetFallback(
+		metadataPack,
+		loaded.Index,
+		request,
+		finalUncertainties,
+	)
+}
+
+func contextFinalDecisionBudgetReserve(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+) (int, error) {
+	before, err := contextBudgetView(pack)
+	if err != nil {
+		return 0, err
+	}
+	probe := cloneContextPack(pack)
+	for concernIndex := range probe.Concerns {
+		probe.Concerns[concernIndex].Covered = true
+	}
+	probe = finalizeContextSourceDecision(probe, index)
+	after, err := contextBudgetView(probe)
+	if err != nil {
+		return 0, err
+	}
+	reserve := after.EstimatedTokens - before.EstimatedTokens
+	beforeBody, err := json.Marshal(before)
+	if err != nil {
+		return 0, err
+	}
+	afterBody, err := json.Marshal(after)
+	if err != nil {
+		return 0, err
+	}
+	if byteReserve := (len(afterBody) - len(beforeBody) + 3) / 4; byteReserve > reserve {
+		reserve = byteReserve
+	}
+	if reserve > 0 {
+		reserve++
+	}
+	return reserve, nil
+}
+
+func contextFinalDecisionBudgetReduction(
+	pack ContextPack,
+	request ContextRequest,
+) (int, error) {
+	view, err := contextBudgetView(pack)
+	if err != nil {
+		return 0, err
+	}
+	reduction := view.EstimatedTokens - request.BudgetTokens
+	body, err := json.Marshal(view)
+	if err != nil {
+		return 0, err
+	}
+	if byteReduction := (len(body) - contextByteBudget(request.BudgetTokens) + 3) / 4; byteReduction > reduction {
+		reduction = byteReduction
+	}
+	if reduction < 1 {
+		reduction = 1
+	}
+	return reduction, nil
+}
+
+func finalContextBudgetFallback(
+	metadataPack ContextPack,
+	index scan.AgentContextIndexRecord,
+	request ContextRequest,
+	uncertainties []ContextUncertainty,
+) (ContextPack, error) {
+	pack := cloneContextPack(metadataPack)
+	pack.FallbackRequired = true
+	pack.FallbackReason = finalContextBudgetFallbackReason
+	pack.SourceCoverage = "none"
+	pack.SourceSections = nil
+	pack.SourceOmissions = nil
+	pack.SourceUnrepresented = 0
+	pack.RetryAllowed = false
+	pack.RetryAnchors = nil
+	for _, uncertainty := range uncertainties {
+		if len(pack.Uncertainties) >= maximumContextUncertainty {
+			break
+		}
+		if contextUncertaintyExists(pack.Uncertainties, uncertainty.Scope, uncertainty.Reason) {
+			continue
+		}
+		pack.Uncertainties = append(pack.Uncertainties, uncertainty)
+	}
+	pack, err := finalizeContextPackWithinBudget(pack, request)
+	if err == nil {
+		return pack, nil
+	}
+	if !errors.Is(err, errContextPackBudget) {
+		return ContextPack{}, err
+	}
+
+	pack, err = fallbackContextPack(
+		index,
+		request,
+		finalContextBudgetFallbackReason,
+		uncertainties,
+	)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	pack.ContextID = metadataPack.ContextID
 	return finalizeContextPackWithinBudget(pack, request)
 }
 

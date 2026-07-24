@@ -62,6 +62,8 @@ var contextSourceRolePriority = map[string]int{
 	"test":         5,
 }
 
+var errContextPackBudget = errors.New("context pack exceeds the requested token or byte budget")
+
 func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecord) []sourceCandidate {
 	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
 	for _, fact := range index.Facts {
@@ -528,7 +530,7 @@ func finalizeContextPackWithinBudget(pack ContextPack, request ContextRequest) (
 		return ContextPack{}, err
 	}
 	if !fits {
-		return ContextPack{}, fmt.Errorf("context pack exceeds the requested token or byte budget")
+		return ContextPack{}, errContextPackBudget
 	}
 	return pack, nil
 }

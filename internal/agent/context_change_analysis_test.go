@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -14,6 +15,103 @@ const (
 	missingContractEnglishQuery = "When DELETE /catalog/items/{itemId} removes an item in services/catalog, plan cleanup of related jobs through libraries/job-client and services/jobs. Cover the current path, missing HTTP contract, task types and lookup attributes, authentication, configuration, retry behavior, persistence, side effects, and tests."
 	missingContractGermanQuery  = "Wenn DELETE /catalog/items/{itemId} einen Eintrag in services/catalog löscht, plane das Entfernen verbundener Aufgaben über libraries/job-client und services/jobs. Berücksichtige aktuellen Pfad, fehlenden HTTP-Vertrag, Aufgabenarten und Suchattribute, Authentifizierung, Konfiguration, Wiederholung, Persistenz, Nebenwirkungen und Tests."
 )
+
+func TestBuildContextBudgetsFinalDecisionMetadata(t *testing.T) {
+	root := writeMissingContractContextFixture(t)
+	const budget = 1750
+	pack, err := BuildContext(ContextRequest{
+		Root:         root,
+		Query:        missingContractEnglishQuery,
+		BudgetTokens: budget,
+		MaxFiles:     DefaultContextMaxFiles,
+	})
+	if err != nil {
+		t.Fatalf("context failed instead of compacting final decision metadata: %v", err)
+	}
+	if !contextHasUncertainty(pack, "requested_http_contract") {
+		t.Fatalf("missing contract uncertainty = %#v", pack.Uncertainties)
+	}
+	if pack.SourceCoverage != "complete" {
+		t.Fatalf("source coverage = %q, omissions %#v", pack.SourceCoverage, pack.SourceOmissions)
+	}
+	if pack.EstimatedTokens > budget {
+		t.Fatalf("final pack exceeded budget: %d", pack.EstimatedTokens)
+	}
+}
+
+func TestBuildContextReturnsStructuredPackWhenFinalMetadataCannotFit(t *testing.T) {
+	root := writeMissingContractContextFixture(t)
+	const budget = 1400
+	pack, err := BuildContext(ContextRequest{
+		Root:         root,
+		Query:        missingContractEnglishQuery,
+		BudgetTokens: budget,
+		MaxFiles:     DefaultContextMaxFiles,
+	})
+	if err != nil {
+		t.Fatalf("context failed instead of returning a structured pack: %v", err)
+	}
+	if pack.ContextID == "" {
+		t.Fatal("structured pack has no context id")
+	}
+	if pack.SourceCoverage == "" {
+		t.Fatal("structured pack has no source coverage")
+	}
+	if pack.EstimatedTokens > budget {
+		t.Fatalf("structured pack exceeded budget: %d", pack.EstimatedTokens)
+	}
+}
+
+func TestFinalContextBudgetFallbackPreservesBoundedContract(t *testing.T) {
+	request := ContextRequest{
+		Query:        "x",
+		BudgetTokens: MinContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	}
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-24T08:00:00Z",
+	}
+	metadataPack, err := newContextEnvelope(index, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataPack.ContextID = strings.Repeat("a", 24)
+	metadataPack.Confidence = "MEDIUM"
+	metadataPack.Files = []ContextFile{{
+		Project: "services/catalog",
+		Path:    strings.Repeat("oversized/", 100),
+	}}
+
+	pack, err := finalContextBudgetFallback(metadataPack, index, request, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pack.FallbackRequired || pack.FallbackReason != finalContextBudgetFallbackReason {
+		t.Fatalf("fallback contract = %#v", pack)
+	}
+	if pack.SourceCoverage != "none" || len(pack.SourceSections) != 0 ||
+		pack.RetryAllowed || len(pack.RetryAnchors) != 0 {
+		t.Fatalf("fallback source state = %#v", pack)
+	}
+	if pack.ContextID != metadataPack.ContextID {
+		t.Fatalf("context id = %q, want %q", pack.ContextID, metadataPack.ContextID)
+	}
+	if pack.EstimatedTokens > request.BudgetTokens ||
+		len(body) > contextByteBudget(request.BudgetTokens) {
+		t.Fatalf(
+			"fallback exceeded budget: tokens=%d/%d bytes=%d/%d",
+			pack.EstimatedTokens,
+			request.BudgetTokens,
+			len(body),
+			contextByteBudget(request.BudgetTokens),
+		)
+	}
+}
 
 func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 	root := writeMissingContractContextFixture(t)
