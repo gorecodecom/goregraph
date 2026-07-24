@@ -435,7 +435,9 @@ func expandContextEvidenceConcernsWithProfile(
 	contractProjects map[string]bool,
 	modelProjects map[string]bool,
 ) []contextConcern {
-	queryTokens := contextExpandedTokenSet(contextSelectionQuery(pack))
+	query := contextSelectionQuery(pack)
+	queryTokens := contextExpandedTokenSet(query)
+	requestedActions := contextEndpointRequestedActions(query)
 	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
@@ -487,7 +489,7 @@ func expandContextEvidenceConcernsWithProfile(
 				concern.project,
 				contextConcernConfiguration,
 				"binding",
-				queryTokens,
+				requestedActions,
 			)
 			consumerCandidates := contextEvidenceFacetCandidateIDs(
 				index,
@@ -498,7 +500,7 @@ func expandContextEvidenceConcernsWithProfile(
 				concern.project,
 				contextConcernConfiguration,
 				"consumer",
-				queryTokens,
+				requestedActions,
 			)
 			result = append(
 				result,
@@ -546,7 +548,7 @@ func expandContextEvidenceConcernsWithProfile(
 						concern.project,
 						contextConcernResilience,
 						facet,
-						queryTokens,
+						requestedActions,
 					),
 					reason,
 				))
@@ -619,7 +621,7 @@ func expandContextEvidenceConcernsWithProfile(
 						concern.project,
 						contextConcernSideEffects,
 						name,
-						queryTokens,
+						requestedActions,
 					),
 					"requested "+name+" side effects",
 				))
@@ -642,7 +644,7 @@ func contextEvidenceFacetCandidateIDs(
 	project string,
 	kind string,
 	facet string,
-	queryTokens map[string]bool,
+	requestedActions map[string]bool,
 ) []string {
 	project = normalizeContextProject(project)
 	result := make([]string, 0, len(candidateFactIDs))
@@ -655,8 +657,17 @@ func contextEvidenceFacetCandidateIDs(
 			continue
 		}
 		facetMatch := contextEvidenceFacetFactScore(fact, kind, facet) > 0
-		actionMatch := contextConcernActionAligned(queryTokens, fact)
+		factActions := contextFactActionFamilies(fact)
+		actionMatch := len(requestedActions) == 0 ||
+			contextActionFamiliesOverlap(requestedActions, factActions)
+		actionMismatch := len(requestedActions) > 0 &&
+			len(factActions) > 0 &&
+			!actionMatch &&
+			contextActionFamiliesHaveMutation(factActions)
 		if kind == contextConcernSideEffects {
+			if actionMismatch {
+				continue
+			}
 			if candidateSet[fact.ID] {
 				if !facetMatch &&
 					(!actionMatch || contextEvidenceFactHasAnyFacet(fact, kind)) {
@@ -677,9 +688,30 @@ func contextEvidenceFacetCandidateIDs(
 		result = append(result, fact.ID)
 	}
 	if len(result) == 0 {
+		if kind == contextConcernResilience && facet == "recovery" {
+			return nil
+		}
 		return orderedContextConcernIDs(candidateFactIDs)
 	}
 	return orderedContextConcernIDs(result)
+}
+
+func contextFactActionFamilies(
+	fact scan.AgentContextFactRecord,
+) map[string]bool {
+	return contextActionFamilies(
+		strings.Join([]string{
+			fact.Name,
+			fact.Qualified,
+			fact.HTTPMethod,
+			fact.Path,
+		}, " "),
+		fact.HTTPMethod,
+	)
+}
+
+func contextActionFamiliesHaveMutation(actions map[string]bool) bool {
+	return actions["create"] || actions["delete"] || actions["update"]
 }
 
 func contextEvidenceFactHasAnyFacet(
@@ -709,7 +741,7 @@ func contextEvidenceFacetFactScore(
 		fact.Summary,
 	}, " "))
 	score := 0
-	for _, token := range contextEvidenceFacetVocabulary[kind][facet] {
+	for _, token := range contextEvidenceFacetTokens(kind, facet) {
 		token = strings.ToLower(strings.TrimSpace(token))
 		if token != "" && strings.Contains(value, token) {
 			score++
@@ -736,6 +768,13 @@ func contextEvidenceFacetFactScore(
 		}
 	}
 	return score
+}
+
+func contextEvidenceFacetTokens(kind, facet string) []string {
+	if kind == contextConcernResilience && facet == "recovery" {
+		return []string{"recover", "recovery"}
+	}
+	return contextEvidenceFacetVocabulary[kind][facet]
 }
 
 func contextPublicConcernKey(concern ContextConcern) string {
@@ -989,7 +1028,7 @@ func appendContextSourceCandidateOptions(
 		requestedModelIDs,
 	)
 	stableMatches := contextSourceStableDomainMatchesForFacts(facts, domainTokens)
-	requestedActions := contextActionFamilies(contextSelectionQuery(pack), "")
+	requestedActions := contextEndpointRequestedActions(contextSelectionQuery(pack))
 	actionAligned := len(requestedActions) == 0 ||
 		contextSourceFactsActionAligned(facts, candidate, requestedActions)
 	for _, mode := range []string{"declaration_body", "body", "focused", "signature"} {
@@ -1495,7 +1534,7 @@ func contextSourceOptionConcernsForQuery(
 	index scan.AgentContextIndexRecord,
 	query string,
 ) ([]string, bool) {
-	requestedActions := contextActionFamilies(query, "")
+	requestedActions := contextEndpointRequestedActions(query)
 	actionAligned := len(requestedActions) == 0 ||
 		contextSourceCandidateActionAligned(candidate, index, requestedActions)
 	return contextSourceOptionConcernsWithAction(
@@ -2251,7 +2290,7 @@ func contextSourceRequiresRenderedConcernEvidence(kind string) bool {
 
 func contextSourceOptionActionAligned(pack ContextPack, option contextSourceOption) bool {
 	query := contextSelectionQuery(pack)
-	requested := contextActionFamilies(query, contextRequestedHTTPMethod(query))
+	requested := contextEndpointRequestedActions(query)
 	candidate := contextActionFamilies(
 		strings.Join([]string{
 			option.candidate.Name,
@@ -3273,7 +3312,7 @@ func contextSourceOmissionFacetScore(
 	}, " "))
 	tokens := append(
 		[]string(nil),
-		contextEvidenceFacetVocabulary[concern.kind][concern.facet]...,
+		contextEvidenceFacetTokens(concern.kind, concern.facet)...,
 	)
 	tokens = append(tokens, strings.Split(concern.facet, "_")...)
 	score := 0

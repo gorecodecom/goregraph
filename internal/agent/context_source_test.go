@@ -374,6 +374,44 @@ func TestExpandContextEvidenceConcernsScopesOperationalBoundaries(t *testing.T) 
 	}
 }
 
+func TestRecoveryFacetCandidatesRequireRecoveryEvidence(t *testing.T) {
+	const project = "libraries/job-client"
+	exception := scan.AgentContextFactRecord{
+		ID: "not-found", Project: project, Kind: "symbol",
+		Name: "NotFoundException", File: "NotFoundException.java",
+		Search: "not found exception",
+	}
+	client := scan.AgentContextFactRecord{
+		ID: "job-client", Project: project, Kind: "api_contract",
+		Name: "GET /jobs", Qualified: "JobClient.getJobs",
+		File:   "JobClient.java",
+		Search: "retryable method recovery method recoverGetJobs",
+	}
+	got := contextEvidenceFacetCandidateIDs(
+		scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{exception, client}},
+		[]string{exception.ID, client.ID},
+		project,
+		contextConcernResilience,
+		"recovery",
+		nil,
+	)
+	if !reflect.DeepEqual(got, []string{client.ID}) {
+		t.Fatalf("recovery candidates = %v, want source-backed recovery only", got)
+	}
+
+	got = contextEvidenceFacetCandidateIDs(
+		scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{exception}},
+		[]string{exception.ID},
+		project,
+		contextConcernResilience,
+		"recovery",
+		nil,
+	)
+	if len(got) != 0 {
+		t.Fatalf("generic exception became recovery evidence: %v", got)
+	}
+}
+
 func TestExpandContextEvidenceConcernsNarrowsSideEffectCandidatesByFacet(t *testing.T) {
 	pack := ContextPack{
 		Query:          "delete task with mail, audit, and user information",
@@ -447,6 +485,48 @@ func TestExpandContextEvidenceConcernsNarrowsSideEffectCandidatesByFacet(t *test
 	}
 }
 
+func TestExpandContextEvidenceConcernsIgnoresMetaCreateAction(t *testing.T) {
+	query := "Root-cause analysis: when a task is removed, related records remain. " +
+		"Identify mail side effects and files to change/create."
+	pack := ContextPack{Query: query, selectionQuery: query}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "create-mail", Project: "services/jobs", Kind: "symbol",
+			Name: "createTaskAndSendMail", Qualified: "TaskService.createTaskAndSendMail",
+			File: "src/main/java/jobs/TaskService.java",
+		},
+		{
+			ID: "delete-task", Project: "services/jobs", Kind: "symbol",
+			Name: "deleteTask", Qualified: "TaskService.deleteTask",
+			File: "src/main/java/jobs/TaskService.java",
+		},
+	}}
+	base := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{"create-mail", "delete-task"},
+		"requested side effects",
+	)
+
+	got := expandContextEvidenceConcernsWithProfile(
+		pack,
+		index,
+		[]contextConcern{base},
+		nil,
+		map[string]bool{},
+		map[string]bool{},
+		map[string]bool{"services/jobs": true},
+	)
+	mail, ok := findContextConcern(
+		got,
+		contextConcernSideEffects+":services/jobs#mail",
+	)
+	if !ok || !reflect.DeepEqual(mail.candidateFactIDs, []string{"delete-task"}) {
+		t.Fatalf("mail candidates = %#v, want delete action only", mail.candidateFactIDs)
+	}
+}
+
 func TestContextSourceOptionConcernsRejectsUnrelatedSideEffectAction(t *testing.T) {
 	base := newContextConcern(
 		contextConcernSideEffects,
@@ -493,6 +573,51 @@ func TestContextSourceOptionConcernsRejectsUnrelatedSideEffectAction(t *testing.
 	)
 	if len(keys) != 0 {
 		t.Fatalf("unrelated due-mail action covered delete-mail concern: %#v", keys)
+	}
+}
+
+func TestContextSourceOptionConcernsIgnoreMetaCreateAction(t *testing.T) {
+	query := "Root-cause analysis: when a regulation is removed from a cadaster, " +
+		"connected tasks remain. Identify production and test files to change/create."
+	base := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{"create-task"},
+		"requested side effects",
+	)
+	mail := newContextEvidenceConcern(
+		base,
+		"mail",
+		base.candidateFactIDs,
+		"requested mail side effects",
+	)
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{{
+		ID: "create-task", Project: "services/jobs", Kind: "symbol",
+		Name: "createTask", Qualified: "TaskService.createTask",
+	}}}
+	section := ContextSourceSection{
+		Project:    "services/jobs",
+		Role:       "call_chain",
+		RenderMode: "declaration_body",
+		Content: `void createTask() {
+  taskMailService.sendNewTaskCreatedMail(task);
+}`,
+	}
+
+	keys, _ := contextSourceOptionConcernsForQuery(
+		sourceCandidate{
+			FactID: "create-task", FactIDs: []string{"create-task"},
+			Project: "services/jobs", Name: "createTask",
+			Qualified: "TaskService.createTask",
+		},
+		section,
+		[]contextConcern{mail},
+		index,
+		query,
+	)
+	if len(keys) != 0 {
+		t.Fatalf("meta create action covered delete-side-effect concern: %#v", keys)
 	}
 }
 

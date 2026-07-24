@@ -514,6 +514,109 @@ func TestSideEffectConcernCandidatesIncludeSameActionProductionMethod(t *testing
 	}
 }
 
+func TestPlanContextConcernsIgnoresMetaCreateAction(t *testing.T) {
+	query := "Root-cause analysis: when a regulation is removed from a cadaster, " +
+		"connected tasks remain in services/jobs. Identify the internal API contract, " +
+		"mail side effects, and production and test files to change/create."
+	seed := scan.AgentContextFactRecord{
+		ID: "delete-regulation", Project: "services/regulations", Kind: "api_endpoint",
+		Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+		Qualified:  "RegulationController.deleteRegulation",
+		HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+		File:   "RegulationController.java",
+		Search: "delete cadaster regulation",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		seed,
+		{
+			ID: "create-mail", Project: "services/jobs", Kind: "symbol",
+			Name: "createTaskAndSendMail", Qualified: "TaskService.createTaskAndSendMail",
+			File:   "TaskService.java",
+			Search: "cadaster regulation task mail side effect",
+		},
+		{
+			ID: "delete-task", Project: "services/jobs", Kind: "symbol",
+			Name: "deleteTask", Qualified: "TaskService.deleteTask",
+			File:   "TaskService.java",
+			Search: "delete cadaster regulation task",
+		},
+		{
+			ID: "create-contract", Project: "services/jobs", Kind: "api_endpoint",
+			Name: "POST /tasks", Qualified: "TaskController.createTask",
+			HTTPMethod: "POST", Path: "/tasks",
+			File:   "TaskController.java",
+			Search: "create cadaster regulation task internal API contract",
+		},
+		{
+			ID: "delete-contract", Project: "services/jobs", Kind: "api_endpoint",
+			Name: "DELETE /tasks/regulation-change", Qualified: "TaskController.deleteTask",
+			HTTPMethod: "DELETE", Path: "/tasks/regulation-change",
+			File:   "TaskController.java",
+			Search: "delete cadaster regulation task internal API contract",
+		},
+	}}
+
+	concerns := planContextConcerns(query, index, seed)
+	project, ok := findContextConcern(
+		concerns,
+		contextConcernProject+":services/jobs",
+	)
+	if !ok || !reflect.DeepEqual(
+		project.candidateFactIDs,
+		[]string{"delete-contract", "delete-task"},
+	) {
+		t.Fatalf(
+			"project candidates = %#v, want delete action only",
+			project.candidateFactIDs,
+		)
+	}
+	httpContract, ok := findContextConcern(
+		concerns,
+		contextConcernHTTPContract+":services/jobs",
+	)
+	if !ok || !reflect.DeepEqual(httpContract.candidateFactIDs, []string{"delete-contract"}) {
+		t.Fatalf(
+			"HTTP contract candidates = %#v, want delete action only",
+			httpContract.candidateFactIDs,
+		)
+	}
+	sideEffects, ok := findContextConcern(
+		concerns,
+		contextConcernSideEffects+":services/jobs",
+	)
+	if !ok || !reflect.DeepEqual(
+		sideEffects.candidateFactIDs,
+		[]string{"delete-contract", "delete-task"},
+	) {
+		t.Fatalf(
+			"side-effect candidates = %#v, want delete action only",
+			sideEffects.candidateFactIDs,
+		)
+	}
+}
+
+func TestContextSourceOptionActionIgnoresMetaFileOperations(t *testing.T) {
+	query := "Read-only root-cause analysis: when a regulation is removed from a cadaster, " +
+		"connected tasks remain. Identify the exact production and test files to " +
+		"change/create, error handling, retry logic, and tests."
+	pack := ContextPack{Query: query, selectionQuery: query}
+	deleteOption := contextSourceOption{candidate: sourceCandidate{
+		Name:      "deleteRegulationChangeTask",
+		Qualified: "CadasterTaskController.deleteRegulationChangeTask",
+	}}
+	createOption := contextSourceOption{candidate: sourceCandidate{
+		Name:      "createTaskRegulationChange",
+		Qualified: "CadasterTaskController.createTaskRegulationChange",
+	}}
+
+	if !contextSourceOptionActionAligned(pack, deleteOption) {
+		t.Fatal("primary delete action was rejected")
+	}
+	if contextSourceOptionActionAligned(pack, createOption) {
+		t.Fatal("meta instruction to create files became a domain create action")
+	}
+}
+
 func TestSupportRouteMatchesRequestedActionWithoutExactFuturePath(t *testing.T) {
 	route := scan.AgentContextFactRecord{
 		ID: "task-delete", Project: "services/tasks", Kind: "route",
@@ -529,6 +632,97 @@ func TestSupportRouteMatchesRequestedActionWithoutExactFuturePath(t *testing.T) 
 	)
 	if !operational || score <= 0 {
 		t.Fatalf("same-action support route = operational %v score %d", operational, score)
+	}
+}
+
+func TestSupportRouteIgnoresMetaCreateAction(t *testing.T) {
+	query := "Root-cause analysis: when a regulation is removed from a cadaster, " +
+		"connected tasks remain. Identify production and test files to change/create."
+	deleteRoute := scan.AgentContextFactRecord{
+		ID: "task-delete", Project: "services/tasks", Kind: "route",
+		Name: "DELETE /tasks/regulation-change", HTTPMethod: "DELETE",
+		Path: "/tasks/regulation-change", Confidence: "EXACT",
+	}
+	createRoute := scan.AgentContextFactRecord{
+		ID: "task-create", Project: "services/tasks", Kind: "route",
+		Name: "POST /tasks", HTTPMethod: "POST",
+		Path: "/tasks", Confidence: "EXACT",
+	}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{deleteRoute, createRoute},
+	}
+	utility := newContextForwardUtility(index)
+
+	deleteOperational, _ := contextSupportOperationalScore(
+		utility,
+		deleteRoute,
+		query,
+		nil,
+	)
+	createOperational, _ := contextSupportOperationalScore(
+		utility,
+		createRoute,
+		query,
+		nil,
+	)
+	if !deleteOperational || createOperational {
+		t.Fatalf(
+			"support actions = delete %v create %v, want delete only",
+			deleteOperational,
+			createOperational,
+		)
+	}
+}
+
+func TestRetryFactActionIgnoresMetaCreateAction(t *testing.T) {
+	query := "Root-cause analysis: when a regulation is removed from a cadaster, " +
+		"connected tasks remain. Identify production and test files to change/create."
+	deleteFact := scan.AgentContextFactRecord{
+		ID: "delete-task", Name: "deleteTask", Qualified: "TaskService.deleteTask",
+	}
+	createFact := scan.AgentContextFactRecord{
+		ID: "create-task", Name: "createTask", Qualified: "TaskService.createTask",
+	}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{deleteFact, createFact},
+	}
+	if !contextRetryFactMatchesAction(deleteFact, index, query) {
+		t.Fatal("primary delete action was rejected for retry")
+	}
+	if contextRetryFactMatchesAction(createFact, index, query) {
+		t.Fatal("meta create action matched retry fact")
+	}
+}
+
+func TestSourceConcernScoreIgnoresMetaCreateAction(t *testing.T) {
+	query := "Root-cause analysis: when a regulation is removed from a cadaster, " +
+		"connected tasks remain. Identify mail side effects and files to change/create."
+	concern := newContextConcern(
+		contextConcernSideEffects,
+		"services/tasks",
+		true,
+		[]string{"delete-task", "create-task"},
+		"requested side effects",
+	)
+	deleteFact := scan.AgentContextFactRecord{
+		ID: "delete-task", Project: "services/tasks", Kind: "symbol",
+		Name: "deleteTask", Qualified: "TaskService.deleteTask",
+		Search: "cadaster regulation task mail side effect",
+	}
+	createFact := scan.AgentContextFactRecord{
+		ID: "create-task", Project: "services/tasks", Kind: "symbol",
+		Name: "createTask", Qualified: "TaskService.createTask",
+		Search: "cadaster regulation task mail side effect",
+	}
+
+	deleteScore := contextSourceConcernFactScore(deleteFact, concern, query, nil)
+	createScore := contextSourceConcernFactScore(createFact, concern, query, nil)
+	if deleteScore <= createScore {
+		t.Fatalf(
+			"source concern scores = delete %d create %d, want delete higher",
+			deleteScore,
+			createScore,
+		)
 	}
 }
 

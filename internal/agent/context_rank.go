@@ -552,7 +552,7 @@ func contextRetryFactMatchesAction(
 	index scan.AgentContextIndexRecord,
 	query string,
 ) bool {
-	requested := contextActionFamilies(query, contextRequestedHTTPMethod(query))
+	requested := contextEndpointRequestedActions(query)
 	if len(requested) == 0 {
 		return true
 	}
@@ -1268,7 +1268,7 @@ func contextSupportOperationalScore(
 			score += 180
 			operational = true
 		} else {
-			requestedActions := contextActionFamilies(query, contextRequestedHTTPMethod(query))
+			requestedActions := contextEndpointRequestedActions(query)
 			factActions := contextActionFamilies(
 				strings.Join([]string{fact.Name, fact.Qualified, fact.HTTPMethod, fact.Path}, " "),
 				fact.HTTPMethod,

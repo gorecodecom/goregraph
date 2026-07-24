@@ -624,7 +624,7 @@ class JobClient {
   @Value("${jobs.url}")
   private String baseUrl;
   private final RestClient restClient;
-  @Retryable
+  @Retryable(recover = "recoverDeleteRelatedJobs")
   void deleteRelatedJobs(String catalogId, String itemId) {
     String credentialUser = "private-user";
     String credentialPassword = "private-password";
@@ -632,6 +632,7 @@ class JobClient {
     restClient.defaultHeader("Authorization", "Basic private-token");
     restClient.delete(baseUrl + "/job-management/catalogs/" + catalogId + "/items/" + itemId);
   }
+  void recoverDeleteRelatedJobs(Exception exception, String catalogId, String itemId) {}
 }`)
 	records := buildJavaAPIContracts([]JavaSourceRecord{source})
 	if len(records) != 1 {
@@ -641,7 +642,9 @@ class JobClient {
 	if !reflect.DeepEqual(records[0].Auth, wantAuth) {
 		t.Fatalf("auth = %#v, want %#v", records[0].Auth, wantAuth)
 	}
-	if records[0].Path != "/job-management/catalogs/{dynamic}/items/{dynamic}" || !strings.Contains(records[0].Reason, "retryable") {
+	if records[0].Path != "/job-management/catalogs/{dynamic}/items/{dynamic}" ||
+		!strings.Contains(records[0].Reason, "retryable") ||
+		!strings.Contains(records[0].Reason, "recovery method recoverDeleteRelatedJobs") {
 		t.Fatalf("path/retry provenance missing: %#v", records[0])
 	}
 	marshaled, err := json.Marshal(records)

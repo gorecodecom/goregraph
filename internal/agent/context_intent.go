@@ -43,6 +43,8 @@ func planContextConcerns(
 	seed scan.AgentContextFactRecord,
 ) []contextConcern {
 	reachableFactIDs, reachableEdges := reachableContextConcernEvidence(index, seed.ID)
+	queryTokens := contextExpandedTokenSet(query)
+	requestedActions := contextEndpointRequestedActions(query)
 	concerns := []contextConcern{
 		newContextConcern(contextConcernEntrypoint, "", true, []string{seed.ID}, "selected entrypoint"),
 		newContextConcern(contextConcernPrimaryPath, "", true, mapContextConcernKeys(reachableFactIDs), "reachable production path"),
@@ -57,7 +59,12 @@ func planContextConcerns(
 	}
 	sort.Strings(projects)
 	for _, project := range projects {
-		candidates := semanticContextProjectFacts(semanticQueryTokens, project, index.Facts)
+		candidates := semanticContextProjectFacts(
+			semanticQueryTokens,
+			requestedActions,
+			project,
+			index.Facts,
+		)
 		reason := "explicit project task match"
 		if len(candidates) == 0 {
 			coverage, incomplete := strongestIncompleteContextProjectCoverage(project, index.Coverage)
@@ -110,8 +117,9 @@ func planContextConcerns(
 				if !contextQueryRequestsConcern(query, kind) {
 					continue
 				}
-				candidates := contextExplicitProjectConcernCandidates(
-					contextExpandedTokenSet(query),
+				candidates := contextExplicitProjectConcernCandidatesWithActions(
+					queryTokens,
+					requestedActions,
 					project,
 					kind,
 					index.Facts,
@@ -483,12 +491,20 @@ func reachableContextConcernEvidence(
 
 func semanticContextProjectFacts(
 	queryTokens map[string]bool,
+	requestedActions map[string]bool,
 	project string,
 	facts []scan.AgentContextFactRecord,
 ) []string {
 	result := []string{}
 	for _, fact := range facts {
 		if normalizeContextProject(fact.Project) != project || !eligibleContextConcernFact(fact) {
+			continue
+		}
+		factActions := contextFactActionFamilies(fact)
+		if len(requestedActions) > 0 &&
+			len(factActions) > 0 &&
+			!contextActionFamiliesOverlap(requestedActions, factActions) &&
+			contextActionFamiliesHaveMutation(factActions) {
 			continue
 		}
 		factTokens := contextTokenSet(strings.Join([]string{
@@ -516,6 +532,28 @@ func contextExplicitProjectConcernCandidates(
 	facts []scan.AgentContextFactRecord,
 	reachable map[string]bool,
 ) []string {
+	requestedActions := contextActionFamilies(
+		strings.Join(mapContextConcernKeys(queryTokens), " "),
+		"",
+	)
+	return contextExplicitProjectConcernCandidatesWithActions(
+		queryTokens,
+		requestedActions,
+		project,
+		kind,
+		facts,
+		reachable,
+	)
+}
+
+func contextExplicitProjectConcernCandidatesWithActions(
+	queryTokens map[string]bool,
+	requestedActions map[string]bool,
+	project string,
+	kind string,
+	facts []scan.AgentContextFactRecord,
+	reachable map[string]bool,
+) []string {
 	result := []string{}
 	domainTokens := make(map[string]bool)
 	for token := range contextConcernDomainQueryTokens(queryTokens) {
@@ -526,6 +564,15 @@ func contextExplicitProjectConcernCandidates(
 	}
 	for _, fact := range facts {
 		if normalizeContextProject(fact.Project) != project || reachable[fact.ID] {
+			continue
+		}
+		factActions := contextFactActionFamilies(fact)
+		actionAligned := len(requestedActions) > 0 &&
+			contextActionFamiliesOverlap(requestedActions, factActions)
+		if len(requestedActions) > 0 &&
+			len(factActions) > 0 &&
+			!actionAligned &&
+			contextActionFamiliesHaveMutation(factActions) {
 			continue
 		}
 		factKind := normalizedContextConcernKind(fact.Kind)
@@ -548,7 +595,7 @@ func contextExplicitProjectConcernCandidates(
 			matchesConcern := factKind == kind || contextValueRequestsConcern(value, kind)
 			if !matchesConcern &&
 				kind == contextConcernSideEffects &&
-				contextConcernActionAligned(queryTokens, fact) {
+				actionAligned {
 				matchesConcern = true
 			}
 			if !matchesConcern {
@@ -571,20 +618,6 @@ func contextExplicitProjectConcernCandidates(
 		}
 	}
 	return orderedContextConcernIDs(result)
-}
-
-func contextConcernActionAligned(
-	queryTokens map[string]bool,
-	fact scan.AgentContextFactRecord,
-) bool {
-	requested := contextActionFamilies(strings.Join(mapContextConcernKeys(queryTokens), " "), "")
-	candidate := contextActionFamilies(strings.Join([]string{
-		fact.Name,
-		fact.Qualified,
-		fact.HTTPMethod,
-		fact.Path,
-	}, " "), fact.HTTPMethod)
-	return len(requested) > 0 && contextActionFamiliesOverlap(requested, candidate)
 }
 
 func contextConcernFactShapeScore(

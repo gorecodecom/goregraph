@@ -55,6 +55,9 @@ func javaDeclarativeAPIContracts(source JavaSourceRecord) []APIContractRecord {
 			reason := fmt.Sprintf("spring %s declarative mapping", clientAnnotation.Name)
 			if javaMethodIsRetryable(source, method) {
 				reason += "; retryable method"
+				if recovery := javaMethodRecoveryName(source, method); recovery != "" {
+					reason += "; recovery method " + recovery
+				}
 			}
 			record := APIContractRecord{
 				Language:         "java",
@@ -137,6 +140,9 @@ func javaImperativeAPIContracts(source JavaSourceRecord, paths javaPathIndex) []
 				record.UnsafeDynamic = record.UnsafeDynamic || unsafeDynamic
 				if javaMethodIsRetryable(source, method) {
 					record.Reason += "; retryable method"
+					if recovery := javaMethodRecoveryName(source, method); recovery != "" {
+						record.Reason += "; recovery method " + recovery
+					}
 				}
 				records = append(records, record)
 			}
@@ -794,6 +800,32 @@ func javaMethodIsRetryable(source JavaSourceRecord, method JavaMethodRecord) boo
 		}
 	}
 	return false
+}
+
+func javaMethodRecoveryName(source JavaSourceRecord, method JavaMethodRecord) string {
+	if !javaHasImport(source.Imports, "org.springframework.retry.annotation.Retryable") {
+		return ""
+	}
+	recovery := ""
+	for _, annotation := range method.Annotations {
+		if annotation.Name != "Retryable" {
+			continue
+		}
+		recovery = strings.Trim(
+			strings.TrimSpace(javaAnnotationAttribute(annotation, "recover")),
+			`"'`,
+		)
+		break
+	}
+	if recovery == "" || strings.Contains(recovery, ".") || !isJavaIdentifierPath(recovery) {
+		return ""
+	}
+	for _, candidate := range source.Methods {
+		if candidate.Owner == method.Owner && candidate.Name == recovery {
+			return recovery
+		}
+	}
+	return ""
 }
 
 func javaHasImport(imports []JavaImportRecord, name string) bool {

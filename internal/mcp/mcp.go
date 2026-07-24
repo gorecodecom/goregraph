@@ -113,7 +113,7 @@ func tools(options Options) []map[string]any {
 func taskContextTool() map[string]any {
 	return map[string]any{
 		"name":        "task_context",
-		"description": "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Call it once with the complete task before reading indexed source. Treat source_sections as already read: for complete coverage, run no source-reading commands on indexed project files; answer only from source_sections and mark absent details as unknown. For partial or missing coverage, inspect only exact project/path and start_line/end_line ranges in source_omissions; do not inspect outside those ranges or other files, and report pathless or unbounded omissions as uncertainty. Retry only when retry_allowed is true, with one retry_anchor and previous_context_id.",
+		"description": "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Call it once with the caller's complete task unchanged; do not translate, summarize, or add inferred repository or component responsibilities. Treat source_sections as already read: for complete coverage, run no source-reading commands on indexed project files; answer only from source_sections and mark absent details as unknown. For partial or missing coverage, inspect only exact project/path and start_line/end_line ranges in source_omissions; do not inspect outside those ranges or other files, and report pathless or unbounded omissions as uncertainty. Retry only when retry_allowed is true, with one retry_anchor and previous_context_id.",
 		"inputSchema": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -131,6 +131,7 @@ func taskContextTool() map[string]any {
 
 func serverInstructions() string {
 	return `Call goregraph context once with the complete task before reading indexed source.
+Pass the caller's complete task unchanged as the query; do not translate, summarize, or add inferred repository or component responsibilities.
 If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
 If source_coverage is complete, run no source-reading commands on indexed project files. Answer only from source_sections and mark details absent from them as unknown.

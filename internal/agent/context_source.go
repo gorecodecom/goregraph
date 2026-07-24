@@ -416,7 +416,10 @@ func contextSourceConcernFactScoreWithIndex(
 	score += 160 * contextEvidenceFacetFactScore(fact, concern.kind, concern.facet)
 	score += contextConcernFactShapeScore(fact, concern.kind)
 	if concern.kind == contextConcernSideEffects &&
-		contextConcernActionAligned(contextExpandedTokenSet(query), fact) {
+		contextActionFamiliesOverlap(
+			contextEndpointRequestedActions(query),
+			contextFactActionFamilies(fact),
+		) {
 		score += 260
 	}
 	value := strings.Join([]string{
