@@ -51,6 +51,19 @@ func TestDocumentationDescribesSourceBackedCoverage(t *testing.T) {
 	}
 }
 
+func TestDocumentationDefinesSemanticEvidenceCoverage(t *testing.T) {
+	outputs := normalizedFileContents(t, "docs/OUTPUTS.md")
+	for _, phrase := range []string{
+		"`source_coverage: complete` requires every requested evidence facet",
+		"one repository cannot cover multiple requested domain models",
+		"`source_omissions` may combine missing facets for the same project and path",
+	} {
+		if !strings.Contains(outputs, phrase) {
+			t.Errorf("OUTPUTS.md missing semantic coverage contract %q", phrase)
+		}
+	}
+}
+
 func TestSourceBackedDocumentationUsesThe4000TokenDefault(t *testing.T) {
 	for _, file := range []string{"docs/OUTPUTS.md", "docs/RELEASE.md"} {
 		content, err := os.ReadFile(file)

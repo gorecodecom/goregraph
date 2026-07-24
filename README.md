@@ -307,6 +307,11 @@ project. `source_coverage: complete` means every required concern has current
 source; it does not mean that every indexed candidate was serialized. The
 default limits remain 4,000 tokens, 12 files, and 12 source sections, and
 complete coverage permits no source-reading commands on indexed project files.
+Completeness is semantic rather than merely file-based: authentication,
+configuration, retry/recovery, requested model repositories, and individual
+side effects must each be present in verified source. Missing facets produce
+bounded project/path omissions instead of allowing one related section to imply
+the rest.
 
 ### Update source safely before scanning
 

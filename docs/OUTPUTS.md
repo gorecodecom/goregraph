@@ -244,6 +244,14 @@ required concern has current source, not that every candidate was serialized.
 The hard limits remain 4,000 tokens, 12 files, and 12 source sections; complete
 coverage permits no source-reading commands on indexed project files.
 
+`source_coverage: complete` requires every requested evidence facet to be
+backed by a verified `source_section`. In particular, one repository cannot cover multiple requested domain models, and one side-effect section cannot
+implicitly cover mail, audit, and user-information behavior.
+
+When the bounded pack cannot represent every facet, `source_coverage` is
+`partial` or `none`. `source_omissions` may combine missing facets for the same project and path so an agent can inspect that one indexed file without widening
+navigation. Non-faceted omissions retain their concrete source failure reason.
+
 The Context Pack `query` field is the normalized request text verbatim when it
 is at most 256 runes and its JSON encoding, including quotes and escapes, is at
 most 256 bytes; otherwise it is a compact primary-task summary. The complete
