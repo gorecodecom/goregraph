@@ -1638,6 +1638,13 @@ func selectContextEndpoint(
 		if leftAnchor != rightAnchor {
 			return leftAnchor
 		}
+		if primaryAction, ok := contextEndpointPrimaryActionClause(query); ok {
+			leftPrimary := contextEndpointPrimaryActionScore(left.fact, primaryAction)
+			rightPrimary := contextEndpointPrimaryActionScore(right.fact, primaryAction)
+			if leftPrimary != rightPrimary {
+				return leftPrimary > rightPrimary
+			}
+		}
 		leftUtility := left.score + contextEndpointPathUtility(index, utility, left.fact)
 		rightUtility := right.score + contextEndpointPathUtility(index, utility, right.fact)
 		if leftUtility != rightUtility {
@@ -1680,6 +1687,36 @@ func selectContextEndpoint(
 		return rankedContextFact{}, false, contextEndpointProviderAmbiguityReason
 	}
 	return providers[bestProvider][0], true, ""
+}
+
+func contextEndpointPrimaryActionClause(query string) (string, bool) {
+	primary := contextPrimaryQuery(query)
+	index := strings.IndexAny(primary, ",;")
+	if index < 0 {
+		return "", false
+	}
+	clause := strings.TrimSpace(primary[:index])
+	if clause == "" ||
+		!contextActionFamiliesHaveMutation(contextActionFamilies(clause, "")) {
+		return "", false
+	}
+	return clause, true
+}
+
+func contextEndpointPrimaryActionScore(
+	fact scan.AgentContextFactRecord,
+	primaryAction string,
+) int {
+	queryTokens := contextQueryTokens(primaryAction)
+	routeTokens := contextTokenSet(strings.TrimSpace(fact.HTTPMethod + " " + fact.Path))
+	matched := 0
+	for _, token := range queryTokens {
+		if routeTokens[token] {
+			matched++
+		}
+	}
+	extras := len(routeTokens) - matched
+	return matched*100 - extras*10
 }
 
 func contextEndpointRequestedActions(query string) map[string]bool {

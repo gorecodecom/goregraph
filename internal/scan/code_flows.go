@@ -359,6 +359,9 @@ func walkCodeFlow(function CodeFunctionRecord, edgesByMethod map[string][]CallGr
 			Kind:       codeFlowStepKind(edge),
 			File:       edge.To.File,
 			Line:       edge.To.Line,
+			Caller:     qualifiedContextName(function.Owner, function.Name),
+			CallerFile: function.File,
+			CallerLine: function.Line,
 			Confidence: edge.Confidence,
 			Reason:     edge.Reason,
 		}
@@ -404,6 +407,9 @@ func appendJavaFlowSteps(steps []CodeFlowStep, route CodeRouteRecord, springFlow
 				Language:   "java",
 				File:       step.File,
 				Line:       step.Line,
+				Caller:     step.Caller,
+				CallerFile: step.CallerFile,
+				CallerLine: step.CallerLine,
 				Confidence: step.Confidence,
 			})
 		}

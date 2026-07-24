@@ -766,6 +766,20 @@ func (builder *agentContextBuilder) addFlowEdges(flows []CodeFlowRecord) {
 		}
 		for index := 1; index < len(stepIDs); index++ {
 			fromID := stepIDs[index-1]
+			step := flow.Steps[index]
+			if step.Caller != "" {
+				preferredKind := "symbol"
+				if contextLabelKey(step.Caller) == contextLabelKey(flow.Handler) {
+					preferredKind = "route"
+				}
+				fromID = builder.resolveFactID(
+					"",
+					step.Caller,
+					step.CallerFile,
+					step.CallerLine,
+					preferredKind,
+				)
+			}
 			toID := stepIDs[index]
 			if fromID == "" || toID == "" || fromID == toID {
 				continue
@@ -774,19 +788,19 @@ func (builder *agentContextBuilder) addFlowEdges(flows []CodeFlowRecord) {
 			if builder.factsByID[toID].Kind == "persistence" {
 				kind = "persistence"
 			}
-			reason := firstNonEmpty(flow.Steps[index].Reason, "flow transition")
+			reason := firstNonEmpty(step.Reason, "flow transition")
 			builder.addEdge(AgentContextEdgeRecord{
 				FromFactID: fromID,
 				ToFactID:   toID,
 				Kind:       kind,
-				File:       contextPathKey(flow.Steps[index].File),
-				Line:       flow.Steps[index].Line,
+				File:       contextPathKey(step.File),
+				Line:       step.Line,
 				Reason:     reason,
-				Confidence: flow.Steps[index].Confidence,
+				Confidence: step.Confidence,
 				EvidenceIDs: builder.evidenceIDs(
-					flow.Steps[index].File,
-					flow.Steps[index].Line,
-					flow.Steps[index].EvidenceIDs,
+					step.File,
+					step.Line,
+					step.EvidenceIDs,
 				),
 			})
 		}

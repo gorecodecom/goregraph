@@ -222,6 +222,9 @@ type SpringEndpointFlowStep struct {
 	Kind       string `json:"kind,omitempty"`
 	File       string `json:"file,omitempty"`
 	Line       int    `json:"line,omitempty"`
+	Caller     string `json:"caller,omitempty"`
+	CallerFile string `json:"caller_file,omitempty"`
+	CallerLine int    `json:"caller_line,omitempty"`
 	Confidence string `json:"confidence"`
 }
 
@@ -323,6 +326,9 @@ type CodeFlowStep struct {
 	Language    string   `json:"language,omitempty"`
 	File        string   `json:"file,omitempty"`
 	Line        int      `json:"line,omitempty"`
+	Caller      string   `json:"caller,omitempty"`
+	CallerFile  string   `json:"caller_file,omitempty"`
+	CallerLine  int      `json:"caller_line,omitempty"`
 	Confidence  string   `json:"confidence"`
 	Reason      string   `json:"reason,omitempty"`
 	EvidenceIDs []string `json:"evidence_ids,omitempty"`

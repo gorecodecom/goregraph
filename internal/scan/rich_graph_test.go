@@ -156,6 +156,37 @@ class Consumer {
 	assertHasJavaCallGraphEdgeConfidence(t, graph.Edges, "Consumer", "call", "Inner", "run", "EXTRACTED")
 }
 
+func TestJavaCallGraphResolvesBareLocalHelperCalls(t *testing.T) {
+	body := `class TaskController {
+    void deleteTask() {
+        runAfterLicenseCheck(() -> deleteCadasterTask());
+    }
+
+    private void deleteCadasterTask() {
+    }
+
+    private void runAfterLicenseCheck(Runnable action) {
+        action.run();
+    }
+}
+`
+	source := extractJavaSource(FileRecord{
+		Path:     "src/main/java/com/example/TaskController.java",
+		Language: "java",
+	}, body)
+	graph := buildJavaCallGraph([]JavaSourceRecord{source})
+
+	assertHasJavaCallGraphEdgeConfidence(
+		t,
+		graph.Edges,
+		"TaskController",
+		"deleteTask",
+		"TaskController",
+		"deleteCadasterTask",
+		"EXTRACTED",
+	)
+}
+
 func TestParseJavaMethodSignatureWithAnnotatedMultipartParameters(t *testing.T) {
 	line := `public ResponseEntity<?> importFile(@RequestPart(name = "csvFile") MultipartFile multipartFile, @RequestPart(name = "ownerUserId") String ownerUserId) throws Exception {`
 	name, returnType, params, visibility, ok := parseJavaMethodSignature(line)

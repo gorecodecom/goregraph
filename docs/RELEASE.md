@@ -104,13 +104,14 @@ and the signed manual rubric outside the repository. The harness supplies
 `--json`; callers must not supply it through `CODEX_BENCHMARK_ARGS`.
 
 ```text
-Call goregraph context once with the complete task before reading indexed source.
-Pass the caller's complete task unchanged as the query; do not translate, summarize, or add inferred repository or component responsibilities.
+Call goregraph context once with a focused query containing the caller's problem statement and requested evidence scope before reading indexed source.
+Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
 If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
 If source_coverage is complete, run no source-reading commands on indexed project files. Answer only from source_sections and mark details absent from them as unknown.
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
+A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.

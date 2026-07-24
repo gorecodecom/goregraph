@@ -2474,6 +2474,83 @@ func TestBuildContextPrioritizesPrimaryGermanActionOverAffectedEntity(t *testing
 	}
 }
 
+func TestBuildContextKeepsPrimaryGermanActionWhenAffectedEndpointHasHigherUtility(t *testing.T) {
+	query := "Wenn eine Vorschrift aus einem Kataster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-24T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "regulation-endpoint", Project: "ms-cadasterregulation", Kind: "api_endpoint",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+				Qualified: "CadasterRegulationController.deleteFromCadaster",
+				File:      "CadasterRegulationController.java", Line: 195, Confidence: "EXACT",
+				Search: "delete remove cadaster regulation",
+			},
+			{
+				ID: "regulation-route", Project: "ms-cadasterregulation", Kind: "route",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+				Qualified: "CadasterRegulationController.deleteFromCadaster",
+				File:      "CadasterRegulationController.java", Line: 195, Confidence: "EXACT",
+				Search: "delete remove cadaster regulation",
+			},
+			{
+				ID: "regulation-service", Project: "ms-cadasterregulation", Kind: "symbol",
+				Name: "deleteRegulationFromCadaster", File: "CadasterRegulationOperationsService.java",
+				Line: 50, Confidence: "EXACT", Search: "delete remove cadaster regulation",
+			},
+			{
+				ID: "task-endpoint", Project: "ms-cadastertask", Kind: "api_endpoint",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}",
+				Qualified: "CadasterTaskController.deleteTask",
+				File:      "CadasterTaskController.java", Line: 320, Confidence: "EXACT",
+				Search: "delete remove cadaster regulation task",
+			},
+			{
+				ID: "task-route", Project: "ms-cadastertask", Kind: "route",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}/tasks/{taskId}",
+				Qualified: "CadasterTaskController.deleteTask",
+				File:      "CadasterTaskController.java", Line: 320, Confidence: "EXACT",
+				Search: "delete remove cadaster regulation task",
+			},
+			{
+				ID: "task-helper", Project: "ms-cadastertask", Kind: "symbol",
+				Name: "deleteCadasterTask", File: "CadasterTaskController.java",
+				Line: 335, Confidence: "EXACT", Search: "delete cadaster regulation task",
+			},
+			{
+				ID: "task-service", Project: "ms-cadastertask", Kind: "symbol",
+				Name: "deleteCadasterTask", File: "CadasterTaskService.java",
+				Line: 339, Confidence: "EXACT", Search: "delete cadaster regulation task",
+			},
+			{
+				ID: "task-repository", Project: "ms-cadastertask", Kind: "persistence",
+				Name: "delete", File: "CadasterRegTaskRepository.java",
+				Line: 17, Confidence: "EXACT", Search: "delete cadaster regulation task persistence",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{ID: "regulation-call", FromFactID: "regulation-route", ToFactID: "regulation-service", Kind: "call"},
+			{ID: "task-helper-call", FromFactID: "task-route", ToFactID: "task-helper", Kind: "call"},
+			{ID: "task-service-call", FromFactID: "task-helper", ToFactID: "task-service", Kind: "call"},
+			{ID: "task-persistence", FromFactID: "task-service", ToFactID: "task-repository", Kind: "persistence"},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 1 ||
+		pack.Endpoints[0].Path != "/cadasters/{cadasterId}/regulations/{objectId}" {
+		t.Fatalf("affected endpoint utility displaced the primary action: %#v", pack.Endpoints)
+	}
+}
+
 func TestBuildContextUsesProductionEntrypointsForLongAnalysisRequests(t *testing.T) {
 	query := "Im Vorschriftendienst bleiben beim Entfernen einer Vorschrift aus einem Kataster die mit dieser Vorschrift verbundenen Aufgaben bestehen. " +
 		"Analysiere repositoryübergreifend in ms-cadasterregulation, ms-cadastertask und ms-common den öffentlichen REST-Endpunkt, " +

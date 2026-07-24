@@ -458,6 +458,54 @@ func TestBuildProjectAgentContextIndexNormalizesRoutesAndFlowTransitions(t *test
 	}
 }
 
+func TestBuildProjectAgentContextIndexPreservesFlowBranches(t *testing.T) {
+	routes := []CodeRouteRecord{{
+		Kind: "backend", HTTPMethod: "DELETE", Path: "/tasks/{id}",
+		Handler: "TaskController.deleteTask", File: "src/TaskController.java", Line: 10,
+	}}
+	flows := []CodeFlowRecord{{
+		HTTPMethod: "DELETE", Path: "/tasks/{id}",
+		Handler: "TaskController.deleteTask", File: "src/TaskController.java", Line: 10,
+		Steps: []CodeFlowStep{
+			{
+				Name: "deleteTask", Owner: "TaskController", Kind: "route_handler",
+				File: "src/TaskController.java", Line: 10,
+			},
+			{
+				Name: "deleteTaskInternal", Owner: "TaskController", Kind: "call",
+				File: "src/TaskController.java", Line: 20,
+				Caller: "TaskController.deleteTask", CallerFile: "src/TaskController.java", CallerLine: 10,
+			},
+			{
+				Name: "deleteTask", Owner: "TaskService", Kind: "service_method",
+				File: "src/TaskService.java", Line: 30,
+				Caller: "TaskController.deleteTaskInternal", CallerFile: "src/TaskController.java", CallerLine: 20,
+			},
+			{
+				Name: "checkAccess", Owner: "AccessService", Kind: "service_method",
+				File: "src/AccessService.java", Line: 40,
+				Caller: "TaskController.deleteTaskInternal", CallerFile: "src/TaskController.java", CallerLine: 20,
+			},
+		},
+	}}
+
+	index := BuildProjectAgentContextIndex("app", "2026-07-24T00:00:00Z",
+		routes, flows, nil, nil, nil, nil, nil, nil)
+
+	handler := findContextFactByQualified(index.Facts, "TaskController.deleteTask")
+	helper := findContextFactByQualified(index.Facts, "TaskController.deleteTaskInternal")
+	service := findContextFactByQualified(index.Facts, "TaskService.deleteTask")
+	access := findContextFactByQualified(index.Facts, "AccessService.checkAccess")
+	if !hasContextEdge(index.Edges, handler.ID, helper.ID, "call") ||
+		!hasContextEdge(index.Edges, helper.ID, service.ID, "call") ||
+		!hasContextEdge(index.Edges, helper.ID, access.ID, "call") {
+		t.Fatalf("flow branch edges missing: %#v", index.Edges)
+	}
+	if hasContextEdge(index.Edges, service.ID, access.ID, "call") {
+		t.Fatalf("sibling flow steps were linearized: %#v", index.Edges)
+	}
+}
+
 func TestBuildProjectAgentContextIndexUsesOneSelectedRoutePerFlow(t *testing.T) {
 	routes := []CodeRouteRecord{
 		{

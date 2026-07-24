@@ -18,6 +18,12 @@ func buildJavaCallGraph(sources []JavaSourceRecord) CallGraphRecord {
 			from := MethodRefRecord{Owner: method.Owner, Method: method.Name, File: method.File, Line: method.Line}
 			for _, call := range method.Calls {
 				toOwner := resolveCallOwner(call, method.Owner, fields)
+				if toOwner == "" &&
+					!(call.Method == method.Name && call.Line == method.Line) {
+					if _, ok := methods[method.Owner][call.Method]; ok {
+						toOwner = method.Owner
+					}
+				}
 				if toOwner == "" {
 					continue
 				}
@@ -126,7 +132,13 @@ func buildEndpointFlows(index SpringIndex, graph CallGraphRecord) []SpringEndpoi
 					continue
 				}
 				visited[key] = true
-				step := SpringEndpointFlowStep{Owner: edge.To.Owner, Method: edge.To.Method, Kind: componentKinds[edge.To.Owner], File: edge.To.File, Line: edge.To.Line, Confidence: edge.Confidence}
+				step := SpringEndpointFlowStep{
+					Owner: edge.To.Owner, Method: edge.To.Method,
+					Kind: componentKinds[edge.To.Owner], File: edge.To.File, Line: edge.To.Line,
+					Caller:     qualifiedContextName(current.Owner, current.Method),
+					CallerFile: current.File, CallerLine: current.Line,
+					Confidence: edge.Confidence,
+				}
 				flow.Steps = append(flow.Steps, step)
 				queue = append(queue, step)
 			}
