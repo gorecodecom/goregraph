@@ -32,7 +32,14 @@ func TestBuildContextBudgetsFinalDecisionMetadata(t *testing.T) {
 		t.Fatalf("missing contract uncertainty = %#v", pack.Uncertainties)
 	}
 	if pack.SourceCoverage != "complete" {
-		t.Fatalf("source coverage = %q, omissions %#v", pack.SourceCoverage, pack.SourceOmissions)
+		if pack.SourceCoverage != "partial" || len(pack.SourceOmissions) == 0 {
+			t.Fatalf("source coverage = %q, omissions %#v", pack.SourceCoverage, pack.SourceOmissions)
+		}
+		for _, omission := range pack.SourceOmissions {
+			if omission.Path == "" {
+				t.Fatalf("bounded metadata produced a pathless omission: %#v", pack.SourceOmissions)
+			}
+		}
 	}
 	if pack.EstimatedTokens > budget {
 		t.Fatalf("final pack exceeded budget: %d", pack.EstimatedTokens)
@@ -184,7 +191,7 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 	if !contextHasUncertainty(pack, "requested_http_contract") {
 		t.Fatalf("missing contract uncertainty = %#v", pack.Uncertainties)
 	}
-	if pack.FallbackRequired || pack.RetryAllowed || pack.SourceCoverage != "complete" {
+	if pack.FallbackRequired || pack.RetryAllowed {
 		t.Fatalf(
 			"pack decision = fallback %v retry %v coverage %q omissions %#v",
 			pack.FallbackRequired,
@@ -192,6 +199,16 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 			pack.SourceCoverage,
 			pack.SourceOmissions,
 		)
+	}
+	if pack.SourceCoverage != "complete" {
+		if pack.SourceCoverage != "partial" || len(pack.SourceOmissions) == 0 {
+			t.Fatalf("missing evidence was not represented: %#v", pack.SourceOmissions)
+		}
+		for _, omission := range pack.SourceOmissions {
+			if omission.Path == "" {
+				t.Fatalf("missing evidence lacks a targeted path: %#v", pack.SourceOmissions)
+			}
+		}
 	}
 	for _, concern := range pack.Concerns {
 		if !concern.Covered || !contextSourceRequiresRenderedConcernEvidence(concern.Kind) {
@@ -233,6 +250,42 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 			len(pack.SourceSections),
 			len(pack.Files),
 		)
+	}
+}
+
+func TestBuildContextReportsMissingSideEffectFacetsWithoutRerankingEndpoint(t *testing.T) {
+	root := writeMissingContractContextFixture(t)
+	query := "When DELETE /catalog/items/{itemId} removes an item in services/catalog, " +
+		"plan cleanup of related jobs through libraries/job-client and services/jobs. " +
+		"Cover task types and lookup attributes plus mail, audit, and user information separately."
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "catalog-route" {
+		t.Fatalf("evidence planning changed primary entrypoint: %#v", pack.Entrypoints)
+	}
+	if pack.SourceCoverage == "complete" {
+		t.Fatalf("generic side-effect source covered three requested facets: %#v", pack.Concerns)
+	}
+	var sideEffectOmission *ContextSourceOmission
+	for index := range pack.SourceOmissions {
+		if strings.HasSuffix(pack.SourceOmissions[index].Path, "JobHousekeeping.java") {
+			sideEffectOmission = &pack.SourceOmissions[index]
+			break
+		}
+	}
+	if sideEffectOmission == nil {
+		t.Fatalf("missing side-effect evidence lacks targeted omission: %#v", pack.SourceOmissions)
+	}
+	for _, facet := range []string{"mail", "audit", "user_information"} {
+		if !strings.Contains(sideEffectOmission.Reason, facet) {
+			t.Errorf("coalesced omission lacks %q: %#v", facet, sideEffectOmission)
+		}
+	}
+	if pack.EstimatedTokens > pack.BudgetTokens || pack.FallbackRequired || pack.RetryAllowed {
+		t.Fatalf("bounded one-shot contract changed: %#v", pack)
 	}
 }
 

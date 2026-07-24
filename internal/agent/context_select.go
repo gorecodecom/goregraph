@@ -108,14 +108,12 @@ func selectContextSourceOptions(
 		}
 	}
 	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
-	for _, concern := range concerns {
-		if !concern.required || state.coveredConcerns[concern.key] || len(pack.SourceOmissions) >= MaxContextSourceOmissions {
-			continue
-		}
-		omission := contextSourceConcernOmission(concern, candidates, failures)
-		if contextSourceOmissionContains(pack.SourceOmissions, omission) {
-			continue
-		}
+	for _, omission := range contextSourceEvidenceOmissions(
+		concerns,
+		candidates,
+		failures,
+		state.coveredConcerns,
+	) {
 		candidate := cloneContextPack(pack)
 		candidate.SourceOmissions = append(candidate.SourceOmissions, omission)
 		candidate, err = finalizeContextEstimate(candidate)
@@ -1093,6 +1091,14 @@ func contextSourceOptionConcerns(
 			normalizeContextProject(candidate.Project) != concern.project {
 			covered = false
 		}
+		if concern.facet != "" {
+			if !covered || !contextSourceSectionSupportsEvidence(section, concern) {
+				continue
+			}
+			keys = append(keys, concern.key)
+			required = true
+			continue
+		}
 		if covered && contextSourceRequiresRenderedConcernEvidence(concern.kind) {
 			covered = contextSourceSectionSupportsConcern(section, concern)
 		}
@@ -1110,6 +1116,88 @@ func contextSourceOptionConcerns(
 	}
 	sort.Strings(keys)
 	return keys, required
+}
+
+func contextSourceSectionSupportsEvidence(
+	section ContextSourceSection,
+	concern contextConcern,
+) bool {
+	if concern.project != "" &&
+		normalizeContextProject(section.Project) != concern.project {
+		return false
+	}
+	if section.Role == "test" && concern.kind != contextConcernTests {
+		return false
+	}
+	if concern.facet == "" {
+		return contextSourceSectionSupportsConcern(section, concern)
+	}
+	content := strings.ToLower(contextSourceSemanticContent(section.Content))
+	switch concern.kind + "#" + concern.facet {
+	case contextConcernAuth + "#client_transport":
+		return contextSourceContainsAny(
+			content,
+			"basicauthenticationinterceptor",
+			"basicauthentication(",
+			"defaultheader",
+			"authorization",
+			"oauth2authorizedclient",
+			".setbasicauth(",
+		)
+	case contextConcernAuth + "#server_policy":
+		return contextSourceContainsAny(
+			content,
+			"securityfilterchain",
+			".httpbasic(",
+			".oauth2resourceserver(",
+			"@securityrequirement",
+		)
+	case contextConcernConfiguration + "#binding":
+		return contextSourceContainsAny(
+			content,
+			"@configurationproperties",
+			"@value(",
+			"connecttimeout",
+			"readtimeout",
+			"maxretries",
+		)
+	case contextConcernConfiguration + "#consumer":
+		return contextSourceContainsAny(
+			content,
+			"configuration.",
+			"config.get",
+			"getconfig(",
+			"getbaseurl(",
+			"getconnecttimeout(",
+			"getreadtimeout(",
+			"getmaxretries(",
+			"getpath(",
+		)
+	case contextConcernResilience + "#retry_policy":
+		return contextSourceContainsAny(content, "@retryable", "maxattempts")
+	case contextConcernResilience + "#recovery":
+		return contextSourceContainsAny(content, "@recover", "recovering", "recovery")
+	case contextConcernSideEffects + "#mail":
+		return contextSourceContainsAny(content, "mailservice.", "sendmail", "sendemail")
+	case contextConcernSideEffects + "#audit":
+		return contextSourceContainsAny(
+			content,
+			"protocolservice.",
+			"trackingservice.",
+			"audit",
+			"log.",
+		)
+	case contextConcernSideEffects + "#user_information":
+		return contextSourceContainsAny(
+			content,
+			"userservice.",
+			"usermgmt",
+			"getuser",
+			"userinformation",
+		)
+	default:
+		return contextSourceSectionSupportsConcern(section, concern)
+	}
 }
 
 func contextSourceSectionSupportsConcern(
@@ -2484,13 +2572,56 @@ func contextSourceConcernOmission(
 	}
 }
 
-func contextSourceOmissionContains(omissions []ContextSourceOmission, candidate ContextSourceOmission) bool {
-	for _, omission := range omissions {
-		if omission == candidate {
-			return true
+func contextSourceEvidenceOmissions(
+	concerns []contextConcern,
+	candidates []sourceCandidate,
+	failures map[string]string,
+	covered map[string]bool,
+) []ContextSourceOmission {
+	grouped := map[string]ContextSourceOmission{}
+	reasons := map[string][]string{}
+	for _, concern := range concerns {
+		if !concern.required || covered[concern.key] {
+			continue
+		}
+		omission := contextSourceConcernOmission(concern, candidates, failures)
+		key := "0facet\x00" + normalizeContextProject(omission.Project) + "\x00" +
+			contextPackSourceFile(omission.Path) + "\x00" + omission.Role
+		if concern.facet == "" {
+			key = "1concern\x00" + normalizeContextProject(omission.Project) + "\x00" +
+				contextPackSourceFile(omission.Path) + "\x00" + omission.Role + "\x00" +
+				omission.Reason
+		}
+		if _, exists := grouped[key]; !exists {
+			grouped[key] = omission
+		}
+		if concern.facet == "" {
+			continue
+		}
+		reason := strings.TrimSpace(concern.reason)
+		if reason == "" {
+			reason = omission.Reason
+		}
+		reasons[key] = append(reasons[key], reason)
+	}
+	keys := make([]string, 0, len(grouped))
+	for key := range grouped {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]ContextSourceOmission, 0, min(len(keys), MaxContextSourceOmissions))
+	for _, key := range keys {
+		omission := grouped[key]
+		if len(reasons[key]) > 0 {
+			values := orderedContextConcernIDs(reasons[key])
+			omission.Reason = "missing evidence: " + strings.Join(values, "; ")
+		}
+		result = append(result, omission)
+		if len(result) == MaxContextSourceOmissions {
+			break
 		}
 	}
-	return false
+	return result
 }
 
 func contextSourceConcernRole(kind string) string {

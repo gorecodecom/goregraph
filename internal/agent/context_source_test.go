@@ -53,6 +53,60 @@ func TestApplyContextSourceCoverageRequiresEveryInternalFacet(t *testing.T) {
 	}
 }
 
+func TestContextSourceSectionSupportsOnlyMatchingEvidenceFacet(t *testing.T) {
+	base := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{"delete-job"},
+		"requested side effects",
+	)
+	mail := newContextEvidenceConcern(base, "mail", []string{"delete-job"}, "mail")
+	audit := newContextEvidenceConcern(base, "audit", []string{"delete-job"}, "audit")
+	user := newContextEvidenceConcern(base, "user_information", []string{"delete-job"}, "user")
+	section := ContextSourceSection{
+		Project:    "services/jobs",
+		Role:       "call_chain",
+		RenderMode: "declaration_body",
+		Content: `void deleteJob() {
+  mailService.sendDeletedMail(job);
+}`,
+	}
+	if !contextSourceSectionSupportsEvidence(section, mail) {
+		t.Fatal("mail evidence was rejected")
+	}
+	if contextSourceSectionSupportsEvidence(section, audit) ||
+		contextSourceSectionSupportsEvidence(section, user) {
+		t.Fatal("mail-only source covered audit or user information")
+	}
+}
+
+func TestContextSourceEvidenceOmissionsCoalesceFacetsByPath(t *testing.T) {
+	base := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{"service"},
+		"requested side effects",
+	)
+	concerns := []contextConcern{
+		newContextEvidenceConcern(base, "mail", []string{"service"}, "mail evidence"),
+		newContextEvidenceConcern(base, "audit", []string{"service"}, "audit evidence"),
+	}
+	candidates := []sourceCandidate{{
+		FactID: "service", FactIDs: []string{"service"},
+		Project: "services/jobs", Path: "src/JobService.java", Role: "call_chain",
+	}}
+	got := contextSourceEvidenceOmissions(concerns, candidates, nil, map[string]bool{})
+	if len(got) != 1 ||
+		got[0].Project != "services/jobs" ||
+		got[0].Path != "src/JobService.java" ||
+		!strings.Contains(got[0].Reason, "audit evidence") ||
+		!strings.Contains(got[0].Reason, "mail evidence") {
+		t.Fatalf("coalesced omissions = %#v", got)
+	}
+}
+
 func TestExpandContextEvidenceConcernsScopesOperationalBoundaries(t *testing.T) {
 	pack, index := contextEvidenceExpansionFixture()
 	concerns := []contextConcern{
