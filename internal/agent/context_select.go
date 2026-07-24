@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -38,15 +39,34 @@ type contextSourceSelectionState struct {
 	selectedEvidenceFamilies map[string]int
 }
 
+const contextPublicSourceConcernRank = 1_000_000
+
 func selectContextSourceOptions(
 	pack ContextPack,
 	loaded loadedContextIndex,
 	request ContextRequest,
 ) (ContextPack, error) {
 	concerns := contextSourceConcerns(pack, loaded.Index)
-	candidates := contextSourceCandidatesForConcerns(pack, loaded.Index, concerns)
+	requestedModelIDs := contextRequestedDomainModelIDsFromConcerns(
+		pack,
+		loaded.Index,
+		concerns,
+	)
+	candidates := contextSourceCandidatesForConcernsWithModels(
+		pack,
+		loaded.Index,
+		concerns,
+		requestedModelIDs,
+	)
 	distances := contextSourcePathDistances(pack, loaded.Index)
-	options, failures, err := contextSourceRenderOptions(pack, loaded, candidates, concerns, distances)
+	options, failures, err := contextSourceRenderOptionsWithModels(
+		pack,
+		loaded,
+		candidates,
+		concerns,
+		distances,
+		requestedModelIDs,
+	)
 	if err != nil {
 		return ContextPack{}, err
 	}
@@ -68,25 +88,52 @@ func selectContextSourceOptions(
 	if err != nil {
 		return ContextPack{}, err
 	}
+	sectionRequest, err := contextSourceRequestWithOmissionReserve(
+		pack,
+		request,
+		contextSourceEvidenceOmissionsWithOptions(
+			contextSourceConcernsWithoutRenderedOptions(concerns, options),
+			candidates,
+			options,
+			failures,
+			state.coveredConcerns,
+		),
+	)
+	if err != nil {
+		return ContextPack{}, err
+	}
 
 	coreBoundaries := contextCoreSourceBoundaries(pack, loaded.Index, distances)
 	for _, boundary := range mandatoryContextSourceBoundaries(loaded.Index, concerns, coreBoundaries, distances) {
 		if contextSourceBoundaryCovered(boundary, state) {
 			continue
 		}
-		option, ok, selectErr := smallestFittingContextSourceOption(pack, request, options, concerns, state, boundary)
+		option, ok, selectErr := smallestFittingContextSourceOption(
+			pack,
+			sectionRequest,
+			options,
+			concerns,
+			state,
+			boundary,
+		)
 		if selectErr != nil {
 			return ContextPack{}, selectErr
 		}
 		if !ok {
 			continue
 		}
-		pack, state, err = addContextSourceOption(pack, request, option, concerns, state)
+		pack, state, err = addContextSourceOption(pack, sectionRequest, option, concerns, state)
 		if err != nil {
 			return ContextPack{}, err
 		}
 	}
-	pack, err = enrichContextCoreSourceOptions(pack, request, options, state, coreBoundaries)
+	pack, err = enrichContextCoreSourceOptions(
+		pack,
+		sectionRequest,
+		options,
+		state,
+		coreBoundaries,
+	)
 	if err != nil {
 		return ContextPack{}, err
 	}
@@ -94,7 +141,7 @@ func selectContextSourceOptions(
 	for len(pack.SourceSections) < MaxContextSourceSections {
 		productionPending := coverableContextSourceProductionPending(concerns, options, state)
 		best, bestUtility, found, utilityErr := contextSourceUtilityOption(
-			pack, request, options, concerns, state, productionPending,
+			pack, sectionRequest, options, concerns, state, productionPending,
 		)
 		if utilityErr != nil {
 			return ContextPack{}, utilityErr
@@ -102,15 +149,22 @@ func selectContextSourceOptions(
 		if !found || bestUtility <= 0 {
 			break
 		}
-		pack, state, err = addContextSourceOption(pack, request, best, concerns, state)
+		pack, state, err = addContextSourceOption(
+			pack,
+			sectionRequest,
+			best,
+			concerns,
+			state,
+		)
 		if err != nil {
 			return ContextPack{}, err
 		}
 	}
 	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
-	for _, omission := range contextSourceEvidenceOmissions(
+	for _, omission := range contextSourceEvidenceOmissionsWithOptions(
 		concerns,
 		candidates,
+		options,
 		failures,
 		state.coveredConcerns,
 	) {
@@ -133,6 +187,73 @@ func selectContextSourceOptions(
 	}
 	pack.SourceSections = contextSourceSectionsProductionFirst(pack.SourceSections)
 	return finalizeContextPackWithinBudget(pack, request)
+}
+
+func contextSourceConcernsWithoutRenderedOptions(
+	concerns []contextConcern,
+	options []contextSourceOption,
+) []contextConcern {
+	result := make([]contextConcern, 0)
+	for _, concern := range concerns {
+		if !concern.required {
+			continue
+		}
+		hasOption := false
+		for _, option := range options {
+			if contextSourceOptionHasConcern(option, concern.key) {
+				hasOption = true
+				break
+			}
+		}
+		if !hasOption {
+			result = append(result, concern)
+		}
+	}
+	return result
+}
+
+func contextSourceRequestWithOmissionReserve(
+	pack ContextPack,
+	request ContextRequest,
+	omissions []ContextSourceOmission,
+) (ContextRequest, error) {
+	if len(omissions) == 0 {
+		return request, nil
+	}
+	before, err := contextBudgetView(pack)
+	if err != nil {
+		return ContextRequest{}, err
+	}
+	probe := cloneContextPack(pack)
+	probe.SourceOmissions = append(
+		probe.SourceOmissions,
+		omissions[:min(len(omissions), MaxContextSourceOmissions)]...,
+	)
+	probe, err = finalizeContextEstimate(probe)
+	if err != nil {
+		return ContextRequest{}, err
+	}
+	after, err := contextBudgetView(probe)
+	if err != nil {
+		return ContextRequest{}, err
+	}
+	reserve := after.EstimatedTokens - before.EstimatedTokens
+	beforeBody, err := json.Marshal(before)
+	if err != nil {
+		return ContextRequest{}, err
+	}
+	afterBody, err := json.Marshal(after)
+	if err != nil {
+		return ContextRequest{}, err
+	}
+	if byteReserve := (len(afterBody) - len(beforeBody) + 3) / 4; byteReserve > reserve {
+		reserve = byteReserve
+	}
+	if reserve <= 0 || request.BudgetTokens-reserve < MinContextBudgetTokens {
+		return request, nil
+	}
+	request.BudgetTokens -= reserve
+	return request, nil
 }
 
 func contextSourceSectionsProductionFirst(sections []ContextSourceSection) []ContextSourceSection {
@@ -159,10 +280,25 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 	for index, concern := range planned {
 		plannedByKey[concern.key] = index
 	}
+	requestedModels := contextRequestedDomainModelIDsFromConcerns(
+		pack,
+		index,
+		planned,
+	)
+	endpointProjects, contractProjects, modelProjects :=
+		contextEvidenceProjectRolesForModels(pack, index, requestedModels)
 
 	if len(pack.Concerns) == 0 {
 		sort.Slice(planned, func(i, j int) bool { return planned[i].key < planned[j].key })
-		return expandContextEvidenceConcerns(pack, index, planned)
+		return expandContextEvidenceConcernsWithProfile(
+			pack,
+			index,
+			planned,
+			requestedModels,
+			endpointProjects,
+			contractProjects,
+			modelProjects,
+		)
 	}
 	concerns := make([]contextConcern, 0, len(pack.Concerns))
 	added := make(map[string]bool, len(pack.Concerns))
@@ -174,12 +310,14 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 		selected := contextSourceConcernFromPack(pack, index, public)
 		if plannedIndex, ok := plannedByKey[key]; ok {
 			concern := planned[plannedIndex]
+			concern.rank = max(concern.rank, contextPublicSourceConcernRank)
 			concern.candidateFactIDs = orderedContextConcernIDs(append(
 				concern.candidateFactIDs,
 				selected.candidateFactIDs...,
 			))
 			concerns = append(concerns, concern)
 		} else {
+			selected.rank = max(selected.rank, contextPublicSourceConcernRank)
 			concerns = append(concerns, selected)
 		}
 		added[key] = true
@@ -191,17 +329,42 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 			concern.kind == contextConcernProject {
 			continue
 		}
-		concern.required = contextRequiredEvidenceConcern(pack, index, concern)
+		concern.required = contextRequiredEvidenceConcernForRoles(
+			concern,
+			endpointProjects,
+			contractProjects,
+			modelProjects,
+		)
 		concerns = append(concerns, concern)
 		added[concern.key] = true
 	}
 	sort.Slice(concerns, func(i, j int) bool { return concerns[i].key < concerns[j].key })
-	return expandContextEvidenceConcerns(pack, index, concerns)
+	return expandContextEvidenceConcernsWithProfile(
+		pack,
+		index,
+		concerns,
+		requestedModels,
+		endpointProjects,
+		contractProjects,
+		modelProjects,
+	)
 }
 
 func contextEvidenceProjectRoles(
 	pack ContextPack,
 	index scan.AgentContextIndexRecord,
+) (map[string]bool, map[string]bool, map[string]bool) {
+	return contextEvidenceProjectRolesForModels(
+		pack,
+		index,
+		contextRequestedDomainModelIDs(pack, index),
+	)
+}
+
+func contextEvidenceProjectRolesForModels(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	requestedModels map[string]bool,
 ) (map[string]bool, map[string]bool, map[string]bool) {
 	endpointProjects := map[string]bool{}
 	for _, endpoint := range pack.Endpoints {
@@ -212,7 +375,6 @@ func contextEvidenceProjectRoles(
 		contractProjects[normalizeContextProject(contract.Project)] = true
 	}
 	modelProjects := map[string]bool{}
-	requestedModels := contextRequestedDomainModelIDs(pack, index)
 	for _, fact := range index.Facts {
 		if requestedModels[fact.ID] {
 			project := normalizeContextProject(fact.Project)
@@ -225,13 +387,12 @@ func contextEvidenceProjectRoles(
 	return endpointProjects, contractProjects, modelProjects
 }
 
-func contextRequiredEvidenceConcern(
-	pack ContextPack,
-	index scan.AgentContextIndexRecord,
+func contextRequiredEvidenceConcernForRoles(
 	concern contextConcern,
+	endpointProjects map[string]bool,
+	contractProjects map[string]bool,
+	modelProjects map[string]bool,
 ) bool {
-	endpointProjects, contractProjects, modelProjects :=
-		contextEvidenceProjectRoles(pack, index)
 	switch concern.kind {
 	case contextConcernAuth:
 		return endpointProjects[concern.project] ||
@@ -251,10 +412,30 @@ func expandContextEvidenceConcerns(
 	index scan.AgentContextIndexRecord,
 	concerns []contextConcern,
 ) []contextConcern {
-	queryTokens := contextExpandedTokenSet(contextSelectionQuery(pack))
 	requestedModels := contextRequestedDomainModelIDs(pack, index)
 	endpointProjects, contractProjects, modelProjects :=
-		contextEvidenceProjectRoles(pack, index)
+		contextEvidenceProjectRolesForModels(pack, index, requestedModels)
+	return expandContextEvidenceConcernsWithProfile(
+		pack,
+		index,
+		concerns,
+		requestedModels,
+		endpointProjects,
+		contractProjects,
+		modelProjects,
+	)
+}
+
+func expandContextEvidenceConcernsWithProfile(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	concerns []contextConcern,
+	requestedModels map[string]bool,
+	endpointProjects map[string]bool,
+	contractProjects map[string]bool,
+	modelProjects map[string]bool,
+) []contextConcern {
+	queryTokens := contextExpandedTokenSet(contextSelectionQuery(pack))
 	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
@@ -300,21 +481,37 @@ func expandContextEvidenceConcerns(
 				result = append(result, concern)
 				continue
 			}
+			bindingCandidates := contextEvidenceFacetCandidateIDs(
+				index,
+				concern.candidateFactIDs,
+				concern.project,
+				contextConcernConfiguration,
+				"binding",
+				queryTokens,
+			)
+			consumerCandidates := contextEvidenceFacetCandidateIDs(
+				index,
+				orderedContextConcernIDs(append(
+					append([]string(nil), concern.candidateFactIDs...),
+					contractFactIDs[concern.project]...,
+				)),
+				concern.project,
+				contextConcernConfiguration,
+				"consumer",
+				queryTokens,
+			)
 			result = append(
 				result,
 				newContextEvidenceConcern(
 					concern,
 					"binding",
-					concern.candidateFactIDs,
+					bindingCandidates,
 					"client configuration binding",
 				),
 				newContextEvidenceConcern(
 					concern,
 					"consumer",
-					orderedContextConcernIDs(append(
-						append([]string(nil), concern.candidateFactIDs...),
-						contractFactIDs[concern.project]...,
-					)),
+					consumerCandidates,
 					"client configuration consumption",
 				),
 			)
@@ -343,7 +540,14 @@ func expandContextEvidenceConcerns(
 				result = append(result, newContextEvidenceConcern(
 					concern,
 					facet,
-					candidates,
+					contextEvidenceFacetCandidateIDs(
+						index,
+						candidates,
+						concern.project,
+						contextConcernResilience,
+						facet,
+						queryTokens,
+					),
 					reason,
 				))
 				added = true
@@ -409,7 +613,14 @@ func expandContextEvidenceConcerns(
 				result = append(result, newContextEvidenceConcern(
 					concern,
 					name,
-					concern.candidateFactIDs,
+					contextEvidenceFacetCandidateIDs(
+						index,
+						concern.candidateFactIDs,
+						concern.project,
+						contextConcernSideEffects,
+						name,
+						queryTokens,
+					),
 					"requested "+name+" side effects",
 				))
 				added = true
@@ -423,6 +634,108 @@ func expandContextEvidenceConcerns(
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].key < result[j].key })
 	return result
+}
+
+func contextEvidenceFacetCandidateIDs(
+	index scan.AgentContextIndexRecord,
+	candidateFactIDs []string,
+	project string,
+	kind string,
+	facet string,
+	queryTokens map[string]bool,
+) []string {
+	project = normalizeContextProject(project)
+	result := make([]string, 0, len(candidateFactIDs))
+	candidateSet := make(map[string]bool, len(candidateFactIDs))
+	for _, factID := range candidateFactIDs {
+		candidateSet[factID] = true
+	}
+	for _, fact := range index.Facts {
+		if project != "" && normalizeContextProject(fact.Project) != project {
+			continue
+		}
+		facetMatch := contextEvidenceFacetFactScore(fact, kind, facet) > 0
+		actionMatch := contextConcernActionAligned(queryTokens, fact)
+		if kind == contextConcernSideEffects {
+			if candidateSet[fact.ID] {
+				if !facetMatch &&
+					(!actionMatch || contextEvidenceFactHasAnyFacet(fact, kind)) {
+					continue
+				}
+			} else if !facetMatch || !actionMatch {
+				continue
+			}
+			factKind := strings.ToLower(strings.TrimSpace(fact.Kind))
+			if factKind != "symbol" &&
+				normalizedContextConcernKind(factKind) != contextConcernSideEffects &&
+				normalizedContextConcernKind(factKind) != contextConcernTests {
+				continue
+			}
+		} else if !facetMatch || !eligibleContextConcernFact(fact) {
+			continue
+		}
+		result = append(result, fact.ID)
+	}
+	if len(result) == 0 {
+		return orderedContextConcernIDs(candidateFactIDs)
+	}
+	return orderedContextConcernIDs(result)
+}
+
+func contextEvidenceFactHasAnyFacet(
+	fact scan.AgentContextFactRecord,
+	kind string,
+) bool {
+	for facet := range contextEvidenceFacetVocabulary[kind] {
+		if contextEvidenceFacetFactScore(fact, kind, facet) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func contextEvidenceFacetFactScore(
+	fact scan.AgentContextFactRecord,
+	kind string,
+	facet string,
+) int {
+	value := strings.ToLower(strings.Join([]string{
+		fact.Kind,
+		fact.Name,
+		fact.Qualified,
+		fact.File,
+		fact.Path,
+		fact.Search,
+		fact.Summary,
+	}, " "))
+	score := 0
+	for _, token := range contextEvidenceFacetVocabulary[kind][facet] {
+		token = strings.ToLower(strings.TrimSpace(token))
+		if token != "" && strings.Contains(value, token) {
+			score++
+		}
+	}
+	switch kind + "#" + facet {
+	case contextConcernSideEffects + "#mail":
+		if contextSourceContainsAny(value, "sendmail", "sendemail") {
+			score++
+		}
+	case contextConcernSideEffects + "#audit":
+		if contextSourceContainsAny(value, "audit", "protocolservice", "trackingservice") {
+			score++
+		}
+	case contextConcernSideEffects + "#user_information":
+		if contextSourceContainsAny(
+			value,
+			"getuser",
+			"userservice",
+			"usermgmt",
+			"userinformation",
+		) {
+			score++
+		}
+	}
+	return score
 }
 
 func contextPublicConcernKey(concern ContextConcern) string {
@@ -541,9 +854,31 @@ func contextSourceRenderOptions(
 	concerns []contextConcern,
 	distances map[string]int,
 ) ([]contextSourceOption, map[string]string, error) {
+	return contextSourceRenderOptionsWithModels(
+		pack,
+		loaded,
+		candidates,
+		concerns,
+		distances,
+		contextRequestedDomainModelIDs(pack, loaded.Index),
+	)
+}
+
+func contextSourceRenderOptionsWithModels(
+	pack ContextPack,
+	loaded loadedContextIndex,
+	candidates []sourceCandidate,
+	concerns []contextConcern,
+	distances map[string]int,
+	requestedModelIDs map[string]bool,
+) ([]contextSourceOption, map[string]string, error) {
 	options := []contextSourceOption{}
 	failures := make(map[string]string)
-	requestedModelIDs := contextRequestedDomainModelIDs(pack, loaded.Index)
+	factByID := make(map[string]scan.AgentContextFactRecord, len(loaded.Index.Facts))
+	for _, fact := range loaded.Index.Facts {
+		factByID[fact.ID] = fact
+	}
+	domainTokens := contextSourceDomainModelTokens(pack, loaded.Index)
 	for _, candidate := range candidates {
 		path, err := resolveSourcePath(loaded, candidate)
 		if err != nil {
@@ -567,6 +902,8 @@ func contextSourceRenderOptions(
 			concerns,
 			distances,
 			requestedModelIDs,
+			factByID,
+			domainTokens,
 		)
 		if renderErr != nil {
 			return nil, nil, renderErr
@@ -588,6 +925,8 @@ func contextSourceRenderOptions(
 					concerns,
 					distances,
 					requestedModelIDs,
+					factByID,
+					domainTokens,
 				)
 				if renderErr != nil {
 					return nil, nil, renderErr
@@ -607,6 +946,8 @@ func contextSourceRenderOptions(
 					concerns,
 					distances,
 					requestedModelIDs,
+					factByID,
+					domainTokens,
 				)
 				if renderErr != nil {
 					return nil, nil, renderErr
@@ -632,8 +973,25 @@ func appendContextSourceCandidateOptions(
 	concerns []contextConcern,
 	distances map[string]int,
 	requestedModelIDs map[string]bool,
+	factByID map[string]scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
 ) (int, error) {
 	added := 0
+	facts := contextSourceCandidateFacts(candidate, factByID)
+	matchesModel := contextPersistenceFactsMatchRequestedDomainModel(
+		index,
+		facts,
+		domainTokens,
+		requestedModelIDs,
+	)
+	requestedModel := contextSourceCandidateHasRequestedModel(
+		candidate,
+		requestedModelIDs,
+	)
+	stableMatches := contextSourceStableDomainMatchesForFacts(facts, domainTokens)
+	requestedActions := contextActionFamilies(contextSelectionQuery(pack), "")
+	actionAligned := len(requestedActions) == 0 ||
+		contextSourceFactsActionAligned(facts, candidate, requestedActions)
 	for _, mode := range []string{"declaration_body", "body", "focused", "signature"} {
 		section, renderErr := renderSourceCandidate(candidate, file, mode)
 		if renderErr != nil {
@@ -658,11 +1016,12 @@ func appendContextSourceCandidateOptions(
 		if err != nil {
 			return 0, err
 		}
-		concernKeys, required := contextSourceOptionConcerns(
+		concernKeys, required := contextSourceOptionConcernsWithAction(
 			optionCandidate,
 			section,
 			concerns,
 			index,
+			actionAligned,
 		)
 		projectKey := ""
 		if optionCandidate.Role != "test" {
@@ -673,21 +1032,24 @@ func appendContextSourceCandidateOptions(
 			concernKeys: concernKeys, projectKey: projectKey, required: required,
 			pathDistance: contextSourceCandidateDistance(optionCandidate, distances),
 		}
-		option.evidenceFamily = contextSourceEvidenceFamily(pack, index, option)
-		option.matchesModel = contextPersistenceMatchesRequestedDomainModel(
+		option.evidenceFamily = contextSourceEvidenceFamilyForFacts(
+			pack,
+			option,
+			facts,
+			domainTokens,
+		)
+		option.matchesModel = matchesModel
+		option.modelMatchSet = true
+		option.requestedModel = requestedModel
+		option.candidateQuality = contextSourceCandidateQualityForFacts(
 			pack,
 			index,
 			option,
-			requestedModelIDs,
+			facts,
+			domainTokens,
 		)
-		option.modelMatchSet = true
-		option.requestedModel = contextSourceCandidateHasRequestedModel(
-			option.candidate,
-			requestedModelIDs,
-		)
-		option.candidateQuality = contextSourceCandidateQuality(pack, index, option)
-		option.quality = contextSourceOptionQuality(pack, index, option)
-		option.stableMatches = contextSourceStableDomainMatches(pack, index, option)
+		option.quality = contextSourceOptionQualityForProfile(option)
+		option.stableMatches = stableMatches
 		option.profiled = true
 		*options = append(*options, option)
 		added++
@@ -951,6 +1313,18 @@ func contextRequestedDomainModelIDs(
 	pack ContextPack,
 	index scan.AgentContextIndexRecord,
 ) map[string]bool {
+	planned := []contextConcern(nil)
+	if seed, ok := contextConcernPlanningSeed(index, contextSelectionQuery(pack)); ok {
+		planned = planContextConcerns(contextSelectionQuery(pack), index, seed)
+	}
+	return contextRequestedDomainModelIDsFromConcerns(pack, index, planned)
+}
+
+func contextRequestedDomainModelIDsFromConcerns(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	concerns []contextConcern,
+) map[string]bool {
 	domainTokens := contextSourceDomainModelTokens(pack, index)
 	selected := make(map[string]bool, len(pack.selectedSourceFactIDs))
 	for _, factID := range pack.selectedSourceFactIDs {
@@ -962,14 +1336,12 @@ func contextRequestedDomainModelIDs(
 			selectedModels[model.ID] = true
 		}
 	}
-	if seed, ok := contextConcernPlanningSeed(index, contextSelectionQuery(pack)); ok {
-		for _, concern := range planContextConcerns(contextSelectionQuery(pack), index, seed) {
-			if concern.kind != contextConcernDomainModel {
-				continue
-			}
-			for _, factID := range concern.candidateFactIDs {
-				selectedModels[factID] = true
-			}
+	for _, concern := range concerns {
+		if concern.kind != contextConcernDomainModel {
+			continue
+		}
+		for _, factID := range concern.candidateFactIDs {
+			selectedModels[factID] = true
 		}
 	}
 	return selectedModels
@@ -1013,6 +1385,39 @@ func contextPersistenceFactMatchesRequestedDomainModel(
 	requestedModelIDs map[string]bool,
 ) bool {
 	domainTokens := contextSourceDomainModelTokens(pack, index)
+	return contextPersistenceFactMatchesRequestedDomainModelWithTokens(
+		index,
+		fact,
+		domainTokens,
+		requestedModelIDs,
+	)
+}
+
+func contextPersistenceFactsMatchRequestedDomainModel(
+	index scan.AgentContextIndexRecord,
+	facts []scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+	requestedModelIDs map[string]bool,
+) bool {
+	for _, fact := range facts {
+		if contextPersistenceFactMatchesRequestedDomainModelWithTokens(
+			index,
+			fact,
+			domainTokens,
+			requestedModelIDs,
+		) {
+			return true
+		}
+	}
+	return false
+}
+
+func contextPersistenceFactMatchesRequestedDomainModelWithTokens(
+	index scan.AgentContextIndexRecord,
+	fact scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+	requestedModelIDs map[string]bool,
+) bool {
 	if len(requestedModelIDs) == 0 {
 		return contextPersistenceMatchesPrimaryDomainModel(index, fact, domainTokens)
 	}
@@ -1074,6 +1479,41 @@ func contextSourceOptionConcerns(
 	concerns []contextConcern,
 	index scan.AgentContextIndexRecord,
 ) ([]string, bool) {
+	return contextSourceOptionConcernsForQuery(
+		candidate,
+		section,
+		concerns,
+		index,
+		"",
+	)
+}
+
+func contextSourceOptionConcernsForQuery(
+	candidate sourceCandidate,
+	section ContextSourceSection,
+	concerns []contextConcern,
+	index scan.AgentContextIndexRecord,
+	query string,
+) ([]string, bool) {
+	requestedActions := contextActionFamilies(query, "")
+	actionAligned := len(requestedActions) == 0 ||
+		contextSourceCandidateActionAligned(candidate, index, requestedActions)
+	return contextSourceOptionConcernsWithAction(
+		candidate,
+		section,
+		concerns,
+		index,
+		actionAligned,
+	)
+}
+
+func contextSourceOptionConcernsWithAction(
+	candidate sourceCandidate,
+	section ContextSourceSection,
+	concerns []contextConcern,
+	index scan.AgentContextIndexRecord,
+	actionAligned bool,
+) ([]string, bool) {
 	factIDs := make(map[string]bool)
 	for _, factID := range contextSourceCandidateFactIDs(candidate) {
 		factIDs[factID] = true
@@ -1096,7 +1536,9 @@ func contextSourceOptionConcerns(
 			covered = false
 		}
 		if concern.facet != "" {
-			if !covered || !contextSourceSectionSupportsEvidence(section, concern) {
+			if !covered ||
+				concern.kind == contextConcernSideEffects && !actionAligned ||
+				!contextSourceSectionSupportsEvidence(section, concern) {
 				continue
 			}
 			keys = append(keys, concern.key)
@@ -1122,6 +1564,46 @@ func contextSourceOptionConcerns(
 	return keys, required
 }
 
+func contextSourceFactsActionAligned(
+	facts []scan.AgentContextFactRecord,
+	candidate sourceCandidate,
+	requestedActions map[string]bool,
+) bool {
+	for _, fact := range facts {
+		actions := contextActionFamilies(
+			strings.Join([]string{fact.Name, fact.Qualified}, " "),
+			fact.HTTPMethod,
+		)
+		if contextActionFamiliesOverlap(requestedActions, actions) {
+			return true
+		}
+	}
+	actions := contextActionFamilies(
+		strings.Join([]string{candidate.Name, candidate.Qualified}, " "),
+		"",
+	)
+	return contextActionFamiliesOverlap(requestedActions, actions)
+}
+
+func contextSourceCandidateActionAligned(
+	candidate sourceCandidate,
+	index scan.AgentContextIndexRecord,
+	requestedActions map[string]bool,
+) bool {
+	candidateFactIDs := make(map[string]bool)
+	for _, factID := range contextSourceCandidateFactIDs(candidate) {
+		candidateFactIDs[factID] = true
+	}
+	facts := make([]scan.AgentContextFactRecord, 0, len(candidateFactIDs))
+	for _, fact := range index.Facts {
+		if !candidateFactIDs[fact.ID] {
+			continue
+		}
+		facts = append(facts, fact)
+	}
+	return contextSourceFactsActionAligned(facts, candidate, requestedActions)
+}
+
 func contextSourceSectionSupportsEvidence(
 	section ContextSourceSection,
 	concern contextConcern,
@@ -1130,7 +1612,9 @@ func contextSourceSectionSupportsEvidence(
 		normalizeContextProject(section.Project) != concern.project {
 		return false
 	}
-	if section.Role == "test" && concern.kind != contextConcernTests {
+	if section.Role == "test" &&
+		concern.kind != contextConcernTests &&
+		concern.kind != contextConcernSideEffects {
 		return false
 	}
 	if concern.facet == "" {
@@ -1182,7 +1666,7 @@ func contextSourceSectionSupportsEvidence(
 	case contextConcernResilience + "#recovery":
 		return contextSourceContainsAny(content, "@recover", "recovering", "recovery")
 	case contextConcernSideEffects + "#mail":
-		return contextSourceContainsAny(content, "mailservice.", "sendmail", "sendemail")
+		return contextSourceContainsAny(content, "mailservice", "sendmail", "sendemail")
 	case contextConcernSideEffects + "#audit":
 		return contextSourceContainsAny(
 			content,
@@ -1491,6 +1975,15 @@ func contextSourceEvidenceFamily(
 ) string {
 	facts := contextSourceOptionFacts(index, option)
 	domainTokens := contextSourceDomainModelTokens(pack, index)
+	return contextSourceEvidenceFamilyForFacts(pack, option, facts, domainTokens)
+}
+
+func contextSourceEvidenceFamilyForFacts(
+	pack ContextPack,
+	option contextSourceOption,
+	facts []scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+) string {
 	if option.candidate.Role == contextConcernDomainModel {
 		return contextConcernDomainModel
 	}
@@ -1544,9 +2037,31 @@ func contextSourceCandidateQuality(
 	index scan.AgentContextIndexRecord,
 	option contextSourceOption,
 ) int {
-	family := contextSourceEvidenceFamily(pack, index, option)
 	facts := contextSourceOptionFacts(index, option)
 	domainTokens := contextSourceDomainModelTokens(pack, index)
+	option.evidenceFamily = contextSourceEvidenceFamilyForFacts(
+		pack,
+		option,
+		facts,
+		domainTokens,
+	)
+	return contextSourceCandidateQualityForFacts(
+		pack,
+		index,
+		option,
+		facts,
+		domainTokens,
+	)
+}
+
+func contextSourceCandidateQualityForFacts(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	option contextSourceOption,
+	facts []scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+) int {
+	family := option.evidenceFamily
 	stableMatches := 0
 	confidence := 0
 	genericPersistence := false
@@ -1613,16 +2128,21 @@ func contextSourceOptionQuality(
 	index scan.AgentContextIndexRecord,
 	option contextSourceOption,
 ) int {
-	quality := contextSourceCandidateQuality(pack, index, option)
+	option.evidenceFamily = contextSourceEvidenceFamily(pack, index, option)
+	option.candidateQuality = contextSourceCandidateQuality(pack, index, option)
+	return contextSourceOptionQualityForProfile(option)
+}
+
+func contextSourceOptionQualityForProfile(option contextSourceOption) int {
+	quality := option.candidateQuality
 	switch option.section.RenderMode {
 	case "declaration_body", "body":
 		quality += 180
 	case "focused":
 		quality += 100
 	}
-	family := contextSourceEvidenceFamily(pack, index, option)
 	if option.section.RenderMode == "signature" &&
-		contextSourceCrossCuttingFamily(family) {
+		contextSourceCrossCuttingFamily(option.evidenceFamily) {
 		quality -= 320
 	}
 	return max(-500, min(quality, 1000))
@@ -1636,17 +2156,24 @@ func contextSourceOptionFacts(
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
-	facts := make([]scan.AgentContextFactRecord, 0, len(contextSourceCandidateFactIDs(option.candidate)))
-	for _, factID := range contextSourceCandidateFactIDs(option.candidate) {
+	return contextSourceCandidateFacts(option.candidate, factByID)
+}
+
+func contextSourceCandidateFacts(
+	candidate sourceCandidate,
+	factByID map[string]scan.AgentContextFactRecord,
+) []scan.AgentContextFactRecord {
+	facts := make([]scan.AgentContextFactRecord, 0, len(contextSourceCandidateFactIDs(candidate)))
+	for _, factID := range contextSourceCandidateFactIDs(candidate) {
 		if fact, ok := factByID[factID]; ok {
 			facts = append(facts, fact)
 		}
 	}
 	if len(facts) == 0 {
 		facts = append(facts, scan.AgentContextFactRecord{
-			ID: option.candidate.FactID, Project: option.candidate.Project,
-			Kind: option.candidate.Kind, Name: option.candidate.Name,
-			Qualified: option.candidate.Qualified, File: option.candidate.Path,
+			ID: candidate.FactID, Project: candidate.Project,
+			Kind: candidate.Kind, Name: candidate.Name,
+			Qualified: candidate.Qualified, File: candidate.Path,
 		})
 	}
 	return facts
@@ -1669,8 +2196,18 @@ func contextSourceStableDomainMatches(
 	option contextSourceOption,
 ) int {
 	domainTokens := contextSourceDomainModelTokens(pack, index)
+	return contextSourceStableDomainMatchesForFacts(
+		contextSourceOptionFacts(index, option),
+		domainTokens,
+	)
+}
+
+func contextSourceStableDomainMatchesForFacts(
+	facts []scan.AgentContextFactRecord,
+	domainTokens map[string]bool,
+) int {
 	matches := 0
-	for _, fact := range contextSourceOptionFacts(index, option) {
+	for _, fact := range facts {
 		matches = max(matches, contextStableFactIdentityMatchCount(fact, domainTokens))
 	}
 	return matches
@@ -2538,10 +3075,15 @@ func applyContextSourceCoverage(
 func contextSourceConcernOmission(
 	concern contextConcern,
 	candidates []sourceCandidate,
+	options []contextSourceOption,
 	failures map[string]string,
 ) ContextSourceOmission {
 	matching := []sourceCandidate{}
 	for _, candidate := range candidates {
+		if concern.project != "" &&
+			normalizeContextProject(candidate.Project) != concern.project {
+			continue
+		}
 		matches := concern.kind == contextConcernProject && candidate.Role != "test" &&
 			normalizeContextProject(candidate.Project) == concern.project
 		if !matches {
@@ -2556,14 +3098,32 @@ func contextSourceConcernOmission(
 			matching = append(matching, candidate)
 		}
 	}
-	sort.Slice(matching, func(i, j int) bool { return contextSourceCandidateLess(matching[i], matching[j]) })
 	if len(matching) == 0 {
 		return ContextSourceOmission{
 			Project: concern.project, Role: contextSourceConcernRole(concern.kind),
 			Reason: "required concern has no indexed source candidate",
 		}
 	}
-	candidate := matching[0]
+	candidate := sourceCandidate{}
+	startLine := 0
+	endLine := 0
+	if option, ok := contextSourceOmissionEvidenceOption(concern, options); ok {
+		candidate = option.candidate
+		startLine = option.section.StartLine
+		endLine = option.section.EndLine
+	} else {
+		sort.Slice(matching, func(i, j int) bool {
+			leftScore := contextSourceOmissionFacetScore(concern, matching[i])
+			rightScore := contextSourceOmissionFacetScore(concern, matching[j])
+			if leftScore != rightScore {
+				return leftScore > rightScore
+			}
+			return contextSourceCandidateLess(matching[i], matching[j])
+		})
+		candidate = matching[0]
+		startLine = candidate.StartLine
+		endLine = candidate.EndLine
+	}
 	reason := "source section does not fit the response budget"
 	for _, factID := range contextSourceCandidateFactIDs(candidate) {
 		if failure := failures[factID]; failure != "" {
@@ -2571,8 +3131,13 @@ func contextSourceConcernOmission(
 			break
 		}
 	}
+	if startLine > 0 && endLine <= 0 {
+		endLine = startLine
+	}
 	return ContextSourceOmission{
-		Project: candidate.Project, Path: candidate.Path, Role: candidate.Role, Reason: reason,
+		Project: candidate.Project, Path: candidate.Path,
+		StartLine: startLine, EndLine: endLine,
+		Role: candidate.Role, Reason: reason,
 	}
 }
 
@@ -2582,13 +3147,35 @@ func contextSourceEvidenceOmissions(
 	failures map[string]string,
 	covered map[string]bool,
 ) []ContextSourceOmission {
+	return contextSourceEvidenceOmissionsWithOptions(
+		concerns,
+		candidates,
+		nil,
+		failures,
+		covered,
+	)
+}
+
+func contextSourceEvidenceOmissionsWithOptions(
+	concerns []contextConcern,
+	candidates []sourceCandidate,
+	options []contextSourceOption,
+	failures map[string]string,
+	covered map[string]bool,
+) []ContextSourceOmission {
 	grouped := map[string]ContextSourceOmission{}
 	reasons := map[string][]string{}
+	ranks := map[string]int{}
 	for _, concern := range concerns {
 		if !concern.required || covered[concern.key] {
 			continue
 		}
-		omission := contextSourceConcernOmission(concern, candidates, failures)
+		omission := contextSourceConcernOmission(
+			concern,
+			candidates,
+			options,
+			failures,
+		)
 		pathRank := "1"
 		if contextPackSourceFile(omission.Path) != "" {
 			pathRank = "0"
@@ -2603,6 +3190,7 @@ func contextSourceEvidenceOmissions(
 		if _, exists := grouped[key]; !exists {
 			grouped[key] = omission
 		}
+		ranks[key] = max(ranks[key], concern.rank)
 		if concern.facet == "" {
 			continue
 		}
@@ -2616,7 +3204,17 @@ func contextSourceEvidenceOmissions(
 	for key := range grouped {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	sort.Slice(keys, func(left, right int) bool {
+		leftPathBound := strings.HasPrefix(keys[left], "0")
+		rightPathBound := strings.HasPrefix(keys[right], "0")
+		if leftPathBound != rightPathBound {
+			return leftPathBound
+		}
+		if ranks[keys[left]] != ranks[keys[right]] {
+			return ranks[keys[left]] > ranks[keys[right]]
+		}
+		return keys[left] < keys[right]
+	})
 	result := make([]ContextSourceOmission, 0, min(len(keys), MaxContextSourceOmissions))
 	for _, key := range keys {
 		omission := grouped[key]
@@ -2630,6 +3228,61 @@ func contextSourceEvidenceOmissions(
 		}
 	}
 	return result
+}
+
+func contextSourceOmissionEvidenceOption(
+	concern contextConcern,
+	options []contextSourceOption,
+) (contextSourceOption, bool) {
+	matching := make([]contextSourceOption, 0)
+	for _, option := range options {
+		if concern.project != "" &&
+			normalizeContextProject(option.candidate.Project) != concern.project ||
+			!contextSourceOptionHasConcern(option, concern.key) {
+			continue
+		}
+		matching = append(matching, option)
+	}
+	if len(matching) == 0 {
+		return contextSourceOption{}, false
+	}
+	sort.Slice(matching, func(left, right int) bool {
+		if matching[left].candidateQuality != matching[right].candidateQuality {
+			return matching[left].candidateQuality > matching[right].candidateQuality
+		}
+		if matching[left].quality != matching[right].quality {
+			return matching[left].quality > matching[right].quality
+		}
+		if matching[left].estimated != matching[right].estimated {
+			return matching[left].estimated < matching[right].estimated
+		}
+		return contextSourceOptionLess(matching[left], matching[right])
+	})
+	return matching[0], true
+}
+
+func contextSourceOmissionFacetScore(
+	concern contextConcern,
+	candidate sourceCandidate,
+) int {
+	value := strings.ToLower(strings.Join([]string{
+		candidate.Kind,
+		candidate.Name,
+		candidate.Qualified,
+		candidate.Path,
+	}, " "))
+	tokens := append(
+		[]string(nil),
+		contextEvidenceFacetVocabulary[concern.kind][concern.facet]...,
+	)
+	tokens = append(tokens, strings.Split(concern.facet, "_")...)
+	score := 0
+	for _, token := range orderedContextConcernIDs(tokens) {
+		if token != "" && strings.Contains(value, strings.ToLower(token)) {
+			score++
+		}
+	}
+	return score
 }
 
 func contextSourceConcernRole(kind string) string {

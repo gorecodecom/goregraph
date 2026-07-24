@@ -1,12 +1,14 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
@@ -147,6 +149,173 @@ func TestContextSourceEvidenceOmissionsPrioritizeIndexedPaths(t *testing.T) {
 	}
 }
 
+func TestContextSourceEvidenceOmissionsStayWithinConcernProject(t *testing.T) {
+	base := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{"catalog-controller", "jobs-mail-service"},
+		"requested side effects",
+	)
+	concerns := []contextConcern{
+		newContextEvidenceConcern(
+			base,
+			"mail",
+			[]string{"catalog-controller", "jobs-mail-service"},
+			"requested mail side effects",
+		),
+	}
+	candidates := []sourceCandidate{
+		{
+			FactID: "catalog-controller", FactIDs: []string{"catalog-controller"},
+			Project: "services/catalog", Path: "src/CatalogController.java",
+			StartLine: 40, EndLine: 60, Role: "entrypoint",
+		},
+		{
+			FactID: "jobs-mail-service", FactIDs: []string{"jobs-mail-service"},
+			Project: "services/jobs", Path: "src/JobMailService.java",
+			StartLine: 210, EndLine: 236, Role: "call_chain",
+		},
+	}
+
+	got := contextSourceEvidenceOmissions(concerns, candidates, nil, map[string]bool{})
+	if len(got) != 1 ||
+		got[0].Project != "services/jobs" ||
+		got[0].Path != "src/JobMailService.java" {
+		t.Fatalf("project-scoped omission = %#v", got)
+	}
+}
+
+func TestContextSourceEvidenceOmissionJSONIncludesIndexedRange(t *testing.T) {
+	concern := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernConfiguration,
+			"libraries/jobs",
+			true,
+			[]string{"jobs-config"},
+			"requested configuration",
+		),
+		"binding",
+		[]string{"jobs-config"},
+		"client configuration binding",
+	)
+	candidates := []sourceCandidate{{
+		FactID: "jobs-config", FactIDs: []string{"jobs-config"},
+		Project: "libraries/jobs", Path: "src/JobsConfig.java",
+		StartLine: 17, EndLine: 44, Role: "call_chain",
+	}}
+
+	got := contextSourceEvidenceOmissions(
+		[]contextConcern{concern},
+		candidates,
+		nil,
+		map[string]bool{},
+	)
+	if len(got) != 1 {
+		t.Fatalf("omissions = %#v", got)
+	}
+	body, err := json.Marshal(got[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"start_line":17`) ||
+		!strings.Contains(string(body), `"end_line":44`) {
+		t.Fatalf("bounded omission JSON = %s", body)
+	}
+}
+
+func TestContextSourceEvidenceOmissionsPrioritizeHigherRankedConcern(t *testing.T) {
+	hidden := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernSideEffects,
+			"services/catalog",
+			true,
+			[]string{"catalog-controller"},
+			"hidden adjacent side effects",
+		),
+		"mail",
+		[]string{"catalog-controller"},
+		"hidden mail evidence",
+	)
+	hidden.rank = 10
+	public := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernConfiguration,
+			"services/jobs",
+			true,
+			[]string{"jobs-config"},
+			"public configuration",
+		),
+		"binding",
+		[]string{"jobs-config"},
+		"public configuration binding",
+	)
+	public.rank = 100
+	candidates := []sourceCandidate{
+		{
+			FactID: "catalog-controller", FactIDs: []string{"catalog-controller"},
+			Project: "services/catalog", Path: "src/CatalogController.java",
+			StartLine: 20, EndLine: 38, Role: "entrypoint",
+		},
+		{
+			FactID: "jobs-config", FactIDs: []string{"jobs-config"},
+			Project: "services/jobs", Path: "src/JobsConfig.java",
+			StartLine: 14, EndLine: 42, Role: "call_chain",
+		},
+	}
+
+	got := contextSourceEvidenceOmissions(
+		[]contextConcern{hidden, public},
+		candidates,
+		nil,
+		map[string]bool{},
+	)
+	if len(got) != 2 || got[0].Path != "src/JobsConfig.java" {
+		t.Fatalf("ranked omissions = %#v", got)
+	}
+}
+
+func TestContextSourceEvidenceOmissionsPreferFacetSpecificCandidate(t *testing.T) {
+	mail := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernSideEffects,
+			"services/jobs",
+			true,
+			[]string{"security", "mail-test"},
+			"requested side effects",
+		),
+		"mail",
+		[]string{"security", "mail-test"},
+		"requested mail side effects",
+	)
+	candidates := []sourceCandidate{
+		{
+			FactID: "security", FactIDs: []string{"security"},
+			Project: "services/jobs", Path: "src/main/java/jobs/config/SecurityConfig.java",
+			StartLine: 77, EndLine: 99, Role: "call_chain",
+			Name: "securityFilterChain", Qualified: "SecurityConfig.securityFilterChain",
+		},
+		{
+			FactID: "mail-test", FactIDs: []string{"mail-test"},
+			Project: "services/jobs", Path: "src/test/java/jobs/CadasterTaskMailTests.java",
+			StartLine: 1415, EndLine: 1432, Role: "test",
+			Name:      "testDeleteRegChangeTask_mailSent",
+			Qualified: "CadasterTaskMailTests.testDeleteRegChangeTask_mailSent",
+		},
+	}
+
+	got := contextSourceEvidenceOmissions(
+		[]contextConcern{mail},
+		candidates,
+		nil,
+		map[string]bool{},
+	)
+	if len(got) != 1 ||
+		got[0].Path != "src/test/java/jobs/CadasterTaskMailTests.java" {
+		t.Fatalf("facet-specific omission = %#v", got)
+	}
+}
+
 func TestExpandContextEvidenceConcernsScopesOperationalBoundaries(t *testing.T) {
 	pack, index := contextEvidenceExpansionFixture()
 	concerns := []contextConcern{
@@ -202,6 +371,156 @@ func TestExpandContextEvidenceConcernsScopesOperationalBoundaries(t *testing.T) 
 		if _, ok := findContextConcern(got, key); !ok {
 			t.Errorf("expanded concern %q missing from %#v", key, got)
 		}
+	}
+}
+
+func TestExpandContextEvidenceConcernsNarrowsSideEffectCandidatesByFacet(t *testing.T) {
+	pack := ContextPack{
+		Query:          "delete task with mail, audit, and user information",
+		selectionQuery: "delete task with mail, audit, and user information",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "security", Project: "services/jobs", Kind: "symbol",
+			Name: "securityFilterChain", Qualified: "SecurityConfig.securityFilterChain",
+			File: "src/main/java/jobs/SecurityConfig.java",
+		},
+		{
+			ID: "mail-service", Project: "services/jobs", Kind: "symbol",
+			Name: "sendDeletedTaskMail", Qualified: "TaskMailService.sendDeletedTaskMail",
+			File: "src/main/java/jobs/TaskMailService.java",
+		},
+		{
+			ID: "audit-service", Project: "services/jobs", Kind: "symbol",
+			Name: "trackDeletedTask", Qualified: "TaskTrackingService.trackDeletedTask",
+			File: "src/main/java/jobs/TaskTrackingService.java",
+		},
+		{
+			ID: "user-service", Project: "services/jobs", Kind: "symbol",
+			Name: "getUserInformation", Qualified: "TaskUserService.getUserInformation",
+			File: "src/main/java/jobs/TaskUserService.java",
+		},
+		{
+			ID: "delete-handler", Project: "services/jobs", Kind: "symbol",
+			Name: "deleteTask", Qualified: "TaskService.deleteTask",
+			File: "src/main/java/jobs/TaskService.java",
+		},
+	}}
+	base := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{
+			"security",
+			"mail-service",
+			"audit-service",
+			"user-service",
+			"delete-handler",
+		},
+		"requested side effects",
+	)
+
+	got := expandContextEvidenceConcernsWithProfile(
+		pack,
+		index,
+		[]contextConcern{base},
+		nil,
+		map[string]bool{},
+		map[string]bool{},
+		map[string]bool{"services/jobs": true},
+	)
+	for key, want := range map[string][]string{
+		contextConcernSideEffects + ":services/jobs#mail": {
+			"delete-handler", "mail-service",
+		},
+		contextConcernSideEffects + ":services/jobs#audit": {
+			"audit-service", "delete-handler",
+		},
+		contextConcernSideEffects + ":services/jobs#user_information": {
+			"delete-handler", "user-service",
+		},
+	} {
+		concern, ok := findContextConcern(got, key)
+		if !ok || !reflect.DeepEqual(concern.candidateFactIDs, want) {
+			t.Errorf("%q candidates = %#v, want %#v", key, concern.candidateFactIDs, want)
+		}
+	}
+}
+
+func TestContextSourceOptionConcernsRejectsUnrelatedSideEffectAction(t *testing.T) {
+	base := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{"due-mail", "delete-mail"},
+		"requested side effects",
+	)
+	mail := newContextEvidenceConcern(
+		base,
+		"mail",
+		base.candidateFactIDs,
+		"requested mail side effects",
+	)
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "due-mail", Project: "services/jobs", Kind: "symbol",
+			Name: "sendDueMails", Qualified: "TaskMailService.sendDueMails",
+		},
+		{
+			ID: "delete-mail", Project: "services/jobs", Kind: "test",
+			Name: "deleteTaskSendsMail", Qualified: "TaskMailTests.deleteTaskSendsMail",
+		},
+	}}
+	section := ContextSourceSection{
+		Project:    "services/jobs",
+		Role:       "call_chain",
+		RenderMode: "declaration_body",
+		Content: `void sendDueMails() {
+  mailService.sendMail(task);
+}`,
+	}
+
+	keys, _ := contextSourceOptionConcernsForQuery(
+		sourceCandidate{
+			FactID: "due-mail", FactIDs: []string{"due-mail"},
+			Project: "services/jobs", Name: "sendDueMails",
+			Qualified: "TaskMailService.sendDueMails",
+		},
+		section,
+		[]contextConcern{mail},
+		index,
+		"delete task with mail",
+	)
+	if len(keys) != 0 {
+		t.Fatalf("unrelated due-mail action covered delete-mail concern: %#v", keys)
+	}
+}
+
+func TestContextSourceSectionSupportsExecutableTestAsSideEffectEvidence(t *testing.T) {
+	mail := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernSideEffects,
+			"services/jobs",
+			true,
+			[]string{"mail-test"},
+			"requested side effects",
+		),
+		"mail",
+		[]string{"mail-test"},
+		"requested mail side effects",
+	)
+	section := ContextSourceSection{
+		Project:    "services/jobs",
+		Role:       "test",
+		RenderMode: "declaration_body",
+		Content: `void deleteTaskSendsMail() {
+  verify(cadasterTaskMailService, times(1))
+    .sendTaskDeletedMailToResponsible(responsible, creator, task);
+}`,
+	}
+
+	if !contextSourceSectionSupportsEvidence(section, mail) {
+		t.Fatal("executable mail test was rejected as side-effect evidence")
 	}
 }
 
@@ -2221,6 +2540,256 @@ func TestContextSourceConcernCandidatesDoNotLetOneFileConsumeTheCap(t *testing.T
 	}
 }
 
+func TestContextSourceConcernCandidateGrowthIsSubquadratic(t *testing.T) {
+	small := benchmarkContextSourceConcernCandidates(240)
+	large := benchmarkContextSourceConcernCandidates(480)
+	growth := float64(large.NsPerOp()) / float64(small.NsPerOp())
+	t.Logf(
+		"context source candidate growth: %.2fx (small=%s large=%s)",
+		growth,
+		small,
+		large,
+	)
+	if growth >= 3.25 {
+		t.Fatalf(
+			"doubling context source candidates grew selection time %.2fx; want less than 3.25x (small=%s large=%s)",
+			growth,
+			small,
+			large,
+		)
+	}
+	if large.NsPerOp() >= int64(500*time.Millisecond) {
+		t.Fatalf(
+			"context source selection took %s for 480 candidates; want less than 500ms",
+			time.Duration(large.NsPerOp()),
+		)
+	}
+}
+
+func benchmarkContextSourceConcernCandidates(size int) testing.BenchmarkResult {
+	const project = "services/jobs"
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "route", Project: "services/catalog", Kind: "api_endpoint",
+			Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+			Qualified:  "CatalogController.deleteRegulation",
+			HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+			File: "CatalogController.java", Line: 20, EndLine: 32,
+			Search: "delete cadaster regulation task",
+		},
+		{
+			ID: "task-model", Project: project, Kind: "symbol",
+			Name: "CadasterRegTaskEntity", Qualified: "CadasterRegTaskEntity",
+			File: "CadasterRegTaskEntity.java", Line: 10, EndLine: 28,
+			Search: "cadaster regulation task model entity",
+		},
+	}
+	candidateIDs := make([]string, 0, size)
+	selectedIDs := []string{"route", "task-model"}
+	for index := range size {
+		id := fmt.Sprintf("repository-%d", index)
+		candidateIDs = append(candidateIDs, id)
+		selectedIDs = append(selectedIDs, id)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Project: project, Kind: contextConcernPersistence,
+			Name: fmt.Sprintf("findByCadasterIdAndObjectId%d", index),
+			Qualified: fmt.Sprintf(
+				"CadasterRegTaskRepository%d.findByCadasterIdAndObjectId",
+				index,
+			),
+			File: fmt.Sprintf("CadasterRegTaskRepository%d.java", index),
+			Line: 15, EndLine: 18,
+			Search: "cadaster regulation task persistence repository",
+		})
+	}
+	query := "Analyze services/jobs cadaster regulation task persistence and lookup attributes."
+	pack := ContextPack{
+		Query:                 query,
+		selectionQuery:        query,
+		Entrypoints:           []ContextLocation{{ID: "route"}},
+		selectedSourceFactIDs: selectedIDs,
+	}
+	index := scan.AgentContextIndexRecord{Facts: facts}
+	concern := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernPersistence,
+			project,
+			true,
+			candidateIDs,
+			"requested persistence",
+		),
+		"model:task-model",
+		candidateIDs,
+		"task persistence",
+	)
+
+	return testing.Benchmark(func(benchmark *testing.B) {
+		for iteration := 0; iteration < benchmark.N; iteration++ {
+			contextSourceCandidatesForConcerns(
+				pack,
+				index,
+				[]contextConcern{concern},
+			)
+		}
+	})
+}
+
+func TestContextSourceConcernPlanningAvoidsRepeatedProjectRoleDiscovery(t *testing.T) {
+	result := benchmarkContextSourceConcernPlanning()
+	t.Logf("context source concern planning: %s", result)
+	if result.NsPerOp() >= int64(75*time.Millisecond) {
+		t.Fatalf(
+			"context source concern planning took %s; want less than 75ms",
+			time.Duration(result.NsPerOp()),
+		)
+	}
+}
+
+func benchmarkContextSourceConcernPlanning() testing.BenchmarkResult {
+	facts := []scan.AgentContextFactRecord{{
+		ID: "route", Project: "services/catalog", Kind: "api_endpoint",
+		Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+		Qualified:  "CatalogController.deleteRegulation",
+		HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+		File: "CatalogController.java", Line: 20, EndLine: 32,
+		Search: "delete cadaster regulation task",
+	}}
+	selectedIDs := []string{"route"}
+	projectNames := []string{"services/jobs-a", "services/jobs-b", "libraries/jobs-client"}
+	kinds := []string{
+		contextConcernHTTPContract,
+		contextConcernAuth,
+		contextConcernConfiguration,
+		contextConcernResilience,
+		contextConcernPersistence,
+		contextConcernSideEffects,
+		contextConcernTests,
+	}
+	for _, project := range projectNames {
+		for _, kind := range kinds {
+			for index := range 8 {
+				id := fmt.Sprintf("%s-%s-%d", project, kind, index)
+				selectedIDs = append(selectedIDs, id)
+				facts = append(facts, scan.AgentContextFactRecord{
+					ID: id, Project: project, Kind: kind,
+					Name:       fmt.Sprintf("%sCadasterRegTask%d", kind, index),
+					Qualified:  fmt.Sprintf("%s.%sCadasterRegTask%d", project, kind, index),
+					HTTPMethod: "GET", Path: "/cadastertaskmgmt/tasks",
+					File: fmt.Sprintf("%s%d.java", kind, index),
+					Line: 10 + index, EndLine: 12 + index,
+					Search: "cadaster regulation task auth configuration retry recovery persistence mail audit user information tests",
+				})
+			}
+		}
+	}
+	query := "Delete a cadaster regulation and analyze services/jobs-a, services/jobs-b, and libraries/jobs-client for auth, configuration, retry, recovery, persistence, mail, audit, user information, and tests."
+	pack := ContextPack{
+		Query:                 query,
+		selectionQuery:        query,
+		Concerns:              []ContextConcern{{Kind: contextConcernEntrypoint}},
+		Entrypoints:           []ContextLocation{{ID: "route"}},
+		selectedSourceFactIDs: selectedIDs,
+	}
+	index := scan.AgentContextIndexRecord{Facts: facts}
+
+	return testing.Benchmark(func(benchmark *testing.B) {
+		for iteration := 0; iteration < benchmark.N; iteration++ {
+			contextSourceConcerns(pack, index)
+		}
+	})
+}
+
+func TestContextSourceRenderOptionProfilingReusesIndexLookups(t *testing.T) {
+	result := benchmarkContextSourceRenderOptions(t, 64)
+	t.Logf("context source render options: %s", result)
+	if result.NsPerOp() >= int64(150*time.Millisecond) {
+		t.Fatalf(
+			"context source render options took %s; want less than 150ms",
+			time.Duration(result.NsPerOp()),
+		)
+	}
+}
+
+func benchmarkContextSourceRenderOptions(
+	t *testing.T,
+	size int,
+) testing.BenchmarkResult {
+	t.Helper()
+	root := t.TempDir()
+	facts := make([]scan.AgentContextFactRecord, 0, size)
+	candidates := make([]sourceCandidate, 0, size)
+	candidateIDs := make([]string, 0, size)
+	for index := range size {
+		id := fmt.Sprintf("delete-task-%d", index)
+		name := fmt.Sprintf("deleteTask%d", index)
+		path := fmt.Sprintf("repository_%d.go", index)
+		writeSourceFile(
+			t,
+			root,
+			path,
+			fmt.Sprintf(
+				"package jobs\n\nfunc %s() {\n\trepository.Delete()\n}\n",
+				name,
+			),
+		)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Project: "services/jobs", Kind: contextConcernPersistence,
+			Name: name, Qualified: "JobRepository." + name,
+			File: path, Line: 3, EndLine: 5,
+			Search: "task persistence repository delete",
+		})
+		candidates = append(candidates, sourceCandidate{
+			FactID: id, FactIDs: []string{id},
+			Project: "services/jobs", Path: path,
+			StartLine: 3, EndLine: 5,
+			Role: contextConcernPersistence,
+			Kind: contextConcernPersistence,
+			Name: name, Qualified: "JobRepository." + name,
+		})
+		candidateIDs = append(candidateIDs, id)
+	}
+	for index := range 1200 {
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID:        fmt.Sprintf("background-%d", index),
+			Project:   fmt.Sprintf("services/background-%d", index%20),
+			Kind:      "symbol",
+			Name:      fmt.Sprintf("BackgroundType%d", index),
+			Qualified: fmt.Sprintf("BackgroundType%d", index),
+			File:      fmt.Sprintf("BackgroundType%d.go", index),
+			Line:      1,
+			EndLine:   3,
+			Search:    "background unrelated symbol",
+		})
+	}
+	query := "Analyze services/jobs task persistence and deletion."
+	pack := ContextPack{Query: query, selectionQuery: query}
+	index := scan.AgentContextIndexRecord{Facts: facts}
+	loaded := loadedContextIndex{ScopeRoot: root, Index: index}
+	concern := newContextConcern(
+		contextConcernPersistence,
+		"services/jobs",
+		true,
+		candidateIDs,
+		"requested persistence",
+	)
+
+	return testing.Benchmark(func(benchmark *testing.B) {
+		for iteration := 0; iteration < benchmark.N; iteration++ {
+			_, _, err := contextSourceRenderOptionsWithModels(
+				pack,
+				loaded,
+				candidates,
+				[]contextConcern{concern},
+				nil,
+				nil,
+			)
+			if err != nil {
+				benchmark.Fatal(err)
+			}
+		}
+	})
+}
+
 func TestContextSourceRoleRecognizesRepositoryOwner(t *testing.T) {
 	fact := scan.AgentContextFactRecord{
 		ID: "repository-owner", Project: "services/jobs", Kind: "symbol",
@@ -3447,7 +4016,9 @@ func TestContextSourceConcernCoverage(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := ContextSourceOmission{
-			Project: "services/provider", Path: "Provider.go", Role: "call_chain", Reason: "source file is missing",
+			Project: "services/provider", Path: "Provider.go",
+			StartLine: 1, EndLine: 1,
+			Role: "call_chain", Reason: "source file is missing",
 		}
 		if got.SourceCoverage != "partial" || len(got.SourceOmissions) != 1 || got.SourceOmissions[0] != want {
 			t.Fatalf("required project omission = %#v, want %#v", got, want)

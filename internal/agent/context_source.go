@@ -170,6 +170,20 @@ func contextSourceCandidatesForConcerns(
 	index scan.AgentContextIndexRecord,
 	concerns []contextConcern,
 ) []sourceCandidate {
+	return contextSourceCandidatesForConcernsWithModels(
+		pack,
+		index,
+		concerns,
+		contextRequestedDomainModelIDs(pack, index),
+	)
+}
+
+func contextSourceCandidatesForConcernsWithModels(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	concerns []contextConcern,
+	requestedModelIDs map[string]bool,
+) []sourceCandidate {
 	selected := make(map[string]bool, len(pack.selectedSourceFactIDs))
 	for _, factID := range pack.selectedSourceFactIDs {
 		selected[factID] = true
@@ -185,7 +199,6 @@ func contextSourceCandidatesForConcerns(
 		aliases,
 		explicitProjects,
 	)
-	requestedModelIDs := contextRequestedDomainModelIDs(pack, index)
 	anchorTokens := contextSourceAnchorTokens(pack, factByID)
 	for _, concern := range concerns {
 		if concern.kind == contextConcernEntrypoint ||
@@ -210,18 +223,38 @@ func contextSourceCandidatesForConcerns(
 		if len(domainFacts) > 0 {
 			facts = domainFacts
 		}
-		bestBySource := make(map[string]scan.AgentContextFactRecord, len(facts))
+		scoreByFactID := make(map[string]int, len(facts))
 		for _, fact := range facts {
-			key := normalizeContextProject(fact.Project) + "\x00" + contextPackSourceFile(fact.File)
-			current, found := bestBySource[key]
-			if !found || contextSourceConcernFactLess(
+			scoreByFactID[fact.ID] = contextSourceConcernFactScoreWithIndex(
 				fact,
-				current,
 				concern,
 				contextSelectionQuery(pack),
 				anchorTokens,
 				index,
-			) {
+			)
+		}
+		factLess := func(left, right scan.AgentContextFactRecord) bool {
+			leftScore := scoreByFactID[left.ID]
+			rightScore := scoreByFactID[right.ID]
+			if leftScore != rightScore {
+				return leftScore > rightScore
+			}
+			if left.Project != right.Project {
+				return left.Project < right.Project
+			}
+			if left.File != right.File {
+				return left.File < right.File
+			}
+			if left.Line != right.Line {
+				return left.Line < right.Line
+			}
+			return left.ID < right.ID
+		}
+		bestBySource := make(map[string]scan.AgentContextFactRecord, len(facts))
+		for _, fact := range facts {
+			key := normalizeContextProject(fact.Project) + "\x00" + contextPackSourceFile(fact.File)
+			current, found := bestBySource[key]
+			if !found || factLess(fact, current) {
 				bestBySource[key] = fact
 			}
 		}
@@ -230,14 +263,7 @@ func contextSourceCandidatesForConcerns(
 			facts = append(facts, fact)
 		}
 		sort.Slice(facts, func(left, right int) bool {
-			return contextSourceConcernFactLess(
-				facts[left],
-				facts[right],
-				concern,
-				contextSelectionQuery(pack),
-				anchorTokens,
-				index,
-			)
+			return factLess(facts[left], facts[right])
 		})
 		limit := len(facts)
 		if limit > maximumContextSourceConcernCandidates {
@@ -387,10 +413,11 @@ func contextSourceConcernFactScoreWithIndex(
 	if factKind == concern.kind {
 		score += 100
 	}
+	score += 160 * contextEvidenceFacetFactScore(fact, concern.kind, concern.facet)
 	score += contextConcernFactShapeScore(fact, concern.kind)
 	if concern.kind == contextConcernSideEffects &&
 		contextConcernActionAligned(contextExpandedTokenSet(query), fact) {
-		score += 140
+		score += 260
 	}
 	value := strings.Join([]string{
 		fact.Name,

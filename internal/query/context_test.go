@@ -278,7 +278,10 @@ func TestRenderContextMarkdownIncludesSourceCoverageSectionsAndOmissions(t *test
 		},
 	}
 	pack.SourceOmissions = []agent.ContextSourceOmission{
-		{Project: "data", Path: "UserRepository.java", Role: "persistence", Reason: "source file is missing"},
+		{
+			Project: "data", Path: "UserRepository.java", StartLine: 17, EndLine: 44,
+			Role: "persistence", Reason: "source file is missing",
+		},
 	}
 
 	body := RenderContextMarkdown(pack)
@@ -296,7 +299,7 @@ func TestRenderContextMarkdownIncludesSourceCoverageSectionsAndOmissions(t *test
 		"### 2. `service/UserService.java:8`",
 		"    8\tvoid deleteUser();",
 		"## Source omissions",
-		"`data/UserRepository.java`",
+		"`data/UserRepository.java:17-44`",
 		"role: persistence",
 		"source file is missing",
 	} {

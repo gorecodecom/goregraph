@@ -311,7 +311,12 @@ func appendContextSourceOmissions(
 		if contextInline(omission.Path) == "" {
 			continue
 		}
-		entry := "- " + contextCodeReference(omission.Project, omission.Path, 0, 0)
+		entry := "- " + contextCodeReference(
+			omission.Project,
+			omission.Path,
+			omission.StartLine,
+			omission.EndLine,
+		)
 		if role := contextInline(omission.Role); role != "" {
 			entry += " — role: " + role
 		}

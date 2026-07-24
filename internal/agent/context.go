@@ -82,10 +82,12 @@ type ContextUncertainty struct {
 }
 
 type ContextSourceOmission struct {
-	Project string `json:"project,omitempty"`
-	Path    string `json:"path"`
-	Role    string `json:"role"`
-	Reason  string `json:"reason"`
+	Project   string `json:"project,omitempty"`
+	Path      string `json:"path"`
+	StartLine int    `json:"start_line,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
+	Role      string `json:"role"`
+	Reason    string `json:"reason"`
 }
 
 type ContextEndpointConsumer struct {
