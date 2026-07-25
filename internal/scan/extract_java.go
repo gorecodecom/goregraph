@@ -48,6 +48,8 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	methodSignature := ""
 	methodSignatureSource := ""
 	methodSignatureLine := 0
+	activeMethodIndex := -1
+	activeMethodBodyDepth := 0
 	typeSignature := ""
 	typeSignatureLine := 0
 	annotationSignature := ""
@@ -98,6 +100,11 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			braceDepth += strings.Count(lexicalLine, "{")
 			braceDepth -= strings.Count(lexicalLine, "}")
 			typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
+			activeMethodIndex, activeMethodBodyDepth = finalizeJavaMethodScope(
+				activeMethodIndex,
+				activeMethodBodyDepth,
+				braceDepth,
+			)
 			continue
 		}
 		if methodSignature != "" {
@@ -106,6 +113,8 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			if javaDeclarationBodyOpen(methodSignature) >= 0 {
 				if method, ok := parseJavaMethodWithSource(methodSignature, methodSignatureSource, file.Path, currentOwner, methodSignatureLine, pending); ok {
 					source.Methods = append(source.Methods, method)
+					activeMethodIndex = len(source.Methods) - 1
+					activeMethodBodyDepth = braceDepth + 1
 					pending = nil
 				}
 				methodSignature = ""
@@ -115,6 +124,11 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			braceDepth += strings.Count(lexicalLine, "{")
 			braceDepth -= strings.Count(lexicalLine, "}")
 			typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
+			activeMethodIndex, activeMethodBodyDepth = finalizeJavaMethodScope(
+				activeMethodIndex,
+				activeMethodBodyDepth,
+				braceDepth,
+			)
 			continue
 		}
 
@@ -169,29 +183,36 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			methodSignatureLine = lineNo
 		} else if method, ok := parseJavaMethodWithSource(lexicalLines[index], literalLines[index], file.Path, currentOwner, lineNo, pending); ok && currentOwner != "" {
 			source.Methods = append(source.Methods, method)
+			activeMethodIndex = len(source.Methods) - 1
+			activeMethodBodyDepth = braceDepth + 1
 			pending = nil
-		} else if len(source.Methods) > 0 {
-			last := &source.Methods[len(source.Methods)-1]
-			last.LocalTypes = mergeJavaLocalTypes(last.LocalTypes, extractJavaLocalType(strings.TrimSpace(lexicalLines[index])))
+		} else if activeMethodIndex >= 0 && braceDepth >= activeMethodBodyDepth {
+			active := &source.Methods[activeMethodIndex]
+			active.LocalTypes = mergeJavaLocalTypes(active.LocalTypes, extractJavaLocalType(strings.TrimSpace(lexicalLines[index])))
 			if match := javaReturnExpressionRE.FindStringSubmatch(strings.TrimSpace(literalLines[index])); len(match) == 2 {
-				last.ReturnExpression = strings.TrimSpace(match[1])
+				active.ReturnExpression = strings.TrimSpace(match[1])
 			}
-			last.StringExpressions = mergeJavaStringExpressions(
-				last.StringExpressions,
+			active.StringExpressions = mergeJavaStringExpressions(
+				active.StringExpressions,
 				extractJavaStringExpressionAt(literalLines, index),
 			)
-			last.StringVars = mergeJavaStringVars(last.StringVars, extractJavaStringVars(strings.TrimSpace(literalLines[index])))
-			last.ConstructedTypes = append(last.ConstructedTypes, extractJavaConstructedTypes(lexicalLines[index])...)
-			last.Calls = append(last.Calls, extractJavaCallsWithSource(lexicalLines[index], literalLines[index], lineNo)...)
-			last.Auth = append(last.Auth, extractJavaSecurityAuth(lexicalLine, lineNo, file.Path)...)
-			requests, pending := extractJavaHTTPRequestsWithPendingSource(lexicalLines[index], literalLines[index], lineNo, last.StringVars, last.PendingHTTP)
-			last.PendingHTTP = pending
-			last.HTTPRequests = append(last.HTTPRequests, requests...)
+			active.StringVars = mergeJavaStringVars(active.StringVars, extractJavaStringVars(strings.TrimSpace(literalLines[index])))
+			active.ConstructedTypes = append(active.ConstructedTypes, extractJavaConstructedTypes(lexicalLines[index])...)
+			active.Calls = append(active.Calls, extractJavaCallsWithSource(lexicalLines[index], literalLines[index], lineNo)...)
+			active.Auth = append(active.Auth, extractJavaSecurityAuth(lexicalLine, lineNo, file.Path)...)
+			requests, pending := extractJavaHTTPRequestsWithPendingSource(lexicalLines[index], literalLines[index], lineNo, active.StringVars, active.PendingHTTP)
+			active.PendingHTTP = pending
+			active.HTTPRequests = append(active.HTTPRequests, requests...)
 		}
 
 		braceDepth += strings.Count(lexicalLine, "{")
 		braceDepth -= strings.Count(lexicalLine, "}")
 		typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
+		activeMethodIndex, activeMethodBodyDepth = finalizeJavaMethodScope(
+			activeMethodIndex,
+			activeMethodBodyDepth,
+			braceDepth,
+		)
 	}
 	for len(typeStack) > 0 {
 		scope := typeStack[len(typeStack)-1]
@@ -217,6 +238,13 @@ type javaTypeScope struct {
 
 func javaAtCurrentTypeBody(braceDepth int, stack []javaTypeScope) bool {
 	return len(stack) > 0 && braceDepth == stack[len(stack)-1].bodyDepth
+}
+
+func finalizeJavaMethodScope(activeIndex, activeBodyDepth, braceDepth int) (int, int) {
+	if activeIndex >= 0 && braceDepth < activeBodyDepth {
+		return -1, 0
+	}
+	return activeIndex, activeBodyDepth
 }
 
 func finalizeJavaTypeScopes(source *JavaSourceRecord, stack []javaTypeScope, braceDepth, line int) ([]javaTypeScope, string, int) {

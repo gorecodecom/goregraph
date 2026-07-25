@@ -39,6 +39,84 @@ func TestExtractJavaSecurityEvidenceCalls(t *testing.T) {
 	}
 }
 
+func TestExtractJavaKeepsExecutableEvidenceInsideActiveMethodScope(t *testing.T) {
+	source := extractJavaSource(
+		FileRecord{Path: "src/main/java/example/Scope.java", Language: "java"},
+		`final class Scope {
+  void publishRemoval(String removal) {
+  }
+
+  {
+    String removalMessage = "/removal/" + removal;
+    new RemovalEvent(removal);
+    client.post("/removal/" + removal);
+    routes.authenticated();
+    sink.accept(removal);
+  }
+
+  static {
+    sink.accept(staticRemoval);
+  }
+
+  void multiLine(
+      String removal) {
+    Runnable work = () -> {
+      if (removal != null) {
+        sink.accept(removal);
+      }
+    };
+    Object callback = new Object() {
+      {
+        sink.accept(removal);
+      }
+    };
+  }
+
+  void oneLine(String inline) { sink.accept(inline); }
+
+  void sequential(String sequence) {
+    sink.accept(sequence);
+  }
+}`,
+	)
+	methods := map[string]JavaMethodRecord{}
+	for _, method := range source.Methods {
+		methods[method.Name] = method
+	}
+	if len(methods) != 4 {
+		t.Fatalf("methods = %#v", source.Methods)
+	}
+	publishRemoval := methods["publishRemoval"]
+	for _, call := range publishRemoval.Calls {
+		if call.Method != "publishRemoval" {
+			t.Fatalf("initializer call %q leaked into publishRemoval: %#v", call.Method, publishRemoval)
+		}
+	}
+	if len(publishRemoval.StringExpressions) != 0 ||
+		len(publishRemoval.ConstructedTypes) != 0 ||
+		len(publishRemoval.HTTPRequests) != 0 ||
+		len(publishRemoval.Auth) != 0 {
+		t.Fatalf("initializer evidence leaked into publishRemoval: %#v", publishRemoval)
+	}
+	expectedAcceptCalls := map[string]int{
+		"multiLine":  2,
+		"oneLine":    1,
+		"sequential": 1,
+	}
+	for name, expected := range expectedAcceptCalls {
+		method := methods[name]
+		acceptCalls := 0
+		for _, call := range method.Calls {
+			if call.Method == "accept" {
+				acceptCalls++
+			}
+		}
+		if acceptCalls != expected {
+			t.Errorf("%s accept calls = %d, want %d: %#v", name, acceptCalls, expected, method)
+		}
+	}
+}
+
 func TestSpringIndexExtractsMethodAnnotationAuth(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/Controller.java", Language: "java"}, `@RestController
 class Controller {

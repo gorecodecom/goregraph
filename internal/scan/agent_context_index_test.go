@@ -267,6 +267,33 @@ func TestBuildProjectAgentContextIndexRequiresExecutableJavaSideEffectEvidence(t
 	}
 }
 
+func TestBuildProjectAgentContextIndexRejectsJavaInitializerEvidenceAfterEmptyMethod(t *testing.T) {
+	const file = "src/main/java/example/JobHousekeeping.java"
+	richSymbols := javaAgentContextSymbols(file, `final class JobHousekeeping {
+  void publishRemoval(String removal) {
+  }
+
+  {
+    sink.accept(removal);
+  }
+}`)
+	index := BuildProjectAgentContextIndex(
+		"services/jobs",
+		"fixed",
+		nil,
+		nil,
+		richSymbols,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	if len(index.Facts) != 0 || len(index.Edges) != 0 {
+		t.Fatalf("initializer evidence leaked into the preceding method: %#v", index)
+	}
+}
+
 func TestBuildProjectAgentContextIndexAcceptsReferencedJavaStringExpression(t *testing.T) {
 	const file = "src/main/java/example/JobHousekeeping.java"
 	richSymbols := javaAgentContextSymbols(file, `final class JobHousekeeping {
