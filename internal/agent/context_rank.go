@@ -22,6 +22,7 @@ const (
 	scoreTestKind                             = 20
 	scoreExactConfidence                      = 30
 	scoreResolvedConfidence                   = 15
+	scoreNaturalLanguageEndpoint              = 70
 	minimumContextSeedScore                   = 180
 	maximumContextUncertainty                 = 3
 	maximumContextConsumers                   = 8
@@ -1609,18 +1610,36 @@ func selectContextEndpoint(
 	ranked []rankedContextFact,
 	query string,
 ) (rankedContextFact, bool, string) {
+	if contextEndpointProtectedByExactFact(ranked) {
+		return rankedContextFact{}, false, ""
+	}
 	candidates := make([]rankedContextFact, 0)
 	requestedActions := contextEndpointRequestedActions(query)
+	requestsEndpoint := contextQueryRequestsEndpoint(query, ranked)
 	actionMismatch := false
 	for _, candidate := range ranked {
-		if candidate.score < minimumContextSeedScore ||
-			!eligibleContextEndpoint(candidate.fact) ||
-			!contextEndpointRouteMatchesQuery(candidate.fact, query) {
+		if !eligibleContextEndpoint(candidate.fact) {
 			continue
 		}
-		if !contextEndpointActionAligned(candidate, requestedActions) {
+		explicitAnchor := contextEndpointExplicitAnchor(candidate)
+		if len(requestedActions) == 0 && !explicitAnchor && !requestsEndpoint {
+			continue
+		}
+		actionAligned := contextEndpointActionAligned(candidate, requestedActions)
+		naturalLanguageRelevant := actionAligned &&
+			contextEndpointNaturalLanguageRelevant(candidate.fact, query, requestedActions)
+		if !contextEndpointRouteMatchesQuery(candidate.fact, query) && !naturalLanguageRelevant {
+			continue
+		}
+		if candidate.score < minimumContextSeedScore && !naturalLanguageRelevant {
+			continue
+		}
+		if !actionAligned {
 			actionMismatch = true
 			continue
+		}
+		if naturalLanguageRelevant {
+			candidate.score += scoreNaturalLanguageEndpoint
 		}
 		candidates = append(candidates, candidate)
 	}
@@ -1727,11 +1746,31 @@ func contextEndpointRequestedActions(query string) map[string]bool {
 			actions[action] = true
 		}
 	}
+	if actions["update"] &&
+		(actions["create"] || actions["delete"]) &&
+		strings.Contains(normalizeContextTerm(primaryQuery), "production change") {
+		delete(actions, "update")
+	}
 	if actions["read"] &&
 		(actions["create"] || actions["delete"] || actions["update"]) {
 		delete(actions, "read")
 	}
 	return actions
+}
+
+func contextEndpointProtectedByExactFact(ranked []rankedContextFact) bool {
+	for _, candidate := range ranked {
+		if candidate.exactClass == 0 ||
+			strings.EqualFold(candidate.fact.Kind, "api_endpoint") {
+			continue
+		}
+		switch candidate.reason {
+		case "exact qualified name", "exact name",
+			"embedded exact qualified name", "embedded exact name", "embedded exact file":
+			return true
+		}
+	}
+	return false
 }
 
 func contextQueryRequestsEndpoint(query string, ranked []rankedContextFact) bool {
@@ -1753,6 +1792,41 @@ func contextQueryRequestsEndpoint(query string, ranked []rankedContextFact) bool
 		}
 	}
 	return false
+}
+
+func contextEndpointNaturalLanguageRelevant(
+	fact scan.AgentContextFactRecord,
+	query string,
+	requestedActions map[string]bool,
+) bool {
+	if !contextActionFamiliesHaveMutation(requestedActions) {
+		return false
+	}
+	queryTokens := contextTokenSet(contextPrimaryQuery(query))
+	factTokens := contextTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.Path,
+	}, " "))
+	for token := range queryTokens {
+		if !factTokens[token] ||
+			contextEndpointGenericDomainToken(token) ||
+			len(contextActionFamilies(token, "")) > 0 {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func contextEndpointGenericDomainToken(token string) bool {
+	switch token {
+	case "api", "controller", "endpoint", "handler", "http", "id",
+		"internal", "public", "rest", "route", "service":
+		return true
+	default:
+		return false
+	}
 }
 
 func contextEndpointActionAligned(
@@ -2257,8 +2331,9 @@ func contextQueryAnchors(query string) []string {
 			occurrences = append(occurrences, contextQueryAnchorToken{start: token.start, value: sourceFile})
 			continue
 		}
+		qualifiedValue := strings.TrimRight(token.value, ".!?")
 		if !strings.Contains(token.value, "/") &&
-			(strings.Contains(token.value, ".") || strings.Contains(token.value, "#") || strings.Contains(token.value, "::")) {
+			(strings.Contains(qualifiedValue, ".") || strings.Contains(qualifiedValue, "#") || strings.Contains(qualifiedValue, "::")) {
 			occurrences = append(occurrences, token)
 		}
 	}

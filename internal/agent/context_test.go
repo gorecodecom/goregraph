@@ -1541,6 +1541,58 @@ func TestContextQueryAnchorsRecognizeSupportedFilesAndSentencePunctuation(t *tes
 	}
 }
 
+func TestContextQueryAnchorsIgnoreSentencePeriodsWithoutLosingQualifiedAnchors(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{
+			name:  "ordinary prose",
+			query: "Analyze deleting an account.",
+			want:  []string{},
+		},
+		{
+			name:  "qualified and file",
+			query: "Inspect Foo.bar. and Controller.java.",
+			want:  []string{"Foo.bar.", "Controller.java"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := contextQueryAnchors(test.query); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("contextQueryAnchors() = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestContextQueryAnchorsKeepExactSymbolForms(t *testing.T) {
+	fact := scan.AgentContextFactRecord{
+		ID: "account", Kind: "symbol", Name: "Account", Qualified: "example.Account",
+		File: "Account.java", Confidence: "EXACT",
+	}
+	tests := []struct {
+		name       string
+		query      string
+		wantReason string
+	}{
+		{name: "name", query: "Account", wantReason: "exact name"},
+		{name: "qualified", query: "example.Account", wantReason: "exact qualified name"},
+		{name: "backtick", query: "`Account`", wantReason: "exact name"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ranked := rankContextFacts([]scan.AgentContextFactRecord{fact}, test.query)
+			if len(ranked) != 1 || ranked[0].exactClass == 0 || ranked[0].reason != test.wantReason {
+				t.Fatalf("rankContextFacts() = %#v, want exact reason %q", ranked, test.wantReason)
+			}
+		})
+	}
+}
+
 func TestBuildContextReturnsOnlyRelevantEndpointSecurityAndBoundedConsumers(t *testing.T) {
 	facts := []scan.AgentContextFactRecord{{
 		ID: "endpoint", Project: "services/orders", Kind: "api_endpoint", Name: "GET /orders/{id}",
@@ -2221,6 +2273,14 @@ func TestSelectContextEndpointDoesNotMaskExactSymbolWithActionMismatch(t *testin
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{
 			{
+				ID: "delete-endpoint", Project: "ms-cadasterregulation", Kind: "api_endpoint",
+				Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
+				Qualified:  "CadasterRegulationController.deleteRegulationFromCadaster",
+				HTTPMethod: "DELETE", Path: "/cadasters/{cadasterId}/regulations/{objectId}",
+				File: "Controller.java", Confidence: "EXACT",
+				Search: "delete regulation from cadaster",
+			},
+			{
 				ID: "put-endpoint", Project: "ms-cadasterregulation", Kind: "api_endpoint",
 				Name:       "PUT /cadasters/{cadasterId}/cachetareas",
 				Qualified:  "CadasterRegulationController.putRegulationTopicsOfCadaster",
@@ -2253,6 +2313,203 @@ func TestSelectContextEndpointDoesNotMaskExactSymbolWithActionMismatch(t *testin
 			ok,
 			reason,
 		)
+	}
+}
+
+func TestSelectContextEndpointDoesNotTreatProductionChangeAsUpdateIntent(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "catalog-delete", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "DELETE /catalog/{itemId}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/{itemId}", File: "CatalogController.java",
+				Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "catalog-update", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "PUT /catalog/{itemId}", Qualified: "CatalogController.changeItem",
+				HTTPMethod: "PUT", Path: "/catalog/{itemId}", File: "CatalogController.java",
+				Search: "change catalog item", Confidence: "EXACT",
+			},
+		},
+	}
+	query := "Plan the smallest production change that removes jobs when a catalog item is deleted."
+
+	endpoint, ok, reason := selectContextEndpoint(index, rankContextFacts(index.Facts, query), query)
+	if !ok || reason != "" {
+		t.Fatalf("endpoint selection failed: ok=%v reason=%q", ok, reason)
+	}
+	if endpoint.fact.ID != "catalog-delete" {
+		t.Fatalf("selected endpoint = %#v, want catalog DELETE", endpoint.fact)
+	}
+}
+
+func TestBuildContextSelectsActionAlignedNaturalLanguageDeleteEndpoint(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "catalog-delete", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "DELETE /catalog/{itemId}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/{itemId}", File: "CatalogController.java",
+				Line: 2, EndLine: 4, Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "catalog-delete-route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/{itemId}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/{itemId}", File: "CatalogController.java",
+				Line: 2, EndLine: 4, Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "catalog-delete-service", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", Qualified: "CatalogService.deleteItem",
+				File: "CatalogService.java", Line: 2, EndLine: 4,
+				Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "catalog-update", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "PUT /catalog/{itemId}", Qualified: "CatalogController.changeItem",
+				HTTPMethod: "PUT", Path: "/catalog/{itemId}", File: "CatalogController.java",
+				Line: 6, EndLine: 8, Search: "change catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "jobs-get", Project: "services/jobs", Kind: "api_endpoint",
+				Name: "GET /internal/jobs", Qualified: "JobsController.findJobs",
+				HTTPMethod: "GET", Path: "/internal/jobs", File: "JobsController.java",
+				Search: "find jobs", Confidence: "EXACT",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "catalog-delete-call", FromFactID: "catalog-delete-route", ToFactID: "catalog-delete-service",
+			Kind: "call", Confidence: "EXACT",
+		}},
+	})
+	writeContextSourceFile(t, root, "CatalogController.java", "public class CatalogController {\n    void deleteItem() {\n        service.deleteItem();\n    }\n    void changeItem() {\n        service.changeItem();\n    }\n}\n")
+	writeContextSourceFile(t, root, "CatalogService.java", "public class CatalogService {\n    void deleteItem() {\n        repository.deleteItem();\n    }\n}\n")
+	query := "Plan the smallest production change that removes jobs when a catalog item is deleted."
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || pack.Confidence == "LOW" {
+		t.Fatalf("natural-language delete confidence = %q, fallback = %v: %#v", pack.Confidence, pack.FallbackRequired, pack)
+	}
+	if len(pack.Endpoints) != 1 || pack.Endpoints[0].HTTPMethod != "DELETE" ||
+		pack.Endpoints[0].Path != "/catalog/{itemId}" {
+		t.Fatalf("natural-language delete endpoint = %#v, want catalog DELETE", pack.Endpoints)
+	}
+}
+
+func TestBuildContextSelectsNaturalLanguageAccountDeleteEndpoint(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "account-delete", Project: "accounts", Kind: "api_endpoint",
+				Name: "DELETE /accounts/{accountId}", Qualified: "AccountController.deleteAccount",
+				HTTPMethod: "DELETE", Path: "/accounts/{accountId}", File: "AccountController.java",
+				Line: 2, EndLine: 4, Search: "delete account", Confidence: "EXACT",
+			},
+			{
+				ID: "account-delete-route", Project: "accounts", Kind: "route",
+				Name: "DELETE /accounts/{accountId}", Qualified: "AccountController.deleteAccount",
+				HTTPMethod: "DELETE", Path: "/accounts/{accountId}", File: "AccountController.java",
+				Line: 2, EndLine: 4, Search: "delete account", Confidence: "EXACT",
+			},
+			{
+				ID: "account-delete-service", Project: "accounts", Kind: "symbol",
+				Name: "deleteAccount", Qualified: "AccountService.deleteAccount",
+				File: "AccountService.java", Line: 2, EndLine: 4,
+				Search: "delete account", Confidence: "EXACT",
+			},
+			{
+				ID: "account-create", Project: "accounts", Kind: "api_endpoint",
+				Name: "POST /accounts", Qualified: "AccountController.createAccount",
+				HTTPMethod: "POST", Path: "/accounts", File: "AccountController.java",
+				Line: 6, EndLine: 8, Search: "create account", Confidence: "EXACT",
+			},
+			{
+				ID: "account-domain", Project: "accounts", Kind: "symbol",
+				Name: "Account", Qualified: "example.Account", File: "Account.java",
+				Search: "account domain", Confidence: "EXACT",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "account-delete-call", FromFactID: "account-delete-route", ToFactID: "account-delete-service",
+			Kind: "call", Confidence: "EXACT",
+		}},
+	})
+	writeContextSourceFile(t, root, "AccountController.java", "public class AccountController {\n    void deleteAccount() {\n        service.deleteAccount();\n    }\n    void createAccount() {\n        service.createAccount();\n    }\n}\n")
+	writeContextSourceFile(t, root, "AccountService.java", "public class AccountService {\n    void deleteAccount() {\n        repository.deleteAccount();\n    }\n}\n")
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "Analyze deleting an account."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || pack.Confidence == "LOW" {
+		t.Fatalf("natural-language account delete fell back: %#v", pack)
+	}
+	if len(pack.Endpoints) != 1 || pack.Endpoints[0].HTTPMethod != "DELETE" {
+		t.Fatalf("natural-language account endpoint = %#v, want DELETE", pack.Endpoints)
+	}
+	if len(pack.Entrypoints) != 0 {
+		t.Fatalf("account domain displaced DELETE endpoint: %#v", pack.Entrypoints)
+	}
+}
+
+func TestBuildContextBareNaturalLanguageDomainDoesNotForceEndpoint(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "account-delete", Project: "accounts", Kind: "api_endpoint",
+				Name: "DELETE /account/{id}", Qualified: "AccountController.deleteAccount",
+				HTTPMethod: "DELETE", Path: "/account/{id}", File: "AccountController.java",
+				Search: "delete account", Confidence: "EXACT",
+			},
+			{
+				ID: "account-domain", Project: "accounts", Kind: "symbol",
+				Name: "Account", Qualified: "example.Account", File: "Account.java",
+				Search: "account domain", Confidence: "EXACT",
+			},
+		},
+	})
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "account"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 0 || len(pack.Entrypoints) != 1 ||
+		pack.Entrypoints[0].ID != "account-domain" {
+		t.Fatalf("bare domain forced an endpoint: %#v", pack)
+	}
+}
+
+func TestSelectContextEndpointKeepsNaturalLanguageActionAmbiguous(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "accounts-a", Project: "services/accounts-a", Kind: "api_endpoint",
+				Name: "DELETE /accounts/{id}", Qualified: "AccountController.deleteAccount",
+				HTTPMethod: "DELETE", Path: "/accounts/{id}", File: "AccountController.java",
+				Search: "delete account", Confidence: "EXACT",
+			},
+			{
+				ID: "accounts-b", Project: "services/accounts-b", Kind: "api_endpoint",
+				Name: "DELETE /accounts/{id}", Qualified: "AccountController.deleteAccount",
+				HTTPMethod: "DELETE", Path: "/accounts/{id}", File: "AccountController.java",
+				Search: "delete account", Confidence: "EXACT",
+			},
+		},
+	}
+	query := "Analyze deleting an account."
+
+	endpoint, ok, reason := selectContextEndpoint(index, rankContextFacts(index.Facts, query), query)
+	if ok || !strings.Contains(reason, "ambiguous") {
+		t.Fatalf("equivalent endpoints were resolved: endpoint=%#v ok=%v reason=%q", endpoint.fact, ok, reason)
 	}
 }
 
