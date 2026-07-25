@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -251,6 +252,446 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 			len(pack.Files),
 		)
 	}
+}
+
+func TestCompileContextPackKeepsTestForAcceptedRelatedProvider(t *testing.T) {
+	pack := compileMissingContractRankPack(
+		t,
+		missingContractRankIndexWithProviderTests(),
+		missingContractEnglishQuery,
+		DefaultContextBudgetTokens,
+		DefaultContextMaxFiles,
+	)
+
+	testIDs := map[string]int{}
+	for _, test := range pack.Tests {
+		testIDs[test.ID]++
+	}
+	if !reflect.DeepEqual(testIDs, map[string]int{
+		"catalog-test": 1,
+		"jobs-test":    1,
+	}) {
+		t.Fatalf("primary and related provider tests = %#v", pack.Tests)
+	}
+	testTargets := map[string]int{}
+	for _, relationship := range pack.CallChain {
+		if relationship.Kind == "test_target" {
+			testTargets[relationship.From+" -> "+relationship.To]++
+		}
+		if relationship.From == "CatalogOperations.deleteItem" &&
+			strings.Contains(relationship.To, "Job") {
+			t.Fatalf("fabricated future relationship: %#v", relationship)
+		}
+	}
+	if !reflect.DeepEqual(testTargets, map[string]int{
+		"CatalogControllerTest.deletesItem -> DELETE /catalog/items/{itemId}": 1,
+		"JobManagementControllerTest.listJobs -> GET /job-management/jobs":    1,
+	}) {
+		t.Fatalf("observed test targets = %#v", pack.CallChain)
+	}
+	selected := contextSelectedFactSet(pack)
+	for _, factID := range []string{"catalog-test", "jobs-route", "jobs-test"} {
+		if !selected[factID] {
+			t.Errorf("required rank evidence %q not selected", factID)
+		}
+	}
+	selectedEdges := map[string]bool{}
+	for _, edgeID := range pack.selectedEdgeIDs {
+		selectedEdges[edgeID] = true
+	}
+	for _, edgeID := range []string{"current-test", "adjacent-test"} {
+		if !selectedEdges[edgeID] {
+			t.Errorf("required observed edge %q not selected: %#v", edgeID, pack.selectedEdgeIDs)
+		}
+	}
+	filePaths := map[string]bool{}
+	for _, file := range pack.Files {
+		filePaths[file.Path] = true
+	}
+	for _, path := range []string{
+		"src/test/java/example/CatalogControllerTest.java",
+		"src/test/java/example/JobManagementControllerTest.java",
+	} {
+		if !filePaths[path] {
+			t.Errorf("test file %q missing from %#v", path, pack.Files)
+		}
+	}
+}
+
+func TestCompileContextPackRelatedProviderTestFailsClosed(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		mutate func(*scan.AgentContextIndexRecord)
+	}{
+		{
+			name:  "query does not request tests",
+			query: strings.Replace(missingContractEnglishQuery, ", and tests.", ".", 1),
+		},
+		{
+			name: "lexical similarity without edge",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Edges = removeMissingContractEdge(index.Edges, "adjacent-test")
+			},
+		},
+		{
+			name: "cross-project test",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				missingContractFactByID(index.Facts, "jobs-test").Project = "services/audit"
+			},
+		},
+		{
+			name: "missing test source",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				missingContractFactByID(index.Facts, "jobs-test").File = ""
+			},
+		},
+		{
+			name: "non-test source fact",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				missingContractFactByID(index.Facts, "jobs-test").Kind = "symbol"
+			},
+		},
+		{
+			name: "unresolved edge",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				missingContractEdgeByID(index.Edges, "adjacent-test").Confidence = "PARTIAL"
+			},
+		},
+		{
+			name: "same test targets multiple production facts",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+					ID: "ambiguous-test", FromFactID: "jobs-test", ToFactID: "jobs-service",
+					Kind: "test_target", Confidence: "EXTRACTED",
+				})
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			index := missingContractRankIndexWithProviderTests()
+			if test.mutate != nil {
+				test.mutate(&index)
+			}
+			query := test.query
+			if query == "" {
+				query = missingContractEnglishQuery
+			}
+			pack := compileMissingContractRankPack(
+				t,
+				index,
+				query,
+				DefaultContextBudgetTokens,
+				DefaultContextMaxFiles,
+			)
+			for _, selected := range pack.Tests {
+				if selected.ID == "jobs-test" {
+					t.Fatalf("ineligible related provider test was selected: %#v", pack)
+				}
+			}
+		})
+	}
+}
+
+func TestCompileContextPackRelatedProviderTestIsDeterministicAndBoundedPerProvider(t *testing.T) {
+	index := missingContractRankIndexWithProviderTests()
+	second := *missingContractFactByID(index.Facts, "jobs-test")
+	second.ID = "jobs-test-z"
+	second.Name = "listJobsAlternative"
+	second.Qualified = "JobManagementControllerTest.listJobsAlternative"
+	index.Facts = append(index.Facts, second)
+	index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+		ID: "adjacent-test-z", FromFactID: second.ID, ToFactID: "jobs-route",
+		Kind: "test_target", Confidence: "EXTRACTED",
+	})
+	reversed := index
+	reversed.Facts = append([]scan.AgentContextFactRecord(nil), index.Facts...)
+	reversed.Edges = append([]scan.AgentContextEdgeRecord(nil), index.Edges...)
+	slices.Reverse(reversed.Facts)
+	slices.Reverse(reversed.Edges)
+
+	build := func(index scan.AgentContextIndexRecord) ContextPack {
+		t.Helper()
+		return compileMissingContractRankPack(
+			t,
+			index,
+			missingContractEnglishQuery,
+			DefaultContextBudgetTokens,
+			DefaultContextMaxFiles,
+		)
+	}
+	forward := build(index)
+	backward := build(reversed)
+	for _, pack := range []ContextPack{forward, backward} {
+		relatedTests := 0
+		for _, selected := range pack.Tests {
+			if normalizeContextProject(selected.Project) == "services/jobs" {
+				relatedTests++
+				if selected.ID != "jobs-test" {
+					t.Fatalf("deterministic related test = %#v, want jobs-test", selected)
+				}
+			}
+		}
+		if relatedTests != 1 {
+			t.Fatalf("related provider tests = %#v, want exactly one", pack.Tests)
+		}
+	}
+	if !reflect.DeepEqual(forward.Tests, backward.Tests) ||
+		!reflect.DeepEqual(forward.CallChain, backward.CallChain) ||
+		!reflect.DeepEqual(forward.Files, backward.Files) ||
+		!reflect.DeepEqual(forward.selectedFactIDs, backward.selectedFactIDs) ||
+		!reflect.DeepEqual(forward.selectedEdgeIDs, backward.selectedEdgeIDs) ||
+		forward.ContextID != backward.ContextID {
+		t.Fatalf("related provider test selection changed with index order:\nforward: %#v\nbackward: %#v", forward, backward)
+	}
+}
+
+func TestRelatedProviderTestTargetRequiresProviderKind(t *testing.T) {
+	tests := []struct {
+		name string
+		fact scan.AgentContextFactRecord
+		want bool
+	}{
+		{
+			name: "route",
+			fact: scan.AgentContextFactRecord{
+				ID: "route", Project: "services/jobs", Kind: "route",
+				File: "JobController.java", Confidence: "EXACT",
+			},
+			want: true,
+		},
+		{
+			name: "http symbol",
+			fact: scan.AgentContextFactRecord{
+				ID: "handler", Project: "services/jobs", Kind: "symbol",
+				HTTPMethod: "GET", Path: "/jobs", File: "JobController.java", Confidence: "EXACT",
+			},
+			want: true,
+		},
+		{
+			name: "service symbol",
+			fact: scan.AgentContextFactRecord{
+				ID: "service", Project: "services/jobs", Kind: "symbol",
+				File: "JobService.java", Confidence: "EXACT",
+			},
+		},
+		{
+			name: "persistence",
+			fact: scan.AgentContextFactRecord{
+				ID: "repository", Project: "services/jobs", Kind: "persistence",
+				File: "JobRepository.java", Confidence: "EXACT",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := reliableRelatedProviderTestTarget(test.fact); got != test.want {
+				t.Fatalf("reliableRelatedProviderTestTarget() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestCompileContextPackRejectsRelatedProviderTestAtomicallyAtBoundaries(t *testing.T) {
+	t.Run("max files", func(t *testing.T) {
+		index := missingContractRankIndexWithProviderTests()
+		baseline := index
+		baseline.Edges = removeMissingContractEdge(baseline.Edges, "adjacent-test")
+		for maxFiles := MinContextMaxFiles; maxFiles < DefaultContextMaxFiles; maxFiles++ {
+			want, wantErr := tryCompileMissingContractRankPack(
+				baseline,
+				missingContractEnglishQuery,
+				DefaultContextBudgetTokens,
+				maxFiles,
+			)
+			got, gotErr := tryCompileMissingContractRankPack(
+				index,
+				missingContractEnglishQuery,
+				DefaultContextBudgetTokens,
+				maxFiles,
+			)
+			if wantErr == nil &&
+				gotErr == nil &&
+				contextSelectedFactSet(want)["jobs-route"] &&
+				!contextSelectedFactSet(got)["jobs-test"] &&
+				reflect.DeepEqual(got, want) {
+				return
+			}
+		}
+		t.Fatal("no MaxFiles boundary rejected the related provider test atomically")
+	})
+
+	t.Run("support cap", func(t *testing.T) {
+		index := missingContractRankIndexWithProviderTests()
+		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+			ID: "jobs-configuration", Project: "services/jobs", Kind: "configuration",
+			Name: "jobConfiguration", Qualified: "JobConfiguration.jobConfiguration",
+			File: "src/main/java/example/JobConfiguration.java", Line: 8, EndLine: 12,
+			Confidence: "EXACT", Search: "job task configuration",
+		})
+		baseline := index
+		baseline.Edges = removeMissingContractEdge(baseline.Edges, "adjacent-test")
+		want := compileMissingContractRankPack(
+			t,
+			baseline,
+			missingContractEnglishQuery,
+			DefaultContextBudgetTokens,
+			DefaultContextMaxFiles,
+		)
+		got := compileMissingContractRankPack(
+			t,
+			index,
+			missingContractEnglishQuery,
+			DefaultContextBudgetTokens,
+			DefaultContextMaxFiles,
+		)
+		if !contextSelectedFactSet(want)["jobs-configuration"] {
+			t.Fatalf("support-cap fixture did not saturate selected support: %#v", want.selectedFactIDs)
+		}
+		assertRelatedProviderTestRejectedAtomically(t, got, want)
+	})
+
+	t.Run("token budget", func(t *testing.T) {
+		index := missingContractRankIndexWithProviderTests()
+		baseline := index
+		baseline.Edges = removeMissingContractEdge(baseline.Edges, "adjacent-test")
+		const budget = 1028
+		want := compileMissingContractRankPack(
+			t,
+			baseline,
+			missingContractEnglishQuery,
+			budget,
+			DefaultContextMaxFiles,
+		)
+		got := compileMissingContractRankPack(
+			t,
+			index,
+			missingContractEnglishQuery,
+			budget,
+			DefaultContextMaxFiles,
+		)
+		if !contextSelectedFactSet(want)["jobs-route"] {
+			t.Fatalf("token-boundary fixture lost the accepted provider: %#v", want.selectedFactIDs)
+		}
+		assertRelatedProviderTestRejectedAtomically(t, got, want)
+	})
+}
+
+func assertRelatedProviderTestRejectedAtomically(
+	t *testing.T,
+	got ContextPack,
+	want ContextPack,
+) {
+	t.Helper()
+	if contextSelectedFactSet(got)["jobs-test"] {
+		t.Fatalf("related provider test crossed a saturated boundary: %#v", got.Tests)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("rejected related provider test changed the existing pack:\ngot:  %#v\nwant: %#v", got, want)
+	}
+}
+
+func missingContractRankIndexWithProviderTests() scan.AgentContextIndexRecord {
+	index := missingContractContextIndex()
+	providerAlias := *missingContractFactByID(index.Facts, "jobs-route")
+	providerAlias.ID = "jobs-route-symbol"
+	providerAlias.Kind = "symbol"
+	providerAlias.HTTPMethod = ""
+	providerAlias.Path = ""
+	index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+		ID: "catalog-test", Project: "services/catalog", Kind: "test",
+		Name: "deletesItem", Qualified: "CatalogControllerTest.deletesItem",
+		File: "src/test/java/example/CatalogControllerTest.java",
+		Line: 10, EndLine: 18, Confidence: "EXACT", Search: "delete catalog item test",
+	}, providerAlias)
+	index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+		ID: "current-test", FromFactID: "catalog-test", ToFactID: "catalog-route",
+		Kind: "test_target", Confidence: "EXACT",
+	}, scan.AgentContextEdgeRecord{
+		ID: "adjacent-test-alias", FromFactID: "jobs-test", ToFactID: providerAlias.ID,
+		Kind: "test_target", Confidence: "EXTRACTED",
+	})
+	missingContractFactByID(index.Facts, "jobs-test").Confidence = "EXTRACTED"
+	missingContractEdgeByID(index.Edges, "adjacent-test").Confidence = "EXTRACTED"
+	return index
+}
+
+func compileMissingContractRankPack(
+	t *testing.T,
+	index scan.AgentContextIndexRecord,
+	query string,
+	budgetTokens int,
+	maxFiles int,
+) ContextPack {
+	t.Helper()
+	pack, err := tryCompileMissingContractRankPack(index, query, budgetTokens, maxFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pack
+}
+
+func tryCompileMissingContractRankPack(
+	index scan.AgentContextIndexRecord,
+	query string,
+	budgetTokens int,
+	maxFiles int,
+) (ContextPack, error) {
+	request, err := normalizeContextRequest(ContextRequest{
+		Query: query, BudgetTokens: budgetTokens, MaxFiles: maxFiles,
+	})
+	if err != nil {
+		return ContextPack{}, err
+	}
+	pack, err := compileContextPack(index, request)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	pack.ContextID = contextIdentity(
+		pack.Freshness,
+		pack.selectedFactIDs,
+		pack.selectedEdgeIDs,
+		pack.selectedConcernKeys,
+	)
+	return pack, nil
+}
+
+func missingContractFactByID(
+	facts []scan.AgentContextFactRecord,
+	id string,
+) *scan.AgentContextFactRecord {
+	for index := range facts {
+		if facts[index].ID == id {
+			return &facts[index]
+		}
+	}
+	return &scan.AgentContextFactRecord{}
+}
+
+func missingContractEdgeByID(
+	edges []scan.AgentContextEdgeRecord,
+	id string,
+) *scan.AgentContextEdgeRecord {
+	for index := range edges {
+		if edges[index].ID == id {
+			return &edges[index]
+		}
+	}
+	return &scan.AgentContextEdgeRecord{}
+}
+
+func removeMissingContractEdge(
+	edges []scan.AgentContextEdgeRecord,
+	id string,
+) []scan.AgentContextEdgeRecord {
+	result := make([]scan.AgentContextEdgeRecord, 0, len(edges))
+	for _, edge := range edges {
+		if edge.ID != id {
+			result = append(result, edge)
+		}
+	}
+	return result
 }
 
 func TestBuildContextReportsMissingSideEffectFacetsWithoutRerankingEndpoint(t *testing.T) {
@@ -806,8 +1247,11 @@ func contextSourceContainsStableIdentity(pack ContextPack, value string) bool {
 
 func writeMissingContractContextFixture(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
-	index := scan.AgentContextIndexRecord{
+	return writeMissingContractContextIndexFixture(t, missingContractContextIndex())
+}
+
+func missingContractContextIndex() scan.AgentContextIndexRecord {
+	return scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Generated:     "2026-07-23T00:00:00Z",
 		Facts: []scan.AgentContextFactRecord{
@@ -844,6 +1288,11 @@ func writeMissingContractContextFixture(t *testing.T) string {
 			{ID: "adjacent-test", FromFactID: "jobs-test", ToFactID: "jobs-route", Kind: "test_target", Confidence: "EXACT"},
 		},
 	}
+}
+
+func writeMissingContractContextIndexFixture(t *testing.T, index scan.AgentContextIndexRecord) string {
+	t.Helper()
+	root := t.TempDir()
 	writeContextIndexAt(t, filepath.Join(root, ".goregraph-workspace", "agent", "context-index.json"), index)
 
 	factsByPath := make(map[string][]scan.AgentContextFactRecord)

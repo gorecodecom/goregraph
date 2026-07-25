@@ -221,6 +221,7 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	for project, represented := range representedProjects {
 		primaryProjects[project] = represented
 	}
+	acceptedRelatedFacts := make([]scan.AgentContextFactRecord, 0)
 	for _, relatedFact := range pathSelection.relatedProductionFacts {
 		project := normalizeContextProject(relatedFact.Project)
 		if primaryProjects[project] || supportProjectCounts[project] >= maximumContextSupportFactsPerProject {
@@ -262,6 +263,9 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		}
 		if accepted {
 			pack = candidate
+			if reliableRelatedProviderTestTarget(relatedFact) {
+				acceptedRelatedFacts = append(acceptedRelatedFacts, relatedFact)
+			}
 			includedFactIDs[relatedFact.ID] = true
 			supportFactIDs[relatedFact.ID] = true
 			representedProjects[project] = true
@@ -338,6 +342,67 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 			}
 		}
 	}
+	if contextQueryRequestsConcern(request.Query, contextConcernTests) {
+		for _, provider := range acceptedRelatedFacts {
+			test, testEdge, hasTest := relatedProviderTestCandidate(index, provider)
+			if !hasTest {
+				continue
+			}
+			project := normalizeContextProject(provider.Project)
+			testAlreadyIncluded := includedFactIDs[test.ID]
+			if !testAlreadyIncluded &&
+				supportProjectCounts[project] >= maximumContextSupportFactsPerProject {
+				continue
+			}
+			edgeID := contextPathEdgeIdentity(testEdge)
+			if acceptedEdgeIDs[edgeID] {
+				continue
+			}
+			testCandidate, testAccepted, testErr := tryContextPack(
+				pack,
+				request.BudgetTokens,
+				func(candidate *ContextPack) bool {
+					if !contextPackHasLocation(candidate.Tests, test.ID) {
+						candidate.Tests = append(
+							candidate.Tests,
+							contextLocation(test, "selected related provider test_target"),
+						)
+					}
+					relationship := contextRelationship(testEdge, test, provider)
+					if !contextPackHasRelationship(candidate.CallChain, relationship) {
+						candidate.CallChain = append(candidate.CallChain, relationship)
+						sortContextRelationships(candidate.CallChain)
+					}
+					return mergeContextFile(
+						candidate,
+						contextFileForFact(
+							test,
+							"test",
+							"selected related provider test_target",
+						),
+						request.MaxFiles,
+					)
+				},
+			)
+			if testErr != nil {
+				return ContextPack{}, testErr
+			}
+			if !testAccepted {
+				continue
+			}
+			pack = testCandidate
+			includedFactIDs[test.ID] = true
+			acceptedEdgeIDs[edgeID] = true
+			if !testAlreadyIncluded {
+				supportFactIDs[test.ID] = true
+				supportProjectCounts[project]++
+				if supportProjectRoles[project] == nil {
+					supportProjectRoles[project] = map[string]bool{}
+				}
+				supportProjectRoles[project][contextConcernTests] = true
+			}
+		}
+	}
 	supportScopes := selectedContextScopes(nil, supportFactIDs, nil, factByID)
 	supportUncertainties, _ := scopedContextUncertainties(index.Coverage, supportScopes)
 	uncertainties = deduplicateContextUncertainties(
@@ -384,6 +449,188 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	retainSelectedSourceFactIDs(&pack, selectedSourceFactIDs)
 	retainContextSemanticSelection(&pack, includedFactIDs, acceptedEdgeIDs, concerns)
 	return finalizeContextEstimate(pack)
+}
+
+type relatedProviderTest struct {
+	fact scan.AgentContextFactRecord
+	edge scan.AgentContextEdgeRecord
+}
+
+func relatedProviderTestCandidate(
+	index scan.AgentContextIndexRecord,
+	provider scan.AgentContextFactRecord,
+) (scan.AgentContextFactRecord, scan.AgentContextEdgeRecord, bool) {
+	project := normalizeContextProject(provider.Project)
+	if project == "" || !reliableRelatedProviderTestTarget(provider) {
+		return scan.AgentContextFactRecord{}, scan.AgentContextEdgeRecord{}, false
+	}
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	targetsByTestID := relatedProviderTestTargets(index.Edges, factByID)
+	candidates := map[string]relatedProviderTest{}
+	for _, edge := range index.Edges {
+		if edge.ToFactID != provider.ID ||
+			!strings.EqualFold(strings.TrimSpace(edge.Kind), "test_target") ||
+			!reliableRelatedProviderTestConfidence(edge.Confidence) {
+			continue
+		}
+		test, exists := factByID[edge.FromFactID]
+		if !exists ||
+			normalizeContextProject(test.Project) != project ||
+			!reliableRelatedProviderTestFact(test) ||
+			len(targetsByTestID[test.ID]) != 1 {
+			continue
+		}
+		if existing, found := candidates[test.ID]; !found || contextEdgeLess(edge, existing.edge) {
+			candidates[test.ID] = relatedProviderTest{fact: test, edge: edge}
+		}
+	}
+	ordered := make([]relatedProviderTest, 0, len(candidates))
+	for _, candidate := range candidates {
+		ordered = append(ordered, candidate)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		left, right := ordered[i], ordered[j]
+		if leftRank, rightRank := relatedProviderTestConfidenceRank(left.fact.Confidence),
+			relatedProviderTestConfidenceRank(right.fact.Confidence); leftRank != rightRank {
+			return leftRank > rightRank
+		}
+		for _, values := range [][2]string{
+			{left.fact.Qualified, right.fact.Qualified},
+			{left.fact.Name, right.fact.Name},
+			{left.fact.File, right.fact.File},
+		} {
+			if values[0] != values[1] {
+				return values[0] < values[1]
+			}
+		}
+		if left.fact.Line != right.fact.Line {
+			return left.fact.Line < right.fact.Line
+		}
+		if left.fact.ID != right.fact.ID {
+			return left.fact.ID < right.fact.ID
+		}
+		return contextEdgeLess(left.edge, right.edge)
+	})
+	if len(ordered) == 0 {
+		return scan.AgentContextFactRecord{}, scan.AgentContextEdgeRecord{}, false
+	}
+	return ordered[0].fact, ordered[0].edge, true
+}
+
+func reliableRelatedProviderTestTarget(fact scan.AgentContextFactRecord) bool {
+	if fact.ID == "" ||
+		strings.TrimSpace(fact.File) == "" ||
+		contextFactUsesTestSource(fact) ||
+		contextFactUsesGeneratedMetadata(fact) ||
+		!reliableRelatedProviderTestConfidence(fact.Confidence) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(fact.Kind)) {
+	case "route", "api_endpoint", "backend_handler":
+		return true
+	case "symbol":
+		return strings.TrimSpace(fact.HTTPMethod) != "" &&
+			strings.TrimSpace(fact.Path) != ""
+	default:
+		return false
+	}
+}
+
+func relatedProviderTestTargets(
+	edges []scan.AgentContextEdgeRecord,
+	factByID map[string]scan.AgentContextFactRecord,
+) map[string]map[string]bool {
+	targetsByTestID := map[string]map[string]bool{}
+	for _, edge := range edges {
+		if !strings.EqualFold(strings.TrimSpace(edge.Kind), "test_target") ||
+			!reliableRelatedProviderTestConfidence(edge.Confidence) {
+			continue
+		}
+		test, hasTest := factByID[edge.FromFactID]
+		target, hasTarget := factByID[edge.ToFactID]
+		if !hasTest ||
+			!hasTarget ||
+			!reliableRelatedProviderTestFact(test) ||
+			!reliableRelatedProviderTestProductionTarget(target) ||
+			normalizeContextProject(test.Project) != normalizeContextProject(target.Project) {
+			continue
+		}
+		if targetsByTestID[test.ID] == nil {
+			targetsByTestID[test.ID] = map[string]bool{}
+		}
+		targetsByTestID[test.ID][relatedProviderTestTargetIdentity(target)] = true
+	}
+	return targetsByTestID
+}
+
+func relatedProviderTestTargetIdentity(fact scan.AgentContextFactRecord) string {
+	return fmt.Sprintf(
+		"%s\x00%s\x00%s\x00%d",
+		normalizeContextProject(fact.Project),
+		strings.ToLower(contextRetryPath(fact.File)),
+		normalizeContextTerm(firstNonEmptyContext(fact.Qualified, fact.Name)),
+		fact.Line,
+	)
+}
+
+func reliableRelatedProviderTestProductionTarget(fact scan.AgentContextFactRecord) bool {
+	return fact.ID != "" &&
+		normalizeContextProject(fact.Project) != "" &&
+		strings.TrimSpace(fact.File) != "" &&
+		!contextFactUsesTestSource(fact) &&
+		!contextFactUsesGeneratedMetadata(fact) &&
+		reliableRelatedProviderTestConfidence(fact.Confidence)
+}
+
+func reliableRelatedProviderTestFact(fact scan.AgentContextFactRecord) bool {
+	return fact.ID != "" &&
+		strings.EqualFold(strings.TrimSpace(fact.Kind), "test") &&
+		strings.TrimSpace(fact.File) != "" &&
+		fact.Line > 0 &&
+		contextFactUsesTestSource(fact) &&
+		contextSourceFileAllowed(fact.File) &&
+		reliableRelatedProviderTestConfidence(fact.Confidence)
+}
+
+func reliableRelatedProviderTestConfidence(confidence string) bool {
+	return relatedProviderTestConfidenceRank(confidence) > 0
+}
+
+func relatedProviderTestConfidenceRank(confidence string) int {
+	switch strings.ToUpper(strings.TrimSpace(confidence)) {
+	case "EXACT":
+		return 3
+	case "RESOLVED":
+		return 2
+	case "EXTRACTED":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func contextPackHasLocation(locations []ContextLocation, id string) bool {
+	for _, location := range locations {
+		if location.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func contextPackHasRelationship(
+	relationships []ContextRelationship,
+	target ContextRelationship,
+) bool {
+	for _, relationship := range relationships {
+		if relationship == target {
+			return true
+		}
+	}
+	return false
 }
 
 func retainContextSemanticSelection(
