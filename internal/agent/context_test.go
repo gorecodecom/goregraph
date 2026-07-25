@@ -624,6 +624,184 @@ func TestPlanContextConcernsMatchesGermanOperationalTask(t *testing.T) {
 	}
 }
 
+func TestContextExplicitProjectsMatchesExpandedUniqueBasenames(t *testing.T) {
+	index, seed := catalogProjectScopeIndex()
+	aliases := contextProjectAliases(index.Facts, index.Coverage)
+	const (
+		englishQuery = "Plan the smallest production change that removes jobs when a catalog item is deleted. Show the current public deletion path and adjacent client configuration."
+		germanQuery  = "Plane die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden. Zeige den aktuellen öffentlichen Löschpfad und angrenzende Client-Konfiguration."
+	)
+	want := map[string]bool{
+		"services/catalog": true,
+		"services/jobs":    true,
+	}
+	for _, test := range []struct {
+		name  string
+		query string
+	}{
+		{name: "English", query: englishQuery},
+		{name: "German", query: germanQuery},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := contextExplicitProjects(test.query, aliases); !reflect.DeepEqual(got, want) {
+				t.Fatalf("explicit projects = %#v, want %#v", got, want)
+			}
+		})
+	}
+
+	reversed := index
+	reversed.Facts = slices.Clone(index.Facts)
+	reversed.Edges = slices.Clone(index.Edges)
+	slices.Reverse(reversed.Facts)
+	slices.Reverse(reversed.Edges)
+	reversedAliases := contextProjectAliases(reversed.Facts, reversed.Coverage)
+	if got := contextExplicitProjects(germanQuery, reversedAliases); !reflect.DeepEqual(got, want) {
+		t.Fatalf("reversed explicit projects = %#v, want %#v", got, want)
+	}
+	if got, reversedGot := contextConcernKeys(
+		planContextConcerns(germanQuery, index, seed),
+	), contextConcernKeys(
+		planContextConcerns(germanQuery, reversed, seed),
+	); !reflect.DeepEqual(got, reversedGot) {
+		t.Fatalf("reversed German concern keys = %#v, want %#v", reversedGot, got)
+	}
+}
+
+func TestPlanContextConcernsMatchesEnglishGermanCatalogProjectScope(t *testing.T) {
+	index, seed := catalogProjectScopeIndex()
+	const (
+		englishQuery = "Plan the smallest production change that removes jobs when a catalog item is deleted. Show the current public deletion path, prove that the future job deletion contract is absent, and provide adjacent client configuration, authentication, retry, provider persistence, side-effect, and test evidence. Do not invent the missing call or route."
+		germanQuery  = "Plane die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden. Zeige den aktuellen öffentlichen Löschpfad, belege das Fehlen des zukünftigen Aufgaben-Löschvertrags und liefere angrenzende Belege zu Client-Konfiguration, Authentifizierung, Retry, Provider-Persistenz, Nebenwirkungen und Tests. Erfinde weder den fehlenden Aufruf noch die fehlende Route."
+	)
+	english := contextConcernKeys(planContextConcerns(englishQuery, index, seed))
+	german := contextConcernKeys(planContextConcerns(germanQuery, index, seed))
+	if !reflect.DeepEqual(german, english) {
+		t.Fatalf("German concern keys = %#v, want %#v", german, english)
+	}
+	for _, key := range []string{
+		"project:services/catalog",
+		"project:services/jobs",
+		"persistence:services/jobs",
+		"side_effects:services/jobs",
+		"tests:services/jobs",
+	} {
+		if !slices.Contains(german, key) {
+			t.Errorf("German concern keys miss %q: %#v", key, german)
+		}
+	}
+}
+
+func TestContextExplicitProjectsPreservesRawAndAmbiguousBasenameBoundaries(t *testing.T) {
+	index, _ := catalogProjectScopeIndex()
+	aliases := contextProjectAliases(index.Facts, index.Coverage)
+	for _, query := range []string{
+		"Analyze job client configuration.",
+		"Analyze libraries/job-client configuration.",
+	} {
+		want := map[string]bool{"libraries/job-client": true}
+		if got := contextExplicitProjects(query, aliases); !reflect.DeepEqual(got, want) {
+			t.Fatalf("explicit projects for %q = %#v, want %#v", query, got, want)
+		}
+	}
+	if got := contextExplicitProjects("Analysiere Aufgaben und Client-Konfiguration.", aliases); !reflect.DeepEqual(
+		got,
+		map[string]bool{"services/jobs": true},
+	) {
+		t.Fatalf("dispersed translated tokens synthesized a project alias: %#v", got)
+	}
+
+	ambiguousAliases := contextProjectAliases([]scan.AgentContextFactRecord{
+		{ID: "service-jobs", Project: "services/jobs"},
+		{ID: "library-jobs", Project: "libraries/jobs"},
+	}, nil)
+	if got := contextExplicitProjects("Analysiere Aufgaben.", ambiguousAliases); len(got) != 0 {
+		t.Fatalf("ambiguous expanded basename selected projects: %#v", got)
+	}
+	if got := contextExplicitProjects(
+		"Analysiere services/jobs Aufgaben.",
+		ambiguousAliases,
+	); !reflect.DeepEqual(got, map[string]bool{"services/jobs": true}) {
+		t.Fatalf("explicit path did not resolve duplicate basename: %#v", got)
+	}
+}
+
+func catalogProjectScopeIndex() (scan.AgentContextIndexRecord, scan.AgentContextFactRecord) {
+	seed := scan.AgentContextFactRecord{
+		ID: "catalog-route", Project: "services/catalog", Kind: "route",
+		Name: "DELETE /catalog/{itemId}", Qualified: "CatalogController.remove",
+		HTTPMethod: "DELETE", Path: "/catalog/{itemId}",
+		File: "CatalogController.java", Confidence: "EXACT",
+		Search: "delete catalog item",
+	}
+	return scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			seed,
+			{
+				ID: "catalog-repository", Project: "services/catalog", Kind: "persistence",
+				Name: "deleteById", Qualified: "CatalogRepository.deleteById",
+				File: "CatalogRepository.java", Confidence: "EXACT",
+				Search: "delete catalog item persistence",
+			},
+			{
+				ID: "catalog-test", Project: "services/catalog", Kind: "test",
+				Name: "remove", Qualified: "CatalogControllerTest.remove",
+				File: "CatalogControllerTest.java", Confidence: "EXACT",
+				Search: "delete catalog item test",
+			},
+			{
+				ID: "job-contract", Project: "libraries/job-client", Kind: "api_contract",
+				Name: "GET /internal/jobs", Qualified: "JobClient.listJobs",
+				File: "JobClient.java", Confidence: "EXACT",
+				Search: "job task client contract",
+			},
+			{
+				ID: "job-config", Project: "libraries/job-client", Kind: "configuration",
+				Name: "jobsPath", File: "JobClientConfig.java", Confidence: "EXACT",
+				Search: "job task client configuration",
+			},
+			{
+				ID: "job-auth", Project: "libraries/job-client", Kind: "authentication",
+				Name: "authenticate", File: "JobClientAuth.java", Confidence: "EXACT",
+				Search: "job task client authentication",
+			},
+			{
+				ID: "job-retry", Project: "libraries/job-client", Kind: "resilience",
+				Name: "retry", File: "JobClientRetry.java", Confidence: "EXACT",
+				Search: "job task client retry",
+			},
+			{
+				ID: "jobs-repository", Project: "services/jobs", Kind: "persistence",
+				Name: "findByCatalogIdAndItemId", Qualified: "JobRepository.findByCatalogIdAndItemId",
+				File: "JobRepository.java", Confidence: "EXACT",
+				Search: "catalog job task item persistence",
+			},
+			{
+				ID: "jobs-side-effect", Project: "services/jobs", Kind: "side_effects",
+				Name: "publishDeletion", Qualified: "JobHousekeeping.publishDeletion",
+				File: "JobHousekeeping.java", Confidence: "EXACT",
+				Search: "catalog job task removal side effects",
+			},
+			{
+				ID: "jobs-test", Project: "services/jobs", Kind: "test",
+				Name: "listJobs", Qualified: "JobControllerTest.listJobs",
+				File: "JobControllerTest.java", Confidence: "EXACT",
+				Search: "catalog job task test",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{
+				ID: "catalog-persistence", FromFactID: "catalog-route",
+				ToFactID: "catalog-repository", Kind: "persistence", Confidence: "EXACT",
+			},
+			{
+				ID: "catalog-test-target", FromFactID: "catalog-test",
+				ToFactID: "catalog-route", Kind: "test_target", Confidence: "EXACT",
+			},
+		},
+	}, seed
+}
+
 func TestPlanContextConcernsScopesOperationalEvidenceToExplicitProjects(t *testing.T) {
 	seed := scan.AgentContextFactRecord{
 		ID: "route", Project: "services/catalog", Kind: "route", Search: "delete catalog item",

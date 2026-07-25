@@ -1359,6 +1359,7 @@ func contextProjectBasename(project string) string {
 
 func contextExplicitProjects(query string, aliases map[string][]string) map[string]bool {
 	normalizedQuery := " " + normalizeContextTerm(query) + " "
+	expandedQueryTokens := contextExpandedTokenSet(query)
 	explicit := map[string]bool{}
 	for project, projectAliases := range aliases {
 		if contextQueryContainsProjectPath(query, project) {
@@ -1367,6 +1368,18 @@ func contextExplicitProjects(query string, aliases map[string][]string) map[stri
 		}
 		for _, alias := range projectAliases {
 			if alias != project && alias != "" && strings.Contains(normalizedQuery, " "+alias+" ") {
+				explicit[project] = true
+				break
+			}
+		}
+	}
+	if len(explicit) > 0 {
+		return explicit
+	}
+	for project, projectAliases := range aliases {
+		for _, alias := range projectAliases {
+			aliasTokens := contextTokens(alias)
+			if alias != project && len(aliasTokens) == 1 && expandedQueryTokens[aliasTokens[0]] {
 				explicit[project] = true
 				break
 			}
