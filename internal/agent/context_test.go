@@ -2345,6 +2345,15 @@ func TestSelectContextEndpointDoesNotTreatProductionChangeAsUpdateIntent(t *test
 	}
 }
 
+func TestContextEndpointRequestedActionsPreserveExplicitUpdateWithProductionChange(t *testing.T) {
+	query := "Plan a production change to update a catalog item when obsolete versions are deleted."
+
+	actions := contextEndpointRequestedActions(query)
+	if !actions["update"] || !actions["delete"] {
+		t.Fatalf("requested actions = %#v, want explicit update and delete", actions)
+	}
+}
+
 func TestBuildContextSelectsActionAlignedNaturalLanguageDeleteEndpoint(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
@@ -2402,7 +2411,67 @@ func TestBuildContextSelectsActionAlignedNaturalLanguageDeleteEndpoint(t *testin
 	}
 }
 
+func TestBuildContextDoesNotUseProductionChangeAsEndpointDomain(t *testing.T) {
+	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{{
+			ID: "production-delete", Project: "services/deployment", Kind: "api_endpoint",
+			Name: "DELETE /production/{id}", Qualified: "ProductionController.delete",
+			HTTPMethod: "DELETE", Path: "/production/{id}", File: "ProductionController.java",
+			Search: "delete production", Confidence: "EXACT",
+		}},
+	})
+	query := "Plan the smallest production change that removes jobs when a catalog item is deleted."
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 0 {
+		t.Fatalf("task framing selected an unrelated endpoint: %#v", pack.Endpoints)
+	}
+}
+
 func TestBuildContextSelectsNaturalLanguageAccountDeleteEndpoint(t *testing.T) {
+	for _, confidence := range []string{"EXACT", "RESOLVED", "EXTRACTED", ""} {
+		name := confidence
+		if name == "" {
+			name = "empty"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := writeNaturalLanguageAccountDeleteFixture(t, confidence)
+
+			pack, err := BuildContext(ContextRequest{Root: root, Query: "Analyze deleting an account."})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pack.FallbackRequired || pack.Confidence == "LOW" {
+				t.Fatalf("natural-language account delete fell back: %#v", pack)
+			}
+			if len(pack.Endpoints) != 1 || pack.Endpoints[0].HTTPMethod != "DELETE" {
+				t.Fatalf("natural-language account endpoint = %#v, want DELETE", pack.Endpoints)
+			}
+			if len(pack.Entrypoints) != 0 {
+				t.Fatalf("account domain displaced DELETE endpoint: %#v", pack.Entrypoints)
+			}
+		})
+	}
+}
+
+func TestBuildContextDoesNotPromotePartialNaturalLanguageEndpoint(t *testing.T) {
+	root := writeNaturalLanguageAccountDeleteFixture(t, "PARTIAL")
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "Analyze deleting an account."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 0 {
+		t.Fatalf("partial endpoint received semantic confidence floor: %#v", pack.Endpoints)
+	}
+}
+
+func writeNaturalLanguageAccountDeleteFixture(t *testing.T, endpointConfidence string) string {
+	t.Helper()
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{
@@ -2410,7 +2479,7 @@ func TestBuildContextSelectsNaturalLanguageAccountDeleteEndpoint(t *testing.T) {
 				ID: "account-delete", Project: "accounts", Kind: "api_endpoint",
 				Name: "DELETE /accounts/{accountId}", Qualified: "AccountController.deleteAccount",
 				HTTPMethod: "DELETE", Path: "/accounts/{accountId}", File: "AccountController.java",
-				Line: 2, EndLine: 4, Search: "delete account", Confidence: "EXACT",
+				Line: 2, EndLine: 4, Search: "delete account", Confidence: endpointConfidence,
 			},
 			{
 				ID: "account-delete-route", Project: "accounts", Kind: "route",
@@ -2443,20 +2512,7 @@ func TestBuildContextSelectsNaturalLanguageAccountDeleteEndpoint(t *testing.T) {
 	})
 	writeContextSourceFile(t, root, "AccountController.java", "public class AccountController {\n    void deleteAccount() {\n        service.deleteAccount();\n    }\n    void createAccount() {\n        service.createAccount();\n    }\n}\n")
 	writeContextSourceFile(t, root, "AccountService.java", "public class AccountService {\n    void deleteAccount() {\n        repository.deleteAccount();\n    }\n}\n")
-
-	pack, err := BuildContext(ContextRequest{Root: root, Query: "Analyze deleting an account."})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pack.FallbackRequired || pack.Confidence == "LOW" {
-		t.Fatalf("natural-language account delete fell back: %#v", pack)
-	}
-	if len(pack.Endpoints) != 1 || pack.Endpoints[0].HTTPMethod != "DELETE" {
-		t.Fatalf("natural-language account endpoint = %#v, want DELETE", pack.Endpoints)
-	}
-	if len(pack.Entrypoints) != 0 {
-		t.Fatalf("account domain displaced DELETE endpoint: %#v", pack.Entrypoints)
-	}
+	return root
 }
 
 func TestBuildContextBareNaturalLanguageDomainDoesNotForceEndpoint(t *testing.T) {

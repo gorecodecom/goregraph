@@ -22,7 +22,7 @@ const (
 	scoreTestKind                             = 20
 	scoreExactConfidence                      = 30
 	scoreResolvedConfidence                   = 15
-	scoreNaturalLanguageEndpoint              = 70
+	minimumContextMediumScore                 = 240
 	minimumContextSeedScore                   = 180
 	maximumContextUncertainty                 = 3
 	maximumContextConsumers                   = 8
@@ -1638,8 +1638,8 @@ func selectContextEndpoint(
 			actionMismatch = true
 			continue
 		}
-		if naturalLanguageRelevant {
-			candidate.score += scoreNaturalLanguageEndpoint
+		if naturalLanguageRelevant && candidate.score < minimumContextMediumScore {
+			candidate.score = minimumContextMediumScore
 		}
 		candidates = append(candidates, candidate)
 	}
@@ -1714,7 +1714,7 @@ func contextEndpointPrimaryActionClause(query string) (string, bool) {
 	if index < 0 {
 		return "", false
 	}
-	clause := strings.TrimSpace(primary[:index])
+	clause := contextEndpointQueryWithoutMetaPhrases(strings.TrimSpace(primary[:index]))
 	if clause == "" ||
 		!contextActionFamiliesHaveMutation(contextActionFamilies(clause, "")) {
 		return "", false
@@ -1740,22 +1740,34 @@ func contextEndpointPrimaryActionScore(
 
 func contextEndpointRequestedActions(query string) map[string]bool {
 	primaryQuery := contextPrimaryQuery(query)
-	actions := contextActionFamilies(primaryQuery, contextRequestedHTTPMethod(query))
+	actions := contextActionFamilies(
+		contextEndpointQueryWithoutMetaPhrases(primaryQuery),
+		contextRequestedHTTPMethod(query),
+	)
 	for _, anchor := range contextQueryAnchors(query) {
-		for action := range contextActionFamilies(anchor, "") {
+		for action := range contextActionFamilies(contextEndpointQueryWithoutMetaPhrases(anchor), "") {
 			actions[action] = true
 		}
-	}
-	if actions["update"] &&
-		(actions["create"] || actions["delete"]) &&
-		strings.Contains(normalizeContextTerm(primaryQuery), "production change") {
-		delete(actions, "update")
 	}
 	if actions["read"] &&
 		(actions["create"] || actions["delete"] || actions["update"]) {
 		delete(actions, "read")
 	}
 	return actions
+}
+
+func contextEndpointQueryWithoutMetaPhrases(value string) string {
+	tokens := contextOrderedTokens(value)
+	result := make([]string, 0, len(tokens))
+	for index := 0; index < len(tokens); index++ {
+		if tokens[index] == "production" &&
+			index+1 < len(tokens) && tokens[index+1] == "change" {
+			index++
+			continue
+		}
+		result = append(result, tokens[index])
+	}
+	return strings.Join(result, " ")
 }
 
 func contextEndpointProtectedByExactFact(ranked []rankedContextFact) bool {
@@ -1799,10 +1811,13 @@ func contextEndpointNaturalLanguageRelevant(
 	query string,
 	requestedActions map[string]bool,
 ) bool {
-	if !contextActionFamiliesHaveMutation(requestedActions) {
+	if !reliableProductionContextSeed(fact) ||
+		!contextActionFamiliesHaveMutation(requestedActions) {
 		return false
 	}
-	queryTokens := contextTokenSet(contextPrimaryQuery(query))
+	queryTokens := contextTokenSet(
+		contextEndpointQueryWithoutMetaPhrases(contextPrimaryQuery(query)),
+	)
 	factTokens := contextTokenSet(strings.Join([]string{
 		fact.Name,
 		fact.Qualified,
@@ -2907,7 +2922,7 @@ func contextPackConfidence(top rankedContextFact, hasRelationship bool) string {
 	if top.allTerms && hasRelationship {
 		return "HIGH"
 	}
-	if top.score >= 240 {
+	if top.score >= minimumContextMediumScore {
 		return "MEDIUM"
 	}
 	return "LOW"
