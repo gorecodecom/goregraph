@@ -423,21 +423,21 @@ func TestExpandContextEvidenceConcernsProjectsRequestedClientEvidenceFromSelecte
 		},
 		{
 			ID: "same-project-audit-config", Project: clientProject, Kind: "symbol",
-			Name: "AuditClientConfig", Qualified: "example.AuditClientConfig",
-			File: "src/main/java/example/AuditClientConfig.java", Confidence: "EXACT",
-			Search: "AuditClientConfig Audit Client Config example.AuditClientConfig example AuditClientConfig.java java",
+			Name: "JobAuditConfig", Qualified: "example.JobAuditConfig",
+			File: "src/main/java/example/JobAuditConfig.java", Confidence: "EXACT",
+			Search: "JobAuditConfig Job Audit Config example.JobAuditConfig example JobAuditConfig.java java",
 		},
 		{
 			ID: "same-project-audit-auth", Project: clientProject, Kind: "symbol",
-			Name: "AuditClientAuth", Qualified: "example.AuditClientAuth",
-			File: "src/main/java/example/AuditClientAuth.java", Confidence: "EXACT",
-			Search: "AuditClientAuth Audit Client Auth example.AuditClientAuth example AuditClientAuth.java java",
+			Name: "JobAuditAuth", Qualified: "example.JobAuditAuth",
+			File: "src/main/java/example/JobAuditAuth.java", Confidence: "EXACT",
+			Search: "JobAuditAuth Job Audit Auth example.JobAuditAuth example JobAuditAuth.java java",
 		},
 		{
 			ID: "same-project-audit-retry", Project: clientProject, Kind: "symbol",
-			Name: "AuditClientRetry", Qualified: "example.AuditClientRetry",
-			File: "src/main/java/example/AuditClientRetry.java", Confidence: "EXACT",
-			Search: "AuditClientRetry Audit Client Retry example.AuditClientRetry example AuditClientRetry.java java",
+			Name: "JobAuditRetry", Qualified: "example.JobAuditRetry",
+			File: "src/main/java/example/JobAuditRetry.java", Confidence: "EXACT",
+			Search: "JobAuditRetry Job Audit Retry example.JobAuditRetry example JobAuditRetry.java java",
 		},
 	}}
 	concerns := []contextConcern{
@@ -479,6 +479,70 @@ func TestExpandContextEvidenceConcernsProjectsRequestedClientEvidenceFromSelecte
 		[]string{"client-retry"},
 		[]string{"provider-retry", "same-project-audit-retry"},
 	)
+}
+
+func TestExpandContextEvidenceConcernsDoesNotComposeSelectedContractIdentities(t *testing.T) {
+	const clientProject = "libraries/integration-client"
+	pack := ContextPack{
+		Query:          "Provide authentication for every selected client contract.",
+		selectionQuery: "Provide authentication for every selected client contract.",
+		Contracts: []ContextLocation{
+			{ID: "job-contract", Project: clientProject, Kind: "api_contract"},
+			{ID: "billing-contract", Project: clientProject, Kind: "api_contract"},
+		},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "job-contract", Project: clientProject, Kind: "api_contract",
+			Name: "GET /internal/jobs", Qualified: "JobClient.listJobs",
+			File: "src/main/java/example/JobClient.java", Confidence: "EXACT",
+			Search: "GET internal jobs JobClient.listJobs Job Client list Jobs JobClient.java java",
+		},
+		{
+			ID: "billing-contract", Project: clientProject, Kind: "api_contract",
+			Name: "GET /internal/invoices", Qualified: "BillingClient.listInvoices",
+			File: "src/main/java/example/BillingClient.java", Confidence: "EXACT",
+			Search: "GET internal invoices BillingClient.listInvoices Billing Client list Invoices BillingClient.java java",
+		},
+		{
+			ID: "job-auth", Project: clientProject, Kind: "symbol",
+			Name: "JobClientAuth", Qualified: "example.JobClientAuth",
+			File: "src/main/java/example/JobClientAuth.java", Confidence: "EXACT",
+			Search: "JobClientAuth Job Client Auth example.JobClientAuth example JobClientAuth.java java",
+		},
+		{
+			ID: "billing-auth", Project: clientProject, Kind: "symbol",
+			Name: "BillingClientAuth", Qualified: "example.BillingClientAuth",
+			File: "src/main/java/example/BillingClientAuth.java", Confidence: "EXACT",
+			Search: "BillingClientAuth Billing Client Auth example.BillingClientAuth example BillingClientAuth.java java",
+		},
+		{
+			ID: "composed-auth", Project: clientProject, Kind: "symbol",
+			Name: "JobBillingAuth", Qualified: "example.JobBillingAuth",
+			File: "src/main/java/example/JobBillingAuth.java", Confidence: "EXACT",
+			Search: "JobBillingAuth Job Billing Auth example.JobBillingAuth example JobBillingAuth.java java",
+		},
+	}}
+	concerns := []contextConcern{
+		newContextConcern(contextConcernAuth, "", true, nil, "requested authentication"),
+	}
+
+	got := expandContextEvidenceConcerns(pack, index, concerns)
+	concern, ok := findContextConcern(
+		got,
+		contextConcernAuth+":"+clientProject+"#client_transport",
+	)
+	if !ok {
+		t.Fatalf("projected client authentication concern missing from %#v", got)
+	}
+	for _, factID := range []string{"job-auth", "billing-auth"} {
+		if !slices.Contains(concern.candidateFactIDs, factID) {
+			t.Errorf("client authentication candidates = %v, want %q", concern.candidateFactIDs, factID)
+		}
+	}
+	if slices.Contains(concern.candidateFactIDs, "composed-auth") {
+		t.Errorf("client authentication candidates contain composed identity: %v", concern.candidateFactIDs)
+	}
 }
 
 func TestExpandContextEvidenceConcernsBindsExistingSelectedClientPublicConcern(t *testing.T) {

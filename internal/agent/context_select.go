@@ -925,25 +925,13 @@ func contextContractProjectConcernCandidateIDs(
 		candidateSet[factID] = true
 	}
 	contractIDs := make(map[string]bool, len(contractFactIDs))
-	contractTokens := make(map[string]bool)
 	for _, factID := range contractFactIDs {
 		contractIDs[factID] = true
 	}
+	contractFacts := make([]scan.AgentContextFactRecord, 0, len(contractFactIDs))
 	for _, fact := range index.Facts {
-		if !contractIDs[fact.ID] {
-			continue
-		}
-		for token := range contextExpandedTokenSet(strings.Join([]string{
-			fact.Name,
-			fact.Qualified,
-			fact.HTTPMethod,
-			fact.Path,
-			fact.Search,
-			fact.Summary,
-		}, " ")) {
-			if contextContractSupportIdentityToken(token) {
-				contractTokens[token] = true
-			}
+		if contractIDs[fact.ID] {
+			contractFacts = append(contractFacts, fact)
 		}
 	}
 	contractNeighbors := make(map[string]bool)
@@ -969,7 +957,7 @@ func contextContractProjectConcernCandidateIDs(
 			continue
 		}
 		if !contractNeighbors[fact.ID] &&
-			contextContractSupportIdentityMatches(fact, contractTokens) == 0 {
+			!contextContractSupportMatchesAnyContract(fact, kind, contractFacts) {
 			continue
 		}
 		value := strings.Join([]string{
@@ -987,28 +975,95 @@ func contextContractProjectConcernCandidateIDs(
 	return orderedContextConcernIDs(candidates)
 }
 
-func contextContractSupportIdentityToken(token string) bool {
-	if len([]rune(token)) < 3 || len(contextActionFamilies(token, "")) > 0 {
+func contextContractSupportMatchesAnyContract(
+	fact scan.AgentContextFactRecord,
+	kind string,
+	contracts []scan.AgentContextFactRecord,
+) bool {
+	supportFamilies := contextContractSupportFamilies(fact, kind)
+	if len(supportFamilies) == 0 {
 		return false
 	}
-	for _, vocabulary := range contextConcernVocabulary {
-		for _, generic := range vocabulary {
-			if token == generic {
-				return false
+	for _, contract := range contracts {
+		for family := range contextContractOwnerFamilies(contract) {
+			if supportFamilies[family] {
+				return true
 			}
 		}
 	}
-	switch token {
-	case "api", "call", "calls", "class", "client_declarative", "com",
-		"declarative", "endpoint", "example", "feign", "file", "golang",
-		"http", "https", "internal", "java", "javascript", "js", "kotlin",
-		"main", "mapping", "org", "package", "python", "request",
-		"response", "route", "ruby", "source", "spring", "src", "trace",
-		"ts", "typescript":
-		return false
-	default:
-		return true
+	return false
+}
+
+func contextContractOwnerFamilies(
+	fact scan.AgentContextFactRecord,
+) map[string]bool {
+	result := make(map[string]bool)
+	owner := contextQualifiedOwner(fact.Qualified)
+	for _, identity := range []string{
+		contextIdentifierLeaf(owner),
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	} {
+		if family := compactContextIdentifier(identity); family != "" {
+			result[family] = true
+		}
 	}
+	return result
+}
+
+func contextContractSupportFamilies(
+	fact scan.AgentContextFactRecord,
+	kind string,
+) map[string]bool {
+	result := make(map[string]bool)
+	owner := contextQualifiedOwner(fact.Qualified)
+	for _, identity := range []string{
+		fact.Name,
+		contextIdentifierLeaf(fact.Qualified),
+		contextIdentifierLeaf(owner),
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	} {
+		family := compactContextIdentifier(identity)
+		if family == "" {
+			continue
+		}
+		result[family] = true
+		for _, suffix := range contextContractSupportFamilySuffixes(kind) {
+			if strings.HasSuffix(family, suffix) && len(family) > len(suffix) {
+				result[strings.TrimSuffix(family, suffix)] = true
+			}
+		}
+	}
+	return result
+}
+
+func contextContractSupportFamilySuffixes(kind string) []string {
+	switch kind {
+	case contextConcernAuth:
+		return []string{
+			"auth", "authentication", "authorization", "credential",
+			"credentials", "interceptor", "security",
+		}
+	case contextConcernConfiguration:
+		return []string{"config", "configuration", "properties", "settings"}
+	case contextConcernResilience:
+		return []string{
+			"exception", "recovery", "resilience", "retry", "retries", "timeout",
+		}
+	default:
+		return nil
+	}
+}
+
+func contextIdentifierLeaf(value string) string {
+	value = strings.ReplaceAll(strings.TrimSpace(value), "::", ".")
+	parts := strings.FieldsFunc(value, func(current rune) bool {
+		return current == '.' || current == '#' || current == '/' ||
+			current == '\\' || current == '$'
+	})
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[len(parts)-1]
 }
 
 func contextConcernCandidateIntersection(left, right []string) []string {
@@ -1023,25 +1078,6 @@ func contextConcernCandidateIntersection(left, right []string) []string {
 		}
 	}
 	return orderedContextConcernIDs(result)
-}
-
-func contextContractSupportIdentityMatches(
-	fact scan.AgentContextFactRecord,
-	contractTokens map[string]bool,
-) int {
-	factTokens := contextExpandedTokenSet(strings.Join([]string{
-		fact.Name,
-		fact.Qualified,
-		fact.Search,
-		fact.Summary,
-	}, " "))
-	matches := 0
-	for token := range contractTokens {
-		if factTokens[token] {
-			matches++
-		}
-	}
-	return matches
 }
 
 func contextEvidenceFacetCandidateIDs(

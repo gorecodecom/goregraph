@@ -3294,6 +3294,33 @@ func TestAlignedReachablePersistenceKeepsReadBeforeDelete(t *testing.T) {
 	}
 }
 
+func TestAlignedReachablePersistenceRequiresDistinctiveDomainIdentity(t *testing.T) {
+	const project = "services/operations"
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "invoice-delete", Project: project, Kind: "persistence",
+			Name: "deleteInvoice", Qualified: "InvoiceRepository.deleteInvoice",
+			Search: "delete invoice persistence repository evidence",
+		},
+		{
+			ID: "customer-finder", Project: project, Kind: "persistence",
+			Name: "findByCustomerId", Qualified: "CustomerRepository.findByCustomerId",
+			Search: "find customer persistence repository evidence",
+		},
+	}
+
+	got := contextAlignedReachablePersistenceCandidates(
+		contextExpandedTokenSet("delete using persistence repository evidence"),
+		map[string]bool{"delete": true},
+		project,
+		[]string{"invoice-delete", "customer-finder"},
+		facts,
+	)
+	if len(got) != 0 {
+		t.Fatalf("generic persistence-only query merged candidates: %v", got)
+	}
+}
+
 func TestBuildContextRejectsIneligibleIncomingClientContracts(t *testing.T) {
 	tests := []struct {
 		name   string

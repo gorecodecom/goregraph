@@ -277,12 +277,15 @@ func contextAlignedReachablePersistenceCandidates(
 	}
 	domainTokens := make(map[string]bool)
 	for token := range contextConcernDomainQueryTokens(queryTokens) {
-		if len(contextActionFamilies(token, "")) == 0 {
+		if contextDistinctivePersistenceDomainToken(token) {
 			domainTokens[token] = true
 		}
 	}
 	for token := range contextTokenSet(project) {
 		delete(domainTokens, token)
+	}
+	if len(domainTokens) == 0 {
+		return nil
 	}
 	result := []string{}
 	for _, fact := range facts {
@@ -311,6 +314,27 @@ func contextAlignedReachablePersistenceCandidates(
 		}
 	}
 	return orderedContextConcernIDs(result)
+}
+
+func contextDistinctivePersistenceDomainToken(token string) bool {
+	if len([]rune(token)) < 3 || len(contextActionFamilies(token, "")) > 0 {
+		return false
+	}
+	for _, vocabulary := range contextConcernVocabulary {
+		for _, generic := range vocabulary {
+			if contextExpandedTokenSet(generic)[token] {
+				return false
+			}
+		}
+	}
+	switch token {
+	case "analysis", "analyze", "current", "evidence", "include", "inspect",
+		"operation", "operations", "provide", "show", "through", "use",
+		"using", "with", "without":
+		return false
+	default:
+		return true
+	}
 }
 
 func contextConcernLess(left, right contextConcern) bool {
