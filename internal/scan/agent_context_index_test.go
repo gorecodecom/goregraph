@@ -77,6 +77,184 @@ func TestBuildProjectAgentContextIndexIsCompactAndDeterministic(t *testing.T) {
 	}
 }
 
+func TestBuildProjectAgentContextIndexKeepsUnconnectedJavaSideEffectMethod(t *testing.T) {
+	const file = "src/main/java/example/JobHousekeeping.java"
+	source := extractJavaSource(
+		FileRecord{Path: file, Language: "java"},
+		`package example;
+
+final class JobHousekeeping {
+  void publishRemoval(String itemId) {
+  }
+}
+`,
+	)
+	rawSymbols := javaSymbols(source)
+	rawMethodFound := false
+	for _, symbol := range rawSymbols {
+		if symbol.Kind == "method" && symbol.Name == "publishRemoval" &&
+			symbol.File == file && symbol.Line == 4 {
+			rawMethodFound = true
+		}
+	}
+	if !rawMethodFound {
+		t.Fatalf("raw Java method missing before compact indexing: %#v", rawSymbols)
+	}
+	richSymbols := buildRichSymbols(
+		[]FileRecord{{Path: file, Language: "java"}},
+		rawSymbols,
+	)
+	index := BuildProjectAgentContextIndex(
+		"services/jobs",
+		"fixed",
+		nil,
+		nil,
+		richSymbols,
+		nil,
+		nil,
+		nil,
+		[]EvidenceRecord{{
+			ID: "evidence:publish-removal", File: file,
+			Start: EvidenceLocation{Line: 4},
+		}},
+		nil,
+	)
+
+	fact := findContextFact(index.Facts, "side_effects", "publishRemoval")
+	if fact.ID == "" {
+		t.Fatalf("raw publishRemoval method was dropped from compact context: %#v", index.Facts)
+	}
+	if fact.File != file || fact.Line != 4 ||
+		!slices.Equal(fact.EvidenceIDs, []string{"evidence:publish-removal"}) {
+		t.Fatalf("publishRemoval provenance = %#v", fact)
+	}
+	if len(index.Edges) != 0 {
+		t.Fatalf("unconnected publishRemoval gained a fabricated edge: %#v", index.Edges)
+	}
+}
+
+func TestBuildProjectAgentContextIndexRejectsLowSignalUnconnectedJavaMethods(t *testing.T) {
+	symbols := []RichSymbolRecord{
+		{
+			ID: "format-debug", Name: "formatDebugMessage",
+			Kind: "method", Language: "java",
+			File: "src/main/java/example/DebugHelper.java", Line: 10,
+		},
+		{
+			ID: "send-debug", Name: "sendDebugMessage",
+			Kind: "method", Language: "java",
+			File: "src/main/java/example/DebugHelper.java", Line: 20,
+		},
+		{
+			ID: "get-removal", Name: "getRemovalStatus",
+			Kind: "method", Language: "java",
+			File: "src/main/java/example/RemovalStore.java", Line: 10,
+		},
+		{
+			ID: "create-account", Name: "createAccount",
+			Kind: "method", Language: "java",
+			File: "src/main/java/example/AccountStore.java", Line: 20,
+		},
+		{
+			ID: "update-account", Name: "updateAccount",
+			Kind: "method", Language: "java",
+			File: "src/main/java/example/AccountStore.java", Line: 30,
+		},
+		{
+			ID: "delete-account", Name: "deleteAccount",
+			Kind: "method", Language: "java",
+			File: "src/main/java/example/AccountStore.java", Line: 40,
+		},
+		{
+			ID: "save-account", Name: "saveAccount",
+			Kind: "method", Language: "java",
+			File: "src/main/java/example/AccountStore.java", Line: 50,
+		},
+		{
+			ID: "find-account", Name: "findByAccountId",
+			Kind: "method", Language: "java",
+			File: "src/main/java/example/AccountStore.java", Line: 60,
+		},
+		{
+			ID: "generic-message", Name: "sendMessage",
+			Kind: "method", Language: "java",
+			File: "src/main/java/example/MessageSender.java", Line: 10,
+		},
+		{
+			ID: "test-publish", Name: "publishRemoval",
+			Kind: "method", Language: "java",
+			File: "src/test/java/example/JobHousekeepingTest.java", Line: 10,
+		},
+		{
+			ID: "go-publish", Name: "publishRemoval",
+			Kind: "method", Language: "go",
+			File: "internal/jobs/housekeeping.go", Line: 10,
+		},
+	}
+
+	index := BuildProjectAgentContextIndex(
+		"services/jobs",
+		"fixed",
+		nil,
+		nil,
+		symbols,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	if len(index.Facts) != 0 || len(index.Edges) != 0 {
+		t.Fatalf("low-signal or non-production methods leaked into compact context: %#v", index)
+	}
+}
+
+func TestBuildProjectAgentContextIndexBoundsUnconnectedJavaSideEffectsDeterministically(t *testing.T) {
+	symbols := make([]RichSymbolRecord, 12)
+	for index := range symbols {
+		symbols[index] = RichSymbolRecord{
+			ID:       fmt.Sprintf("effect:%02d", 11-index),
+			Name:     fmt.Sprintf("publishAccountRemoval%02d", index),
+			Kind:     "method",
+			Language: "java",
+			File:     fmt.Sprintf("src/main/java/example/Effect%02d.java", index),
+			Line:     index + 1,
+		}
+	}
+	build := func(values []RichSymbolRecord) AgentContextIndexRecord {
+		t.Helper()
+		return BuildProjectAgentContextIndex(
+			"services/jobs",
+			"fixed",
+			nil,
+			nil,
+			values,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+		)
+	}
+	reversed := slices.Clone(symbols)
+	slices.Reverse(reversed)
+	forward := build(symbols)
+	backward := build(reversed)
+
+	if diff := cmpJSON(forward, backward); diff != "" {
+		t.Fatalf("side-effect input order changed compact context: %s", diff)
+	}
+	sideEffects := 0
+	for _, fact := range forward.Facts {
+		if fact.Kind == "side_effects" {
+			sideEffects++
+		}
+	}
+	if sideEffects != 8 || len(forward.Facts) != 8 {
+		t.Fatalf("bounded side-effect facts = %d / %d, want 8: %#v", sideEffects, len(forward.Facts), forward.Facts)
+	}
+}
+
 func TestBuildProjectAgentContextIndexDoesNotPromoteUnrelatedMethodRelations(t *testing.T) {
 	routes := []CodeRouteRecord{{
 		RouteID: "route:users", HTTPMethod: "GET", Path: "/users",

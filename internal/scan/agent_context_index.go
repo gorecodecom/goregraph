@@ -60,6 +60,7 @@ const (
 	maxCatalogConsumersPerService = 5
 	maxCatalogContextValueRunes   = 160
 	maxCatalogFactEvidenceIDs     = 8
+	maxAdjacentSideEffectSymbols  = 8
 )
 
 type compactCatalogConsumerSelection struct {
@@ -385,6 +386,7 @@ func (builder *agentContextBuilder) selectSymbols(
 			builder.selectSymbol(from, "symbol")
 		}
 	}
+	builder.selectAdjacentSideEffectSymbols()
 }
 
 func (builder *agentContextBuilder) selectSymbol(symbol RichSymbolRecord, kind string) {
@@ -395,6 +397,65 @@ func (builder *agentContextBuilder) selectSymbol(symbol RichSymbolRecord, kind s
 		return
 	}
 	builder.selectedSymbolKinds[symbol.ID] = kind
+}
+
+func (builder *agentContextBuilder) selectAdjacentSideEffectSymbols() {
+	candidates := make([]RichSymbolRecord, 0)
+	for _, symbol := range builder.symbols {
+		if builder.selectedSymbolKinds[symbol.ID] == "" &&
+			contextAdjacentSideEffectSymbol(symbol) {
+			candidates = append(candidates, symbol)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].ID < candidates[j].ID
+	})
+	if len(candidates) > maxAdjacentSideEffectSymbols {
+		candidates = candidates[:maxAdjacentSideEffectSymbols]
+	}
+	for _, symbol := range candidates {
+		builder.selectSymbol(symbol, "side_effects")
+	}
+}
+
+func contextAdjacentSideEffectSymbol(symbol RichSymbolRecord) bool {
+	if !strings.EqualFold(symbol.Language, "java") ||
+		!strings.EqualFold(symbol.Kind, "method") ||
+		isWorkspaceTestNamespacePath(symbol.File, symbol.Kind) {
+		return false
+	}
+	effectSignal := false
+	domainSignal := false
+	for _, token := range contextIdentifierTokens(symbol.Name) {
+		token = strings.ToLower(token)
+		switch token {
+		case "debug", "trace":
+			return false
+		case "publish", "emit", "notify", "send":
+			effectSignal = true
+		default:
+			if contextSideEffectDomainToken(token) {
+				domainSignal = true
+			}
+		}
+	}
+	return effectSignal && domainSignal
+}
+
+func contextSideEffectDomainToken(token string) bool {
+	switch token {
+	case "", "all", "any", "async", "create", "data", "delete", "event", "events",
+		"find", "get", "helper", "info", "information", "list", "log", "message",
+		"messages", "notification", "notifications", "read", "request", "response",
+		"result", "save", "set", "status", "update", "value", "values":
+		return false
+	}
+	for _, current := range token {
+		if unicode.IsLetter(current) {
+			return true
+		}
+	}
+	return false
 }
 
 func (builder *agentContextBuilder) relationSymbol(id, label string) (RichSymbolRecord, bool) {
