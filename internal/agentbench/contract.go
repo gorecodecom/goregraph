@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 )
 
 const (
@@ -351,11 +350,14 @@ func validateLocation(location LocationExpectation, field string) error {
 func locationsOverlap(first, second LocationExpectation) bool {
 	return first.Section == second.Section &&
 		(first.Project == "" || second.Project == "" || first.Project == second.Project) &&
-		(first.Kind == "" || second.Kind == "" || first.Kind == second.Kind) &&
-		(strings.Contains(first.LabelContains, second.LabelContains) || strings.Contains(second.LabelContains, first.LabelContains))
+		(first.Kind == "" || second.Kind == "" || first.Kind == second.Kind)
 }
 
 func validateFacets(answer AnswerExpectation) error {
+	if len(answer.RequiredFacets) == 0 {
+		return fmt.Errorf("answer.required_facets must contain at least one facet")
+	}
+
 	facetIDs := make(map[string]bool)
 	for _, category := range []struct {
 		field  string

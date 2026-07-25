@@ -108,6 +108,13 @@ func TestValidateContract(t *testing.T) {
 			wantErr: "answer.required_facets[0].description",
 		},
 		{
+			name: "rejects contracts without required facets",
+			mutate: func(contract *Contract) {
+				contract.Answer.RequiredFacets = nil
+			},
+			wantErr: "answer.required_facets",
+		},
+		{
 			name: "rejects unsupported schema versions",
 			mutate: func(contract *Contract) {
 				contract.Schema = 2
@@ -146,6 +153,24 @@ func TestValidateContract(t *testing.T) {
 			name: "rejects overlapping required and forbidden locations",
 			mutate: func(contract *Contract) {
 				contract.Pack.ForbiddenLocations[0] = contract.Pack.RequiredLocations[0]
+			},
+			wantErr: "pack.forbidden_locations[0]",
+		},
+		{
+			name: "rejects compatible locations with distinct label matchers",
+			mutate: func(contract *Contract) {
+				contract.Pack.RequiredLocations[0] = LocationExpectation{
+					Section:       "persistence",
+					Project:       "services/catalog",
+					Kind:          "method",
+					LabelContains: "delete",
+				}
+				contract.Pack.ForbiddenLocations[0] = LocationExpectation{
+					Section:       "persistence",
+					Project:       "services/catalog",
+					Kind:          "method",
+					LabelContains: "catalog",
+				}
 			},
 			wantErr: "pack.forbidden_locations[0]",
 		},
