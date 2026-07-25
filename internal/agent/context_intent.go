@@ -207,8 +207,9 @@ func planContextConcerns(
 		contextConcernEdgeCandidates(reachableEdges, contextConcernPersistence)...,
 	)
 	persistenceCandidates = orderedContextConcernIDs(persistenceCandidates)
-	if !scopedConcernKinds[contextConcernPersistence] &&
-		(contextQueryRequestsConcern(query, contextConcernPersistence) || len(persistenceCandidates) > 0) {
+	if len(persistenceCandidates) > 0 ||
+		!scopedConcernKinds[contextConcernPersistence] &&
+			contextQueryRequestsConcern(query, contextConcernPersistence) {
 		concerns = append(concerns, newContextConcern(
 			contextConcernPersistence,
 			"",

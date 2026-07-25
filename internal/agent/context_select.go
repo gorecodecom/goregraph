@@ -452,6 +452,13 @@ func expandContextEvidenceConcernsWithProfile(
 		contractFactIDs[project] = append(contractFactIDs[project], contract.ID)
 	}
 
+	concerns = contextProjectRequestedContractConcerns(
+		concerns,
+		index,
+		contractProjects,
+		requestedActions,
+		query,
+	)
 	result := make([]contextConcern, 0, len(concerns)+len(requestedModels))
 	for _, concern := range concerns {
 		switch concern.kind {
@@ -462,7 +469,7 @@ func expandContextEvidenceConcernsWithProfile(
 					append([]string(nil), concern.candidateFactIDs...),
 					contractFactIDs[concern.project]...,
 				))
-				result = append(result, newContextEvidenceConcern(
+				result = append(result, newExpandedContextEvidenceConcern(
 					concern,
 					"client_transport",
 					candidates,
@@ -471,7 +478,7 @@ func expandContextEvidenceConcernsWithProfile(
 				added = true
 			}
 			if endpointProjects[concern.project] || modelProjects[concern.project] {
-				result = append(result, newContextEvidenceConcern(
+				result = append(result, newExpandedContextEvidenceConcern(
 					concern,
 					"server_policy",
 					concern.candidateFactIDs,
@@ -485,6 +492,15 @@ func expandContextEvidenceConcernsWithProfile(
 		case contextConcernConfiguration:
 			if !contractProjects[concern.project] {
 				result = append(result, concern)
+				continue
+			}
+			if concern.key != concern.publicKey {
+				result = append(result, newExpandedContextEvidenceConcern(
+					concern,
+					"client_configuration",
+					concern.candidateFactIDs,
+					"client configuration",
+				))
 				continue
 			}
 			bindingCandidates := contextEvidenceFacetCandidateIDs(
@@ -508,13 +524,13 @@ func expandContextEvidenceConcernsWithProfile(
 			)
 			result = append(
 				result,
-				newContextEvidenceConcern(
+				newExpandedContextEvidenceConcern(
 					concern,
 					"binding",
 					bindingCandidates,
 					"client configuration binding",
 				),
-				newContextEvidenceConcern(
+				newExpandedContextEvidenceConcern(
 					concern,
 					"consumer",
 					consumerCandidates,
@@ -543,7 +559,7 @@ func expandContextEvidenceConcernsWithProfile(
 				if facet == "recovery" {
 					reason = "client recovery behavior"
 				}
-				result = append(result, newContextEvidenceConcern(
+				result = append(result, newExpandedContextEvidenceConcern(
 					concern,
 					facet,
 					contextEvidenceFacetCandidateIDs(
@@ -576,6 +592,7 @@ func expandContextEvidenceConcernsWithProfile(
 				continue
 			}
 			domainTokens := contextSourceDomainModelTokens(pack, index)
+			added := false
 			for _, modelID := range modelIDs {
 				candidates := []string{}
 				for _, factID := range concern.candidateFactIDs {
@@ -589,12 +606,19 @@ func expandContextEvidenceConcernsWithProfile(
 						candidates = append(candidates, factID)
 					}
 				}
+				if len(candidates) == 0 {
+					continue
+				}
 				result = append(result, newContextEvidenceConcern(
 					concern,
 					"model:"+modelID,
 					candidates,
 					"persistence for requested model "+factByID[modelID].Name,
 				))
+				added = true
+			}
+			if !added {
+				result = append(result, concern)
 			}
 		case contextConcernSideEffects:
 			if concern.project != "" && !modelProjects[concern.project] {
@@ -640,6 +664,142 @@ func expandContextEvidenceConcernsWithProfile(
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].key < result[j].key })
 	return result
+}
+
+func newExpandedContextEvidenceConcern(
+	base contextConcern,
+	facet string,
+	candidateFactIDs []string,
+	reason string,
+) contextConcern {
+	result := newContextEvidenceConcern(base, facet, candidateFactIDs, reason)
+	if base.key != base.publicKey {
+		result.key = base.key + "#" + strings.TrimSpace(facet)
+	}
+	return result
+}
+
+func contextProjectRequestedContractConcerns(
+	concerns []contextConcern,
+	index scan.AgentContextIndexRecord,
+	contractProjects map[string]bool,
+	requestedActions map[string]bool,
+	query string,
+) []contextConcern {
+	projects := make([]string, 0, len(contractProjects))
+	for project := range contractProjects {
+		if project != "" {
+			projects = append(projects, project)
+		}
+	}
+	sort.Strings(projects)
+	if len(projects) == 0 {
+		return concerns
+	}
+
+	result := make([]contextConcern, 0, len(concerns)+len(projects))
+	projectedKinds := make(map[string]bool)
+	for _, concern := range concerns {
+		if concern.project != "" && contractProjects[concern.project] &&
+			(concern.kind == contextConcernAuth ||
+				concern.kind == contextConcernConfiguration ||
+				concern.kind == contextConcernResilience) {
+			projectedKinds[concern.kind+"\x00"+concern.project] = true
+		}
+		if concern.project != "" ||
+			concern.kind != contextConcernAuth &&
+				concern.kind != contextConcernConfiguration &&
+				concern.kind != contextConcernResilience {
+			result = append(result, concern)
+			continue
+		}
+		for _, project := range projects {
+			projected := concern
+			projected.project = project
+			projected.key = concern.kind + ":" + project
+			projected.publicKey = firstNonEmptyContext(concern.publicKey, concern.key)
+			projected.candidateFactIDs = contextContractProjectConcernCandidateIDs(
+				index,
+				concern.candidateFactIDs,
+				project,
+				concern.kind,
+				requestedActions,
+			)
+			result = append(result, projected)
+			projectedKinds[concern.kind+"\x00"+project] = true
+		}
+	}
+	for _, kind := range []string{
+		contextConcernAuth,
+		contextConcernConfiguration,
+		contextConcernResilience,
+	} {
+		if !contextQueryRequestsConcern(query, kind) {
+			continue
+		}
+		for _, project := range projects {
+			key := kind + "\x00" + project
+			if projectedKinds[key] {
+				continue
+			}
+			concern := newContextConcern(
+				kind,
+				project,
+				true,
+				contextContractProjectConcernCandidateIDs(
+					index,
+					nil,
+					project,
+					kind,
+					requestedActions,
+				),
+				"requested selected client "+strings.ReplaceAll(kind, "_", " ")+" evidence",
+			)
+			concern.publicKey = kind
+			result = append(result, concern)
+			projectedKinds[key] = true
+		}
+	}
+	return result
+}
+
+func contextContractProjectConcernCandidateIDs(
+	index scan.AgentContextIndexRecord,
+	candidateFactIDs []string,
+	project string,
+	kind string,
+	requestedActions map[string]bool,
+) []string {
+	candidateSet := make(map[string]bool, len(candidateFactIDs))
+	for _, factID := range candidateFactIDs {
+		candidateSet[factID] = true
+	}
+	candidates := []string{}
+	for _, fact := range index.Facts {
+		if normalizeContextProject(fact.Project) != project ||
+			!eligibleContextConcernFact(fact) {
+			continue
+		}
+		factActions := contextFactActionFamilies(fact)
+		if len(requestedActions) > 0 &&
+			len(factActions) > 0 &&
+			!contextActionFamiliesOverlap(requestedActions, factActions) &&
+			contextActionFamiliesHaveMutation(factActions) {
+			continue
+		}
+		value := strings.Join([]string{
+			fact.Search,
+			fact.Name,
+			fact.Qualified,
+			fact.Summary,
+		}, " ")
+		if candidateSet[fact.ID] ||
+			normalizedContextConcernKind(fact.Kind) == kind ||
+			contextValueRequestsConcern(value, kind) {
+			candidates = append(candidates, fact.ID)
+		}
+	}
+	return orderedContextConcernIDs(candidates)
 }
 
 func contextEvidenceFacetCandidateIDs(
@@ -1662,6 +1822,8 @@ func contextSourceSectionSupportsEvidence(
 			"authorization",
 			"oauth2authorizedclient",
 			".setbasicauth(",
+			".withbasicauth(",
+			".with_basic_auth(",
 		)
 	case contextConcernAuth + "#server_policy":
 		return contextSourceContainsAny(
@@ -1693,7 +1855,13 @@ func contextSourceSectionSupportsEvidence(
 			"getpath(",
 		)
 	case contextConcernResilience + "#retry_policy":
-		return contextSourceContainsAny(content, "@retryable", "maxattempts")
+		return contextSourceContainsAny(
+			content,
+			"@retryable",
+			"maxattempts",
+			"retrytemplate",
+			"retry_template",
+		)
 	case contextConcernResilience + "#recovery":
 		return contextSourceContainsAny(content, "@recover", "recovering", "recovery")
 	case contextConcernSideEffects + "#mail":
@@ -2805,6 +2973,10 @@ func contextSourceOptionFits(
 	if !reusesSection {
 		candidate.SourceSections = append(candidate.SourceSections, option.section)
 	}
+	if file, publish := contextProjectedClientSupportFile(pack, option, concerns); publish &&
+		!mergeContextFile(&candidate, file, request.MaxFiles) {
+		return false, nil
+	}
 	if candidate.SourceUnrepresented > 0 {
 		candidate.SourceUnrepresented--
 	}
@@ -2885,6 +3057,10 @@ func addContextSourceOption(
 	if !contextSourceSectionAlreadyPresent(pack, option.section) {
 		pack.SourceSections = append(pack.SourceSections, option.section)
 	}
+	if file, publish := contextProjectedClientSupportFile(pack, option, concerns); publish &&
+		!mergeContextFile(&pack, file, request.MaxFiles) {
+		return ContextPack{}, state, fmt.Errorf("selected client support source exceeds the response file budget")
+	}
 	if pack.SourceUnrepresented > 0 {
 		pack.SourceUnrepresented--
 	}
@@ -2924,6 +3100,47 @@ func addContextSourceOption(
 		return ContextPack{}, state, fmt.Errorf("selected context source option no longer fits the response budget")
 	}
 	return pack, state, nil
+}
+
+func contextProjectedClientSupportFile(
+	pack ContextPack,
+	option contextSourceOption,
+	concerns []contextConcern,
+) (ContextFile, bool) {
+	concernKeys := make(map[string]bool, len(option.concernKeys))
+	for _, key := range option.concernKeys {
+		concernKeys[key] = true
+	}
+	project := normalizeContextProject(option.candidate.Project)
+	selectedContractProject := false
+	for _, contract := range pack.Contracts {
+		if normalizeContextProject(contract.Project) == project {
+			selectedContractProject = true
+			break
+		}
+	}
+	if !selectedContractProject {
+		return ContextFile{}, false
+	}
+	for _, concern := range concerns {
+		if !concern.required ||
+			!concernKeys[concern.key] ||
+			concern.project != project ||
+			concern.kind != contextConcernAuth &&
+				concern.kind != contextConcernConfiguration &&
+				concern.kind != contextConcernResilience {
+			continue
+		}
+		return ContextFile{
+			Project:   option.section.Project,
+			Path:      option.section.Path,
+			StartLine: option.section.StartLine,
+			EndLine:   option.section.EndLine,
+			Role:      "related_project",
+			Reason:    "selected client support evidence",
+		}, true
+	}
+	return ContextFile{}, false
 }
 
 func coverableContextSourceProductionPending(

@@ -3148,6 +3148,89 @@ func TestBuildContextIncomingCurrentGETContractKeepsRequestedDELETEGap(t *testin
 	}
 }
 
+func TestBuildContextPublishesReachableConcretePersistence(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-25T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "catalog-delete", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "DELETE /catalog/{itemId}", Qualified: "CatalogController.remove",
+				HTTPMethod: "DELETE", Path: "/catalog/{itemId}", File: "CatalogController.go",
+				Line: 3, EndLine: 5, Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "catalog-service", Project: "services/catalog", Kind: "symbol",
+				Name: "remove", Qualified: "CatalogService.remove", File: "CatalogService.go",
+				Line: 3, EndLine: 5, Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "catalog-delete-persistence", Project: "services/catalog", Kind: "persistence",
+				Name: "deleteById", Qualified: "CatalogRepository.deleteById",
+				File: "CatalogRepository.go", Line: 3, EndLine: 5, Confidence: "EXACT",
+				Search: "delete catalog item persistence repository",
+			},
+			{
+				ID: "catalog-generic-persistence", Project: "services/catalog", Kind: "persistence",
+				Name: "findAll", Qualified: "GenericCatalogRepository.findAll",
+				File: "GenericCatalogRepository.go", Line: 3, EndLine: 5, Confidence: "EXACT",
+				Search:  "catalog item persistence repository",
+				Summary: "inherited repository method",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{
+				ID: "catalog-service-call", FromFactID: "catalog-delete",
+				ToFactID: "catalog-service", Kind: "call", Confidence: "EXACT",
+			},
+			{
+				ID: "catalog-delete-persistence-call", FromFactID: "catalog-service",
+				ToFactID: "catalog-delete-persistence", Kind: "persistence", Confidence: "RESOLVED",
+			},
+			{
+				ID: "catalog-generic-persistence-call", FromFactID: "catalog-service",
+				ToFactID: "catalog-generic-persistence", Kind: "persistence", Confidence: "RESOLVED",
+			},
+		},
+	}
+	root := writeIncomingResolvedContractContextFixture(t, index)
+	writeContextSourceFile(
+		t,
+		root,
+		"CatalogRepository.go",
+		"package fixture\n\nfunc deleteById() {\n\trepository.delete()\n}\n",
+	)
+
+	pack, err := BuildContext(ContextRequest{
+		Root:         root,
+		Query:        "Inspect DELETE /catalog/{itemId} in services/catalog and include the catalog item persistence operation.",
+		BudgetTokens: MaxContextBudgetTokens,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundPersistence := false
+	for _, location := range pack.Persistence {
+		foundPersistence = foundPersistence || location.ID == "catalog-delete-persistence"
+	}
+	if !foundPersistence {
+		t.Fatalf("reachable concrete persistence missing: %#v", pack.Persistence)
+	}
+	foundSource := false
+	for _, section := range pack.SourceSections {
+		foundSource = foundSource ||
+			section.Path == "CatalogRepository.go" &&
+				strings.Contains(section.Content, "deleteById")
+	}
+	if !foundSource {
+		t.Fatalf(
+			"reachable concrete persistence source missing: sections=%#v omissions=%#v",
+			pack.SourceSections,
+			pack.SourceOmissions,
+		)
+	}
+}
+
 func TestBuildContextRejectsIneligibleIncomingClientContracts(t *testing.T) {
 	tests := []struct {
 		name   string
