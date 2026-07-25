@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/gorecodecom/goregraph/internal/agent"
 	"github.com/gorecodecom/goregraph/internal/agentbench"
@@ -43,6 +48,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	switch args[0] {
+	case "run":
+		return runRegressionCommand(
+			args[1:],
+			stderr,
+			os.LookupEnv,
+			agentbench.RunRegression,
+		)
 	case "verify-pack":
 		return runVerifyPack(args[1:], stdout, stderr)
 	case "diff-pack":
@@ -52,6 +64,98 @@ func run(args []string, stdout, stderr io.Writer) int {
 	default:
 		return commandError(stderr, "unknown command %q", args[0])
 	}
+}
+
+func runRegressionCommand(
+	args []string,
+	stderr io.Writer,
+	getenv func(string) (string, bool),
+	execute func(context.Context, agentbench.RunnerConfig) error,
+) int {
+	flags, err := parseFileFlags(
+		args,
+		"matrix",
+		"external-case",
+		"golden-binary",
+		"golden-commit",
+		"candidate-binary",
+		"candidate-commit",
+		"instruction",
+		"phase",
+		"target-case",
+		"runs",
+		"output",
+	)
+	if err != nil {
+		return commandError(stderr, "%v", err)
+	}
+	if err := validateInputPaths(map[string]string{
+		"matrix":           flags["matrix"],
+		"external-case":    flags["external-case"],
+		"golden-binary":    flags["golden-binary"],
+		"candidate-binary": flags["candidate-binary"],
+		"instruction":      flags["instruction"],
+	}); err != nil {
+		return commandError(stderr, "%v", err)
+	}
+	if !filepath.IsAbs(flags["output"]) {
+		return commandError(stderr, "--output must be an absolute path")
+	}
+	runs, err := strconv.Atoi(flags["runs"])
+	if err != nil {
+		return commandError(stderr, "--runs must be an integer")
+	}
+	codexSource, present := getenv("CODEX_BENCHMARK_ARGS")
+	if !present || codexSource == "" {
+		return commandError(stderr, "CODEX_BENCHMARK_ARGS must contain one literal argument per line")
+	}
+	codexArgs := strings.Split(codexSource, "\n")
+	for _, argument := range codexArgs {
+		if argument == "" || strings.ContainsRune(argument, '\r') {
+			return commandError(stderr, "CODEX_BENCHMARK_ARGS must not contain empty or carriage-return arguments")
+		}
+	}
+	analyzerPath, err := repositoryAnalyzerPath()
+	if err != nil {
+		return commandError(stderr, "%v", err)
+	}
+	config := agentbench.RunnerConfig{
+		MatrixPath:      flags["matrix"],
+		ExternalCase:    flags["external-case"],
+		GoldenBinary:    flags["golden-binary"],
+		GoldenCommit:    flags["golden-commit"],
+		CandidateBinary: flags["candidate-binary"],
+		CandidateCommit: flags["candidate-commit"],
+		InstructionPath: flags["instruction"],
+		Phase:           flags["phase"],
+		TargetCase:      flags["target-case"],
+		Runs:            runs,
+		Output:          flags["output"],
+		CodexArgs:       codexArgs,
+		AnalyzerPath:    analyzerPath,
+	}
+	commandContext, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+	if err := execute(commandContext, config); err != nil {
+		return commandError(stderr, "%v", err)
+	}
+	return 0
+}
+
+func repositoryAnalyzerPath() (string, error) {
+	_, sourcePath, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("resolve command source path")
+	}
+	path := filepath.Join(filepath.Dir(filepath.Dir(sourcePath)), "analyze-agent-context-log.sh")
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("analyzer path is not absolute")
+	}
+	return path, nil
 }
 
 func runVerifyPack(args []string, stdout, stderr io.Writer) int {

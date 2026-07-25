@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -26,6 +27,174 @@ func TestRunRequiresCommand(t *testing.T) {
 	}
 	if stderr.Len() == 0 {
 		t.Fatal("stderr is empty, want diagnostic")
+	}
+}
+
+func TestRunCommandBuildsRunnerConfig(t *testing.T) {
+	root := t.TempDir()
+	arguments := runnerCommandArguments(root)
+	environment := strings.Join(safeCommandCodexArgs(), "\n")
+	var captured agentbench.RunnerConfig
+	called := false
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := runRegressionCommand(
+		arguments,
+		&stderr,
+		func(name string) (string, bool) {
+			if name != "CODEX_BENCHMARK_ARGS" {
+				return "", false
+			}
+			return environment, true
+		},
+		func(_ context.Context, config agentbench.RunnerConfig) error {
+			called = true
+			captured = config
+			return nil
+		},
+	)
+
+	if code != 0 {
+		t.Fatalf("run command exit = %d, want 0; stderr = %q", code, stderr.String())
+	}
+	if !called {
+		t.Fatal("runner was not called")
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("stdout = %q, stderr = %q; want empty", stdout.String(), stderr.String())
+	}
+	if got, want := captured.CodexArgs, safeCommandCodexArgs(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("CodexArgs = %q, want %q", got, want)
+	}
+	if captured.Phase != "smoke" ||
+		captured.TargetCase != "g1" ||
+		captured.Runs != 1 ||
+		!filepath.IsAbs(captured.AnalyzerPath) ||
+		filepath.Base(captured.AnalyzerPath) != "analyze-agent-context-log.sh" {
+		t.Fatalf("RunnerConfig = %#v, want parsed smoke config with repository analyzer", captured)
+	}
+	if captured.MatrixPath != filepath.Join(root, "matrix.json") ||
+		captured.Output != filepath.Join(root, "output") {
+		t.Fatalf("RunnerConfig paths = %#v, want literal flag paths", captured)
+	}
+}
+
+func TestRunCommandRejectsMalformedInput(t *testing.T) {
+	tests := []struct {
+		name        string
+		mutateArgs  func([]string) []string
+		environment string
+		present     bool
+	}{
+		{
+			name:        "missing required flag",
+			mutateArgs:  func(args []string) []string { return args[:len(args)-2] },
+			environment: strings.Join(safeCommandCodexArgs(), "\n"),
+			present:     true,
+		},
+		{
+			name: "duplicate flag",
+			mutateArgs: func(args []string) []string {
+				return append(args, "--matrix", args[1])
+			},
+			environment: strings.Join(safeCommandCodexArgs(), "\n"),
+			present:     true,
+		},
+		{
+			name: "unknown flag",
+			mutateArgs: func(args []string) []string {
+				return append(args, "--unknown", args[1])
+			},
+			environment: strings.Join(safeCommandCodexArgs(), "\n"),
+			present:     true,
+		},
+		{
+			name: "relative path",
+			mutateArgs: func(args []string) []string {
+				args[1] = "matrix.json"
+				return args
+			},
+			environment: strings.Join(safeCommandCodexArgs(), "\n"),
+			present:     true,
+		},
+		{
+			name: "invalid run count",
+			mutateArgs: func(args []string) []string {
+				args[len(args)-3] = "many"
+				return args
+			},
+			environment: strings.Join(safeCommandCodexArgs(), "\n"),
+			present:     true,
+		},
+		{
+			name:        "missing Codex args",
+			environment: "",
+			present:     false,
+		},
+		{
+			name:        "empty Codex args",
+			environment: "",
+			present:     true,
+		},
+		{
+			name:        "blank Codex argument line",
+			environment: strings.Join(append(safeCommandCodexArgs(), ""), "\n"),
+			present:     true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			args := runnerCommandArguments(t.TempDir())
+			if test.mutateArgs != nil {
+				args = test.mutateArgs(args)
+			}
+			called := false
+			var stderr bytes.Buffer
+
+			code := runRegressionCommand(
+				args,
+				&stderr,
+				func(string) (string, bool) { return test.environment, test.present },
+				func(context.Context, agentbench.RunnerConfig) error {
+					called = true
+					return nil
+				},
+			)
+
+			if code != 2 {
+				t.Fatalf("run command exit = %d, want 2", code)
+			}
+			if called {
+				t.Fatal("runner called for malformed command")
+			}
+			if stderr.Len() == 0 {
+				t.Fatal("stderr is empty, want diagnostic")
+			}
+		})
+	}
+}
+
+func TestRunCommandReturnsInfrastructureFailure(t *testing.T) {
+	var stderr bytes.Buffer
+
+	code := runRegressionCommand(
+		runnerCommandArguments(t.TempDir()),
+		&stderr,
+		func(string) (string, bool) {
+			return strings.Join(safeCommandCodexArgs(), "\n"), true
+		},
+		func(context.Context, agentbench.RunnerConfig) error {
+			return errors.New("injected runner failure")
+		},
+	)
+
+	if code != 2 {
+		t.Fatalf("run command exit = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "injected runner failure") {
+		t.Fatalf("stderr = %q, want runner failure", stderr.String())
 	}
 }
 
@@ -721,6 +890,37 @@ type commandFixture struct {
 	hypothesis    string
 	goldenRuns    string
 	candidateRuns string
+}
+
+func runnerCommandArguments(root string) []string {
+	return []string{
+		"--matrix", filepath.Join(root, "matrix.json"),
+		"--external-case", filepath.Join(root, "g1"),
+		"--golden-binary", filepath.Join(root, "golden"),
+		"--golden-commit", strings.Repeat("a", 40),
+		"--candidate-binary", filepath.Join(root, "candidate"),
+		"--candidate-commit", strings.Repeat("b", 40),
+		"--instruction", filepath.Join(root, "instruction.txt"),
+		"--phase", "smoke",
+		"--target-case", "g1",
+		"--runs", "1",
+		"--output", filepath.Join(root, "output"),
+	}
+}
+
+func safeCommandCodexArgs() []string {
+	return []string{
+		"-a", "never",
+		"exec",
+		"--sandbox", "read-only",
+		"--skip-git-repo-check",
+		"--ephemeral",
+		"--ignore-user-config",
+		"--ignore-rules",
+		"--color", "never",
+		"-m", "test-model",
+		"-c", `model_reasoning_effort="high"`,
+	}
 }
 
 func newCommandFixture(t *testing.T) commandFixture {
