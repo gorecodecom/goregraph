@@ -48,8 +48,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	methodSignature := ""
 	methodSignatureSource := ""
 	methodSignatureLine := 0
-	activeMethodIndex := -1
-	activeMethodBodyDepth := 0
+	methodScopes := []javaMethodScope{}
 	typeSignature := ""
 	typeSignatureLine := 0
 	annotationSignature := ""
@@ -100,11 +99,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			braceDepth += strings.Count(lexicalLine, "{")
 			braceDepth -= strings.Count(lexicalLine, "}")
 			typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
-			activeMethodIndex, activeMethodBodyDepth = finalizeJavaMethodScope(
-				activeMethodIndex,
-				activeMethodBodyDepth,
-				braceDepth,
-			)
+			methodScopes = finalizeJavaMethodScopes(methodScopes, braceDepth)
 			continue
 		}
 		if methodSignature != "" {
@@ -113,8 +108,10 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			if javaDeclarationBodyOpen(methodSignature) >= 0 {
 				if method, ok := parseJavaMethodWithSource(methodSignature, methodSignatureSource, file.Path, currentOwner, methodSignatureLine, pending); ok {
 					source.Methods = append(source.Methods, method)
-					activeMethodIndex = len(source.Methods) - 1
-					activeMethodBodyDepth = braceDepth + 1
+					methodScopes = append(methodScopes, javaMethodScope{
+						methodIndex: len(source.Methods) - 1,
+						bodyDepth:   braceDepth + 1,
+					})
 					pending = nil
 				}
 				methodSignature = ""
@@ -124,11 +121,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			braceDepth += strings.Count(lexicalLine, "{")
 			braceDepth -= strings.Count(lexicalLine, "}")
 			typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
-			activeMethodIndex, activeMethodBodyDepth = finalizeJavaMethodScope(
-				activeMethodIndex,
-				activeMethodBodyDepth,
-				braceDepth,
-			)
+			methodScopes = finalizeJavaMethodScopes(methodScopes, braceDepth)
 			continue
 		}
 
@@ -183,11 +176,14 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			methodSignatureLine = lineNo
 		} else if method, ok := parseJavaMethodWithSource(lexicalLines[index], literalLines[index], file.Path, currentOwner, lineNo, pending); ok && currentOwner != "" {
 			source.Methods = append(source.Methods, method)
-			activeMethodIndex = len(source.Methods) - 1
-			activeMethodBodyDepth = braceDepth + 1
+			methodScopes = append(methodScopes, javaMethodScope{
+				methodIndex: len(source.Methods) - 1,
+				bodyDepth:   braceDepth + 1,
+			})
 			pending = nil
-		} else if activeMethodIndex >= 0 && braceDepth >= activeMethodBodyDepth {
-			active := &source.Methods[activeMethodIndex]
+		} else if len(methodScopes) > 0 && braceDepth >= methodScopes[len(methodScopes)-1].bodyDepth {
+			activeScope := methodScopes[len(methodScopes)-1]
+			active := &source.Methods[activeScope.methodIndex]
 			active.LocalTypes = mergeJavaLocalTypes(active.LocalTypes, extractJavaLocalType(strings.TrimSpace(lexicalLines[index])))
 			if match := javaReturnExpressionRE.FindStringSubmatch(strings.TrimSpace(literalLines[index])); len(match) == 2 {
 				active.ReturnExpression = strings.TrimSpace(match[1])
@@ -208,11 +204,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		braceDepth += strings.Count(lexicalLine, "{")
 		braceDepth -= strings.Count(lexicalLine, "}")
 		typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
-		activeMethodIndex, activeMethodBodyDepth = finalizeJavaMethodScope(
-			activeMethodIndex,
-			activeMethodBodyDepth,
-			braceDepth,
-		)
+		methodScopes = finalizeJavaMethodScopes(methodScopes, braceDepth)
 	}
 	for len(typeStack) > 0 {
 		scope := typeStack[len(typeStack)-1]
@@ -236,15 +228,20 @@ type javaTypeScope struct {
 	bodyDepth int
 }
 
+type javaMethodScope struct {
+	methodIndex int
+	bodyDepth   int
+}
+
 func javaAtCurrentTypeBody(braceDepth int, stack []javaTypeScope) bool {
 	return len(stack) > 0 && braceDepth == stack[len(stack)-1].bodyDepth
 }
 
-func finalizeJavaMethodScope(activeIndex, activeBodyDepth, braceDepth int) (int, int) {
-	if activeIndex >= 0 && braceDepth < activeBodyDepth {
-		return -1, 0
+func finalizeJavaMethodScopes(stack []javaMethodScope, braceDepth int) []javaMethodScope {
+	for len(stack) > 0 && braceDepth < stack[len(stack)-1].bodyDepth {
+		stack = stack[:len(stack)-1]
 	}
-	return activeIndex, activeBodyDepth
+	return stack
 }
 
 func finalizeJavaTypeScopes(source *JavaSourceRecord, stack []javaTypeScope, braceDepth, line int) ([]javaTypeScope, string, int) {

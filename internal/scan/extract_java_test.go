@@ -117,6 +117,68 @@ func TestExtractJavaKeepsExecutableEvidenceInsideActiveMethodScope(t *testing.T)
 	}
 }
 
+func TestExtractJavaRestoresOuterMethodAfterNestedClassMethods(t *testing.T) {
+	source := extractJavaSource(
+		FileRecord{Path: "src/main/java/example/JobHousekeeping.java", Language: "java"},
+		`final class JobHousekeeping {
+  void publishRemoval(String removal) {
+    Runnable callback = new Runnable() {
+      public void runAnonymous() {
+        sink.accept("anonymous-only");
+      }
+    };
+    sink.accept(removal);
+  }
+
+  void emitRemoval(String removal) {
+    class Local {
+      void runLocal() {
+        sink.accept("local-only");
+      }
+    }
+    sink.accept(removal);
+  }
+}`,
+	)
+	methods := map[string]JavaMethodRecord{}
+	for _, method := range source.Methods {
+		methods[method.Name] = method
+	}
+	if len(methods) != 4 {
+		t.Fatalf("methods = %#v", source.Methods)
+	}
+
+	tests := []struct {
+		name          string
+		wantArguments []string
+	}{
+		{name: "publishRemoval", wantArguments: []string{"removal"}},
+		{name: "runAnonymous", wantArguments: []string{`"anonymous-only"`}},
+		{name: "emitRemoval", wantArguments: []string{"removal"}},
+		{name: "runLocal", wantArguments: []string{`"local-only"`}},
+	}
+	for _, test := range tests {
+		method, ok := methods[test.name]
+		if !ok {
+			t.Fatalf("method %q missing: %#v", test.name, source.Methods)
+		}
+		var acceptArguments []string
+		for _, call := range method.Calls {
+			if call.Method == "accept" {
+				acceptArguments = append(acceptArguments, call.Arguments...)
+			}
+		}
+		if !reflect.DeepEqual(acceptArguments, test.wantArguments) {
+			t.Errorf("%s accept arguments = %#v, want %#v", test.name, acceptArguments, test.wantArguments)
+		}
+	}
+	for _, name := range []string{"publishRemoval", "emitRemoval"} {
+		if !methods[name].adjacentSideEffectEvidence {
+			t.Errorf("%s lost outer side-effect evidence: %#v", name, methods[name])
+		}
+	}
+}
+
 func TestSpringIndexExtractsMethodAnnotationAuth(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/Controller.java", Language: "java"}, `@RestController
 class Controller {

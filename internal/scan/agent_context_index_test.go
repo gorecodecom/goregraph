@@ -294,6 +294,54 @@ func TestBuildProjectAgentContextIndexRejectsJavaInitializerEvidenceAfterEmptyMe
 	}
 }
 
+func TestBuildProjectAgentContextIndexRestoresOuterJavaMethodAfterNestedMethods(t *testing.T) {
+	const file = "src/main/java/example/JobHousekeeping.java"
+	richSymbols := javaAgentContextSymbols(file, `final class JobHousekeeping {
+  void publishRemoval(String removal) {
+    Runnable callback = new Runnable() {
+      public void runAnonymous() {
+        sink.accept("anonymous-only");
+      }
+    };
+    sink.accept(removal);
+  }
+
+  void emitRemoval(String removal) {
+    class Local {
+      void runLocal() {
+        sink.accept("local-only");
+      }
+    }
+    sink.accept(removal);
+  }
+}`)
+	index := BuildProjectAgentContextIndex(
+		"services/jobs",
+		"fixed",
+		nil,
+		nil,
+		richSymbols,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	for _, name := range []string{"publishRemoval", "emitRemoval"} {
+		if !hasContextFact(index.Facts, "side_effects", name) {
+			t.Errorf("outer method %q lost side-effect fact: %#v", name, index)
+		}
+	}
+	for _, name := range []string{"runAnonymous", "runLocal"} {
+		if hasContextFact(index.Facts, "side_effects", name) {
+			t.Errorf("nested method %q gained outer side-effect fact: %#v", name, index)
+		}
+	}
+	if len(index.Edges) != 0 {
+		t.Fatalf("unconnected methods gained edges: %#v", index.Edges)
+	}
+}
+
 func TestBuildProjectAgentContextIndexAcceptsReferencedJavaStringExpression(t *testing.T) {
 	const file = "src/main/java/example/JobHousekeeping.java"
 	richSymbols := javaAgentContextSymbols(file, `final class JobHousekeeping {
