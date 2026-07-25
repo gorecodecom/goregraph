@@ -179,6 +179,70 @@ func TestExtractJavaRestoresOuterMethodAfterNestedClassMethods(t *testing.T) {
 	}
 }
 
+func TestExtractJavaReadsMultilineTypedFieldWithoutConsumingClassMembers(t *testing.T) {
+	source := extractJavaSource(
+		FileRecord{Path: "src/test/java/example/JobControllerTest.java", Language: "java"},
+		`final class JobControllerTest {
+  private final RecordingJobRepository repository = new RecordingJobRepository();
+  private final JobController controller =
+      new JobController(new JobService(repository));
+
+  @Deprecated
+  private final Runnable callback =
+      () -> {
+        controller.list("ignored", "ignored");
+      };
+
+  @Test
+  void listUsesTheCatalogAndItemFinder() {
+    controller.list("catalog-2", "item-7");
+  }
+
+  void localDeclarationStaysLocal() {
+    JobController local =
+        new JobController(new JobService(repository));
+    local.list("catalog-2", "item-7");
+  }
+
+  void methodAfterMultilineMembers() {
+  }
+}`,
+	)
+
+	fields := map[string]JavaFieldRecord{}
+	for _, field := range source.Fields {
+		fields[field.Name] = field
+	}
+	if fields["repository"].Type != "RecordingJobRepository" {
+		t.Fatalf("repository field = %#v", fields["repository"])
+	}
+	if fields["controller"].Type != "JobController" || !fields["controller"].Final {
+		t.Fatalf("multiline controller field = %#v", fields["controller"])
+	}
+	if _, exists := fields["local"]; exists {
+		t.Fatalf("method-local declaration became a field: %#v", source.Fields)
+	}
+
+	methods := map[string]JavaMethodRecord{}
+	for _, method := range source.Methods {
+		methods[method.Name] = method
+	}
+	for _, name := range []string{
+		"listUsesTheCatalogAndItemFinder",
+		"localDeclarationStaysLocal",
+		"methodAfterMultilineMembers",
+	} {
+		if _, exists := methods[name]; !exists {
+			t.Errorf("method %q was consumed by multiline field state: %#v", name, source.Methods)
+		}
+	}
+	testMethod := methods["listUsesTheCatalogAndItemFinder"]
+	if !hasAnnotation(testMethod.Annotations, "Test") ||
+		hasAnnotation(testMethod.Annotations, "Deprecated") {
+		t.Fatalf("lambda field annotations leaked into following test method: %#v", testMethod.Annotations)
+	}
+}
+
 func TestSpringIndexExtractsMethodAnnotationAuth(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/Controller.java", Language: "java"}, `@RestController
 class Controller {

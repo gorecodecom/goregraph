@@ -986,6 +986,129 @@ func TestBuildProjectAgentContextIndexCompactsFlowsTestsContractsAndCoverage(t *
 	}
 }
 
+func TestBuildProjectAgentContextIndexProjectsTypedJavaMethodTest(t *testing.T) {
+	const controllerFile = "src/main/java/example/JobController.java"
+	const testFile = "src/test/java/example/JobControllerTest.java"
+	controller := extractJavaSource(
+		FileRecord{Path: controllerFile, Language: "java"},
+		`@RestController
+@RequestMapping("/internal/jobs")
+final class JobController {
+  @GetMapping
+  List<Job> list(String catalogId, String itemId) {
+    return service.list(catalogId, itemId);
+  }
+}`,
+	)
+	test := extractJavaSource(
+		FileRecord{Path: testFile, Language: "java"},
+		`final class JobControllerTest {
+  private final RecordingJobRepository repository = new RecordingJobRepository();
+  private final JobController controller =
+      new JobController(new JobService(repository));
+
+  @Test
+  void listUsesTheCatalogAndItemFinder() {
+    List<Job> jobs = controller.list("catalog-2", "item-7");
+    assert jobs.size() == 1;
+  }
+}`,
+	)
+	spring := buildSpringIndex([]JavaSourceRecord{controller, test})
+	tests := buildJavaTestMap([]JavaSourceRecord{controller, test}, spring.Endpoints)
+	if len(tests) != 1 {
+		t.Fatalf("typed Java test maps = %#v, want one", tests)
+	}
+	symbols := []RichSymbolRecord{{
+		ID: "job-controller-list", Name: "list",
+		QualifiedName: "JobController.list",
+		Kind:          "method", Language: "java",
+		File: controllerFile, Line: 2, Confidence: ConfidenceExact,
+	}}
+
+	index := BuildProjectAgentContextIndex(
+		"services/jobs",
+		"fixed",
+		[]CodeRouteRecord{{
+			HTTPMethod: "GET", Path: "/internal/jobs",
+			Handler: "JobController.list", Kind: "backend",
+			File: controllerFile, Line: 5,
+		}},
+		nil,
+		symbols,
+		nil,
+		tests,
+		nil,
+		nil,
+		nil,
+	)
+	if countNamedContextFacts(index.Facts, "test", "listUsesTheCatalogAndItemFinder") != 1 {
+		t.Fatalf("typed Java test facts = %#v, want one exact fact", index.Facts)
+	}
+	testFact := findContextFact(index.Facts, "test", "listUsesTheCatalogAndItemFinder")
+	targetFact := findContextFact(index.Facts, "route", "GET /internal/jobs")
+	if targetFact.ID == "" {
+		t.Fatalf("typed Java test target missing: %#v", index.Facts)
+	}
+	if countContextEdges(index.Edges, "test_target") != 1 ||
+		!hasContextEdge(index.Edges, testFact.ID, targetFact.ID, "test_target") {
+		t.Fatalf("typed Java test target edges = %#v, want one exact edge", index.Edges)
+	}
+}
+
+func TestBuildProjectAgentContextIndexKeepsMethodTargetForAmbiguousRoutes(t *testing.T) {
+	const controllerFile = "src/main/java/example/JobController.java"
+	const testFile = "src/test/java/example/JobControllerTest.java"
+	symbols := []RichSymbolRecord{{
+		ID: "job-controller-list", Name: "list",
+		QualifiedName: "JobController.list",
+		Owner:         "JobController",
+		Kind:          "method", Language: "java",
+		File: controllerFile, Line: 5, Confidence: ConfidenceExact,
+	}}
+	tests := []TestMapRecord{{
+		TestFile: testFile, TestClass: "JobControllerTest",
+		TestMethod: "listUsesTheCatalogAndItemFinder",
+		TargetFile: controllerFile, TargetClass: "JobController", TargetMethod: "list",
+		HTTPMethod: "GET", Path: "/internal/jobs",
+		Type: "method", Line: 8, Confidence: "EXTRACTED",
+		Reason: "test method calls production method",
+	}}
+
+	index := BuildProjectAgentContextIndex(
+		"services/jobs",
+		"fixed",
+		[]CodeRouteRecord{
+			{
+				HTTPMethod: "GET", Path: "/internal/jobs",
+				Handler: "JobController.list", Kind: "backend",
+				File: controllerFile, Line: 5,
+			},
+			{
+				HTTPMethod: "GET", Path: "/internal/jobs",
+				Handler: "JobController.list", Kind: "frontend",
+				File: "src/main/java/example/AlternateJobController.java", Line: 5,
+			},
+		},
+		nil,
+		symbols,
+		nil,
+		tests,
+		nil,
+		nil,
+		nil,
+	)
+	testFact := findContextFact(index.Facts, "test", "listUsesTheCatalogAndItemFinder")
+	methodFact := findContextFact(index.Facts, "symbol", "list")
+	if methodFact.Kind != "symbol" {
+		t.Fatalf("method target missing: %#v", index.Facts)
+	}
+	if countContextEdges(index.Edges, "test_target") != 1 ||
+		!hasContextEdge(index.Edges, testFact.ID, methodFact.ID, "test_target") {
+		t.Fatalf("ambiguous route target edges = %#v, want method fallback", index.Edges)
+	}
+}
+
 func TestProjectAgentContextIndexPreservesContractOperationalSignals(t *testing.T) {
 	index := BuildProjectAgentContextIndex(
 		"libraries/jobs",

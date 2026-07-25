@@ -49,6 +49,8 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	methodSignatureSource := ""
 	methodSignatureLine := 0
 	methodScopes := []javaMethodScope{}
+	fieldSignature := ""
+	fieldSignatureLine := 0
 	typeSignature := ""
 	typeSignatureLine := 0
 	annotationSignature := ""
@@ -84,6 +86,27 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 		}
 		if lexicalLine == "" {
 			continue
+		}
+		if fieldSignature != "" {
+			if !javaMultilineFieldContinuationSafe(lexicalLine) {
+				fieldSignature = ""
+				fieldSignatureLine = 0
+				pending = nil
+			} else {
+				fieldSignature += " " + lexicalLine
+				if strings.HasSuffix(lexicalLine, ";") {
+					if appendJavaField(&source, fieldSignature, fieldSignatureLine, file.Path, currentOwner, pending) {
+						pending = nil
+					}
+					fieldSignature = ""
+					fieldSignatureLine = 0
+				}
+				braceDepth += strings.Count(lexicalLine, "{")
+				braceDepth -= strings.Count(lexicalLine, "}")
+				typeStack, currentOwner, braceDepth = finalizeJavaTypeScopes(&source, typeStack, braceDepth, lineNo)
+				methodScopes = finalizeJavaMethodScopes(methodScopes, braceDepth)
+				continue
+			}
 		}
 		if typeSignature != "" {
 			typeSignature += " " + lexicalLine
@@ -159,17 +182,15 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 				typeStack = append(typeStack, javaTypeScope{typeIndex: typeIndex, bodyDepth: braceDepth + 1})
 				pending = nil
 			}
-		} else if match := javaFieldLineRE.FindStringSubmatch(lexicalLine); len(match) == 5 && currentOwner != "" && javaAtCurrentTypeBody(braceDepth, typeStack) {
-			source.Fields = append(source.Fields, JavaFieldRecord{
-				Name:        match[3],
-				Type:        cleanJavaType(match[2] + strings.ReplaceAll(match[4], " ", "")),
-				File:        file.Path,
-				Line:        lineNo,
-				Owner:       currentOwner,
-				Final:       strings.TrimSpace(match[1]) == "final",
-				Annotations: pending,
-			})
+		} else if currentOwner != "" &&
+			javaAtCurrentTypeBody(braceDepth, typeStack) &&
+			appendJavaField(&source, lexicalLine, lineNo, file.Path, currentOwner, pending) {
 			pending = nil
+		} else if currentOwner != "" &&
+			javaAtCurrentTypeBody(braceDepth, typeStack) &&
+			javaMultilineFieldStart(lexicalLine) {
+			fieldSignature = lexicalLine
+			fieldSignatureLine = lineNo
 		} else if currentOwner != "" && (looksLikeJavaMethodStart(lexicalLine) || looksLikeJavaGenericMethodPrefix(lexicalLine)) && javaDeclarationBodyOpen(lexicalLine) < 0 {
 			methodSignature = lexicalLines[index]
 			methodSignatureSource = literalLines[index]
@@ -231,6 +252,47 @@ type javaTypeScope struct {
 type javaMethodScope struct {
 	methodIndex int
 	bodyDepth   int
+}
+
+func appendJavaField(
+	source *JavaSourceRecord,
+	signature string,
+	line int,
+	file string,
+	owner string,
+	annotations []JavaAnnotationRecord,
+) bool {
+	match := javaFieldLineRE.FindStringSubmatch(signature)
+	if len(match) != 5 {
+		return false
+	}
+	source.Fields = append(source.Fields, JavaFieldRecord{
+		Name:        match[3],
+		Type:        cleanJavaType(match[2] + strings.ReplaceAll(match[4], " ", "")),
+		File:        file,
+		Line:        line,
+		Owner:       owner,
+		Final:       strings.TrimSpace(match[1]) == "final",
+		Annotations: annotations,
+	})
+	return true
+}
+
+func javaMultilineFieldStart(line string) bool {
+	return strings.Contains(line, "=") &&
+		!strings.Contains(line, ";") &&
+		!strings.ContainsAny(line, "{}") &&
+		!strings.Contains(line, "->") &&
+		javaFieldLineRE.MatchString(line+";")
+}
+
+func javaMultilineFieldContinuationSafe(line string) bool {
+	return !strings.HasPrefix(line, "@") &&
+		!javaTypeLineRE.MatchString(line) &&
+		!looksLikeJavaMethodStart(line) &&
+		!looksLikeJavaGenericMethodPrefix(line) &&
+		!strings.ContainsAny(line, "{}") &&
+		!strings.Contains(line, "->")
 }
 
 func javaAtCurrentTypeBody(braceDepth int, stack []javaTypeScope) bool {

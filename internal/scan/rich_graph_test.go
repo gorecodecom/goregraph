@@ -1030,6 +1030,323 @@ func TestBuildJavaTestMapMatchesRegulationChangeBaseControllerConstants(t *testi
 	assertHasEndpointTestMap(t, records, "RegulationChangesSaveRelevantForControllerTest", "savesRelevantFor", "PUT", endpoints[0].Path)
 }
 
+func TestBuildJavaTestMapResolvesMultilineTypedFieldReceiver(t *testing.T) {
+	controller := extractJavaSource(
+		FileRecord{Path: "src/main/java/example/JobController.java", Language: "java"},
+		`@RestController
+@RequestMapping("/internal/jobs")
+final class JobController {
+  @GetMapping
+  List<Job> list(String catalogId, String itemId) {
+    return service.list(catalogId, itemId);
+  }
+}`,
+	)
+	decoy := extractJavaSource(
+		FileRecord{Path: "src/main/java/example/OtherController.java", Language: "java"},
+		`final class OtherController {
+  List<Job> list(String catalogId, String itemId) {
+    return List.of();
+  }
+}`,
+	)
+	test := extractJavaSource(
+		FileRecord{Path: "src/test/java/example/JobControllerTest.java", Language: "java"},
+		`final class JobControllerTest {
+  private final RecordingJobRepository repository = new RecordingJobRepository();
+  private final JobController controller =
+      new JobController(new JobService(repository));
+
+  @Test
+  void listUsesTheCatalogAndItemFinder() {
+    List<Job> jobs = controller.list("catalog-2", "item-7");
+    assert jobs.size() == 1;
+  }
+}`,
+	)
+
+	endpoints := buildSpringIndex([]JavaSourceRecord{controller}).Endpoints
+	records := buildJavaTestMap(
+		[]JavaSourceRecord{controller, decoy, test},
+		endpoints,
+	)
+	if len(records) != 1 {
+		t.Fatalf("typed receiver test maps = %#v, want exactly one", records)
+	}
+	assertHasMethodTestMap(
+		t,
+		records,
+		"JobControllerTest",
+		"listUsesTheCatalogAndItemFinder",
+		"JobController",
+		"list",
+	)
+	if records[0].Type != "method" ||
+		records[0].HTTPMethod != "GET" ||
+		records[0].Path != "/internal/jobs" {
+		t.Fatalf("typed controller test route metadata = %#v", records[0])
+	}
+}
+
+func TestBuildJavaTestMapLeavesAmbiguousControllerEndpointMetadataUnset(t *testing.T) {
+	controller := extractJavaSource(
+		FileRecord{Path: "src/main/java/example/JobController.java", Language: "java"},
+		`final class JobController {
+  void list() {}
+}`,
+	)
+	test := extractJavaSource(
+		FileRecord{Path: "src/test/java/example/JobControllerTest.java", Language: "java"},
+		`final class JobControllerTest {
+  private final JobController controller = null;
+
+  @Test
+  void listUsesTheCatalogAndItemFinder() {
+    controller.list();
+  }
+}`,
+	)
+	endpoints := []SpringEndpointRecord{
+		{
+			HTTPMethod: "GET", Path: "/internal/jobs",
+			Controller: "JobController", Method: "list", File: controller.File,
+		},
+		{
+			HTTPMethod: "GET", Path: "/internal/jobs/search",
+			Controller: "JobController", Method: "list", File: controller.File,
+		},
+	}
+
+	records := buildJavaTestMap([]JavaSourceRecord{controller, test}, endpoints)
+	if len(records) != 1 {
+		t.Fatalf("ambiguous endpoint test maps = %#v, want one method map", records)
+	}
+	if records[0].Type != "method" ||
+		records[0].TargetClass != "JobController" ||
+		records[0].TargetMethod != "list" {
+		t.Fatalf("method target was not preserved: %#v", records[0])
+	}
+	if records[0].HTTPMethod != "" || records[0].Path != "" {
+		t.Fatalf("ambiguous route metadata was guessed: %#v", records[0])
+	}
+}
+
+func TestBuildJavaTestMapKeepsExplicitHTTPRequestAsEndpointEvidence(t *testing.T) {
+	controller := extractJavaSource(
+		FileRecord{Path: "src/main/java/example/JobController.java", Language: "java"},
+		`@RestController
+@RequestMapping("/internal/jobs")
+final class JobController {
+  @GetMapping
+  void list() {}
+}`,
+	)
+	test := extractJavaSource(
+		FileRecord{Path: "src/test/java/example/JobControllerTest.java", Language: "java"},
+		`final class JobControllerTest {
+  private final JobController controller = null;
+
+  @Test
+  void callsControllerDirectly() {
+    controller.list();
+  }
+
+  @Test
+  void callsEndpoint() {
+    mockMvc.perform(get("/internal/jobs"));
+  }
+}`,
+	)
+	endpoints := buildSpringIndex([]JavaSourceRecord{controller}).Endpoints
+
+	records := buildJavaTestMap([]JavaSourceRecord{controller, test}, endpoints)
+	if len(records) != 2 {
+		t.Fatalf("direct and HTTP test maps = %#v, want two", records)
+	}
+	for _, record := range records {
+		switch record.TestMethod {
+		case "callsControllerDirectly":
+			if record.Type != "method" || record.HTTPMethod != "" || record.Path != "" {
+				t.Fatalf("direct call duplicated endpoint metadata: %#v", record)
+			}
+		case "callsEndpoint":
+			if record.Type != "endpoint" ||
+				record.HTTPMethod != "GET" ||
+				record.Path != "/internal/jobs" {
+				t.Fatalf("explicit HTTP evidence missing: %#v", record)
+			}
+		default:
+			t.Fatalf("unexpected test map: %#v", record)
+		}
+	}
+}
+
+func TestBuildJavaTestMapLeavesUncertainTypedReceiversUnresolved(t *testing.T) {
+	tests := []struct {
+		name    string
+		sources []JavaSourceRecord
+	}{
+		{
+			name: "unknown receiver is not inferred from test filename",
+			sources: []JavaSourceRecord{
+				extractJavaSource(
+					FileRecord{Path: "src/main/java/example/JobController.java", Language: "java"},
+					`final class JobController {
+  void list() {}
+}`,
+				),
+				extractJavaSource(
+					FileRecord{Path: "src/test/java/example/JobControllerTest.java", Language: "java"},
+					`final class JobControllerTest {
+  @Test
+  void listUsesTheCatalogAndItemFinder() {
+    subject.list();
+  }
+}`,
+				),
+			},
+		},
+		{
+			name: "duplicate production owner",
+			sources: []JavaSourceRecord{
+				extractJavaSource(
+					FileRecord{Path: "src/main/java/a/JobController.java", Language: "java"},
+					`package a;
+final class JobController {
+  void list() {}
+}`,
+				),
+				extractJavaSource(
+					FileRecord{Path: "src/main/java/b/JobController.java", Language: "java"},
+					`package b;
+final class JobController {
+  void list() {}
+}`,
+				),
+				extractJavaSource(
+					FileRecord{Path: "src/test/java/example/JobControllerTest.java", Language: "java"},
+					`final class JobControllerTest {
+  private final JobController controller = null;
+
+  @Test
+  void listUsesTheCatalogAndItemFinder() {
+    controller.list();
+  }
+}`,
+				),
+			},
+		},
+		{
+			name: "test helper receiver",
+			sources: []JavaSourceRecord{
+				extractJavaSource(
+					FileRecord{Path: "src/test/java/example/JobControllerTest.java", Language: "java"},
+					`final class JobControllerTest {
+  private final JobControllerHelper helper = new JobControllerHelper();
+
+  @Test
+  void listUsesTheCatalogAndItemFinder() {
+    helper.list();
+  }
+}
+
+final class JobControllerHelper {
+  void list() {}
+}`,
+				),
+			},
+		},
+		{
+			name: "overloaded production method",
+			sources: []JavaSourceRecord{
+				extractJavaSource(
+					FileRecord{Path: "src/main/java/example/JobController.java", Language: "java"},
+					`final class JobController {
+  void list(String itemId) {}
+  void list(long itemId) {}
+}`,
+				),
+				extractJavaSource(
+					FileRecord{Path: "src/test/java/example/JobControllerTest.java", Language: "java"},
+					`final class JobControllerTest {
+  private final JobController controller = null;
+
+  @Test
+  void listUsesTheCatalogAndItemFinder() {
+    controller.list("item-7");
+  }
+}`,
+				),
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if records := buildJavaTestMap(test.sources, nil); len(records) != 0 {
+				t.Fatalf("uncertain receiver produced test maps: %#v", records)
+			}
+		})
+	}
+}
+
+func TestBuildJavaTestMapClassifiesJavaSourceSetsAcrossSeparators(t *testing.T) {
+	production := extractJavaSource(
+		FileRecord{Path: "src/main/java/example/JobController.java", Language: "java"},
+		`final class JobController {
+  void list() {}
+}`,
+	)
+	integrationDecoy := extractJavaSource(
+		FileRecord{Path: "src/integrationTest/java/example/JobController.java", Language: "java"},
+		`final class JobController {
+  void list() {}
+}`,
+	)
+	fixtureDecoy := extractJavaSource(
+		FileRecord{Path: `src\testFixtures\java\example\JobController.java`, Language: "java"},
+		`final class JobController {
+  void list() {}
+}`,
+	)
+
+	for _, testFile := range []string{
+		"src/test/java/example/JobControllerTest.java",
+		`src\test\java\example\JobControllerTest.java`,
+	} {
+		t.Run(testFile, func(t *testing.T) {
+			test := extractJavaSource(
+				FileRecord{Path: testFile, Language: "java"},
+				`final class JobControllerTest {
+  private final JobController controller = null;
+
+  @Test
+  void listUsesTheCatalogAndItemFinder() {
+    controller.list();
+  }
+}`,
+			)
+			records := buildJavaTestMap(
+				[]JavaSourceRecord{production, integrationDecoy, fixtureDecoy, test},
+				nil,
+			)
+			if len(records) != 1 {
+				t.Fatalf("Java source-set test maps = %#v, want one", records)
+			}
+			assertHasMethodTestMap(
+				t,
+				records,
+				"JobControllerTest",
+				"listUsesTheCatalogAndItemFinder",
+				"JobController",
+				"list",
+			)
+			if records[0].TargetFile != production.File {
+				t.Fatalf("target file = %q, want production %q", records[0].TargetFile, production.File)
+			}
+		})
+	}
+}
+
 func TestBuildJavaTestMapPropagatesInheritedHTTPHelper(t *testing.T) {
 	base := extractJavaSource(FileRecord{Path: "src/test/java/ControllerBaseTest.java", Language: "java"}, `class ControllerBaseTest {
   protected MockHttpServletRequestBuilder getForUser(final String isbn, final Optional<Long> objectId, final String suffix) {

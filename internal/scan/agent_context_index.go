@@ -904,6 +904,8 @@ func (builder *agentContextBuilder) addTestEdges(tests []TestMapRecord) {
 		targetID := ""
 		if strings.EqualFold(test.Type, "endpoint") {
 			targetID = builder.compatibleRouteFactID(test.HTTPMethod, test.Path)
+		} else if strings.EqualFold(test.Type, "method") && test.HTTPMethod != "" && test.Path != "" {
+			targetID = builder.uniqueCompatibleTestRouteFactID(test.HTTPMethod, test.Path)
 		}
 		if targetID == "" {
 			targetID = builder.resolveFactID(
@@ -935,6 +937,26 @@ func (builder *agentContextBuilder) addTestEdges(tests []TestMapRecord) {
 			),
 		})
 	}
+}
+
+func (builder *agentContextBuilder) uniqueCompatibleTestRouteFactID(method, routePath string) string {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	routePath = normalizeOptionalContextPath(routePath)
+	if method == "" || routePath == "" {
+		return ""
+	}
+	var candidates []string
+	for id, fact := range builder.factsByID {
+		if fact.Kind == "route" &&
+			strings.EqualFold(method, fact.HTTPMethod) &&
+			pathsCompatibleWithKnownBasePrefixes(routePath, fact.Path) {
+			candidates = append(candidates, id)
+		}
+	}
+	if len(candidates) != 1 {
+		return ""
+	}
+	return candidates[0]
 }
 
 func (builder *agentContextBuilder) addAPIContractEdges(contracts []APIContractRecord) {

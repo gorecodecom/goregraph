@@ -155,35 +155,40 @@ func buildEndpointFlows(index SpringIndex, graph CallGraphRecord) []SpringEndpoi
 }
 
 func buildJavaTestMap(sources []JavaSourceRecord, endpoints []SpringEndpointRecord) []TestMapRecord {
-	methods := javaMethodsByOwner(sources)
+	methods := javaProductionMethodsByOwner(sources)
+	typeCounts := javaProductionTypeCounts(sources)
 	endpointByRequest := endpointMatchers(endpoints)
 	helperHTTPRequests := javaHTTPRequestsByOwnerMethod(sources)
 	var records []TestMapRecord
 	for _, source := range sources {
-		if !strings.Contains(source.File, "src/test/") && !strings.Contains(source.File, "_test") {
+		if !javaCallGraphTestSourcePath(source.File) {
 			continue
 		}
+		fields := javaUnambiguousFieldTypesByOwner(source)
 		for _, method := range source.Methods {
 			if !isJavaTestMethod(method) {
 				continue
 			}
 			for _, call := range method.Calls {
-				toOwner := call.TargetOwner
-				if toOwner == "" && call.Receiver != "" {
-					toOwner = strings.TrimSuffix(legacyJavaCallReceiver(call), "Test")
-				}
-				if toOwner == "" {
+				toOwner := resolveCallOwner(call, method.Owner, fields)
+				if toOwner == "" || typeCounts[toOwner] != 1 {
 					continue
 				}
-				if candidates := methods[toOwner]; candidates != nil {
-					if target, ok := candidates[call.Method]; ok {
-						records = append(records, TestMapRecord{
-							TestFile: method.File, TestClass: method.Owner, TestMethod: method.Name,
-							TargetFile: target.File, TargetClass: target.Owner, TargetMethod: target.Name,
-							Type: "method", Line: call.Line, Confidence: "EXTRACTED", ConfidenceScore: 1.0, Reason: "test method calls production method",
-						})
-					}
+				candidates := methods[toOwner][call.Method]
+				if len(candidates) != 1 {
+					continue
 				}
+				target := candidates[0]
+				record := TestMapRecord{
+					TestFile: method.File, TestClass: method.Owner, TestMethod: method.Name,
+					TargetFile: target.File, TargetClass: target.Owner, TargetMethod: target.Name,
+					Type: "method", Line: call.Line, Confidence: "EXTRACTED", ConfidenceScore: 1.0, Reason: "test method calls production method",
+				}
+				if endpoint, ok := uniqueJavaEndpointForMethod(endpoints, target); ok {
+					record.HTTPMethod = endpoint.HTTPMethod
+					record.Path = endpoint.Path
+				}
+				records = append(records, record)
 			}
 			for _, request := range javaTestMethodHTTPRequests(method, helperHTTPRequests) {
 				if endpoint, ok := endpointByRequest.match(request.HTTPMethod, request.Path); ok {
@@ -198,6 +203,7 @@ func buildJavaTestMap(sources []JavaSourceRecord, endpoints []SpringEndpointReco
 			}
 		}
 	}
+	clearDuplicateJavaMethodTestEndpointMetadata(records)
 	sort.Slice(records, func(i, j int) bool {
 		if records[i].TestFile != records[j].TestFile {
 			return records[i].TestFile < records[j].TestFile
@@ -208,6 +214,59 @@ func buildJavaTestMap(sources []JavaSourceRecord, endpoints []SpringEndpointReco
 		return records[i].TargetClass < records[j].TargetClass
 	})
 	return records
+}
+
+func clearDuplicateJavaMethodTestEndpointMetadata(records []TestMapRecord) {
+	explicitEndpoints := map[string]bool{}
+	for _, record := range records {
+		if strings.EqualFold(record.Type, "endpoint") {
+			explicitEndpoints[javaTestEndpointKey(record)] = true
+		}
+	}
+	for index := range records {
+		record := &records[index]
+		if !strings.EqualFold(record.Type, "method") ||
+			!explicitEndpoints[javaTestEndpointKey(*record)] {
+			continue
+		}
+		record.HTTPMethod = ""
+		record.Path = ""
+	}
+}
+
+func javaTestEndpointKey(record TestMapRecord) string {
+	if record.HTTPMethod == "" || record.Path == "" {
+		return ""
+	}
+	return strings.Join([]string{
+		contextPathKey(record.TargetFile),
+		record.TargetClass,
+		record.TargetMethod,
+		strings.ToUpper(strings.TrimSpace(record.HTTPMethod)),
+		normalizeOptionalContextPath(record.Path),
+	}, "\x00")
+}
+
+func javaCallGraphTestSourcePath(file string) bool {
+	return contextJavaTestSourcePath(file) || strings.Contains(file, "_test")
+}
+
+func uniqueJavaEndpointForMethod(
+	endpoints []SpringEndpointRecord,
+	target JavaMethodRecord,
+) (SpringEndpointRecord, bool) {
+	var match SpringEndpointRecord
+	count := 0
+	for _, endpoint := range endpoints {
+		if endpoint.Controller != target.Owner ||
+			endpoint.Method != target.Name ||
+			contextPathKey(endpoint.File) != contextPathKey(target.File) {
+			continue
+		}
+		match = endpoint
+		count++
+	}
+	return match, count == 1
 }
 
 func classifyEndpointTestCase(name string) (string, string) {
@@ -333,6 +392,59 @@ func javaMethodsByOwner(sources []JavaSourceRecord) map[string]map[string]JavaMe
 		}
 	}
 	return methods
+}
+
+func javaProductionMethodsByOwner(sources []JavaSourceRecord) map[string]map[string][]JavaMethodRecord {
+	methods := map[string]map[string][]JavaMethodRecord{}
+	for _, source := range sources {
+		if javaCallGraphTestSourcePath(source.File) {
+			continue
+		}
+		for _, method := range source.Methods {
+			if methods[method.Owner] == nil {
+				methods[method.Owner] = map[string][]JavaMethodRecord{}
+			}
+			methods[method.Owner][method.Name] = append(
+				methods[method.Owner][method.Name],
+				method,
+			)
+		}
+	}
+	return methods
+}
+
+func javaProductionTypeCounts(sources []JavaSourceRecord) map[string]int {
+	counts := map[string]int{}
+	for _, source := range sources {
+		if javaCallGraphTestSourcePath(source.File) {
+			continue
+		}
+		for _, typ := range source.Types {
+			counts[typ.Name]++
+		}
+	}
+	return counts
+}
+
+func javaUnambiguousFieldTypesByOwner(source JavaSourceRecord) map[string]map[string]string {
+	fields := map[string]map[string]string{}
+	counts := map[string]map[string]int{}
+	for _, field := range source.Fields {
+		if fields[field.Owner] == nil {
+			fields[field.Owner] = map[string]string{}
+			counts[field.Owner] = map[string]int{}
+		}
+		counts[field.Owner][field.Name]++
+		fields[field.Owner][field.Name] = field.Type
+	}
+	for owner, names := range counts {
+		for name, count := range names {
+			if count != 1 {
+				delete(fields[owner], name)
+			}
+		}
+	}
+	return fields
 }
 
 func javaFieldTypesByOwner(sources []JavaSourceRecord) map[string]map[string]string {
