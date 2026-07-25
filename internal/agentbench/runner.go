@@ -678,7 +678,6 @@ func (state *runnerState) createOutput(ctx context.Context) error {
 		"cases",
 		"runs",
 		"reviews",
-		"workspaces",
 		"runtime/golden",
 		"runtime/candidate",
 	} {
@@ -784,8 +783,8 @@ func (state *runnerState) prepareWorkspaceAndScan(
 ) error {
 	query := endToEndQuery(plan.benchmarkCase.contract)
 	plan.workspace = filepath.Join(
-		state.config.Output,
-		"workspaces",
+		state.snapshotRoot,
+		"executions",
 		plan.benchmarkCase.id,
 		fmt.Sprintf("%s-%d-%d", plan.build, plan.run, plan.attempt),
 	)

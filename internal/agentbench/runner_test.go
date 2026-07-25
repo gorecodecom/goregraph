@@ -34,11 +34,12 @@ func TestRunRegressionSmokeOrderAndIsolation(t *testing.T) {
 	if got := endToEndContextOrder(t, fixture.log); !reflect.DeepEqual(got, wantOrder) {
 		t.Fatalf("Context order = %q, want %q", got, wantOrder)
 	}
-	assertIsolatedExecutions(t, fixture.log, 4)
+	assertIsolatedExecutions(t, fixture.log, 4, fixture.config.Output)
 	if got := os.Getenv("PATH"); got != parentPath {
 		t.Fatalf("parent PATH changed to %q, want %q", got, parentPath)
 	}
-	assertExcludedDirectoriesAbsent(t, fixture.config.Output)
+	assertNoRetainedExecutionSources(t, fixture.config.Output)
+	assertTemporaryExecutionRootRemoved(t, fixture.config.Output)
 }
 
 func TestRunRegressionInterleavesPreparationContextAndCodex(t *testing.T) {
@@ -202,7 +203,7 @@ func TestRunRegressionFullOrderAndArtifacts(t *testing.T) {
 			}
 		}
 	}
-	assertIsolatedExecutions(t, fixture.log, 36)
+	assertIsolatedExecutions(t, fixture.log, 36, fixture.config.Output)
 	assertRequiredArtifacts(t, fixture)
 	for _, build := range []string{"golden", "candidate"} {
 		requireFile(t, filepath.Join(
@@ -501,6 +502,9 @@ func TestRunRegressionRetainsCodexFailureAndStops(t *testing.T) {
 		reviewed.Invalid.RetainedLog == "" {
 		t.Fatalf("invalid record = %#v, want retained infrastructure failure", reviewed.Invalid)
 	}
+	assertRetainedLogPath(t, fixture.config.Output, reviewed.Invalid.RetainedLog)
+	assertNoRetainedExecutionSources(t, fixture.config.Output)
+	assertTemporaryExecutionRootRemoved(t, fixture.config.Output)
 }
 
 func TestRunRegressionRetainsProcessFailureAndStops(t *testing.T) {
@@ -570,6 +574,9 @@ func TestRunRegressionRetainsProcessFailureAndStops(t *testing.T) {
 			if reviewed.Invalid == nil || !reviewed.Invalid.InfrastructureFailure {
 				t.Fatalf("invalid record = %#v, want infrastructure failure", reviewed.Invalid)
 			}
+			assertRetainedLogPath(t, fixture.config.Output, reviewed.Invalid.RetainedLog)
+			assertNoRetainedExecutionSources(t, fixture.config.Output)
+			assertTemporaryExecutionRootRemoved(t, fixture.config.Output)
 		})
 	}
 }
@@ -600,6 +607,9 @@ func TestRunRegressionRetainsIndexDriftAndStops(t *testing.T) {
 	if reviewed.Invalid == nil || !reviewed.Invalid.InfrastructureFailure {
 		t.Fatalf("invalid record = %#v, want index infrastructure failure", reviewed.Invalid)
 	}
+	assertRetainedLogPath(t, fixture.config.Output, reviewed.Invalid.RetainedLog)
+	assertNoRetainedExecutionSources(t, fixture.config.Output)
+	assertTemporaryExecutionRootRemoved(t, fixture.config.Output)
 }
 
 func TestRunRegressionKeepsSuccessfulSemanticFailureValid(t *testing.T) {
@@ -730,6 +740,9 @@ func TestRunRegressionRetainsFirstPackAndRejectsProjectionDrift(t *testing.T) {
 		if reviewed.Invalid == nil || !reviewed.Invalid.InfrastructureFailure {
 			t.Fatalf("invalid record = %#v, want projection infrastructure failure", reviewed.Invalid)
 		}
+		assertRetainedLogPath(t, fixture.config.Output, reviewed.Invalid.RetainedLog)
+		assertNoRetainedExecutionSources(t, fixture.config.Output)
+		assertTemporaryExecutionRootRemoved(t, fixture.config.Output)
 	})
 }
 
@@ -776,6 +789,9 @@ func TestRunRegressionHonorsCancellation(t *testing.T) {
 		if reviewed.Invalid == nil || !reviewed.Invalid.InfrastructureFailure {
 			t.Fatalf("invalid record = %#v, want cancellation infrastructure failure", reviewed.Invalid)
 		}
+		assertRetainedLogPath(t, fixture.config.Output, reviewed.Invalid.RetainedLog)
+		assertNoRetainedExecutionSources(t, fixture.config.Output)
+		assertTemporaryExecutionRootRemoved(t, fixture.config.Output)
 	})
 }
 
@@ -932,6 +948,12 @@ workspace=${3:-}
 case "$command_name" in
   workspace)
     printf 'scan\t%s\t%%s\t%%s\n' "$workspace" "$0" >>"$FAKE_RUNNER_LOG"
+    for excluded in .git .goregraph-workspace goregraph-out node_modules target build dist; do
+      if [ -e "$workspace/$excluded/secret.txt" ]; then
+        printf 'excluded source retained: %%s\n' "$excluded" >&2
+        exit 9
+      fi
+    done
     if [ -n "${FAKE_SCAN_BLOCK:-}" ]; then
       exec sleep 5
     fi
@@ -1134,7 +1156,12 @@ func requireOperationCounts(
 	}
 }
 
-func assertIsolatedExecutions(t *testing.T, logPath string, want int) {
+func assertIsolatedExecutions(
+	t *testing.T,
+	logPath string,
+	want int,
+	output string,
+) {
 	t.Helper()
 	seenWorkspaces := make(map[string]bool)
 	for _, line := range readLogLines(t, logPath) {
@@ -1147,6 +1174,10 @@ func assertIsolatedExecutions(t *testing.T, logPath string, want int) {
 			t.Fatalf("workspace reused by Codex: %s", workspace)
 		}
 		seenWorkspaces[workspace] = true
+		if workspace == output ||
+			strings.HasPrefix(workspace, output+string(filepath.Separator)) {
+			t.Fatalf("execution workspace retained inside output: %s", workspace)
+		}
 		if filepath.Base(frontBinary) != "goregraph" {
 			t.Fatalf("front PATH binary = %q, want goregraph", frontBinary)
 		}
@@ -1168,21 +1199,47 @@ func assertIsolatedExecutions(t *testing.T, logPath string, want int) {
 	}
 }
 
-func assertExcludedDirectoriesAbsent(t *testing.T, output string) {
+func assertNoRetainedExecutionSources(t *testing.T, output string) {
 	t.Helper()
-	workspaces := filepath.Join(output, "workspaces")
-	err := filepath.WalkDir(workspaces, func(path string, entry os.DirEntry, err error) error {
+	if _, err := os.Lstat(filepath.Join(output, "workspaces")); !os.IsNotExist(err) {
+		t.Fatalf("output/workspaces retained: %v", err)
+	}
+	err := filepath.WalkDir(output, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if entry.Name() == "secret.txt" {
-			t.Fatalf("excluded input content copied: %s", path)
+		if entry.Name() == "source.txt" || entry.Name() == "secret.txt" {
+			t.Fatalf("fixture source retained in final output: %s", path)
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("filepath.WalkDir workspaces: %v", err)
+		t.Fatalf("filepath.WalkDir output: %v", err)
 	}
+}
+
+func assertTemporaryExecutionRootRemoved(t *testing.T, output string) {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(
+		filepath.Dir(output),
+		".goregraph-agentbench-snapshot-*",
+	))
+	if err != nil {
+		t.Fatalf("filepath.Glob temporary execution roots: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("temporary execution roots retained: %v", matches)
+	}
+}
+
+func assertRetainedLogPath(t *testing.T, output, logPath string) {
+	t.Helper()
+	if !filepath.IsAbs(logPath) ||
+		(logPath != output &&
+			!strings.HasPrefix(logPath, output+string(filepath.Separator))) {
+		t.Fatalf("retained log path = %q, want path under output %q", logPath, output)
+	}
+	requireFile(t, logPath)
 }
 
 func assertRequiredArtifacts(t *testing.T, fixture runnerFixture) {
@@ -1247,6 +1304,7 @@ func assertRequiredArtifacts(t *testing.T, fixture runnerFixture) {
 	summaryOrder := make([]string, 0, len(summaryLines))
 	for _, line := range summaryLines {
 		fields := strings.Split(line, "\t")
+		assertRetainedLogPath(t, fixture.config.Output, fields[13])
 		summaryOrder = append(
 			summaryOrder,
 			strings.Join([]string{fields[0], fields[2], fields[3]}, "\t"),
@@ -1255,6 +1313,8 @@ func assertRequiredArtifacts(t *testing.T, fixture runnerFixture) {
 	if want := codexOrder(t, fixture.log); !reflect.DeepEqual(summaryOrder, want) {
 		t.Fatalf("summary order = %q, want %q", summaryOrder, want)
 	}
+	assertNoRetainedExecutionSources(t, fixture.config.Output)
+	assertTemporaryExecutionRootRemoved(t, fixture.config.Output)
 }
 
 func readLogLines(t *testing.T, path string) []string {
