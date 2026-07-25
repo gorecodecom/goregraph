@@ -98,6 +98,9 @@ func runDiffPack(args []string, stderr io.Writer) int {
 	if err != nil {
 		return commandError(stderr, "%v", err)
 	}
+	if err := validateHypothesis(hypothesis); err != nil {
+		return commandError(stderr, "invalid hypothesis: %v", err)
+	}
 
 	diff := agentbench.DiffPacks(golden, candidate)
 	violations := agentbench.EvaluatePackDiff(diff, hypothesis)
@@ -144,6 +147,12 @@ func runGate(args []string, stderr io.Writer) int {
 	hypothesis, err := agentbench.LoadHypothesis(flags["hypothesis"])
 	if err != nil {
 		return commandError(stderr, "%v", err)
+	}
+	if err := validateHypothesis(hypothesis); err != nil {
+		return commandError(stderr, "invalid hypothesis: %v", err)
+	}
+	if !hypothesisTargetsCase(hypothesis, contract.ID) {
+		return commandError(stderr, "hypothesis does not target contract %q", contract.ID)
 	}
 	golden, err := loadStrictJSON[[]agentbench.ReviewedRun](flags["golden-runs"])
 	if err != nil {
@@ -249,6 +258,29 @@ func loadStrictJSON[T any](path string) (T, error) {
 		return value, fmt.Errorf("decode %s: trailing JSON value", path)
 	}
 	return value, fmt.Errorf("decode %s: trailing data: %w", path, err)
+}
+
+func validateHypothesis(hypothesis agentbench.Hypothesis) error {
+	cases := make([]agentbench.MatrixCase, 0, len(hypothesis.TargetCases))
+	for _, caseID := range hypothesis.TargetCases {
+		cases = append(cases, agentbench.MatrixCase{ID: caseID, Directory: "."})
+	}
+	if len(cases) == 0 {
+		cases = append(cases, agentbench.MatrixCase{ID: "validation", Directory: "."})
+	}
+	return agentbench.ValidateHypothesis(hypothesis, agentbench.Matrix{
+		Schema: 1,
+		Cases:  cases,
+	})
+}
+
+func hypothesisTargetsCase(hypothesis agentbench.Hypothesis, caseID string) bool {
+	for _, targetCase := range hypothesis.TargetCases {
+		if targetCase == caseID {
+			return true
+		}
+	}
+	return false
 }
 
 func violationFailures(violations []agentbench.Violation) []string {

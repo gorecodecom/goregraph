@@ -376,6 +376,51 @@ func TestRunRejectsMalformedCommandsAndInputs(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid hypothesis schema",
+			command: func(t *testing.T, fixture commandFixture) []string {
+				hypothesis := validHypothesis()
+				hypothesis.Schema = 0
+				writeJSONFile(t, fixture.hypothesis, hypothesis)
+				return diffArgs(fixture, filepath.Join(t.TempDir(), "diff.json"))
+			},
+		},
+		{
+			name: "duplicate hypothesis target",
+			command: func(t *testing.T, fixture commandFixture) []string {
+				hypothesis := validHypothesis()
+				hypothesis.TargetCases = []string{"case", "case"}
+				writeJSONFile(t, fixture.hypothesis, hypothesis)
+				return diffArgs(fixture, filepath.Join(t.TempDir(), "diff.json"))
+			},
+		},
+		{
+			name: "unknown allowed pack change",
+			command: func(t *testing.T, fixture commandFixture) []string {
+				hypothesis := validHypothesis()
+				hypothesis.AllowedPackChanges = []string{"unknown"}
+				writeJSONFile(t, fixture.hypothesis, hypothesis)
+				return diffArgs(fixture, filepath.Join(t.TempDir(), "diff.json"))
+			},
+		},
+		{
+			name: "incomplete protected pack fields",
+			command: func(t *testing.T, fixture commandFixture) []string {
+				hypothesis := validHypothesis()
+				hypothesis.ProtectedPackFields = []string{"endpoint"}
+				writeJSONFile(t, fixture.hypothesis, hypothesis)
+				return diffArgs(fixture, filepath.Join(t.TempDir(), "diff.json"))
+			},
+		},
+		{
+			name: "gate contract absent from hypothesis targets",
+			command: func(t *testing.T, fixture commandFixture) []string {
+				hypothesis := validHypothesis()
+				hypothesis.TargetCases = []string{"other-case"}
+				writeJSONFile(t, fixture.hypothesis, hypothesis)
+				return gateArgs(fixture, filepath.Join(t.TempDir(), "gate.json"))
+			},
+		},
+		{
 			name: "runs unknown field",
 			command: func(t *testing.T, fixture commandFixture) []string {
 				writeTextFile(t, fixture.goldenRuns, `[{"unexpected":true}]`)
