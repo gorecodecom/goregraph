@@ -725,6 +725,43 @@ func TestContextExplicitProjectsPreservesRawAndAmbiguousBasenameBoundaries(t *te
 	}
 }
 
+func TestContextExplicitProjectsRejectsAmbiguousTranslatedBasenameGroups(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		facts []scan.AgentContextFactRecord
+	}{
+		{
+			name:  "jobs and tasks",
+			query: "Analysiere Aufgaben.",
+			facts: []scan.AgentContextFactRecord{
+				{ID: "jobs", Project: "services/jobs"},
+				{ID: "tasks", Project: "services/tasks"},
+			},
+		},
+		{
+			name:  "catalog and item",
+			query: "Analysiere Katalogeintrag.",
+			facts: []scan.AgentContextFactRecord{
+				{ID: "catalog", Project: "services/catalog"},
+				{ID: "item", Project: "services/item"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reversedFacts := slices.Clone(test.facts)
+			slices.Reverse(reversedFacts)
+			for _, facts := range [][]scan.AgentContextFactRecord{test.facts, reversedFacts} {
+				aliases := contextProjectAliases(facts, nil)
+				if got := contextExplicitProjects(test.query, aliases); len(got) != 0 {
+					t.Fatalf("ambiguous translated basename group selected projects: %#v", got)
+				}
+			}
+		})
+	}
+}
+
 func catalogProjectScopeIndex() (scan.AgentContextIndexRecord, scan.AgentContextFactRecord) {
 	seed := scan.AgentContextFactRecord{
 		ID: "catalog-route", Project: "services/catalog", Kind: "route",
