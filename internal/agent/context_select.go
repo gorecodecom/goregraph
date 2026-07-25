@@ -311,10 +311,14 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 		if plannedIndex, ok := plannedByKey[key]; ok {
 			concern := planned[plannedIndex]
 			concern.rank = max(concern.rank, contextPublicSourceConcernRank)
-			concern.candidateFactIDs = orderedContextConcernIDs(append(
-				concern.candidateFactIDs,
-				selected.candidateFactIDs...,
-			))
+			if concern.kind == contextConcernHTTPContract {
+				concern.candidateFactIDs = selected.candidateFactIDs
+			} else {
+				concern.candidateFactIDs = orderedContextConcernIDs(append(
+					concern.candidateFactIDs,
+					selected.candidateFactIDs...,
+				))
+			}
 			concerns = append(concerns, concern)
 		} else {
 			selected.rank = max(selected.rank, contextPublicSourceConcernRank)
@@ -829,18 +833,6 @@ func contextSourceConcernFromPack(
 		}
 		if include {
 			candidateIDs = append(candidateIDs, fact.ID)
-		}
-	}
-	if kind == contextConcernHTTPContract {
-		for _, edge := range index.Edges {
-			if normalizedContextConcernKind(edge.Kind) == contextConcernHTTPContract {
-				if selected[edge.FromFactID] {
-					candidateIDs = append(candidateIDs, edge.FromFactID)
-				}
-				if selected[edge.ToFactID] {
-					candidateIDs = append(candidateIDs, edge.ToFactID)
-				}
-			}
 		}
 	}
 	return newContextConcern(kind, project, true, candidateIDs, public.Reason)

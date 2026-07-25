@@ -2156,6 +2156,131 @@ func TestBuildContextLeavesUnrenderedSupportConcernsUncovered(t *testing.T) {
 	}
 }
 
+func TestContextSourceProviderOnlyHTTPContractStaysUncovered(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "client", Project: "libraries/jobs", Kind: "api_contract",
+				Name: "GET /internal/jobs", HTTPMethod: "GET", Path: "/internal/jobs",
+				File: "JobClient.go",
+			},
+			{
+				ID: "provider", Project: "services/jobs", Kind: "route",
+				Name: "GET /internal/jobs", HTTPMethod: "GET", Path: "/internal/jobs",
+				File: "JobController.go",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "contract-provider", FromFactID: "client", ToFactID: "provider",
+			Kind: contextConcernHTTPContract, Confidence: "RESOLVED",
+		}},
+	}
+	pack := ContextPack{
+		Concerns:              []ContextConcern{{Kind: contextConcernHTTPContract}},
+		selectedSourceFactIDs: []string{"provider"},
+	}
+
+	concern := contextSourceConcernFromPack(pack, index, pack.Concerns[0])
+	if len(concern.candidateFactIDs) != 0 {
+		t.Fatalf("provider-only HTTP contract candidates = %#v", concern.candidateFactIDs)
+	}
+}
+
+func TestContextSourceBudgetOmittedHTTPContractStaysUncovered(t *testing.T) {
+	root := t.TempDir()
+	writeSourceFile(t, root, "JobController.go", "package jobs\nfunc listJobs() {}\n")
+	writeSourceFile(
+		t,
+		root,
+		"JobClient.go",
+		"package jobs\nfunc listJobsForRemoval() { "+strings.Repeat("call()", 8000)+" }\n",
+	)
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "client", Project: "libraries/jobs", Kind: "api_contract",
+				Name: "GET /internal/jobs", Qualified: "JobClient.listJobsForRemoval",
+				HTTPMethod: "GET", Path: "/internal/jobs", File: "JobClient.go",
+				Line: 2, EndLine: 2, Confidence: "EXACT",
+			},
+			{
+				ID: "provider", Project: "services/jobs", Kind: "route",
+				Name: "GET /internal/jobs", Qualified: "JobController.listJobs",
+				HTTPMethod: "GET", Path: "/internal/jobs", File: "JobController.go",
+				Line: 2, EndLine: 2, Confidence: "EXTRACTED",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "contract-provider", FromFactID: "client", ToFactID: "provider",
+			Kind: contextConcernHTTPContract, Confidence: "RESOLVED",
+		}},
+	}
+	base := ContextPack{
+		Schema:     1,
+		Query:      "inspect the current HTTP client contract",
+		Confidence: "MEDIUM",
+		Concerns: []ContextConcern{
+			{Kind: contextConcernEntrypoint},
+			{Kind: contextConcernHTTPContract},
+		},
+		Entrypoints: []ContextLocation{{
+			ID: "provider", Project: "services/jobs", Kind: "route",
+			Label: "GET /internal/jobs", File: "JobController.go", Line: 2, EndLine: 2,
+		}},
+		Contracts: []ContextLocation{{
+			ID: "client", Project: "libraries/jobs", Kind: "api_contract",
+			Label: "GET /internal/jobs", File: "JobClient.go", Line: 2, EndLine: 2,
+		}},
+		selectedSourceFactIDs: []string{"client", "provider"},
+	}
+	loaded := loadedContextIndex{ScopeRoot: root, Index: index}
+
+	var omitted ContextPack
+	found := false
+	for budget := MinContextBudgetTokens; budget <= DefaultContextBudgetTokens; budget++ {
+		candidate := cloneContextPack(base)
+		candidate.BudgetTokens = budget
+		got, err := selectContextSourceOptions(
+			candidate,
+			loaded,
+			ContextRequest{BudgetTokens: budget, MaxFiles: DefaultContextMaxFiles},
+		)
+		if err != nil {
+			continue
+		}
+		hasProvider := false
+		hasClient := false
+		for _, section := range got.SourceSections {
+			hasProvider = hasProvider || section.Path == "JobController.go"
+			hasClient = hasClient || section.Path == "JobClient.go"
+		}
+		hasClientOmission := false
+		for _, omission := range got.SourceOmissions {
+			hasClientOmission = hasClientOmission || omission.Path == "JobClient.go"
+		}
+		if hasProvider && !hasClient && hasClientOmission {
+			omitted = got
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("fixture has no budget that retains the provider while omitting the client contract")
+	}
+	for _, concern := range omitted.Concerns {
+		if normalizedContextConcernKind(concern.Kind) == contextConcernHTTPContract && concern.Covered {
+			t.Fatalf("omitted client contract was covered by provider source: %#v", omitted)
+		}
+	}
+	foundOmission := false
+	for _, omission := range omitted.SourceOmissions {
+		foundOmission = foundOmission || omission.Path == "JobClient.go"
+	}
+	if !foundOmission {
+		t.Fatalf("omitted client contract lacks an exact source omission: %#v", omitted.SourceOmissions)
+	}
+}
+
 func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 		{ID: "route", Project: "services/catalog", Kind: "route", File: "Catalog.go"},

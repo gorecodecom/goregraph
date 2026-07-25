@@ -275,6 +275,62 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 				}
 				supportProjectRoles[project][role] = true
 			}
+			client, contractEdge, hasContract := incomingContextContractCandidate(
+				index,
+				relatedFact,
+				request.Query,
+			)
+			clientProject := normalizeContextProject(client.Project)
+			if hasContract &&
+				!primaryProjects[clientProject] &&
+				supportProjectCounts[clientProject] < maximumContextSupportFactsPerProject &&
+				(supportProjectCounts[clientProject] > 0 ||
+					acceptedSupportProjects < maximumContextSupportingProjects) &&
+				(supportProjectCounts[clientProject] == 0 ||
+					!supportProjectRoles[clientProject]["contract"]) {
+				contractCandidate, contractAccepted, contractErr := tryContextPack(
+					pack,
+					request.BudgetTokens,
+					func(candidate *ContextPack) bool {
+						candidate.Contracts = append(
+							candidate.Contracts,
+							contextLocation(client, "selected incoming "+contextConcernHTTPContract),
+						)
+						candidate.CallChain = append(
+							candidate.CallChain,
+							contextRelationship(contractEdge, client, relatedFact),
+						)
+						sortContextRelationships(candidate.CallChain)
+						return mergeContextFile(
+							candidate,
+							contextFileForFact(
+								client,
+								"contract",
+								"selected incoming "+contextConcernHTTPContract,
+							),
+							request.MaxFiles,
+						)
+					},
+				)
+				if contractErr != nil {
+					return ContextPack{}, contractErr
+				}
+				if contractAccepted {
+					pack = contractCandidate
+					includedFactIDs[client.ID] = true
+					supportFactIDs[client.ID] = true
+					acceptedEdgeIDs[contextPathEdgeIdentity(contractEdge)] = true
+					representedProjects[clientProject] = true
+					supportProjectCounts[clientProject]++
+					if supportProjectCounts[clientProject] == 1 {
+						acceptedSupportProjects++
+					}
+					if supportProjectRoles[clientProject] == nil {
+						supportProjectRoles[clientProject] = map[string]bool{}
+					}
+					supportProjectRoles[clientProject]["contract"] = true
+				}
+			}
 		}
 	}
 	supportScopes := selectedContextScopes(nil, supportFactIDs, nil, factByID)
@@ -1409,6 +1465,155 @@ func contextSupportRole(
 		}
 	}
 	return ""
+}
+
+func incomingContextContractCandidate(
+	index scan.AgentContextIndexRecord,
+	provider scan.AgentContextFactRecord,
+	query string,
+) (scan.AgentContextFactRecord, scan.AgentContextEdgeRecord, bool) {
+	if !contextQueryRequestsConcern(query, contextConcernHTTPContract) ||
+		!reliableIncomingContextContractFact(provider, false) {
+		return scan.AgentContextFactRecord{}, scan.AgentContextEdgeRecord{}, false
+	}
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	edges := append([]scan.AgentContextEdgeRecord(nil), index.Edges...)
+	sort.Slice(edges, func(i, j int) bool { return contextEdgeLess(edges[i], edges[j]) })
+	type candidate struct {
+		fact scan.AgentContextFactRecord
+		edge scan.AgentContextEdgeRecord
+	}
+	candidates := map[string]candidate{}
+	for _, edge := range edges {
+		if edge.ToFactID != provider.ID ||
+			normalizedContextConcernKind(edge.Kind) != contextConcernHTTPContract ||
+			!reliableIncomingContextContractEdge(edge) {
+			continue
+		}
+		client, exists := factByID[edge.FromFactID]
+		if !exists ||
+			!reliableIncomingContextContractFact(client, true) ||
+			normalizeContextProject(client.Project) == normalizeContextProject(provider.Project) ||
+			!contextIncomingContractRouteCompatible(client, provider) ||
+			!contextIncomingContractDomainRelevant(client, query) {
+			continue
+		}
+		if existing, found := candidates[client.ID]; !found || contextEdgeLess(edge, existing.edge) {
+			candidates[client.ID] = candidate{fact: client, edge: edge}
+		}
+	}
+	if len(candidates) != 1 {
+		return scan.AgentContextFactRecord{}, scan.AgentContextEdgeRecord{}, false
+	}
+	for _, selected := range candidates {
+		return selected.fact, selected.edge, true
+	}
+	return scan.AgentContextFactRecord{}, scan.AgentContextEdgeRecord{}, false
+}
+
+func reliableIncomingContextContractEdge(edge scan.AgentContextEdgeRecord) bool {
+	switch strings.ToUpper(strings.TrimSpace(edge.Confidence)) {
+	case "EXACT", "RESOLVED":
+		return true
+	default:
+		return false
+	}
+}
+
+func reliableIncomingContextContractFact(
+	fact scan.AgentContextFactRecord,
+	client bool,
+) bool {
+	kind := strings.ToLower(strings.TrimSpace(fact.Kind))
+	if client {
+		if kind != "api_contract" {
+			return false
+		}
+	} else if kind != "route" && kind != "api_endpoint" {
+		return false
+	}
+	if strings.Contains(kind, "generated") || strings.Contains(kind, "metadata") ||
+		contextFactUsesTestSource(fact) || contextFactUsesGeneratedMetadata(fact) ||
+		contextIncomingContractUsesGeneratedSource(fact.File) ||
+		contextPackSourceFile(fact.File) == "" {
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(fact.Confidence)) {
+	case "EXACT", "RESOLVED", "EXTRACTED":
+		return true
+	default:
+		return false
+	}
+}
+
+func contextIncomingContractUsesGeneratedSource(file string) bool {
+	path := "/" + strings.Trim(
+		strings.ToLower(strings.ReplaceAll(strings.TrimSpace(file), "\\", "/")),
+		"/",
+	) + "/"
+	return strings.Contains(path, "/generated/") ||
+		strings.Contains(path, "/target/generated-sources/")
+}
+
+func contextIncomingContractRouteCompatible(
+	client scan.AgentContextFactRecord,
+	provider scan.AgentContextFactRecord,
+) bool {
+	return strings.EqualFold(strings.TrimSpace(client.HTTPMethod), strings.TrimSpace(provider.HTTPMethod)) &&
+		contextIncomingContractPathIdentity(client.Path) == contextIncomingContractPathIdentity(provider.Path)
+}
+
+func contextIncomingContractPathIdentity(path string) string {
+	path = strings.TrimSuffix(strings.TrimSpace(path), "/")
+	if path == "" {
+		return ""
+	}
+	var identity strings.Builder
+	inParameter := false
+	for _, current := range path {
+		switch current {
+		case '{':
+			if !inParameter {
+				identity.WriteString("{}")
+				inParameter = true
+			}
+		case '}':
+			inParameter = false
+		default:
+			if !inParameter {
+				identity.WriteRune(current)
+			}
+		}
+	}
+	return identity.String()
+}
+
+func contextIncomingContractDomainRelevant(
+	client scan.AgentContextFactRecord,
+	query string,
+) bool {
+	queryTokens := contextConcernDomainQueryTokens(
+		contextExpandedTokenSet(contextPrimaryQuery(query)),
+	)
+	search := strings.ToLower(client.Search)
+	route := strings.ToLower(strings.TrimSpace(client.HTTPMethod + " " + client.Path))
+	if route != "" {
+		search = strings.ReplaceAll(search, route, " ")
+	}
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
+		client.Qualified,
+		client.Summary,
+		search,
+	}, " "))
+	for token := range queryTokens {
+		if factTokens[token] {
+			return true
+		}
+	}
+	return false
 }
 
 func contextGenericPersistenceFact(fact scan.AgentContextFactRecord) bool {

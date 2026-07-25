@@ -3096,6 +3096,280 @@ func TestBuildContextAddsSupportingFactsFromNamedProjects(t *testing.T) {
 	}
 }
 
+func TestBuildContextSelectsIncomingResolvedClientContract(t *testing.T) {
+	root := writeIncomingResolvedContractContextFixture(t, incomingResolvedContractContextIndex())
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: incomingResolvedContractQuery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Contracts) != 1 || pack.Contracts[0].ID != "jobs-get-contract" {
+		t.Fatalf("incoming current contract = %#v, want jobs-get-contract", pack.Contracts)
+	}
+	if !slices.Contains(pack.selectedFactIDs, "jobs-get-contract") ||
+		!slices.Contains(pack.selectedEdgeIDs, "jobs-get-http-contract") {
+		t.Fatalf(
+			"incoming contract identity missing: facts=%#v edges=%#v",
+			pack.selectedFactIDs,
+			pack.selectedEdgeIDs,
+		)
+	}
+	foundDirection := false
+	for _, relationship := range pack.CallChain {
+		if relationship.Kind == contextConcernHTTPContract {
+			foundDirection = relationship.From == "JobClient.listJobsForRemoval" &&
+				relationship.To == "JobController.list"
+		}
+	}
+	if !foundDirection {
+		t.Fatalf("client-to-provider contract direction missing: %#v", pack.CallChain)
+	}
+}
+
+func TestBuildContextIncomingCurrentGETContractKeepsRequestedDELETEGap(t *testing.T) {
+	root := writeIncomingResolvedContractContextFixture(t, incomingResolvedContractContextIndex())
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: incomingResolvedContractQuery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contextPackHasUncertainty(
+		pack,
+		"requested_http_contract",
+		"no indexed HTTP contract matches the requested operation",
+	) {
+		t.Fatalf(
+			"missing future DELETE contract uncertainty: uncertainties=%#v concerns=%#v sections=%#v omissions=%#v",
+			pack.Uncertainties,
+			pack.Concerns,
+			pack.SourceSections,
+			pack.SourceOmissions,
+		)
+	}
+}
+
+func TestBuildContextRejectsIneligibleIncomingClientContracts(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*scan.AgentContextIndexRecord)
+	}{
+		{
+			name: "weak edge",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Edges[2].Confidence = "PARTIAL"
+			},
+		},
+		{
+			name: "weak client fact",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Facts[4].Confidence = "PARTIAL"
+			},
+		},
+		{
+			name: "wrong method and action",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Facts[4].HTTPMethod = "POST"
+				index.Facts[4].Name = "POST /internal/jobs"
+			},
+		},
+		{
+			name: "wrong path",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Facts[4].Path = "/internal/audit"
+				index.Facts[4].Name = "GET /internal/audit"
+			},
+		},
+		{
+			name: "unrelated client",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Facts[4].Qualified = "AuditClient.listMetrics"
+				index.Facts[4].Search = "audit metrics telemetry"
+			},
+		},
+		{
+			name: "generated client",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Facts[4].File = "build/generated/JobClient.go"
+			},
+		},
+		{
+			name: "test client",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Facts[4].File = "src/test/JobClient.go"
+			},
+		},
+		{
+			name: "competing clients",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				competing := index.Facts[4]
+				competing.ID = "competing-jobs-get-contract"
+				competing.Project = "libraries/other-job-client"
+				competing.Qualified = "OtherJobClient.listJobs"
+				competing.File = "OtherJobClient.go"
+				index.Facts = append(index.Facts, competing)
+				index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+					ID: "competing-jobs-get-http-contract", FromFactID: competing.ID,
+					ToFactID: "jobs-get-provider", Kind: contextConcernHTTPContract,
+					Confidence: "RESOLVED",
+				})
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			index := incomingResolvedContractContextIndex()
+			test.mutate(&index)
+			root := writeIncomingResolvedContractContextFixture(t, index)
+
+			pack, err := BuildContext(ContextRequest{Root: root, Query: incomingResolvedContractQuery})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(pack.Contracts) != 0 {
+				t.Fatalf("ineligible incoming contracts were promoted: %#v", pack.Contracts)
+			}
+			for _, edgeID := range pack.selectedEdgeIDs {
+				if strings.Contains(edgeID, "jobs-get-http-contract") {
+					t.Fatalf("ineligible incoming edge %q was retained", edgeID)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildContextIncomingClientContractSelectionIsDeterministicAndBounded(t *testing.T) {
+	index := incomingResolvedContractContextIndex()
+	reversed := index
+	reversed.Facts = append([]scan.AgentContextFactRecord(nil), index.Facts...)
+	reversed.Edges = append([]scan.AgentContextEdgeRecord(nil), index.Edges...)
+	slices.Reverse(reversed.Facts)
+	slices.Reverse(reversed.Edges)
+
+	forwardRoot := writeIncomingResolvedContractContextFixture(t, index)
+	reversedRoot := writeIncomingResolvedContractContextFixture(t, reversed)
+	forward, err := BuildContext(ContextRequest{Root: forwardRoot, Query: incomingResolvedContractQuery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	backward, err := BuildContext(ContextRequest{Root: reversedRoot, Query: incomingResolvedContractQuery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(forward.Contracts, backward.Contracts) ||
+		!reflect.DeepEqual(forward.selectedFactIDs, backward.selectedFactIDs) ||
+		!reflect.DeepEqual(forward.selectedEdgeIDs, backward.selectedEdgeIDs) {
+		t.Fatalf("incoming contract selection changed with index order:\nforward: %#v\nreverse: %#v", forward, backward)
+	}
+	supportProjects := map[string]bool{}
+	supportFacts := map[string]int{}
+	for _, factID := range forward.selectedFactIDs {
+		for _, fact := range index.Facts {
+			if fact.ID != factID || fact.Project == "services/catalog" {
+				continue
+			}
+			supportProjects[fact.Project] = true
+			supportFacts[fact.Project]++
+		}
+	}
+	if len(supportProjects) > maximumContextSupportingProjects {
+		t.Fatalf("support projects = %d, want at most %d", len(supportProjects), maximumContextSupportingProjects)
+	}
+	for project, count := range supportFacts {
+		if count > maximumContextSupportFactsPerProject {
+			t.Fatalf("support facts for %q = %d, want at most %d", project, count, maximumContextSupportFactsPerProject)
+		}
+	}
+}
+
+const incomingResolvedContractQuery = "Plan the smallest production change that removes jobs when a catalog item is deleted and inspect the HTTP client contract. The required future DELETE contract is missing."
+
+func incomingResolvedContractContextIndex() scan.AgentContextIndexRecord {
+	return scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Generated:     "2026-07-25T00:00:00Z",
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "catalog-delete", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "DELETE /catalog/{itemId}", Qualified: "CatalogController.remove",
+				HTTPMethod: "DELETE", Path: "/catalog/{itemId}", File: "CatalogController.go",
+				Line: 2, EndLine: 4, Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "catalog-service", Project: "services/catalog", Kind: "symbol",
+				Name: "remove", Qualified: "CatalogService.remove", File: "CatalogService.go",
+				Line: 2, EndLine: 4, Confidence: "EXACT", Search: "delete catalog item",
+			},
+			{
+				ID: "jobs-get-provider", Project: "services/jobs", Kind: "route",
+				Name: "GET /internal/jobs", Qualified: "JobController.list",
+				HTTPMethod: "GET", Path: "/internal/jobs", File: "JobController.go",
+				Line: 2, EndLine: 4, Confidence: "EXTRACTED", Search: "catalog item jobs provider",
+			},
+			{
+				ID: "jobs-finder", Project: "services/jobs", Kind: "persistence",
+				Name: "findByCatalogIdAndItemId", Qualified: "JobRepository.findByCatalogIdAndItemId",
+				File: "JobRepository.go", Line: 2, EndLine: 2, Confidence: "EXTRACTED",
+				Search: "catalog item jobs persistence",
+			},
+			{
+				ID: "jobs-get-contract", Project: "libraries/job-client", Kind: "api_contract",
+				Name: "GET /internal/jobs", Qualified: "JobClient.listJobsForRemoval",
+				HTTPMethod: "GET", Path: "/internal/jobs", File: "JobClient.go",
+				Line: 2, EndLine: 4, Confidence: "EXACT", Search: "job client",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{
+				ID: "catalog-service-call", FromFactID: "catalog-delete",
+				ToFactID: "catalog-service", Kind: "call", Confidence: "EXACT",
+			},
+			{
+				ID: "jobs-finder-call", FromFactID: "jobs-get-provider",
+				ToFactID: "jobs-finder", Kind: "persistence", Confidence: "RESOLVED",
+			},
+			{
+				ID: "jobs-get-http-contract", FromFactID: "jobs-get-contract",
+				ToFactID: "jobs-get-provider", Kind: contextConcernHTTPContract,
+				FromLabel: "JobClient.listJobsForRemoval", ToLabel: "JobController.list",
+				Confidence: "RESOLVED",
+			},
+		},
+	}
+}
+
+func writeIncomingResolvedContractContextFixture(
+	t *testing.T,
+	index scan.AgentContextIndexRecord,
+) string {
+	t.Helper()
+	root := writeContextIndexFixture(t, index)
+	files := map[string]string{}
+	for _, fact := range index.Facts {
+		file := contextPackSourceFile(fact.File)
+		if file == "" {
+			continue
+		}
+		name := fact.Qualified
+		if separator := strings.LastIndex(name, "."); separator >= 0 {
+			name = name[separator+1:]
+		}
+		if name == "" {
+			name = fact.Name
+		}
+		files[file] = name
+	}
+	for file, name := range files {
+		writeContextSourceFile(
+			t,
+			root,
+			file,
+			"package fixture\n\nfunc "+name+"() {\n\t_ = \"catalog item jobs\"\n}\n",
+		)
+	}
+	return root
+}
+
 func TestContextSupportSelectionUsesPrimaryQueryAcrossPromptFormats(t *testing.T) {
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 		{
