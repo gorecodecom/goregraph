@@ -1,0 +1,1 @@
+Plan the smallest production change that removes jobs when a catalog item is deleted. Show the current public deletion path, prove that the future job deletion contract is absent, and provide adjacent client configuration, authentication, retry, provider persistence, side-effect, and test evidence. Do not invent the missing call or route.

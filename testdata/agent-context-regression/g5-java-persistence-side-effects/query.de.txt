@@ -1,0 +1,1 @@
+Analysiere das Löschen eines Kontos. Belege den öffentlichen Endpunkt, die aktuelle Aufrufkette, den konkreten Repository-Finder und die Löschoperation sowie alle Nebenwirkungen für Audit, E-Mail und Benutzerinformationen. Verwende keine Create- oder generische Find-All-Evidenz als Ersatz.

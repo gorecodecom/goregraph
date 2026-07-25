@@ -1,0 +1,1 @@
+Analyze deleting an account. Show the public endpoint, the current call chain, the concrete repository finder and delete operation, and every side effect for audit, email, and user information. Do not use create or generic find-all evidence as a substitute.

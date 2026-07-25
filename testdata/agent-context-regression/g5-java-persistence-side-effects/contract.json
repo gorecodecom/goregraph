@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "id": "g5-java-persistence-side-effects",
+  "queries": [
+    {
+      "id": "english",
+      "language": "en",
+      "file": "query.en.txt",
+      "end_to_end": true
+    },
+    {
+      "id": "german",
+      "language": "de",
+      "file": "query.de.txt",
+      "end_to_end": false
+    }
+  ],
+  "pack": {
+    "endpoint": {
+      "provider_contains": "services/accounts",
+      "http_method": "DELETE",
+      "path": "/accounts/{accountId}"
+    },
+    "required_locations": [
+      {
+        "section": "persistence",
+        "project": "services/accounts",
+        "kind": "persistence",
+        "label_contains": "findByAccountId"
+      },
+      {
+        "section": "persistence",
+        "project": "services/accounts",
+        "kind": "persistence",
+        "label_contains": "delete"
+      }
+    ],
+    "forbidden_locations": [],
+    "required_source_suffixes": [
+      "AccountController.java",
+      "AccountService.java",
+      "AccountRepository.java"
+    ],
+    "forbidden_source_suffixes": [],
+    "required_unknowns": [],
+    "fallback_required": false,
+    "retry_allowed": false,
+    "max_estimated_tokens": 4000,
+    "max_source_omissions": 3,
+    "require_bounded_source": true
+  },
+  "answer": {
+    "required_facets": [
+      {
+        "id": "account-delete-path",
+        "description": "Show the public account DELETE endpoint and current controller-to-service call chain."
+      },
+      {
+        "id": "concrete-persistence",
+        "description": "Show findByAccountId and delete as the concrete repository operations."
+      },
+      {
+        "id": "business-side-effects",
+        "description": "Show audit recording, removal email, and user-directory invalidation."
+      }
+    ],
+    "forbidden_outcomes": [
+      {
+        "id": "create-substitute",
+        "description": "Do not use the account create method as deletion evidence."
+      },
+      {
+        "id": "find-all-substitute",
+        "description": "Do not use inherited findAll as a substitute for findByAccountId."
+      }
+    ],
+    "explicit_unknowns": []
+  },
+  "limits": {
+    "context_tokens": 4000,
+    "max_source_omissions": 3,
+    "max_token_increase_percent": 5,
+    "max_latency_increase_percent": 10,
+    "max_paired_latency_multiplier": 2
+  }
+}

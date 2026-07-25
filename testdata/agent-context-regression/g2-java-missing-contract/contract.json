@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "id": "g2-java-missing-contract",
+  "queries": [
+    {
+      "id": "english",
+      "language": "en",
+      "file": "query.en.txt",
+      "end_to_end": true
+    },
+    {
+      "id": "german",
+      "language": "de",
+      "file": "query.de.txt",
+      "end_to_end": false
+    }
+  ],
+  "pack": {
+    "endpoint": {
+      "provider_contains": "services/catalog",
+      "http_method": "DELETE",
+      "path": "/catalog/{itemId}"
+    },
+    "required_locations": [
+      {
+        "section": "contracts",
+        "project": "libraries/job-client",
+        "kind": "api_contract",
+        "label_contains": "GET /internal/jobs"
+      },
+      {
+        "section": "persistence",
+        "project": "services/catalog",
+        "kind": "persistence",
+        "label_contains": "deleteById"
+      },
+      {
+        "section": "persistence",
+        "project": "services/jobs",
+        "kind": "persistence",
+        "label_contains": "findByCatalogIdAndItemId"
+      },
+      {
+        "section": "tests",
+        "project": "services/catalog",
+        "kind": "test",
+        "label_contains": "remove"
+      }
+    ],
+    "forbidden_locations": [
+      {
+        "section": "entrypoints",
+        "project": "services/jobs",
+        "label_contains": "list"
+      }
+    ],
+    "required_source_suffixes": [
+      "CatalogController.java",
+      "CatalogService.java",
+      "CatalogRepository.java",
+      "JobClient.java",
+      "JobClientConfig.java",
+      "JobClientAuth.java",
+      "JobClientRetry.java",
+      "JobRepository.java",
+      "JobHousekeeping.java",
+      "CatalogControllerTest.java",
+      "JobControllerTest.java"
+    ],
+    "forbidden_source_suffixes": [],
+    "required_unknowns": [
+      "requested_http_contract"
+    ],
+    "fallback_required": false,
+    "retry_allowed": false,
+    "max_estimated_tokens": 4000,
+    "max_source_omissions": 3,
+    "require_bounded_source": true
+  },
+  "answer": {
+    "required_facets": [
+      {
+        "id": "catalog-delete-path",
+        "description": "Show the current catalog controller, service, and repository deletion path."
+      },
+      {
+        "id": "adjacent-job-evidence",
+        "description": "Include current client configuration, authentication, retry, provider persistence, side-effect, and test evidence."
+      }
+    ],
+    "forbidden_outcomes": [
+      {
+        "id": "invented-job-delete",
+        "description": "Do not claim that a jobs DELETE route or client delete method already exists."
+      },
+      {
+        "id": "jobs-list-entrypoint",
+        "description": "Do not substitute the existing jobs GET route for the catalog deletion entrypoint."
+      }
+    ],
+    "explicit_unknowns": [
+      {
+        "id": "missing-job-delete-contract",
+        "description": "State explicitly that the future job deletion HTTP contract is absent."
+      }
+    ]
+  },
+  "limits": {
+    "context_tokens": 4000,
+    "max_source_omissions": 3,
+    "max_token_increase_percent": 5,
+    "max_latency_increase_percent": 10,
+    "max_paired_latency_multiplier": 2
+  }
+}

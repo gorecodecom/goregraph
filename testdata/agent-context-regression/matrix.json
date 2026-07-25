@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "g2-java-missing-contract",
+      "directory": "g2-java-missing-contract",
+      "external": false
+    },
+    {
+      "id": "g5-java-persistence-side-effects",
+      "directory": "g5-java-persistence-side-effects",
+      "external": false
+    }
+  ]
+}
