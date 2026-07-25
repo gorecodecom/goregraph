@@ -2534,6 +2534,9 @@ func contextSourceEvidenceFamilyForFacts(
 	facts []scan.AgentContextFactRecord,
 	domainTokens map[string]bool,
 ) string {
+	if option.candidate.Role == "test" {
+		return contextConcernTests
+	}
 	if option.candidate.Role == contextConcernDomainModel {
 		return contextConcernDomainModel
 	}
@@ -2549,8 +2552,6 @@ func contextSourceEvidenceFamilyForFacts(
 		return "contract"
 	case "persistence":
 		return contextConcernPersistence
-	case "test":
-		return contextConcernTests
 	}
 	for _, fact := range facts {
 		switch normalizedContextConcernKind(fact.Kind) {

@@ -4288,6 +4288,213 @@ func TestSmallestFittingContextSourceOptionPrefersActionableFactEvidence(t *test
 	}
 }
 
+func TestContextSourceEvidenceFamilyPrefersExplicitTestRole(t *testing.T) {
+	pack := ContextPack{Query: "catalog job task types and lookup attributes"}
+	facts := []scan.AgentContextFactRecord{{
+		ID: "domain-shaped", Kind: "symbol",
+		Name: "CatalogJobEntity", Qualified: "example.CatalogJobEntity",
+		File: "CatalogJobEntity.java",
+	}}
+	domainTokens := map[string]bool{"catalog": true, "job": true}
+
+	for _, test := range []struct {
+		name string
+		role string
+		want string
+	}{
+		{name: "test", role: "test", want: contextConcernTests},
+		{name: "domain model", role: contextConcernDomainModel, want: contextConcernDomainModel},
+		{name: "ordinary call chain", role: "call_chain", want: contextConcernDomainModel},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			option := contextSourceOption{
+				candidate: sourceCandidate{Role: test.role},
+			}
+			if got := contextSourceEvidenceFamilyForFacts(pack, option, facts, domainTokens); got != test.want {
+				t.Fatalf("evidence family = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestContextSourceSelectionKeepsProductionModelsBesideExplicitTestRole(t *testing.T) {
+	const (
+		project          = "services/jobs"
+		regularModelKey  = contextConcernDomainModel + ":" + project + "#regular"
+		changeModelKey   = contextConcernDomainModel + ":" + project + "#change"
+		projectTestsKey  = contextConcernTests + ":" + project
+		stableContextID  = "stable-source-selection"
+		defaultPathHops  = 0
+		sourceTokenCost  = 30
+		sourceOptionRank = 100
+	)
+	pack := ContextPack{
+		Schema: 1, Query: "catalog job task types lookup attributes and tests",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+		ContextID: stableContextID,
+		Concerns: []ContextConcern{
+			{Kind: contextConcernDomainModel, Project: project},
+			{Kind: contextConcernTests, Project: project},
+		},
+	}
+	baseDomainConcern := newContextConcern(
+		contextConcernDomainModel,
+		project,
+		true,
+		[]string{"regular-model", "change-model"},
+		"requested job domain models",
+	)
+	concerns := []contextConcern{
+		newContextEvidenceConcern(baseDomainConcern, "regular", []string{"regular-model"}, "regular job model"),
+		newContextEvidenceConcern(baseDomainConcern, "change", []string{"change-model"}, "change job model"),
+		newContextConcern(contextConcernTests, project, true, []string{"provider-test"}, "provider tests"),
+	}
+	modelOption := func(id, path, concernKey string) contextSourceOption {
+		return contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: id, FactIDs: []string{id}, Project: project,
+				Path: path, Role: contextConcernDomainModel,
+				Kind: "symbol", Name: strings.TrimSuffix(path, ".java"),
+			},
+			section: ContextSourceSection{
+				Project: project, Path: path, StartLine: 1, EndLine: 3,
+				Role: contextConcernDomainModel, RenderMode: "declaration_body",
+				Content: "class " + strings.TrimSuffix(path, ".java") + " {}",
+			},
+			estimated: sourceTokenCost, concernKeys: []string{concernKey},
+			projectKey: project, pathDistance: defaultPathHops,
+			quality: sourceOptionRank, evidenceFamily: contextConcernDomainModel,
+			stableMatches: 2, requestedModel: true, profiled: true,
+		}
+	}
+	testOption := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "provider-test", FactIDs: []string{"provider-test"},
+			Project: project, Path: "JobControllerTest.java",
+			Role: "test", Kind: "test", Name: "listJobs",
+		},
+		section: ContextSourceSection{
+			Project: project, Path: "JobControllerTest.java",
+			StartLine: 1, EndLine: 4, Role: "test", RenderMode: "declaration_body",
+			Content: "@Test\nvoid listJobs() {\n  assert true;\n}",
+		},
+		estimated: sourceTokenCost, concernKeys: []string{projectTestsKey},
+		pathDistance: defaultPathHops, quality: sourceOptionRank, profiled: true,
+	}
+	testOption.evidenceFamily = contextSourceEvidenceFamilyForFacts(
+		pack,
+		testOption,
+		[]scan.AgentContextFactRecord{
+			{
+				ID: "domain-shaped", Kind: "symbol",
+				Name: "CatalogJobEntity", Qualified: "example.CatalogJobEntity",
+				File: "CatalogJobEntity.java",
+			},
+			{
+				ID: "provider-target", Kind: "route",
+				Name: "GET /jobs", HTTPMethod: "GET", Path: "/jobs",
+				File: "JobController.java",
+			},
+		},
+		map[string]bool{"catalog": true, "job": true},
+	)
+	options := []contextSourceOption{
+		modelOption("regular-model", "CatalogJobEntity.java", regularModelKey),
+		modelOption("change-model", "CatalogChangeJobEntity.java", changeModelKey),
+		testOption,
+	}
+
+	selectOptions := func(options []contextSourceOption, maxFiles int) (ContextPack, contextSourceSelectionState) {
+		t.Helper()
+		selected := cloneContextPack(pack)
+		state := contextSourceSelectionState{
+			selectedCandidates:       map[string]bool{},
+			selectedFactIDs:          map[string]bool{},
+			selectedProjects:         map[string]bool{},
+			coveredConcerns:          map[string]bool{},
+			coveredRoles:             map[string]bool{},
+			selectedEvidenceFamilies: map[string]int{},
+		}
+		request := ContextRequest{
+			BudgetTokens: DefaultContextBudgetTokens,
+			MaxFiles:     maxFiles,
+		}
+		for len(selected.SourceSections) < MaxContextSourceSections {
+			productionPending := coverableContextSourceProductionPending(concerns, options, state)
+			option, utility, found, err := contextSourceUtilityOption(
+				selected,
+				request,
+				options,
+				concerns,
+				state,
+				productionPending,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !found || utility <= 0 {
+				break
+			}
+			selected, state, err = addContextSourceOption(
+				selected,
+				request,
+				option,
+				concerns,
+				state,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		return selected, state
+	}
+
+	got, state := selectOptions(options, 3)
+	wantPaths := map[string]bool{
+		"CatalogJobEntity.java":       true,
+		"CatalogChangeJobEntity.java": true,
+		"JobControllerTest.java":      true,
+	}
+	if paths := contextSourcePathSet(got); !reflect.DeepEqual(paths, wantPaths) {
+		t.Fatalf("selected production and test sources = %#v, want %#v", paths, wantPaths)
+	}
+	if got.ContextID != stableContextID {
+		t.Fatalf("Context ID = %q, want %q", got.ContextID, stableContextID)
+	}
+	if state.selectedEvidenceFamilies[project+"\x00"+contextConcernDomainModel] != 2 ||
+		state.selectedEvidenceFamilies["\x00"+contextConcernTests] != 1 {
+		t.Fatalf("source evidence families = %#v", state.selectedEvidenceFamilies)
+	}
+
+	reversed := slices.Clone(options)
+	slices.Reverse(reversed)
+	reversedPack, reversedState := selectOptions(reversed, 3)
+	if !reflect.DeepEqual(reversedPack.SourceSections, got.SourceSections) ||
+		reversedPack.ContextID != got.ContextID ||
+		!reflect.DeepEqual(reversedState.selectedEvidenceFamilies, state.selectedEvidenceFamilies) {
+		t.Fatalf(
+			"reversed source selection changed:\ngot:  %#v / %#v\nwant: %#v / %#v",
+			reversedPack.SourceSections,
+			reversedState.selectedEvidenceFamilies,
+			got.SourceSections,
+			state.selectedEvidenceFamilies,
+		)
+	}
+
+	tight, tightState := selectOptions(options, 2)
+	wantTightPaths := map[string]bool{
+		"CatalogJobEntity.java":       true,
+		"CatalogChangeJobEntity.java": true,
+	}
+	if paths := contextSourcePathSet(tight); !reflect.DeepEqual(paths, wantTightPaths) {
+		t.Fatalf("tight selection displaced production sources: %#v, want %#v", paths, wantTightPaths)
+	}
+	if tightState.selectedEvidenceFamilies[project+"\x00"+contextConcernDomainModel] != 2 ||
+		tightState.selectedEvidenceFamilies["\x00"+contextConcernTests] != 0 {
+		t.Fatalf("tight source evidence families = %#v", tightState.selectedEvidenceFamilies)
+	}
+}
+
 func TestContextSourceUtilityPrefersDomainEvidenceOverGenericSignatures(t *testing.T) {
 	pack := ContextPack{
 		Schema: 1, Query: "catalog job task types and lookup attributes",
