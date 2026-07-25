@@ -1815,10 +1815,10 @@ func contextEndpointNaturalLanguageRelevant(
 		!contextActionFamiliesHaveMutation(requestedActions) {
 		return false
 	}
-	queryTokens := contextTokenSet(
+	queryTokens := contextExpandedTokenSet(
 		contextEndpointQueryWithoutMetaPhrases(contextPrimaryQuery(query)),
 	)
-	factTokens := contextTokenSet(strings.Join([]string{
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
 		fact.Name,
 		fact.Qualified,
 		fact.Path,
@@ -2186,6 +2186,9 @@ var contextIntentTokenAliases = map[string][]string{
 }
 
 var contextQueryTokenAliases = map[string][]string{
+	"konto":              {"account"},
+	"kontos":             {"account"},
+	"konten":             {"account"},
 	"vorschrift":         {"regulation", "regulations"},
 	"vorschriften":       {"regulation", "regulations"},
 	"vorschriftendienst": {"regulation", "regulations"},

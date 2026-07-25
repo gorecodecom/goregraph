@@ -2458,6 +2458,31 @@ func TestBuildContextSelectsNaturalLanguageAccountDeleteEndpoint(t *testing.T) {
 	}
 }
 
+func TestBuildContextSelectsGermanAccountDeleteEndpoint(t *testing.T) {
+	for name, query := range map[string]string{
+		"Konto":  "Analysiere das Löschen vom Konto.",
+		"Kontos": "Analysiere das Löschen eines Kontos.",
+		"Konten": "Analysiere das Löschen von Konten.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := writeNaturalLanguageAccountDeleteFixture(t, "EXACT")
+
+			pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pack.FallbackRequired || pack.Confidence == "LOW" {
+				t.Fatalf("German account delete fell back: %#v", pack)
+			}
+			if len(pack.Endpoints) != 1 ||
+				pack.Endpoints[0].HTTPMethod != "DELETE" ||
+				pack.Endpoints[0].Path != "/accounts/{accountId}" {
+				t.Fatalf("German account endpoint = %#v, want account DELETE", pack.Endpoints)
+			}
+		})
+	}
+}
+
 func TestBuildContextDoesNotPromotePartialNaturalLanguageEndpoint(t *testing.T) {
 	root := writeNaturalLanguageAccountDeleteFixture(t, "PARTIAL")
 
@@ -2515,6 +2540,18 @@ func writeNaturalLanguageAccountDeleteFixture(t *testing.T, endpointConfidence s
 	return root
 }
 
+func TestBuildContextGermanAccountBareDomainDoesNotForceEndpoint(t *testing.T) {
+	root := writeNaturalLanguageAccountDeleteFixture(t, "EXACT")
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "Konto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Endpoints) != 0 {
+		t.Fatalf("bare German account domain forced an endpoint: %#v", pack.Endpoints)
+	}
+}
+
 func TestBuildContextBareNaturalLanguageDomainDoesNotForceEndpoint(t *testing.T) {
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
@@ -2540,6 +2577,32 @@ func TestBuildContextBareNaturalLanguageDomainDoesNotForceEndpoint(t *testing.T)
 	if len(pack.Endpoints) != 0 || len(pack.Entrypoints) != 1 ||
 		pack.Entrypoints[0].ID != "account-domain" {
 		t.Fatalf("bare domain forced an endpoint: %#v", pack)
+	}
+}
+
+func TestSelectContextEndpointKeepsGermanAccountProvidersAmbiguous(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "accounts-a", Project: "services/accounts-a", Kind: "api_endpoint",
+				Name: "DELETE /accounts/{id}", Qualified: "AccountController.deleteAccount",
+				HTTPMethod: "DELETE", Path: "/accounts/{id}", File: "AccountController.java",
+				Search: "delete account", Confidence: "EXACT",
+			},
+			{
+				ID: "accounts-b", Project: "services/accounts-b", Kind: "api_endpoint",
+				Name: "DELETE /accounts/{id}", Qualified: "AccountController.deleteAccount",
+				HTTPMethod: "DELETE", Path: "/accounts/{id}", File: "AccountController.java",
+				Search: "delete account", Confidence: "EXACT",
+			},
+		},
+	}
+	query := "Analysiere das Löschen eines Kontos."
+
+	endpoint, ok, reason := selectContextEndpoint(index, rankContextFacts(index.Facts, query), query)
+	if ok || !strings.Contains(reason, "ambiguous") {
+		t.Fatalf("equivalent German account endpoints were resolved: endpoint=%#v ok=%v reason=%q", endpoint.fact, ok, reason)
 	}
 }
 
