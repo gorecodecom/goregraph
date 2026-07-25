@@ -318,6 +318,36 @@ func TestCompileContextPackKeepsTestForAcceptedRelatedProvider(t *testing.T) {
 	}
 }
 
+func TestBuildContextRetainsRelatedProviderTestWithinCrossProjectMetadataBudget(t *testing.T) {
+	root := writeMissingContractContextIndexFixture(t, missingContractRankIndexWithProviderTests())
+	query := "When DELETE /catalog/items/{itemId} removes an item in services/catalog, " +
+		"plan cleanup of related jobs through the current job client and services/jobs. " +
+		"Cover the current path, missing HTTP contract, task types and lookup attributes, " +
+		"authentication, configuration, retry behavior, persistence, side effects, and tests."
+	pack, err := BuildContext(ContextRequest{
+		Root:         root,
+		Query:        query,
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !contextSelectedFactSet(pack)["jobs-test"] {
+		t.Fatalf("related provider test missing from metadata: %#v", pack.Tests)
+	}
+	for _, relationship := range pack.CallChain {
+		if relationship.From == "CatalogOperations.deleteItem" &&
+			strings.Contains(relationship.To, "Job") {
+			t.Fatalf("fabricated future relationship: %#v", relationship)
+		}
+	}
+	if pack.EstimatedTokens > DefaultContextBudgetTokens {
+		t.Fatalf("final pack exceeded budget: %d", pack.EstimatedTokens)
+	}
+}
+
 func TestCompileContextPackRelatedProviderTestFailsClosed(t *testing.T) {
 	tests := []struct {
 		name   string

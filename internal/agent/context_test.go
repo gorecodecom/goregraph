@@ -61,19 +61,76 @@ func TestContextBudgetsReserveSpaceForSource(t *testing.T) {
 }
 
 func TestContextMetadataBudgetReservesCrossProjectPlanningCapacity(t *testing.T) {
-	concerns := []ContextConcern{
+	oneProject := []ContextConcern{
 		{Kind: contextConcernProject, Project: "services/catalog"},
-		{Kind: contextConcernProject, Project: "libraries/integration"},
-		{Kind: contextConcernProject, Project: "services/jobs"},
-		{Kind: contextConcernHTTPContract},
-		{Kind: contextConcernPersistence},
 	}
-	got := contextMetadataBudgetForConcerns(DefaultContextBudgetTokens, concerns)
-	if got <= DefaultContextMetadataBudgetTokens || got > DefaultContextBudgetTokens/2 {
-		t.Fatalf("cross-project metadata budget = %d, want (%d, %d]", got, DefaultContextMetadataBudgetTokens, DefaultContextBudgetTokens/2)
-	}
-	if single := contextMetadataBudgetForConcerns(DefaultContextBudgetTokens, concerns[:1]); single != DefaultContextMetadataBudgetTokens {
-		t.Fatalf("single-project metadata budget = %d, want %d", single, DefaultContextMetadataBudgetTokens)
+	twoProjects := append(slices.Clone(oneProject),
+		ContextConcern{Kind: contextConcernProject, Project: "services/jobs"},
+	)
+	threeProjects := append(slices.Clone(twoProjects),
+		ContextConcern{Kind: contextConcernProject, Project: "libraries/integration"},
+	)
+	reversedProjects := slices.Clone(twoProjects)
+	slices.Reverse(reversedProjects)
+
+	for _, test := range []struct {
+		name     string
+		total    int
+		concerns []ContextConcern
+		want     int
+	}{
+		{
+			name:     "one project",
+			total:    DefaultContextBudgetTokens,
+			concerns: oneProject,
+			want:     DefaultContextMetadataBudgetTokens,
+		},
+		{
+			name:     "two projects",
+			total:    DefaultContextBudgetTokens,
+			concerns: twoProjects,
+			want:     1650,
+		},
+		{
+			name:     "three projects",
+			total:    DefaultContextBudgetTokens,
+			concerns: threeProjects,
+			want:     DefaultContextBudgetTokens / 2,
+		},
+		{
+			name:  "only distinct normalized project concerns count",
+			total: DefaultContextBudgetTokens,
+			concerns: append(slices.Clone(twoProjects),
+				ContextConcern{Kind: contextConcernProject, Project: "./SERVICES/CATALOG/"},
+				ContextConcern{Kind: contextConcernProject, Project: ""},
+				ContextConcern{Kind: contextConcernHTTPContract, Project: "libraries/integration"},
+			),
+			want: 1650,
+		},
+		{
+			name:     "reversed concerns",
+			total:    DefaultContextBudgetTokens,
+			concerns: reversedProjects,
+			want:     1650,
+		},
+		{
+			name:     "small total caps expansion",
+			total:    2400,
+			concerns: twoProjects,
+			want:     1200,
+		},
+		{
+			name:     "total below base",
+			total:    1000,
+			concerns: twoProjects,
+			want:     1000,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := contextMetadataBudgetForConcerns(test.total, test.concerns); got != test.want {
+				t.Fatalf("metadata budget = %d, want %d", got, test.want)
+			}
+		})
 	}
 }
 

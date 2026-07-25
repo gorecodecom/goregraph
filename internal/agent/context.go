@@ -586,7 +586,7 @@ func contextMetadataBudgetForConcerns(total int, concerns []ContextConcern) int 
 	if len(projects) <= 1 || total <= base {
 		return base
 	}
-	expanded := base + (len(projects)-1)*300
+	expanded := base + (len(projects)-1)*(DefaultContextMetadataBudgetTokens/2)
 	maximum := total / 2
 	if maximum < base {
 		return base
