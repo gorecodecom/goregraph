@@ -210,16 +210,36 @@ func TestBuildProjectAgentContextIndexRejectsLowSignalUnconnectedJavaMethods(t *
 }
 
 func TestBuildProjectAgentContextIndexBoundsUnconnectedJavaSideEffectsDeterministically(t *testing.T) {
-	symbols := make([]RichSymbolRecord, 12)
-	for index := range symbols {
-		symbols[index] = RichSymbolRecord{
-			ID:       fmt.Sprintf("effect:%02d", 11-index),
-			Name:     fmt.Sprintf("publishAccountRemoval%02d", index),
+	domainMethods := []string{
+		"publishInvoiceFinalized",
+		"emitPaymentCaptured",
+		"notifyCustomerRenewal",
+		"sendReceiptDelivery",
+		"publishOrderConfirmed",
+		"emitSubscriptionExpired",
+		"notifyVendorApproval",
+		"sendShipmentDispatch",
+	}
+	symbols := make([]RichSymbolRecord, 0, 12)
+	for index, name := range domainMethods {
+		symbols = append(symbols, RichSymbolRecord{
+			ID:       fmt.Sprintf("real:%02d", index),
+			Name:     name,
 			Kind:     "method",
 			Language: "java",
 			File:     fmt.Sprintf("src/main/java/example/Effect%02d.java", index),
 			Line:     index + 1,
-		}
+		})
+	}
+	for index, name := range []string{"sendTo", "notifyIf", "publishNow", "sendX"} {
+		symbols = append(symbols, RichSymbolRecord{
+			ID:       fmt.Sprintf("fragment:%02d", index),
+			Name:     name,
+			Kind:     "method",
+			Language: "java",
+			File:     fmt.Sprintf("src/main/java/example/Fragment%02d.java", index),
+			Line:     index + 20,
+		})
 	}
 	build := func(values []RichSymbolRecord) AgentContextIndexRecord {
 		t.Helper()
@@ -252,6 +272,178 @@ func TestBuildProjectAgentContextIndexBoundsUnconnectedJavaSideEffectsDeterminis
 	}
 	if sideEffects != 8 || len(forward.Facts) != 8 {
 		t.Fatalf("bounded side-effect facts = %d / %d, want 8: %#v", sideEffects, len(forward.Facts), forward.Facts)
+	}
+	for _, name := range domainMethods {
+		if !hasContextFact(forward.Facts, "side_effects", name) {
+			t.Errorf("real domain side effect %q was displaced: %#v", name, forward.Facts)
+		}
+	}
+	for _, name := range []string{"sendTo", "notifyIf", "publishNow", "sendX"} {
+		if hasContextFact(forward.Facts, "side_effects", name) {
+			t.Errorf("non-domain fragment %q was promoted: %#v", name, forward.Facts)
+		}
+	}
+}
+
+func TestBuildProjectAgentContextIndexRejectsJavaTestSourceSetsAcrossSeparators(t *testing.T) {
+	productionMethods := []string{
+		"publishInvoiceFinalized",
+		"emitPaymentCaptured",
+		"notifyCustomerRenewal",
+		"sendReceiptDelivery",
+	}
+	productionPaths := []string{
+		"src/main/java/example/InvoicePublisher.java",
+		"module/src/main/java/example/PaymentEmitter.java",
+		`src\main\java\example\CustomerNotifier.java`,
+		`module\src\main\java\example\ReceiptSender.java`,
+	}
+	testPaths := []string{
+		"src/test/java/example/EffectTest.java",
+		"module/src/test/java/example/EffectTest.java",
+		`src\test\java\example\EffectTest.java`,
+		`module\src\test\java\example\EffectTest.java`,
+		"src/integrationTest/java/example/EffectTest.java",
+		"module/src/integrationTest/java/example/EffectTest.java",
+		`src\integrationTest\java\example\EffectTest.java`,
+		`module\src\integrationTest\java\example\EffectTest.java`,
+		"src/testFixtures/java/example/EffectFixture.java",
+		"module/src/testFixtures/java/example/EffectFixture.java",
+		`src\testFixtures\java\example\EffectFixture.java`,
+		`module\src\testFixtures\java\example\EffectFixture.java`,
+	}
+	symbols := make([]RichSymbolRecord, 0, len(productionPaths)+len(testPaths))
+	for index, file := range productionPaths {
+		symbols = append(symbols, RichSymbolRecord{
+			ID:       fmt.Sprintf("production:%02d", index),
+			Name:     productionMethods[index],
+			Kind:     "method",
+			Language: "java",
+			File:     file,
+			Line:     10,
+		})
+	}
+	for index, file := range testPaths {
+		symbols = append(symbols, RichSymbolRecord{
+			ID:       fmt.Sprintf("test-source:%02d", index),
+			Name:     fmt.Sprintf("publishInvoiceFinalized%02d", index),
+			Kind:     "method",
+			Language: "java",
+			File:     file,
+			Line:     10,
+		})
+	}
+
+	index := BuildProjectAgentContextIndex(
+		"services/invoices",
+		"fixed",
+		nil,
+		nil,
+		symbols,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	if len(index.Facts) != len(productionPaths) {
+		t.Fatalf("Java test source sets leaked into compact context: %#v", index.Facts)
+	}
+	for _, name := range productionMethods {
+		if !hasContextFact(index.Facts, "side_effects", name) {
+			t.Errorf("production Java side effect %q missing: %#v", name, index.Facts)
+		}
+	}
+}
+
+func TestBuildProjectAgentContextIndexUpgradesConnectedJavaSideEffectWithoutChangingEdges(t *testing.T) {
+	symbols := []RichSymbolRecord{
+		{
+			ID: "route-caller", Name: "listInvoices",
+			QualifiedName: "InvoiceController.listInvoices",
+			Kind:          "method", Language: "java",
+			File: "src/main/java/example/InvoiceController.java", Line: 20,
+		},
+		{
+			ID: "connected-effect", Name: "sendInvoiceReceipt",
+			QualifiedName: "InvoiceNotifier.sendInvoiceReceipt",
+			Kind:          "method", Language: "java",
+			File: "src/main/java/example/InvoiceNotifier.java", Line: 30,
+		},
+		{
+			ID: "persistence-effect", Name: "sendLedgerEntry",
+			QualifiedName: "LedgerRepository.sendLedgerEntry",
+			Kind:          "method", Language: "java",
+			File: "src/main/java/example/LedgerRepository.java", Line: 40,
+		},
+	}
+	for index := range 8 {
+		symbols = append(symbols, RichSymbolRecord{
+			ID:       fmt.Sprintf("adjacent:%02d", index),
+			Name:     fmt.Sprintf("publishInvoiceAdjustment%02d", index),
+			Kind:     "method",
+			Language: "java",
+			File:     fmt.Sprintf("src/main/java/example/Adjustment%02d.java", index),
+			Line:     index + 50,
+		})
+	}
+	routes := []CodeRouteRecord{{
+		RouteID: "route:invoices", HTTPMethod: "GET", Path: "/invoices",
+		Handler: "InvoiceController.listInvoices",
+		File:    "src/main/java/example/InvoiceController.java", Line: 20,
+	}}
+	flows := []CodeFlowRecord{{
+		Steps: []CodeFlowStep{{
+			Name: "sendLedgerEntry", Owner: "LedgerRepository",
+			Kind: "repository_method",
+			File: "src/main/java/example/LedgerRepository.java", Line: 40,
+		}},
+	}}
+	relations := []RichRelationRecord{{
+		ID:   "observed-call",
+		From: "src/main/java/example/InvoiceController.java",
+		To:   "InvoiceNotifier.sendInvoiceReceipt",
+		Type: "call", FromSymbolID: "route-caller", ToSymbolID: "connected-effect",
+		Line: 25, Resolution: SymbolResolutionExact, Confidence: "EXACT",
+	}}
+
+	index := BuildProjectAgentContextIndex(
+		"services/invoices",
+		"fixed",
+		routes,
+		flows,
+		symbols,
+		relations,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	connected := findContextFactByQualified(index.Facts, "InvoiceNotifier.sendInvoiceReceipt")
+	if connected.Kind != "side_effects" {
+		t.Fatalf("connected effect kind = %q, want side_effects: %#v", connected.Kind, index.Facts)
+	}
+	persistence := findContextFactByQualified(index.Facts, "LedgerRepository.sendLedgerEntry")
+	if persistence.Kind != "persistence" {
+		t.Fatalf("stronger persistence kind was overwritten: %#v", persistence)
+	}
+	sideEffects := 0
+	for _, fact := range index.Facts {
+		if fact.Kind == "side_effects" {
+			sideEffects++
+		}
+	}
+	if sideEffects != 9 {
+		t.Fatalf("upgraded plus newly adjacent side effects = %d, want 9: %#v", sideEffects, index.Facts)
+	}
+	caller := findContextFact(index.Facts, "symbol", "listInvoices")
+	if len(index.Edges) != 1 ||
+		index.Edges[0].FromFactID != caller.ID ||
+		index.Edges[0].ToFactID != connected.ID ||
+		index.Edges[0].Kind != "call" ||
+		index.Edges[0].File != "src/main/java/example/InvoiceController.java" ||
+		index.Edges[0].Line != 25 {
+		t.Fatalf("observed call edge changed or extra edge appeared: %#v", index.Edges)
 	}
 }
 

@@ -402,9 +402,14 @@ func (builder *agentContextBuilder) selectSymbol(symbol RichSymbolRecord, kind s
 func (builder *agentContextBuilder) selectAdjacentSideEffectSymbols() {
 	candidates := make([]RichSymbolRecord, 0)
 	for _, symbol := range builder.symbols {
-		if builder.selectedSymbolKinds[symbol.ID] == "" &&
-			contextAdjacentSideEffectSymbol(symbol) {
+		if !contextAdjacentSideEffectSymbol(symbol) {
+			continue
+		}
+		switch builder.selectedSymbolKinds[symbol.ID] {
+		case "":
 			candidates = append(candidates, symbol)
+		case "symbol":
+			builder.selectedSymbolKinds[symbol.ID] = "side_effects"
 		}
 	}
 	sort.Slice(candidates, func(i, j int) bool {
@@ -421,7 +426,7 @@ func (builder *agentContextBuilder) selectAdjacentSideEffectSymbols() {
 func contextAdjacentSideEffectSymbol(symbol RichSymbolRecord) bool {
 	if !strings.EqualFold(symbol.Language, "java") ||
 		!strings.EqualFold(symbol.Kind, "method") ||
-		isWorkspaceTestNamespacePath(symbol.File, symbol.Kind) {
+		contextJavaTestSourcePath(symbol.File) {
 		return false
 	}
 	effectSignal := false
@@ -442,20 +447,39 @@ func contextAdjacentSideEffectSymbol(symbol RichSymbolRecord) bool {
 	return effectSignal && domainSignal
 }
 
-func contextSideEffectDomainToken(token string) bool {
-	switch token {
-	case "", "all", "any", "async", "create", "data", "delete", "event", "events",
-		"find", "get", "helper", "info", "information", "list", "log", "message",
-		"messages", "notification", "notifications", "read", "request", "response",
-		"result", "save", "set", "status", "update", "value", "values":
-		return false
-	}
-	for _, current := range token {
-		if unicode.IsLetter(current) {
+func contextJavaTestSourcePath(file string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(file), "\\", "/"))
+	parts := strings.Split(strings.Trim(normalized, "/"), "/")
+	for index := 0; index+1 < len(parts); index++ {
+		if parts[index] != "src" {
+			continue
+		}
+		switch parts[index+1] {
+		case "test", "integrationtest", "testfixtures":
 			return true
 		}
 	}
 	return false
+}
+
+func contextSideEffectDomainToken(token string) bool {
+	switch token {
+	case "", "all", "and", "any", "as", "async", "at", "by", "create", "data",
+		"delete", "do", "else", "event", "events", "find", "for", "from", "get",
+		"helper", "if", "in", "info", "information", "into", "is", "it", "list",
+		"log", "message", "messages", "notification", "notifications", "now", "of",
+		"on", "or", "out", "read", "request", "response", "result", "save", "set",
+		"status", "that", "then", "this", "to", "update", "value", "values", "when",
+		"while", "with":
+		return false
+	}
+	letters := 0
+	for _, current := range token {
+		if unicode.IsLetter(current) {
+			letters++
+		}
+	}
+	return letters >= 4
 }
 
 func (builder *agentContextBuilder) relationSymbol(id, label string) (RichSymbolRecord, bool) {
