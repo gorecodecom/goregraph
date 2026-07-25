@@ -555,8 +555,7 @@ func relatedProviderTestTargets(
 		if !hasTest ||
 			!hasTarget ||
 			!reliableRelatedProviderTestFact(test) ||
-			!reliableRelatedProviderTestProductionTarget(target) ||
-			normalizeContextProject(test.Project) != normalizeContextProject(target.Project) {
+			!reliableRelatedProviderTestProductionTarget(target) {
 			continue
 		}
 		if targetFactsByTestID[test.ID] == nil {

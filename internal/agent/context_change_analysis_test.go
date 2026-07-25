@@ -386,6 +386,22 @@ func TestCompileContextPackRelatedProviderTestFailsClosed(t *testing.T) {
 			},
 		},
 		{
+			name: "same test targets reliable production in another project",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+					ID: "audit-route", Project: "services/audit", Kind: "route",
+					Name: "GET /audit/jobs", Qualified: "AuditJobController.listJobs",
+					HTTPMethod: "GET", Path: "/audit/jobs",
+					File: "src/main/java/example/AuditJobController.java",
+					Line: 10, Confidence: "EXACT",
+				})
+				index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+					ID: "cross-project-test", FromFactID: "jobs-test", ToFactID: "audit-route",
+					Kind: "test_target", Confidence: "EXTRACTED",
+				})
+			},
+		},
+		{
 			name: "same qualified handler has multiple method lines",
 			mutate: func(index *scan.AgentContextIndexRecord) {
 				overload := *missingContractFactByID(index.Facts, "jobs-route-symbol")
