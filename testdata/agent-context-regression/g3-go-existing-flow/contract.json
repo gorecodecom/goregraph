@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "id": "g3-go-existing-flow",
+  "queries": [
+    {
+      "id": "english",
+      "language": "en",
+      "file": "query.en.txt",
+      "end_to_end": true
+    }
+  ],
+  "pack": {
+    "required_locations": [
+      {
+        "section": "entrypoints",
+        "project": "services/orders",
+        "kind": "route",
+        "label_contains": "DELETE /orders/{orderId}"
+      },
+      {
+        "section": "tests",
+        "project": "services/orders",
+        "kind": "test",
+        "label_contains": "TestRemove"
+      }
+    ],
+    "forbidden_locations": [],
+    "required_source_suffixes": [
+      "routes.go",
+      "service.go",
+      "repository.go",
+      "service_test.go"
+    ],
+    "required_source_content": [
+      {
+        "path_suffix": "routes.go",
+        "required": [
+          "orderService.Remove"
+        ]
+      },
+      {
+        "path_suffix": "service.go",
+        "required": [
+          "repository.DeleteByOrderID"
+        ]
+      }
+    ],
+    "forbidden_source_suffixes": [],
+    "required_unknowns": [],
+    "fallback_required": false,
+    "retry_allowed": false,
+    "max_estimated_tokens": 4000,
+    "max_source_omissions": 3,
+    "require_bounded_source": true
+  },
+  "answer": {
+    "required_facets": [
+      {
+        "id": "order-delete-entrypoint",
+        "description": "Show DELETE /orders/{orderId} and deleteOrder as the current entrypoint."
+      },
+      {
+        "id": "order-delete-call-flow",
+        "description": "Show deleteOrder calling OrderService.Remove and Remove calling DeleteByOrderID."
+      },
+      {
+        "id": "order-delete-test",
+        "description": "Show the connected test for the current removal flow."
+      }
+    ],
+    "forbidden_outcomes": [
+      {
+        "id": "list-route-substitute",
+        "description": "Do not use GET /orders or listOrders as the deletion entrypoint."
+      }
+    ],
+    "explicit_unknowns": [
+      {
+        "id": "structured-go-endpoint-record",
+        "description": "Generic Go routes are represented as entrypoints and are not published in ContextPack.Endpoints."
+      }
+    ]
+  },
+  "limits": {
+    "context_tokens": 4000,
+    "max_source_omissions": 3,
+    "max_token_increase_percent": 5,
+    "max_latency_increase_percent": 10,
+    "max_paired_latency_multiplier": 2
+  }
+}

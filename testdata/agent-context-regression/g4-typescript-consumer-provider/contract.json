@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "id": "g4-typescript-consumer-provider",
+  "queries": [
+    {
+      "id": "english",
+      "language": "en",
+      "file": "query.en.txt",
+      "end_to_end": true
+    }
+  ],
+  "pack": {
+    "endpoint": {
+      "provider_contains": "services/orders",
+      "http_method": "DELETE",
+      "path": "/api/orders/{orderId}"
+    },
+    "required_locations": [
+      {
+        "section": "contracts",
+        "project": "frontend/storefront",
+        "kind": "api_contract",
+        "label_contains": "DELETE /api/orders/{orderId}"
+      }
+    ],
+    "forbidden_locations": [
+      {
+        "section": "entrypoints",
+        "project": "services/orders",
+        "label_contains": "GET /api/orders"
+      }
+    ],
+    "required_source_suffixes": [
+      "ordersApi.ts",
+      "server.ts"
+    ],
+    "required_source_content": [
+      {
+        "path_suffix": "ordersApi.ts",
+        "required": [
+          "function authorizationHeaders",
+          "method: \"DELETE\"",
+          "headers: authorizationHeaders()"
+        ]
+      },
+      {
+        "path_suffix": "server.ts",
+        "required": [
+          "orderService.remove"
+        ]
+      }
+    ],
+    "forbidden_source_suffixes": [],
+    "required_unknowns": [],
+    "fallback_required": false,
+    "retry_allowed": false,
+    "max_estimated_tokens": 4000,
+    "max_source_omissions": 3,
+    "require_bounded_source": true
+  },
+  "answer": {
+    "required_facets": [
+      {
+        "id": "consumer-delete-contract",
+        "description": "Show the storefront DELETE request and authorizationHeaders call."
+      },
+      {
+        "id": "provider-delete-handler",
+        "description": "Show the Express DELETE route, removeOrder handler, and 204 response."
+      },
+      {
+        "id": "provider-service-call",
+        "description": "Show the handler calling orderService.remove."
+      }
+    ],
+    "forbidden_outcomes": [
+      {
+        "id": "list-route-substitute",
+        "description": "Do not use GET /api/orders or listOrders as the deletion entrypoint."
+      }
+    ],
+    "explicit_unknowns": [
+      {
+        "id": "provider-service-source-not-expanded",
+        "description": "The matched TypeScript API endpoint does not expand through its project route fact to the provider service implementation source."
+      }
+    ]
+  },
+  "limits": {
+    "context_tokens": 4000,
+    "max_source_omissions": 3,
+    "max_token_increase_percent": 5,
+    "max_latency_increase_percent": 10,
+    "max_paired_latency_multiplier": 2
+  }
+}

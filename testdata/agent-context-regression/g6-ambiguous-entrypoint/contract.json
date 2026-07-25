@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "id": "g6-ambiguous-entrypoint",
+  "queries": [
+    {
+      "id": "english",
+      "language": "en",
+      "file": "query.en.txt",
+      "end_to_end": true
+    }
+  ],
+  "pack": {
+    "required_locations": [],
+    "forbidden_locations": [
+      {
+        "section": "entrypoints",
+        "project": "services/batch-jobs",
+        "label_contains": "DELETE /jobs/{jobId}"
+      },
+      {
+        "section": "entrypoints",
+        "project": "services/scheduled-jobs",
+        "label_contains": "DELETE /jobs/{jobId}"
+      }
+    ],
+    "required_source_suffixes": [],
+    "forbidden_source_suffixes": [],
+    "required_unknowns": [],
+    "fallback_required": true,
+    "retry_allowed": false,
+    "max_estimated_tokens": 4000,
+    "max_source_omissions": 0,
+    "require_bounded_source": true
+  },
+  "answer": {
+    "required_facets": [
+      {
+        "id": "ambiguous-job-delete",
+        "description": "State that two equally strong DELETE /jobs/{jobId} providers prevent selecting one reliable entrypoint."
+      },
+      {
+        "id": "safe-fallback",
+        "description": "Require source fallback instead of presenting either provider as authoritative."
+      }
+    ],
+    "forbidden_outcomes": [
+      {
+        "id": "batch-jobs-unique-entrypoint",
+        "description": "Do not present services/batch-jobs as the unique deletion entrypoint."
+      },
+      {
+        "id": "scheduled-jobs-unique-entrypoint",
+        "description": "Do not present services/scheduled-jobs as the unique deletion entrypoint."
+      }
+    ],
+    "explicit_unknowns": [
+      {
+        "id": "provider-identity",
+        "description": "The query does not identify which job service owns the requested deletion flow."
+      }
+    ]
+  },
+  "limits": {
+    "context_tokens": 4000,
+    "max_source_omissions": 0,
+    "max_token_increase_percent": 5,
+    "max_latency_increase_percent": 10,
+    "max_paired_latency_multiplier": 2
+  }
+}

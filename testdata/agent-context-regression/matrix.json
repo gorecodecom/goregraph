@@ -7,8 +7,23 @@
       "external": false
     },
     {
+      "id": "g3-go-existing-flow",
+      "directory": "g3-go-existing-flow",
+      "external": false
+    },
+    {
+      "id": "g4-typescript-consumer-provider",
+      "directory": "g4-typescript-consumer-provider",
+      "external": false
+    },
+    {
       "id": "g5-java-persistence-side-effects",
       "directory": "g5-java-persistence-side-effects",
+      "external": false
+    },
+    {
+      "id": "g6-ambiguous-entrypoint",
+      "directory": "g6-ambiguous-entrypoint",
       "external": false
     }
   ]

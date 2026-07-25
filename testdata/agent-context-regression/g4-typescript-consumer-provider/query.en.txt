@@ -1,0 +1,1 @@
+Explain the removeOrder deletion flow. Show authorizationHeaders, the provider removeOrder handler, the service remove call, and the 204 response.

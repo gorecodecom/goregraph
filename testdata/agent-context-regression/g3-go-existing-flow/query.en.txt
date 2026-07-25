@@ -1,0 +1,1 @@
+Explain DELETE /orders/{orderId}. Show how deleteOrder calls Remove, how Remove calls DeleteByOrderID, and how TestRemoveDeletesByOrderID covers the flow. Do not use GET /orders or listOrders as the entrypoint.
