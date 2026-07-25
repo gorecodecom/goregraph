@@ -185,7 +185,8 @@ func TestExtractJavaReadsMultilineTypedFieldWithoutConsumingClassMembers(t *test
 		`final class JobControllerTest {
   private final RecordingJobRepository repository = new RecordingJobRepository();
   private final JobController controller =
-      new JobController(new JobService(repository));
+      createController(
+          repository);
 
   @Deprecated
   private final Runnable callback =
@@ -196,6 +197,10 @@ func TestExtractJavaReadsMultilineTypedFieldWithoutConsumingClassMembers(t *test
   @Test
   void listUsesTheCatalogAndItemFinder() {
     controller.list("catalog-2", "item-7");
+  }
+
+  private JobController createController(RecordingJobRepository repository) {
+    return new JobController(new JobService(repository));
   }
 
   void localDeclarationStaysLocal() {
@@ -229,6 +234,7 @@ func TestExtractJavaReadsMultilineTypedFieldWithoutConsumingClassMembers(t *test
 	}
 	for _, name := range []string{
 		"listUsesTheCatalogAndItemFinder",
+		"createController",
 		"localDeclarationStaysLocal",
 		"methodAfterMultilineMembers",
 	} {
@@ -240,6 +246,76 @@ func TestExtractJavaReadsMultilineTypedFieldWithoutConsumingClassMembers(t *test
 	if !hasAnnotation(testMethod.Annotations, "Test") ||
 		hasAnnotation(testMethod.Annotations, "Deprecated") {
 		t.Fatalf("lambda field annotations leaked into following test method: %#v", testMethod.Annotations)
+	}
+}
+
+func TestExtractJavaAbandonsMultilineFieldAtMemberBoundary(t *testing.T) {
+	tests := []struct {
+		name       string
+		member     string
+		wantField  string
+		wantMethod string
+	}{
+		{
+			name: "field",
+			member: `  private final JobController fallback = null;
+`,
+			wantField: "fallback",
+		},
+		{
+			name: "method",
+			member: `  JobController createController(
+      RecordingJobRepository repository) {
+    return null;
+  }
+`,
+			wantMethod: "createController",
+		},
+		{
+			name: "constructor",
+			member: `  JobControllerTest(
+      JobController controller) {
+  }
+`,
+			wantMethod: "JobControllerTest",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := extractJavaSource(
+				FileRecord{Path: "src/test/java/example/JobControllerTest.java", Language: "java"},
+				`final class JobControllerTest {
+  private final JobController incomplete =
+`+test.member+`
+  @Test
+  void testAfterBoundary() {
+  }
+}`,
+			)
+			fieldFound := test.wantField == ""
+			for _, field := range source.Fields {
+				fieldFound = fieldFound || field.Name == test.wantField
+			}
+			if !fieldFound {
+				t.Fatalf("member field %q was consumed: %#v", test.wantField, source.Fields)
+			}
+			methodFound := test.wantMethod == ""
+			var testMethod JavaMethodRecord
+			testFound := false
+			for _, method := range source.Methods {
+				methodFound = methodFound || method.Name == test.wantMethod
+				if method.Name == "testAfterBoundary" {
+					testMethod = method
+					testFound = true
+				}
+			}
+			if !methodFound {
+				t.Fatalf("member method %q was consumed: %#v", test.wantMethod, source.Methods)
+			}
+			if !testFound || !hasAnnotation(testMethod.Annotations, "Test") {
+				t.Fatalf("test after member boundary was consumed: %#v", source.Methods)
+			}
+		})
 	}
 }
 

@@ -1055,12 +1055,17 @@ final class JobController {
 		`final class JobControllerTest {
   private final RecordingJobRepository repository = new RecordingJobRepository();
   private final JobController controller =
-      new JobController(new JobService(repository));
+      createController(
+          repository);
 
   @Test
   void listUsesTheCatalogAndItemFinder() {
     List<Job> jobs = controller.list("catalog-2", "item-7");
     assert jobs.size() == 1;
+  }
+
+  private JobController createController(RecordingJobRepository repository) {
+    return new JobController(new JobService(repository));
   }
 }`,
 	)

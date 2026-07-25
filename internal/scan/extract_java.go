@@ -88,7 +88,7 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 			continue
 		}
 		if fieldSignature != "" {
-			if !javaMultilineFieldContinuationSafe(lexicalLine) {
+			if !javaMultilineFieldContinuationSafe(lexicalLine, currentOwner) {
 				fieldSignature = ""
 				fieldSignatureLine = 0
 				pending = nil
@@ -286,13 +286,21 @@ func javaMultilineFieldStart(line string) bool {
 		javaFieldLineRE.MatchString(line+";")
 }
 
-func javaMultilineFieldContinuationSafe(line string) bool {
-	return !strings.HasPrefix(line, "@") &&
-		!javaTypeLineRE.MatchString(line) &&
-		!looksLikeJavaMethodStart(line) &&
-		!looksLikeJavaGenericMethodPrefix(line) &&
-		!strings.ContainsAny(line, "{}") &&
-		!strings.Contains(line, "->")
+func javaMultilineFieldContinuationSafe(line, owner string) bool {
+	if strings.HasPrefix(line, "@") ||
+		javaTypeLineRE.MatchString(line) ||
+		javaFieldLineRE.MatchString(line) ||
+		looksLikeJavaGenericMethodPrefix(line) ||
+		strings.ContainsAny(line, "{}") ||
+		strings.Contains(line, "->") {
+		return false
+	}
+	if !looksLikeJavaMethodStart(line) {
+		return true
+	}
+	open := strings.Index(line, "(")
+	name := strings.TrimSpace(line[:open])
+	return javaTypeParameterNameRE.MatchString(name) && name != owner
 }
 
 func javaAtCurrentTypeBody(braceDepth int, stack []javaTypeScope) bool {
