@@ -3,6 +3,7 @@ package agentbench
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/gorecodecom/goregraph/internal/agent"
@@ -27,6 +28,78 @@ func TestEvaluatePackReportsExpectationViolations(t *testing.T) {
 
 	requireViolation(t, violations, "endpoint")
 	requireViolation(t, violations, "source_omission")
+}
+
+func TestEvaluatePackRequiresSourceContentInOneSection(t *testing.T) {
+	const suffix = "AccountService.java"
+	required := []string{
+		"auditLog.recordAccountRemoval",
+		"mailSender.sendAccountRemoved",
+		"userDirectory.invalidate",
+	}
+	expectation := PackExpectation{
+		RequiredSourceContent: []RequiredSourceContentExpectation{{
+			PathSuffix: suffix,
+			Required:   required,
+		}},
+	}
+
+	t.Run("accepts one complete section", func(t *testing.T) {
+		pack := agent.ContextPack{SourceSections: []agent.ContextSourceSection{{
+			Path: "src/main/java/example/AccountService.java",
+			Content: strings.Join([]string{
+				"auditLog.recordAccountRemoval(accountId);",
+				"mailSender.sendAccountRemoved(account);",
+				"userDirectory.invalidate(accountId);",
+			}, "\n"),
+		}}}
+
+		if violations := EvaluatePack(pack, expectation); len(violations) != 0 {
+			t.Fatalf("EvaluatePack violations = %#v, want none", violations)
+		}
+	})
+
+	t.Run("rejects a wrong range", func(t *testing.T) {
+		pack := agent.ContextPack{SourceSections: []agent.ContextSourceSection{{
+			Path:    "src/main/java/example/AccountService.java",
+			Content: "return accountRepository.findAll();",
+		}}}
+
+		violations := EvaluatePack(pack, expectation)
+		for _, fragment := range required {
+			requireSourceContentViolation(t, violations, suffix, fragment)
+		}
+	})
+
+	t.Run("rejects a missing path", func(t *testing.T) {
+		pack := agent.ContextPack{SourceSections: []agent.ContextSourceSection{{
+			Path:    "src/main/java/example/OtherService.java",
+			Content: strings.Join(required, "\n"),
+		}}}
+
+		requireSourceContentViolation(t, EvaluatePack(pack, expectation), suffix, "")
+	})
+
+	t.Run("rejects fragments split across ranges", func(t *testing.T) {
+		pack := agent.ContextPack{SourceSections: []agent.ContextSourceSection{
+			{
+				Path:    "src/main/java/example/AccountService.java",
+				Content: "auditLog.recordAccountRemoval(accountId);",
+			},
+			{
+				Path: "src/main/java/example/AccountService.java",
+				Content: "mailSender.sendAccountRemoved(account);\n" +
+					"userDirectory.invalidate(accountId);",
+			},
+		}}
+
+		violations := EvaluatePack(pack, expectation)
+		requireSourceContentViolation(t, violations, suffix, "auditLog.recordAccountRemoval")
+		reversed := pack
+		reversed.SourceSections = slices.Clone(pack.SourceSections)
+		slices.Reverse(reversed.SourceSections)
+		assertSameJSON(t, violations, EvaluatePack(reversed, expectation))
+	})
 }
 
 func TestDiffPacksReportsSemanticChanges(t *testing.T) {
@@ -212,4 +285,27 @@ func requireViolation(t *testing.T, violations []Violation, field string) {
 		}
 	}
 	t.Fatalf("violations = %#v, want field %q", violations, field)
+}
+
+func requireSourceContentViolation(
+	t *testing.T,
+	violations []Violation,
+	suffix string,
+	fragment string,
+) {
+	t.Helper()
+	for _, violation := range violations {
+		if violation.Field != "required_source_content" ||
+			!strings.Contains(violation.Reason, suffix) ||
+			fragment != "" && !strings.Contains(violation.Reason, fragment) {
+			continue
+		}
+		return
+	}
+	t.Fatalf(
+		"violations = %#v, want required_source_content naming suffix %q and fragment %q",
+		violations,
+		suffix,
+		fragment,
+	)
 }

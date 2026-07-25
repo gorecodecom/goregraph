@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 const (
@@ -46,17 +47,23 @@ type QueryVariant struct {
 }
 
 type PackExpectation struct {
-	Endpoint                *EndpointExpectation  `json:"endpoint,omitempty"`
-	RequiredLocations       []LocationExpectation `json:"required_locations"`
-	ForbiddenLocations      []LocationExpectation `json:"forbidden_locations"`
-	RequiredSourceSuffixes  []string              `json:"required_source_suffixes"`
-	ForbiddenSourceSuffixes []string              `json:"forbidden_source_suffixes"`
-	RequiredUnknowns        []string              `json:"required_unknowns"`
-	FallbackRequired        *bool                 `json:"fallback_required,omitempty"`
-	RetryAllowed            *bool                 `json:"retry_allowed,omitempty"`
-	MaxEstimatedTokens      int                   `json:"max_estimated_tokens"`
-	MaxSourceOmissions      int                   `json:"max_source_omissions"`
-	RequireBoundedSource    bool                  `json:"require_bounded_source"`
+	Endpoint                *EndpointExpectation               `json:"endpoint,omitempty"`
+	RequiredLocations       []LocationExpectation              `json:"required_locations"`
+	ForbiddenLocations      []LocationExpectation              `json:"forbidden_locations"`
+	RequiredSourceSuffixes  []string                           `json:"required_source_suffixes"`
+	RequiredSourceContent   []RequiredSourceContentExpectation `json:"required_source_content,omitempty"`
+	ForbiddenSourceSuffixes []string                           `json:"forbidden_source_suffixes"`
+	RequiredUnknowns        []string                           `json:"required_unknowns"`
+	FallbackRequired        *bool                              `json:"fallback_required,omitempty"`
+	RetryAllowed            *bool                              `json:"retry_allowed,omitempty"`
+	MaxEstimatedTokens      int                                `json:"max_estimated_tokens"`
+	MaxSourceOmissions      int                                `json:"max_source_omissions"`
+	RequireBoundedSource    bool                               `json:"require_bounded_source"`
+}
+
+type RequiredSourceContentExpectation struct {
+	PathSuffix string   `json:"path_suffix"`
+	Required   []string `json:"required"`
 }
 
 type EndpointExpectation struct {
@@ -332,6 +339,31 @@ func validatePack(pack PackExpectation) error {
 			if locationsOverlap(required, location) {
 				return fmt.Errorf("pack.forbidden_locations[%d] overlaps a required location matcher", index)
 			}
+		}
+	}
+	sourceContentSuffixes := make(map[string]bool, len(pack.RequiredSourceContent))
+	for index, expectation := range pack.RequiredSourceContent {
+		field := fmt.Sprintf("pack.required_source_content[%d]", index)
+		if strings.TrimSpace(expectation.PathSuffix) == "" {
+			return fmt.Errorf("%s.path_suffix must not be blank", field)
+		}
+		if sourceContentSuffixes[expectation.PathSuffix] {
+			return fmt.Errorf("%s.path_suffix duplicates an earlier required source content expectation", field)
+		}
+		sourceContentSuffixes[expectation.PathSuffix] = true
+		if len(expectation.Required) == 0 {
+			return fmt.Errorf("%s.required must contain at least one fragment", field)
+		}
+		fragments := make(map[string]bool, len(expectation.Required))
+		for fragmentIndex, fragment := range expectation.Required {
+			fragmentField := fmt.Sprintf("%s.required[%d]", field, fragmentIndex)
+			if strings.TrimSpace(fragment) == "" {
+				return fmt.Errorf("%s must not be blank", fragmentField)
+			}
+			if fragments[fragment] {
+				return fmt.Errorf("%s duplicates an earlier required fragment", fragmentField)
+			}
+			fragments[fragment] = true
 		}
 	}
 	return nil

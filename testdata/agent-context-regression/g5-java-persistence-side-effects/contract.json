@@ -41,6 +41,16 @@
       "AccountService.java",
       "AccountRepository.java"
     ],
+    "required_source_content": [
+      {
+        "path_suffix": "AccountService.java",
+        "required": [
+          "auditLog.recordAccountRemoval",
+          "mailSender.sendAccountRemoved",
+          "userDirectory.invalidate"
+        ]
+      }
+    ],
     "forbidden_source_suffixes": [],
     "required_unknowns": [],
     "fallback_required": false,

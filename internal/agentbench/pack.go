@@ -91,6 +91,9 @@ func EvaluatePack(pack agent.ContextPack, expectation PackExpectation) []Violati
 			violations = append(violations, Violation{Field: "required_source", Reason: fmt.Sprintf("source ending in %q is missing", suffix)})
 		}
 	}
+	for _, required := range expectation.RequiredSourceContent {
+		violations = append(violations, requiredSourceContentViolations(pack.SourceSections, required)...)
+	}
 	for _, suffix := range expectation.ForbiddenSourceSuffixes {
 		if hasSourceSuffix(pack.Files, suffix) {
 			violations = append(violations, Violation{Field: "forbidden_source", Reason: fmt.Sprintf("forbidden source ending in %q is present", suffix)})
@@ -118,6 +121,67 @@ func EvaluatePack(pack agent.ContextPack, expectation PackExpectation) []Violati
 		violations = append(violations, Violation{Field: "source_omission", Reason: "source evidence or omission is not bounded to a path and line range"})
 	}
 	return violations
+}
+
+func requiredSourceContentViolations(
+	sections []agent.ContextSourceSection,
+	expectation RequiredSourceContentExpectation,
+) []Violation {
+	matchedPath := false
+	bestMissing := []string(nil)
+	bestSectionKey := ""
+	for _, section := range sections {
+		if !hasSourceSectionSuffix(section, expectation.PathSuffix) {
+			continue
+		}
+		matchedPath = true
+		missing := make([]string, 0, len(expectation.Required))
+		for _, fragment := range expectation.Required {
+			if !strings.Contains(section.Content, fragment) {
+				missing = append(missing, fragment)
+			}
+		}
+		if len(missing) == 0 {
+			return nil
+		}
+		sectionKey := sourceKey(
+			section.Project,
+			section.Path,
+			section.StartLine,
+			section.EndLine,
+			section.Role,
+			section.Content,
+		)
+		if bestMissing == nil ||
+			len(missing) < len(bestMissing) ||
+			len(missing) == len(bestMissing) && sectionKey < bestSectionKey {
+			bestMissing = missing
+			bestSectionKey = sectionKey
+		}
+	}
+	if !matchedPath {
+		return []Violation{{
+			Field:  "required_source_content",
+			Reason: fmt.Sprintf("source section ending in %q is missing", expectation.PathSuffix),
+		}}
+	}
+	violations := make([]Violation, 0, len(bestMissing))
+	for _, fragment := range bestMissing {
+		violations = append(violations, Violation{
+			Field: "required_source_content",
+			Reason: fmt.Sprintf(
+				"source section ending in %q is missing required fragment %q",
+				expectation.PathSuffix,
+				fragment,
+			),
+		})
+	}
+	return violations
+}
+
+func hasSourceSectionSuffix(section agent.ContextSourceSection, suffix string) bool {
+	return strings.HasSuffix(section.Path, suffix) ||
+		strings.HasSuffix(strings.TrimPrefix(section.Project+"/"+section.Path, "/"), suffix)
 }
 
 func DiffPacks(golden, candidate agent.ContextPack) PackDiff {

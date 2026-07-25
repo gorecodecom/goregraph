@@ -84,6 +84,22 @@ func TestLoadContract(t *testing.T) {
 	})
 }
 
+func TestLoadContractAcceptsRequiredSourceContent(t *testing.T) {
+	var body map[string]any
+	if err := json.Unmarshal(mustJSON(t, validContract()), &body); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	pack := body["pack"].(map[string]any)
+	pack["required_source_content"] = []map[string]any{{
+		"path_suffix": "AccountService.java",
+		"required":    []string{"auditLog.recordAccountRemoval"},
+	}}
+
+	if _, err := LoadContract(writeJSON(t, body)); err != nil {
+		t.Fatalf("LoadContract returned error: %v", err)
+	}
+}
+
 func TestValidateContract(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -173,6 +189,64 @@ func TestValidateContract(t *testing.T) {
 				}
 			},
 			wantErr: "pack.forbidden_locations[0]",
+		},
+		{
+			name: "rejects blank source content path suffix",
+			mutate: func(contract *Contract) {
+				contract.Pack.RequiredSourceContent = []RequiredSourceContentExpectation{{
+					PathSuffix: " \t",
+					Required:   []string{"auditLog.recordAccountRemoval"},
+				}}
+			},
+			wantErr: "pack.required_source_content[0].path_suffix",
+		},
+		{
+			name: "rejects empty source content fragment list",
+			mutate: func(contract *Contract) {
+				contract.Pack.RequiredSourceContent = []RequiredSourceContentExpectation{{
+					PathSuffix: "AccountService.java",
+				}}
+			},
+			wantErr: "pack.required_source_content[0].required",
+		},
+		{
+			name: "rejects blank source content fragment",
+			mutate: func(contract *Contract) {
+				contract.Pack.RequiredSourceContent = []RequiredSourceContentExpectation{{
+					PathSuffix: "AccountService.java",
+					Required:   []string{" \t"},
+				}}
+			},
+			wantErr: "pack.required_source_content[0].required[0]",
+		},
+		{
+			name: "rejects duplicate source content fragment",
+			mutate: func(contract *Contract) {
+				contract.Pack.RequiredSourceContent = []RequiredSourceContentExpectation{{
+					PathSuffix: "AccountService.java",
+					Required: []string{
+						"auditLog.recordAccountRemoval",
+						"auditLog.recordAccountRemoval",
+					},
+				}}
+			},
+			wantErr: "pack.required_source_content[0].required[1]",
+		},
+		{
+			name: "rejects duplicate source content path suffix",
+			mutate: func(contract *Contract) {
+				contract.Pack.RequiredSourceContent = []RequiredSourceContentExpectation{
+					{
+						PathSuffix: "AccountService.java",
+						Required:   []string{"auditLog.recordAccountRemoval"},
+					},
+					{
+						PathSuffix: "AccountService.java",
+						Required:   []string{"mailSender.sendAccountRemoved"},
+					},
+				}
+			},
+			wantErr: "pack.required_source_content[1].path_suffix",
 		},
 	}
 
