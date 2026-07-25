@@ -503,7 +503,11 @@ func contextSourceConcernProjectDomainQueryTokens(
 	aliases map[string][]string,
 	explicitProjects map[string]bool,
 ) map[string]bool {
-	result := contextConcernDomainQueryTokens(queryTokens)
+	base := contextConcernDomainQueryTokens(queryTokens)
+	result := make(map[string]bool, len(base))
+	for token := range base {
+		result[token] = true
+	}
 	for project := range explicitProjects {
 		for _, alias := range aliases[project] {
 			for token := range contextExpandedTokenSet(alias) {

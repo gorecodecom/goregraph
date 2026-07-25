@@ -1031,6 +1031,55 @@ interface JobClientCall<T> {
 	}
 }
 
+func TestSourceConcernProjectDomainTokensPreserveSemanticQueryTokens(t *testing.T) {
+	const query = "client call calls"
+	semanticTokens := contextSourceConcernSemanticQueryTokens(query)
+	wantSemanticTokens := map[string]bool{"client": true}
+	fact := scan.AgentContextFactRecord{
+		ID: "client", Project: "libraries/client", Kind: "api_contract",
+		Name: "JobClient", Qualified: "example.JobClient",
+		File: "JobClient.java", Confidence: "EXACT",
+	}
+	concern := newContextConcern(
+		contextConcernHTTPContract,
+		"libraries/client",
+		true,
+		[]string{fact.ID},
+		"requested client contract",
+	)
+	scoreBefore := contextSourceConcernFactScoreWithTokensAndIndex(
+		fact,
+		concern,
+		query,
+		semanticTokens,
+		nil,
+		scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{fact}},
+	)
+
+	domainTokens := contextSourceConcernProjectDomainQueryTokens(
+		semanticTokens,
+		map[string][]string{"libraries/client": {"client", "libraries/client"}},
+		map[string]bool{"libraries/client": true},
+	)
+	if len(domainTokens) != 0 {
+		t.Fatalf("project domain tokens = %#v, want empty", domainTokens)
+	}
+	if !reflect.DeepEqual(semanticTokens, wantSemanticTokens) {
+		t.Fatalf("semantic query tokens mutated to %#v, want %#v", semanticTokens, wantSemanticTokens)
+	}
+	scoreAfter := contextSourceConcernFactScoreWithTokensAndIndex(
+		fact,
+		concern,
+		query,
+		semanticTokens,
+		nil,
+		scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{fact}},
+	)
+	if scoreAfter != scoreBefore {
+		t.Fatalf("source concern score changed from %d to %d", scoreBefore, scoreAfter)
+	}
+}
+
 func jobClientResilienceSourceFacts() []scan.AgentContextFactRecord {
 	return []scan.AgentContextFactRecord{
 		{
