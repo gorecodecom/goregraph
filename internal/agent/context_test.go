@@ -3212,6 +3212,9 @@ func TestBuildContextPublishesReachableConcretePersistence(t *testing.T) {
 	foundPersistence := false
 	for _, location := range pack.Persistence {
 		foundPersistence = foundPersistence || location.ID == "catalog-delete-persistence"
+		if location.ID == "catalog-generic-persistence" {
+			t.Errorf("generic persistence leaked into published locations: %#v", pack.Persistence)
+		}
 	}
 	if !foundPersistence {
 		t.Fatalf("reachable concrete persistence missing: %#v", pack.Persistence)
@@ -3221,6 +3224,9 @@ func TestBuildContextPublishesReachableConcretePersistence(t *testing.T) {
 		foundSource = foundSource ||
 			section.Path == "CatalogRepository.go" &&
 				strings.Contains(section.Content, "deleteById")
+		if section.Path == "GenericCatalogRepository.go" {
+			t.Errorf("generic persistence leaked into source sections: %#v", pack.SourceSections)
+		}
 	}
 	if !foundSource {
 		t.Fatalf(
@@ -3228,6 +3234,11 @@ func TestBuildContextPublishesReachableConcretePersistence(t *testing.T) {
 			pack.SourceSections,
 			pack.SourceOmissions,
 		)
+	}
+	for _, file := range pack.Files {
+		if file.Path == "GenericCatalogRepository.go" {
+			t.Errorf("generic persistence leaked into published files: %#v", pack.Files)
+		}
 	}
 }
 

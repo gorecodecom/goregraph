@@ -207,16 +207,45 @@ func planContextConcerns(
 		contextConcernEdgeCandidates(reachableEdges, contextConcernPersistence)...,
 	)
 	persistenceCandidates = orderedContextConcernIDs(persistenceCandidates)
-	if len(persistenceCandidates) > 0 ||
-		!scopedConcernKinds[contextConcernPersistence] &&
-			contextQueryRequestsConcern(query, contextConcernPersistence) {
-		concerns = append(concerns, newContextConcern(
-			contextConcernPersistence,
-			"",
-			true,
-			persistenceCandidates,
-			"requested or reachable persistence evidence",
-		))
+	if scopedConcernKinds[contextConcernPersistence] {
+		for concernIndex := range concerns {
+			if concerns[concernIndex].kind != contextConcernPersistence ||
+				concerns[concernIndex].project == "" {
+				continue
+			}
+			aligned := contextAlignedReachablePersistenceCandidates(
+				queryTokens,
+				requestedActions,
+				concerns[concernIndex].project,
+				persistenceCandidates,
+				index.Facts,
+			)
+			concerns[concernIndex].candidateFactIDs = orderedContextConcernIDs(append(
+				concerns[concernIndex].candidateFactIDs,
+				aligned...,
+			))
+		}
+	} else {
+		if contextQueryRequestsConcern(query, contextConcernPersistence) &&
+			len(requestedActions) > 0 {
+			persistenceCandidates = contextAlignedReachablePersistenceCandidates(
+				queryTokens,
+				requestedActions,
+				"",
+				persistenceCandidates,
+				index.Facts,
+			)
+		}
+		if contextQueryRequestsConcern(query, contextConcernPersistence) ||
+			len(persistenceCandidates) > 0 {
+			concerns = append(concerns, newContextConcern(
+				contextConcernPersistence,
+				"",
+				true,
+				persistenceCandidates,
+				"requested or reachable persistence evidence",
+			))
+		}
 	}
 
 	if !scopedConcernKinds[contextConcernTests] && contextQueryRequestsConcern(query, contextConcernTests) {
@@ -233,6 +262,52 @@ func planContextConcerns(
 		return contextConcernLess(concerns[i], concerns[j])
 	})
 	return concerns
+}
+
+func contextAlignedReachablePersistenceCandidates(
+	queryTokens map[string]bool,
+	requestedActions map[string]bool,
+	project string,
+	candidateFactIDs []string,
+	facts []scan.AgentContextFactRecord,
+) []string {
+	candidates := make(map[string]bool, len(candidateFactIDs))
+	for _, factID := range candidateFactIDs {
+		candidates[factID] = true
+	}
+	domainTokens := make(map[string]bool)
+	for token := range contextConcernDomainQueryTokens(queryTokens) {
+		domainTokens[token] = true
+	}
+	for token := range contextTokenSet(project) {
+		delete(domainTokens, token)
+	}
+	result := []string{}
+	for _, fact := range facts {
+		if !candidates[fact.ID] ||
+			project != "" && normalizeContextProject(fact.Project) != project ||
+			contextGenericPersistenceFact(fact) {
+			continue
+		}
+		factActions := contextFactActionFamilies(fact)
+		if len(requestedActions) > 0 &&
+			!contextActionFamiliesOverlap(requestedActions, factActions) {
+			continue
+		}
+		factTokens := contextExpandedTokenSet(strings.Join([]string{
+			fact.Search,
+			fact.Name,
+			fact.Qualified,
+			fact.Summary,
+		}, " "))
+		for token := range domainTokens {
+			if factTokens[token] {
+				result = append(result, fact.ID)
+				break
+			}
+		}
+	}
+	return orderedContextConcernIDs(result)
 }
 
 func contextConcernLess(left, right contextConcern) bool {

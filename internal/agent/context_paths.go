@@ -374,10 +374,13 @@ func contextPathAddsBoundedRoleEvidence(
 	concerns []contextConcern,
 ) bool {
 	persistenceRequired := false
+	persistenceCandidates := make(map[string]bool)
 	for _, concern := range concerns {
 		if concern.required && concern.kind == contextConcernPersistence {
 			persistenceRequired = true
-			break
+			for _, factID := range concern.candidateFactIDs {
+				persistenceCandidates[factID] = true
+			}
 		}
 	}
 	if !persistenceRequired {
@@ -395,7 +398,9 @@ func contextPathAddsBoundedRoleEvidence(
 	for _, pathEdge := range path.edges {
 		candidateID := pathEdge.ToFactID
 		if selectedFacts[candidateID] ||
-			normalizedContextConcernKind(factByID[candidateID].Kind) != contextConcernPersistence {
+			normalizedContextConcernKind(factByID[candidateID].Kind) != contextConcernPersistence ||
+			!persistenceCandidates[candidateID] ||
+			contextGenericPersistenceFact(factByID[candidateID]) {
 			continue
 		}
 		for siblingID := range boundedRoleEvidence[pathEdge.FromFactID] {

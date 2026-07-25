@@ -395,8 +395,10 @@ func TestExpandContextEvidenceConcernsProjectsRequestedClientEvidenceFromSelecte
 			Name: "JobClientConfig", File: "JobClientConfig.java", Confidence: "EXACT",
 		},
 		{
-			ID: "client-auth", Project: clientProject, Kind: "authentication",
-			Name: "JobClientAuth", File: "JobClientAuth.java", Confidence: "EXACT",
+			ID: "client-auth", Project: clientProject, Kind: "symbol",
+			Name: "JobClientAuth", Qualified: "example.JobClientAuth",
+			File: "JobClientAuth.java", Confidence: "EXACT",
+			Search: "JobClientAuth Job Client Auth example.JobClientAuth example JobClientAuth.java java",
 		},
 		{
 			ID: "client-retry", Project: clientProject, Kind: "resilience",
@@ -414,13 +416,24 @@ func TestExpandContextEvidenceConcernsProjectsRequestedClientEvidenceFromSelecte
 			ID: "unrelated-config", Project: "libraries/audit-client", Kind: "configuration",
 			Name: "AuditClientConfig", File: "AuditClientConfig.java", Confidence: "EXACT",
 		},
+		{
+			ID: "same-project-audit-config", Project: clientProject, Kind: "configuration",
+			Name: "AuditClientConfig", File: "InternalAuditClientConfig.java", Confidence: "EXACT",
+		},
+		{
+			ID: "same-project-audit-auth", Project: clientProject, Kind: "authentication",
+			Name: "AuditClientAuth", File: "InternalAuditClientAuth.java", Confidence: "EXACT",
+		},
+		{
+			ID: "same-project-audit-retry", Project: clientProject, Kind: "resilience",
+			Name: "AuditClientRetry", File: "InternalAuditClientRetry.java", Confidence: "EXACT",
+		},
 	}}
 	concerns := []contextConcern{
 		newContextConcern(contextConcernAuth, "", true, nil, "requested authentication"),
 		newContextConcern(contextConcernConfiguration, "", true, nil, "requested configuration"),
 		newContextConcern(contextConcernResilience, "", true, nil, "requested retry policy"),
 	}
-
 	got := expandContextEvidenceConcerns(pack, index, concerns)
 	assertCandidates := func(key string, required []string, rejected []string) {
 		t.Helper()
@@ -443,18 +456,75 @@ func TestExpandContextEvidenceConcernsProjectsRequestedClientEvidenceFromSelecte
 	assertCandidates(
 		contextConcernAuth+":"+clientProject+"#client_transport",
 		[]string{"client-auth"},
-		[]string{"provider-auth"},
+		[]string{"provider-auth", "same-project-audit-auth"},
 	)
 	assertCandidates(
 		contextConcernConfiguration+":"+clientProject+"#client_configuration",
 		[]string{"client-config"},
-		[]string{"unrelated-config"},
+		[]string{"unrelated-config", "same-project-audit-config"},
 	)
 	assertCandidates(
 		contextConcernResilience+":"+clientProject+"#retry_policy",
 		[]string{"client-retry"},
-		[]string{"provider-retry"},
+		[]string{"provider-retry", "same-project-audit-retry"},
 	)
+}
+
+func TestExpandContextEvidenceConcernsBindsExistingSelectedClientPublicConcern(t *testing.T) {
+	const clientProject = "libraries/job-client"
+	pack := ContextPack{
+		Query:          "Provide authentication for the selected job client contract.",
+		selectionQuery: "Provide authentication for the selected job client contract.",
+		Contracts: []ContextLocation{{
+			ID: "job-contract", Project: clientProject, Kind: "api_contract",
+		}},
+		Concerns: []ContextConcern{{
+			Kind: contextConcernAuth, Project: clientProject,
+		}},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "job-contract", Project: clientProject, Kind: "api_contract",
+			Name: "GET /internal/jobs", Qualified: "JobClient.listJobsForRemoval",
+			File: "JobClient.java", Confidence: "EXACT",
+		},
+		{
+			ID: "client-auth", Project: clientProject, Kind: "symbol",
+			Name: "JobClientAuth", Qualified: "example.JobClientAuth",
+			File: "JobClientAuth.java", Confidence: "EXACT",
+			Search: "JobClientAuth Job Client Auth example.JobClientAuth example JobClientAuth.java java",
+		},
+		{
+			ID: "same-project-audit-auth", Project: clientProject, Kind: "symbol",
+			Name: "InternalAuditClientAuth", Qualified: "example.InternalAuditClientAuth",
+			File: "InternalAuditClientAuth.java", Confidence: "EXACT",
+			Search: "InternalAuditClientAuth Internal Audit Client Auth example.InternalAuditClientAuth example InternalAuditClientAuth.java java",
+		},
+	}}
+	concerns := []contextConcern{
+		newContextConcern(
+			contextConcernAuth,
+			clientProject,
+			true,
+			nil,
+			"requested selected client authentication evidence",
+		),
+	}
+
+	got := expandContextEvidenceConcerns(pack, index, concerns)
+	concern, ok := findContextConcern(
+		got,
+		contextConcernAuth+":"+clientProject+"#client_transport",
+	)
+	if !ok {
+		t.Fatalf("projected client authentication concern missing from %#v", got)
+	}
+	if !slices.Contains(concern.candidateFactIDs, "client-auth") {
+		t.Errorf("client authentication candidates = %v, want client-auth", concern.candidateFactIDs)
+	}
+	if slices.Contains(concern.candidateFactIDs, "same-project-audit-auth") {
+		t.Errorf("client authentication candidates contain Audit decoy: %v", concern.candidateFactIDs)
+	}
 }
 
 func TestContextSourceOptionsSelectProjectedClientEvidenceAndReportBudgetOmissions(t *testing.T) {
@@ -499,6 +569,26 @@ final class JobServerRetry {
 
 @ConfigurationProperties
 final class AuditClientConfig {}
+`)
+	writeSourceFile(t, root, "InternalAuditClientConfig.java", `package example;
+
+@ConfigurationProperties
+final class InternalAuditClientConfig {}
+`)
+	writeSourceFile(t, root, "InternalAuditClientAuth.java", `package example;
+
+final class InternalAuditClientAuth {
+  void apply() {
+    headers.setBasicAuth(user, password);
+  }
+}
+`)
+	writeSourceFile(t, root, "InternalAuditClientRetry.java", `package example;
+
+final class InternalAuditClientRetry {
+  @Retryable(maxAttempts = 3)
+  void execute() {}
+}
 `)
 	pack := ContextPack{
 		Schema:         1,
@@ -550,6 +640,21 @@ final class AuditClientConfig {}
 				Name: "AuditClientConfig", File: "AuditClientConfig.java",
 				Line: 4, EndLine: 4, Confidence: "EXACT",
 			},
+			{
+				ID: "same-project-audit-config", Project: clientProject, Kind: "configuration",
+				Name: "InternalAuditClientConfig", File: "InternalAuditClientConfig.java",
+				Line: 4, EndLine: 4, Confidence: "EXACT",
+			},
+			{
+				ID: "same-project-audit-auth", Project: clientProject, Kind: "authentication",
+				Name: "apply", Qualified: "InternalAuditClientAuth.apply",
+				File: "InternalAuditClientAuth.java", Line: 4, EndLine: 6, Confidence: "EXACT",
+			},
+			{
+				ID: "same-project-audit-retry", Project: clientProject, Kind: "resilience",
+				Name: "execute", Qualified: "InternalAuditClientRetry.execute",
+				File: "InternalAuditClientRetry.java", Line: 4, EndLine: 5, Confidence: "EXACT",
+			},
 		}},
 	}
 
@@ -582,9 +687,18 @@ final class AuditClientConfig {}
 				t.Errorf("client source %q missing from published files %#v", path, got.Files)
 			}
 		}
-		for _, path := range []string{"JobServerRetry.java", "AuditClientConfig.java"} {
+		for _, path := range []string{
+			"JobServerRetry.java",
+			"AuditClientConfig.java",
+			"InternalAuditClientConfig.java",
+			"InternalAuditClientAuth.java",
+			"InternalAuditClientRetry.java",
+		} {
 			if paths[path] {
 				t.Errorf("decoy source %q selected: %#v", path, got.SourceSections)
+			}
+			if publishedPaths[path] {
+				t.Errorf("decoy source %q published: %#v", path, got.Files)
 			}
 		}
 	})
@@ -621,6 +735,126 @@ final class AuditClientConfig {}
 			}
 		}
 	})
+}
+
+func TestContextSourceOptionsExposeMissingSelectedClientAuthentication(t *testing.T) {
+	const clientProject = "libraries/job-client"
+	root := t.TempDir()
+	writeSourceFile(t, root, "JobClient.java", `package example;
+
+interface JobClient {
+  void listJobsForRemoval();
+}
+`)
+	writeSourceFile(t, root, "JobServerAuth.java", `package example;
+
+final class JobServerAuth {
+  SecurityFilterChain securityFilterChain() {
+    return http.authenticated();
+  }
+}
+`)
+	writeSourceFile(t, root, "InternalAuditClientAuth.java", `package example;
+
+final class InternalAuditClientAuth {
+  void apply() {
+    headers.setBasicAuth(user, password);
+  }
+}
+`)
+	writeSourceFile(t, root, "InternalAuditClientConfig.java", `package example;
+
+@ConfigurationProperties
+final class InternalAuditClientConfig {}
+`)
+	writeSourceFile(t, root, "InternalAuditClientRetry.java", `package example;
+
+final class InternalAuditClientRetry {
+  @Retryable(maxAttempts = 3)
+  void execute() {}
+}
+`)
+	pack := ContextPack{
+		Schema:         1,
+		Query:          "Provide authentication for the selected job client contract.",
+		selectionQuery: "Provide authentication for the selected job client contract.",
+		Confidence:     "EXACT",
+		BudgetTokens:   DefaultContextBudgetTokens,
+		Concerns: []ContextConcern{{
+			Kind: contextConcernAuth, Project: "services/jobs", Covered: true,
+		}},
+		Contracts: []ContextLocation{{
+			ID: "job-contract", Project: clientProject, Kind: "api_contract",
+			File: "JobClient.java", Line: 3, EndLine: 5,
+		}},
+		selectedSourceFactIDs: []string{"job-contract", "provider-auth"},
+	}
+	loaded := loadedContextIndex{
+		ScopeRoot: root,
+		Index: scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "job-contract", Project: clientProject, Kind: "api_contract",
+				Name: "GET /internal/jobs", Qualified: "JobClient.listJobsForRemoval",
+				File: "JobClient.java", Line: 3, EndLine: 5, Confidence: "EXACT",
+			},
+			{
+				ID: "provider-auth", Project: "services/jobs", Kind: "authentication",
+				Name: "securityFilterChain", Qualified: "JobServerAuth.securityFilterChain",
+				File: "JobServerAuth.java", Line: 3, EndLine: 7, Confidence: "EXACT",
+			},
+			{
+				ID: "same-project-audit-auth", Project: clientProject, Kind: "authentication",
+				Name: "apply", Qualified: "InternalAuditClientAuth.apply",
+				File: "InternalAuditClientAuth.java", Line: 4, EndLine: 6, Confidence: "EXACT",
+			},
+			{
+				ID: "same-project-audit-config", Project: clientProject, Kind: "configuration",
+				Name: "InternalAuditClientConfig", File: "InternalAuditClientConfig.java",
+				Line: 4, EndLine: 4, Confidence: "EXACT",
+			},
+			{
+				ID: "same-project-audit-retry", Project: clientProject, Kind: "resilience",
+				Name: "execute", Qualified: "InternalAuditClientRetry.execute",
+				File: "InternalAuditClientRetry.java", Line: 4, EndLine: 5, Confidence: "EXACT",
+			},
+		}},
+	}
+
+	got, err := attachContextSource(pack, loaded, ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	covered := make(map[string]bool, len(got.Concerns))
+	for _, concern := range got.Concerns {
+		covered[contextPublicConcernKey(concern)] = concern.Covered
+	}
+	if !covered[contextConcernAuth+":services/jobs"] {
+		t.Fatalf("provider authentication was not covered: %#v", got.Concerns)
+	}
+	clientKey := contextConcernAuth + ":" + clientProject
+	if clientCovered, exists := covered[clientKey]; !exists || clientCovered {
+		t.Fatalf("missing selected-client authentication = %v/%v in %#v", clientCovered, exists, got.Concerns)
+	}
+	foundClientOmission := false
+	for _, omission := range got.SourceOmissions {
+		foundClientOmission = foundClientOmission ||
+			omission.Project == clientProject &&
+				strings.Contains(omission.Reason, "client transport authentication")
+	}
+	if !foundClientOmission {
+		t.Fatalf("selected-client authentication omission missing: %#v", got.SourceOmissions)
+	}
+	for _, section := range got.SourceSections {
+		if strings.Contains(section.Path, "Audit") {
+			t.Errorf("same-project Audit evidence covered the selected client: %#v", got.SourceSections)
+		}
+	}
+	if got.SourceCoverage != "partial" {
+		t.Fatalf("missing selected-client authentication coverage = %q, want partial", got.SourceCoverage)
+	}
 }
 
 func TestRecoveryFacetCandidatesRequireRecoveryEvidence(t *testing.T) {
@@ -983,7 +1217,7 @@ func TestNewContextEvidenceConcernKeepsNonProjectedFacetKey(t *testing.T) {
 		"configuration",
 	)
 
-	got := newContextEvidenceConcern(
+	got := newExpandedContextEvidenceConcern(
 		base,
 		"binding",
 		base.candidateFactIDs,
@@ -992,6 +1226,26 @@ func TestNewContextEvidenceConcernKeepsNonProjectedFacetKey(t *testing.T) {
 	const want = contextConcernConfiguration + ":libraries/job-client#binding"
 	if got.key != want || got.publicKey != contextConcernConfiguration+":libraries/job-client" {
 		t.Fatalf("non-projected facet key = %q / %q, want %q", got.key, got.publicKey, want)
+	}
+
+	projected := base
+	projected.publicKey = contextConcernConfiguration
+	projectedGot := newExpandedContextEvidenceConcern(
+		projected,
+		"client_configuration",
+		projected.candidateFactIDs,
+		"client configuration",
+	)
+	const projectedWant = contextConcernConfiguration + ":libraries/job-client#client_configuration"
+	if projectedGot.key != projectedWant ||
+		projectedGot.publicKey != contextConcernConfiguration {
+		t.Fatalf(
+			"projected facet key = %q / %q, want %q / %q",
+			projectedGot.key,
+			projectedGot.publicKey,
+			projectedWant,
+			contextConcernConfiguration,
+		)
 	}
 }
 

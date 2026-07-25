@@ -46,6 +46,7 @@ func selectContextSourceOptions(
 	loaded loadedContextIndex,
 	request ContextRequest,
 ) (ContextPack, error) {
+	pack = contextPackWithSelectedClientPublicConcerns(pack)
 	concerns := contextSourceConcerns(pack, loaded.Index)
 	requestedModelIDs := contextRequestedDomainModelIDsFromConcerns(
 		pack,
@@ -456,6 +457,8 @@ func expandContextEvidenceConcernsWithProfile(
 		concerns,
 		index,
 		contractProjects,
+		contractFactIDs,
+		pack.Concerns,
 		requestedActions,
 		query,
 	)
@@ -559,17 +562,24 @@ func expandContextEvidenceConcernsWithProfile(
 				if facet == "recovery" {
 					reason = "client recovery behavior"
 				}
+				facetCandidates := contextEvidenceFacetCandidateIDs(
+					index,
+					candidates,
+					concern.project,
+					contextConcernResilience,
+					facet,
+					requestedActions,
+				)
+				if concern.key != concern.publicKey {
+					facetCandidates = contextConcernCandidateIntersection(
+						facetCandidates,
+						candidates,
+					)
+				}
 				result = append(result, newExpandedContextEvidenceConcern(
 					concern,
 					facet,
-					contextEvidenceFacetCandidateIDs(
-						index,
-						candidates,
-						concern.project,
-						contextConcernResilience,
-						facet,
-						requestedActions,
-					),
+					facetCandidates,
 					reason,
 				))
 				added = true
@@ -683,6 +693,8 @@ func contextProjectRequestedContractConcerns(
 	concerns []contextConcern,
 	index scan.AgentContextIndexRecord,
 	contractProjects map[string]bool,
+	contractFactIDs map[string][]string,
+	publicConcerns []ContextConcern,
 	requestedActions map[string]bool,
 	query string,
 ) []contextConcern {
@@ -704,7 +716,17 @@ func contextProjectRequestedContractConcerns(
 			(concern.kind == contextConcernAuth ||
 				concern.kind == contextConcernConfiguration ||
 				concern.kind == contextConcernResilience) {
+			concern.candidateFactIDs = contextContractProjectConcernCandidateIDs(
+				index,
+				concern.candidateFactIDs,
+				concern.project,
+				concern.kind,
+				contractFactIDs[concern.project],
+				requestedActions,
+			)
 			projectedKinds[concern.kind+"\x00"+concern.project] = true
+			result = append(result, concern)
+			continue
 		}
 		if concern.project != "" ||
 			concern.kind != contextConcernAuth &&
@@ -723,6 +745,7 @@ func contextProjectRequestedContractConcerns(
 				concern.candidateFactIDs,
 				project,
 				concern.kind,
+				contractFactIDs[project],
 				requestedActions,
 			)
 			result = append(result, projected)
@@ -751,11 +774,16 @@ func contextProjectRequestedContractConcerns(
 					nil,
 					project,
 					kind,
+					contractFactIDs[project],
 					requestedActions,
 				),
 				"requested selected client "+strings.ReplaceAll(kind, "_", " ")+" evidence",
 			)
-			concern.publicKey = kind
+			concern.publicKey = contextSelectedClientPublicConcernKey(
+				publicConcerns,
+				kind,
+				project,
+			)
 			result = append(result, concern)
 			projectedKinds[key] = true
 		}
@@ -763,16 +791,122 @@ func contextProjectRequestedContractConcerns(
 	return result
 }
 
+func contextPackWithSelectedClientPublicConcerns(pack ContextPack) ContextPack {
+	projects := make(map[string]bool)
+	for _, contract := range pack.Contracts {
+		if project := normalizeContextProject(contract.Project); project != "" {
+			projects[project] = true
+		}
+	}
+	orderedProjects := make([]string, 0, len(projects))
+	for project := range projects {
+		orderedProjects = append(orderedProjects, project)
+	}
+	sort.Strings(orderedProjects)
+	if len(orderedProjects) == 0 {
+		return pack
+	}
+
+	result := cloneContextPack(pack)
+	existing := make(map[string]bool, len(result.Concerns))
+	for _, concern := range result.Concerns {
+		existing[contextPublicConcernKey(concern)] = true
+	}
+	for _, kind := range []string{
+		contextConcernAuth,
+		contextConcernConfiguration,
+		contextConcernResilience,
+	} {
+		if !contextQueryRequestsConcern(contextSelectionQuery(pack), kind) {
+			continue
+		}
+		for _, project := range orderedProjects {
+			key := kind + ":" + project
+			if existing[key] || existing[kind] ||
+				len(result.Concerns) >= maximumPublicContextConcerns {
+				continue
+			}
+			result.Concerns = append(result.Concerns, ContextConcern{
+				Kind:    kind,
+				Project: project,
+				Reason:  "requested selected client " + strings.ReplaceAll(kind, "_", " ") + " evidence",
+			})
+			existing[key] = true
+		}
+	}
+	return result
+}
+
+func contextSelectedClientPublicConcernKey(
+	concerns []ContextConcern,
+	kind string,
+	project string,
+) string {
+	projectKey := kind + ":" + project
+	fallbacks := []string{}
+	for _, concern := range concerns {
+		if strings.ToLower(strings.TrimSpace(concern.Kind)) != kind {
+			continue
+		}
+		key := contextPublicConcernKey(concern)
+		switch key {
+		case projectKey:
+			return projectKey
+		case kind:
+			return kind
+		default:
+			fallbacks = append(fallbacks, key)
+		}
+	}
+	sort.Strings(fallbacks)
+	if len(fallbacks) > 0 {
+		return fallbacks[0]
+	}
+	return kind
+}
+
 func contextContractProjectConcernCandidateIDs(
 	index scan.AgentContextIndexRecord,
 	candidateFactIDs []string,
 	project string,
 	kind string,
+	contractFactIDs []string,
 	requestedActions map[string]bool,
 ) []string {
 	candidateSet := make(map[string]bool, len(candidateFactIDs))
 	for _, factID := range candidateFactIDs {
 		candidateSet[factID] = true
+	}
+	contractIDs := make(map[string]bool, len(contractFactIDs))
+	contractTokens := make(map[string]bool)
+	for _, factID := range contractFactIDs {
+		contractIDs[factID] = true
+	}
+	for _, fact := range index.Facts {
+		if !contractIDs[fact.ID] {
+			continue
+		}
+		for token := range contextExpandedTokenSet(strings.Join([]string{
+			fact.Name,
+			fact.Qualified,
+			fact.HTTPMethod,
+			fact.Path,
+			fact.Search,
+			fact.Summary,
+		}, " ")) {
+			if contextContractSupportIdentityToken(token) {
+				contractTokens[token] = true
+			}
+		}
+	}
+	contractNeighbors := make(map[string]bool)
+	for _, edge := range index.Edges {
+		switch {
+		case contractIDs[edge.FromFactID]:
+			contractNeighbors[edge.ToFactID] = true
+		case contractIDs[edge.ToFactID]:
+			contractNeighbors[edge.FromFactID] = true
+		}
 	}
 	candidates := []string{}
 	for _, fact := range index.Facts {
@@ -785,6 +919,10 @@ func contextContractProjectConcernCandidateIDs(
 			len(factActions) > 0 &&
 			!contextActionFamiliesOverlap(requestedActions, factActions) &&
 			contextActionFamiliesHaveMutation(factActions) {
+			continue
+		}
+		if !contractNeighbors[fact.ID] &&
+			contextContractSupportIdentityMatches(fact, contractTokens) < 2 {
 			continue
 		}
 		value := strings.Join([]string{
@@ -800,6 +938,51 @@ func contextContractProjectConcernCandidateIDs(
 		}
 	}
 	return orderedContextConcernIDs(candidates)
+}
+
+func contextContractSupportIdentityToken(token string) bool {
+	switch token {
+	case "api", "call", "calls", "client_declarative", "contract",
+		"declarative", "delete", "endpoint", "feign", "get", "head",
+		"http", "https", "internal", "mapping", "options", "patch",
+		"post", "put", "request", "response", "route", "spring", "trace":
+		return false
+	default:
+		return true
+	}
+}
+
+func contextConcernCandidateIntersection(left, right []string) []string {
+	allowed := make(map[string]bool, len(right))
+	for _, factID := range right {
+		allowed[factID] = true
+	}
+	result := []string{}
+	for _, factID := range left {
+		if allowed[factID] {
+			result = append(result, factID)
+		}
+	}
+	return orderedContextConcernIDs(result)
+}
+
+func contextContractSupportIdentityMatches(
+	fact scan.AgentContextFactRecord,
+	contractTokens map[string]bool,
+) int {
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.Search,
+		fact.Summary,
+	}, " "))
+	matches := 0
+	for token := range contractTokens {
+		if factTokens[token] {
+			matches++
+		}
+	}
+	return matches
 }
 
 func contextEvidenceFacetCandidateIDs(
