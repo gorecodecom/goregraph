@@ -193,9 +193,11 @@ func contextSourceCandidatesForConcernsWithModels(
 		factByID[fact.ID] = fact
 	}
 	aliases := contextProjectAliases(index.Facts, index.Coverage)
-	explicitProjects := contextExplicitProjects(contextSelectionQuery(pack), aliases)
-	domainTokens := contextProjectDomainQueryTokens(
-		contextSelectionQuery(pack),
+	query := contextSelectionQuery(pack)
+	explicitProjects := contextExplicitProjects(query, aliases)
+	semanticQueryTokens := contextSourceConcernSemanticQueryTokens(query)
+	domainTokens := contextSourceConcernProjectDomainQueryTokens(
+		semanticQueryTokens,
 		aliases,
 		explicitProjects,
 	)
@@ -225,10 +227,11 @@ func contextSourceCandidatesForConcernsWithModels(
 		}
 		scoreByFactID := make(map[string]int, len(facts))
 		for _, fact := range facts {
-			scoreByFactID[fact.ID] = contextSourceConcernFactScoreWithIndex(
+			scoreByFactID[fact.ID] = contextSourceConcernFactScoreWithTokensAndIndex(
 				fact,
 				concern,
-				contextSelectionQuery(pack),
+				query,
+				semanticQueryTokens,
 				anchorTokens,
 				index,
 			)
@@ -396,9 +399,27 @@ func contextSourceConcernFactScoreWithIndex(
 	anchorTokens map[string]bool,
 	index scan.AgentContextIndexRecord,
 ) int {
-	score := 10 * contextRetrySemanticScore(fact, query)
+	return contextSourceConcernFactScoreWithTokensAndIndex(
+		fact,
+		concern,
+		query,
+		contextSourceConcernSemanticQueryTokens(query),
+		anchorTokens,
+		index,
+	)
+}
+
+func contextSourceConcernFactScoreWithTokensAndIndex(
+	fact scan.AgentContextFactRecord,
+	concern contextConcern,
+	query string,
+	semanticQueryTokens map[string]bool,
+	anchorTokens map[string]bool,
+	index scan.AgentContextIndexRecord,
+) int {
+	score := 10 * contextSourceConcernSemanticMatchCount(fact, semanticQueryTokens)
 	domainTokens := make(map[string]bool)
-	for token := range contextConcernDomainQueryTokens(contextExpandedTokenSet(query)) {
+	for token := range contextConcernDomainQueryTokens(semanticQueryTokens) {
 		domainTokens[token] = true
 	}
 	for token := range contextTokenSet(concern.project) {
@@ -468,6 +489,49 @@ func contextSourceConcernFactScoreWithIndex(
 		}
 	}
 	return score
+}
+
+func contextSourceConcernSemanticQueryTokens(query string) map[string]bool {
+	tokens := contextExpandedTokenSet(query)
+	delete(tokens, "call")
+	delete(tokens, "calls")
+	return tokens
+}
+
+func contextSourceConcernProjectDomainQueryTokens(
+	queryTokens map[string]bool,
+	aliases map[string][]string,
+	explicitProjects map[string]bool,
+) map[string]bool {
+	result := contextConcernDomainQueryTokens(queryTokens)
+	for project := range explicitProjects {
+		for _, alias := range aliases[project] {
+			for token := range contextExpandedTokenSet(alias) {
+				delete(result, token)
+			}
+		}
+	}
+	return result
+}
+
+func contextSourceConcernSemanticMatchCount(
+	fact scan.AgentContextFactRecord,
+	queryTokens map[string]bool,
+) int {
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.Search,
+		fact.HTTPMethod,
+		fact.Path,
+	}, " "))
+	matches := 0
+	for token := range queryTokens {
+		if factTokens[token] {
+			matches++
+		}
+	}
+	return matches
 }
 
 func contextLocationIDs(locations []ContextLocation) map[string]bool {

@@ -910,6 +910,164 @@ func TestSourceConcernScoreDoesNotTreatSearchTextAsAnchorIdentity(t *testing.T) 
 	}
 }
 
+func TestSourceConcernScoreIgnoresGenericMissingCallGuard(t *testing.T) {
+	facts := jobClientResilienceSourceFacts()
+	concern := newContextConcern(
+		contextConcernResilience,
+		"libraries/job-client",
+		true,
+		[]string{"client-retry", "client-call"},
+		"requested retry policy",
+	)
+	const query = "Provide adjacent client retry evidence."
+	for _, candidateQuery := range []string{
+		query,
+		query + " Do not invent the missing call or route.",
+	} {
+		if got := highestSourceConcernFact(facts, concern, candidateQuery, nil); got.ID != "client-retry" {
+			t.Fatalf("highest resilience fact for %q = %q, want client-retry", candidateQuery, got.ID)
+		}
+	}
+}
+
+func TestSourceConcernScoreKeepsEnglishGermanRetryRangeAligned(t *testing.T) {
+	facts := jobClientResilienceSourceFacts()
+	concern := newContextConcern(
+		contextConcernResilience,
+		"libraries/job-client",
+		true,
+		[]string{"client-retry", "client-call"},
+		"requested retry policy",
+	)
+	const source = `package example;
+
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
+
+final class JobClientRetry {
+  @Retryable(retryFor = JobClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 100))
+  <T> T execute(JobClientCall<T> call) {
+    return call.invoke();
+  }
+}
+
+interface JobClientCall<T> {
+  T invoke();
+}
+
+final class JobClientException extends RuntimeException {}
+`
+	queries := map[string]string{
+		"English": "Plan the smallest production change that removes jobs when a catalog item is deleted. Show the current public deletion path, prove that the future job deletion contract is absent, and provide adjacent client configuration, authentication, retry, provider persistence, side-effect, and test evidence. Do not invent the missing call or route.",
+		"German":  "Plane die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden. Zeige den aktuellen öffentlichen Löschpfad, belege das Fehlen des zukünftigen Aufgaben-Löschvertrags und liefere angrenzende Belege zu Client-Konfiguration, Authentifizierung, Retry, Provider-Persistenz, Nebenwirkungen und Tests. Erfinde weder den fehlenden Aufruf noch die fehlende Route.",
+	}
+	index := scan.AgentContextIndexRecord{Facts: append(
+		slices.Clone(facts),
+		scan.AgentContextFactRecord{ID: "catalog", Project: "services/catalog"},
+		scan.AgentContextFactRecord{ID: "jobs", Project: "services/jobs"},
+	)}
+	for language, query := range queries {
+		t.Run(language, func(t *testing.T) {
+			candidates := contextSourceCandidatesForConcerns(
+				ContextPack{Query: query, selectionQuery: query},
+				index,
+				[]contextConcern{concern},
+			)
+			if len(candidates) != 1 || candidates[0].FactID != "client-retry" {
+				t.Fatalf("resilience source candidates = %#v, want client-retry", candidates)
+			}
+			section, err := renderSourceCandidate(
+				candidates[0],
+				sourceFile{Path: candidates[0].Path, Lines: strings.Split(source, "\n")},
+				"declaration_body",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if section.StartLine != 6 || section.EndLine != 11 {
+				t.Fatalf("resilience declaration range = %d-%d, want 6-11", section.StartLine, section.EndLine)
+			}
+		})
+	}
+}
+
+func TestSourceConcernCallAnchorRemainsEffectiveAndRenderable(t *testing.T) {
+	facts := jobClientResilienceSourceFacts()
+	call := facts[1]
+	concern := newContextConcern(
+		contextConcernResilience,
+		"libraries/job-client",
+		true,
+		[]string{call.ID},
+		"requested retry policy",
+	)
+	const query = "Provide resilience evidence."
+	unanchoredScore := contextSourceConcernFactScore(call, concern, query, nil)
+	anchoredScore := contextSourceConcernFactScore(call, concern, query, map[string]bool{"call": true})
+	if anchoredScore <= unanchoredScore {
+		t.Fatalf("call anchor score = %d, want greater than %d", anchoredScore, unanchoredScore)
+	}
+
+	const source = `final class JobClientRetry {}
+
+interface JobClientCall<T> {
+  T invoke();
+}`
+	section, err := renderSourceCandidate(
+		sourceCandidate{
+			FactID: call.ID, FactIDs: []string{call.ID},
+			Project: call.Project, Path: call.File,
+			StartLine: 3, EndLine: 5,
+			Kind: call.Kind, Name: call.Name, Qualified: call.Qualified,
+		},
+		sourceFile{Path: call.File, Lines: strings.Split(source, "\n")},
+		"declaration_body",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if section.StartLine != 3 || section.EndLine != 5 {
+		t.Fatalf("anchored call declaration range = %d-%d, want 3-5", section.StartLine, section.EndLine)
+	}
+}
+
+func jobClientResilienceSourceFacts() []scan.AgentContextFactRecord {
+	return []scan.AgentContextFactRecord{
+		{
+			ID: "client-retry", Project: "libraries/job-client", Kind: "symbol",
+			Name: "JobClientRetry", Qualified: "example.JobClientRetry",
+			File: "JobClientRetry.java", Line: 6, EndLine: 11, Confidence: "EXACT",
+			Search: "JobClientRetry Job Client Retry example.JobClientRetry",
+		},
+		{
+			ID: "client-call", Project: "libraries/job-client", Kind: "symbol",
+			Name: "JobClientCall", Qualified: "example.JobClientCall",
+			File: "JobClientRetry.java", Line: 13, EndLine: 15, Confidence: "EXACT",
+			Search: "JobClientCall Job Client Call example.JobClientCall",
+		},
+	}
+}
+
+func highestSourceConcernFact(
+	facts []scan.AgentContextFactRecord,
+	concern contextConcern,
+	query string,
+	anchorTokens map[string]bool,
+) scan.AgentContextFactRecord {
+	ranked := slices.Clone(facts)
+	sort.Slice(ranked, func(left, right int) bool {
+		return contextSourceConcernFactLess(
+			ranked[left],
+			ranked[right],
+			concern,
+			query,
+			anchorTokens,
+			scan.AgentContextIndexRecord{Facts: facts},
+		)
+	})
+	return ranked[0]
+}
+
 func TestPublicConfigurationConcernPrefersDomainConfigHolder(t *testing.T) {
 	seed := scan.AgentContextFactRecord{
 		ID: "route", Project: "services/regulations", Kind: "route",
