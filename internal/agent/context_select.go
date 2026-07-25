@@ -470,13 +470,17 @@ func expandContextEvidenceConcernsWithProfile(
 			if contractProjects[concern.project] {
 				candidates := orderedContextConcernIDs(append(
 					append([]string(nil), concern.candidateFactIDs...),
-					contractFactIDs[concern.project]...,
+					contextConcernContractFactIDs(concern, contractFactIDs)...,
 				))
 				result = append(result, newExpandedContextEvidenceConcern(
 					concern,
 					"client_transport",
 					candidates,
-					"client transport authentication",
+					contextContractEvidenceReason(
+						"client transport authentication",
+						concern,
+						factByID,
+					),
 				))
 				added = true
 			}
@@ -502,7 +506,11 @@ func expandContextEvidenceConcernsWithProfile(
 					concern,
 					"client_configuration",
 					concern.candidateFactIDs,
-					"client configuration",
+					contextContractEvidenceReason(
+						"client configuration",
+						concern,
+						factByID,
+					),
 				))
 				continue
 			}
@@ -518,7 +526,7 @@ func expandContextEvidenceConcernsWithProfile(
 				index,
 				orderedContextConcernIDs(append(
 					append([]string(nil), concern.candidateFactIDs...),
-					contractFactIDs[concern.project]...,
+					contextConcernContractFactIDs(concern, contractFactIDs)...,
 				)),
 				concern.project,
 				contextConcernConfiguration,
@@ -547,7 +555,7 @@ func expandContextEvidenceConcernsWithProfile(
 			}
 			candidates := orderedContextConcernIDs(append(
 				append([]string(nil), concern.candidateFactIDs...),
-				contractFactIDs[concern.project]...,
+				contextConcernContractFactIDs(concern, contractFactIDs)...,
 			))
 			added := false
 			for _, facet := range []string{"retry_policy", "recovery"} {
@@ -580,7 +588,7 @@ func expandContextEvidenceConcernsWithProfile(
 					concern,
 					facet,
 					facetCandidates,
-					reason,
+					contextContractEvidenceReason(reason, concern, factByID),
 				))
 				added = true
 			}
@@ -689,6 +697,38 @@ func newExpandedContextEvidenceConcern(
 	return result
 }
 
+func contextConcernContractFactIDs(
+	concern contextConcern,
+	contractFactIDs map[string][]string,
+) []string {
+	if concern.contractFactID != "" {
+		return []string{concern.contractFactID}
+	}
+	return contractFactIDs[concern.project]
+}
+
+func contextContractEvidenceReason(
+	reason string,
+	concern contextConcern,
+	factByID map[string]scan.AgentContextFactRecord,
+) string {
+	if concern.contractFactID == "" {
+		return reason
+	}
+	fact, ok := factByID[concern.contractFactID]
+	if !ok {
+		return reason
+	}
+	owner := contextIdentifierLeaf(contextQualifiedOwner(fact.Qualified))
+	if owner == "" {
+		owner = strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File))
+	}
+	if owner == "" {
+		return reason
+	}
+	return reason + " for " + owner
+}
+
 func contextProjectRequestedContractConcerns(
 	concerns []contextConcern,
 	index scan.AgentContextIndexRecord,
@@ -716,16 +756,16 @@ func contextProjectRequestedContractConcerns(
 			(concern.kind == contextConcernAuth ||
 				concern.kind == contextConcernConfiguration ||
 				concern.kind == contextConcernResilience) {
-			concern.candidateFactIDs = contextContractProjectConcernCandidateIDs(
-				index,
-				concern.candidateFactIDs,
-				concern.project,
-				concern.kind,
-				contractFactIDs[concern.project],
-				requestedActions,
-			)
 			projectedKinds[concern.kind+"\x00"+concern.project] = true
-			result = append(result, concern)
+			result = append(
+				result,
+				contextSelectedContractConcerns(
+					index,
+					concern,
+					contractFactIDs[concern.project],
+					requestedActions,
+				)...,
+			)
 			continue
 		}
 		if concern.project != "" ||
@@ -740,15 +780,15 @@ func contextProjectRequestedContractConcerns(
 			projected.project = project
 			projected.key = concern.kind + ":" + project
 			projected.publicKey = firstNonEmptyContext(concern.publicKey, concern.key)
-			projected.candidateFactIDs = contextContractProjectConcernCandidateIDs(
-				index,
-				concern.candidateFactIDs,
-				project,
-				concern.kind,
-				contractFactIDs[project],
-				requestedActions,
+			result = append(
+				result,
+				contextSelectedContractConcerns(
+					index,
+					projected,
+					contractFactIDs[project],
+					requestedActions,
+				)...,
 			)
-			result = append(result, projected)
 			projectedKinds[concern.kind+"\x00"+project] = true
 		}
 	}
@@ -769,14 +809,7 @@ func contextProjectRequestedContractConcerns(
 				kind,
 				project,
 				true,
-				contextContractProjectConcernCandidateIDs(
-					index,
-					nil,
-					project,
-					kind,
-					contractFactIDs[project],
-					requestedActions,
-				),
+				nil,
 				"requested selected client "+strings.ReplaceAll(kind, "_", " ")+" evidence",
 			)
 			concern.publicKey = contextSelectedClientPublicConcernKey(
@@ -784,9 +817,55 @@ func contextProjectRequestedContractConcerns(
 				kind,
 				project,
 			)
-			result = append(result, concern)
+			result = append(
+				result,
+				contextSelectedContractConcerns(
+					index,
+					concern,
+					contractFactIDs[project],
+					requestedActions,
+				)...,
+			)
 			projectedKinds[key] = true
 		}
+	}
+	return result
+}
+
+func contextSelectedContractConcerns(
+	index scan.AgentContextIndexRecord,
+	base contextConcern,
+	contractFactIDs []string,
+	requestedActions map[string]bool,
+) []contextConcern {
+	contractFactIDs = orderedContextConcernIDs(contractFactIDs)
+	if len(contractFactIDs) == 0 {
+		base.candidateFactIDs = contextContractProjectConcernCandidateIDs(
+			index,
+			base.candidateFactIDs,
+			base.project,
+			base.kind,
+			"",
+			requestedActions,
+		)
+		return []contextConcern{base}
+	}
+	result := make([]contextConcern, 0, len(contractFactIDs))
+	for _, contractFactID := range contractFactIDs {
+		concern := base
+		concern.contractFactID = contractFactID
+		if len(contractFactIDs) > 1 {
+			concern.key = base.key + "#contract:" + contractFactID
+		}
+		concern.candidateFactIDs = contextContractProjectConcernCandidateIDs(
+			index,
+			base.candidateFactIDs,
+			base.project,
+			base.kind,
+			contractFactID,
+			requestedActions,
+		)
+		result = append(result, concern)
 	}
 	return result
 }
@@ -917,29 +996,26 @@ func contextContractProjectConcernCandidateIDs(
 	candidateFactIDs []string,
 	project string,
 	kind string,
-	contractFactIDs []string,
+	contractFactID string,
 	requestedActions map[string]bool,
 ) []string {
 	candidateSet := make(map[string]bool, len(candidateFactIDs))
 	for _, factID := range candidateFactIDs {
 		candidateSet[factID] = true
 	}
-	contractIDs := make(map[string]bool, len(contractFactIDs))
-	for _, factID := range contractFactIDs {
-		contractIDs[factID] = true
-	}
-	contractFacts := make([]scan.AgentContextFactRecord, 0, len(contractFactIDs))
+	var contractFact scan.AgentContextFactRecord
 	for _, fact := range index.Facts {
-		if contractIDs[fact.ID] {
-			contractFacts = append(contractFacts, fact)
+		if fact.ID == contractFactID {
+			contractFact = fact
+			break
 		}
 	}
 	contractNeighbors := make(map[string]bool)
 	for _, edge := range index.Edges {
 		switch {
-		case contractIDs[edge.FromFactID]:
+		case edge.FromFactID == contractFactID:
 			contractNeighbors[edge.ToFactID] = true
-		case contractIDs[edge.ToFactID]:
+		case edge.ToFactID == contractFactID:
 			contractNeighbors[edge.FromFactID] = true
 		}
 	}
@@ -957,7 +1033,7 @@ func contextContractProjectConcernCandidateIDs(
 			continue
 		}
 		if !contractNeighbors[fact.ID] &&
-			!contextContractSupportMatchesAnyContract(fact, kind, contractFacts) {
+			!contextContractSupportMatchesContract(fact, kind, contractFact) {
 			continue
 		}
 		value := strings.Join([]string{
@@ -975,20 +1051,18 @@ func contextContractProjectConcernCandidateIDs(
 	return orderedContextConcernIDs(candidates)
 }
 
-func contextContractSupportMatchesAnyContract(
+func contextContractSupportMatchesContract(
 	fact scan.AgentContextFactRecord,
 	kind string,
-	contracts []scan.AgentContextFactRecord,
+	contract scan.AgentContextFactRecord,
 ) bool {
 	supportFamilies := contextContractSupportFamilies(fact, kind)
 	if len(supportFamilies) == 0 {
 		return false
 	}
-	for _, contract := range contracts {
-		for family := range contextContractOwnerFamilies(contract) {
-			if supportFamilies[family] {
-				return true
-			}
+	for family := range contextContractOwnerFamilies(contract) {
+		if supportFamilies[family] {
+			return true
 		}
 	}
 	return false
@@ -999,13 +1073,12 @@ func contextContractOwnerFamilies(
 ) map[string]bool {
 	result := make(map[string]bool)
 	owner := contextQualifiedOwner(fact.Qualified)
-	for _, identity := range []string{
-		contextIdentifierLeaf(owner),
-		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
-	} {
-		if family := compactContextIdentifier(identity); family != "" {
-			result[family] = true
-		}
+	identity := contextIdentifierLeaf(owner)
+	if identity == "" {
+		identity = strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File))
+	}
+	if family := compactContextIdentifier(identity); family != "" {
+		result[family] = true
 	}
 	return result
 }

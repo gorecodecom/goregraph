@@ -528,6 +528,191 @@ func TestExpandContextEvidenceConcernsDoesNotComposeSelectedContractIdentities(t
 	}
 
 	got := expandContextEvidenceConcerns(pack, index, concerns)
+	for contractFactID, supportFactID := range map[string]string{
+		"job-contract":     "job-auth",
+		"billing-contract": "billing-auth",
+	} {
+		key := contextConcernAuth + ":" + clientProject +
+			"#contract:" + contractFactID + "#client_transport"
+		concern, ok := findContextConcern(got, key)
+		if !ok {
+			t.Errorf("projected client authentication concern %q missing from %#v", key, got)
+			continue
+		}
+		if !slices.Contains(concern.candidateFactIDs, supportFactID) {
+			t.Errorf("%q candidates = %v, want %q", key, concern.candidateFactIDs, supportFactID)
+		}
+		if slices.Contains(concern.candidateFactIDs, "composed-auth") {
+			t.Errorf("%q candidates contain composed identity: %v", key, concern.candidateFactIDs)
+		}
+	}
+}
+
+func TestContextSourceOptionsRequireAuthenticationForEverySelectedContract(t *testing.T) {
+	const clientProject = "libraries/integration-client"
+	for _, test := range []struct {
+		name               string
+		includeBillingAuth bool
+		wantCovered        bool
+		wantCoverage       string
+	}{
+		{
+			name:         "missing billing authentication",
+			wantCoverage: "partial",
+		},
+		{
+			name:               "both contracts authenticated",
+			includeBillingAuth: true,
+			wantCovered:        true,
+			wantCoverage:       "complete",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeSourceFile(t, root, "JobClient.java", `interface JobClient {
+  void listJobs();
+}
+`)
+			writeSourceFile(t, root, "BillingClient.java", `interface BillingClient {
+  void listInvoices();
+}
+`)
+			writeSourceFile(t, root, "JobClientAuth.java", `final class JobClientAuth {
+  void apply() {
+    headers.setBasicAuth(user, password);
+  }
+}
+`)
+			facts := []scan.AgentContextFactRecord{
+				{
+					ID: "job-contract", Project: clientProject, Kind: "api_contract",
+					Name: "GET /internal/jobs", Qualified: "JobClient.listJobs",
+					File: "JobClient.java", Line: 2, EndLine: 2, Confidence: "EXACT",
+				},
+				{
+					ID: "billing-contract", Project: clientProject, Kind: "api_contract",
+					Name: "GET /internal/invoices", Qualified: "BillingClient.listInvoices",
+					File: "BillingClient.java", Line: 2, EndLine: 2, Confidence: "EXACT",
+				},
+				{
+					ID: "job-auth", Project: clientProject, Kind: "authentication",
+					Name: "apply", Qualified: "JobClientAuth.apply",
+					File: "JobClientAuth.java", Line: 2, EndLine: 4, Confidence: "EXACT",
+				},
+			}
+			if test.includeBillingAuth {
+				writeSourceFile(t, root, "BillingClientAuth.java", `final class BillingClientAuth {
+  void apply() {
+    headers.setBasicAuth(user, password);
+  }
+}
+`)
+				facts = append(facts, scan.AgentContextFactRecord{
+					ID: "billing-auth", Project: clientProject, Kind: "authentication",
+					Name: "apply", Qualified: "BillingClientAuth.apply",
+					File: "BillingClientAuth.java", Line: 2, EndLine: 4, Confidence: "EXACT",
+				})
+			}
+			pack := ContextPack{
+				Schema:         1,
+				Query:          "Provide authentication for every selected client contract.",
+				selectionQuery: "Provide authentication for every selected client contract.",
+				Confidence:     "EXACT",
+				BudgetTokens:   DefaultContextBudgetTokens,
+				Concerns: []ContextConcern{{
+					Kind: contextConcernAuth, Project: clientProject,
+				}},
+				Contracts: []ContextLocation{
+					{
+						ID: "job-contract", Project: clientProject, Kind: "api_contract",
+						File: "JobClient.java", Line: 2, EndLine: 2,
+					},
+					{
+						ID: "billing-contract", Project: clientProject, Kind: "api_contract",
+						File: "BillingClient.java", Line: 2, EndLine: 2,
+					},
+				},
+				selectedSourceFactIDs: []string{"job-contract", "billing-contract"},
+			}
+
+			got, err := attachContextSource(
+				pack,
+				loadedContextIndex{
+					ScopeRoot: root,
+					Index:     scan.AgentContextIndexRecord{Facts: facts},
+				},
+				ContextRequest{
+					BudgetTokens: DefaultContextBudgetTokens,
+					MaxFiles:     DefaultContextMaxFiles,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			jobAuthSelected := false
+			for _, section := range got.SourceSections {
+				jobAuthSelected = jobAuthSelected || section.Path == "JobClientAuth.java"
+			}
+			if !jobAuthSelected {
+				t.Fatalf("covered JobClient authentication source missing: %#v", got.SourceSections)
+			}
+			covered := false
+			for _, concern := range got.Concerns {
+				if contextPublicConcernKey(concern) == contextConcernAuth+":"+clientProject {
+					covered = concern.Covered
+				}
+			}
+			if covered != test.wantCovered || got.SourceCoverage != test.wantCoverage {
+				t.Fatalf(
+					"aggregate authentication coverage = covered %t / %q, want %t / %q: %#v",
+					covered,
+					got.SourceCoverage,
+					test.wantCovered,
+					test.wantCoverage,
+					got.Concerns,
+				)
+			}
+			billingOmission := false
+			jobOmission := false
+			for _, omission := range got.SourceOmissions {
+				billingOmission = billingOmission || strings.Contains(omission.Reason, "BillingClient")
+				jobOmission = jobOmission || strings.Contains(omission.Reason, "JobClient")
+			}
+			if billingOmission == test.includeBillingAuth {
+				t.Fatalf("BillingClient omission = %t: %#v", billingOmission, got.SourceOmissions)
+			}
+			if jobOmission {
+				t.Fatalf("covered JobClient was reported omitted: %#v", got.SourceOmissions)
+			}
+		})
+	}
+}
+
+func TestExpandContextEvidenceConcernsPrefersQualifiedContractOwner(t *testing.T) {
+	const clientProject = "libraries/integration-client"
+	pack := ContextPack{
+		Query:          "Provide authentication for the selected job client contract.",
+		selectionQuery: "Provide authentication for the selected job client contract.",
+		Contracts: []ContextLocation{{
+			ID: "job-contract", Project: clientProject, Kind: "api_contract",
+		}},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "job-contract", Project: clientProject, Kind: "api_contract",
+			Name: "GET /internal/jobs", Qualified: "JobClient.listJobs",
+			File: "src/main/java/example/SharedClients.java", Confidence: "EXACT",
+		},
+		{
+			ID: "shared-auth", Project: clientProject, Kind: "authentication",
+			Name: "apply", Qualified: "SharedClientsAuth.apply",
+			File: "src/main/java/example/SharedClientsAuth.java", Confidence: "EXACT",
+		},
+	}}
+
+	got := expandContextEvidenceConcerns(pack, index, []contextConcern{
+		newContextConcern(contextConcernAuth, "", true, nil, "requested authentication"),
+	})
 	concern, ok := findContextConcern(
 		got,
 		contextConcernAuth+":"+clientProject+"#client_transport",
@@ -535,13 +720,64 @@ func TestExpandContextEvidenceConcernsDoesNotComposeSelectedContractIdentities(t
 	if !ok {
 		t.Fatalf("projected client authentication concern missing from %#v", got)
 	}
-	for _, factID := range []string{"job-auth", "billing-auth"} {
-		if !slices.Contains(concern.candidateFactIDs, factID) {
-			t.Errorf("client authentication candidates = %v, want %q", concern.candidateFactIDs, factID)
-		}
+	if slices.Contains(concern.candidateFactIDs, "shared-auth") {
+		t.Fatalf("qualified JobClient owner matched SharedClientsAuth: %v", concern.candidateFactIDs)
 	}
-	if slices.Contains(concern.candidateFactIDs, "composed-auth") {
-		t.Errorf("client authentication candidates contain composed identity: %v", concern.candidateFactIDs)
+}
+
+func TestExpandContextEvidenceConcernsKeepsDirectNeighborContractLocal(t *testing.T) {
+	const clientProject = "libraries/integration-client"
+	pack := ContextPack{
+		Query:          "Provide authentication for every selected client contract.",
+		selectionQuery: "Provide authentication for every selected client contract.",
+		Contracts: []ContextLocation{
+			{ID: "job-contract", Project: clientProject, Kind: "api_contract"},
+			{ID: "billing-contract", Project: clientProject, Kind: "api_contract"},
+		},
+	}
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "job-contract", Project: clientProject, Kind: "api_contract",
+				Name: "GET /internal/jobs", Qualified: "JobClient.listJobs",
+				File: "JobClient.java", Confidence: "EXACT",
+			},
+			{
+				ID: "billing-contract", Project: clientProject, Kind: "api_contract",
+				Name: "GET /internal/invoices", Qualified: "BillingClient.listInvoices",
+				File: "BillingClient.java", Confidence: "EXACT",
+			},
+			{
+				ID: "shared-auth", Project: clientProject, Kind: "authentication",
+				Name: "apply", Qualified: "SharedAuth.apply",
+				File: "SharedAuth.java", Confidence: "EXACT",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "job-auth", FromFactID: "job-contract", ToFactID: "shared-auth",
+			Kind: "uses", Confidence: "EXACT",
+		}},
+	}
+
+	got := expandContextEvidenceConcerns(pack, index, []contextConcern{
+		newContextConcern(contextConcernAuth, "", true, nil, "requested authentication"),
+	})
+	jobConcern, jobFound := findContextConcern(
+		got,
+		contextConcernAuth+":"+clientProject+"#contract:job-contract#client_transport",
+	)
+	billingConcern, billingFound := findContextConcern(
+		got,
+		contextConcernAuth+":"+clientProject+"#contract:billing-contract#client_transport",
+	)
+	if !jobFound || !billingFound {
+		t.Fatalf("per-contract authentication concerns missing from %#v", got)
+	}
+	if !slices.Contains(jobConcern.candidateFactIDs, "shared-auth") {
+		t.Fatalf("JobClient direct neighbor missing: %v", jobConcern.candidateFactIDs)
+	}
+	if slices.Contains(billingConcern.candidateFactIDs, "shared-auth") {
+		t.Fatalf("BillingClient inherited JobClient neighbor: %v", billingConcern.candidateFactIDs)
 	}
 }
 

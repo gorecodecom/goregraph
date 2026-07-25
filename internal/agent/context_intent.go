@@ -32,6 +32,7 @@ type contextConcern struct {
 	kind             string
 	project          string
 	required         bool
+	contractFactID   string
 	candidateFactIDs []string
 	reason           string
 	rank             int
