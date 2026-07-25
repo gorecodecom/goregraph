@@ -37,7 +37,12 @@ distinguishes indexing completeness from analyzer support. Source locations,
 linked tests, safe verification commands, and bounded impact summaries remain
 evidence-backed and local.
 
-For command reference, see [`COMMANDS.md`](COMMANDS.md). The output contract is documented in [`OUTPUTS.md`](OUTPUTS.md) and [`SCHEMA.md`](SCHEMA.md); future work is in [`ROADMAP.md`](ROADMAP.md).
+For command reference, see [`COMMANDS.md`](COMMANDS.md). The output contract is
+documented in [`OUTPUTS.md`](OUTPUTS.md) and [`SCHEMA.md`](SCHEMA.md); future
+work is in [`ROADMAP.md`](ROADMAP.md). The
+[monotonic regression workflow](docs/BENCHMARKING.md#monotonic-regression-benchmark)
+defines the frozen Golden comparison, full-run gates, and external G1 evidence
+handling.
 
 ## Installation
 

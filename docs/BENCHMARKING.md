@@ -213,6 +213,84 @@ Review date:
 Retain this signed rubric with the raw transcripts and `summary.tsv` outside the
 repository as release evidence.
 
+## Monotonic regression benchmark
+
+The release benchmark compares no GoreGraph with one accepted GoreGraph build.
+The monotonic regression benchmark compares the frozen Golden GoreGraph build
+from commit `1bc4408` with one candidate build. Passing either benchmark does
+not imply passing the other.
+
+### Phases and case matrix
+
+Smoke uses one run per build only to validate mechanics and artifacts. A smoke
+result is not gateable. Full uses exactly three paired runs per build, and only
+those three-run results may reach the monotonic gate.
+
+The matrix contains six cases. G1 is external and operator-owned; its materials
+remain outside the repository. G2-G6 are committed generic cases. Every Golden
+and candidate run requires an independent, evidence-backed review against
+source evidence. Do not reuse a review between runs.
+
+Before either phase starts, freeze the contracts, thresholds, single
+hypothesis, Golden and candidate binaries, and run order. Record their hashes
+or digests with the external evidence.
+
+### Monotonic gates
+
+All of these conditions must pass for the candidate:
+
+1. Every previously passing required facet must pass in every candidate run.
+2. Forbidden outcomes and required uncertainty disclosures must remain safe in
+   every candidate run.
+3. The single declared target facet must improve in at least two of the three
+   candidate runs.
+4. Median source reads and tool calls may not increase.
+5. Median end-to-end tokens may increase by at most 5%.
+6. Median direct Context latency may increase by at most 10%.
+7. Unexplained paired direct Context latency above 2x fails.
+
+Passing the smoke phase does not satisfy these gates. The final monotonic gate
+requires exactly three paired Golden and candidate runs for every evaluated
+case.
+
+### Run validity and retained evidence
+
+A valid slow or inaccurate run is never replaced. An infrastructure-invalid run
+retains its diagnostic artifacts, cannot pass, and cannot count as a gateable
+run. Record the invalid reason and retained log rather than treating a quality
+failure as infrastructure failure.
+
+Source snapshots and prepared workspaces are temporary and are removed after
+success, failure, or cancellation. Retained external evidence contains hashes,
+semantic packs and diffs, transcripts, metrics, review templates and completed
+reviews, summaries, and gate reports. Keep process diagnostics with that
+evidence, but do not retain source copies.
+
+### External G1 evidence
+
+`GOREGRAPH_G1_WORKSPACE` and
+`GOREGRAPH_G1_REFERENCE_TRANSCRIPT` must be absolute, readable,
+operator-supplied paths. Neither path nor its contents may be copied into
+repository output; all G1 materials and benchmark evidence remain in
+operator-controlled external directories.
+
+Build the Golden binary from detached commit `1bc4408` and the candidate binary
+from the implementation worktree. Install them into separate external evidence
+directories and hash both binaries. Do not replace the operator's normal local
+installation.
+
+The G1 contract stays external and preserves its required facets, forbidden
+outcomes, and explicit unknowns. For an accuracy candidate, derive the
+candidate contract externally before execution, move only the single declared
+target facet from explicit unknowns to required facets, and retain both
+contract digests. Every other explicit unknown remains a mandatory uncertainty
+disclosure.
+
+After a failed gate, an external `failure-classification.json` is required
+before a new hypothesis may begin. Allowed categories are `scanner_truth`,
+`intent`, `ranking`, `budget`, `rendering`, or `agent_behavior`. The
+classification is evidence only and cannot waive a failed gate.
+
 ## Release decision
 
 Release 1.3.0 only when both token and structural conditions pass, assisted
