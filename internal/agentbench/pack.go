@@ -108,6 +108,16 @@ func EvaluatePack(pack agent.ContextPack, expectation PackExpectation) []Violati
 	if expectation.FallbackRequired != nil && pack.FallbackRequired != *expectation.FallbackRequired {
 		violations = append(violations, Violation{Field: "fallback_required", Reason: "fallback requirement does not match"})
 	}
+	if expected := expectation.FallbackReasonContains; strings.TrimSpace(expected) != "" &&
+		!strings.Contains(strings.ToLower(pack.FallbackReason), strings.ToLower(expected)) {
+		violations = append(violations, Violation{
+			Field: "fallback_reason",
+			Reason: fmt.Sprintf(
+				"fallback reason does not contain expected substring %q",
+				expected,
+			),
+		})
+	}
 	if expectation.RetryAllowed != nil && pack.RetryAllowed != *expectation.RetryAllowed {
 		violations = append(violations, Violation{Field: "retry_allowed", Reason: "retry permission does not match"})
 	}

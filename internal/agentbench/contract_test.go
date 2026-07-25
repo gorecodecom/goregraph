@@ -100,6 +100,25 @@ func TestLoadContractAcceptsRequiredSourceContent(t *testing.T) {
 	}
 }
 
+func TestLoadContractAcceptsFallbackReasonContains(t *testing.T) {
+	var body map[string]any
+	if err := json.Unmarshal(mustJSON(t, validContract()), &body); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	body["pack"].(map[string]any)["fallback_reason_contains"] = "ambiguous"
+
+	contract, err := LoadContract(writeJSON(t, body))
+	if err != nil {
+		t.Fatalf("LoadContract returned error: %v", err)
+	}
+	if contract.Pack.FallbackReasonContains != "ambiguous" {
+		t.Fatalf(
+			"FallbackReasonContains = %q, want ambiguous",
+			contract.Pack.FallbackReasonContains,
+		)
+	}
+}
+
 func TestValidateContract(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -173,7 +192,7 @@ func TestValidateContract(t *testing.T) {
 			wantErr: "pack.forbidden_locations[0]",
 		},
 		{
-			name: "rejects compatible locations with distinct label matchers",
+			name: "accepts compatible locations with distinct label matchers",
 			mutate: func(contract *Contract) {
 				contract.Pack.RequiredLocations[0] = LocationExpectation{
 					Section:       "persistence",
@@ -188,7 +207,6 @@ func TestValidateContract(t *testing.T) {
 					LabelContains: "catalog",
 				}
 			},
-			wantErr: "pack.forbidden_locations[0]",
 		},
 		{
 			name: "rejects blank source content path suffix",

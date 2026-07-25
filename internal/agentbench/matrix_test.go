@@ -2,14 +2,17 @@ package agentbench
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/gorecodecom/goregraph/internal/agent"
 	"github.com/gorecodecom/goregraph/internal/cli"
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
 type parityProjection struct {
@@ -87,6 +90,134 @@ func TestCommittedBenchmarkMatrix(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestG6AmbiguousEndpointFallbackIsStableAcrossIndexOrder(t *testing.T) {
+	fixtureRoot := filepath.Join(
+		"..", "..", "testdata", "agent-context-regression",
+		"g6-ambiguous-entrypoint",
+	)
+	root := copyBenchmarkWorkspace(t, filepath.Join(fixtureRoot, "workspace"))
+	var stdout, stderr bytes.Buffer
+	code := cli.Run([]string{
+		"workspace", "scan-all", root,
+		"--workspace", root,
+		"--no-update-gitignore",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("workspace scan-all exit code = %d, stderr=%s", code, stderr.String())
+	}
+
+	contract, err := LoadContract(filepath.Join(fixtureRoot, "contract.json"))
+	if err != nil {
+		t.Fatalf("LoadContract: %v", err)
+	}
+	query, err := os.ReadFile(filepath.Join(fixtureRoot, contract.Queries[0].File))
+	if err != nil {
+		t.Fatalf("read query: %v", err)
+	}
+
+	indexPath := filepath.Join(
+		root, ".goregraph-workspace", "agent", "context-index.json",
+	)
+	index := readBenchmarkContextIndex(t, indexPath)
+	requireG6DeleteProviders(t, index)
+
+	request := agent.ContextRequest{
+		Root:         root,
+		Query:        string(query),
+		BudgetTokens: 4000,
+		MaxFiles:     12,
+	}
+	forward, err := agent.BuildContext(request)
+	if err != nil {
+		t.Fatalf("BuildContext forward: %v", err)
+	}
+	requireBoundedAmbiguousFallback(t, forward, contract.Pack)
+
+	slices.Reverse(index.Facts)
+	slices.Reverse(index.Edges)
+	slices.Reverse(index.Coverage)
+	writeBenchmarkContextIndex(t, indexPath, index)
+
+	backward, err := agent.BuildContext(request)
+	if err != nil {
+		t.Fatalf("BuildContext reversed: %v", err)
+	}
+	requireBoundedAmbiguousFallback(t, backward, contract.Pack)
+	if !reflect.DeepEqual(comparableProjection(forward), comparableProjection(backward)) {
+		t.Fatalf(
+			"G6 projection depends on index order:\nforward: %#v\nreversed: %#v",
+			comparableProjection(forward),
+			comparableProjection(backward),
+		)
+	}
+}
+
+func readBenchmarkContextIndex(
+	t *testing.T,
+	path string,
+) scan.AgentContextIndexRecord {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read context index: %v", err)
+	}
+	var index scan.AgentContextIndexRecord
+	if err := json.Unmarshal(body, &index); err != nil {
+		t.Fatalf("decode context index: %v", err)
+	}
+	return index
+}
+
+func writeBenchmarkContextIndex(
+	t *testing.T,
+	path string,
+	index scan.AgentContextIndexRecord,
+) {
+	t.Helper()
+	body, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		t.Fatalf("encode context index: %v", err)
+	}
+	body = append(body, '\n')
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatalf("write context index: %v", err)
+	}
+}
+
+func requireG6DeleteProviders(t *testing.T, index scan.AgentContextIndexRecord) {
+	t.Helper()
+	providers := map[string]bool{}
+	for _, fact := range index.Facts {
+		if fact.Kind == "api_endpoint" &&
+			fact.HTTPMethod == "DELETE" &&
+			fact.Path == "/jobs/{jobId}" {
+			providers[fact.Project] = true
+		}
+	}
+	for _, project := range []string{
+		"services/batch-jobs",
+		"services/scheduled-jobs",
+	} {
+		if !providers[project] {
+			t.Fatalf("G6 DELETE provider %q missing before BuildContext", project)
+		}
+	}
+}
+
+func requireBoundedAmbiguousFallback(
+	t *testing.T,
+	pack agent.ContextPack,
+	expectation PackExpectation,
+) {
+	t.Helper()
+	if violations := EvaluatePack(pack, expectation); len(violations) != 0 {
+		t.Fatalf("EvaluatePack violations: %#v\npack: %#v", violations, pack)
+	}
+	if len(pack.Endpoints) != 0 || len(pack.Entrypoints) != 0 {
+		t.Fatalf("ambiguous fallback selected a unique entrypoint: %#v", pack)
 	}
 }
 

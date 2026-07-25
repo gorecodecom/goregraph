@@ -24,7 +24,14 @@
         "label_contains": "TestRemove"
       }
     ],
-    "forbidden_locations": [],
+    "forbidden_locations": [
+      {
+        "section": "entrypoints",
+        "project": "services/orders",
+        "kind": "route",
+        "label_contains": "GET /orders"
+      }
+    ],
     "required_source_suffixes": [
       "routes.go",
       "service.go",

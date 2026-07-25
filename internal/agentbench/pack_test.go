@@ -30,6 +30,85 @@ func TestEvaluatePackReportsExpectationViolations(t *testing.T) {
 	requireViolation(t, violations, "source_omission")
 }
 
+func TestEvaluatePackChecksRequiredAndForbiddenLocationsIndependently(t *testing.T) {
+	expectation := PackExpectation{
+		RequiredLocations: []LocationExpectation{{
+			Section:       "entrypoints",
+			Project:       "services/orders",
+			Kind:          "route",
+			LabelContains: "DELETE /orders/{orderId}",
+		}},
+		ForbiddenLocations: []LocationExpectation{{
+			Section:       "entrypoints",
+			Project:       "services/orders",
+			Kind:          "route",
+			LabelContains: "GET /orders",
+		}},
+	}
+	deleteRoute := agent.ContextLocation{
+		Project: "services/orders",
+		Kind:    "route",
+		Label:   "DELETE /orders/{orderId}",
+	}
+
+	t.Run("accepts the required route alone", func(t *testing.T) {
+		pack := agent.ContextPack{Entrypoints: []agent.ContextLocation{deleteRoute}}
+
+		if violations := EvaluatePack(pack, expectation); len(violations) != 0 {
+			t.Fatalf("EvaluatePack violations = %#v, want none", violations)
+		}
+	})
+
+	t.Run("rejects the forbidden route alongside the required route", func(t *testing.T) {
+		pack := agent.ContextPack{Entrypoints: []agent.ContextLocation{
+			deleteRoute,
+			{Project: "services/orders", Kind: "route", Label: "GET /orders"},
+		}}
+
+		violations := EvaluatePack(pack, expectation)
+		requireViolation(t, violations, "forbidden_location")
+		for _, violation := range violations {
+			if violation.Field == "required_location" {
+				t.Fatalf("required DELETE route was treated as missing: %#v", violations)
+			}
+		}
+	})
+}
+
+func TestEvaluatePackRequiresFallbackReasonSubstring(t *testing.T) {
+	expectation := PackExpectation{FallbackReasonContains: "ambiguous"}
+
+	for _, reason := range []string{
+		"matching endpoint provider is ambiguous",
+		"MATCHING ENDPOINT PROVIDER IS AMBIGUOUS",
+	} {
+		t.Run(reason, func(t *testing.T) {
+			pack := agent.ContextPack{
+				FallbackRequired: true,
+				FallbackReason:   reason,
+			}
+
+			if violations := EvaluatePack(pack, expectation); len(violations) != 0 {
+				t.Fatalf("EvaluatePack violations = %#v, want none", violations)
+			}
+		})
+	}
+
+	t.Run("rejects fallback without indexed endpoint ambiguity", func(t *testing.T) {
+		pack := agent.ContextPack{
+			FallbackRequired: true,
+			FallbackReason:   "no sufficiently relevant context fact found",
+		}
+
+		violations := EvaluatePack(pack, expectation)
+		if len(violations) != 1 ||
+			violations[0].Field != "fallback_reason" ||
+			violations[0].Reason != `fallback reason does not contain expected substring "ambiguous"` {
+			t.Fatalf("EvaluatePack violations = %#v", violations)
+		}
+	})
+}
+
 func TestEvaluatePackRequiresSourceContentInOneSection(t *testing.T) {
 	const suffix = "AccountService.java"
 	required := []string{

@@ -55,6 +55,7 @@ type PackExpectation struct {
 	ForbiddenSourceSuffixes []string                           `json:"forbidden_source_suffixes"`
 	RequiredUnknowns        []string                           `json:"required_unknowns"`
 	FallbackRequired        *bool                              `json:"fallback_required,omitempty"`
+	FallbackReasonContains  string                             `json:"fallback_reason_contains,omitempty"`
 	RetryAllowed            *bool                              `json:"retry_allowed,omitempty"`
 	MaxEstimatedTokens      int                                `json:"max_estimated_tokens"`
 	MaxSourceOmissions      int                                `json:"max_source_omissions"`
@@ -382,7 +383,8 @@ func validateLocation(location LocationExpectation, field string) error {
 func locationsOverlap(first, second LocationExpectation) bool {
 	return first.Section == second.Section &&
 		(first.Project == "" || second.Project == "" || first.Project == second.Project) &&
-		(first.Kind == "" || second.Kind == "" || first.Kind == second.Kind)
+		(first.Kind == "" || second.Kind == "" || first.Kind == second.Kind) &&
+		first.LabelContains == second.LabelContains
 }
 
 func validateFacets(answer AnswerExpectation) error {

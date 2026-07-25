@@ -27,6 +27,7 @@
     "forbidden_source_suffixes": [],
     "required_unknowns": [],
     "fallback_required": true,
+    "fallback_reason_contains": "ambiguous",
     "retry_allowed": false,
     "max_estimated_tokens": 4000,
     "max_source_omissions": 0,
