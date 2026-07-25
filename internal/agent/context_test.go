@@ -3193,6 +3193,18 @@ func TestBuildContextRejectsIneligibleIncomingClientContracts(t *testing.T) {
 			},
 		},
 		{
+			name: "generated test client",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Facts[4].File = "target/generated-test-sources/openapi/JobClient.go"
+			},
+		},
+		{
+			name: "generated test client with windows separators",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				index.Facts[4].File = `target\generated-test-sources\openapi\JobClient.go`
+			},
+		},
+		{
 			name: "test client",
 			mutate: func(index *scan.AgentContextIndexRecord) {
 				index.Facts[4].File = "src/test/JobClient.go"
@@ -3235,6 +3247,38 @@ func TestBuildContextRejectsIneligibleIncomingClientContracts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBuildContextSelectsIncomingClientContractFromPrimaryProject(t *testing.T) {
+	index := incomingResolvedContractContextIndex()
+	index.Facts[4].Project = "services/catalog"
+	root := writeIncomingResolvedContractContextFixture(t, index)
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: incomingResolvedContractQuery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Contracts) != 1 || pack.Contracts[0].ID != "jobs-get-contract" {
+		t.Fatalf("primary-project client contract = %#v, want jobs-get-contract", pack.Contracts)
+	}
+	if !slices.Contains(pack.selectedFactIDs, "jobs-get-contract") ||
+		!slices.Contains(pack.selectedEdgeIDs, "jobs-get-http-contract") {
+		t.Fatalf(
+			"primary-project client identity missing: facts=%#v edges=%#v",
+			pack.selectedFactIDs,
+			pack.selectedEdgeIDs,
+		)
+	}
+	foundDirection := false
+	for _, relationship := range pack.CallChain {
+		if relationship.Kind == contextConcernHTTPContract {
+			foundDirection = relationship.From == "JobClient.listJobsForRemoval" &&
+				relationship.To == "JobController.list"
+		}
+	}
+	if !foundDirection {
+		t.Fatalf("primary-project client-to-provider direction missing: %#v", pack.CallChain)
 	}
 }
 

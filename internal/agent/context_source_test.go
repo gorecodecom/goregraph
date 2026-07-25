@@ -2193,7 +2193,7 @@ func TestContextSourceBudgetOmittedHTTPContractStaysUncovered(t *testing.T) {
 		t,
 		root,
 		"JobClient.go",
-		"package jobs\nfunc listJobsForRemoval() { "+strings.Repeat("call()", 8000)+" }\n",
+		"package jobs\nfunc listJobsForRemoval() { "+strings.Repeat("call()", 1000)+" }\n",
 	)
 	index := scan.AgentContextIndexRecord{
 		Facts: []scan.AgentContextFactRecord{
@@ -2217,12 +2217,15 @@ func TestContextSourceBudgetOmittedHTTPContractStaysUncovered(t *testing.T) {
 	}
 	base := ContextPack{
 		Schema:     1,
-		Query:      "inspect the current HTTP client contract",
+		Query:      incomingResolvedContractQuery,
 		Confidence: "MEDIUM",
 		Concerns: []ContextConcern{
 			{Kind: contextConcernEntrypoint},
 			{Kind: contextConcernHTTPContract},
 		},
+		Endpoints: []ContextEndpoint{{
+			Provider: "services/catalog", HTTPMethod: "DELETE", Path: "/catalog/{itemId}",
+		}},
 		Entrypoints: []ContextLocation{{
 			ID: "provider", Project: "services/jobs", Kind: "route",
 			Label: "GET /internal/jobs", File: "JobController.go", Line: 2, EndLine: 2,
@@ -2240,6 +2243,14 @@ func TestContextSourceBudgetOmittedHTTPContractStaysUncovered(t *testing.T) {
 	for budget := MinContextBudgetTokens; budget <= DefaultContextBudgetTokens; budget++ {
 		candidate := cloneContextPack(base)
 		candidate.BudgetTokens = budget
+		candidate, err := retainContextRequestedContractGapForSelectedEvidence(
+			candidate,
+			index,
+			budget,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
 		got, err := selectContextSourceOptions(
 			candidate,
 			loaded,
@@ -2267,17 +2278,25 @@ func TestContextSourceBudgetOmittedHTTPContractStaysUncovered(t *testing.T) {
 	if !found {
 		t.Fatal("fixture has no budget that retains the provider while omitting the client contract")
 	}
-	for _, concern := range omitted.Concerns {
+	finalized := finalizeContextSourceDecision(omitted, index)
+	for _, concern := range finalized.Concerns {
 		if normalizedContextConcernKind(concern.Kind) == contextConcernHTTPContract && concern.Covered {
-			t.Fatalf("omitted client contract was covered by provider source: %#v", omitted)
+			t.Fatalf("omitted client contract was covered by provider source: %#v", finalized)
 		}
 	}
 	foundOmission := false
-	for _, omission := range omitted.SourceOmissions {
+	for _, omission := range finalized.SourceOmissions {
 		foundOmission = foundOmission || omission.Path == "JobClient.go"
 	}
 	if !foundOmission {
-		t.Fatalf("omitted client contract lacks an exact source omission: %#v", omitted.SourceOmissions)
+		t.Fatalf("omitted client contract lacks an exact source omission: %#v", finalized.SourceOmissions)
+	}
+	if !contextPackHasUncertainty(
+		finalized,
+		"requested_http_contract",
+		"no indexed HTTP contract matches the requested operation",
+	) {
+		t.Fatalf("budget-omitted adjacent GET lost the future DELETE uncertainty: %#v", finalized)
 	}
 }
 

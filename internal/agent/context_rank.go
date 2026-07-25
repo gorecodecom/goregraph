@@ -281,13 +281,16 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 				request.Query,
 			)
 			clientProject := normalizeContextProject(client.Project)
-			if hasContract &&
-				!primaryProjects[clientProject] &&
+			clientIsPrimary := primaryProjects[clientProject]
+			withinSupportLimits := clientIsPrimary ||
 				supportProjectCounts[clientProject] < maximumContextSupportFactsPerProject &&
-				(supportProjectCounts[clientProject] > 0 ||
-					acceptedSupportProjects < maximumContextSupportingProjects) &&
-				(supportProjectCounts[clientProject] == 0 ||
-					!supportProjectRoles[clientProject]["contract"]) {
+					(supportProjectCounts[clientProject] > 0 ||
+						acceptedSupportProjects < maximumContextSupportingProjects) &&
+					(supportProjectCounts[clientProject] == 0 ||
+						!supportProjectRoles[clientProject]["contract"])
+			if hasContract &&
+				!includedFactIDs[client.ID] &&
+				withinSupportLimits {
 				contractCandidate, contractAccepted, contractErr := tryContextPack(
 					pack,
 					request.BudgetTokens,
@@ -318,17 +321,19 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 				if contractAccepted {
 					pack = contractCandidate
 					includedFactIDs[client.ID] = true
-					supportFactIDs[client.ID] = true
 					acceptedEdgeIDs[contextPathEdgeIdentity(contractEdge)] = true
 					representedProjects[clientProject] = true
-					supportProjectCounts[clientProject]++
-					if supportProjectCounts[clientProject] == 1 {
-						acceptedSupportProjects++
+					if !clientIsPrimary {
+						supportFactIDs[client.ID] = true
+						supportProjectCounts[clientProject]++
+						if supportProjectCounts[clientProject] == 1 {
+							acceptedSupportProjects++
+						}
+						if supportProjectRoles[clientProject] == nil {
+							supportProjectRoles[clientProject] = map[string]bool{}
+						}
+						supportProjectRoles[clientProject]["contract"] = true
 					}
-					if supportProjectRoles[clientProject] == nil {
-						supportProjectRoles[clientProject] = map[string]bool{}
-					}
-					supportProjectRoles[clientProject]["contract"] = true
 				}
 			}
 		}
@@ -360,6 +365,14 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		if accepted {
 			pack = candidate
 		}
+	}
+	pack, err = retainContextRequestedContractGapForSelectedEvidence(
+		pack,
+		index,
+		request.BudgetTokens,
+	)
+	if err != nil {
+		return ContextPack{}, err
 	}
 	selectedSourceFactIDs := make(map[string]bool, len(includedFactIDs)+len(pathSelection.factIDs))
 	for factID := range includedFactIDs {
@@ -1555,7 +1568,9 @@ func contextIncomingContractUsesGeneratedSource(file string) bool {
 		"/",
 	) + "/"
 	return strings.Contains(path, "/generated/") ||
-		strings.Contains(path, "/target/generated-sources/")
+		strings.Contains(path, "/generated-sources/") ||
+		strings.Contains(path, "/generated-test-sources/") ||
+		strings.Contains(path, "/target/test-classes/")
 }
 
 func contextIncomingContractRouteCompatible(
@@ -1614,6 +1629,53 @@ func contextIncomingContractDomainRelevant(
 		}
 	}
 	return false
+}
+
+func retainContextRequestedContractGapForSelectedEvidence(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	budget int,
+) (ContextPack, error) {
+	if len(pack.Contracts) == 0 ||
+		len(pack.Uncertainties) >= maximumContextUncertainty {
+		return pack, nil
+	}
+	probe := cloneContextPack(pack)
+	foundContractConcern := false
+	for concernIndex := range probe.Concerns {
+		if normalizedContextConcernKind(probe.Concerns[concernIndex].Kind) != contextConcernHTTPContract {
+			continue
+		}
+		probe.Concerns[concernIndex].Covered = true
+		foundContractConcern = true
+	}
+	if !foundContractConcern {
+		probe.Concerns = append(probe.Concerns, ContextConcern{
+			Kind: contextConcernHTTPContract, Covered: true,
+		})
+	}
+	gap := contextRequestedContractGap(probe, index)
+	if gap == nil ||
+		contextUncertaintyExists(pack.Uncertainties, gap.Scope, gap.Reason) {
+		return pack, nil
+	}
+	candidate, accepted, err := tryContextPack(pack, budget, func(candidate *ContextPack) bool {
+		candidate.Uncertainties = append(candidate.Uncertainties, *gap)
+		sort.Slice(candidate.Uncertainties, func(left, right int) bool {
+			if candidate.Uncertainties[left].Scope != candidate.Uncertainties[right].Scope {
+				return candidate.Uncertainties[left].Scope < candidate.Uncertainties[right].Scope
+			}
+			return candidate.Uncertainties[left].Reason < candidate.Uncertainties[right].Reason
+		})
+		return true
+	})
+	if err != nil {
+		return ContextPack{}, err
+	}
+	if accepted {
+		return candidate, nil
+	}
+	return pack, nil
 }
 
 func contextGenericPersistenceFact(fact scan.AgentContextFactRecord) bool {
