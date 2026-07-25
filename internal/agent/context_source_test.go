@@ -4433,6 +4433,390 @@ func TestContextSourceUtilityRetainsSecondDomainAndPersistenceEvidence(t *testin
 	}
 }
 
+func TestAddContextSourceOptionPublishesRequiredSideEffectSource(t *testing.T) {
+	pack, option, concerns, state := contextSideEffectProjectionFixture()
+	pack.CallChain = []ContextRelationship{{
+		From: "CatalogService.remove",
+		To:   "CatalogRepository.deleteById",
+		Kind: "persistence",
+	}}
+	originalCallChain := slices.Clone(pack.CallChain)
+
+	fits, err := contextSourceOptionFits(
+		pack,
+		ContextRequest{
+			BudgetTokens: DefaultContextBudgetTokens,
+			MaxFiles:     DefaultContextMaxFiles,
+		},
+		option,
+		concerns,
+		state,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fits {
+		t.Fatal("required side-effect source did not fit before publication")
+	}
+	got, gotState, err := addContextSourceOption(
+		pack,
+		ContextRequest{
+			BudgetTokens: DefaultContextBudgetTokens,
+			MaxFiles:     DefaultContextMaxFiles,
+		},
+		option,
+		concerns,
+		state,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.SourceSections, []ContextSourceSection{option.section}) {
+		t.Fatalf("selected source sections = %#v, want one rendered side effect", got.SourceSections)
+	}
+	wantFiles := []ContextFile{{
+		Project: "services/jobs", Path: "JobHousekeeping.java",
+		StartLine: 4, EndLine: 6,
+		Role: "related_project", Reason: "selected side-effect evidence",
+	}}
+	if !reflect.DeepEqual(got.Files, wantFiles) {
+		t.Fatalf("published side-effect files = %#v, want %#v", got.Files, wantFiles)
+	}
+	if !gotState.coveredConcerns[contextConcernSideEffects+":services/jobs"] ||
+		!got.Concerns[0].Covered {
+		t.Fatalf("published side-effect concern stayed uncovered: %#v / %#v", gotState.coveredConcerns, got.Concerns)
+	}
+	if !reflect.DeepEqual(got.CallChain, originalCallChain) {
+		t.Fatalf("side-effect publication changed call chain: got %#v, want %#v", got.CallChain, originalCallChain)
+	}
+}
+
+func TestContextSourceOptionSideEffectProjectionKeepsFitAndAddAtMaxFiles(t *testing.T) {
+	pack, option, concerns, state := contextSideEffectProjectionFixture()
+	pack.Files = []ContextFile{{
+		Project: "services/catalog", Path: "CatalogController.java",
+		StartLine: 10, EndLine: 15, Role: "endpoint", Reason: "selected API endpoint",
+	}}
+	pack.SourceSections = []ContextSourceSection{{
+		Project: "services/catalog", Path: "CatalogController.java",
+		StartLine: 10, EndLine: 15, Role: "entrypoint",
+		RenderMode: "declaration_body", Content: "void remove() {}",
+	}}
+	request := ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     1,
+	}
+
+	fits, err := contextSourceOptionFits(pack, request, option, concerns, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fits {
+		t.Fatal("side-effect source fit despite the saturated file cap")
+	}
+	if _, _, err := addContextSourceOption(pack, request, option, concerns, state); err == nil {
+		t.Fatal("add path accepted a side-effect projection rejected by the fit path")
+	}
+
+	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
+	omissions := contextSourceEvidenceOmissionsWithOptions(
+		concerns,
+		[]sourceCandidate{option.candidate},
+		[]contextSourceOption{option},
+		nil,
+		state.coveredConcerns,
+	)
+	wantOmission := ContextSourceOmission{
+		Project: "services/jobs", Path: "JobHousekeeping.java",
+		StartLine: 4, EndLine: 6,
+		Role: "call_chain", Reason: "source section does not fit the response budget",
+	}
+	if pack.Concerns[0].Covered ||
+		pack.SourceCoverage != "partial" ||
+		pack.SourceUnrepresented != 1 {
+		t.Fatalf("rejected side effect coverage = %#v", pack)
+	}
+	if len(omissions) != 1 ||
+		len(omissions) > MaxContextSourceOmissions ||
+		omissions[0] != wantOmission {
+		t.Fatalf("rejected side-effect omissions = %#v, want %#v", omissions, wantOmission)
+	}
+}
+
+func TestAddContextSourceOptionMergesProjectedSideEffectFile(t *testing.T) {
+	pack, option, concerns, state := contextSideEffectProjectionFixture()
+	pack.Files = []ContextFile{{
+		Project: "services/jobs", Path: "JobHousekeeping.java",
+		StartLine: 10, EndLine: 12,
+		Role: "call_chain", Reason: "selected call", Confidence: "EXTRACTED",
+	}}
+
+	got, _, err := addContextSourceOption(
+		pack,
+		ContextRequest{
+			BudgetTokens: DefaultContextBudgetTokens,
+			MaxFiles:     1,
+		},
+		option,
+		concerns,
+		state,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFiles := []ContextFile{{
+		Project: "services/jobs", Path: "JobHousekeeping.java",
+		StartLine: 4, EndLine: 12,
+		Role:       "call_chain,related_project",
+		Reason:     "selected call;selected side-effect evidence",
+		Confidence: "EXTRACTED",
+	}}
+	if !reflect.DeepEqual(got.Files, wantFiles) {
+		t.Fatalf("merged side-effect files = %#v, want %#v", got.Files, wantFiles)
+	}
+	if len(got.SourceSections) != 1 {
+		t.Fatalf("merged side-effect source sections = %#v, want one", got.SourceSections)
+	}
+}
+
+func TestAddContextSourceOptionDoesNotProjectUnqualifiedSections(t *testing.T) {
+	tests := []struct {
+		name        string
+		candidate   sourceCandidate
+		section     ContextSourceSection
+		concern     contextConcern
+		concernKeys []string
+	}{
+		{
+			name: "optional side effect",
+			concern: newContextConcern(
+				contextConcernSideEffects,
+				"services/jobs",
+				false,
+				[]string{"housekeeping"},
+				"optional side effects",
+			),
+			concernKeys: []string{contextConcernSideEffects + ":services/jobs"},
+		},
+		{
+			name: "wrong project",
+			concern: newContextConcern(
+				contextConcernSideEffects,
+				"services/billing",
+				true,
+				[]string{"housekeeping"},
+				"billing side effects",
+			),
+			concernKeys: []string{contextConcernSideEffects + ":services/billing"},
+		},
+		{
+			name: "wrong exact concern key",
+			concern: newContextConcern(
+				contextConcernSideEffects,
+				"services/jobs",
+				true,
+				[]string{"housekeeping"},
+				"job side effects",
+			),
+			concernKeys: []string{contextConcernSideEffects + ":services/jobs#audit"},
+		},
+		{
+			name: "empty candidate project",
+			candidate: sourceCandidate{
+				FactID: "housekeeping", Path: "JobHousekeeping.java",
+				Role: "call_chain", Kind: contextConcernSideEffects, Name: "publishRemoval",
+			},
+			concern: newContextConcern(
+				contextConcernSideEffects,
+				"services/jobs",
+				true,
+				[]string{"housekeeping"},
+				"job side effects",
+			),
+			concernKeys: []string{contextConcernSideEffects + ":services/jobs"},
+		},
+		{
+			name: "persistence concern",
+			concern: newContextConcern(
+				contextConcernPersistence,
+				"services/jobs",
+				true,
+				[]string{"housekeeping"},
+				"job persistence",
+			),
+			concernKeys: []string{contextConcernPersistence + ":services/jobs"},
+		},
+		{
+			name: "domain model concern",
+			concern: newContextConcern(
+				contextConcernDomainModel,
+				"services/jobs",
+				true,
+				[]string{"housekeeping"},
+				"job domain",
+			),
+			concernKeys: []string{contextConcernDomainModel + ":services/jobs"},
+		},
+		{
+			name: "ordinary call chain",
+			concern: newContextConcern(
+				contextConcernPrimaryPath,
+				"services/jobs",
+				true,
+				[]string{"housekeeping"},
+				"primary path",
+			),
+			concernKeys: []string{contextConcernPrimaryPath + ":services/jobs"},
+		},
+		{
+			name: "test concern",
+			section: ContextSourceSection{
+				Project: "services/jobs", Path: "JobHousekeepingTest.java",
+				StartLine: 4, EndLine: 6, Role: "test",
+				RenderMode: "declaration_body", Content: "@Test void publishRemoval() {}",
+			},
+			concern: newContextConcern(
+				contextConcernTests,
+				"services/jobs",
+				true,
+				[]string{"housekeeping"},
+				"job tests",
+			),
+			concernKeys: []string{contextConcernTests + ":services/jobs"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pack, option, _, state := contextSideEffectProjectionFixture()
+			if test.candidate.FactID != "" {
+				option.candidate = test.candidate
+			}
+			if test.section.Path != "" {
+				option.section = test.section
+			}
+			option.concernKeys = test.concernKeys
+
+			got, _, err := addContextSourceOption(
+				pack,
+				ContextRequest{
+					BudgetTokens: DefaultContextBudgetTokens,
+					MaxFiles:     DefaultContextMaxFiles,
+				},
+				option,
+				[]contextConcern{test.concern},
+				state,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Files) != 0 {
+				t.Fatalf("unqualified source was projected: %#v", got.Files)
+			}
+		})
+	}
+}
+
+func TestAddContextSourceOptionNormalizesSideEffectProjectScope(t *testing.T) {
+	tests := []struct {
+		name             string
+		candidateProject string
+		wantProject      string
+	}{
+		{
+			name:             "equivalent project spelling",
+			candidateProject: " ./SERVICES\\JOBS/ ",
+			wantProject:      "services/jobs",
+		},
+		{
+			name:             "foreign normalized project",
+			candidateProject: " ./SERVICES\\BILLING/ ",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pack, option, concerns, state := contextSideEffectProjectionFixture()
+			option.candidate.Project = test.candidateProject
+			option.section.Project = " Services/Jobs/ "
+			concerns[0].project = " /Services/Jobs/ "
+
+			got, _, err := addContextSourceOption(
+				pack,
+				ContextRequest{
+					BudgetTokens: DefaultContextBudgetTokens,
+					MaxFiles:     DefaultContextMaxFiles,
+				},
+				option,
+				concerns,
+				state,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.wantProject == "" {
+				if len(got.Files) != 0 {
+					t.Fatalf("foreign normalized project was published: %#v", got.Files)
+				}
+				return
+			}
+			if len(got.Files) != 1 || got.Files[0].Project != test.wantProject {
+				t.Fatalf("normalized project files = %#v, want project %q", got.Files, test.wantProject)
+			}
+		})
+	}
+}
+
+func contextSideEffectProjectionFixture() (
+	ContextPack,
+	contextSourceOption,
+	[]contextConcern,
+	contextSourceSelectionState,
+) {
+	const concernKey = contextConcernSideEffects + ":services/jobs"
+	pack := ContextPack{
+		Schema: 1, Query: "publish job removal side effects", Confidence: "EXACT",
+		BudgetTokens: DefaultContextBudgetTokens,
+		Concerns: []ContextConcern{{
+			Kind: contextConcernSideEffects, Project: "services/jobs",
+		}},
+	}
+	option := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "housekeeping", Project: "services/jobs",
+			Path: "JobHousekeeping.java", StartLine: 4, EndLine: 6,
+			Role: "call_chain", Kind: contextConcernSideEffects,
+			Name: "publishRemoval", Qualified: "JobHousekeeping.publishRemoval",
+		},
+		section: ContextSourceSection{
+			Project: "services/jobs", Path: "JobHousekeeping.java",
+			StartLine: 4, EndLine: 6, Role: "call_chain",
+			RenderMode: "declaration_body",
+			Content: `void publishRemoval(String removal) {
+  sink.accept(removal);
+}`,
+		},
+		estimated: 40, concernKeys: []string{concernKey},
+		projectKey: "services/jobs", required: true,
+	}
+	concerns := []contextConcern{
+		newContextConcern(
+			contextConcernSideEffects,
+			"services/jobs",
+			true,
+			[]string{"housekeeping"},
+			"job side effects",
+		),
+	}
+	state := contextSourceSelectionState{
+		selectedCandidates:       map[string]bool{},
+		selectedFactIDs:          map[string]bool{},
+		selectedProjects:         map[string]bool{},
+		coveredConcerns:          map[string]bool{},
+		coveredRoles:             map[string]bool{},
+		selectedEvidenceFamilies: map[string]int{},
+	}
+	return pack, option, concerns, state
+}
+
 func TestAddContextSourceOptionReusesIdenticalRenderedSection(t *testing.T) {
 	section := ContextSourceSection{
 		Project: "libraries/client", Path: "JobClient.java",

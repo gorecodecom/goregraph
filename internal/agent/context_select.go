@@ -3324,7 +3324,7 @@ func contextSourceOptionFits(
 	if !reusesSection {
 		candidate.SourceSections = append(candidate.SourceSections, option.section)
 	}
-	if file, publish := contextProjectedClientSupportFile(pack, option, concerns); publish &&
+	if file, _, publish := contextProjectedSourceFile(pack, option, concerns); publish &&
 		!mergeContextFile(&candidate, file, request.MaxFiles) {
 		return false, nil
 	}
@@ -3408,9 +3408,9 @@ func addContextSourceOption(
 	if !contextSourceSectionAlreadyPresent(pack, option.section) {
 		pack.SourceSections = append(pack.SourceSections, option.section)
 	}
-	if file, publish := contextProjectedClientSupportFile(pack, option, concerns); publish &&
+	if file, budgetError, publish := contextProjectedSourceFile(pack, option, concerns); publish &&
 		!mergeContextFile(&pack, file, request.MaxFiles) {
-		return ContextPack{}, state, fmt.Errorf("selected client support source exceeds the response file budget")
+		return ContextPack{}, state, fmt.Errorf("%s", budgetError)
 	}
 	if pack.SourceUnrepresented > 0 {
 		pack.SourceUnrepresented--
@@ -3453,6 +3453,20 @@ func addContextSourceOption(
 	return pack, state, nil
 }
 
+func contextProjectedSourceFile(
+	pack ContextPack,
+	option contextSourceOption,
+	concerns []contextConcern,
+) (ContextFile, string, bool) {
+	if file, publish := contextProjectedClientSupportFile(pack, option, concerns); publish {
+		return file, "selected client support source exceeds the response file budget", true
+	}
+	if file, publish := contextProjectedSideEffectFile(option, concerns); publish {
+		return file, "selected side-effect source exceeds the response file budget", true
+	}
+	return ContextFile{}, "", false
+}
+
 func contextProjectedClientSupportFile(
 	pack ContextPack,
 	option contextSourceOption,
@@ -3489,6 +3503,35 @@ func contextProjectedClientSupportFile(
 			EndLine:   option.section.EndLine,
 			Role:      "related_project",
 			Reason:    "selected client support evidence",
+		}, true
+	}
+	return ContextFile{}, false
+}
+
+func contextProjectedSideEffectFile(
+	option contextSourceOption,
+	concerns []contextConcern,
+) (ContextFile, bool) {
+	project := normalizeContextProject(option.candidate.Project)
+	if project == "" {
+		return ContextFile{}, false
+	}
+	for _, concern := range concerns {
+		concernProject := normalizeContextProject(concern.project)
+		if !concern.required ||
+			concern.kind != contextConcernSideEffects ||
+			concernProject == "" ||
+			concernProject != project ||
+			!contextSourceOptionHasConcern(option, concern.key) {
+			continue
+		}
+		return ContextFile{
+			Project:   project,
+			Path:      option.section.Path,
+			StartLine: option.section.StartLine,
+			EndLine:   option.section.EndLine,
+			Role:      "related_project",
+			Reason:    "selected side-effect evidence",
 		}, true
 	}
 	return ContextFile{}, false
