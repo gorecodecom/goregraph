@@ -101,7 +101,13 @@ func EvaluateCase(contract Contract, golden, candidate []ReviewedRun, hypothesis
 
 	targetPasses := 0
 	for _, run := range logicalRunNumbers() {
+		goldenReview := goldenValid[run].Review
 		review := candidateValid[run].Review
+		for _, outcomeID := range forbiddenOutcomeIDs {
+			if goldenReview.ForbiddenOutcomes[outcomeID].Status != "pass" {
+				failures = append(failures, fmt.Sprintf("%s failed in golden run %d", outcomeID, run))
+			}
+		}
 		for _, facetID := range requiredFacetIDs {
 			if facetID == hypothesis.TargetFacet {
 				continue
@@ -172,6 +178,9 @@ func validateReview(review RunReview) error {
 	if _, err := time.Parse(time.RFC3339, review.ReviewedAt); err != nil {
 		return fmt.Errorf("reviewed_at must be RFC3339: %w", err)
 	}
+	if len(review.Facets) == 0 {
+		return fmt.Errorf("facets must contain at least one result")
+	}
 	if err := validateFacetResults("facets", review.Facets); err != nil {
 		return err
 	}
@@ -179,9 +188,6 @@ func validateReview(review RunReview) error {
 }
 
 func validateFacetResults(field string, results map[string]FacetResult) error {
-	if len(results) == 0 {
-		return fmt.Errorf("%s must contain at least one result", field)
-	}
 	ids := make([]string, 0, len(results))
 	for id := range results {
 		ids = append(ids, id)
@@ -213,6 +219,9 @@ func collectValidRuns(build, caseID string, runs []ReviewedRun, failures *[]stri
 		}
 		if run.Review.CaseID != caseID {
 			*failures = append(*failures, fmt.Sprintf("%s run %d reviews case %s, want %s", build, run.Review.Run, run.Review.CaseID, caseID))
+		}
+		if run.Review.Build != build {
+			*failures = append(*failures, fmt.Sprintf("%s run %d has build %s, want %s", build, run.Review.Run, run.Review.Build, build))
 		}
 		if run.Invalid != nil {
 			if !run.Invalid.InfrastructureFailure {

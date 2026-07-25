@@ -18,6 +18,19 @@ func TestLoadReview(t *testing.T) {
 		}
 	})
 
+	t.Run("loads a review without forbidden outcomes", func(t *testing.T) {
+		expected := completeReview(1, 1)
+		expected.ForbiddenOutcomes = nil
+
+		review, err := LoadReview(writeJSON(t, expected))
+		if err != nil {
+			t.Fatalf("LoadReview returned error: %v", err)
+		}
+		if len(review.ForbiddenOutcomes) != 0 {
+			t.Fatalf("LoadReview forbidden outcomes = %#v, want none", review.ForbiddenOutcomes)
+		}
+	})
+
 	for _, test := range []struct {
 		name    string
 		content string
@@ -84,6 +97,30 @@ func TestEvaluateCase(t *testing.T) {
 				candidate[0].Review.CaseID = "g3-go-existing-flow"
 			},
 			failure: "candidate run 1 reviews case g3-go-existing-flow, want g2-java-missing-contract",
+		},
+		{
+			name: "rejects a candidate review marked as golden",
+			mutate: func(_ []ReviewedRun, candidate []ReviewedRun) {
+				candidate[0].Review.Build = "golden"
+			},
+			failure: "candidate run 1 has build golden, want candidate",
+		},
+		{
+			name: "rejects a golden review marked as candidate",
+			mutate: func(golden []ReviewedRun, _ []ReviewedRun) {
+				golden[0].Review.Build = "candidate"
+			},
+			failure: "golden run 1 has build candidate, want golden",
+		},
+		{
+			name: "rejects a forbidden outcome in golden",
+			mutate: func(golden []ReviewedRun, _ []ReviewedRun) {
+				golden[1].Review.ForbiddenOutcomes["invented-edge"] = FacetResult{
+					Status:   "fail",
+					Evidence: "The Golden answer asserted the absent edge exists.",
+				}
+			},
+			failure: "invented-edge failed in golden run 2",
 		},
 		{
 			name: "rejects a forbidden outcome",
@@ -203,6 +240,20 @@ func TestEvaluateCase(t *testing.T) {
 		report := EvaluateCase(contract, golden, candidate, hypothesis)
 		if !report.Passed || len(report.Failures) != 0 {
 			t.Fatalf("replacement report = %#v", report)
+		}
+	})
+
+	t.Run("accepts a contract without forbidden outcomes", func(t *testing.T) {
+		contract, golden, candidate, hypothesis := passingCase()
+		contract.Answer.ForbiddenOutcomes = nil
+		for index := range golden {
+			golden[index].Review.ForbiddenOutcomes = nil
+			candidate[index].Review.ForbiddenOutcomes = nil
+		}
+
+		report := EvaluateCase(contract, golden, candidate, hypothesis)
+		if !report.Passed || len(report.Failures) != 0 {
+			t.Fatalf("zero-forbidden-outcome report = %#v", report)
 		}
 	})
 }
