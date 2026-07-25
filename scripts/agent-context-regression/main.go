@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,19 @@ type packDiffReport struct {
 	Passed     bool                   `json:"passed"`
 	Diff       agentbench.PackDiff    `json:"diff"`
 	Violations []agentbench.Violation `json:"violations"`
+}
+
+type temporaryFile interface {
+	io.Writer
+	Name() string
+	Sync() error
+	Close() error
+}
+
+type fileOutput struct {
+	createTemp func(directory, pattern string) (temporaryFile, error)
+	link       func(oldPath, newPath string) error
+	remove     func(path string) error
 }
 
 func main() {
@@ -301,32 +315,82 @@ func sortViolations(violations []agentbench.Violation) {
 }
 
 func writeJSON(destination io.Writer, value any) error {
+	body, err := marshalJSON(value)
+	if err != nil {
+		return err
+	}
+	return writeAll(destination, body)
+}
+
+func marshalJSON(value any) ([]byte, error) {
 	body, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	body = append(body, '\n')
-	written, err := destination.Write(body)
-	if err != nil {
-		return err
-	}
-	if written != len(body) {
-		return io.ErrShortWrite
+	return append(body, '\n'), nil
+}
+
+func writeAll(destination io.Writer, body []byte) error {
+	for len(body) > 0 {
+		written, err := destination.Write(body)
+		if err != nil {
+			return err
+		}
+		if written <= 0 || written > len(body) {
+			return io.ErrShortWrite
+		}
+		body = body[written:]
 	}
 	return nil
 }
 
 func writeNewJSON(path string, value any) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("create output: %w", err)
+	return writeNewJSONWithOutput(path, value, realFileOutput())
+}
+
+func realFileOutput() fileOutput {
+	return fileOutput{
+		createTemp: func(directory, pattern string) (temporaryFile, error) {
+			return os.CreateTemp(directory, pattern)
+		},
+		link:   os.Link,
+		remove: os.Remove,
 	}
-	if err := writeJSON(file, value); err != nil {
+}
+
+func writeNewJSONWithOutput(path string, value any, operations fileOutput) (resultErr error) {
+	body, err := marshalJSON(value)
+	if err != nil {
+		return fmt.Errorf("marshal output: %w", err)
+	}
+
+	file, err := operations.createTemp(filepath.Dir(path), ".agent-context-regression-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temporary output: %w", err)
+	}
+	tempPath := file.Name()
+	defer func() {
+		if err := operations.remove(tempPath); err != nil {
+			resultErr = errors.Join(
+				resultErr,
+				fmt.Errorf("remove temporary output: %w", err),
+			)
+		}
+	}()
+
+	if err := writeAll(file, body); err != nil {
 		_ = file.Close()
 		return fmt.Errorf("write output: %w", err)
 	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("sync output: %w", err)
+	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close output: %w", err)
+	}
+	if err := operations.link(tempPath, path); err != nil {
+		return fmt.Errorf("publish output: %w", err)
 	}
 	return nil
 }

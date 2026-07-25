@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -491,6 +492,171 @@ func TestRunDoesNotOverwriteExistingOutput(t *testing.T) {
 	}
 }
 
+func TestWriteNewJSONLeavesNoArtifactOnMarshalFailure(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "report.json")
+
+	err := writeNewJSON(output, make(chan int))
+
+	if err == nil {
+		t.Fatal("writeNewJSON error = nil, want marshal error")
+	}
+	requireDirectoryEntries(t, directory)
+}
+
+func TestWriteNewJSONCleansTemporaryFileOnStageFailure(t *testing.T) {
+	tests := []struct {
+		name   string
+		inject func(*os.File) temporaryFile
+	}{
+		{
+			name: "write",
+			inject: func(file *os.File) temporaryFile {
+				return &injectedTemporaryFile{File: file, writeErr: errors.New("injected write failure")}
+			},
+		},
+		{
+			name: "sync",
+			inject: func(file *os.File) temporaryFile {
+				return &injectedTemporaryFile{File: file, syncErr: errors.New("injected sync failure")}
+			},
+		},
+		{
+			name: "close",
+			inject: func(file *os.File) temporaryFile {
+				return &injectedTemporaryFile{File: file, closeErr: errors.New("injected close failure")}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			directory := t.TempDir()
+			output := filepath.Join(directory, "report.json")
+			operations := realFileOutput()
+			operations.createTemp = func(directory, pattern string) (temporaryFile, error) {
+				file, err := os.CreateTemp(directory, pattern)
+				if err != nil {
+					return nil, err
+				}
+				return test.inject(file), nil
+			}
+
+			err := writeNewJSONWithOutput(
+				output,
+				agentbench.GateReport{Passed: true, Failures: []string{}},
+				operations,
+			)
+
+			if err == nil || !strings.Contains(err.Error(), "injected") {
+				t.Fatalf("writeNewJSONWithOutput error = %v, want injected %s failure", err, test.name)
+			}
+			requireDirectoryEntries(t, directory)
+		})
+	}
+}
+
+func TestWriteNewJSONCleansTemporaryFileOnPublishFailure(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "report.json")
+	operations := realFileOutput()
+	operations.link = func(_, _ string) error {
+		return errors.New("injected publish failure")
+	}
+
+	err := writeNewJSONWithOutput(
+		output,
+		agentbench.GateReport{Passed: true, Failures: []string{}},
+		operations,
+	)
+
+	if err == nil || !strings.Contains(err.Error(), "injected publish failure") {
+		t.Fatalf("writeNewJSONWithOutput error = %v, want injected publish failure", err)
+	}
+	requireDirectoryEntries(t, directory)
+}
+
+func TestWriteNewJSONPreservesDestinationCreatedDuringPublish(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "report.json")
+	operations := realFileOutput()
+	operations.link = func(_, destination string) error {
+		if err := os.WriteFile(destination, []byte("sentinel"), 0o600); err != nil {
+			t.Fatalf("os.WriteFile(%q): %v", destination, err)
+		}
+		return os.ErrExist
+	}
+
+	err := writeNewJSONWithOutput(
+		output,
+		agentbench.GateReport{Passed: true, Failures: []string{}},
+		operations,
+	)
+
+	if err == nil {
+		t.Fatal("writeNewJSONWithOutput error = nil, want publish collision")
+	}
+	if got := readTextFile(t, output); got != "sentinel" {
+		t.Fatalf("existing output = %q, want sentinel", got)
+	}
+	requireDirectoryEntries(t, directory, "report.json")
+}
+
+func TestWriteNewJSONReportsCleanupFailureAfterWriteFailure(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "report.json")
+	operations := realFileOutput()
+	operations.createTemp = func(directory, pattern string) (temporaryFile, error) {
+		file, err := os.CreateTemp(directory, pattern)
+		if err != nil {
+			return nil, err
+		}
+		return &injectedTemporaryFile{
+			File:     file,
+			writeErr: errors.New("injected write failure"),
+		}, nil
+	}
+	operations.remove = func(string) error {
+		return errors.New("injected cleanup failure")
+	}
+
+	err := writeNewJSONWithOutput(
+		output,
+		agentbench.GateReport{Passed: true, Failures: []string{}},
+		operations,
+	)
+
+	if err == nil ||
+		!strings.Contains(err.Error(), "injected write failure") ||
+		!strings.Contains(err.Error(), "injected cleanup failure") {
+		t.Fatalf("writeNewJSONWithOutput error = %v, want write and cleanup failures", err)
+	}
+}
+
+func TestWriteNewJSONReportsCleanupFailureAfterPublication(t *testing.T) {
+	directory := t.TempDir()
+	output := filepath.Join(directory, "report.json")
+	operations := realFileOutput()
+	operations.remove = func(string) error {
+		return errors.New("injected cleanup failure")
+	}
+
+	err := writeNewJSONWithOutput(
+		output,
+		agentbench.GateReport{Passed: true, Failures: []string{}},
+		operations,
+	)
+
+	if err == nil || !strings.Contains(err.Error(), "injected cleanup failure") {
+		t.Fatalf("writeNewJSONWithOutput error = %v, want cleanup failure", err)
+	}
+	var report agentbench.GateReport
+	decodeJSON(t, readTextFile(t, output), &report)
+	if !report.Passed {
+		t.Fatalf("published report = %#v, want passing report", report)
+	}
+}
+
 func TestRunProducesStableOutputForReorderedInputs(t *testing.T) {
 	t.Run("diff pack", func(t *testing.T) {
 		fixture := newCommandFixture(t)
@@ -778,6 +944,55 @@ type shortWriter struct{}
 
 func (shortWriter) Write(body []byte) (int, error) {
 	return len(body) - 1, nil
+}
+
+type injectedTemporaryFile struct {
+	*os.File
+	writeErr error
+	syncErr  error
+	closeErr error
+}
+
+func (file *injectedTemporaryFile) Write(body []byte) (int, error) {
+	if file.writeErr != nil {
+		return 0, file.writeErr
+	}
+	return file.File.Write(body)
+}
+
+func (file *injectedTemporaryFile) Sync() error {
+	if file.syncErr != nil {
+		return file.syncErr
+	}
+	return file.File.Sync()
+}
+
+func (file *injectedTemporaryFile) Close() error {
+	closeErr := file.File.Close()
+	if closeErr != nil {
+		return closeErr
+	}
+	return file.closeErr
+}
+
+func requireDirectoryEntries(t *testing.T, directory string, want ...string) {
+	t.Helper()
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatalf("os.ReadDir(%q): %v", directory, err)
+	}
+	got := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		got = append(got, entry.Name())
+	}
+	if len(got) != len(want) {
+		t.Fatalf("directory entries = %q, want %q", got, want)
+	}
+	for index := range got {
+		if got[index] != want[index] {
+			t.Fatalf("directory entries = %q, want %q", got, want)
+		}
+	}
 }
 
 func TestValidCommandFixture(t *testing.T) {
