@@ -25,19 +25,20 @@ type PackProjection struct {
 }
 
 type PackDiff struct {
-	EndpointChanged   bool     `json:"endpoint_changed"`
-	GoldenEndpoint    string   `json:"golden_endpoint"`
-	CandidateEndpoint string   `json:"candidate_endpoint"`
-	AddedLocations    []string `json:"added_locations"`
-	RemovedLocations  []string `json:"removed_locations"`
-	AddedSources      []string `json:"added_sources"`
-	RemovedSources    []string `json:"removed_sources"`
-	AddedOmissions    []string `json:"added_omissions"`
-	RemovedOmissions  []string `json:"removed_omissions"`
-	CoverageChanged   bool     `json:"coverage_changed"`
-	BudgetChanged     bool     `json:"budget_changed"`
-	FallbackChanged   bool     `json:"fallback_changed"`
-	RetryChanged      bool     `json:"retry_changed"`
+	EndpointChanged    bool     `json:"endpoint_changed"`
+	GoldenEndpoint     string   `json:"golden_endpoint"`
+	CandidateEndpoint  string   `json:"candidate_endpoint"`
+	AddedLocations     []string `json:"added_locations"`
+	RemovedLocations   []string `json:"removed_locations"`
+	AddedSources       []string `json:"added_sources"`
+	RemovedSources     []string `json:"removed_sources"`
+	AddedOmissions     []string `json:"added_omissions"`
+	RemovedOmissions   []string `json:"removed_omissions"`
+	CoverageChanged    bool     `json:"coverage_changed"`
+	BudgetChanged      bool     `json:"budget_changed"`
+	FallbackChanged    bool     `json:"fallback_changed"`
+	RetryChanged       bool     `json:"retry_changed"`
+	UncertaintyChanged bool     `json:"uncertainty_changed"`
 }
 
 type Violation struct {
@@ -46,11 +47,7 @@ type Violation struct {
 }
 
 func ProjectPack(pack agent.ContextPack) PackProjection {
-	endpoints := make([]string, 0, len(pack.Endpoints))
-	for _, endpoint := range pack.Endpoints {
-		endpoints = append(endpoints, endpointKey(endpoint))
-	}
-	endpoints = sortedUnique(endpoints)
+	endpoints := projectEndpointKeys(pack.Endpoints)
 
 	projection := PackProjection{
 		Entrypoints:      projectLocations("entrypoints", pack.Entrypoints),
@@ -131,19 +128,20 @@ func DiffPacks(golden, candidate agent.ContextPack) PackDiff {
 	addedOmissions, removedOmissions := diffKeys(goldenProjection.Omissions, candidateProjection.Omissions, sourceDisplay)
 
 	return PackDiff{
-		EndpointChanged:   goldenProjection.Endpoint != candidateProjection.Endpoint,
-		GoldenEndpoint:    goldenProjection.Endpoint,
-		CandidateEndpoint: candidateProjection.Endpoint,
-		AddedLocations:    addedLocations,
-		RemovedLocations:  removedLocations,
-		AddedSources:      addedSources,
-		RemovedSources:    removedSources,
-		AddedOmissions:    addedOmissions,
-		RemovedOmissions:  removedOmissions,
-		CoverageChanged:   goldenProjection.SourceCoverage != candidateProjection.SourceCoverage,
-		BudgetChanged:     goldenProjection.EstimatedTokens != candidateProjection.EstimatedTokens,
-		FallbackChanged:   goldenProjection.FallbackRequired != candidateProjection.FallbackRequired,
-		RetryChanged:      goldenProjection.RetryAllowed != candidateProjection.RetryAllowed,
+		EndpointChanged:    !equalStringSlices(projectEndpointKeys(golden.Endpoints), projectEndpointKeys(candidate.Endpoints)),
+		GoldenEndpoint:     goldenProjection.Endpoint,
+		CandidateEndpoint:  candidateProjection.Endpoint,
+		AddedLocations:     addedLocations,
+		RemovedLocations:   removedLocations,
+		AddedSources:       addedSources,
+		RemovedSources:     removedSources,
+		AddedOmissions:     addedOmissions,
+		RemovedOmissions:   removedOmissions,
+		CoverageChanged:    goldenProjection.SourceCoverage != candidateProjection.SourceCoverage,
+		BudgetChanged:      goldenProjection.EstimatedTokens != candidateProjection.EstimatedTokens,
+		FallbackChanged:    goldenProjection.FallbackRequired != candidateProjection.FallbackRequired,
+		RetryChanged:       goldenProjection.RetryAllowed != candidateProjection.RetryAllowed,
+		UncertaintyChanged: !equalStringSlices(goldenProjection.Uncertainties, candidateProjection.Uncertainties),
 	}
 }
 
@@ -183,7 +181,18 @@ func EvaluatePackDiff(diff PackDiff, hypothesis Hypothesis) []Violation {
 	if diff.RetryChanged {
 		violations = append(violations, Violation{Field: "retry_allowed", Reason: "retry permission changes are not allowed"})
 	}
+	if diff.UncertaintyChanged {
+		violations = append(violations, Violation{Field: "uncertainties", Reason: "uncertainty changes are not allowed"})
+	}
 	return violations
+}
+
+func projectEndpointKeys(endpoints []agent.ContextEndpoint) []string {
+	keys := make([]string, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		keys = append(keys, endpointKey(endpoint))
+	}
+	return sortedUnique(keys)
 }
 
 func endpointKey(endpoint agent.ContextEndpoint) string {
@@ -243,6 +252,18 @@ func sortedUnique(values []string) []string {
 		}
 	}
 	return result
+}
+
+func equalStringSlices(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func matchesEndpoint(endpoints []agent.ContextEndpoint, expectation EndpointExpectation) bool {

@@ -62,6 +62,37 @@ func TestEvaluatePackDiffRejectsProtectedAndUndeclaredChanges(t *testing.T) {
 		requireViolation(t, violations, "call_chain")
 	})
 
+	t.Run("rejects changes to secondary endpoints", func(t *testing.T) {
+		hypothesis := Hypothesis{AllowedPackChanges: []string{"locations", "sources", "coverage", "omissions", "budget"}}
+		golden := goldenPack()
+		golden.Endpoints = append(golden.Endpoints, agent.ContextEndpoint{Provider: "zebra", HTTPMethod: "GET", Path: "/zebra"})
+		candidate := golden
+		candidate.Endpoints = append([]agent.ContextEndpoint(nil), golden.Endpoints...)
+		candidate.Endpoints[1].Path = "/zebra/{id}"
+
+		diff := DiffPacks(golden, candidate)
+		if !diff.EndpointChanged {
+			t.Fatal("secondary endpoint change was not reported")
+		}
+		violations := EvaluatePackDiff(diff, hypothesis)
+
+		requireViolation(t, violations, "endpoint")
+	})
+
+	t.Run("rejects uncertainty changes", func(t *testing.T) {
+		hypothesis := Hypothesis{AllowedPackChanges: []string{"locations", "sources", "coverage", "omissions", "budget"}}
+		candidate := goldenPack()
+		candidate.Uncertainties[0].Reason = "job client is indexed"
+
+		diff := DiffPacks(goldenPack(), candidate)
+		if !diff.UncertaintyChanged {
+			t.Fatal("uncertainty change was not reported")
+		}
+		violations := EvaluatePackDiff(diff, hypothesis)
+
+		requireViolation(t, violations, "uncertainties")
+	})
+
 	t.Run("rejects actual change categories absent from the hypothesis", func(t *testing.T) {
 		hypothesis := Hypothesis{AllowedPackChanges: []string{"locations"}}
 		candidate := goldenPack()
