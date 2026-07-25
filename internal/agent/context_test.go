@@ -174,6 +174,28 @@ func TestContextExpandedTokenSet(t *testing.T) {
 	}
 }
 
+func TestContextExpandedTokenSetExpandsGermanCatalogItemInflections(t *testing.T) {
+	for _, value := range []string{
+		"Katalogeintrag",
+		"Katalogeintrags",
+		"Katalogeintrages",
+		"Katalogeinträge",
+		"Katalogeinträgen",
+	} {
+		t.Run(value, func(t *testing.T) {
+			tokens := contextExpandedTokenSet(value)
+			if !tokens["catalog"] || !tokens["item"] {
+				t.Fatalf("expanded tokens for %q = %#v, want catalog and item", value, tokens)
+			}
+		})
+	}
+
+	tokens := contextExpandedTokenSet("Katalogisierung")
+	if tokens["catalog"] || tokens["item"] {
+		t.Fatalf("unrelated German noun received catalog-item aliases: %#v", tokens)
+	}
+}
+
 func TestContextEvidenceFacetsRecognizeBenchmarkLanguage(t *testing.T) {
 	tokens := contextExpandedTokenSet(
 		"Retry-Logik und Fehlerbehandlung sowie Protokollierung, E-Mail und Benutzerinformationen",
@@ -2399,6 +2421,110 @@ func TestSelectContextEndpointDoesNotTreatProductionChangeAsUpdateIntent(t *test
 	}
 	if endpoint.fact.ID != "catalog-delete" {
 		t.Fatalf("selected endpoint = %#v, want catalog DELETE", endpoint.fact)
+	}
+}
+
+func TestSelectContextEndpointPromotesGermanCatalogItemInflections(t *testing.T) {
+	index := naturalLanguageCatalogDeleteIndex()
+	const (
+		englishQuery = "Plan the smallest production change that removes jobs when a catalog item is deleted."
+		germanQuery  = "Plane die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden."
+	)
+
+	var selectedID string
+	for _, test := range []struct {
+		name     string
+		query    string
+		rawScore int
+	}{
+		{name: "English", query: englishQuery, rawScore: 230},
+		{name: "German", query: germanQuery, rawScore: 170},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ranked := rankContextFacts(index.Facts, test.query)
+			rawScore := 0
+			for _, candidate := range ranked {
+				if candidate.fact.ID == "catalog-delete" {
+					rawScore = candidate.score
+					break
+				}
+			}
+			if rawScore != test.rawScore {
+				t.Fatalf("raw catalog DELETE score = %d, want %d", rawScore, test.rawScore)
+			}
+
+			actions := contextEndpointRequestedActions(test.query)
+			if !contextEndpointNaturalLanguageRelevant(index.Facts[0], test.query, actions) {
+				t.Fatal("catalog DELETE endpoint is not naturally relevant")
+			}
+			selected, ok, reason := selectContextEndpoint(index, ranked, test.query)
+			if !ok || reason != "" {
+				t.Fatalf("endpoint selection failed: ok=%v reason=%q", ok, reason)
+			}
+			if selected.fact.ID != "catalog-delete" || selected.score < minimumContextMediumScore {
+				t.Fatalf("selected endpoint = %#v, score %d", selected.fact, selected.score)
+			}
+			if selectedID != "" && selected.fact.ID != selectedID {
+				t.Fatalf("selected endpoint = %q, want parity with %q", selected.fact.ID, selectedID)
+			}
+			selectedID = selected.fact.ID
+		})
+	}
+}
+
+func TestBuildContextSelectsGermanCatalogItemDeleteEndpoint(t *testing.T) {
+	root := writeContextIndexFixture(t, naturalLanguageCatalogDeleteIndex())
+	writeContextSourceFile(t, root, "CatalogController.java", "public class CatalogController {\n    void deleteItem() {\n        service.deleteItem();\n    }\n    void changeItem() {\n        service.changeItem();\n    }\n}\n")
+	writeContextSourceFile(t, root, "CatalogService.java", "public class CatalogService {\n    void deleteItem() {\n        repository.deleteItem();\n    }\n}\n")
+	query := "Plane die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden."
+
+	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.FallbackRequired || pack.Confidence == "LOW" {
+		t.Fatalf("German catalog-item delete confidence = %q, fallback = %v: %#v", pack.Confidence, pack.FallbackRequired, pack)
+	}
+	if len(pack.Endpoints) != 1 ||
+		pack.Endpoints[0].HTTPMethod != "DELETE" ||
+		pack.Endpoints[0].Path != "/catalog/{itemId}" {
+		t.Fatalf("German catalog-item endpoint = %#v, want catalog DELETE", pack.Endpoints)
+	}
+}
+
+func naturalLanguageCatalogDeleteIndex() scan.AgentContextIndexRecord {
+	return scan.AgentContextIndexRecord{
+		SchemaVersion: scan.SchemaVersion,
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "catalog-delete", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "DELETE /catalog/{itemId}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/{itemId}", File: "CatalogController.java",
+				Line: 2, EndLine: 4, Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "catalog-delete-route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/{itemId}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/{itemId}", File: "CatalogController.java",
+				Line: 2, EndLine: 4, Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "catalog-delete-service", Project: "services/catalog", Kind: "symbol",
+				Name: "deleteItem", Qualified: "CatalogService.deleteItem",
+				File: "CatalogService.java", Line: 2, EndLine: 4,
+				Search: "delete catalog item", Confidence: "EXACT",
+			},
+			{
+				ID: "catalog-update", Project: "services/catalog", Kind: "api_endpoint",
+				Name: "PUT /catalog/{itemId}", Qualified: "CatalogController.changeItem",
+				HTTPMethod: "PUT", Path: "/catalog/{itemId}", File: "CatalogController.java",
+				Line: 6, EndLine: 8, Search: "change catalog item", Confidence: "EXACT",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "catalog-delete-call", FromFactID: "catalog-delete-route", ToFactID: "catalog-delete-service",
+			Kind: "call", Confidence: "EXACT",
+		}},
 	}
 }
 
