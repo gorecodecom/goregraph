@@ -359,10 +359,41 @@ func TestCompileContextPackRelatedProviderTestFailsClosed(t *testing.T) {
 			},
 		},
 		{
+			name: "blank provider confidence",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				missingContractFactByID(index.Facts, "jobs-route").Confidence = ""
+			},
+		},
+		{
+			name: "partial provider confidence",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				missingContractFactByID(index.Facts, "jobs-route").Confidence = "PARTIAL"
+			},
+		},
+		{
+			name: "matched provider confidence",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				missingContractFactByID(index.Facts, "jobs-route").Confidence = "MATCHED"
+			},
+		},
+		{
 			name: "same test targets multiple production facts",
 			mutate: func(index *scan.AgentContextIndexRecord) {
 				index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
 					ID: "ambiguous-test", FromFactID: "jobs-test", ToFactID: "jobs-service",
+					Kind: "test_target", Confidence: "EXTRACTED",
+				})
+			},
+		},
+		{
+			name: "same qualified handler has multiple method lines",
+			mutate: func(index *scan.AgentContextIndexRecord) {
+				overload := *missingContractFactByID(index.Facts, "jobs-route-symbol")
+				overload.ID = "jobs-route-overload"
+				overload.Line += 6
+				index.Facts = append(index.Facts, overload)
+				index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+					ID: "overloaded-test", FromFactID: "jobs-test", ToFactID: overload.ID,
 					Kind: "test_target", Confidence: "EXTRACTED",
 				})
 			},
@@ -597,6 +628,8 @@ func missingContractRankIndexWithProviderTests() scan.AgentContextIndexRecord {
 	providerAlias := *missingContractFactByID(index.Facts, "jobs-route")
 	providerAlias.ID = "jobs-route-symbol"
 	providerAlias.Kind = "symbol"
+	providerAlias.Name = "listJobs"
+	providerAlias.Line += 4
 	providerAlias.HTTPMethod = ""
 	providerAlias.Path = ""
 	index.Facts = append(index.Facts, scan.AgentContextFactRecord{

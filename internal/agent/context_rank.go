@@ -236,6 +236,7 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		if supportProjectCounts[project] == 0 && acceptedSupportProjects >= maximumContextSupportingProjects {
 			continue
 		}
+		indexedRelatedFact := relatedFact
 		relatedFact = lowerConfidenceForRelatedProduction(relatedFact)
 		candidate := pack
 		accepted := false
@@ -263,8 +264,8 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 		}
 		if accepted {
 			pack = candidate
-			if reliableRelatedProviderTestTarget(relatedFact) {
-				acceptedRelatedFacts = append(acceptedRelatedFacts, relatedFact)
+			if reliableRelatedProviderTestTarget(indexedRelatedFact) {
+				acceptedRelatedFacts = append(acceptedRelatedFacts, indexedRelatedFact)
 			}
 			includedFactIDs[relatedFact.ID] = true
 			supportFactIDs[relatedFact.ID] = true
@@ -543,7 +544,7 @@ func relatedProviderTestTargets(
 	edges []scan.AgentContextEdgeRecord,
 	factByID map[string]scan.AgentContextFactRecord,
 ) map[string]map[string]bool {
-	targetsByTestID := map[string]map[string]bool{}
+	targetFactsByTestID := map[string]map[string]scan.AgentContextFactRecord{}
 	for _, edge := range edges {
 		if !strings.EqualFold(strings.TrimSpace(edge.Kind), "test_target") ||
 			!reliableRelatedProviderTestConfidence(edge.Confidence) {
@@ -558,22 +559,78 @@ func relatedProviderTestTargets(
 			normalizeContextProject(test.Project) != normalizeContextProject(target.Project) {
 			continue
 		}
-		if targetsByTestID[test.ID] == nil {
-			targetsByTestID[test.ID] = map[string]bool{}
+		if targetFactsByTestID[test.ID] == nil {
+			targetFactsByTestID[test.ID] = map[string]scan.AgentContextFactRecord{}
 		}
-		targetsByTestID[test.ID][relatedProviderTestTargetIdentity(target)] = true
+		targetFactsByTestID[test.ID][target.ID] = target
+	}
+	targetsByTestID := make(map[string]map[string]bool, len(targetFactsByTestID))
+	for testID, targets := range targetFactsByTestID {
+		targetsByTestID[testID] = relatedProviderTestTargetIdentities(targets)
 	}
 	return targetsByTestID
 }
 
-func relatedProviderTestTargetIdentity(fact scan.AgentContextFactRecord) string {
-	return fmt.Sprintf(
-		"%s\x00%s\x00%s\x00%d",
-		normalizeContextProject(fact.Project),
-		strings.ToLower(contextRetryPath(fact.File)),
-		normalizeContextTerm(firstNonEmptyContext(fact.Qualified, fact.Name)),
-		fact.Line,
-	)
+func relatedProviderTestTargetIdentities(
+	targets map[string]scan.AgentContextFactRecord,
+) map[string]bool {
+	type qualifiedTargetGroup struct {
+		concreteLines map[int]bool
+	}
+	identities := map[string]bool{}
+	qualifiedGroups := map[string]qualifiedTargetGroup{}
+	for _, target := range targets {
+		project := normalizeContextProject(target.Project)
+		file := strings.ToLower(contextRetryPath(target.File))
+		qualified := normalizeContextTerm(target.Qualified)
+		if qualified == "" {
+			name := normalizeContextTerm(target.Name)
+			if name == "" || target.Line <= 0 {
+				identities["fact\x00"+target.ID] = true
+				continue
+			}
+			identities[fmt.Sprintf(
+				"%s\x00%s\x00name\x00%s\x00%d",
+				project,
+				file,
+				name,
+				target.Line,
+			)] = true
+			continue
+		}
+		groupKey := strings.Join([]string{project, file, qualified}, "\x00")
+		group := qualifiedGroups[groupKey]
+		if group.concreteLines == nil {
+			group.concreteLines = map[int]bool{}
+		}
+		if !relatedProviderTestRouteAlias(target) {
+			if target.Line <= 0 {
+				identities["fact\x00"+target.ID] = true
+			} else {
+				group.concreteLines[target.Line] = true
+			}
+		}
+		qualifiedGroups[groupKey] = group
+	}
+	for groupKey, group := range qualifiedGroups {
+		if len(group.concreteLines) == 0 {
+			identities[groupKey] = true
+			continue
+		}
+		for line := range group.concreteLines {
+			identities[fmt.Sprintf("%s\x00%d", groupKey, line)] = true
+		}
+	}
+	return identities
+}
+
+func relatedProviderTestRouteAlias(fact scan.AgentContextFactRecord) bool {
+	switch strings.ToLower(strings.TrimSpace(fact.Kind)) {
+	case "route", "api_endpoint":
+		return true
+	default:
+		return false
+	}
 }
 
 func reliableRelatedProviderTestProductionTarget(fact scan.AgentContextFactRecord) bool {
