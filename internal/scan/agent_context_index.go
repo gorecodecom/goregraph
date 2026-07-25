@@ -432,8 +432,8 @@ func contextAdjacentSideEffectSymbol(symbol RichSymbolRecord) bool {
 	effectSignal := false
 	domainSignal := false
 	for _, token := range contextIdentifierTokens(symbol.Name) {
-		token = strings.ToLower(token)
-		switch token {
+		normalized := strings.ToLower(token)
+		switch normalized {
 		case "debug", "trace":
 			return false
 		case "publish", "emit", "notify", "send":
@@ -463,23 +463,27 @@ func contextJavaTestSourcePath(file string) bool {
 }
 
 func contextSideEffectDomainToken(token string) bool {
-	switch token {
-	case "", "all", "and", "any", "as", "async", "at", "by", "create", "data",
-		"delete", "do", "else", "event", "events", "find", "for", "from", "get",
-		"helper", "if", "in", "info", "information", "into", "is", "it", "list",
-		"log", "message", "messages", "notification", "notifications", "now", "of",
-		"on", "or", "out", "read", "request", "response", "result", "save", "set",
-		"status", "that", "then", "this", "to", "update", "value", "values", "when",
-		"while", "with":
+	normalized := strings.ToLower(token)
+	switch normalized {
+	case "", "again", "all", "and", "any", "as", "async", "at", "away", "back",
+		"by", "create", "data", "delete", "directly", "do", "else", "event", "events",
+		"find", "for", "from", "get", "helper", "if", "immediately", "in", "info",
+		"information", "into", "is", "it", "later", "list", "log", "message",
+		"messages", "notification", "notifications", "now", "of", "on", "once",
+		"only", "or", "out", "read", "request", "response", "result", "save", "set",
+		"soon", "status", "that", "then", "this", "to", "update", "value", "values",
+		"when", "while", "with":
 		return false
 	}
 	letters := 0
+	uppercase := true
 	for _, current := range token {
 		if unicode.IsLetter(current) {
 			letters++
+			uppercase = uppercase && unicode.IsUpper(current)
 		}
 	}
-	return letters >= 4
+	return letters >= 4 || letters >= 2 && uppercase
 }
 
 func (builder *agentContextBuilder) relationSymbol(id, label string) (RichSymbolRecord, bool) {

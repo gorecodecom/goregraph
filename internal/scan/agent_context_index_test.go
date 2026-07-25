@@ -220,7 +220,7 @@ func TestBuildProjectAgentContextIndexBoundsUnconnectedJavaSideEffectsDeterminis
 		"notifyVendorApproval",
 		"sendShipmentDispatch",
 	}
-	symbols := make([]RichSymbolRecord, 0, 12)
+	symbols := make([]RichSymbolRecord, 0, 16)
 	for index, name := range domainMethods {
 		symbols = append(symbols, RichSymbolRecord{
 			ID:       fmt.Sprintf("real:%02d", index),
@@ -231,7 +231,17 @@ func TestBuildProjectAgentContextIndexBoundsUnconnectedJavaSideEffectsDeterminis
 			Line:     index + 1,
 		})
 	}
-	for index, name := range []string{"sendTo", "notifyIf", "publishNow", "sendX"} {
+	nonDomainMethods := []string{
+		"sendSoon",
+		"emitOnce",
+		"publishLater",
+		"notifyOnly",
+		"sendTo",
+		"notifyIf",
+		"publishNow",
+		"sendX",
+	}
+	for index, name := range nonDomainMethods {
 		symbols = append(symbols, RichSymbolRecord{
 			ID:       fmt.Sprintf("fragment:%02d", index),
 			Name:     name,
@@ -278,9 +288,79 @@ func TestBuildProjectAgentContextIndexBoundsUnconnectedJavaSideEffectsDeterminis
 			t.Errorf("real domain side effect %q was displaced: %#v", name, forward.Facts)
 		}
 	}
-	for _, name := range []string{"sendTo", "notifyIf", "publishNow", "sendX"} {
+	for _, name := range nonDomainMethods {
 		if hasContextFact(forward.Facts, "side_effects", name) {
 			t.Errorf("non-domain fragment %q was promoted: %#v", name, forward.Facts)
+		}
+	}
+}
+
+func TestBuildProjectAgentContextIndexAcceptsOnlyUppercaseSideEffectAcronymsAtCap(t *testing.T) {
+	domainMethods := []string{
+		"publishInvoiceFinalized",
+		"emitPaymentCaptured",
+		"notifyCustomerRenewal",
+		"sendReceiptDelivery",
+		"sendSMS",
+		"notifyHR",
+		"publishSQS",
+		"emitOTP",
+	}
+	nonDomainMethods := []string{
+		"sendSms",
+		"notifyHr",
+		"publishSqs",
+		"emitOtp",
+		"sendTo",
+		"notifyIf",
+		"publishNow",
+		"sendX",
+	}
+	symbols := make([]RichSymbolRecord, 0, len(domainMethods)+len(nonDomainMethods))
+	for index, name := range domainMethods {
+		symbols = append(symbols, RichSymbolRecord{
+			ID:       fmt.Sprintf("valid:%02d", index),
+			Name:     name,
+			Kind:     "method",
+			Language: "java",
+			File:     fmt.Sprintf("src/main/java/example/Effect%02d.java", index),
+			Line:     index + 1,
+		})
+	}
+	for index, name := range nonDomainMethods {
+		symbols = append(symbols, RichSymbolRecord{
+			ID:       fmt.Sprintf("fragment:%02d", index),
+			Name:     name,
+			Kind:     "method",
+			Language: "java",
+			File:     fmt.Sprintf("src/main/java/example/Fragment%02d.java", index),
+			Line:     index + 20,
+		})
+	}
+
+	index := BuildProjectAgentContextIndex(
+		"services/jobs",
+		"fixed",
+		nil,
+		nil,
+		symbols,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	if len(index.Facts) != maxAdjacentSideEffectSymbols {
+		t.Fatalf("bounded acronym side-effect facts = %d, want %d: %#v", len(index.Facts), maxAdjacentSideEffectSymbols, index.Facts)
+	}
+	for _, name := range domainMethods {
+		if !hasContextFact(index.Facts, "side_effects", name) {
+			t.Errorf("uppercase acronym side effect %q missing: %#v", name, index.Facts)
+		}
+	}
+	for _, name := range nonDomainMethods {
+		if hasContextFact(index.Facts, "side_effects", name) {
+			t.Errorf("lowercase short fragment %q was promoted: %#v", name, index.Facts)
 		}
 	}
 }
