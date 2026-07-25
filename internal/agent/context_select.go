@@ -820,21 +820,75 @@ func contextPackWithSelectedClientPublicConcerns(pack ContextPack) ContextPack {
 		if !contextQueryRequestsConcern(contextSelectionQuery(pack), kind) {
 			continue
 		}
+		missingProjects := []string{}
 		for _, project := range orderedProjects {
 			key := kind + ":" + project
-			if existing[key] || existing[kind] ||
-				len(result.Concerns) >= maximumPublicContextConcerns {
+			if existing[key] || existing[kind] {
 				continue
 			}
-			result.Concerns = append(result.Concerns, ContextConcern{
-				Kind:    kind,
-				Project: project,
-				Reason:  "requested selected client " + strings.ReplaceAll(kind, "_", " ") + " evidence",
-			})
-			existing[key] = true
+			missingProjects = append(missingProjects, project)
+		}
+		if len(missingProjects) == 0 {
+			continue
+		}
+		remaining := maximumPublicContextConcerns - len(result.Concerns)
+		if len(missingProjects) <= remaining {
+			for _, project := range missingProjects {
+				key := kind + ":" + project
+				result.Concerns = append(result.Concerns, ContextConcern{
+					Kind:    kind,
+					Project: project,
+					Reason:  "requested selected client " + strings.ReplaceAll(kind, "_", " ") + " evidence",
+				})
+				existing[key] = true
+			}
+			continue
+		}
+		global := ContextConcern{
+			Kind:   kind,
+			Reason: "requested selected client " + strings.ReplaceAll(kind, "_", " ") + " evidence",
+		}
+		if remaining > 0 {
+			result.Concerns = append(result.Concerns, global)
+			existing[kind] = true
+			continue
+		}
+		replacement := contextSelectedClientConcernReplacementIndex(result.Concerns)
+		if replacement >= 0 {
+			delete(existing, contextPublicConcernKey(result.Concerns[replacement]))
+			result.Concerns[replacement] = global
+			existing[kind] = true
 		}
 	}
 	return result
+}
+
+func contextSelectedClientConcernReplacementIndex(
+	concerns []ContextConcern,
+) int {
+	projectRepresented := make(map[string]int)
+	for _, concern := range concerns {
+		if project := normalizeContextProject(concern.Project); project != "" {
+			projectRepresented[project]++
+		}
+	}
+	bestIndex := -1
+	bestKey := ""
+	for index, concern := range concerns {
+		kind := strings.ToLower(strings.TrimSpace(concern.Kind))
+		project := normalizeContextProject(concern.Project)
+		if kind != contextConcernProject ||
+			projectRepresented[project] <= 1 ||
+			strings.HasPrefix(concern.Reason, "requested selected client ") {
+			continue
+		}
+		key := contextPublicConcernKey(concern)
+		if bestIndex < 0 || key > bestKey {
+			bestIndex = index
+			bestKey = key
+		}
+	}
+	return bestIndex
 }
 
 func contextSelectedClientPublicConcernKey(
@@ -843,7 +897,6 @@ func contextSelectedClientPublicConcernKey(
 	project string,
 ) string {
 	projectKey := kind + ":" + project
-	fallbacks := []string{}
 	for _, concern := range concerns {
 		if strings.ToLower(strings.TrimSpace(concern.Kind)) != kind {
 			continue
@@ -854,13 +907,7 @@ func contextSelectedClientPublicConcernKey(
 			return projectKey
 		case kind:
 			return kind
-		default:
-			fallbacks = append(fallbacks, key)
 		}
-	}
-	sort.Strings(fallbacks)
-	if len(fallbacks) > 0 {
-		return fallbacks[0]
 	}
 	return kind
 }
@@ -922,7 +969,7 @@ func contextContractProjectConcernCandidateIDs(
 			continue
 		}
 		if !contractNeighbors[fact.ID] &&
-			contextContractSupportIdentityMatches(fact, contractTokens) < 2 {
+			contextContractSupportIdentityMatches(fact, contractTokens) == 0 {
 			continue
 		}
 		value := strings.Join([]string{
@@ -941,11 +988,23 @@ func contextContractProjectConcernCandidateIDs(
 }
 
 func contextContractSupportIdentityToken(token string) bool {
+	if len([]rune(token)) < 3 || len(contextActionFamilies(token, "")) > 0 {
+		return false
+	}
+	for _, vocabulary := range contextConcernVocabulary {
+		for _, generic := range vocabulary {
+			if token == generic {
+				return false
+			}
+		}
+	}
 	switch token {
-	case "api", "call", "calls", "client_declarative", "contract",
-		"declarative", "delete", "endpoint", "feign", "get", "head",
-		"http", "https", "internal", "mapping", "options", "patch",
-		"post", "put", "request", "response", "route", "spring", "trace":
+	case "api", "call", "calls", "class", "client_declarative", "com",
+		"declarative", "endpoint", "example", "feign", "file", "golang",
+		"http", "https", "internal", "java", "javascript", "js", "kotlin",
+		"main", "mapping", "org", "package", "python", "request",
+		"response", "route", "ruby", "source", "spring", "src", "trace",
+		"ts", "typescript":
 		return false
 	default:
 		return true

@@ -388,21 +388,26 @@ func TestExpandContextEvidenceConcernsProjectsRequestedClientEvidenceFromSelecte
 		{
 			ID: "job-contract", Project: clientProject, Kind: "api_contract",
 			Name: "GET /internal/jobs", Qualified: "JobClient.listJobsForRemoval",
-			File: "JobClient.java", Confidence: "EXACT",
+			File: "src/main/java/example/JobClient.java", Confidence: "EXACT",
+			Search: "GET /internal/jobs internal jobs JobClient.listJobsForRemoval Job Client list For Removal spring FeignClient declarative mapping JobClient.java java JobClient",
 		},
 		{
-			ID: "client-config", Project: clientProject, Kind: "configuration",
-			Name: "JobClientConfig", File: "JobClientConfig.java", Confidence: "EXACT",
+			ID: "client-config", Project: clientProject, Kind: "symbol",
+			Name: "JobClientConfig", Qualified: "example.JobClientConfig",
+			File: "src/main/java/example/JobClientConfig.java", Confidence: "EXACT",
+			Search: "JobClientConfig Job Client Config example.JobClientConfig example JobClientConfig.java java",
 		},
 		{
 			ID: "client-auth", Project: clientProject, Kind: "symbol",
 			Name: "JobClientAuth", Qualified: "example.JobClientAuth",
-			File: "JobClientAuth.java", Confidence: "EXACT",
+			File: "src/main/java/example/JobClientAuth.java", Confidence: "EXACT",
 			Search: "JobClientAuth Job Client Auth example.JobClientAuth example JobClientAuth.java java",
 		},
 		{
-			ID: "client-retry", Project: clientProject, Kind: "resilience",
-			Name: "JobClientRetry", File: "JobClientRetry.java", Confidence: "EXACT",
+			ID: "client-retry", Project: clientProject, Kind: "symbol",
+			Name: "JobClientRetry", Qualified: "example.JobClientRetry",
+			File: "src/main/java/example/JobClientRetry.java", Confidence: "EXACT",
+			Search: "JobClientRetry Job Client Retry example.JobClientRetry example JobClientRetry.java java",
 		},
 		{
 			ID: "provider-auth", Project: "services/jobs", Kind: "authentication",
@@ -417,16 +422,22 @@ func TestExpandContextEvidenceConcernsProjectsRequestedClientEvidenceFromSelecte
 			Name: "AuditClientConfig", File: "AuditClientConfig.java", Confidence: "EXACT",
 		},
 		{
-			ID: "same-project-audit-config", Project: clientProject, Kind: "configuration",
-			Name: "AuditClientConfig", File: "InternalAuditClientConfig.java", Confidence: "EXACT",
+			ID: "same-project-audit-config", Project: clientProject, Kind: "symbol",
+			Name: "AuditClientConfig", Qualified: "example.AuditClientConfig",
+			File: "src/main/java/example/AuditClientConfig.java", Confidence: "EXACT",
+			Search: "AuditClientConfig Audit Client Config example.AuditClientConfig example AuditClientConfig.java java",
 		},
 		{
-			ID: "same-project-audit-auth", Project: clientProject, Kind: "authentication",
-			Name: "AuditClientAuth", File: "InternalAuditClientAuth.java", Confidence: "EXACT",
+			ID: "same-project-audit-auth", Project: clientProject, Kind: "symbol",
+			Name: "AuditClientAuth", Qualified: "example.AuditClientAuth",
+			File: "src/main/java/example/AuditClientAuth.java", Confidence: "EXACT",
+			Search: "AuditClientAuth Audit Client Auth example.AuditClientAuth example AuditClientAuth.java java",
 		},
 		{
-			ID: "same-project-audit-retry", Project: clientProject, Kind: "resilience",
-			Name: "AuditClientRetry", File: "InternalAuditClientRetry.java", Confidence: "EXACT",
+			ID: "same-project-audit-retry", Project: clientProject, Kind: "symbol",
+			Name: "AuditClientRetry", Qualified: "example.AuditClientRetry",
+			File: "src/main/java/example/AuditClientRetry.java", Confidence: "EXACT",
+			Search: "AuditClientRetry Audit Client Retry example.AuditClientRetry example AuditClientRetry.java java",
 		},
 	}}
 	concerns := []contextConcern{
@@ -735,6 +746,247 @@ final class InternalAuditClientRetry {
 			}
 		}
 	})
+}
+
+func TestSelectedClientPublicConcernsAtCapDoNotAliasForeignScopedCoverage(t *testing.T) {
+	tests := []struct {
+		name             string
+		selectedProjects []string
+	}{
+		{
+			name:             "one selected client",
+			selectedProjects: []string{"libraries/job-client"},
+		},
+		{
+			name:             "multiple selected clients",
+			selectedProjects: []string{"libraries/billing-client", "libraries/job-client"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			concerns := []ContextConcern{
+				{
+					Kind: contextConcernAuth, Project: "services/jobs",
+					Covered: true, Reason: "covered provider authentication",
+				},
+				{
+					Kind: contextConcernAuth, Project: "libraries/audit-client",
+					Covered: true, Reason: "covered Audit client authentication",
+				},
+				{
+					Kind: contextConcernProject, Project: "services/catalog",
+					Covered: true, Reason: "redundant project metadata",
+				},
+				{
+					Kind: contextConcernPersistence, Project: "services/catalog",
+					Covered: true, Reason: "project-specific evidence",
+				},
+			}
+			for index := len(concerns); index < maximumPublicContextConcerns; index++ {
+				concerns = append(concerns, ContextConcern{
+					Kind: fmt.Sprintf("filler_%02d", index),
+				})
+			}
+			contracts := make([]ContextLocation, 0, len(test.selectedProjects))
+			for _, project := range test.selectedProjects {
+				contracts = append(contracts, ContextLocation{
+					ID: project + "-contract", Project: project, Kind: "api_contract",
+				})
+			}
+			pack := contextPackWithSelectedClientPublicConcerns(ContextPack{
+				Query:          "Provide authentication for every selected client contract.",
+				selectionQuery: "Provide authentication for every selected client contract.",
+				Concerns:       concerns,
+				Contracts:      contracts,
+			})
+			if len(pack.Concerns) > maximumPublicContextConcerns {
+				t.Fatalf("selected-client concerns exceed cap: %#v", pack.Concerns)
+			}
+
+			internal := []contextConcern{
+				newContextConcern(
+					contextConcernAuth,
+					"services/jobs",
+					true,
+					[]string{"provider-auth"},
+					"provider authentication",
+				),
+				newContextConcern(
+					contextConcernAuth,
+					"libraries/audit-client",
+					true,
+					[]string{"audit-auth"},
+					"Audit client authentication",
+				),
+			}
+			represented := make(map[string]bool, len(pack.Concerns))
+			for _, concern := range pack.Concerns {
+				represented[contextPublicConcernKey(concern)] = true
+			}
+			for _, project := range test.selectedProjects {
+				publicKey := contextSelectedClientPublicConcernKey(
+					pack.Concerns,
+					contextConcernAuth,
+					project,
+				)
+				exactKey := contextConcernAuth + ":" + project
+				if publicKey != exactKey && publicKey != contextConcernAuth {
+					t.Fatalf(
+						"selected client %q aliased to foreign concern %q",
+						project,
+						publicKey,
+					)
+				}
+				if !represented[publicKey] {
+					t.Fatalf(
+						"selected client %q representation %q is absent from %#v",
+						project,
+						publicKey,
+						pack.Concerns,
+					)
+				}
+				missing := newContextConcern(
+					contextConcernAuth,
+					project,
+					true,
+					nil,
+					"missing selected client authentication",
+				)
+				missing.publicKey = publicKey
+				internal = append(internal, missing)
+			}
+
+			applyContextSourceCoverage(
+				&pack,
+				internal,
+				map[string]bool{
+					contextConcernAuth + ":services/jobs":          true,
+					contextConcernAuth + ":libraries/audit-client": true,
+				},
+			)
+			coverage := make(map[string]bool, len(pack.Concerns))
+			for _, concern := range pack.Concerns {
+				coverage[contextPublicConcernKey(concern)] = concern.Covered
+			}
+			for _, foreignKey := range []string{
+				contextConcernAuth + ":services/jobs",
+				contextConcernAuth + ":libraries/audit-client",
+			} {
+				if !coverage[foreignKey] {
+					t.Errorf("foreign concern %q was marked uncovered: %#v", foreignKey, pack.Concerns)
+				}
+			}
+			for _, project := range test.selectedProjects {
+				exactKey := contextConcernAuth + ":" + project
+				publicKey := contextSelectedClientPublicConcernKey(
+					pack.Concerns,
+					contextConcernAuth,
+					project,
+				)
+				if publicKey == exactKey && coverage[exactKey] ||
+					publicKey == contextConcernAuth && coverage[contextConcernAuth] {
+					t.Errorf(
+						"missing selected client %q was reported covered: %#v",
+						project,
+						pack.Concerns,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestSelectedClientPublicConcernsAtCapKeepNonredundantMetadata(t *testing.T) {
+	const clientProject = "libraries/job-client"
+	root := t.TempDir()
+	writeSourceFile(t, root, "JobClient.java", `package example;
+
+interface JobClient {
+  void listJobsForRemoval();
+}
+`)
+	writeSourceFile(t, root, "JobServerAuth.java", `package example;
+
+final class JobServerAuth {
+  SecurityFilterChain securityFilterChain() {
+    return http.authenticated();
+  }
+}
+`)
+	concerns := []ContextConcern{{
+		Kind: contextConcernAuth, Project: "services/jobs",
+		Covered: true, Reason: "covered provider authentication",
+	}}
+	for index := len(concerns); index < maximumPublicContextConcerns; index++ {
+		concerns = append(concerns, ContextConcern{
+			Kind: fmt.Sprintf("nonredundant_%02d", index),
+		})
+	}
+	originalKeys := make([]string, 0, len(concerns))
+	for _, concern := range concerns {
+		originalKeys = append(originalKeys, contextPublicConcernKey(concern))
+	}
+	pack := ContextPack{
+		Schema:         1,
+		Query:          "Provide authentication for the selected job client contract.",
+		selectionQuery: "Provide authentication for the selected job client contract.",
+		Confidence:     "EXACT",
+		BudgetTokens:   DefaultContextBudgetTokens,
+		Concerns:       concerns,
+		Contracts: []ContextLocation{{
+			ID: "job-contract", Project: clientProject, Kind: "api_contract",
+			File: "JobClient.java", Line: 3, EndLine: 5,
+		}},
+		selectedSourceFactIDs: []string{"job-contract", "provider-auth"},
+	}
+	loaded := loadedContextIndex{
+		ScopeRoot: root,
+		Index: scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "job-contract", Project: clientProject, Kind: "api_contract",
+				Name: "GET /internal/jobs", Qualified: "JobClient.listJobsForRemoval",
+				File: "JobClient.java", Line: 3, EndLine: 5, Confidence: "EXACT",
+			},
+			{
+				ID: "provider-auth", Project: "services/jobs", Kind: "authentication",
+				Name: "securityFilterChain", Qualified: "JobServerAuth.securityFilterChain",
+				File: "JobServerAuth.java", Line: 3, EndLine: 7, Confidence: "EXACT",
+			},
+		}},
+	}
+
+	got, err := attachContextSource(pack, loaded, ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotKeys := make([]string, 0, len(got.Concerns))
+	coverage := make(map[string]bool, len(got.Concerns))
+	for _, concern := range got.Concerns {
+		key := contextPublicConcernKey(concern)
+		gotKeys = append(gotKeys, key)
+		coverage[key] = concern.Covered
+	}
+	if !reflect.DeepEqual(gotKeys, originalKeys) {
+		t.Fatalf("full-cap public concerns changed: got %v, want %v", gotKeys, originalKeys)
+	}
+	if !coverage[contextConcernAuth+":services/jobs"] {
+		t.Fatalf("provider authentication was marked uncovered: %#v", got.Concerns)
+	}
+	foundClientOmission := false
+	for _, omission := range got.SourceOmissions {
+		foundClientOmission = foundClientOmission ||
+			omission.Project == clientProject &&
+				strings.Contains(omission.Reason, "client transport authentication")
+	}
+	if !foundClientOmission {
+		t.Fatalf("selected-client authentication omission missing: %#v", got.SourceOmissions)
+	}
+	if got.SourceCoverage != "partial" {
+		t.Fatalf("missing selected-client authentication coverage = %q, want partial", got.SourceCoverage)
+	}
 }
 
 func TestContextSourceOptionsExposeMissingSelectedClientAuthentication(t *testing.T) {

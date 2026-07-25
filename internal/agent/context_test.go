@@ -3242,6 +3242,58 @@ func TestBuildContextPublishesReachableConcretePersistence(t *testing.T) {
 	}
 }
 
+func TestAlignedReachablePersistenceKeepsReadBeforeDelete(t *testing.T) {
+	const project = "services/accounts"
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "account-delete", Project: project, Kind: "persistence",
+			Name: "deleteAccount", Qualified: "AccountRepository.deleteAccount",
+			Search: "delete account persistence repository",
+		},
+		{
+			ID: "account-finder", Project: project, Kind: "persistence",
+			Name: "findByAccountId", Qualified: "AccountRepository.findByAccountId",
+			Search: "find account persistence repository",
+		},
+		{
+			ID: "account-update", Project: project, Kind: "persistence",
+			Name: "updateAccount", Qualified: "AccountRepository.updateAccount",
+			Search: "update account persistence repository",
+		},
+		{
+			ID: "account-generic", Project: project, Kind: "persistence",
+			Name: "findAll", Qualified: "AccountRepository.findAll",
+			Search: "find account persistence repository",
+		},
+		{
+			ID: "invoice-delete", Project: project, Kind: "persistence",
+			Name: "deleteInvoice", Qualified: "InvoiceRepository.deleteInvoice",
+			Search: "delete invoice persistence repository",
+		},
+		{
+			ID: "other-project-delete", Project: "services/legacy-accounts", Kind: "persistence",
+			Name: "deleteAccount", Qualified: "AccountRepository.deleteAccount",
+			Search: "delete account persistence repository",
+		},
+	}
+	candidateIDs := make([]string, 0, len(facts))
+	for _, fact := range facts {
+		candidateIDs = append(candidateIDs, fact.ID)
+	}
+
+	got := contextAlignedReachablePersistenceCandidates(
+		contextExpandedTokenSet("delete account persistence repository"),
+		map[string]bool{"delete": true},
+		project,
+		candidateIDs,
+		facts,
+	)
+	want := []string{"account-delete", "account-finder"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("delete-aligned persistence = %v, want %v", got, want)
+	}
+}
+
 func TestBuildContextRejectsIneligibleIncomingClientContracts(t *testing.T) {
 	tests := []struct {
 		name   string

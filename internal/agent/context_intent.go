@@ -277,7 +277,9 @@ func contextAlignedReachablePersistenceCandidates(
 	}
 	domainTokens := make(map[string]bool)
 	for token := range contextConcernDomainQueryTokens(queryTokens) {
-		domainTokens[token] = true
+		if len(contextActionFamilies(token, "")) == 0 {
+			domainTokens[token] = true
+		}
 	}
 	for token := range contextTokenSet(project) {
 		delete(domainTokens, token)
@@ -291,7 +293,8 @@ func contextAlignedReachablePersistenceCandidates(
 		}
 		factActions := contextFactActionFamilies(fact)
 		if len(requestedActions) > 0 &&
-			!contextActionFamiliesOverlap(requestedActions, factActions) {
+			!contextActionFamiliesOverlap(requestedActions, factActions) &&
+			contextActionFamiliesHaveMutation(factActions) {
 			continue
 		}
 		factTokens := contextExpandedTokenSet(strings.Join([]string{
