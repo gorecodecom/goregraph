@@ -42,6 +42,8 @@ type SymbolRecord struct {
 	Kind string `json:"kind"`
 	File string `json:"file"`
 	Line int    `json:"line"`
+
+	adjacentSideEffectEvidence bool
 }
 
 type RelationRecord struct {
@@ -116,6 +118,8 @@ type RichSymbolRecord struct {
 	Limitations      []string   `json:"limitations,omitempty"`
 	scriptOffset     int
 	scriptCapability scriptSymbolCapability
+
+	adjacentSideEffectEvidence bool
 }
 
 type RichRelationRecord struct {
@@ -672,6 +676,8 @@ type JavaMethodRecord struct {
 	ConstructedTypes  []string               `json:"-"`
 	PendingHTTP       javaPendingHTTPRecord  `json:"-"`
 	TypeParameters    []string               `json:"-"`
+
+	adjacentSideEffectEvidence bool
 }
 
 type JavaFieldRecord struct {

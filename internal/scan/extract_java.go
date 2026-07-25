@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -203,6 +204,9 @@ func extractJavaSource(file FileRecord, body string) JavaSourceRecord {
 	}
 	resolveJavaHTTPClientKinds(&source)
 	resolveJavaHTTPCallConfidence(&source)
+	for index := range source.Methods {
+		source.Methods[index].adjacentSideEffectEvidence = javaAdjacentSideEffectEvidence(source.Methods[index])
+	}
 	return source
 }
 
@@ -754,7 +758,13 @@ func javaSymbols(source JavaSourceRecord) []SymbolRecord {
 		symbols = append(symbols, SymbolRecord{Name: typ.Name, Kind: typ.Kind, File: typ.File, Line: typ.Line})
 	}
 	for _, method := range source.Methods {
-		symbols = append(symbols, SymbolRecord{Name: method.Name, Kind: "method", File: method.File, Line: method.Line})
+		symbols = append(symbols, SymbolRecord{
+			Name:                       method.Name,
+			Kind:                       "method",
+			File:                       method.File,
+			Line:                       method.Line,
+			adjacentSideEffectEvidence: method.adjacentSideEffectEvidence,
+		})
 		if strings.HasPrefix(method.Name, "test") || hasAnnotation(method.Annotations, "Test") {
 			symbols = append(symbols, SymbolRecord{Name: method.Name, Kind: "test", File: method.File, Line: method.Line})
 		}
@@ -769,6 +779,143 @@ func javaSymbols(source JavaSourceRecord) []SymbolRecord {
 		return symbols[i].Name < symbols[j].Name
 	})
 	return symbols
+}
+
+func javaAdjacentSideEffectEvidence(method JavaMethodRecord) bool {
+	domainTokens, nameSignal := javaSideEffectNameDomainTokens(method.Name)
+	if !nameSignal || len(method.Parameters) == 0 {
+		return false
+	}
+
+	var calls []JavaCallRecord
+	for _, call := range method.Calls {
+		syntheticDeclarationCall := call.Line == method.Line &&
+			call.Receiver == "" &&
+			call.TargetOwner == "" &&
+			call.Method == method.Name
+		if !syntheticDeclarationCall {
+			calls = append(calls, call)
+		}
+	}
+	if len(calls) == 0 && len(method.HTTPRequests) == 0 {
+		return false
+	}
+
+	var executableEvidence []string
+	var callReferences []string
+	for _, call := range calls {
+		executableEvidence = append(
+			executableEvidence,
+			call.Receiver,
+			call.TargetOwner,
+			call.Method,
+		)
+		executableEvidence = append(executableEvidence, call.Arguments...)
+		callReferences = append(callReferences, call.Receiver)
+		callReferences = append(callReferences, call.Arguments...)
+	}
+	for _, request := range method.HTTPRequests {
+		executableEvidence = append(
+			executableEvidence,
+			request.Receiver,
+			request.PathExpression,
+			request.Path,
+		)
+		callReferences = append(callReferences, request.Receiver, request.PathExpression)
+	}
+	directCallReferences := append([]string(nil), callReferences...)
+	expressionNames := make([]string, 0, len(method.StringExpressions))
+	for name := range method.StringExpressions {
+		expressionNames = append(expressionNames, name)
+	}
+	sort.Strings(expressionNames)
+	for _, name := range expressionNames {
+		if javaEvidenceReferencesIdentifier(directCallReferences, name) {
+			expression := method.StringExpressions[name]
+			executableEvidence = append(executableEvidence, name, expression)
+			callReferences = append(callReferences, expression)
+		}
+	}
+
+	parameterConsumed := false
+	for _, parameter := range method.Parameters {
+		if javaEvidenceReferencesIdentifier(callReferences, parameter.Name) {
+			parameterConsumed = true
+			executableEvidence = append(executableEvidence, parameter.Name, parameter.Type)
+		}
+	}
+	if !parameterConsumed {
+		return false
+	}
+	executableEvidence = append(executableEvidence, method.ConstructedTypes...)
+	for _, domainToken := range domainTokens {
+		if javaEvidenceContainsToken(executableEvidence, domainToken) {
+			return true
+		}
+	}
+	return false
+}
+
+func javaSideEffectNameDomainTokens(name string) ([]string, bool) {
+	effectSignal := false
+	var domainTokens []string
+	for _, token := range contextIdentifierTokens(name) {
+		normalized := strings.ToLower(token)
+		switch normalized {
+		case "debug", "trace":
+			return nil, false
+		case "publish", "emit", "notify", "send":
+			effectSignal = true
+		default:
+			if javaStructurallyValidSideEffectDomainToken(token) {
+				domainTokens = append(domainTokens, normalized)
+			}
+		}
+	}
+	return domainTokens, effectSignal && len(domainTokens) > 0
+}
+
+func javaStructurallyValidSideEffectDomainToken(token string) bool {
+	letters := 0
+	uppercase := true
+	for _, current := range token {
+		if unicode.IsLetter(current) {
+			letters++
+			uppercase = uppercase && unicode.IsUpper(current)
+		}
+	}
+	return letters >= 4 || letters >= 2 && uppercase
+}
+
+func javaEvidenceReferencesIdentifier(evidence []string, identifier string) bool {
+	if identifier == "" {
+		return false
+	}
+	for _, value := range evidence {
+		lexical := sanitizeJavaLexical(value)
+		for _, candidate := range strings.FieldsFunc(lexical, func(current rune) bool {
+			return !(unicode.IsLetter(current) ||
+				unicode.IsDigit(current) ||
+				current == '_' ||
+				current == '$')
+		}) {
+			if candidate == identifier {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func javaEvidenceContainsToken(evidence []string, token string) bool {
+	for _, value := range evidence {
+		for _, candidate := range contextIdentifierTokens(value) {
+			if strings.EqualFold(candidate, token) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func javaImportRelations(source JavaSourceRecord) []RelationRecord {

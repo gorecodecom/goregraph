@@ -8,6 +8,20 @@ import (
 	"testing"
 )
 
+func javaAgentContextSymbols(file, body string) []RichSymbolRecord {
+	source := extractJavaSource(FileRecord{Path: file, Language: "java"}, body)
+	var methods []SymbolRecord
+	for _, symbol := range javaSymbols(source) {
+		if symbol.Kind == "method" {
+			methods = append(methods, symbol)
+		}
+	}
+	return buildRichSymbols(
+		[]FileRecord{{Path: file, Language: "java"}},
+		methods,
+	)
+}
+
 func TestBuildProjectAgentContextIndexIsCompactAndDeterministic(t *testing.T) {
 	routes := []CodeRouteRecord{{
 		RouteID: "route:delete", HTTPMethod: "DELETE",
@@ -84,7 +98,8 @@ func TestBuildProjectAgentContextIndexKeepsUnconnectedJavaSideEffectMethod(t *te
 		`package example;
 
 final class JobHousekeeping {
-  void publishRemoval(String itemId) {
+  void publishRemoval(String catalogId, String itemId) {
+    System.out.printf("job-removal catalog=%s item=%s%n", catalogId, itemId);
   }
 }
 `,
@@ -130,6 +145,153 @@ final class JobHousekeeping {
 	}
 	if len(index.Edges) != 0 {
 		t.Fatalf("unconnected publishRemoval gained a fabricated edge: %#v", index.Edges)
+	}
+}
+
+func TestBuildProjectAgentContextIndexRejectsUnmatchedSideEffectQualifiers(t *testing.T) {
+	const file = "src/main/java/example/JobQualifiers.java"
+	richSymbols := javaAgentContextSymbols(file, `package example;
+
+final class JobQualifiers {
+  void sendToday(String itemId) {
+    System.out.printf("job item=%s%n", itemId);
+  }
+
+  void emitDaily(String itemId) {
+    System.out.printf("job item=%s%n", itemId);
+  }
+
+  void publishTomorrow(String itemId) {
+    System.out.printf("job item=%s%n", itemId);
+  }
+
+  void notifyAlways(String itemId) {
+    System.out.printf("job item=%s%n", itemId);
+  }
+
+  void sendBefore(String itemId) {
+    System.out.printf("job item=%s%n", itemId);
+  }
+
+  void emitAfter(String itemId) {
+    System.out.printf("job item=%s%n", itemId);
+  }
+
+  void publishASAP(String itemId) {
+    System.out.printf("job item=%s%n", itemId);
+  }
+
+  void notifyOK(String itemId) {
+    System.out.printf("job item=%s%n", itemId);
+  }
+}
+`)
+	index := BuildProjectAgentContextIndex(
+		"services/jobs",
+		"fixed",
+		nil,
+		nil,
+		richSymbols,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	if len(index.Facts) != 0 || len(index.Edges) != 0 {
+		t.Fatalf("unmatched side-effect qualifiers leaked into compact context: %#v", index)
+	}
+}
+
+func TestBuildProjectAgentContextIndexRequiresExecutableJavaSideEffectEvidence(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "empty parameter method",
+			body: `final class JobHousekeeping {
+  void publishRemoval() {
+    System.out.printf("job-removal%n");
+  }
+}`,
+		},
+		{
+			name: "synthetic declaration call",
+			body: `final class JobHousekeeping {
+  void publishRemoval(String removalId) {
+  }
+}`,
+		},
+		{
+			name: "unused literal and comment",
+			body: `final class JobHousekeeping {
+  void publishRemoval(String itemId) {
+    String unused = "job-removal";
+    // removal must not count as executable evidence.
+    System.out.printf("job item=%s%n", itemId);
+  }
+}`,
+		},
+		{
+			name: "parameter name only in literal",
+			body: `final class JobHousekeeping {
+  void publishRemoval(String removalId) {
+    logger.info("removalId");
+  }
+}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			richSymbols := javaAgentContextSymbols(
+				"src/main/java/example/JobHousekeeping.java",
+				test.body,
+			)
+			index := BuildProjectAgentContextIndex(
+				"services/jobs",
+				"fixed",
+				nil,
+				nil,
+				richSymbols,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			if len(index.Facts) != 0 || len(index.Edges) != 0 {
+				t.Fatalf("method without executable side-effect evidence leaked into compact context: %#v", index)
+			}
+		})
+	}
+}
+
+func TestBuildProjectAgentContextIndexAcceptsReferencedJavaStringExpression(t *testing.T) {
+	const file = "src/main/java/example/JobHousekeeping.java"
+	richSymbols := javaAgentContextSymbols(file, `final class JobHousekeeping {
+  void publishRemoval(String itemId) {
+    String message = "job-removal item=%s%n";
+    System.out.printf(message, itemId);
+  }
+}`)
+	index := BuildProjectAgentContextIndex(
+		"services/jobs",
+		"fixed",
+		nil,
+		nil,
+		richSymbols,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	if !hasContextFact(index.Facts, "side_effects", "publishRemoval") {
+		t.Fatalf("referenced String expression side effect missing: %#v", index)
+	}
+	if len(index.Edges) != 0 {
+		t.Fatalf("unconnected String expression side effect gained an edge: %#v", index.Edges)
 	}
 }
 
@@ -220,16 +382,15 @@ func TestBuildProjectAgentContextIndexBoundsUnconnectedJavaSideEffectsDeterminis
 		"notifyVendorApproval",
 		"sendShipmentDispatch",
 	}
-	symbols := make([]RichSymbolRecord, 0, 16)
-	for index, name := range domainMethods {
-		symbols = append(symbols, RichSymbolRecord{
-			ID:       fmt.Sprintf("real:%02d", index),
-			Name:     name,
-			Kind:     "method",
-			Language: "java",
-			File:     fmt.Sprintf("src/main/java/example/Effect%02d.java", index),
-			Line:     index + 1,
-		})
+	domainParameters := []string{
+		"invoice",
+		"payment",
+		"customer",
+		"receipt",
+		"order",
+		"subscription",
+		"vendor",
+		"shipment",
 	}
 	nonDomainMethods := []string{
 		"sendSoon",
@@ -241,16 +402,25 @@ func TestBuildProjectAgentContextIndexBoundsUnconnectedJavaSideEffectsDeterminis
 		"publishNow",
 		"sendX",
 	}
-	for index, name := range nonDomainMethods {
-		symbols = append(symbols, RichSymbolRecord{
-			ID:       fmt.Sprintf("fragment:%02d", index),
-			Name:     name,
-			Kind:     "method",
-			Language: "java",
-			File:     fmt.Sprintf("src/main/java/example/Fragment%02d.java", index),
-			Line:     index + 20,
-		})
+	var body strings.Builder
+	body.WriteString("final class Effects {\n")
+	for index, name := range domainMethods {
+		fmt.Fprintf(
+			&body,
+			"  void %s(String %s) { sink.accept(%s); }\n",
+			name,
+			domainParameters[index],
+			domainParameters[index],
+		)
 	}
+	for _, name := range nonDomainMethods {
+		fmt.Fprintf(&body, "  void %s(String eventId) { sink.accept(eventId); }\n", name)
+	}
+	body.WriteString("}\n")
+	symbols := javaAgentContextSymbols(
+		"src/main/java/example/Effects.java",
+		body.String(),
+	)
 	build := func(values []RichSymbolRecord) AgentContextIndexRecord {
 		t.Helper()
 		return BuildProjectAgentContextIndex(
@@ -316,27 +486,35 @@ func TestBuildProjectAgentContextIndexAcceptsOnlyUppercaseSideEffectAcronymsAtCa
 		"publishNow",
 		"sendX",
 	}
-	symbols := make([]RichSymbolRecord, 0, len(domainMethods)+len(nonDomainMethods))
+	domainParameters := []string{
+		"invoice",
+		"payment",
+		"customer",
+		"receipt",
+		"sms",
+		"hr",
+		"sqs",
+		"otp",
+	}
+	var body strings.Builder
+	body.WriteString("final class Effects {\n")
 	for index, name := range domainMethods {
-		symbols = append(symbols, RichSymbolRecord{
-			ID:       fmt.Sprintf("valid:%02d", index),
-			Name:     name,
-			Kind:     "method",
-			Language: "java",
-			File:     fmt.Sprintf("src/main/java/example/Effect%02d.java", index),
-			Line:     index + 1,
-		})
+		fmt.Fprintf(
+			&body,
+			"  void %s(String %s) { sink.accept(%s); }\n",
+			name,
+			domainParameters[index],
+			domainParameters[index],
+		)
 	}
-	for index, name := range nonDomainMethods {
-		symbols = append(symbols, RichSymbolRecord{
-			ID:       fmt.Sprintf("fragment:%02d", index),
-			Name:     name,
-			Kind:     "method",
-			Language: "java",
-			File:     fmt.Sprintf("src/main/java/example/Fragment%02d.java", index),
-			Line:     index + 20,
-		})
+	for _, name := range nonDomainMethods {
+		fmt.Fprintf(&body, "  void %s(String fragment) { sink.accept(fragment); }\n", name)
 	}
+	body.WriteString("}\n")
+	symbols := javaAgentContextSymbols(
+		"src/main/java/example/Effects.java",
+		body.String(),
+	)
 
 	index := BuildProjectAgentContextIndex(
 		"services/jobs",
@@ -372,6 +550,7 @@ func TestBuildProjectAgentContextIndexRejectsJavaTestSourceSetsAcrossSeparators(
 		"notifyCustomerRenewal",
 		"sendReceiptDelivery",
 	}
+	productionParameters := []string{"invoice", "payment", "customer", "receipt"}
 	productionPaths := []string{
 		"src/main/java/example/InvoicePublisher.java",
 		"module/src/main/java/example/PaymentEmitter.java",
@@ -392,26 +571,22 @@ func TestBuildProjectAgentContextIndexRejectsJavaTestSourceSetsAcrossSeparators(
 		`src\testFixtures\java\example\EffectFixture.java`,
 		`module\src\testFixtures\java\example\EffectFixture.java`,
 	}
-	symbols := make([]RichSymbolRecord, 0, len(productionPaths)+len(testPaths))
+	var symbols []RichSymbolRecord
 	for index, file := range productionPaths {
-		symbols = append(symbols, RichSymbolRecord{
-			ID:       fmt.Sprintf("production:%02d", index),
-			Name:     productionMethods[index],
-			Kind:     "method",
-			Language: "java",
-			File:     file,
-			Line:     10,
-		})
+		body := fmt.Sprintf(
+			"final class Effect {\n  void %s(String %s) { sink.accept(%s); }\n}\n",
+			productionMethods[index],
+			productionParameters[index],
+			productionParameters[index],
+		)
+		symbols = append(symbols, javaAgentContextSymbols(file, body)...)
 	}
 	for index, file := range testPaths {
-		symbols = append(symbols, RichSymbolRecord{
-			ID:       fmt.Sprintf("test-source:%02d", index),
-			Name:     fmt.Sprintf("publishInvoiceFinalized%02d", index),
-			Kind:     "method",
-			Language: "java",
-			File:     file,
-			Line:     10,
-		})
+		body := fmt.Sprintf(
+			"final class Effect {\n  void publishInvoiceFinalized%02d(String invoice) { sink.accept(invoice); }\n}\n",
+			index,
+		)
+		symbols = append(symbols, javaAgentContextSymbols(file, body)...)
 	}
 
 	index := BuildProjectAgentContextIndex(
@@ -457,16 +632,23 @@ func TestBuildProjectAgentContextIndexUpgradesConnectedJavaSideEffectWithoutChan
 			File: "src/main/java/example/LedgerRepository.java", Line: 40,
 		},
 	}
+	var adjacentBody strings.Builder
+	adjacentBody.WriteString("final class Adjustments {\n")
 	for index := range 8 {
-		symbols = append(symbols, RichSymbolRecord{
-			ID:       fmt.Sprintf("adjacent:%02d", index),
-			Name:     fmt.Sprintf("publishInvoiceAdjustment%02d", index),
-			Kind:     "method",
-			Language: "java",
-			File:     fmt.Sprintf("src/main/java/example/Adjustment%02d.java", index),
-			Line:     index + 50,
-		})
+		fmt.Fprintf(
+			&adjacentBody,
+			"  void publishInvoiceAdjustment%02d(String invoice) { sink.accept(invoice); }\n",
+			index,
+		)
 	}
+	adjacentBody.WriteString("}\n")
+	symbols = append(
+		symbols,
+		javaAgentContextSymbols(
+			"src/main/java/example/Adjustments.java",
+			adjacentBody.String(),
+		)...,
+	)
 	routes := []CodeRouteRecord{{
 		RouteID: "route:invoices", HTTPMethod: "GET", Path: "/invoices",
 		Handler: "InvoiceController.listInvoices",

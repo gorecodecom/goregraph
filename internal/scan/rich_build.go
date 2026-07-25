@@ -19,14 +19,15 @@ func buildRichSymbols(files []FileRecord, symbols []SymbolRecord) []RichSymbolRe
 			module = goModule
 		}
 		rich = append(rich, RichSymbolRecord{
-			ID:             stableID("symbol", symbol.File, symbol.Kind, symbol.Name, fmt.Sprint(symbol.Line)),
-			Name:           symbol.Name,
-			Kind:           symbol.Kind,
-			Language:       language,
-			File:           symbol.File,
-			Line:           symbol.Line,
-			SourceLocation: sourceLocation(symbol.Line),
-			Module:         module,
+			ID:                         stableID("symbol", symbol.File, symbol.Kind, symbol.Name, fmt.Sprint(symbol.Line)),
+			Name:                       symbol.Name,
+			Kind:                       symbol.Kind,
+			Language:                   language,
+			File:                       symbol.File,
+			Line:                       symbol.Line,
+			SourceLocation:             sourceLocation(symbol.Line),
+			Module:                     module,
+			adjacentSideEffectEvidence: symbol.adjacentSideEffectEvidence,
 		})
 	}
 	sort.Slice(rich, func(i, j int) bool { return rich[i].ID < rich[j].ID })

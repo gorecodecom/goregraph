@@ -407,7 +407,9 @@ func (builder *agentContextBuilder) selectAdjacentSideEffectSymbols() {
 		}
 		switch builder.selectedSymbolKinds[symbol.ID] {
 		case "":
-			candidates = append(candidates, symbol)
+			if symbol.adjacentSideEffectEvidence {
+				candidates = append(candidates, symbol)
+			}
 		case "symbol":
 			builder.selectedSymbolKinds[symbol.ID] = "side_effects"
 		}
