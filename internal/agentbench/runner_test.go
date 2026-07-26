@@ -12,7 +12,25 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
+
+func TestDecodeContextPackAcceptsProductionSchema(t *testing.T) {
+	body := []byte(fmt.Sprintf(
+		`{"schema":%d,"query":"production","confidence":"high","fallback_required":false,"estimated_tokens":10,"budget_tokens":4000,"retry_allowed":false}`,
+		scan.SchemaVersion,
+	))
+
+	pack, err := decodeContextPack(body)
+
+	if err != nil {
+		t.Fatalf("decodeContextPack: %v", err)
+	}
+	if pack.Schema != scan.SchemaVersion {
+		t.Fatalf("schema = %d, want %d", pack.Schema, scan.SchemaVersion)
+	}
+}
 
 func TestRunRegressionSmokeOrderAndIsolation(t *testing.T) {
 	fixture := newRunnerFixture(t, "smoke", "g2-java-missing-contract", 1)
@@ -993,9 +1011,9 @@ case "$command_name" in
       printf '{'
       exit 0
     fi
-    schema=1
+    schema=%d
     if [ -n "${FAKE_CONTEXT_BAD_SCHEMA:-}" ]; then
-      schema=2
+      schema=$((schema + 1))
     fi
     count=0
     if [ -f "$FAKE_CONTEXT_COUNTER" ]; then
@@ -1015,7 +1033,7 @@ case "$command_name" in
     exit 9
     ;;
 esac
-`, build, build, build, build)
+`, build, build, build, build, scan.SchemaVersion)
 	writeRunnerText(t, path, script, 0o700)
 }
 

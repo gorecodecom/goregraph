@@ -50,12 +50,12 @@ case "${1:-}" in
     workspace=${3:-}
     printf 'scan\t__BUILD__\t%s\n' "$workspace" >>"$FAKE_RUNNER_LOG"
     mkdir -p -- "$workspace/.goregraph-workspace/agent"
-    printf '{"schema":1,"build":"__BUILD__"}\n' \
+    printf '{"schema":3,"build":"__BUILD__"}\n' \
       >"$workspace/.goregraph-workspace/agent/context-index.json"
     ;;
   context)
     printf 'context\t__BUILD__\t%s\n' "${2:-}" >>"$FAKE_RUNNER_LOG"
-    printf '{"schema":1,"query":"fake","confidence":"high","fallback_required":false,"estimated_tokens":10,"budget_tokens":4000,"retry_allowed":false}\n'
+    printf '{"schema":3,"query":"fake","confidence":"high","fallback_required":false,"estimated_tokens":10,"budget_tokens":4000,"retry_allowed":false}\n'
     ;;
   *)
     printf 'unexpected fake goregraph arguments: %s\n' "$*" >&2

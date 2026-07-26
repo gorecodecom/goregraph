@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gorecodecom/goregraph/internal/agent"
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
 const regressionSummaryHeader = "case\tquery\tbuild\trun\tattempt\ttokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tincluded_source_rereads\tcontext_millis\tlog\n"
@@ -1478,10 +1479,11 @@ func decodeContextPack(body []byte) (agent.ContextPack, error) {
 		}
 		return agent.ContextPack{}, fmt.Errorf("decode Context Pack trailing data: %w", err)
 	}
-	if pack.Schema != 1 {
+	if pack.Schema != scan.SchemaVersion {
 		return agent.ContextPack{}, fmt.Errorf(
-			"decode Context Pack: schema %d is unsupported; expected 1",
+			"decode Context Pack: schema %d is unsupported; expected %d",
 			pack.Schema,
+			scan.SchemaVersion,
 		)
 	}
 	return pack, nil
