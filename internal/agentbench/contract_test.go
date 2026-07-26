@@ -322,6 +322,11 @@ func TestValidateHypothesis(t *testing.T) {
 		t.Fatalf("ValidateHypothesis returned error: %v", err)
 	}
 
+	hypothesis.AllowedPackChanges = []string{"retry_permission"}
+	if err := ValidateHypothesis(hypothesis, matrix); err != nil {
+		t.Fatalf("ValidateHypothesis rejected retry permission: %v", err)
+	}
+
 	hypothesis.AllowedPackChanges = []string{"unknown"}
 	if err := ValidateHypothesis(hypothesis, matrix); err == nil || !strings.Contains(err.Error(), "allowed_pack_changes[0]") {
 		t.Fatalf("ValidateHypothesis error = %v, want invalid allowed change error", err)

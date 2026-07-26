@@ -25,20 +25,22 @@ type PackProjection struct {
 }
 
 type PackDiff struct {
-	EndpointChanged    bool     `json:"endpoint_changed"`
-	GoldenEndpoint     string   `json:"golden_endpoint"`
-	CandidateEndpoint  string   `json:"candidate_endpoint"`
-	AddedLocations     []string `json:"added_locations"`
-	RemovedLocations   []string `json:"removed_locations"`
-	AddedSources       []string `json:"added_sources"`
-	RemovedSources     []string `json:"removed_sources"`
-	AddedOmissions     []string `json:"added_omissions"`
-	RemovedOmissions   []string `json:"removed_omissions"`
-	CoverageChanged    bool     `json:"coverage_changed"`
-	BudgetChanged      bool     `json:"budget_changed"`
-	FallbackChanged    bool     `json:"fallback_changed"`
-	RetryChanged       bool     `json:"retry_changed"`
-	UncertaintyChanged bool     `json:"uncertainty_changed"`
+	EndpointChanged       bool     `json:"endpoint_changed"`
+	GoldenEndpoint        string   `json:"golden_endpoint"`
+	CandidateEndpoint     string   `json:"candidate_endpoint"`
+	AddedLocations        []string `json:"added_locations"`
+	RemovedLocations      []string `json:"removed_locations"`
+	AddedSources          []string `json:"added_sources"`
+	RemovedSources        []string `json:"removed_sources"`
+	AddedOmissions        []string `json:"added_omissions"`
+	RemovedOmissions      []string `json:"removed_omissions"`
+	CoverageChanged       bool     `json:"coverage_changed"`
+	BudgetChanged         bool     `json:"budget_changed"`
+	FallbackChanged       bool     `json:"fallback_changed"`
+	RetryChanged          bool     `json:"retry_changed"`
+	GoldenRetryAllowed    bool     `json:"golden_retry_allowed"`
+	CandidateRetryAllowed bool     `json:"candidate_retry_allowed"`
+	UncertaintyChanged    bool     `json:"uncertainty_changed"`
 }
 
 type Violation struct {
@@ -202,20 +204,22 @@ func DiffPacks(golden, candidate agent.ContextPack) PackDiff {
 	addedOmissions, removedOmissions := diffKeys(goldenProjection.Omissions, candidateProjection.Omissions, sourceDisplay)
 
 	return PackDiff{
-		EndpointChanged:    !equalStringSlices(projectEndpointKeys(golden.Endpoints), projectEndpointKeys(candidate.Endpoints)),
-		GoldenEndpoint:     goldenProjection.Endpoint,
-		CandidateEndpoint:  candidateProjection.Endpoint,
-		AddedLocations:     addedLocations,
-		RemovedLocations:   removedLocations,
-		AddedSources:       addedSources,
-		RemovedSources:     removedSources,
-		AddedOmissions:     addedOmissions,
-		RemovedOmissions:   removedOmissions,
-		CoverageChanged:    goldenProjection.SourceCoverage != candidateProjection.SourceCoverage,
-		BudgetChanged:      goldenProjection.EstimatedTokens != candidateProjection.EstimatedTokens,
-		FallbackChanged:    goldenProjection.FallbackRequired != candidateProjection.FallbackRequired,
-		RetryChanged:       goldenProjection.RetryAllowed != candidateProjection.RetryAllowed,
-		UncertaintyChanged: !equalStringSlices(goldenProjection.Uncertainties, candidateProjection.Uncertainties),
+		EndpointChanged:       !equalStringSlices(projectEndpointKeys(golden.Endpoints), projectEndpointKeys(candidate.Endpoints)),
+		GoldenEndpoint:        goldenProjection.Endpoint,
+		CandidateEndpoint:     candidateProjection.Endpoint,
+		AddedLocations:        addedLocations,
+		RemovedLocations:      removedLocations,
+		AddedSources:          addedSources,
+		RemovedSources:        removedSources,
+		AddedOmissions:        addedOmissions,
+		RemovedOmissions:      removedOmissions,
+		CoverageChanged:       goldenProjection.SourceCoverage != candidateProjection.SourceCoverage,
+		BudgetChanged:         goldenProjection.EstimatedTokens != candidateProjection.EstimatedTokens,
+		FallbackChanged:       goldenProjection.FallbackRequired != candidateProjection.FallbackRequired,
+		RetryChanged:          goldenProjection.RetryAllowed != candidateProjection.RetryAllowed,
+		GoldenRetryAllowed:    goldenProjection.RetryAllowed,
+		CandidateRetryAllowed: candidateProjection.RetryAllowed,
+		UncertaintyChanged:    !equalStringSlices(goldenProjection.Uncertainties, candidateProjection.Uncertainties),
 	}
 }
 
@@ -253,7 +257,15 @@ func EvaluatePackDiff(diff PackDiff, hypothesis Hypothesis) []Violation {
 		violations = append(violations, Violation{Field: "fallback_required", Reason: "fallback requirement changes are not allowed"})
 	}
 	if diff.RetryChanged {
-		violations = append(violations, Violation{Field: "retry_allowed", Reason: "retry permission changes are not allowed"})
+		switch {
+		case !allowed["retry_permission"]:
+			violations = append(violations, Violation{Field: "retry_allowed", Reason: "retry permission changes are not allowed"})
+		case !diff.GoldenRetryAllowed || diff.CandidateRetryAllowed:
+			violations = append(violations, Violation{
+				Field:  "retry_allowed",
+				Reason: "retry permission may only tighten from true to false",
+			})
+		}
 	}
 	if diff.UncertaintyChanged {
 		violations = append(violations, Violation{Field: "uncertainties", Reason: "uncertainty changes are not allowed"})

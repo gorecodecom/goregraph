@@ -256,6 +256,50 @@ func TestEvaluatePackDiffRejectsProtectedAndUndeclaredChanges(t *testing.T) {
 
 		requireViolation(t, violations, "sources")
 	})
+
+	t.Run("allows declared retry permission tightening", func(t *testing.T) {
+		golden := goldenPack()
+		golden.RetryAllowed = true
+		candidate := golden
+		candidate.RetryAllowed = false
+		hypothesis := Hypothesis{AllowedPackChanges: []string{"retry_permission"}}
+
+		diff := DiffPacks(golden, candidate)
+		if !diff.RetryChanged || !diff.GoldenRetryAllowed || diff.CandidateRetryAllowed {
+			t.Fatalf("retry diff = %#v", diff)
+		}
+		if violations := EvaluatePackDiff(diff, hypothesis); len(violations) != 0 {
+			t.Fatalf("declared retry tightening violations = %#v", violations)
+		}
+	})
+
+	t.Run("rejects undeclared retry permission tightening", func(t *testing.T) {
+		golden := goldenPack()
+		golden.RetryAllowed = true
+		candidate := golden
+		candidate.RetryAllowed = false
+
+		violations := EvaluatePackDiff(
+			DiffPacks(golden, candidate),
+			Hypothesis{AllowedPackChanges: []string{"sources"}},
+		)
+
+		requireViolation(t, violations, "retry_allowed")
+	})
+
+	t.Run("rejects declared retry permission widening", func(t *testing.T) {
+		golden := goldenPack()
+		golden.RetryAllowed = false
+		candidate := golden
+		candidate.RetryAllowed = true
+
+		violations := EvaluatePackDiff(
+			DiffPacks(golden, candidate),
+			Hypothesis{AllowedPackChanges: []string{"retry_permission"}},
+		)
+
+		requireViolation(t, violations, "retry_allowed")
+	})
 }
 
 func TestProjectPackAndDiffPacksAreDeterministicAcrossPublicSliceOrder(t *testing.T) {

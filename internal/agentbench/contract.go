@@ -15,11 +15,12 @@ const (
 )
 
 var allowedPackChangeKinds = map[string]bool{
-	"locations": true,
-	"sources":   true,
-	"coverage":  true,
-	"omissions": true,
-	"budget":    true,
+	"locations":        true,
+	"sources":          true,
+	"coverage":         true,
+	"omissions":        true,
+	"budget":           true,
+	"retry_permission": true,
 }
 
 var protectedPackFields = map[string]bool{
@@ -262,7 +263,10 @@ func ValidateHypothesis(hypothesis Hypothesis, matrix Matrix) error {
 	for index, change := range hypothesis.AllowedPackChanges {
 		field := fmt.Sprintf("allowed_pack_changes[%d]", index)
 		if !allowedPackChangeKinds[change] {
-			return fmt.Errorf("%s must be one of locations, sources, coverage, omissions, budget", field)
+			return fmt.Errorf(
+				"%s must be one of locations, sources, coverage, omissions, budget, retry_permission",
+				field,
+			)
 		}
 		if allowedChanges[change] {
 			return fmt.Errorf("%s duplicates an earlier change kind", field)
