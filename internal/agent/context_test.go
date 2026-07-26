@@ -5674,6 +5674,129 @@ func TestContextRetryPermissionRanksActualOmissions(t *testing.T) {
 	}
 }
 
+func TestContextRetryPermissionRequiresConnectedCallChainOmission(t *testing.T) {
+	t.Run("rejects disconnected housekeeping flow", func(t *testing.T) {
+		index := scan.AgentContextIndexRecord{
+			Facts: []scan.AgentContextFactRecord{
+				{
+					ID: "catalog-route", Project: "services/catalog", Kind: "route",
+					Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem",
+					HTTPMethod: "DELETE", Path: "/catalog/items/{id}",
+					File: "CatalogController.java", Confidence: "EXACT",
+					Search: "delete catalog item",
+				},
+				{
+					ID: "catalog-service", Project: "services/catalog", Kind: "symbol",
+					Name: "deleteItem", Qualified: "CatalogService.deleteItem",
+					File: "CatalogService.java", Confidence: "EXACT",
+					Search: "delete catalog item",
+				},
+				{
+					ID: "jobs-housekeeping-route", Project: "services/jobs", Kind: "route",
+					Name:       "DELETE /job-management/marked",
+					Qualified:  "JobManagementController.deleteMarkedJobs",
+					HTTPMethod: "DELETE", Path: "/job-management/marked",
+					File: "JobManagementController.java", Confidence: "EXACT",
+					Search: "delete marked jobs housekeeping",
+				},
+				{
+					ID: "jobs-housekeeping-service", Project: "services/jobs", Kind: "symbol",
+					Name: "deleteMarkedJobs", Qualified: "JobHousekeepingService.deleteMarkedJobs",
+					File: "JobHousekeepingService.java", Confidence: "EXACT",
+					Search: "delete marked jobs housekeeping",
+				},
+			},
+			Edges: []scan.AgentContextEdgeRecord{
+				{
+					ID: "catalog-call", FromFactID: "catalog-route",
+					ToFactID: "catalog-service", Kind: "call", Confidence: "EXACT",
+				},
+				{
+					ID: "jobs-housekeeping-call", FromFactID: "jobs-housekeeping-route",
+					ToFactID: "jobs-housekeeping-service", Kind: "call", Confidence: "EXACT",
+				},
+			},
+		}
+		pack := ContextPack{
+			Query: "When DELETE /catalog/items/{id} removes a catalog item in " +
+				"services/catalog, related jobs remain in services/jobs. Inspect the deletion flow.",
+			Concerns: []ContextConcern{{
+				Kind: contextConcernProject, Project: "services/jobs", Covered: false,
+			}},
+			SourceSections: []ContextSourceSection{
+				{Project: "services/catalog", Path: "CatalogController.java"},
+				{Project: "services/catalog", Path: "CatalogService.java"},
+			},
+			SourceOmissions: []ContextSourceOmission{{
+				Project: "services/jobs", Path: "JobManagementController.java",
+				Role: "call_chain", Reason: "source section does not fit the response budget",
+			}},
+			selectedFactIDs: []string{"catalog-route", "catalog-service"},
+		}
+
+		allowed, anchors := contextRetryPermission(pack, index)
+		if allowed || len(anchors) != 0 {
+			t.Fatalf("disconnected call-chain retry = %v / %#v", allowed, anchors)
+		}
+	})
+
+	t.Run("allows connected production flow", func(t *testing.T) {
+		index := scan.AgentContextIndexRecord{
+			Facts: []scan.AgentContextFactRecord{
+				{
+					ID: "catalog-route", Project: "services/catalog", Kind: "route",
+					Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem",
+					HTTPMethod: "DELETE", Path: "/catalog/items/{id}",
+					File: "CatalogController.java", Confidence: "EXACT",
+					Search: "delete catalog item",
+				},
+				{
+					ID: "catalog-service", Project: "services/catalog", Kind: "symbol",
+					Name: "deleteItem", Qualified: "CatalogService.deleteItem",
+					File: "CatalogService.java", Confidence: "EXACT",
+					Search: "delete catalog item",
+				},
+				{
+					ID: "catalog-audit", Project: "services/catalog", Kind: "symbol",
+					Name: "deleteCatalogAudit", Qualified: "CatalogAudit.deleteCatalogAudit",
+					File: "CatalogAudit.java", Confidence: "EXACT",
+					Search: "delete catalog item audit",
+				},
+			},
+			Edges: []scan.AgentContextEdgeRecord{
+				{
+					ID: "catalog-call", FromFactID: "catalog-route",
+					ToFactID: "catalog-service", Kind: "call", Confidence: "EXACT",
+				},
+				{
+					ID: "catalog-audit-call", FromFactID: "catalog-service",
+					ToFactID: "catalog-audit", Kind: "call", Confidence: "EXACT",
+				},
+			},
+		}
+		pack := ContextPack{
+			Query: "DELETE /catalog/items/{id}; inspect the complete catalog deletion flow",
+			Concerns: []ContextConcern{{
+				Kind: contextConcernPrimaryPath, Covered: false,
+			}},
+			SourceSections: []ContextSourceSection{
+				{Project: "services/catalog", Path: "CatalogController.java"},
+				{Project: "services/catalog", Path: "CatalogService.java"},
+			},
+			SourceOmissions: []ContextSourceOmission{{
+				Project: "services/catalog", Path: "CatalogAudit.java",
+				Role: "call_chain", Reason: "source section does not fit the response budget",
+			}},
+			selectedFactIDs: []string{"catalog-route", "catalog-service"},
+		}
+
+		allowed, anchors := contextRetryPermission(pack, index)
+		if !allowed || !reflect.DeepEqual(anchors, []string{"CatalogAudit.deleteCatalogAudit"}) {
+			t.Fatalf("connected call-chain retry = %v / %#v", allowed, anchors)
+		}
+	})
+}
+
 func TestContextRetryPermissionRejectsUnrenderableOmission(t *testing.T) {
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 		{

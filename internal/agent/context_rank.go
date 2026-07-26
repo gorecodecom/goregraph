@@ -723,6 +723,7 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 	if !ok {
 		return false, nil
 	}
+	reachableFactIDs, _ := reachableContextConcernEvidence(index, seed.ID)
 	planned := planContextConcerns(selectionQuery, index, seed)
 	plannedByKey := make(map[string]contextConcern, len(planned))
 	for _, concern := range planned {
@@ -756,6 +757,7 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 				normalizeContextProject(public.Project) != "" &&
 					normalizeContextProject(fact.Project) != normalizeContextProject(public.Project) ||
 				len(pack.SourceOmissions) > 0 && !omissionMatch ||
+				!contextRetryFactExtendsPrimaryPath(pack, fact, reachableFactIDs) ||
 				!contextRetryFactMatchesAction(fact, index, selectionQuery) ||
 				!contextRetryFactHasSourceEvidence(pack, fact) {
 				continue
@@ -864,6 +866,25 @@ func contextRetryFactMatchesOmission(
 		}
 	}
 	return false
+}
+
+func contextRetryFactExtendsPrimaryPath(
+	pack ContextPack,
+	fact scan.AgentContextFactRecord,
+	reachable map[string]bool,
+) bool {
+	for _, omission := range pack.SourceOmissions {
+		if normalizeContextProject(omission.Project) != normalizeContextProject(fact.Project) ||
+			contextRetryPath(omission.Path) != contextRetryPath(fact.File) {
+			continue
+		}
+		for _, role := range strings.Split(omission.Role, ",") {
+			if strings.TrimSpace(role) == "call_chain" {
+				return reachable[fact.ID]
+			}
+		}
+	}
+	return true
 }
 
 func contextRetryPath(value string) string {
