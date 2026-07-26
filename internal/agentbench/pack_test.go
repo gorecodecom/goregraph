@@ -300,6 +300,35 @@ func TestEvaluatePackDiffRejectsProtectedAndUndeclaredChanges(t *testing.T) {
 
 		requireViolation(t, violations, "retry_allowed")
 	})
+
+	t.Run("rejects changed retry values without change metadata", func(t *testing.T) {
+		diff := PackDiff{
+			GoldenRetryAllowed:    false,
+			CandidateRetryAllowed: true,
+		}
+
+		violations := EvaluatePackDiff(
+			diff,
+			Hypothesis{AllowedPackChanges: []string{"retry_permission"}},
+		)
+
+		requireViolationReason(t, violations, "retry_allowed", "inconsistent")
+	})
+
+	t.Run("rejects retry change metadata without changed values", func(t *testing.T) {
+		diff := PackDiff{
+			RetryChanged:          true,
+			GoldenRetryAllowed:    false,
+			CandidateRetryAllowed: false,
+		}
+
+		violations := EvaluatePackDiff(
+			diff,
+			Hypothesis{AllowedPackChanges: []string{"retry_permission"}},
+		)
+
+		requireViolationReason(t, violations, "retry_allowed", "inconsistent")
+	})
 }
 
 func TestProjectPackAndDiffPacksAreDeterministicAcrossPublicSliceOrder(t *testing.T) {
@@ -408,6 +437,26 @@ func requireViolation(t *testing.T, violations []Violation, field string) {
 		}
 	}
 	t.Fatalf("violations = %#v, want field %q", violations, field)
+}
+
+func requireViolationReason(
+	t *testing.T,
+	violations []Violation,
+	field string,
+	reason string,
+) {
+	t.Helper()
+	for _, violation := range violations {
+		if violation.Field == field && strings.Contains(violation.Reason, reason) {
+			return
+		}
+	}
+	t.Fatalf(
+		"violations = %#v, want field %q with reason containing %q",
+		violations,
+		field,
+		reason,
+	)
 }
 
 func requireSourceContentViolation(

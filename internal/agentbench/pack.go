@@ -256,7 +256,13 @@ func EvaluatePackDiff(diff PackDiff, hypothesis Hypothesis) []Violation {
 	if diff.FallbackChanged {
 		violations = append(violations, Violation{Field: "fallback_required", Reason: "fallback requirement changes are not allowed"})
 	}
-	if diff.RetryChanged {
+	retryChanged := diff.GoldenRetryAllowed != diff.CandidateRetryAllowed
+	if diff.RetryChanged != retryChanged {
+		violations = append(violations, Violation{
+			Field:  "retry_allowed",
+			Reason: "retry change metadata is inconsistent",
+		})
+	} else if retryChanged {
 		switch {
 		case !allowed["retry_permission"]:
 			violations = append(violations, Violation{Field: "retry_allowed", Reason: "retry permission changes are not allowed"})
