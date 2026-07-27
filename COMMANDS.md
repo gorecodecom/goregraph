@@ -52,7 +52,7 @@ goregraph context <path> --query "<current coding task>" --budget-tokens 4000 --
 The equivalent standard MCP tool is `task_context`.
 
 ```text
-Call goregraph context once with a focused query containing the caller's problem statement and requested evidence scope before reading indexed source.
+Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
 If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
@@ -556,7 +556,7 @@ request-lifecycle internal for semantic selection and is neither serialized nor
 hashed into `context_id`.
 
 ```text
-Call goregraph context once with a focused query containing the caller's problem statement and requested evidence scope before reading indexed source.
+Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
 If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
@@ -1511,7 +1511,7 @@ the problem statement and requested evidence scope, then use its first Context
 Pack directly.
 
 ```text
-Call goregraph context once with a focused query containing the caller's problem statement and requested evidence scope before reading indexed source.
+Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
 If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller's fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.

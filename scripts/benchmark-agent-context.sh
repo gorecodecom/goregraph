@@ -288,7 +288,7 @@ if grep -Eiq 'goregraph|goregraph-out|\.goregraph-workspace|task_context|context
 fi
 
 expected_baseline='Do not use the goregraph CLI, MCP tools, goregraph-out, or .goregraph-workspace files.'
-expected_assisted='Call goregraph context once with a focused query containing the caller'\''s problem statement and requested evidence scope before reading indexed source.
+expected_assisted='Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller'\''s problem statement and requested evidence scope in the query.
 Preserve the caller'\''s domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
 If the context command fails, do not read context-index.json or any generated index; only a missing or stale output error permits goregraph doctor ., otherwise stop using GoreGraph and follow the caller'\''s fallback policy.
 Treat source_sections as current source already read; never re-read, grep, or widen an included range.
