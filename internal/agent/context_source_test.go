@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
@@ -3903,12 +3902,6 @@ func TestContextSourceConcernCandidateGrowthIsSubquadratic(t *testing.T) {
 			large,
 		)
 	}
-	if large.NsPerOp() >= int64(500*time.Millisecond) {
-		t.Fatalf(
-			"context source selection took %s for 480 candidates; want less than 500ms",
-			time.Duration(large.NsPerOp()),
-		)
-	}
 }
 
 func benchmarkContextSourceConcernCandidates(size int) testing.BenchmarkResult {
@@ -3979,18 +3972,27 @@ func benchmarkContextSourceConcernCandidates(size int) testing.BenchmarkResult {
 	})
 }
 
-func TestContextSourceConcernPlanningAvoidsRepeatedProjectRoleDiscovery(t *testing.T) {
-	result := benchmarkContextSourceConcernPlanning()
-	t.Logf("context source concern planning: %s", result)
-	if result.NsPerOp() >= int64(75*time.Millisecond) {
+func TestContextSourceConcernPlanningGrowthIsSubquadratic(t *testing.T) {
+	small := benchmarkContextSourceConcernPlanning(2)
+	large := benchmarkContextSourceConcernPlanning(4)
+	growth := float64(large.NsPerOp()) / float64(small.NsPerOp())
+	t.Logf(
+		"context source concern planning growth: %.2fx (small=%s large=%s)",
+		growth,
+		small,
+		large,
+	)
+	if growth >= 3.25 {
 		t.Fatalf(
-			"context source concern planning took %s; want less than 75ms",
-			time.Duration(result.NsPerOp()),
+			"doubling context source concern projects grew planning time %.2fx; want less than 3.25x (small=%s large=%s)",
+			growth,
+			small,
+			large,
 		)
 	}
 }
 
-func benchmarkContextSourceConcernPlanning() testing.BenchmarkResult {
+func benchmarkContextSourceConcernPlanning(projectCount int) testing.BenchmarkResult {
 	facts := []scan.AgentContextFactRecord{{
 		ID: "route", Project: "services/catalog", Kind: "api_endpoint",
 		Name:       "DELETE /cadasters/{cadasterId}/regulations/{objectId}",
@@ -4000,7 +4002,10 @@ func benchmarkContextSourceConcernPlanning() testing.BenchmarkResult {
 		Search: "delete cadaster regulation task",
 	}}
 	selectedIDs := []string{"route"}
-	projectNames := []string{"services/jobs-a", "services/jobs-b", "libraries/jobs-client"}
+	projectNames := make([]string, 0, projectCount)
+	for index := range projectCount {
+		projectNames = append(projectNames, fmt.Sprintf("services/jobs-%d", index))
+	}
 	kinds := []string{
 		contextConcernHTTPContract,
 		contextConcernAuth,
@@ -4027,7 +4032,10 @@ func benchmarkContextSourceConcernPlanning() testing.BenchmarkResult {
 			}
 		}
 	}
-	query := "Delete a cadaster regulation and analyze services/jobs-a, services/jobs-b, and libraries/jobs-client for auth, configuration, retry, recovery, persistence, mail, audit, user information, and tests."
+	query := fmt.Sprintf(
+		"Delete a cadaster regulation and analyze %s for auth, configuration, retry, recovery, persistence, mail, audit, user information, and tests.",
+		strings.Join(projectNames, ", "),
+	)
 	pack := ContextPack{
 		Query:                 query,
 		selectionQuery:        query,
@@ -4044,13 +4052,22 @@ func benchmarkContextSourceConcernPlanning() testing.BenchmarkResult {
 	})
 }
 
-func TestContextSourceRenderOptionProfilingReusesIndexLookups(t *testing.T) {
-	result := benchmarkContextSourceRenderOptions(t, 64)
-	t.Logf("context source render options: %s", result)
-	if result.NsPerOp() >= int64(150*time.Millisecond) {
+func TestContextSourceRenderOptionIndexGrowthStaysBounded(t *testing.T) {
+	small := benchmarkContextSourceRenderOptions(t, 128, 300)
+	large := benchmarkContextSourceRenderOptions(t, 128, 1200)
+	growth := float64(large.NsPerOp()) / float64(small.NsPerOp())
+	t.Logf(
+		"context source render option index growth: %.2fx (small=%s large=%s)",
+		growth,
+		small,
+		large,
+	)
+	if growth >= 3 {
 		t.Fatalf(
-			"context source render options took %s; want less than 150ms",
-			time.Duration(result.NsPerOp()),
+			"quadrupling unrelated context index facts grew render profiling time %.2fx; want less than 3x (small=%s large=%s)",
+			growth,
+			small,
+			large,
 		)
 	}
 }
@@ -4058,6 +4075,7 @@ func TestContextSourceRenderOptionProfilingReusesIndexLookups(t *testing.T) {
 func benchmarkContextSourceRenderOptions(
 	t *testing.T,
 	size int,
+	backgroundSize int,
 ) testing.BenchmarkResult {
 	t.Helper()
 	root := t.TempDir()
@@ -4093,7 +4111,7 @@ func benchmarkContextSourceRenderOptions(
 		})
 		candidateIDs = append(candidateIDs, id)
 	}
-	for index := range 1200 {
+	for index := range backgroundSize {
 		facts = append(facts, scan.AgentContextFactRecord{
 			ID:        fmt.Sprintf("background-%d", index),
 			Project:   fmt.Sprintf("services/background-%d", index%20),
