@@ -906,6 +906,94 @@ Run `goregraph build agent .` first, then point the MCP client at
 diagnostics or legacy exploration. Expert tools are not a fallback cascade after
 the one-call/at-most-one-retry Context workflow.
 
+### Prepare a project
+
+GoreGraph must be installed on `PATH`. Verify the installation from a new
+terminal:
+
+```powershell
+goregraph version
+```
+
+Before using GoreGraph in Codex, generate the local index from the project root:
+
+```powershell
+cd C:\path\to\project
+goregraph scan .
+```
+
+`scan` builds both the agent and dashboard projections. To generate only the
+data required by the MCP server, run:
+
+```powershell
+goregraph build agent .
+```
+
+The MCP server is read-only and does not run a scan automatically. Refresh the
+agent index after relevant source changes:
+
+```powershell
+goregraph update . --target agent
+```
+
+### Connect GoreGraph to Codex
+
+The ChatGPT/Codex desktop app, Codex CLI, and Codex IDE extension share the same
+local MCP configuration. ChatGPT web cannot start this local stdio server.
+
+The recommended setup uses the Codex CLI:
+
+```powershell
+codex mcp add goregraph -- goregraph mcp
+codex mcp list
+```
+
+Restart Codex after adding the server. In the desktop app or Codex terminal,
+enter `/mcp` and verify that `goregraph` is connected and exposes
+`task_context`.
+
+Alternatively, open `~/.codex/config.toml` and add:
+
+```toml
+[mcp_servers.goregraph]
+enabled = true
+command = "goregraph"
+args = ["mcp"]
+```
+
+In the desktop app, the same configuration can be added through
+**Settings → MCP servers → Add server**:
+
+1. Enter `goregraph` as the server name.
+2. Select **STDIO**.
+3. Enter `goregraph` as the command.
+4. Add `mcp` as the argument.
+5. Save the server and restart Codex.
+
+Codex starts and stops `goregraph mcp` automatically. Do not start a separate
+MCP process manually after configuring the server.
+
+### Use GoreGraph in Codex
+
+Open the indexed project as the active Codex workspace and ask Codex to use the
+GoreGraph `task_context` tool for the coding task. For example:
+
+```text
+Use GoreGraph task_context to identify the current implementation path,
+affected files, and relevant tests before reading additional source files.
+```
+
+If the server is not available, verify the installation and configuration:
+
+```powershell
+Get-Command goregraph
+goregraph version
+codex mcp list
+```
+
+After installing GoreGraph or changing `PATH`, close and restart all terminals
+and Codex clients before testing the MCP connection.
+
 ## Exclusions
 
 GoreGraph skips common generated, dependency, build, VCS, editor, and local output paths by default:
