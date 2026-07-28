@@ -538,6 +538,98 @@ func contextSourceConcernSemanticMatchCount(
 	return matches
 }
 
+func contextSourceOmissionCandidateAllowed(
+	pack ContextPack,
+	concern contextConcern,
+	candidate sourceCandidate,
+	index scan.AgentContextIndexRecord,
+) bool {
+	if !contextQueryRequestsMissingContract(contextSelectionQuery(pack)) ||
+		candidate.Role != "call_chain" && candidate.Role != "entrypoint" ||
+		concern.kind == contextConcernDomainModel ||
+		concern.kind == contextConcernPersistence ||
+		concern.kind == contextConcernHTTPContract ||
+		concern.kind == contextConcernTests {
+		return true
+	}
+	seed, ok := contextConcernPlanningSeed(index, contextSelectionQuery(pack))
+	if !ok {
+		return true
+	}
+	reachable, _ := reachableContextConcernEvidence(index, seed.ID)
+	for _, factID := range contextSourceCandidateFactIDs(candidate) {
+		if reachable[factID] {
+			return true
+		}
+	}
+	operations := contextSourceOperationalActionsForCandidate(candidate, index)
+	if len(operations) == 0 {
+		return true
+	}
+	requested := contextSourceOperationalActions(contextSelectionQuery(pack))
+	for operation := range operations {
+		if requested[operation] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextSourceOperationalActionsForCandidate(
+	candidate sourceCandidate,
+	index scan.AgentContextIndexRecord,
+) map[string]bool {
+	values := []string{
+		candidate.Kind,
+		candidate.Name,
+		candidate.Qualified,
+		candidate.Path,
+	}
+	factIDs := make(map[string]bool)
+	for _, factID := range contextSourceCandidateFactIDs(candidate) {
+		factIDs[factID] = true
+	}
+	for _, fact := range index.Facts {
+		if !factIDs[fact.ID] {
+			continue
+		}
+		values = append(
+			values,
+			fact.Name,
+			fact.Qualified,
+			fact.Search,
+			fact.Summary,
+			fact.Path,
+			fact.File,
+		)
+	}
+	return contextSourceOperationalActions(strings.Join(values, " "))
+}
+
+func contextSourceOperationalActions(value string) map[string]bool {
+	tokens := contextExpandedTokenSet(value)
+	vocabulary := map[string][]string{
+		"maintenance":  {"maintenance", "maintain", "wartung"},
+		"housekeeping": {"housekeeping", "aufraeumen", "aufräumen"},
+		"batch":        {"batch", "batching", "stapel"},
+		"cleanup":      {"cleanup", "clean", "bereinigen", "bereinigung"},
+		"purge":        {"purge", "purged", "purging"},
+		"sweep":        {"sweep", "sweeping"},
+		"archive":      {"archive", "archived", "archival", "archivieren"},
+		"repair":       {"repair", "repairs", "reparatur"},
+	}
+	result := make(map[string]bool)
+	for operation, aliases := range vocabulary {
+		for _, alias := range aliases {
+			if tokens[alias] {
+				result[operation] = true
+				break
+			}
+		}
+	}
+	return result
+}
+
 func contextLocationIDs(locations []ContextLocation) map[string]bool {
 	result := make(map[string]bool, len(locations))
 	for _, location := range locations {

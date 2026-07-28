@@ -70,6 +70,76 @@ func TestBuildContextReturnsStructuredPackWhenFinalMetadataCannotFit(t *testing.
 	}
 }
 
+func TestBuildContextExcludesDisconnectedOperationalOmissionForMissingTransition(t *testing.T) {
+	index := missingContractContextIndex()
+	index.Facts = append(
+		index.Facts,
+		scan.AgentContextFactRecord{
+			ID: "jobs-housekeeping-route", Project: "services/jobs", Kind: "route",
+			Name:       "DELETE /internal/jobs/housekeeping",
+			Qualified:  "JobHousekeepingController.purgeArchivedJobs",
+			HTTPMethod: "DELETE", Path: "/internal/jobs/housekeeping",
+			File: "src/main/java/example/JobHousekeepingController.java",
+			Line: 8, EndLine: 13, Confidence: "EXACT",
+			Search: "job task housekeeping purge archived batch endpoint",
+		},
+		scan.AgentContextFactRecord{
+			ID: "jobs-housekeeping-service", Project: "services/jobs", Kind: "symbol",
+			Name:      "purgeArchivedJobs",
+			Qualified: "JobHousekeepingService.purgeArchivedJobs",
+			File:      "src/main/java/example/JobHousekeepingService.java",
+			Line:      8, EndLine: 13, Confidence: "EXACT",
+			Search: "job task housekeeping purge archived batch service",
+		},
+	)
+	index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{
+		ID:         "jobs-housekeeping-call",
+		FromFactID: "jobs-housekeeping-route", ToFactID: "jobs-housekeeping-service",
+		Kind: "call", Confidence: "EXACT",
+	})
+	root := writeMissingContractContextIndexFixture(t, index)
+	query := "When DELETE /catalog/items/{itemId} removes an item in services/catalog, " +
+		"plan deletion of related jobs through libraries/job-client and services/jobs. " +
+		"Cover the current path, missing HTTP contract, task types and lookup attributes, and persistence."
+
+	var pack ContextPack
+	foundBoundedDomainOmission := false
+	for budget := MinContextBudgetTokens; budget <= 2400; budget += 25 {
+		candidate, err := BuildContext(ContextRequest{
+			Root: root, Query: query, BudgetTokens: budget, MaxFiles: 4,
+		})
+		if err != nil || candidate.FallbackRequired ||
+			!contextHasUncertainty(candidate, "requested_http_contract") {
+			continue
+		}
+		for _, omission := range candidate.SourceOmissions {
+			if omission.Path != "" &&
+				(omission.Role == contextConcernDomainModel || omission.Role == "persistence") {
+				pack = candidate
+				foundBoundedDomainOmission = true
+				break
+			}
+		}
+		if foundBoundedDomainOmission {
+			break
+		}
+	}
+	if !foundBoundedDomainOmission {
+		t.Fatal("fixture has no bounded domain or persistence omission")
+	}
+	if len(pack.Entrypoints) != 1 || pack.Entrypoints[0].ID != "catalog-route" {
+		t.Fatalf("primary entrypoint changed: %#v", pack.Entrypoints)
+	}
+	for _, omission := range pack.SourceOmissions {
+		if strings.Contains(strings.ToLower(omission.Path), "housekeeping") {
+			t.Fatalf("disconnected operational source consumed an omission slot: %#v", pack.SourceOmissions)
+		}
+	}
+	if pack.RetryAllowed {
+		t.Fatalf("disconnected operational source enabled retry: %#v", pack)
+	}
+}
+
 func TestFinalContextBudgetFallbackPreservesBoundedContract(t *testing.T) {
 	request := ContextRequest{
 		Query:        "x",

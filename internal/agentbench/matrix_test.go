@@ -60,12 +60,13 @@ func TestCommittedBenchmarkMatrix(t *testing.T) {
 				if err != nil {
 					t.Fatalf("read query %s: %v", variant.ID, err)
 				}
-				pack, err := agent.BuildContext(agent.ContextRequest{
+				request := agent.ContextRequest{
 					Root:         root,
 					Query:        string(query),
 					BudgetTokens: 4000,
 					MaxFiles:     12,
-				})
+				}
+				pack, err := agent.BuildContext(request)
 				if err != nil {
 					t.Fatalf("BuildContext %s: %v", variant.ID, err)
 				}
@@ -79,6 +80,7 @@ func TestCommittedBenchmarkMatrix(t *testing.T) {
 						pack,
 					)
 				}
+				requireByteStableContextPack(t, request, pack, variant.ID)
 
 				projection := comparableProjection(pack)
 				if index == 0 {
@@ -90,6 +92,32 @@ func TestCommittedBenchmarkMatrix(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func requireByteStableContextPack(
+	t *testing.T,
+	request agent.ContextRequest,
+	want agent.ContextPack,
+	variant string,
+) {
+	t.Helper()
+	wantBody, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal %s baseline pack: %v", variant, err)
+	}
+	for repeat := 2; repeat <= 3; repeat++ {
+		got, err := agent.BuildContext(request)
+		if err != nil {
+			t.Fatalf("BuildContext %s repeat %d: %v", variant, repeat, err)
+		}
+		gotBody, err := json.Marshal(got)
+		if err != nil {
+			t.Fatalf("marshal %s repeat %d: %v", variant, repeat, err)
+		}
+		if !bytes.Equal(gotBody, wantBody) {
+			t.Fatalf("%s repeat %d is not byte-stable", variant, repeat)
+		}
 	}
 }
 

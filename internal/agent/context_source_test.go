@@ -83,6 +83,262 @@ func TestContextSourceSectionSupportsOnlyMatchingEvidenceFacet(t *testing.T) {
 	}
 }
 
+func TestMissingTransitionOmissionCandidateEligibility(t *testing.T) {
+	const missingQuery = "DELETE /catalog/items/{id}; the required future HTTP contract is missing"
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "catalog-route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/items/{id}", Qualified: "CatalogController.deleteItem",
+				HTTPMethod: "DELETE", Path: "/catalog/items/{id}",
+				File: "CatalogController.java", Confidence: "EXACT",
+			},
+			{
+				ID: "disconnected-housekeeping", Project: "services/jobs", Kind: "symbol",
+				Name: "purgeArchivedJobs", Qualified: "JobHousekeeping.purgeArchivedJobs",
+				File: "JobHousekeeping.java", Confidence: "EXACT",
+				Search: "housekeeping purge archive batch",
+			},
+			{
+				ID: "reachable-maintenance", Project: "services/catalog", Kind: "symbol",
+				Name: "repairCatalog", Qualified: "CatalogMaintenance.repairCatalog",
+				File: "CatalogMaintenance.java", Confidence: "EXACT",
+				Search: "maintenance repair",
+			},
+			{
+				ID: "job-model", Project: "services/jobs", Kind: "symbol",
+				Name: "CatalogJob", Qualified: "example.CatalogJob",
+				File: "CatalogJob.java", Confidence: "EXACT",
+			},
+			{
+				ID: "job-repository", Project: "services/jobs", Kind: "persistence",
+				Name: "CatalogJobRepository", Qualified: "example.CatalogJobRepository",
+				File: "CatalogJobRepository.java", Confidence: "EXACT",
+			},
+			{
+				ID: "ordinary-service", Project: "services/jobs", Kind: "symbol",
+				Name: "deleteRelatedJobs", Qualified: "JobService.deleteRelatedJobs",
+				File: "JobService.java", Confidence: "EXACT",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID:         "reachable-maintenance-call",
+			FromFactID: "catalog-route", ToFactID: "reachable-maintenance",
+			Kind: "call", Confidence: "EXACT",
+		}},
+	}
+	projectConcern := newContextConcern(
+		contextConcernProject,
+		"services/jobs",
+		true,
+		[]string{"disconnected-housekeeping"},
+		"explicit project",
+	)
+	candidate := func(factID, role string) sourceCandidate {
+		for _, fact := range index.Facts {
+			if fact.ID == factID {
+				return sourceCandidate{
+					FactID: fact.ID, FactIDs: []string{fact.ID},
+					Project: fact.Project, Path: fact.File, Role: role,
+					Kind: fact.Kind, Name: fact.Name, Qualified: fact.Qualified,
+				}
+			}
+		}
+		t.Fatalf("missing fixture fact %q", factID)
+		return sourceCandidate{}
+	}
+	tests := []struct {
+		name      string
+		query     string
+		concern   contextConcern
+		candidate sourceCandidate
+		want      bool
+	}{
+		{
+			name:  "rejects disconnected housekeeping",
+			query: missingQuery, concern: projectConcern,
+			candidate: candidate("disconnected-housekeeping", "call_chain"),
+		},
+		{
+			name:  "allows explicitly requested housekeeping",
+			query: missingQuery + "; include housekeeping", concern: projectConcern,
+			candidate: candidate("disconnected-housekeeping", "call_chain"), want: true,
+		},
+		{
+			name:  "allows reachable operational method",
+			query: missingQuery, concern: projectConcern,
+			candidate: candidate("reachable-maintenance", "call_chain"), want: true,
+		},
+		{
+			name:      "allows requested domain model",
+			query:     missingQuery,
+			concern:   newContextConcern(contextConcernDomainModel, "services/jobs", true, []string{"job-model"}, "domain"),
+			candidate: candidate("job-model", contextConcernDomainModel), want: true,
+		},
+		{
+			name:      "allows persistence declaration",
+			query:     missingQuery,
+			concern:   newContextConcern(contextConcernPersistence, "services/jobs", true, []string{"job-repository"}, "persistence"),
+			candidate: candidate("job-repository", "persistence"), want: true,
+		},
+		{
+			name:  "allows ordinary disconnected call chain",
+			query: missingQuery, concern: projectConcern,
+			candidate: candidate("ordinary-service", "call_chain"), want: true,
+		},
+		{
+			name:  "allows housekeeping without missing transition planning",
+			query: "DELETE /catalog/items/{id}; inspect services/jobs", concern: projectConcern,
+			candidate: candidate("disconnected-housekeeping", "call_chain"), want: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pack := ContextPack{Query: test.query, selectionQuery: test.query}
+			if got := contextSourceOmissionCandidateAllowed(
+				pack,
+				test.concern,
+				test.candidate,
+				index,
+			); got != test.want {
+				t.Fatalf("candidate allowed = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestMissingTransitionOmissionsPreferRequestedDomainAndPersistence(t *testing.T) {
+	const query = "DELETE /catalog/items/{id}; the required future HTTP contract is missing. " +
+		"Cover catalog job types, lookup attributes, and persistence in services/jobs."
+	pack := ContextPack{
+		Query: query, selectionQuery: query,
+		selectedSourceFactIDs: []string{"regular-model", "change-model"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "catalog-route", Project: "services/catalog", Kind: "route",
+			Name: "DELETE /catalog/items/{id}", HTTPMethod: "DELETE",
+			Path: "/catalog/items/{id}", File: "CatalogController.java",
+		},
+		{
+			ID: "ordinary-service", Project: "services/jobs", Kind: "symbol",
+			Name: "deleteRelatedJobs", Qualified: "JobService.deleteRelatedJobs",
+			File: "AJobService.java",
+		},
+		{
+			ID: "regular-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJob", Qualified: "example.CatalogJob",
+			File: "ZCatalogJob.java", Search: "catalog job model type lookup attributes",
+		},
+		{
+			ID: "change-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJob", Qualified: "example.CatalogChangeJob",
+			File: "YCatalogChangeJob.java", Search: "catalog change job model type lookup attributes",
+		},
+		{
+			ID: "regular-repository", Project: "services/jobs", Kind: "persistence",
+			Name: "CatalogJobRepository", Qualified: "example.CatalogJobRepository",
+			File: "XCatalogJobRepository.java", Search: "catalog job persistence repository",
+		},
+		{
+			ID: "change-repository", Project: "services/jobs", Kind: "persistence",
+			Name: "CatalogChangeJobRepository", Qualified: "example.CatalogChangeJobRepository",
+			File: "WCatalogChangeJobRepository.java", Search: "catalog change job persistence repository",
+		},
+	}}
+	baseDomain := newContextConcern(
+		contextConcernDomainModel,
+		"services/jobs",
+		true,
+		[]string{"regular-model", "change-model"},
+		"requested domain models",
+	)
+	basePersistence := newContextConcern(
+		contextConcernPersistence,
+		"services/jobs",
+		true,
+		[]string{"regular-repository", "change-repository"},
+		"requested persistence",
+	)
+	ordinary := newContextConcern(
+		contextConcernProject,
+		"services/jobs",
+		true,
+		[]string{"ordinary-service"},
+		"explicit project",
+	)
+	ordinary.rank = 10_000
+	concerns := []contextConcern{
+		ordinary,
+		newContextEvidenceConcern(
+			baseDomain,
+			"model:regular-model",
+			[]string{"regular-model"},
+			"regular model",
+		),
+		newContextEvidenceConcern(
+			baseDomain,
+			"model:change-model",
+			[]string{"change-model"},
+			"change model",
+		),
+		newContextEvidenceConcern(
+			basePersistence,
+			"model:regular-model",
+			[]string{"regular-repository"},
+			"regular repository",
+		),
+		newContextEvidenceConcern(
+			basePersistence,
+			"model:change-model",
+			[]string{"change-repository"},
+			"change repository",
+		),
+	}
+	candidates := make([]sourceCandidate, 0, len(index.Facts)-1)
+	for _, fact := range index.Facts {
+		if fact.ID == "catalog-route" {
+			continue
+		}
+		role := "call_chain"
+		switch fact.ID {
+		case "regular-model", "change-model":
+			role = contextConcernDomainModel
+		case "regular-repository", "change-repository":
+			role = "persistence"
+		}
+		candidates = append(candidates, sourceCandidate{
+			FactID: fact.ID, FactIDs: []string{fact.ID},
+			Project: fact.Project, Path: fact.File,
+			StartLine: 4, EndLine: 12, Role: role,
+			Kind: fact.Kind, Name: fact.Name, Qualified: fact.Qualified,
+		})
+	}
+
+	got := contextSourceEvidenceOmissionsWithOptions(
+		pack,
+		index,
+		concerns,
+		candidates,
+		nil,
+		nil,
+		map[string]bool{},
+	)
+	if len(got) != MaxContextSourceOmissions {
+		t.Fatalf("omissions = %#v, want %d", got, MaxContextSourceOmissions)
+	}
+	if got[0].Role != contextConcernDomainModel ||
+		got[1].Role != contextConcernDomainModel ||
+		got[2].Role != "persistence" {
+		t.Fatalf("omission priority = %#v, want requested models then persistence", got)
+	}
+	for _, omission := range got {
+		if omission.Path == "AJobService.java" {
+			t.Fatalf("ordinary disconnected source displaced requested evidence: %#v", got)
+		}
+	}
+}
+
 func TestContextSourceEvidenceOmissionsCoalesceFacetsByPath(t *testing.T) {
 	base := newContextConcern(
 		contextConcernSideEffects,
@@ -4745,6 +5001,8 @@ func TestContextSourceOptionSideEffectProjectionKeepsFitAndAddAtMaxFiles(t *test
 
 	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
 	omissions := contextSourceEvidenceOmissionsWithOptions(
+		ContextPack{},
+		scan.AgentContextIndexRecord{},
 		concerns,
 		[]sourceCandidate{option.candidate},
 		[]contextSourceOption{option},

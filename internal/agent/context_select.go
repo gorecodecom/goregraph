@@ -93,6 +93,8 @@ func selectContextSourceOptions(
 		pack,
 		request,
 		contextSourceEvidenceOmissionsWithOptions(
+			pack,
+			loaded.Index,
 			contextSourceConcernsWithoutRenderedOptions(concerns, options),
 			candidates,
 			options,
@@ -163,6 +165,8 @@ func selectContextSourceOptions(
 	}
 	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
 	for _, omission := range contextSourceEvidenceOmissionsWithOptions(
+		pack,
+		loaded.Index,
 		concerns,
 		candidates,
 		options,
@@ -3716,6 +3720,8 @@ func applyContextSourceCoverage(
 }
 
 func contextSourceConcernOmission(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
 	concern contextConcern,
 	candidates []sourceCandidate,
 	options []contextSourceOption,
@@ -3737,7 +3743,7 @@ func contextSourceConcernOmission(
 				}
 			}
 		}
-		if matches {
+		if matches && contextSourceOmissionCandidateAllowed(pack, concern, candidate, index) {
 			matching = append(matching, candidate)
 		}
 	}
@@ -3750,7 +3756,7 @@ func contextSourceConcernOmission(
 	candidate := sourceCandidate{}
 	startLine := 0
 	endLine := 0
-	if option, ok := contextSourceOmissionEvidenceOption(concern, options); ok {
+	if option, ok := contextSourceOmissionEvidenceOption(concern, matching, options); ok {
 		candidate = option.candidate
 		startLine = option.section.StartLine
 		endLine = option.section.EndLine
@@ -3791,6 +3797,8 @@ func contextSourceEvidenceOmissions(
 	covered map[string]bool,
 ) []ContextSourceOmission {
 	return contextSourceEvidenceOmissionsWithOptions(
+		ContextPack{},
+		scan.AgentContextIndexRecord{},
 		concerns,
 		candidates,
 		nil,
@@ -3800,6 +3808,8 @@ func contextSourceEvidenceOmissions(
 }
 
 func contextSourceEvidenceOmissionsWithOptions(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
 	concerns []contextConcern,
 	candidates []sourceCandidate,
 	options []contextSourceOption,
@@ -3809,11 +3819,14 @@ func contextSourceEvidenceOmissionsWithOptions(
 	grouped := map[string]ContextSourceOmission{}
 	reasons := map[string][]string{}
 	ranks := map[string]int{}
+	priorities := map[string]int{}
 	for _, concern := range concerns {
 		if !concern.required || covered[concern.key] {
 			continue
 		}
 		omission := contextSourceConcernOmission(
+			pack,
+			index,
 			concern,
 			candidates,
 			options,
@@ -3834,6 +3847,10 @@ func contextSourceEvidenceOmissionsWithOptions(
 			grouped[key] = omission
 		}
 		ranks[key] = max(ranks[key], concern.rank)
+		priorities[key] = max(
+			priorities[key],
+			contextSourceOmissionPriority(concern, omission),
+		)
 		if concern.facet == "" {
 			continue
 		}
@@ -3848,10 +3865,8 @@ func contextSourceEvidenceOmissionsWithOptions(
 		keys = append(keys, key)
 	}
 	sort.Slice(keys, func(left, right int) bool {
-		leftPathBound := strings.HasPrefix(keys[left], "0")
-		rightPathBound := strings.HasPrefix(keys[right], "0")
-		if leftPathBound != rightPathBound {
-			return leftPathBound
+		if priorities[keys[left]] != priorities[keys[right]] {
+			return priorities[keys[left]] > priorities[keys[right]]
 		}
 		if ranks[keys[left]] != ranks[keys[right]] {
 			return ranks[keys[left]] > ranks[keys[right]]
@@ -3873,15 +3888,41 @@ func contextSourceEvidenceOmissionsWithOptions(
 	return result
 }
 
+func contextSourceOmissionPriority(
+	concern contextConcern,
+	omission ContextSourceOmission,
+) int {
+	if contextPackSourceFile(omission.Path) == "" {
+		return 0
+	}
+	switch {
+	case concern.kind == contextConcernDomainModel &&
+		omission.Role == contextConcernDomainModel:
+		return 500
+	case concern.kind == contextConcernPersistence &&
+		omission.Role == "persistence":
+		return 400
+	case concern.kind == contextConcernHTTPContract ||
+		concern.kind == contextConcernConfiguration ||
+		concern.kind == contextConcernAuth ||
+		concern.kind == contextConcernResilience:
+		return 300
+	default:
+		return 100
+	}
+}
+
 func contextSourceOmissionEvidenceOption(
 	concern contextConcern,
+	candidates []sourceCandidate,
 	options []contextSourceOption,
 ) (contextSourceOption, bool) {
 	matching := make([]contextSourceOption, 0)
 	for _, option := range options {
 		if concern.project != "" &&
 			normalizeContextProject(option.candidate.Project) != concern.project ||
-			!contextSourceOptionHasConcern(option, concern.key) {
+			!contextSourceOptionHasConcern(option, concern.key) ||
+			!contextSourceOptionMatchesCandidates(option, candidates) {
 			continue
 		}
 		matching = append(matching, option)
@@ -3902,6 +3943,19 @@ func contextSourceOmissionEvidenceOption(
 		return contextSourceOptionLess(matching[left], matching[right])
 	})
 	return matching[0], true
+}
+
+func contextSourceOptionMatchesCandidates(
+	option contextSourceOption,
+	candidates []sourceCandidate,
+) bool {
+	optionKey := contextSourceCandidateKey(option.candidate)
+	for _, candidate := range candidates {
+		if contextSourceCandidateKey(candidate) == optionKey {
+			return true
+		}
+	}
+	return false
 }
 
 func contextSourceOmissionFacetScore(

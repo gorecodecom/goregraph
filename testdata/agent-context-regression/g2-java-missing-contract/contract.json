@@ -67,7 +67,9 @@
       "CatalogControllerTest.java",
       "JobControllerTest.java"
     ],
-    "forbidden_source_suffixes": [],
+    "forbidden_source_suffixes": [
+      "JobHousekeepingController.java"
+    ],
     "required_unknowns": [
       "requested_http_contract"
     ],
