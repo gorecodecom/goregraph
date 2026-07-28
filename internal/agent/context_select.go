@@ -3756,7 +3756,7 @@ func contextSourceConcernOmission(
 	candidate := sourceCandidate{}
 	startLine := 0
 	endLine := 0
-	if option, ok := contextSourceOmissionEvidenceOption(concern, matching, options); ok {
+	if option, ok := contextSourceOmissionEvidenceOption(pack, concern, matching, options); ok {
 		candidate = option.candidate
 		startLine = option.section.StartLine
 		endLine = option.section.EndLine
@@ -3849,7 +3849,7 @@ func contextSourceEvidenceOmissionsWithOptions(
 		ranks[key] = max(ranks[key], concern.rank)
 		priorities[key] = max(
 			priorities[key],
-			contextSourceOmissionPriority(concern, omission),
+			contextSourceOmissionPriority(pack, concern, omission),
 		)
 		if concern.facet == "" {
 			continue
@@ -3889,11 +3889,15 @@ func contextSourceEvidenceOmissionsWithOptions(
 }
 
 func contextSourceOmissionPriority(
+	pack ContextPack,
 	concern contextConcern,
 	omission ContextSourceOmission,
 ) int {
 	if contextPackSourceFile(omission.Path) == "" {
 		return 0
+	}
+	if !contextQueryPlansMissingTransition(contextSelectionQuery(pack)) {
+		return 100
 	}
 	switch {
 	case concern.kind == contextConcernDomainModel &&
@@ -3913,6 +3917,7 @@ func contextSourceOmissionPriority(
 }
 
 func contextSourceOmissionEvidenceOption(
+	pack ContextPack,
 	concern contextConcern,
 	candidates []sourceCandidate,
 	options []contextSourceOption,
@@ -3922,7 +3927,8 @@ func contextSourceOmissionEvidenceOption(
 		if concern.project != "" &&
 			normalizeContextProject(option.candidate.Project) != concern.project ||
 			!contextSourceOptionHasConcern(option, concern.key) ||
-			!contextSourceOptionMatchesCandidates(option, candidates) {
+			contextQueryPlansMissingTransition(contextSelectionQuery(pack)) &&
+				!contextSourceOptionMatchesCandidates(option, candidates) {
 			continue
 		}
 		matching = append(matching, option)

@@ -5586,6 +5586,18 @@ func TestContextRequestedContractGapIgnoresRealisticUnrelatedContract(t *testing
 	}
 }
 
+func TestContextQueryPlansMissingTransitionRecognizesRequiredGermanContract(t *testing.T) {
+	query := "Ermittle die erforderliche neue Aufrufkette und den nötigen internen API-Vertrag."
+	if !contextQueryPlansMissingTransition(query) {
+		t.Fatalf("required German future contract was not recognized: %q", query)
+	}
+	if contextQueryPlansMissingTransition(
+		"Erkläre den bestehenden DELETE /orders/{orderId} Aufruf und seine Persistenz.",
+	) {
+		t.Fatal("existing flow was classified as a missing contract")
+	}
+}
+
 func TestFinalizeContextSourceDecision(t *testing.T) {
 	tests := []struct {
 		name         string

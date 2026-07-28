@@ -80,6 +80,9 @@ func TestCommittedBenchmarkMatrix(t *testing.T) {
 						pack,
 					)
 				}
+				if benchmarkCase.ID == "g3-go-existing-flow" {
+					requireG3ExistingFlowOmissions(t, pack)
+				}
 				requireByteStableContextPack(t, request, pack, variant.ID)
 
 				projection := comparableProjection(pack)
@@ -92,6 +95,27 @@ func TestCommittedBenchmarkMatrix(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func requireG3ExistingFlowOmissions(t *testing.T, pack agent.ContextPack) {
+	t.Helper()
+	if len(pack.SourceOmissions) != 2 {
+		t.Fatalf("G3 source omissions = %#v, want existing flow and test", pack.SourceOmissions)
+	}
+	want := map[string]string{
+		"service.go":      "call_chain",
+		"service_test.go": "test",
+	}
+	for _, omission := range pack.SourceOmissions {
+		role, ok := want[omission.Path]
+		if !ok || omission.Role != role {
+			t.Fatalf("G3 source omission = %#v, want %#v", omission, want)
+		}
+		delete(want, omission.Path)
+	}
+	if len(want) != 0 {
+		t.Fatalf("G3 source omissions missing %#v: %#v", want, pack.SourceOmissions)
 	}
 }
 

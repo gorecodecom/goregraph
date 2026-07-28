@@ -339,6 +339,60 @@ func TestMissingTransitionOmissionsPreferRequestedDomainAndPersistence(t *testin
 	}
 }
 
+func TestExistingFlowOmissionsPreserveConcernRank(t *testing.T) {
+	const query = "Explain the existing DELETE /orders/{orderId} call flow."
+	pack := ContextPack{Query: query, selectionQuery: query}
+	ordinary := newContextConcern(
+		contextConcernPrimaryPath,
+		"services/orders",
+		true,
+		[]string{"service"},
+		"existing service flow",
+	)
+	ordinary.rank = 10_000
+	persistence := newContextConcern(
+		contextConcernPersistence,
+		"services/orders",
+		true,
+		[]string{"repository"},
+		"existing persistence",
+	)
+	concerns := []contextConcern{
+		ordinary,
+		newContextEvidenceConcern(
+			persistence,
+			"model:order",
+			[]string{"repository"},
+			"order persistence",
+		),
+	}
+	candidates := []sourceCandidate{
+		{
+			FactID: "service", FactIDs: []string{"service"},
+			Project: "services/orders", Path: "service.go",
+			StartLine: 9, EndLine: 12, Role: "call_chain",
+		},
+		{
+			FactID: "repository", FactIDs: []string{"repository"},
+			Project: "services/orders", Path: "repository.go",
+			StartLine: 11, EndLine: 11, Role: "persistence",
+		},
+	}
+
+	got := contextSourceEvidenceOmissionsWithOptions(
+		pack,
+		scan.AgentContextIndexRecord{},
+		concerns,
+		candidates,
+		nil,
+		nil,
+		map[string]bool{},
+	)
+	if len(got) != 2 || got[0].Path != "service.go" {
+		t.Fatalf("existing-flow omission order = %#v, want concern rank preserved", got)
+	}
+}
+
 func TestContextSourceEvidenceOmissionsCoalesceFacetsByPath(t *testing.T) {
 	base := newContextConcern(
 		contextConcernSideEffects,

@@ -472,6 +472,25 @@ func contextQueryRequestsMissingContract(query string) bool {
 	return false
 }
 
+func contextQueryPlansMissingTransition(query string) bool {
+	if contextQueryRequestsMissingContract(query) {
+		return true
+	}
+	if !contextQueryRequestsConcern(query, contextConcernHTTPContract) {
+		return false
+	}
+	lower := strings.ToLower(query)
+	for _, marker := range []string{
+		"new call chain", "new invocation chain",
+		"neue aufrufkette", "neuen aufrufkette",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func contextContractDomainScore(fact scan.AgentContextFactRecord, query string) int {
 	queryTokens := contextConcernDomainQueryTokens(contextExpandedTokenSet(query))
 	for _, generic := range []string{
