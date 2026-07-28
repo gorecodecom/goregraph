@@ -96,7 +96,7 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
 The exact matched-prompt protocol and treatment instructions are defined in
 [`BENCHMARKING.md`](BENCHMARKING.md). The baseline may append only the specified
 one-line prohibition; the assisted variant may append only the specified
-nine-line bounded Context instruction. All other prompt and execution inputs
+eleven-line bounded Context instruction. All other prompt and execution inputs
 must be identical, including skill availability. Control skill isolation in the
 invocation, never by adding “do not use skills” to a treatment prompt. Retain
 every raw JSONL transcript, separate stderr log, analyzer result, `summary.tsv`,
@@ -143,6 +143,13 @@ their included line ranges, so non-overlapping range reads remain allowed. The
 analyzer distinguishes a compact `duplicate_of` response, which is retained as
 diagnostic evidence, from a repeated full payload reusing a prior full
 `context_id`; only the latter fails that gate.
+
+The monotonic Golden-versus-candidate runner additionally distinguishes total
+`source_read_calls`, exact `bounded_omission_read_calls`, and
+`unauthorized_source_read_calls`. Its candidate gate compares unauthorized
+reads and caps bounded reads by the case contract. That diagnostic
+classification does not weaken this release gate, which continues comparing
+the total source-read median.
 
 GoreGraph remains offline, explicit, dependency-free, and watcher-free.
 

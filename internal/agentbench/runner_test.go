@@ -671,8 +671,8 @@ func TestRunRegressionMapsAnalyzerMetrics(t *testing.T) {
 		t.Fatalf("summary lines = %d, want header plus 2 runs", len(summaryLines))
 	}
 	fields := strings.Split(summaryLines[1], "\t")
-	if got, want := fields[5:12], []string{
-		"101", "11", "12", "15", "16", "17", "18",
+	if got, want := fields[5:14], []string{
+		"101", "11", "12", "15", "16", "17", "18", "19", "20",
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("summary metrics = %q, want %q", got, want)
 	}
@@ -686,14 +686,16 @@ func TestRunRegressionMapsAnalyzerMetrics(t *testing.T) {
 		&reviewed,
 	)
 	if got, want := reviewed.Metrics, (RunMetrics{
-		Tokens:                101,
-		ToolCalls:             11,
-		ContextCalls:          12,
-		RepeatedFullPacks:     15,
-		BroadNavigationCalls:  16,
-		SourceReads:           17,
-		IncludedSourceRereads: 18,
-		ContextMillis:         reviewed.Metrics.ContextMillis,
+		Tokens:                  101,
+		ToolCalls:               11,
+		ContextCalls:            12,
+		RepeatedFullPacks:       15,
+		BroadNavigationCalls:    16,
+		SourceReads:             17,
+		BoundedOmissionReads:    18,
+		UnauthorizedSourceReads: 19,
+		IncludedSourceRereads:   20,
+		ContextMillis:           reviewed.Metrics.ContextMillis,
 	}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("review metrics = %#v, want %#v", got, want)
 	}
@@ -1091,7 +1093,7 @@ if [ "${1:-}" = "--tokens" ]; then
   printf '101\n'
   exit 0
 fi
-printf '11\t12\t13\t14\t15\t16\t17\t18\t19\n'
+printf '11\t12\t13\t14\t15\t16\t17\t18\t19\t20\t21\n'
 `
 	writeRunnerText(t, path, script, 0o700)
 }
@@ -1314,7 +1316,7 @@ func assertRequiredArtifacts(t *testing.T, fixture runnerFixture) {
 		}
 	}
 	summary := readRunnerText(t, filepath.Join(fixture.config.Output, "summary.tsv"))
-	const header = "case\tquery\tbuild\trun\tattempt\ttokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tincluded_source_rereads\tcontext_millis\tlog\n"
+	const header = "case\tquery\tbuild\trun\tattempt\ttokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\tlog\n"
 	if !strings.HasPrefix(summary, header) {
 		t.Fatalf("summary header = %q, want %q", strings.SplitN(summary, "\n", 2)[0], strings.TrimSpace(header))
 	}
@@ -1322,7 +1324,7 @@ func assertRequiredArtifacts(t *testing.T, fixture runnerFixture) {
 	summaryOrder := make([]string, 0, len(summaryLines))
 	for _, line := range summaryLines {
 		fields := strings.Split(line, "\t")
-		assertRetainedLogPath(t, fixture.config.Output, fields[13])
+		assertRetainedLogPath(t, fixture.config.Output, fields[15])
 		summaryOrder = append(
 			summaryOrder,
 			strings.Join([]string{fields[0], fields[2], fields[3]}, "\t"),

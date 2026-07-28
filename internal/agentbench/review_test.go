@@ -162,13 +162,28 @@ func TestEvaluateCase(t *testing.T) {
 			failure: "candidate median tool calls 11 exceeds golden median 10",
 		},
 		{
-			name: "rejects a source read median increase",
+			name: "rejects an unauthorized source read median increase",
 			mutate: func(_ []ReviewedRun, candidate []ReviewedRun) {
 				for index := range candidate {
-					candidate[index].Metrics.SourceReads = 11
+					candidate[index].Metrics.UnauthorizedSourceReads = 1
 				}
 			},
-			failure: "candidate median source reads 11 exceeds golden median 10",
+			failure: "candidate median unauthorized source reads 1 exceeds golden median 0",
+		},
+		{
+			name: "rejects bounded omission reads above the contract",
+			mutate: func(_ []ReviewedRun, candidate []ReviewedRun) {
+				candidate[0].Metrics.BoundedOmissionReads = 4
+				candidate[0].Metrics.SourceReads = 14
+			},
+			failure: "candidate bounded omission reads 4 exceeds contract maximum 3 for run 1",
+		},
+		{
+			name: "rejects a negative unauthorized source metric",
+			mutate: func(_ []ReviewedRun, candidate []ReviewedRun) {
+				candidate[0].Metrics.UnauthorizedSourceReads = -1
+			},
+			failure: "unauthorized_source_read_calls must not be negative",
 		},
 		{
 			name: "rejects token median above five percent",
@@ -225,6 +240,19 @@ func TestEvaluateCase(t *testing.T) {
 			requireGateFailure(t, EvaluateCase(contract, golden, candidate, hypothesis), test.failure)
 		})
 	}
+
+	t.Run("accepts total reads added only through bounded omissions", func(t *testing.T) {
+		contract, golden, candidate, hypothesis := passingCase()
+		for index := range candidate {
+			candidate[index].Metrics.SourceReads = 13
+			candidate[index].Metrics.BoundedOmissionReads = 3
+		}
+
+		report := EvaluateCase(contract, golden, candidate, hypothesis)
+		if !report.Passed || len(report.Failures) != 0 {
+			t.Fatalf("bounded omission report = %#v", report)
+		}
+	})
 
 	t.Run("accepts an infrastructure replacement in the same logical run", func(t *testing.T) {
 		contract, golden, candidate, hypothesis := passingCase()

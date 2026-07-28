@@ -23,7 +23,7 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
-const regressionSummaryHeader = "case\tquery\tbuild\trun\tattempt\ttokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tincluded_source_rereads\tcontext_millis\tlog\n"
+const regressionSummaryHeader = "case\tquery\tbuild\trun\tattempt\ttokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\tlog\n"
 
 var lowerCommitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
@@ -77,14 +77,16 @@ type runnerState struct {
 }
 
 type transcriptMetrics struct {
-	tokens                int64
-	toolCalls             int64
-	contextCalls          int64
-	repeatedFullPacks     int64
-	broadNavigationCalls  int64
-	sourceReadCalls       int64
-	includedSourceRereads int64
-	contextMillis         int64
+	tokens                  int64
+	toolCalls               int64
+	contextCalls            int64
+	repeatedFullPacks       int64
+	broadNavigationCalls    int64
+	sourceReadCalls         int64
+	boundedOmissionReads    int64
+	unauthorizedSourceReads int64
+	includedSourceRereads   int64
+	contextMillis           int64
 }
 
 type processFailure struct {
@@ -1203,9 +1205,9 @@ func (state *runnerState) analyzeTranscript(
 		)
 	}
 	fields := strings.Split(strings.TrimSpace(string(output)), "\t")
-	if len(fields) != 9 {
+	if len(fields) != 11 {
 		return transcriptMetrics{tokens: tokens}, nil, fmt.Errorf(
-			"analyzer returned %d fields, want 9",
+			"analyzer returned %d fields, want 11",
 			len(fields),
 		)
 	}
@@ -1222,13 +1224,15 @@ func (state *runnerState) analyzeTranscript(
 		values[index] = value
 	}
 	return transcriptMetrics{
-		tokens:                tokens,
-		toolCalls:             values[0],
-		contextCalls:          values[1],
-		repeatedFullPacks:     values[4],
-		broadNavigationCalls:  values[5],
-		sourceReadCalls:       values[6],
-		includedSourceRereads: values[7],
+		tokens:                  tokens,
+		toolCalls:               values[0],
+		contextCalls:            values[1],
+		repeatedFullPacks:       values[4],
+		broadNavigationCalls:    values[5],
+		sourceReadCalls:         values[6],
+		boundedOmissionReads:    values[7],
+		unauthorizedSourceReads: values[8],
+		includedSourceRereads:   values[9],
 	}, nil, nil
 }
 
@@ -1324,13 +1328,15 @@ func parseNonnegativeInteger(value string) (int64, error) {
 
 func writeRunMetrics(path string, metrics transcriptMetrics) error {
 	body := fmt.Sprintf(
-		"tokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tincluded_source_rereads\tcontext_millis\n%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+		"tokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\n%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
 		metrics.tokens,
 		metrics.toolCalls,
 		metrics.contextCalls,
 		metrics.repeatedFullPacks,
 		metrics.broadNavigationCalls,
 		metrics.sourceReadCalls,
+		metrics.boundedOmissionReads,
+		metrics.unauthorizedSourceReads,
 		metrics.includedSourceRereads,
 		metrics.contextMillis,
 	)
@@ -1368,14 +1374,16 @@ func (state *runnerState) reviewTemplate(
 			ForbiddenOutcomes: forbidden,
 		},
 		Metrics: RunMetrics{
-			Tokens:                metrics.tokens,
-			ToolCalls:             metrics.toolCalls,
-			SourceReads:           metrics.sourceReadCalls,
-			IncludedSourceRereads: metrics.includedSourceRereads,
-			RepeatedFullPacks:     metrics.repeatedFullPacks,
-			ContextCalls:          metrics.contextCalls,
-			ContextMillis:         metrics.contextMillis,
-			BroadNavigationCalls:  metrics.broadNavigationCalls,
+			Tokens:                  metrics.tokens,
+			ToolCalls:               metrics.toolCalls,
+			SourceReads:             metrics.sourceReadCalls,
+			BoundedOmissionReads:    metrics.boundedOmissionReads,
+			UnauthorizedSourceReads: metrics.unauthorizedSourceReads,
+			IncludedSourceRereads:   metrics.includedSourceRereads,
+			RepeatedFullPacks:       metrics.repeatedFullPacks,
+			ContextCalls:            metrics.contextCalls,
+			ContextMillis:           metrics.contextMillis,
+			BroadNavigationCalls:    metrics.broadNavigationCalls,
 		},
 		Invalid: invalid,
 	}
@@ -1388,7 +1396,7 @@ func (state *runnerState) appendSummary(
 	logPath string,
 ) error {
 	line := fmt.Sprintf(
-		"%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
+		"%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
 		plan.benchmarkCase.id,
 		query.ID,
 		plan.build,
@@ -1400,6 +1408,8 @@ func (state *runnerState) appendSummary(
 		metrics.repeatedFullPacks,
 		metrics.broadNavigationCalls,
 		metrics.sourceReadCalls,
+		metrics.boundedOmissionReads,
+		metrics.unauthorizedSourceReads,
 		metrics.includedSourceRereads,
 		metrics.contextMillis,
 		logPath,

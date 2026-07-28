@@ -168,11 +168,11 @@ run_harness() {
 run_harness pass >/dev/null
 actual_order=$(tr -d '\n' <"$temporary_directory/pass.order")
 [ "$actual_order" = "baabba" ] || fail "run order = $actual_order, want baabba"
-grep -q $'^variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tincluded_source_rereads\tunique_source_files\tlog$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\tlog$' "$temporary_directory/pass/summary.tsv" ||
   fail "summary schema missing"
-grep -q $'^baseline\tmedian\t100000\t10\t-\t-\t-\t-\t6\t4\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^baseline\tmedian\t100000\t10\t-\t-\t-\t-\t6\t4\t-\t-\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
   fail "baseline median missing"
-grep -q $'^assisted\tmedian\t80000\t6\t-\t-\t-\t-\t2\t2\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^assisted\tmedian\t80000\t6\t-\t-\t-\t-\t2\t2\t-\t-\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
   fail "assisted median missing"
 [ -s "$temporary_directory/pass/assisted-1.log.metrics.tsv" ] ||
   fail "analyzer result was not retained"
@@ -184,7 +184,7 @@ export FAKE_ASSISTED_TOKENS
 if run_harness over-eighty >/dev/null 2>&1; then
   fail "80% plus one token passed"
 fi
-grep -q $'^assisted\tmedian\t80001\t6\t-\t-\t-\t-\t2\t2\t-\t-\t-$' "$temporary_directory/over-eighty/summary.tsv" ||
+grep -q $'^assisted\tmedian\t80001\t6\t-\t-\t-\t-\t2\t2\t-\t-\t-\t-\t-$' "$temporary_directory/over-eighty/summary.tsv" ||
   fail "failed gate did not retain median evidence"
 unset FAKE_ASSISTED_TOKENS
 

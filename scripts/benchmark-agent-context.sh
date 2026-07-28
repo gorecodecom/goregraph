@@ -336,7 +336,7 @@ goregraph version >"$output/goregraph-version.txt" 2>&1
 goregraph context "$workspace" --query "benchmark context preflight" --format json \
   >"$output/context-preflight.json"
 
-printf 'variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tincluded_source_rereads\tunique_source_files\tlog\n' >"$output/summary.tsv"
+printf 'variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\tlog\n' >"$output/summary.tsv"
 baseline_tokens="$temporary_directory/baseline.tokens"
 assisted_tokens="$temporary_directory/assisted.tokens"
 baseline_tool_calls="$temporary_directory/baseline.tool-calls"
@@ -383,22 +383,25 @@ run_variant() {
     die "cannot analyze transcript: $log_path"
   printf '%s\n' "$metrics" >"$metrics_path"
   IFS=$'\t' read -r tool_calls goregraph_calls full_context_packs compact_duplicate_packs \
-    repeated_full_packs raw_navigation_calls source_read_calls included_source_rereads \
-    unique_source_files extra_metrics <<EOF
+    repeated_full_packs raw_navigation_calls source_read_calls bounded_omission_read_calls \
+    unauthorized_source_read_calls included_source_rereads unique_source_files extra_metrics <<EOF
 $metrics
 EOF
   [ -z "${extra_metrics:-}" ] || die "invalid analyzer result: $metrics_path"
   for metric in "$tool_calls" "$goregraph_calls" "$full_context_packs" \
     "$compact_duplicate_packs" "$repeated_full_packs" "$raw_navigation_calls" \
-    "$source_read_calls" "$included_source_rereads" "$unique_source_files"; do
+    "$source_read_calls" "$bounded_omission_read_calls" \
+    "$unauthorized_source_read_calls" "$included_source_rereads" \
+    "$unique_source_files"; do
     case "$metric" in
       *[!0-9]*|"") die "invalid analyzer result: $metrics_path" ;;
     esac
   done
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$variant" "$run_number" "$tokens" "$tool_calls" "$goregraph_calls" \
     "$full_context_packs" "$compact_duplicate_packs" "$repeated_full_packs" \
-    "$raw_navigation_calls" "$source_read_calls" "$included_source_rereads" \
+    "$raw_navigation_calls" "$source_read_calls" "$bounded_omission_read_calls" \
+    "$unauthorized_source_read_calls" "$included_source_rereads" \
     "$unique_source_files" "$log_path" \
     >>"$output/summary.tsv"
   printf '%s\n' "$tokens" >>"$temporary_directory/$variant.tokens"
@@ -444,10 +447,10 @@ assisted_source_read_median=$(median "$assisted_source_read_calls")
 assisted_repeated_full_packs=$(awk '{ total += $1 } END { print total + 0 }' "$assisted_repeated_full_packs")
 assisted_included_source_rereads=$(awk '{ total += $1 } END { print total + 0 }' "$assisted_included_source_rereads")
 
-printf 'baseline\tmedian\t%s\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\t-\n' \
+printf 'baseline\tmedian\t%s\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\t-\t-\t-\n' \
   "$baseline_median" "$baseline_tool_median" "$baseline_navigation_median" \
   "$baseline_source_read_median" >>"$output/summary.tsv"
-printf 'assisted\tmedian\t%s\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\t-\n' \
+printf 'assisted\tmedian\t%s\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\t-\t-\t-\n' \
   "$assisted_median" "$assisted_tool_median" "$assisted_navigation_median" \
   "$assisted_source_read_median" >>"$output/summary.tsv"
 

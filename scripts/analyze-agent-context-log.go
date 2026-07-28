@@ -13,7 +13,7 @@ import (
 	"unicode"
 )
 
-const header = "tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tincluded_source_rereads\tunique_source_files"
+const header = "tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files"
 
 type event struct {
 	Type  string
@@ -24,8 +24,10 @@ type event struct {
 type metrics struct {
 	toolCalls, goregraphCalls, fullPacks, compactPacks, repeatedPacks int
 	navigationCalls, sourceReadCalls, includedSourceRereads           int
+	boundedOmissionReadCalls, unauthorizedSourceReads                 int
 	sourcePaths                                                       map[string]struct{}
-	includedSourceRanges                                              []sourceRange
+	includedSourceRanges, authorizedOmissionRanges                    []sourceRange
+	currentSourceTargets                                              []sourceRange
 }
 
 type analysis struct {
@@ -38,6 +40,7 @@ type parsedContextPack struct {
 	duplicateOf    string
 	sourceCoverage string
 	sourceRanges   []sourceRange
+	omissionRanges []sourceRange
 }
 
 type sourceRange struct {
@@ -64,10 +67,11 @@ func main() {
 		fmt.Println(result.tokens)
 		return
 	}
-	fmt.Printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+	fmt.Printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
 		result.metrics.toolCalls, result.metrics.goregraphCalls, result.metrics.fullPacks,
 		result.metrics.compactPacks, result.metrics.repeatedPacks, result.metrics.navigationCalls,
-		result.metrics.sourceReadCalls, result.metrics.includedSourceRereads,
+		result.metrics.sourceReadCalls, result.metrics.boundedOmissionReadCalls,
+		result.metrics.unauthorizedSourceReads, result.metrics.includedSourceRereads,
 		len(result.metrics.sourcePaths))
 }
 
@@ -189,10 +193,12 @@ func processCompleted(raw json.RawMessage, completed map[string]string, fullIDs 
 	case "mcp_tool_call":
 		contextCall = stringValue(item, "tool") == "task_context" || stringValue(item, "name") == "task_context"
 	case "file_change":
+		metrics.currentSourceTargets = nil
 		recorded, included := recordSourcePath(stringValue(item, "path"), 0, 0, metrics)
 		if recorded {
 			metrics.navigationCalls++
 			metrics.sourceReadCalls++
+			metrics.unauthorizedSourceReads++
 		}
 		includedReread = included
 	}
@@ -339,19 +345,30 @@ func classifyCommand(command string, metrics *metrics) (bool, bool) {
 	if err != nil || len(words) == 0 {
 		return false, false
 	}
+	metrics.currentSourceTargets = nil
 	contextCall, navigation, sourceRead, includedReread := false, false, false, false
+	searchOrInventory := false
 	for _, segment := range shellSegments(words) {
-		context, navigates, reads, included := classifySimpleCommand(segment, metrics)
+		context, navigates, reads, included, searches := classifySimpleCommand(segment, metrics)
 		contextCall = contextCall || context
 		navigation = navigation || navigates
 		sourceRead = sourceRead || reads
 		includedReread = includedReread || included
+		searchOrInventory = searchOrInventory || searches
 	}
 	if navigation {
 		metrics.navigationCalls++
 	}
 	if sourceRead {
 		metrics.sourceReadCalls++
+	}
+	if navigation {
+		if sourceRead && !searchOrInventory && !includedReread &&
+			sourceTargetsFitOmissions(metrics.currentSourceTargets, metrics.authorizedOmissionRanges) {
+			metrics.boundedOmissionReadCalls++
+		} else {
+			metrics.unauthorizedSourceReads++
+		}
 	}
 	return contextCall, includedReread
 }
@@ -375,24 +392,24 @@ func shellSegments(words []string) [][]string {
 	return segments
 }
 
-func classifySimpleCommand(words []string, metrics *metrics) (bool, bool, bool, bool) {
+func classifySimpleCommand(words []string, metrics *metrics) (bool, bool, bool, bool, bool) {
 	if len(words) == 0 {
-		return false, false, false, false
+		return false, false, false, false, false
 	}
 	switch words[0] {
 	case "goregraph":
-		return len(words) > 1 && words[1] == "context", false, false, false
+		return len(words) > 1 && words[1] == "context", false, false, false, false
 	case "rg", "grep":
-		recorded, included := recordSearchTargets(words[1:], metrics)
-		return false, recorded, false, included
+		_, included := recordSearchTargets(words[1:], metrics)
+		return false, true, false, included, true
 	case "find":
-		recorded, included := recordFindTargets(words[1:], metrics)
-		return false, recorded, false, included
+		_, included := recordFindTargets(words[1:], metrics)
+		return false, true, false, included, true
 	case "sed", "nl", "cat", "head", "tail":
 		reads, included := recordReadTargets(words[0], words[1:], metrics)
-		return false, reads, reads, included
+		return false, reads, reads, included, false
 	}
-	return false, false, false, false
+	return false, false, false, false, false
 }
 
 func recordSearchTargets(words []string, metrics *metrics) (bool, bool) {
@@ -550,6 +567,9 @@ func recordSourcePath(path string, startLine, endLine int, metrics *metrics) (bo
 		return false, false
 	}
 	metrics.sourcePaths[path] = struct{}{}
+	metrics.currentSourceTargets = append(metrics.currentSourceTargets, sourceRange{
+		path: path, startLine: startLine, endLine: endLine,
+	})
 	for _, included := range metrics.includedSourceRanges {
 		if sameSourcePath(path, included.path) &&
 			sourceRangesOverlap(startLine, endLine, included) {
@@ -557,6 +577,32 @@ func recordSourcePath(path string, startLine, endLine int, metrics *metrics) (bo
 		}
 	}
 	return true, false
+}
+
+func sourceTargetsFitOmissions(targets, omissions []sourceRange) bool {
+	if len(targets) == 0 {
+		return false
+	}
+	for _, target := range targets {
+		if target.startLine <= 0 || target.endLine < target.startLine {
+			return false
+		}
+		contained := false
+		for _, omission := range omissions {
+			if sameSourcePath(target.path, omission.path) &&
+				omission.startLine > 0 &&
+				omission.endLine >= omission.startLine &&
+				target.startLine >= omission.startLine &&
+				target.endLine <= omission.endLine {
+				contained = true
+				break
+			}
+		}
+		if !contained {
+			return false
+		}
+	}
+	return true
 }
 
 func sourceRangesOverlap(readStart, readEnd int, included sourceRange) bool {
@@ -606,6 +652,18 @@ func recordContextPack(item map[string]json.RawMessage, fullIDs map[string]struc
 			included.allContent = pack.sourceCoverage == "complete"
 			if included.path != "" {
 				metrics.includedSourceRanges = append(metrics.includedSourceRanges, included)
+			}
+		}
+		if pack.duplicateOf == "" {
+			for _, omission := range pack.omissionRanges {
+				omission.path = normalizeRecordedSourcePath(omission.path)
+				if omission.path != "" && omission.startLine > 0 &&
+					omission.endLine >= omission.startLine {
+					metrics.authorizedOmissionRanges = append(
+						metrics.authorizedOmissionRanges,
+						omission,
+					)
+				}
 			}
 		}
 		if pack.duplicateOf != "" {
@@ -660,6 +718,12 @@ func parseContextPack(text string) parsedContextPack {
 			StartLine int    `json:"start_line"`
 			EndLine   int    `json:"end_line"`
 		} `json:"source_sections"`
+		SourceOmissions []struct {
+			Project   string `json:"project"`
+			Path      string `json:"path"`
+			StartLine int    `json:"start_line"`
+			EndLine   int    `json:"end_line"`
+		} `json:"source_omissions"`
 	}
 	if json.Unmarshal([]byte(text), &jsonPack) == nil && jsonPack.ContextID != "" {
 		pack := parsedContextPack{
@@ -667,6 +731,7 @@ func parseContextPack(text string) parsedContextPack {
 			duplicateOf:    jsonPack.DuplicateOf,
 			sourceCoverage: jsonPack.SourceCoverage,
 			sourceRanges:   make([]sourceRange, 0, len(jsonPack.SourceSections)),
+			omissionRanges: make([]sourceRange, 0, len(jsonPack.SourceOmissions)),
 		}
 		for _, section := range jsonPack.SourceSections {
 			path := section.Path
@@ -677,11 +742,22 @@ func parseContextPack(text string) parsedContextPack {
 				path: path, startLine: section.StartLine, endLine: section.EndLine,
 			})
 		}
+		for _, omission := range jsonPack.SourceOmissions {
+			if strings.TrimSpace(omission.Project) == "" ||
+				strings.TrimSpace(omission.Path) == "" {
+				continue
+			}
+			path := strings.TrimSuffix(omission.Project, "/") + "/" +
+				strings.TrimPrefix(omission.Path, "/")
+			pack.omissionRanges = append(pack.omissionRanges, sourceRange{
+				path: path, startLine: omission.StartLine, endLine: omission.EndLine,
+			})
+		}
 		return pack
 	}
 
 	pack := parsedContextPack{}
-	inSourceSections := false
+	inSourceSections, inSourceOmissions := false, false
 	for _, line := range strings.Split(text, "\n") {
 		if strings.HasPrefix(line, "Context ID:") {
 			pack.contextID = strings.TrimSpace(strings.TrimPrefix(line, "Context ID:"))
@@ -694,17 +770,28 @@ func parseContextPack(text string) parsedContextPack {
 		}
 		if line == "## Source sections" {
 			inSourceSections = true
+			inSourceOmissions = false
 			continue
 		}
-		if inSourceSections && strings.HasPrefix(line, "## ") {
+		if line == "## Source omissions" {
 			inSourceSections = false
+			inSourceOmissions = true
 			continue
 		}
-		if !inSourceSections || !strings.HasPrefix(line, "### ") {
+		if strings.HasPrefix(line, "## ") {
+			inSourceSections = false
+			inSourceOmissions = false
 			continue
 		}
-		if section := markdownSourceRange(line); section.path != "" {
-			pack.sourceRanges = append(pack.sourceRanges, section)
+		if inSourceSections && strings.HasPrefix(line, "### ") {
+			if section := markdownSourceRange(line); section.path != "" {
+				pack.sourceRanges = append(pack.sourceRanges, section)
+			}
+		}
+		if inSourceOmissions && strings.HasPrefix(line, "- ") {
+			if omission := markdownSourceRange(line); omission.path != "" {
+				pack.omissionRanges = append(pack.omissionRanges, omission)
+			}
 		}
 	}
 	return pack

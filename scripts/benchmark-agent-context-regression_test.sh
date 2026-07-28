@@ -146,6 +146,12 @@ for artifact in \
   }
 done
 
+expected_summary_header=$'case\tquery\tbuild\trun\tattempt\ttokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\tlog'
+[ "$(head -n 1 "$output/summary.tsv")" = "$expected_summary_header" ] || {
+  printf 'FAIL: regression summary header is %s\n' "$(head -n 1 "$output/summary.tsv")" >&2
+  exit 1
+}
+
 if PATH="$fake_bin:$PATH" \
   FAKE_RUNNER_LOG="$process_log" \
   FAKE_CODEX_COUNTER="$codex_counter" \

@@ -103,7 +103,7 @@ stdout log, separate stderr log, and a colocated analyzer result outside the
 workspace. Its `summary.tsv` has this schema:
 
 ```text
-variant run tokens tool_calls goregraph_calls full_context_packs compact_duplicate_packs repeated_full_packs raw_navigation_calls source_read_calls included_source_rereads unique_source_files log
+variant run tokens tool_calls goregraph_calls full_context_packs compact_duplicate_packs repeated_full_packs raw_navigation_calls source_read_calls bounded_omission_read_calls unauthorized_source_read_calls included_source_rereads unique_source_files log
 ```
 
 Release evaluation uses the integer median of the three end-to-end token,
@@ -244,10 +244,24 @@ All of these conditions must pass for the candidate:
    every candidate run.
 3. The single declared target facet must improve in at least two of the three
    candidate runs.
-4. Median source reads and tool calls may not increase.
+4. Median unauthorized source reads and total tool calls may not increase.
 5. Median end-to-end tokens may increase by at most 5%.
 6. Median direct Context latency may increase by at most 10%.
 7. Unexplained paired direct Context latency above 2x fails.
+
+Each regression run reports `source_read_calls` as the unchanged total direct
+read count, `bounded_omission_read_calls` for exact ranged reads authorized by
+an earlier full Context Pack, and `unauthorized_source_read_calls` for every
+other source read, search, or inventory call. A bounded read must stay inside
+one exact project/path and `start_line`/`end_line` omission, must occur after
+the authorizing pack, and must not overlap an included source section. A
+compound terminal call is bounded only when every source target is bounded.
+Candidate bounded omission reads remain part of tool and token totals and may
+not exceed the case contract's `max_source_omissions`.
+
+This regression classification does not change the matched release benchmark:
+the standard baseline-versus-assisted structural gate above continues to
+compare total `source_read_calls`.
 
 Passing the smoke phase does not satisfy these gates. The final monotonic gate
 requires exactly three paired Golden and candidate runs for every evaluated

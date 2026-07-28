@@ -29,14 +29,16 @@ type FacetResult struct {
 }
 
 type RunMetrics struct {
-	Tokens                int64 `json:"tokens"`
-	ToolCalls             int64 `json:"tool_calls"`
-	SourceReads           int64 `json:"source_reads"`
-	IncludedSourceRereads int64 `json:"included_source_rereads"`
-	RepeatedFullPacks     int64 `json:"repeated_full_packs"`
-	ContextCalls          int64 `json:"context_calls"`
-	ContextMillis         int64 `json:"context_millis"`
-	BroadNavigationCalls  int64 `json:"broad_navigation_calls"`
+	Tokens                  int64 `json:"tokens"`
+	ToolCalls               int64 `json:"tool_calls"`
+	SourceReads             int64 `json:"source_reads"`
+	BoundedOmissionReads    int64 `json:"bounded_omission_read_calls"`
+	UnauthorizedSourceReads int64 `json:"unauthorized_source_read_calls"`
+	IncludedSourceRereads   int64 `json:"included_source_rereads"`
+	RepeatedFullPacks       int64 `json:"repeated_full_packs"`
+	ContextCalls            int64 `json:"context_calls"`
+	ContextMillis           int64 `json:"context_millis"`
+	BroadNavigationCalls    int64 `json:"broad_navigation_calls"`
 }
 
 type InvalidRun struct {
@@ -280,6 +282,8 @@ func validateMetrics(metrics RunMetrics) error {
 		{name: "tokens", value: metrics.Tokens},
 		{name: "tool_calls", value: metrics.ToolCalls},
 		{name: "source_reads", value: metrics.SourceReads},
+		{name: "bounded_omission_read_calls", value: metrics.BoundedOmissionReads},
+		{name: "unauthorized_source_read_calls", value: metrics.UnauthorizedSourceReads},
 		{name: "included_source_rereads", value: metrics.IncludedSourceRereads},
 		{name: "repeated_full_packs", value: metrics.RepeatedFullPacks},
 		{name: "context_calls", value: metrics.ContextCalls},
@@ -321,10 +325,25 @@ func appendEfficiencyFailures(golden, candidate map[int]ReviewedRun, limits Effi
 	if candidateToolCalls > goldenToolCalls {
 		*failures = append(*failures, fmt.Sprintf("candidate median tool calls %d exceeds golden median %d", candidateToolCalls, goldenToolCalls))
 	}
-	goldenSourceReads, _ := Median(goldenMetrics.sourceReads)
-	candidateSourceReads, _ := Median(candidateMetrics.sourceReads)
-	if candidateSourceReads > goldenSourceReads {
-		*failures = append(*failures, fmt.Sprintf("candidate median source reads %d exceeds golden median %d", candidateSourceReads, goldenSourceReads))
+	goldenUnauthorizedReads, _ := Median(goldenMetrics.unauthorizedSourceReads)
+	candidateUnauthorizedReads, _ := Median(candidateMetrics.unauthorizedSourceReads)
+	if candidateUnauthorizedReads > goldenUnauthorizedReads {
+		*failures = append(*failures, fmt.Sprintf(
+			"candidate median unauthorized source reads %d exceeds golden median %d",
+			candidateUnauthorizedReads,
+			goldenUnauthorizedReads,
+		))
+	}
+	for _, run := range logicalRunNumbers() {
+		boundedReads := candidate[run].Metrics.BoundedOmissionReads
+		if boundedReads > int64(limits.MaxSourceOmissions) {
+			*failures = append(*failures, fmt.Sprintf(
+				"candidate bounded omission reads %d exceeds contract maximum %d for run %d",
+				boundedReads,
+				limits.MaxSourceOmissions,
+				run,
+			))
+		}
 	}
 	goldenTokens, _ := Median(goldenMetrics.tokens)
 	candidateTokens, _ := Median(candidateMetrics.tokens)
@@ -346,10 +365,10 @@ func appendEfficiencyFailures(golden, candidate map[int]ReviewedRun, limits Effi
 }
 
 type metricsByRun struct {
-	tokens        []int64
-	toolCalls     []int64
-	sourceReads   []int64
-	contextMillis []int64
+	tokens                  []int64
+	toolCalls               []int64
+	unauthorizedSourceReads []int64
+	contextMillis           []int64
 }
 
 func metricValues(runs map[int]ReviewedRun) metricsByRun {
@@ -357,7 +376,10 @@ func metricValues(runs map[int]ReviewedRun) metricsByRun {
 	for _, run := range logicalRunNumbers() {
 		metrics.tokens = append(metrics.tokens, runs[run].Metrics.Tokens)
 		metrics.toolCalls = append(metrics.toolCalls, runs[run].Metrics.ToolCalls)
-		metrics.sourceReads = append(metrics.sourceReads, runs[run].Metrics.SourceReads)
+		metrics.unauthorizedSourceReads = append(
+			metrics.unauthorizedSourceReads,
+			runs[run].Metrics.UnauthorizedSourceReads,
+		)
 		metrics.contextMillis = append(metrics.contextMillis, runs[run].Metrics.ContextMillis)
 	}
 	return metrics

@@ -48,12 +48,12 @@ cat >"$temporary_directory/transcript.jsonl" <<'EOF'
 {"type":"turn.completed","usage":{"input_tokens":60000,"cached_input_tokens":10000,"output_tokens":30000,"total_tokens":100000}}
 EOF
 
-expected_header=$'tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tincluded_source_rereads\tunique_source_files'
+expected_header=$'tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files'
 header=$(bash "$analyzer" --header "$temporary_directory/transcript.jsonl")
 [ "$header" = "$expected_header" ] || fail "header = $header"
 
 row=$(bash "$analyzer" "$temporary_directory/transcript.jsonl")
-[ "$row" = $'21\t4\t2\t1\t1\t13\t8\t0\t13' ] || fail "row = $row"
+[ "$row" = $'21\t4\t2\t1\t1\t15\t8\t0\t15\t0\t13' ] || fail "row = $row"
 
 cat >"$temporary_directory/included-rereads.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"before-pack","type":"command_execution","command":"cat /work/services/catalog/src/CatalogService.java","exit_code":0}}
@@ -71,11 +71,35 @@ cat >"$temporary_directory/included-rereads.jsonl" <<'EOF'
 EOF
 
 reread_row=$(bash "$analyzer" "$temporary_directory/included-rereads.jsonl")
-IFS=$'\t' read -r _ _ _ _ _ _ _ included_rereads _ extra <<EOF
+IFS=$'\t' read -r _ _ _ _ _ _ _ bounded_reads unauthorized_reads included_rereads _ extra <<EOF
 $reread_row
 EOF
 [ -z "${extra:-}" ] || fail "included reread row has extra fields: $reread_row"
+[ "$bounded_reads" = "0" ] || fail "bounded omission reads = $bounded_reads, row = $reread_row"
+[ "$unauthorized_reads" = "7" ] || fail "unauthorized source reads = $unauthorized_reads, row = $reread_row"
 [ "$included_rereads" = "4" ] || fail "included source rereads = $included_rereads, row = $reread_row"
+
+cat >"$temporary_directory/bounded-omissions.jsonl" <<'EOF'
+{"type":"item.completed","item":{"id":"before-pack","type":"command_execution","command":"sed -n '30,32p' /work/services/worker/src/Missing.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"json-pack","type":"mcp_tool_call","tool":"task_context","result":{"content":[{"type":"text","text":"{\"context_id\":\"json-partial\",\"source_coverage\":\"partial\",\"source_sections\":[{\"project\":\"services/worker\",\"path\":\"src/Worker.go\",\"start_line\":10,\"end_line\":20}],\"source_omissions\":[{\"project\":\"services/worker\",\"path\":\"src/Missing.go\",\"start_line\":30,\"end_line\":40},{\"project\":\"services/worker\",\"path\":\"src/Other.go\",\"start_line\":50,\"end_line\":60},{\"project\":\"services/worker\",\"path\":\"src/Unbounded.go\"}]}"}]}}}
+{"type":"item.completed","item":{"id":"exact","type":"command_execution","command":"sed -n '30,40p' /work/services/worker/src/Missing.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"exact","type":"command_execution","command":"sed -n '30,40p' /work/services/worker/src/Missing.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"subset","type":"command_execution","command":"sed -n '32,35p' /work/services/worker/src/Missing.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"widened","type":"command_execution","command":"sed -n '29,40p' /work/services/worker/src/Missing.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"wrong-path","type":"command_execution","command":"sed -n '30,40p' /work/services/worker/src/Wrong.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"unbounded","type":"command_execution","command":"cat /work/services/worker/src/Unbounded.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"included-overlap","type":"command_execution","command":"sed -n '12,15p' /work/services/worker/src/Worker.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"search","type":"command_execution","command":"rg -n delete /work/services/worker/src/Missing.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"inventory","type":"command_execution","command":"find /work/services/worker -name '*.go'","exit_code":0}}
+{"type":"item.completed","item":{"id":"compound","type":"command_execution","command":"/bin/zsh -lc 'sed -n \"30,32p\" /work/services/worker/src/Missing.go; sed -n \"30,32p\" /work/services/worker/src/Wrong.go'","exit_code":0}}
+{"type":"item.completed","item":{"id":"markdown-pack","type":"command_execution","command":"goregraph context /work --query jobs","aggregated_output":"# GoreGraph Context\n\nContext ID: markdown-partial\nSource coverage: partial\n\n## Source omissions\n- `services/jobs/src/JobRepository.java:70-80` — role: persistence\n"}}
+{"type":"item.completed","item":{"id":"markdown-exact","type":"command_execution","command":"sed -n '72,75p' /work/services/jobs/src/JobRepository.java","exit_code":0}}
+{"type":"turn.completed","usage":{"total_tokens":100}}
+EOF
+
+bounded_row=$(bash "$analyzer" "$temporary_directory/bounded-omissions.jsonl")
+[ "$bounded_row" = $'13\t2\t2\t0\t0\t11\t9\t3\t8\t1\t5' ] ||
+  fail "bounded omission row = $bounded_row"
 
 cat >"$temporary_directory/fallback-usage.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"search","type":"web_search","query":"route"}}
