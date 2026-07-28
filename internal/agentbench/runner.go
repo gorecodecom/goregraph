@@ -879,7 +879,7 @@ func (state *runnerState) prepareWorkspaceAndScan(
 			fmt.Errorf("inspect context index: %w", err),
 		)
 	}
-	indexHash, err := hashFile(ctx, indexPath)
+	indexHash, err := hashContextIndex(ctx, indexPath)
 	if err != nil {
 		return state.retainInfrastructureFailure(
 			plan,
@@ -1627,6 +1627,30 @@ func hashFile(ctx context.Context, path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func hashContextIndex(ctx context.Context, path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	var body bytes.Buffer
+	readErr := copyWithContext(ctx, &body, file)
+	if err := errors.Join(readErr, file.Close()); err != nil {
+		return "", err
+	}
+
+	var index map[string]json.RawMessage
+	if err := decodeRunnerJSON(body.Bytes(), &index); err != nil {
+		return "", fmt.Errorf("decode context index: %w", err)
+	}
+	delete(index, "generated")
+	delete(index, "root")
+	normalized, err := json.Marshal(index)
+	if err != nil {
+		return "", fmt.Errorf("normalize context index: %w", err)
+	}
+	return hashBytes(normalized), nil
 }
 
 func hashBytes(body []byte) string {

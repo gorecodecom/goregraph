@@ -630,6 +630,17 @@ func TestRunRegressionRetainsIndexDriftAndStops(t *testing.T) {
 	assertTemporaryExecutionRootRemoved(t, fixture.config.Output)
 }
 
+func TestRunRegressionIgnoresVolatileContextIndexMetadata(t *testing.T) {
+	fixture := newRunnerFixture(t, "full", "g1", 3)
+	t.Setenv("FAKE_INDEX_VOLATILE", "1")
+
+	if err := RunRegression(context.Background(), fixture.config); err != nil {
+		t.Fatalf("RunRegression: %v", err)
+	}
+
+	requireOperationCounts(t, fixture.log, 36, 42, 36)
+}
+
 func TestRunRegressionKeepsSuccessfulSemanticFailureValid(t *testing.T) {
 	fixture := newRunnerFixture(t, "smoke", "g1", 1)
 	t.Setenv("FAKE_CODEX_SEMANTIC_BAD", "1")
@@ -999,8 +1010,13 @@ case "$command_name" in
       changed=true
     fi
     mkdir -p "$workspace/.goregraph-workspace/agent"
-    printf '{"schema":1,"build":"%s","changed":%%s}\n' \
-      "$changed" >"$workspace/.goregraph-workspace/agent/context-index.json"
+    if [ -n "${FAKE_INDEX_VOLATILE:-}" ]; then
+      printf '{"schema":1,"build":"%s","changed":%%s,"generated":"scan-%%s","root":"%%s"}\n' \
+        "$changed" "$count" "$workspace" >"$workspace/.goregraph-workspace/agent/context-index.json"
+    else
+      printf '{"schema":1,"build":"%s","changed":%%s}\n' \
+        "$changed" >"$workspace/.goregraph-workspace/agent/context-index.json"
+    fi
     ;;
   context)
     printf 'context\t%s\t%%s\t%%s\t%%s\n' \
@@ -1035,7 +1051,7 @@ case "$command_name" in
     exit 9
     ;;
 esac
-`, build, build, build, build, scan.SchemaVersion)
+`, build, build, build, build, build, scan.SchemaVersion)
 	writeRunnerText(t, path, script, 0o700)
 }
 
