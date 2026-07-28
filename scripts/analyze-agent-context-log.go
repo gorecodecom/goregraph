@@ -11,9 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/gorecodecom/goregraph/internal/agentmetrics"
 )
 
-const header = "tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files"
+const header = agentmetrics.AnalyzerHeader
 
 type event struct {
 	Type  string

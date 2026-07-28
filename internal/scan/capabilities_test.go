@@ -10,8 +10,9 @@ func TestBuildCapabilityInventoryReportsHonestCoverage(t *testing.T) {
 	}, WorkspaceIndex{})
 
 	assertCapabilityCoverage(t, records, "typescript", CapabilitySymbols, CoverageComplete)
-	assertCapabilityCoverage(t, records, "typescript", CapabilityPersistence, CoverageComplete)
+	assertCapabilityCoverage(t, records, "typescript", CapabilityPersistence, CoveragePartial)
 	assertCapabilityCoverage(t, records, "rust", CapabilityRoutes, CoverageComplete)
+	assertCapabilityCoverage(t, records, "rust", CapabilityMessaging, CoveragePartial)
 	assertCapabilityCoverage(t, records, "kotlin", CapabilityCalls, CoverageUnavailable)
 }
 

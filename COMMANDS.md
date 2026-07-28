@@ -51,6 +51,7 @@ goregraph context <path> --query "<current coding task>" --budget-tokens 4000 --
 
 The equivalent standard MCP tool is `task_context`.
 
+<!-- goregraph:generated agent-instruction-quick-start start -->
 ```text
 Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
@@ -64,6 +65,7 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
+<!-- goregraph:generated agent-instruction-quick-start end -->
 
 Run `goregraph doctor <path>` only when Context reports missing or stale output.
 
@@ -555,6 +557,7 @@ represented by a compact primary-task summary. The complete input remains
 request-lifecycle internal for semantic selection and is neither serialized nor
 hashed into `context_id`.
 
+<!-- goregraph:generated agent-instruction-context start -->
 ```text
 Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
@@ -568,6 +571,7 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
+<!-- goregraph:generated agent-instruction-context end -->
 
 Endpoint tasks select at most one endpoint and eight consumer call sites, with
 an explicit omitted count when more consumers exist. The 4000-token default is
@@ -1510,6 +1514,7 @@ The standard server exposes only `task_context`. Give it a focused query with
 the problem statement and requested evidence scope, then use its first Context
 Pack directly.
 
+<!-- goregraph:generated agent-instruction-mcp start -->
 ```text
 Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
@@ -1523,6 +1528,7 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
+<!-- goregraph:generated agent-instruction-mcp end -->
 
 Legacy specialist tools are manual compatibility operations. Expose them only
 with the explicit expert mode:

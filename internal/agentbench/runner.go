@@ -20,10 +20,11 @@ import (
 	"time"
 
 	"github.com/gorecodecom/goregraph/internal/agent"
+	"github.com/gorecodecom/goregraph/internal/agentmetrics"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
-const regressionSummaryHeader = "case\tquery\tbuild\trun\tattempt\ttokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\tlog\n"
+const regressionSummaryHeader = agentmetrics.RegressionSummaryHeader + "\n"
 
 var lowerCommitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 

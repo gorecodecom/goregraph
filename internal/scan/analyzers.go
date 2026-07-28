@@ -35,29 +35,18 @@ func buildAnalyzerInventory(files []FileRecord, workspace WorkspaceIndex) []Anal
 }
 
 func analyzerCapabilities() map[string]AnalyzerRecord {
-	return map[string]AnalyzerRecord{
-		"go":         {Language: "go", Scope: "language+routes", Symbols: true, Relations: true, Calls: true, Endpoints: true, Tests: true, Outputs: []string{"symbols.json", "relations.json", "callgraph.json", "routes.json", "flows.json", "test-map.json", "graph-full.json"}},
-		"java":       {Language: "java", Scope: "language+spring", Symbols: true, Relations: true, Calls: true, Endpoints: true, Tests: true, Outputs: []string{"symbols-full.json", "relations-full.json", "spring.json", "callgraph.json", "endpoint-flows.json", "test-map.json"}},
-		"javascript": {Language: "javascript", Scope: "language+routes+api", Symbols: true, Relations: true, Calls: true, Endpoints: true, Tests: true, Outputs: []string{"symbols-full.json", "relations-full.json", "callgraph.json", "routes.json", "flows.json", "api-contracts.json", "test-map.json", "graph-full.json"}},
-		"typescript": {Language: "typescript", Scope: "language+react+routes+api", Symbols: true, Relations: true, Calls: true, Endpoints: true, Tests: true, Outputs: []string{"symbols-full.json", "relations-full.json", "callgraph.json", "routes.json", "flows.json", "api-contracts.json", "test-map.json", "graph-full.json"}},
-		"python":     {Language: "python", Scope: "language+routes", Symbols: true, Relations: true, Calls: true, Endpoints: true, Tests: true, Outputs: []string{"symbols-full.json", "relations-full.json", "callgraph.json", "routes.json", "flows.json", "test-map.json", "graph-full.json"}},
-		"php":        {Language: "php", Scope: "language+routes", Symbols: true, Relations: true, Calls: true, Endpoints: true, Tests: true, Outputs: []string{"symbols-full.json", "relations-full.json", "callgraph.json", "routes.json", "flows.json", "test-map.json", "graph-full.json"}},
-		"shell":      {Language: "shell", Scope: "language", Symbols: true, Relations: true, Calls: true, Endpoints: false, Tests: false, Outputs: []string{"symbols-full.json", "relations-full.json", "callgraph.json", "flows.json", "graph-full.json"}},
-		"rust":       {Language: "rust", Scope: "language+routes", Symbols: true, Relations: true, Calls: true, Endpoints: true, Tests: true, Outputs: []string{"symbols-full.json", "relations-full.json", "callgraph.json", "routes.json", "flows.json", "test-map.json", "graph-full.json"}},
-		"kotlin":     {Language: "kotlin", Scope: "language", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"symbols-full.json", "relations-full.json", "graph-full.json"}},
-		"scala":      {Language: "scala", Scope: "language", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"symbols-full.json", "relations-full.json", "graph-full.json"}},
-		"swift":      {Language: "swift", Scope: "language", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"symbols-full.json", "relations-full.json", "graph-full.json"}},
-		"ruby":       {Language: "ruby", Scope: "language", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"symbols-full.json", "relations-full.json", "graph-full.json"}},
-		"c":          {Language: "c", Scope: "language", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"symbols-full.json", "relations-full.json", "graph-full.json"}},
-		"cpp":        {Language: "cpp", Scope: "language", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"symbols-full.json", "relations-full.json", "graph-full.json"}},
-		"csharp":     {Language: "csharp", Scope: "language", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"symbols-full.json", "relations-full.json", "graph-full.json"}},
-		"markdown":   {Language: "markdown", Scope: "document", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"files.json", "report.md"}},
-		"json":       {Language: "json", Scope: "metadata", Symbols: true, Relations: false, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md"}},
-		"yaml":       {Language: "yaml", Scope: "metadata", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"files.json"}},
-		"maven":      {Language: "maven", Scope: "workspace+dependencies", Symbols: false, Relations: true, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md", "maven-graph.json", "maven-graph.md"}},
-		"node":       {Language: "node", Scope: "workspace", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md", "package-graph.json", "package-graph.md", "entrypoints.md"}},
-		"composer":   {Language: "composer", Scope: "workspace", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md"}},
+	capabilities := map[string]AnalyzerRecord{
+		"markdown": {Language: "markdown", Scope: "document", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"files.json", "report.md"}},
+		"json":     {Language: "json", Scope: "metadata", Symbols: true, Relations: false, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md"}},
+		"yaml":     {Language: "yaml", Scope: "metadata", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Outputs: []string{"files.json"}},
+		"maven":    {Language: "maven", Scope: "workspace+dependencies", Symbols: false, Relations: true, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md", "maven-graph.json", "maven-graph.md"}},
+		"node":     {Language: "node", Scope: "workspace", Symbols: true, Relations: true, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md", "package-graph.json", "package-graph.md", "entrypoints.md"}},
+		"composer": {Language: "composer", Scope: "workspace", Symbols: false, Relations: false, Calls: false, Endpoints: false, Tests: false, Workspace: true, Outputs: []string{"workspace.md"}},
 	}
+	for _, profile := range LanguageCapabilityProfiles() {
+		capabilities[profile.Language] = profile.analyzerRecord()
+	}
+	return capabilities
 }
 
 func renderAnalyzersReport(records []AnalyzerRecord) string {

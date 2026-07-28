@@ -136,18 +136,16 @@ func capabilityCoverage(analyzer AnalyzerRecord, known bool, capability Capabili
 	if complete[capability] {
 		return CoverageComplete, "The active analyzer emits this capability for indexed files."
 	}
-	if (analyzer.Language == "java" || analyzer.Language == "javascript" || analyzer.Language == "typescript" || analyzer.Language == "go" || analyzer.Language == "php" || analyzer.Language == "rust" || analyzer.Language == "python") &&
-		(capability == CapabilityAPIClients || capability == CapabilityPersistence || capability == CapabilityMessaging || capability == CapabilityDataFlow) {
-		return CoverageComplete, "The full adapter emits normalized facts for this capability; detected facts are linked as evidence."
-	}
-	if capability == CapabilityAPIClients && (analyzer.Language == "javascript" || analyzer.Language == "typescript") {
-		return CoveragePartial, "Supported client patterns are extracted; configurable and dynamic wrappers may remain unresolved."
-	}
-	if capability == CapabilityPersistence && (analyzer.Language == "java" || analyzer.Language == "javascript" || analyzer.Language == "typescript" || analyzer.Language == "go" || analyzer.Language == "php") {
-		return CoveragePartial, "Some persistence relationships are visible, but framework parity is not complete."
-	}
-	if capability == CapabilityDataFlow && (analyzer.Calls || analyzer.Endpoints) {
-		return CoveragePartial, "Call and route steps exist, but field-level data flow is not yet complete."
+	if profile, exists := languageCapabilityProfile(analyzer.Language); exists {
+		supported := map[CapabilityID]bool{
+			CapabilityAPIClients:  profile.APIClients,
+			CapabilityPersistence: profile.Persistence,
+			CapabilityMessaging:   profile.Messaging,
+			CapabilityDataFlow:    profile.DataFlow,
+		}
+		if supported[capability] {
+			return CoveragePartial, "Supported static patterns emit file-and-line-backed facts; runtime-generated and dynamic behavior may remain unresolved."
+		}
 	}
 	return CoverageUnavailable, "The active analyzer does not emit this capability yet."
 }

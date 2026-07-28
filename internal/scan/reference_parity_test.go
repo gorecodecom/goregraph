@@ -104,10 +104,11 @@ def test_create_user():
 			var facts []ArchitectureCapabilityFact
 			readJSON(t, filepath.Join(root, "goregraph-out", "architecture-capabilities.json"), &facts)
 			for _, language := range tc.languages {
-				for _, capability := range []CapabilityID{CapabilitySymbols, CapabilityRelations, CapabilityCalls, CapabilityRoutes, CapabilityAPIClients, CapabilityTests, CapabilityPersistence, CapabilityMessaging, CapabilityDataFlow} {
+				for _, capability := range []CapabilityID{CapabilitySymbols, CapabilityRelations, CapabilityCalls, CapabilityRoutes, CapabilityTests} {
 					assertCapabilityCoverage(t, records, language, capability, CoverageComplete)
 				}
 				for _, capability := range []CapabilityID{CapabilityAPIClients, CapabilityPersistence, CapabilityMessaging, CapabilityDataFlow} {
+					assertCapabilityCoverage(t, records, language, capability, CoveragePartial)
 					assertArchitectureCapabilityFact(t, facts, language, capability)
 				}
 				if language == "rust" {

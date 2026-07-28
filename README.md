@@ -46,9 +46,9 @@ handling.
 
 ## Installation
 
-The current unreleased source target is `v1.3.0`. Public artifacts remain tied
-to the latest published tag; the `v1.3.0` tag and package publication remain
-pending.
+<!-- goregraph:generated current-contract start -->
+Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until the release gates pass.
+<!-- goregraph:generated current-contract end -->
 
 The unreleased 1.3.0 source can be built locally, but it has not been published
 through GitHub Releases, Homebrew, Scoop, or Winget. The currently published
@@ -282,6 +282,7 @@ goregraph build agent .
 goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-files 12
 ```
 
+<!-- goregraph:generated agent-instruction-quick-start start -->
 ```text
 Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
@@ -295,6 +296,7 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
+<!-- goregraph:generated agent-instruction-quick-start end -->
 
 `source_sections` are current source already read. With complete
 `source_coverage`, run no source-reading commands on indexed project files;
@@ -709,32 +711,40 @@ Print build metadata including version, commit, build date, Go version, platform
 
 ## Language Coverage
 
-Coverage describes the active static analyzer, not proof that a source behavior is absent. **Full** adapters emit normalized, file-and-line-backed evidence. **Integration** support provides symbols, imports, and calls without architecture capabilities. **Index** support provides best-effort symbol and import orientation. `—` means the capability is unavailable.
+<!-- goregraph:generated language-coverage start -->
+Coverage describes implemented static analyzers, not proof that runtime behavior is absent. **Full** adapters emit normalized symbols, relations, calls, routes, and tests for their supported syntax. **Pattern-backed** capabilities recognize only the listed static families. **Integration** and **Index** are intentionally shallower. `—` means unavailable.
 
-| Language / framework | Symbols | Imports | Calls | Routes | Tests | API clients | Persistence | Exact symbols | Direct usages | HTTP reachability |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Java / Spring | Full | Full | Full | Full | Full | Full | Full | Full | Full | Provider |
-| JavaScript / TypeScript / Node.js / React | Full | Full | Full | Full | Full | Full | Full | Full | Full | Consumer + provider |
-| Go | Full | Full | Full | Full | Full | Full | Full | — | — | — |
-| PHP | Full | Full | Full | Full | Full | Full | Full | — | — | — |
-| Rust | Full | Full | Full | Full | Full | Full | Full | — | — | — |
-| Python | Full | Full | Full | Full | Full | Full | Full | — | — | — |
-| Shell | Integration | Integration | Integration | — | — | — | — | — | — | — |
-| Kotlin | Index | Index | — | — | — | — | — | — | — | — |
-| Scala | Index | Index | — | — | — | — | — | — | — | — |
-| Swift | Index | Index | — | — | — | — | — | — | — | — |
-| Ruby | Index | Index | — | — | — | — | — | — | — | — |
-| C | Index | Index | — | — | — | — | — | — | — | — |
-| C++ | Index | Index | — | — | — | — | — | — | — | — |
-| C# | Index | Index | — | — | — | — | — | — | — | — |
+| Language / framework | Adapter | Symbols | Imports | Calls | Routes | Tests | API clients | Persistence | Messaging / RPC | Data flow | Exact symbols | Direct usages | HTTP reachability |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| C | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| C++ | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| C# | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| Go | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
+| Java / Spring | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Provider |
+| JavaScript / TypeScript / Node.js / React | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Consumer + provider |
+| Kotlin | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| PHP | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
+| Python | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
+| Ruby | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| Rust | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
+| Scala | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| Shell | Integration | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — |
+| Swift | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
 
-For HTTP reachability, **Provider** means a Java / Spring implementation class
-reached by a proven static HTTP chain. **Consumer + provider** means supported
-JavaScript / TypeScript frontend origins plus supported Node.js handlers. These
-columns do not change the existing symbol, import, call, route, test, API-client,
-or persistence capabilities.
+Pattern-backed extraction can miss runtime-generated behavior such as routes, reflective or dynamic dispatch, metaprogramming, dependency-injection aliases, arbitrary client wrappers, ORM behavior assembled at runtime, and configuration outside indexed source. Missing static evidence is not proof of runtime absence.
 
-Full adapters also cover messaging/RPC and request-to-response data-flow evidence. Markdown, JSON, YAML, Maven, Node, and Composer are indexed as documents, metadata, or workspace context rather than source-language adapters.
+Shell integration does not provide routes, tests, or architecture capabilities. Index adapters provide best-effort declarations and imports only; they do not provide normalized calls, routes, tests, or architecture facts.
+
+Supported static pattern families:
+- **Go:** net/http and common routers; net/http clients; database/sql and GORM; Kafka and AMQP; gRPC; JSON request/response boundaries; go test and httptest.
+- **Java / Spring:** Spring MVC and WebFlux; Java and Spring HTTP clients; Spring Data; Spring Messaging; gRPC; Jakarta Validation; JUnit and Spring Test.
+- **JavaScript / TypeScript / Node.js / React:** Express and Fastify; NestJS; Next.js; Web and Node HTTP clients; common Node persistence; Kafka and AMQP; gRPC; Node request/response boundaries; Jest, Vitest, Node Test, and React Testing Library.
+- **PHP:** Laravel and Symfony routes; PHP HTTP clients; Eloquent, Doctrine, and PDO; queues and messaging; gRPC; PHP request/response boundaries; PHPUnit and Pest.
+- **Python:** FastAPI, Flask, and Django routes; requests, httpx, and aiohttp; SQLAlchemy, Django ORM, and DB-API; Kafka, Celery, and AMQP; gRPC; Python web and validation boundaries; pytest and unittest.
+- **Rust:** Axum, Actix, and Rocket routes; reqwest; SQLx, Diesel, and SeaORM; Kafka and AMQP; tonic gRPC; Rust web request/response boundaries; Rust and Tokio tests.
+
+For HTTP reachability, **Provider** means a supported Java/Spring or Node.js provider chain. **Consumer + provider** means supported JavaScript/TypeScript frontend origins plus supported Node.js handlers. These are static, evidence-backed relationships, not runtime reachability guarantees.
+<!-- goregraph:generated language-coverage end -->
 
 ### API integration depth
 
@@ -1116,6 +1126,7 @@ primary-task summary. The complete request remains internal to that request
 lifecycle for selection and is neither emitted nor included in the Context ID
 hash.
 
+<!-- goregraph:generated agent-instruction-reference start -->
 ```text
 Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
@@ -1129,6 +1140,7 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
+<!-- goregraph:generated agent-instruction-reference end -->
 
 For an endpoint task, the compact projection keeps at most one selected endpoint
 and eight consumer call sites with an explicit omitted count. It preserves the
@@ -1158,11 +1170,12 @@ Pack `estimated_tokens` values are approximate pack-size estimates;
 `turn.completed` usage totals from raw JSONL transcripts are the authoritative
 benchmark values.
 
-The latest 159,739-token baseline versus 141,259-token assisted diagnostic
-reduced tokens by 11.57% but regressed from 34 to 48 tool calls. It is
-diagnostic evidence, not release proof: release still requires the matched
-three-by-three benchmark and 12-point rubric. Skill isolation is set in the
-invocation for both variants, never by adding “do not use skills” to a prompt.
+<!-- goregraph:generated release-evidence-status start -->
+No current controlled three-by-three result has passed the release gates. The retained one-pair runs are diagnostic only and cannot establish release proof. Publication remains blocked until a fresh matched three-by-three run passes the token and structural gates and receives the required signed 12-point quality review.
+<!-- goregraph:generated release-evidence-status end -->
+
+Skill isolation is set in the invocation for both variants, never by adding “do
+not use skills” to a prompt.
 
 The benchmark consumes Codex JSONL logs and distinguishes compact
 `duplicate_of` Context Packs from a repeated full payload: compact duplicates

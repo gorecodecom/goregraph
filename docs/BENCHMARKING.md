@@ -48,6 +48,7 @@ Do not use the goregraph CLI, MCP tools, goregraph-out, or .goregraph-workspace 
 
 The assisted instruction is exactly these eleven lines:
 
+<!-- goregraph:generated agent-instruction start -->
 ```text
 Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
@@ -61,6 +62,7 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
+<!-- goregraph:generated agent-instruction end -->
 
 Reject the benchmark before running if an input is absent, either instruction
 differs from the text above, the base prompt is not neutral, or any execution
@@ -102,9 +104,21 @@ The harness invokes `codex exec --json` itself, records the resulting raw JSONL
 stdout log, separate stderr log, and a colocated analyzer result outside the
 workspace. Its `summary.tsv` has this schema:
 
+<!-- goregraph:generated agent-benchmark-metrics start -->
+The standard release summary schema is:
+
 ```text
-variant run tokens tool_calls goregraph_calls full_context_packs compact_duplicate_packs repeated_full_packs raw_navigation_calls source_read_calls bounded_omission_read_calls unauthorized_source_read_calls included_source_rereads unique_source_files log
+variant	run	tokens	tool_calls	goregraph_calls	full_context_packs	compact_duplicate_packs	repeated_full_packs	raw_navigation_calls	source_read_calls	bounded_omission_read_calls	unauthorized_source_read_calls	included_source_rereads	unique_source_files	log
 ```
+
+The monotonic Golden-versus-candidate summary schema is:
+
+```text
+case	query	build	run	attempt	tokens	tool_calls	context_calls	repeated_full_packs	broad_navigation_calls	source_read_calls	bounded_omission_read_calls	unauthorized_source_read_calls	included_source_rereads	context_millis	log
+```
+
+`source_read_calls` remains the total number of direct source-read terminal calls. `bounded_omission_read_calls` counts exact ranged reads wholly authorized by an earlier full Context Pack. `unauthorized_source_read_calls` counts every other source read, search, or inventory terminal call. A compound call is bounded only when every source target is bounded, and included-source overlap is never bounded. Bounded reads remain part of tool and token totals and cannot exceed the case contract's `max_source_omissions`. The monotonic gate compares unauthorized reads; the matched release gate continues to compare total `source_read_calls`.
+<!-- goregraph:generated agent-benchmark-metrics end -->
 
 Release evaluation uses the integer median of the three end-to-end token,
 tool-call, raw-navigation, and source-read totals for each variant. The analyzer
@@ -162,12 +176,12 @@ earlier ambiguous single duplicate-pack column.
 
 ## Latest diagnostic evidence
 
-The latest diagnostic pair recorded 169,913 baseline tokens and 166,833
-assisted tokens, a 3,080-token reduction (1.81%). The assisted run made 31 shell
-executions versus 28 baseline executions, a 10.71% increase. This is diagnostic
-evidence only, not controlled three-by-three release proof. A release run must
-isolate skills in the invocation for both treatments; prompt text must not be
-used to disable skills for only one variant.
+<!-- goregraph:generated release-evidence-status start -->
+No current controlled three-by-three result has passed the release gates. The retained one-pair runs are diagnostic only and cannot establish release proof. Publication remains blocked until a fresh matched three-by-three run passes the token and structural gates and receives the required signed 12-point quality review.
+<!-- goregraph:generated release-evidence-status end -->
+
+A release run must isolate skills in the invocation for both treatments; prompt
+text must not be used to disable skills for only one variant.
 
 ## Twelve-point quality rubric
 
@@ -248,20 +262,6 @@ All of these conditions must pass for the candidate:
 5. Median end-to-end tokens may increase by at most 5%.
 6. Median direct Context latency may increase by at most 10%.
 7. Unexplained paired direct Context latency above 2x fails.
-
-Each regression run reports `source_read_calls` as the unchanged total direct
-read count, `bounded_omission_read_calls` for exact ranged reads authorized by
-an earlier full Context Pack, and `unauthorized_source_read_calls` for every
-other source read, search, or inventory call. A bounded read must stay inside
-one exact project/path and `start_line`/`end_line` omission, must occur after
-the authorizing pack, and must not overlap an included source section. A
-compound terminal call is bounded only when every source target is bounded.
-Candidate bounded omission reads remain part of tool and token totals and may
-not exceed the case contract's `max_source_omissions`.
-
-This regression classification does not change the matched release benchmark:
-the standard baseline-versus-assisted structural gate above continues to
-compare total `source_read_calls`.
 
 Passing the smoke phase does not satisfy these gates. The final monotonic gate
 requires exactly three paired Golden and candidate runs for every evaluated

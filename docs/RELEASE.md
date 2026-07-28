@@ -2,11 +2,9 @@
 
 ## Current Source Target
 
-Current unreleased source target:
-
-```text
-v1.3.0
-```
+<!-- goregraph:generated current-contract start -->
+Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until the release gates pass.
+<!-- goregraph:generated current-contract end -->
 
 The unreleased 1.3.0 source target moves generated output to Schema 3 and adds
 preview-first safe Git updates, target-aware agent/dashboard builds, a bounded
@@ -103,6 +101,7 @@ every raw JSONL transcript, separate stderr log, analyzer result, `summary.tsv`,
 and the signed manual rubric outside the repository. The harness supplies
 `--json`; callers must not supply it through `CODEX_BENCHMARK_ARGS`.
 
+<!-- goregraph:generated agent-instruction start -->
 ```text
 Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
@@ -116,6 +115,7 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
+<!-- goregraph:generated agent-instruction end -->
 
 The source sections replace reads of included ranges, and `source_coverage` is authoritative:
 with complete coverage, run no source-reading commands on indexed project files;
@@ -159,11 +159,9 @@ not release 1.3.0. Keep the dashboard, remove the standard MCP integration from
 release documentation, and decide explicitly whether to ship dashboard-only or
 continue Context-ranking work in a later version.
 
-The latest diagnostic pair recorded 169,913 baseline tokens and 166,833
-assisted tokens, a 3,080-token reduction (1.81%). The assisted run made 31 shell
-executions versus 28 baseline executions, a 10.71% increase. This is diagnostic
-evidence only, not controlled three-by-three release proof. A fresh controlled
-three-by-three run with the matched 12-point rubric remains required.
+<!-- goregraph:generated release-evidence-status start -->
+No current controlled three-by-three result has passed the release gates. The retained one-pair runs are diagnostic only and cannot establish release proof. Publication remains blocked until a fresh matched three-by-three run passes the token and structural gates and receives the required signed 12-point quality review.
+<!-- goregraph:generated release-evidence-status end -->
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.
 

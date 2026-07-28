@@ -28,7 +28,11 @@ Example:
 
 ## Compatibility Rule
 
-Schema 3 is the current unreleased 1.3.0 source contract. Older Schema 1 and
+<!-- goregraph:generated current-contract start -->
+Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until the release gates pass.
+<!-- goregraph:generated current-contract end -->
+
+Older Schema 1 and
 Schema 2 indexes are not rewritten in place because mixed-generation workspaces
 could otherwise combine incompatible assumptions. Install the new binary,
 preview `goregraph workspace clean .`, execute only the listed generated output

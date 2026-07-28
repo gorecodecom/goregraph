@@ -1,7 +1,8 @@
 # GoreGraph Output Contract
 
-GoreGraph 1.3 uses output Schema 3. Outputs are additive: new versions may add
-fields, but must not silently repurpose existing field meanings.
+<!-- goregraph:generated current-contract start -->
+Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until the release gates pass.
+<!-- goregraph:generated current-contract end -->
 
 ## Build Targets and Extraction
 
@@ -210,6 +211,7 @@ goregraph context . --query "<current coding task>" --budget-tokens 4000 --max-f
 
 Standard MCP exposes exactly one tool, `task_context`, with equivalent values.
 
+<!-- goregraph:generated agent-instruction start -->
 ```text
 Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.
@@ -223,6 +225,7 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 ```
+<!-- goregraph:generated agent-instruction end -->
 
 The source sections replace reads of included ranges. `source_coverage` is authoritative:
 with complete coverage, run no source-reading commands on indexed project files;
@@ -413,7 +416,8 @@ matched test coverage.
 
 ## Language Inventory
 
-GoreGraph has deep route/API/test analyzers for Go, Java/Spring,
-JavaScript/TypeScript/Node.js/React, Python, PHP, and Shell. It also indexes
-best-effort symbols and imports for Rust, Kotlin, Scala, Swift, Ruby, C, C++,
-and C# in the shared Schema 3 index.
+<!-- goregraph:generated language-inventory start -->
+GoreGraph provides full adapters for Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, and Rust. They emit normalized symbols, imports, calls, routes, tests, and pattern-backed architecture evidence for their supported static syntax.
+
+Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for C, C++, C#, Kotlin, Ruby, Scala, and Swift provide best-effort declarations and imports only. All records share the Schema 3 index.
+<!-- goregraph:generated language-inventory end -->
