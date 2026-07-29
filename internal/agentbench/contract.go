@@ -58,6 +58,7 @@ type PackExpectation struct {
 	FallbackRequired        *bool                              `json:"fallback_required,omitempty"`
 	FallbackReasonContains  string                             `json:"fallback_reason_contains,omitempty"`
 	RetryAllowed            *bool                              `json:"retry_allowed,omitempty"`
+	MaxEndpoints            *int                               `json:"max_endpoints,omitempty"`
 	MaxEstimatedTokens      int                                `json:"max_estimated_tokens"`
 	MaxSourceOmissions      int                                `json:"max_source_omissions"`
 	RequireBoundedSource    bool                               `json:"require_bounded_source"`
@@ -323,6 +324,9 @@ func validatePack(pack PackExpectation) error {
 		if pack.Endpoint.Path == "" {
 			return fmt.Errorf("pack.endpoint.path must not be empty")
 		}
+	}
+	if pack.MaxEndpoints != nil && *pack.MaxEndpoints < 0 {
+		return fmt.Errorf("pack.max_endpoints must not be negative")
 	}
 	if pack.MaxEstimatedTokens != fixedContextTokens {
 		return fmt.Errorf("pack.max_estimated_tokens must be %d", fixedContextTokens)

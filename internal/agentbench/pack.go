@@ -76,6 +76,12 @@ func EvaluatePack(pack agent.ContextPack, expectation PackExpectation) []Violati
 	if expectation.Endpoint != nil && !matchesEndpoint(pack.Endpoints, *expectation.Endpoint) {
 		violations = append(violations, Violation{Field: "endpoint", Reason: "no endpoint matches the expected provider, HTTP method, and path"})
 	}
+	if expectation.MaxEndpoints != nil && len(pack.Endpoints) > *expectation.MaxEndpoints {
+		violations = append(violations, Violation{
+			Field:  "endpoint_count",
+			Reason: fmt.Sprintf("endpoint count %d exceeds maximum %d", len(pack.Endpoints), *expectation.MaxEndpoints),
+		})
+	}
 
 	for _, required := range expectation.RequiredLocations {
 		if !matchesLocation(pack, required) {

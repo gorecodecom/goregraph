@@ -56,6 +56,7 @@
     "required_unknowns": [],
     "fallback_required": false,
     "retry_allowed": false,
+    "max_endpoints": 0,
     "max_estimated_tokens": 4000,
     "max_source_omissions": 3,
     "require_bounded_source": true
@@ -81,12 +82,7 @@
         "description": "Do not use GET /orders or listOrders as the deletion entrypoint."
       }
     ],
-    "explicit_unknowns": [
-      {
-        "id": "structured-go-endpoint-record",
-        "description": "Generic Go routes are represented as entrypoints and are not published in ContextPack.Endpoints."
-      }
-    ]
+    "explicit_unknowns": []
   },
   "limits": {
     "context_tokens": 4000,

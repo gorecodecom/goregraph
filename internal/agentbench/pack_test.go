@@ -109,6 +109,15 @@ func TestEvaluatePackRequiresFallbackReasonSubstring(t *testing.T) {
 	})
 }
 
+func TestEvaluatePackEnforcesMaximumEndpoints(t *testing.T) {
+	maximum := 0
+	pack := goldenPack()
+
+	violations := EvaluatePack(pack, PackExpectation{MaxEndpoints: &maximum})
+
+	requireViolation(t, violations, "endpoint_count")
+}
+
 func TestEvaluatePackRequiresSourceContentInOneSection(t *testing.T) {
 	const suffix = "AccountService.java"
 	required := []string{

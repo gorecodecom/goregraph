@@ -119,6 +119,22 @@ func TestLoadContractAcceptsFallbackReasonContains(t *testing.T) {
 	}
 }
 
+func TestLoadContractAcceptsZeroMaximumEndpoints(t *testing.T) {
+	var body map[string]any
+	if err := json.Unmarshal(mustJSON(t, validContract()), &body); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	body["pack"].(map[string]any)["max_endpoints"] = 0
+
+	contract, err := LoadContract(writeJSON(t, body))
+	if err != nil {
+		t.Fatalf("LoadContract returned error: %v", err)
+	}
+	if contract.Pack.MaxEndpoints == nil || *contract.Pack.MaxEndpoints != 0 {
+		t.Fatalf("MaxEndpoints = %#v, want pointer to zero", contract.Pack.MaxEndpoints)
+	}
+}
+
 func TestValidateContract(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -162,6 +178,14 @@ func TestValidateContract(t *testing.T) {
 				contract.Pack.MaxEstimatedTokens = 4001
 			},
 			wantErr: "pack.max_estimated_tokens",
+		},
+		{
+			name: "rejects a negative endpoint maximum",
+			mutate: func(contract *Contract) {
+				value := -1
+				contract.Pack.MaxEndpoints = &value
+			},
+			wantErr: "pack.max_endpoints",
 		},
 		{
 			name: "rejects more than three source omissions",
