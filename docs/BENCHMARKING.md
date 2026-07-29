@@ -247,21 +247,59 @@ source evidence. Do not reuse a review between runs.
 
 Before either phase starts, freeze the contracts, thresholds, single
 hypothesis, Golden and candidate binaries, and run order. Record their hashes
-or digests with the external evidence.
+or digests with the external evidence. A later contract correction applies only
+to a newly frozen run and never retroactively changes a retained review or gate
+result.
+
+### Pack contracts and answer reviews
+
+Put deterministic Context Pack invariants in the contract's `pack` section.
+For example, G3 requires its generic Go route in `ContextPack.Entrypoints` and
+sets `max_endpoints` to `0`; the local matrix test verifies both conditions
+without an external answer. Do not ask an answer reviewer to repeat internal
+serialization or representation details.
+
+The answer rubric covers only user-visible evidence quality, forbidden
+outcomes, and disclosures that the answer must actually make. This keeps a
+correct Pack representation from failing because the final answer omitted an
+implementation detail that the user did not request.
 
 ### Monotonic gates
 
-All of these conditions must pass for the candidate:
+Quality and per-run safety conditions always remain hard:
 
 1. Every previously passing required facet must pass in every candidate run.
 2. Forbidden outcomes and required uncertainty disclosures must remain safe in
    every candidate run.
 3. The single declared target facet must improve in at least two of the three
    candidate runs.
-4. Median unauthorized source reads and total tool calls may not increase.
-5. Median end-to-end tokens may increase by at most 5%.
-6. Median direct Context latency may increase by at most 10%.
-7. Unexplained paired direct Context latency above 2x fails.
+4. Candidate bounded omission reads may not exceed the case contract.
+
+The runner's semantic `pack-diff.json` determines whether comparative
+efficiency can be attributed to GoreGraph. When the Pack Diff contains a
+semantic change, all comparative limits remain hard:
+
+1. Median unauthorized source reads and total tool calls may not increase.
+2. Median end-to-end tokens may increase by at most 5%.
+3. Median direct Context latency may increase by at most 10%.
+4. Unexplained paired direct Context latency above 2x fails.
+
+When the semantic Pack Diff is unchanged, breaching one of those comparative
+limits is retained in `observations` as model variance and does not become a
+GoreGraph product regression. Answer-quality, review-integrity, run-validity,
+metric-validity, and bounded-read failures are not downgraded.
+
+The gate command requires the runner's exact case/query Pack Diff:
+
+```text
+scripts/benchmark-agent-context-regression.sh gate \
+  --contract <absolute-contract.json> \
+  --hypothesis <absolute-hypothesis.json> \
+  --pack-diff <absolute-pack-diff.json> \
+  --golden-runs <absolute-golden-runs.json> \
+  --candidate-runs <absolute-candidate-runs.json> \
+  --output <absolute-gate-report.json>
+```
 
 Passing the smoke phase does not satisfy these gates. The final monotonic gate
 requires exactly three paired Golden and candidate runs for every evaluated
@@ -278,7 +316,8 @@ Source snapshots and prepared workspaces are temporary and are removed after
 success, failure, or cancellation. Retained external evidence contains hashes,
 semantic packs and diffs, transcripts, metrics, review templates and completed
 reviews, summaries, and gate reports. Keep process diagnostics with that
-evidence, but do not retain source copies.
+evidence, including unchanged-Pack model-variance observations, but do not
+retain source copies.
 
 ### External G1 evidence
 
