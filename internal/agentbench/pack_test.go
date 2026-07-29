@@ -203,6 +203,55 @@ func TestDiffPacksReportsSemanticChanges(t *testing.T) {
 	}
 }
 
+func TestHasSemanticPackChanges(t *testing.T) {
+	t.Run("reports identical semantic packs as unchanged", func(t *testing.T) {
+		if HasSemanticPackChanges(DiffPacks(goldenPack(), goldenPack())) {
+			t.Fatal("identical semantic packs reported a change")
+		}
+	})
+
+	t.Run("ignores equal raw retry values", func(t *testing.T) {
+		diff := DiffPacks(goldenPack(), goldenPack())
+		diff.GoldenRetryAllowed = true
+		diff.CandidateRetryAllowed = true
+
+		if HasSemanticPackChanges(diff) {
+			t.Fatalf("equal retry values reported a semantic change: %#v", diff)
+		}
+	})
+
+	t.Run("reports each semantic change category", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			mutate func(*PackDiff)
+		}{
+			{name: "endpoint", mutate: func(diff *PackDiff) { diff.EndpointChanged = true }},
+			{name: "added location", mutate: func(diff *PackDiff) { diff.AddedLocations = []string{"entrypoints|new"} }},
+			{name: "removed location", mutate: func(diff *PackDiff) { diff.RemovedLocations = []string{"entrypoints|old"} }},
+			{name: "added source", mutate: func(diff *PackDiff) { diff.AddedSources = []string{"services/catalog/New.java"} }},
+			{name: "removed source", mutate: func(diff *PackDiff) { diff.RemovedSources = []string{"services/catalog/Old.java"} }},
+			{name: "added omission", mutate: func(diff *PackDiff) { diff.AddedOmissions = []string{"services/catalog/New.java"} }},
+			{name: "removed omission", mutate: func(diff *PackDiff) { diff.RemovedOmissions = []string{"services/catalog/Old.java"} }},
+			{name: "coverage", mutate: func(diff *PackDiff) { diff.CoverageChanged = true }},
+			{name: "budget", mutate: func(diff *PackDiff) { diff.BudgetChanged = true }},
+			{name: "fallback", mutate: func(diff *PackDiff) { diff.FallbackChanged = true }},
+			{name: "retry", mutate: func(diff *PackDiff) { diff.RetryChanged = true }},
+			{name: "uncertainty", mutate: func(diff *PackDiff) { diff.UncertaintyChanged = true }},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				diff := DiffPacks(goldenPack(), goldenPack())
+				test.mutate(&diff)
+
+				if !HasSemanticPackChanges(diff) {
+					t.Fatalf("%s did not report a semantic change: %#v", test.name, diff)
+				}
+			})
+		}
+	})
+}
+
 func TestEvaluatePackDiffRejectsProtectedAndUndeclaredChanges(t *testing.T) {
 	t.Run("rejects protected fields regardless of allowed change categories", func(t *testing.T) {
 		hypothesis := Hypothesis{AllowedPackChanges: []string{"locations", "sources", "coverage", "omissions", "budget"}}

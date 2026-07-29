@@ -68,9 +68,9 @@ func TestLoadReview(t *testing.T) {
 
 func TestEvaluateCase(t *testing.T) {
 	t.Run("accepts retained quality and bounded metrics", func(t *testing.T) {
-		contract, golden, candidate, hypothesis := passingCase()
+		contract, golden, candidate, hypothesis, diff := passingCase()
 
-		report := EvaluateCase(contract, golden, candidate, hypothesis)
+		report := EvaluateCase(contract, golden, candidate, hypothesis, diff)
 		if !report.Passed || len(report.Failures) != 0 {
 			t.Fatalf("passing report = %#v", report)
 		}
@@ -224,38 +224,75 @@ func TestEvaluateCase(t *testing.T) {
 	}
 
 	t.Run("rejects an appended fourth logical run after a valid failure", func(t *testing.T) {
-		contract, golden, candidate, hypothesis := passingCase()
+		contract, golden, candidate, hypothesis, diff := passingCase()
 		candidate = append(candidate, reviewedRun(4, "candidate", "pass", RunMetrics{
 			Tokens: 105, ToolCalls: 10, SourceReads: 10, ContextMillis: 110,
 		}))
 
-		requireGateFailure(t, EvaluateCase(contract, golden, candidate, hypothesis), "candidate has unexpected logical run 4")
+		requireGateFailure(t, EvaluateCase(contract, golden, candidate, hypothesis, diff), "candidate has unexpected logical run 4")
 	})
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			contract, golden, candidate, hypothesis := passingCase()
+			contract, golden, candidate, hypothesis, diff := passingCase()
 			test.mutate(golden, candidate)
 
-			requireGateFailure(t, EvaluateCase(contract, golden, candidate, hypothesis), test.failure)
+			requireGateFailure(t, EvaluateCase(contract, golden, candidate, hypothesis, diff), test.failure)
 		})
 	}
 
 	t.Run("accepts total reads added only through bounded omissions", func(t *testing.T) {
-		contract, golden, candidate, hypothesis := passingCase()
+		contract, golden, candidate, hypothesis, diff := passingCase()
 		for index := range candidate {
 			candidate[index].Metrics.SourceReads = 13
 			candidate[index].Metrics.BoundedOmissionReads = 3
 		}
 
-		report := EvaluateCase(contract, golden, candidate, hypothesis)
+		report := EvaluateCase(contract, golden, candidate, hypothesis, diff)
 		if !report.Passed || len(report.Failures) != 0 {
 			t.Fatalf("bounded omission report = %#v", report)
 		}
 	})
 
+	t.Run("retains unchanged-pack efficiency drift as model variance", func(t *testing.T) {
+		contract, golden, candidate, hypothesis, _ := passingCase()
+		for index := range candidate {
+			candidate[index].Metrics.ToolCalls = 11
+			candidate[index].Metrics.UnauthorizedSourceReads = 1
+			candidate[index].Metrics.Tokens = 106
+			candidate[index].Metrics.ContextMillis = 201
+		}
+
+		report := EvaluateCase(contract, golden, candidate, hypothesis, PackDiff{})
+		if !report.Passed || len(report.Failures) != 0 {
+			t.Fatalf("unchanged-Pack report = %#v, want pass", report)
+		}
+		for _, fragment := range []string{
+			"model variance",
+			"candidate median tool calls",
+			"candidate median unauthorized source reads",
+			"candidate median tokens",
+			"candidate median Context latency",
+			"candidate Context latency",
+		} {
+			requireObservation(t, report, fragment)
+		}
+	})
+
+	t.Run("rejects bounded omission reads for unchanged packs", func(t *testing.T) {
+		contract, golden, candidate, hypothesis, _ := passingCase()
+		candidate[0].Metrics.BoundedOmissionReads = 4
+		candidate[0].Metrics.SourceReads = 14
+
+		requireGateFailure(
+			t,
+			EvaluateCase(contract, golden, candidate, hypothesis, PackDiff{}),
+			"candidate bounded omission reads 4 exceeds contract maximum 3 for run 1",
+		)
+	})
+
 	t.Run("accepts an infrastructure replacement in the same logical run", func(t *testing.T) {
-		contract, golden, candidate, hypothesis := passingCase()
+		contract, golden, candidate, hypothesis, diff := passingCase()
 		failedAttempt := candidate[0]
 		failedAttempt.Invalid = &InvalidRun{
 			InfrastructureFailure: true,
@@ -265,21 +302,21 @@ func TestEvaluateCase(t *testing.T) {
 		candidate[0].Review.Attempt = 2
 		candidate = append([]ReviewedRun{failedAttempt}, candidate...)
 
-		report := EvaluateCase(contract, golden, candidate, hypothesis)
+		report := EvaluateCase(contract, golden, candidate, hypothesis, diff)
 		if !report.Passed || len(report.Failures) != 0 {
 			t.Fatalf("replacement report = %#v", report)
 		}
 	})
 
 	t.Run("accepts a contract without forbidden outcomes", func(t *testing.T) {
-		contract, golden, candidate, hypothesis := passingCase()
+		contract, golden, candidate, hypothesis, diff := passingCase()
 		contract.Answer.ForbiddenOutcomes = nil
 		for index := range golden {
 			golden[index].Review.ForbiddenOutcomes = nil
 			candidate[index].Review.ForbiddenOutcomes = nil
 		}
 
-		report := EvaluateCase(contract, golden, candidate, hypothesis)
+		report := EvaluateCase(contract, golden, candidate, hypothesis, diff)
 		if !report.Passed || len(report.Failures) != 0 {
 			t.Fatalf("zero-forbidden-outcome report = %#v", report)
 		}
@@ -331,7 +368,7 @@ func completeReview(run, attempt int) RunReview {
 	}
 }
 
-func passingCase() (Contract, []ReviewedRun, []ReviewedRun, Hypothesis) {
+func passingCase() (Contract, []ReviewedRun, []ReviewedRun, Hypothesis, PackDiff) {
 	contract := validContract()
 	contract.Answer.RequiredFacets = []FacetDefinition{
 		{ID: "current-path", Description: "Explains the observed catalog deletion path."},
@@ -355,7 +392,8 @@ func passingCase() (Contract, []ReviewedRun, []ReviewedRun, Hypothesis) {
 			Tokens: 105, ToolCalls: 10, SourceReads: 10, ContextMillis: 110,
 		})
 	}
-	return contract, golden, candidate, hypothesis
+	diff := PackDiff{AddedSources: []string{"services/catalog/NewEvidence.java"}}
+	return contract, golden, candidate, hypothesis, diff
 }
 
 func reviewedRun(run int, build, targetStatus string, metrics RunMetrics) ReviewedRun {
@@ -383,4 +421,14 @@ func requireGateFailure(t *testing.T, report GateReport, want string) {
 		}
 	}
 	t.Fatalf("gate failures = %#v, want one containing %q", report.Failures, want)
+}
+
+func requireObservation(t *testing.T, report GateReport, want string) {
+	t.Helper()
+	for _, observation := range report.Observations {
+		if strings.Contains(observation, want) {
+			return
+		}
+	}
+	t.Fatalf("gate observations = %#v, want one containing %q", report.Observations, want)
 }

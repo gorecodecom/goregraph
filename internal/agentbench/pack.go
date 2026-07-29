@@ -229,6 +229,21 @@ func DiffPacks(golden, candidate agent.ContextPack) PackDiff {
 	}
 }
 
+func HasSemanticPackChanges(diff PackDiff) bool {
+	return diff.EndpointChanged ||
+		len(diff.AddedLocations) > 0 ||
+		len(diff.RemovedLocations) > 0 ||
+		len(diff.AddedSources) > 0 ||
+		len(diff.RemovedSources) > 0 ||
+		len(diff.AddedOmissions) > 0 ||
+		len(diff.RemovedOmissions) > 0 ||
+		diff.CoverageChanged ||
+		diff.BudgetChanged ||
+		diff.FallbackChanged ||
+		diff.RetryChanged ||
+		diff.UncertaintyChanged
+}
+
 func EvaluatePackDiff(diff PackDiff, hypothesis Hypothesis) []Violation {
 	violations := make([]Violation, 0)
 	if diff.EndpointChanged {

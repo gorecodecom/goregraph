@@ -54,8 +54,9 @@ type ReviewedRun struct {
 }
 
 type GateReport struct {
-	Passed   bool     `json:"passed"`
-	Failures []string `json:"failures"`
+	Passed       bool     `json:"passed"`
+	Failures     []string `json:"failures"`
+	Observations []string `json:"observations,omitempty"`
 }
 
 func LoadReview(path string) (RunReview, error) {
@@ -69,8 +70,14 @@ func LoadReview(path string) (RunReview, error) {
 	return review, nil
 }
 
-func EvaluateCase(contract Contract, golden, candidate []ReviewedRun, hypothesis Hypothesis) GateReport {
+func EvaluateCase(
+	contract Contract,
+	golden, candidate []ReviewedRun,
+	hypothesis Hypothesis,
+	diff PackDiff,
+) GateReport {
 	failures := make([]string, 0)
+	observations := make([]string, 0)
 	if err := ValidateContract(contract); err != nil {
 		failures = append(failures, fmt.Sprintf("invalid contract: %v", err))
 	}
@@ -87,7 +94,7 @@ func EvaluateCase(contract Contract, golden, candidate []ReviewedRun, hypothesis
 	goldenValid := collectValidRuns("golden", contract.ID, golden, &failures)
 	candidateValid := collectValidRuns("candidate", contract.ID, candidate, &failures)
 	if len(failures) > 0 {
-		return gateReport(failures)
+		return gateReport(failures, observations)
 	}
 
 	requiredFacetIDs := facetIDs(contract.Answer.RequiredFacets)
@@ -98,7 +105,7 @@ func EvaluateCase(contract Contract, golden, candidate []ReviewedRun, hypothesis
 		ensureReviewScope("candidate", candidateValid[run].Review, requiredFacetIDs, explicitUnknownIDs, forbiddenOutcomeIDs, &failures)
 	}
 	if len(failures) > 0 {
-		return gateReport(failures)
+		return gateReport(failures, observations)
 	}
 
 	targetPasses := 0
@@ -136,8 +143,23 @@ func EvaluateCase(contract Contract, golden, candidate []ReviewedRun, hypothesis
 		failures = append(failures, fmt.Sprintf("%s passed in %d of %d candidate runs, want at least 2", hypothesis.TargetFacet, targetPasses, logicalRunCount))
 	}
 
-	appendEfficiencyFailures(goldenValid, candidateValid, contract.Limits, &failures)
-	return gateReport(failures)
+	appendBoundedReadFailures(candidateValid, contract.Limits, &failures)
+	efficiencyFindings := comparativeEfficiencyFindings(
+		goldenValid,
+		candidateValid,
+		contract.Limits,
+	)
+	if HasSemanticPackChanges(diff) {
+		failures = append(failures, efficiencyFindings...)
+	} else {
+		for _, finding := range efficiencyFindings {
+			observations = append(
+				observations,
+				"unchanged semantic Pack Diff; retained as model variance: "+finding,
+			)
+		}
+	}
+	return gateReport(failures, observations)
 }
 
 func Median(values []int64) (int64, error) {
@@ -316,24 +338,11 @@ func ensureReviewScope(build string, review RunReview, required, explicitUnknown
 	}
 }
 
-func appendEfficiencyFailures(golden, candidate map[int]ReviewedRun, limits EfficiencyLimits, failures *[]string) {
-	goldenMetrics := metricValues(golden)
-	candidateMetrics := metricValues(candidate)
-
-	goldenToolCalls, _ := Median(goldenMetrics.toolCalls)
-	candidateToolCalls, _ := Median(candidateMetrics.toolCalls)
-	if candidateToolCalls > goldenToolCalls {
-		*failures = append(*failures, fmt.Sprintf("candidate median tool calls %d exceeds golden median %d", candidateToolCalls, goldenToolCalls))
-	}
-	goldenUnauthorizedReads, _ := Median(goldenMetrics.unauthorizedSourceReads)
-	candidateUnauthorizedReads, _ := Median(candidateMetrics.unauthorizedSourceReads)
-	if candidateUnauthorizedReads > goldenUnauthorizedReads {
-		*failures = append(*failures, fmt.Sprintf(
-			"candidate median unauthorized source reads %d exceeds golden median %d",
-			candidateUnauthorizedReads,
-			goldenUnauthorizedReads,
-		))
-	}
+func appendBoundedReadFailures(
+	candidate map[int]ReviewedRun,
+	limits EfficiencyLimits,
+	failures *[]string,
+) {
 	for _, run := range logicalRunNumbers() {
 		boundedReads := candidate[run].Metrics.BoundedOmissionReads
 		if boundedReads > int64(limits.MaxSourceOmissions) {
@@ -345,23 +354,48 @@ func appendEfficiencyFailures(golden, candidate map[int]ReviewedRun, limits Effi
 			))
 		}
 	}
+}
+
+func comparativeEfficiencyFindings(
+	golden, candidate map[int]ReviewedRun,
+	limits EfficiencyLimits,
+) []string {
+	findings := make([]string, 0)
+	goldenMetrics := metricValues(golden)
+	candidateMetrics := metricValues(candidate)
+
+	goldenToolCalls, _ := Median(goldenMetrics.toolCalls)
+	candidateToolCalls, _ := Median(candidateMetrics.toolCalls)
+	if candidateToolCalls > goldenToolCalls {
+		findings = append(findings, fmt.Sprintf("candidate median tool calls %d exceeds golden median %d", candidateToolCalls, goldenToolCalls))
+	}
+	goldenUnauthorizedReads, _ := Median(goldenMetrics.unauthorizedSourceReads)
+	candidateUnauthorizedReads, _ := Median(candidateMetrics.unauthorizedSourceReads)
+	if candidateUnauthorizedReads > goldenUnauthorizedReads {
+		findings = append(findings, fmt.Sprintf(
+			"candidate median unauthorized source reads %d exceeds golden median %d",
+			candidateUnauthorizedReads,
+			goldenUnauthorizedReads,
+		))
+	}
 	goldenTokens, _ := Median(goldenMetrics.tokens)
 	candidateTokens, _ := Median(candidateMetrics.tokens)
 	if !withinRatio(candidateTokens, goldenTokens, 100+int64(limits.MaxTokenIncreasePercent)) {
-		*failures = append(*failures, fmt.Sprintf("candidate median tokens %d exceeds %d percent of golden median %d", candidateTokens, 100+limits.MaxTokenIncreasePercent, goldenTokens))
+		findings = append(findings, fmt.Sprintf("candidate median tokens %d exceeds %d percent of golden median %d", candidateTokens, 100+limits.MaxTokenIncreasePercent, goldenTokens))
 	}
 	goldenLatency, _ := Median(goldenMetrics.contextMillis)
 	candidateLatency, _ := Median(candidateMetrics.contextMillis)
 	if !withinRatio(candidateLatency, goldenLatency, 100+int64(limits.MaxLatencyIncreasePercent)) {
-		*failures = append(*failures, fmt.Sprintf("candidate median Context latency %d exceeds %d percent of golden median %d", candidateLatency, 100+limits.MaxLatencyIncreasePercent, goldenLatency))
+		findings = append(findings, fmt.Sprintf("candidate median Context latency %d exceeds %d percent of golden median %d", candidateLatency, 100+limits.MaxLatencyIncreasePercent, goldenLatency))
 	}
 	for _, run := range logicalRunNumbers() {
 		candidateLatency := candidate[run].Metrics.ContextMillis
 		goldenLatency := golden[run].Metrics.ContextMillis
 		if !withinMultiplier(candidateLatency, goldenLatency, int64(limits.MaxPairedLatencyMultiplier)) {
-			*failures = append(*failures, fmt.Sprintf("candidate Context latency %d exceeds twice golden latency %d for run %d", candidateLatency, goldenLatency, run))
+			findings = append(findings, fmt.Sprintf("candidate Context latency %d exceeds twice golden latency %d for run %d", candidateLatency, goldenLatency, run))
 		}
 	}
+	return findings
 }
 
 type metricsByRun struct {
@@ -418,6 +452,10 @@ func logicalRunNumbers() []int {
 	return []int{1, 2, 3}
 }
 
-func gateReport(failures []string) GateReport {
-	return GateReport{Passed: len(failures) == 0, Failures: failures}
+func gateReport(failures, observations []string) GateReport {
+	return GateReport{
+		Passed:       len(failures) == 0,
+		Failures:     failures,
+		Observations: observations,
+	}
 }
