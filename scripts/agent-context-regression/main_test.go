@@ -362,6 +362,7 @@ func TestRunGate(t *testing.T) {
 			"gate",
 			"--contract", fixture.contract,
 			"--hypothesis", fixture.hypothesis,
+			"--pack-diff", fixture.packDiff,
 			"--golden-runs", fixture.goldenRuns,
 			"--candidate-runs", fixture.candidateRuns,
 			"--output", output,
@@ -406,6 +407,7 @@ func TestRunGate(t *testing.T) {
 			"gate",
 			"--contract", fixture.contract,
 			"--hypothesis", fixture.hypothesis,
+			"--pack-diff", fixture.packDiff,
 			"--golden-runs", fixture.goldenRuns,
 			"--candidate-runs", fixture.candidateRuns,
 			"--output", output,
@@ -422,6 +424,33 @@ func TestRunGate(t *testing.T) {
 		if report.Passed || len(report.Failures) != 1 ||
 			!strings.Contains(report.Failures[0], "passed in 0 of 3") {
 			t.Fatalf("report = %#v, want complete target-facet failure", report)
+		}
+	})
+
+	t.Run("requires Pack Diff evidence", func(t *testing.T) {
+		fixture := newCommandFixture(t)
+		output := filepath.Join(t.TempDir(), "gate.json")
+
+		code, stdout, stderr := invoke(
+			"gate",
+			"--contract", fixture.contract,
+			"--hypothesis", fixture.hypothesis,
+			"--golden-runs", fixture.goldenRuns,
+			"--candidate-runs", fixture.candidateRuns,
+			"--output", output,
+		)
+
+		if code != 2 {
+			t.Fatalf("run exit = %d, want 2", code)
+		}
+		if stdout != "" {
+			t.Fatalf("stdout = %q, want empty", stdout)
+		}
+		if !strings.Contains(stderr, "--pack-diff") {
+			t.Fatalf("stderr = %q, want --pack-diff diagnostic", stderr)
+		}
+		if _, err := os.Stat(output); !os.IsNotExist(err) {
+			t.Fatalf("gate output exists after missing Pack Diff: %v", err)
 		}
 	})
 }
@@ -587,6 +616,13 @@ func TestRunRejectsMalformedCommandsAndInputs(t *testing.T) {
 				hypothesis := validHypothesis()
 				hypothesis.TargetCases = []string{"other-case"}
 				writeJSONFile(t, fixture.hypothesis, hypothesis)
+				return gateArgs(fixture, filepath.Join(t.TempDir(), "gate.json"))
+			},
+		},
+		{
+			name: "Pack Diff unknown field",
+			command: func(t *testing.T, fixture commandFixture) []string {
+				writeTextFile(t, fixture.packDiff, `{"unexpected":true}`)
 				return gateArgs(fixture, filepath.Join(t.TempDir(), "gate.json"))
 			},
 		},
@@ -888,6 +924,7 @@ type commandFixture struct {
 	goldenPack    string
 	candidatePack string
 	hypothesis    string
+	packDiff      string
 	goldenRuns    string
 	candidateRuns string
 }
@@ -931,6 +968,7 @@ func newCommandFixture(t *testing.T) commandFixture {
 		goldenPack:    filepath.Join(directory, "golden-pack.json"),
 		candidatePack: filepath.Join(directory, "candidate-pack.json"),
 		hypothesis:    filepath.Join(directory, "hypothesis.json"),
+		packDiff:      filepath.Join(directory, "pack-diff.json"),
 		goldenRuns:    filepath.Join(directory, "golden-runs.json"),
 		candidateRuns: filepath.Join(directory, "candidate-runs.json"),
 	}
@@ -938,6 +976,9 @@ func newCommandFixture(t *testing.T) commandFixture {
 	writeJSONFile(t, fixture.goldenPack, validPack())
 	writeJSONFile(t, fixture.candidatePack, validPack())
 	writeJSONFile(t, fixture.hypothesis, validHypothesis())
+	writeJSONFile(t, fixture.packDiff, agentbench.PackDiff{
+		AddedSources: []string{"services/catalog/NewEvidence.java"},
+	})
 	writeJSONFile(t, fixture.goldenRuns, reviewedRuns("golden", "fail"))
 	writeJSONFile(t, fixture.candidateRuns, reviewedRuns("candidate", "pass"))
 	return fixture
@@ -1052,6 +1093,7 @@ func gateArgs(fixture commandFixture, output string) []string {
 		"gate",
 		"--contract", fixture.contract,
 		"--hypothesis", fixture.hypothesis,
+		"--pack-diff", fixture.packDiff,
 		"--golden-runs", fixture.goldenRuns,
 		"--candidate-runs", fixture.candidateRuns,
 		"--output", output,

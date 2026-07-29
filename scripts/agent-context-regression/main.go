@@ -239,6 +239,7 @@ func runGate(args []string, stderr io.Writer) int {
 		args,
 		"contract",
 		"hypothesis",
+		"pack-diff",
 		"golden-runs",
 		"candidate-runs",
 		"output",
@@ -249,6 +250,7 @@ func runGate(args []string, stderr io.Writer) int {
 	if err := validateInputPaths(map[string]string{
 		"contract":       flags["contract"],
 		"hypothesis":     flags["hypothesis"],
+		"pack-diff":      flags["pack-diff"],
 		"golden-runs":    flags["golden-runs"],
 		"candidate-runs": flags["candidate-runs"],
 	}); err != nil {
@@ -272,6 +274,10 @@ func runGate(args []string, stderr io.Writer) int {
 	if !hypothesisTargetsCase(hypothesis, contract.ID) {
 		return commandError(stderr, "hypothesis does not target contract %q", contract.ID)
 	}
+	diff, err := loadStrictJSON[agentbench.PackDiff](flags["pack-diff"])
+	if err != nil {
+		return commandError(stderr, "%v", err)
+	}
 	golden, err := loadStrictJSON[[]agentbench.ReviewedRun](flags["golden-runs"])
 	if err != nil {
 		return commandError(stderr, "%v", err)
@@ -281,8 +287,9 @@ func runGate(args []string, stderr io.Writer) int {
 		return commandError(stderr, "%v", err)
 	}
 
-	report := agentbench.EvaluateCase(contract, golden, candidate, hypothesis)
+	report := agentbench.EvaluateCase(contract, golden, candidate, hypothesis, diff)
 	sort.Strings(report.Failures)
+	sort.Strings(report.Observations)
 	if err := writeNewJSON(flags["output"], report); err != nil {
 		return commandError(stderr, "%v", err)
 	}
