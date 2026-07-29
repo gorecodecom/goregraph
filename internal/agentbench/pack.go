@@ -43,9 +43,87 @@ type PackDiff struct {
 	UncertaintyChanged    bool     `json:"uncertainty_changed"`
 }
 
+type packDiffJSON struct {
+	EndpointChanged       *bool     `json:"endpoint_changed"`
+	GoldenEndpoint        *string   `json:"golden_endpoint"`
+	CandidateEndpoint     *string   `json:"candidate_endpoint"`
+	AddedLocations        *[]string `json:"added_locations"`
+	RemovedLocations      *[]string `json:"removed_locations"`
+	AddedSources          *[]string `json:"added_sources"`
+	RemovedSources        *[]string `json:"removed_sources"`
+	AddedOmissions        *[]string `json:"added_omissions"`
+	RemovedOmissions      *[]string `json:"removed_omissions"`
+	CoverageChanged       *bool     `json:"coverage_changed"`
+	BudgetChanged         *bool     `json:"budget_changed"`
+	FallbackChanged       *bool     `json:"fallback_changed"`
+	RetryChanged          *bool     `json:"retry_changed"`
+	GoldenRetryAllowed    *bool     `json:"golden_retry_allowed"`
+	CandidateRetryAllowed *bool     `json:"candidate_retry_allowed"`
+	UncertaintyChanged    *bool     `json:"uncertainty_changed"`
+}
+
 type Violation struct {
 	Field  string `json:"field"`
 	Reason string `json:"reason"`
+}
+
+// LoadPackDiff loads the complete semantic diff emitted by the benchmark runner.
+func LoadPackDiff(path string) (PackDiff, error) {
+	var encoded packDiffJSON
+	if err := loadJSON(path, &encoded); err != nil {
+		return PackDiff{}, err
+	}
+	for _, field := range []struct {
+		name    string
+		present bool
+	}{
+		{name: "endpoint_changed", present: encoded.EndpointChanged != nil},
+		{name: "golden_endpoint", present: encoded.GoldenEndpoint != nil},
+		{name: "candidate_endpoint", present: encoded.CandidateEndpoint != nil},
+		{name: "added_locations", present: encoded.AddedLocations != nil},
+		{name: "removed_locations", present: encoded.RemovedLocations != nil},
+		{name: "added_sources", present: encoded.AddedSources != nil},
+		{name: "removed_sources", present: encoded.RemovedSources != nil},
+		{name: "added_omissions", present: encoded.AddedOmissions != nil},
+		{name: "removed_omissions", present: encoded.RemovedOmissions != nil},
+		{name: "coverage_changed", present: encoded.CoverageChanged != nil},
+		{name: "budget_changed", present: encoded.BudgetChanged != nil},
+		{name: "fallback_changed", present: encoded.FallbackChanged != nil},
+		{name: "retry_changed", present: encoded.RetryChanged != nil},
+		{name: "golden_retry_allowed", present: encoded.GoldenRetryAllowed != nil},
+		{name: "candidate_retry_allowed", present: encoded.CandidateRetryAllowed != nil},
+		{name: "uncertainty_changed", present: encoded.UncertaintyChanged != nil},
+	} {
+		if !field.present {
+			return PackDiff{}, fmt.Errorf("pack diff field %s is required", field.name)
+		}
+	}
+
+	diff := PackDiff{
+		EndpointChanged:       *encoded.EndpointChanged,
+		GoldenEndpoint:        *encoded.GoldenEndpoint,
+		CandidateEndpoint:     *encoded.CandidateEndpoint,
+		AddedLocations:        *encoded.AddedLocations,
+		RemovedLocations:      *encoded.RemovedLocations,
+		AddedSources:          *encoded.AddedSources,
+		RemovedSources:        *encoded.RemovedSources,
+		AddedOmissions:        *encoded.AddedOmissions,
+		RemovedOmissions:      *encoded.RemovedOmissions,
+		CoverageChanged:       *encoded.CoverageChanged,
+		BudgetChanged:         *encoded.BudgetChanged,
+		FallbackChanged:       *encoded.FallbackChanged,
+		RetryChanged:          *encoded.RetryChanged,
+		GoldenRetryAllowed:    *encoded.GoldenRetryAllowed,
+		CandidateRetryAllowed: *encoded.CandidateRetryAllowed,
+		UncertaintyChanged:    *encoded.UncertaintyChanged,
+	}
+	if diff.RetryChanged != (diff.GoldenRetryAllowed != diff.CandidateRetryAllowed) {
+		return PackDiff{}, fmt.Errorf("pack diff retry change metadata is inconsistent")
+	}
+	if !diff.EndpointChanged && diff.GoldenEndpoint != diff.CandidateEndpoint {
+		return PackDiff{}, fmt.Errorf("pack diff endpoint change metadata is inconsistent")
+	}
+	return diff, nil
 }
 
 func ProjectPack(pack agent.ContextPack) PackProjection {
@@ -229,6 +307,7 @@ func DiffPacks(golden, candidate agent.ContextPack) PackDiff {
 	}
 }
 
+// HasSemanticPackChanges reports whether a diff contains a product-visible Pack change.
 func HasSemanticPackChanges(diff PackDiff) bool {
 	return diff.EndpointChanged ||
 		len(diff.AddedLocations) > 0 ||

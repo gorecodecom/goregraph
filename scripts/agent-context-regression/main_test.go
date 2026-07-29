@@ -627,6 +627,22 @@ func TestRunRejectsMalformedCommandsAndInputs(t *testing.T) {
 			},
 		},
 		{
+			name: "Pack Diff omitted fields",
+			command: func(t *testing.T, fixture commandFixture) []string {
+				writeTextFile(t, fixture.packDiff, `{}`)
+				return gateArgs(fixture, filepath.Join(t.TempDir(), "gate.json"))
+			},
+		},
+		{
+			name: "Pack Diff inconsistent retry metadata",
+			command: func(t *testing.T, fixture commandFixture) []string {
+				diff := validPackDiff()
+				diff.CandidateRetryAllowed = true
+				writeJSONFile(t, fixture.packDiff, diff)
+				return gateArgs(fixture, filepath.Join(t.TempDir(), "gate.json"))
+			},
+		},
+		{
 			name: "runs unknown field",
 			command: func(t *testing.T, fixture commandFixture) []string {
 				writeTextFile(t, fixture.goldenRuns, `[{"unexpected":true}]`)
@@ -976,9 +992,7 @@ func newCommandFixture(t *testing.T) commandFixture {
 	writeJSONFile(t, fixture.goldenPack, validPack())
 	writeJSONFile(t, fixture.candidatePack, validPack())
 	writeJSONFile(t, fixture.hypothesis, validHypothesis())
-	writeJSONFile(t, fixture.packDiff, agentbench.PackDiff{
-		AddedSources: []string{"services/catalog/NewEvidence.java"},
-	})
+	writeJSONFile(t, fixture.packDiff, validPackDiff())
 	writeJSONFile(t, fixture.goldenRuns, reviewedRuns("golden", "fail"))
 	writeJSONFile(t, fixture.candidateRuns, reviewedRuns("candidate", "pass"))
 	return fixture
@@ -1046,6 +1060,20 @@ func validPack() agent.ContextPack {
 		EstimatedTokens: 100,
 		BudgetTokens:    4000,
 	}
+}
+
+func validPackDiff() agentbench.PackDiff {
+	golden := validPack()
+	candidate := validPack()
+	candidate.Files = append(candidate.Files, agent.ContextFile{
+		Project:   "services/catalog",
+		Path:      "NewEvidence.java",
+		StartLine: 1,
+		EndLine:   10,
+		Role:      "persistence",
+		Reason:    "Adds target evidence.",
+	})
+	return agentbench.DiffPacks(golden, candidate)
 }
 
 func validHypothesis() agentbench.Hypothesis {

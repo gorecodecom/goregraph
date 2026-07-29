@@ -252,6 +252,35 @@ func TestHasSemanticPackChanges(t *testing.T) {
 	})
 }
 
+func TestLoadPackDiffRequiresCompleteConsistentEvidence(t *testing.T) {
+	t.Run("loads the complete runner representation", func(t *testing.T) {
+		want := DiffPacks(goldenPack(), candidatePack())
+
+		got, err := LoadPackDiff(writeJSON(t, want))
+		if err != nil {
+			t.Fatalf("LoadPackDiff returned error: %v", err)
+		}
+		assertSameJSON(t, got, want)
+	})
+
+	t.Run("rejects omitted fields", func(t *testing.T) {
+		_, err := LoadPackDiff(writeText(t, `{}`))
+		if err == nil || !strings.Contains(err.Error(), "endpoint_changed") {
+			t.Fatalf("LoadPackDiff error = %v, want missing endpoint_changed", err)
+		}
+	})
+
+	t.Run("rejects inconsistent retry metadata", func(t *testing.T) {
+		diff := DiffPacks(goldenPack(), goldenPack())
+		diff.CandidateRetryAllowed = false
+
+		_, err := LoadPackDiff(writeJSON(t, diff))
+		if err == nil || !strings.Contains(err.Error(), "retry") {
+			t.Fatalf("LoadPackDiff error = %v, want retry inconsistency", err)
+		}
+	})
+}
+
 func TestEvaluatePackDiffRejectsProtectedAndUndeclaredChanges(t *testing.T) {
 	t.Run("rejects protected fields regardless of allowed change categories", func(t *testing.T) {
 		hypothesis := Hypothesis{AllowedPackChanges: []string{"locations", "sources", "coverage", "omissions", "budget"}}

@@ -274,7 +274,7 @@ func runGate(args []string, stderr io.Writer) int {
 	if !hypothesisTargetsCase(hypothesis, contract.ID) {
 		return commandError(stderr, "hypothesis does not target contract %q", contract.ID)
 	}
-	diff, err := loadStrictJSON[agentbench.PackDiff](flags["pack-diff"])
+	diff, err := agentbench.LoadPackDiff(flags["pack-diff"])
 	if err != nil {
 		return commandError(stderr, "%v", err)
 	}
