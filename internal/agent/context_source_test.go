@@ -223,6 +223,36 @@ func TestContextSourceSectionRejectsDeclarationOnlyDomainStructure(t *testing.T)
 	}
 }
 
+func TestContextSourceSectionSupportsDomainFieldsWithDeclarationKeywordTypes(t *testing.T) {
+	for _, content := range []string{
+		"private Record metadata;",
+		"private Class<?> payloadType;",
+	} {
+		section := ContextSourceSection{
+			RenderMode: "declaration_body",
+			Content:    content,
+		}
+		if !contextSourceSectionSupportsDomainModel(section) {
+			t.Errorf("domain field rejected: %q", content)
+		}
+	}
+}
+
+func TestContextSourceSectionSupportsInlineDomainFields(t *testing.T) {
+	for _, content := range []string{
+		"export interface Job { id: string }",
+		"public class Job { private String id; }",
+	} {
+		section := ContextSourceSection{
+			RenderMode: "declaration_body",
+			Content:    content,
+		}
+		if !contextSourceSectionSupportsDomainModel(section) {
+			t.Errorf("inline domain field rejected: %q", content)
+		}
+	}
+}
+
 func TestContextSourceSectionSupportsOnlyMatchingEvidenceFacet(t *testing.T) {
 	base := newContextConcern(
 		contextConcernSideEffects,

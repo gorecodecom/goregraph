@@ -14,10 +14,14 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 	for _, line := range strings.Split(contextSourceSemanticContent(section.Content), "\n") {
 		line = strings.TrimSpace(line)
 		lower := strings.ToLower(line)
-		if line == "" || strings.HasPrefix(line, "@") ||
-			line == "{" || line == "}" ||
-			contextSourceDeclarationHeaderLine(lower) ||
-			strings.Contains(line, "(") {
+		if line == "" || strings.HasPrefix(line, "@") {
+			continue
+		}
+		if inlineBody, declaration := contextSourceDeclarationHeaderLine(lower); declaration {
+			line = strings.TrimSpace(inlineBody)
+			lower = strings.ToLower(line)
+		}
+		if line == "" || line == "{" || line == "}" || strings.Contains(line, "(") {
 			continue
 		}
 		if strings.HasSuffix(line, ";") ||
@@ -30,14 +34,38 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 	return false
 }
 
-func contextSourceDeclarationHeaderLine(line string) bool {
-	for _, field := range strings.Fields(strings.TrimRight(line, "{}: \t")) {
-		switch field {
-		case "class", "interface", "struct", "record", "enum", "type":
-			return true
-		}
+func contextSourceDeclarationHeaderLine(line string) (string, bool) {
+	inlineBody := ""
+	if opening := strings.Index(line, "{"); opening >= 0 {
+		inlineBody = line[opening+1:]
+		line = line[:opening]
 	}
-	return false
+	if strings.Contains(line, ";") {
+		return "", false
+	}
+	fields := strings.Fields(strings.TrimSuffix(strings.TrimSpace(line), ":"))
+	for len(fields) > 0 && contextSourceDeclarationModifier(fields[0]) {
+		fields = fields[1:]
+	}
+	if len(fields) < 2 {
+		return "", false
+	}
+	switch fields[0] {
+	case "class", "interface", "struct", "record", "enum", "type":
+		return inlineBody, true
+	default:
+		return "", false
+	}
+}
+
+func contextSourceDeclarationModifier(value string) bool {
+	switch value {
+	case "public", "protected", "private", "internal", "export", "abstract",
+		"final", "sealed", "static", "partial", "readonly", "open", "data":
+		return true
+	default:
+		return false
+	}
 }
 
 func contextDomainModelEvidenceConcerns(
