@@ -1414,6 +1414,21 @@ func TestContextSourceSectionUsesPythonClassIndentationForDomainFields(t *testin
 			want:    true,
 		},
 		{
+			name:    "accepts Django field assignment",
+			content: "class Job(models.Model):\n    catalog_id = models.IntegerField()",
+			want:    true,
+		},
+		{
+			name:    "accepts simple direct assignment",
+			content: "class Job:\n    catalog_id = 0",
+			want:    true,
+		},
+		{
+			name:    "accepts typed initialized assignment",
+			content: "class Job:\n    catalog_id: int = 0",
+			want:    true,
+		},
+		{
 			name:    "rejects field nested in method",
 			content: "class Job:\n    def run(self):\n        catalog_id: int",
 		},
@@ -1422,8 +1437,49 @@ func TestContextSourceSectionUsesPythonClassIndentationForDomainFields(t *testin
 			content: "class Job:\n    class Details:\n        catalog_id: int",
 		},
 		{
+			name:    "rejects module field after inline ellipsis suite",
+			content: "class Job: ...\n\ncatalog_id: int",
+		},
+		{
+			name:    "rejects module field after inline pass suite",
+			content: "class Job: pass\n\ncatalog_id: int",
+		},
+		{
+			name:    "rejects module field after inline docstring suite",
+			content: "class Job: \"empty\"\n\ncatalog_id: int",
+		},
+		{
+			name:    "rejects module field after inline expression suite",
+			content: "class Job: register()\n\ncatalog_id: int",
+		},
+		{
+			name:    "rejects equality comparison",
+			content: "class Job:\n    catalog_id == 0",
+		},
+		{
+			name:    "rejects inequality comparison",
+			content: "class Job:\n    catalog_id != 0",
+		},
+		{
+			name:    "rejects less-than comparison",
+			content: "class Job:\n    catalog_id <= 0",
+		},
+		{
+			name:    "rejects greater-than comparison",
+			content: "class Job:\n    catalog_id >= 0",
+		},
+		{
+			name:    "rejects assignment expression",
+			content: "class Job:\n    catalog_id := 0",
+		},
+		{
 			name:    "preserves direct snippet fallback",
 			content: "catalog_id: int",
+			want:    true,
+		},
+		{
+			name:    "preserves brace-language inheritance",
+			content: "class Job : Base() { private long catalogId; }",
 			want:    true,
 		},
 	}

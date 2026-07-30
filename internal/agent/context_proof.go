@@ -672,14 +672,7 @@ func contextSourcePythonClassSupportsDomainField(
 		return false, false
 	}
 	if inlineSuite := strings.TrimSpace(declaration.header[colon+1:]); inlineSuite != "" {
-		if contextSourcePythonDomainModelFieldLine(inlineSuite) {
-			return true, true
-		}
-		if !contextSourceDomainModelStatement(strings.Fields(inlineSuite)[0]) &&
-			inlineSuite != "pass" {
-			return false, false
-		}
-		return false, true
+		return contextSourcePythonDomainModelFieldLine(inlineSuite), true
 	}
 
 	classIndent := sourceLeadingIndent(lines[declarationStart])
@@ -712,13 +705,33 @@ func contextSourcePythonClassSupportsDomainField(
 }
 
 func contextSourcePythonDomainModelFieldLine(line string) bool {
+	line = strings.TrimSpace(line)
 	declaration := contextSourceDomainModelDeclaration(line)
 	colon := contextSourceTopLevelSeparator(declaration, ':')
-	if colon <= 0 {
+	if colon > 0 &&
+		strings.TrimSpace(declaration[colon+1:]) != "" &&
+		contextSourcePythonIdentifier(strings.TrimSpace(declaration[:colon])) {
+		return contextSourceDomainModelFieldLine(declaration)
+	}
+	return contextSourcePythonAssignmentFieldLine(line)
+}
+
+func contextSourcePythonAssignmentFieldLine(line string) bool {
+	assignment := contextSourceTopLevelSeparator(line, '=')
+	if assignment <= 0 || assignment+1 >= len(line) ||
+		line[assignment+1] == '=' ||
+		strings.ContainsRune("!<>=:+-*/%@&|^~", rune(line[assignment-1])) {
 		return false
 	}
-	name := strings.TrimSpace(declaration[:colon])
-	for index, character := range name {
+	return contextSourcePythonIdentifier(strings.TrimSpace(line[:assignment])) &&
+		strings.TrimSpace(line[assignment+1:]) != ""
+}
+
+func contextSourcePythonIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for index, character := range value {
 		if (character >= 'a' && character <= 'z') ||
 			(character >= 'A' && character <= 'Z') ||
 			character == '_' ||
@@ -727,7 +740,7 @@ func contextSourcePythonDomainModelFieldLine(line string) bool {
 		}
 		return false
 	}
-	return contextSourceDomainModelFieldLine(declaration)
+	return true
 }
 
 func contextSourceDeclarationHasDomainField(declaration contextSourceTypeDeclaration) bool {
