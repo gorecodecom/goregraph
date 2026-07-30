@@ -511,21 +511,32 @@ func contextSourceCoverageFromFinalSections(
 			if option.section != section {
 				continue
 			}
-			for _, key := range option.concernKeys {
-				concern, ok := known[key]
-				if !ok {
-					continue
-				}
-				if concern.kind != contextConcernProject &&
-					len(concern.candidateFactIDs) > 0 &&
-					!contextSourceOptionMatchesConcernFacts(option, concern) {
-					continue
-				}
+			for key := range contextSourceOptionProvenConcernKeys(option, known) {
 				covered[key] = true
 			}
 		}
 	}
 	return covered
+}
+
+func contextSourceOptionProvenConcernKeys(
+	option contextSourceOption,
+	known map[string]contextConcern,
+) map[string]bool {
+	proven := make(map[string]bool, len(option.concernKeys))
+	for _, key := range option.concernKeys {
+		concern, ok := known[key]
+		if !ok {
+			continue
+		}
+		if concern.kind != contextConcernProject &&
+			len(concern.candidateFactIDs) > 0 &&
+			!contextSourceOptionMatchesConcernFacts(option, concern) {
+			continue
+		}
+		proven[key] = true
+	}
+	return proven
 }
 
 func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool {

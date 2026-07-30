@@ -169,6 +169,7 @@ func selectContextSourceOptions(
 		pack,
 		sectionRequest,
 		options,
+		concerns,
 		state,
 		coreBoundaries,
 	)
@@ -3293,12 +3294,25 @@ func enrichContextCoreSourceOptions(
 	pack ContextPack,
 	request ContextRequest,
 	options []contextSourceOption,
+	concerns []contextConcern,
 	state contextSourceSelectionState,
 	boundaries []contextSourceBoundary,
 ) (ContextPack, error) {
+	knownConcerns := make(map[string]contextConcern, len(concerns))
+	for _, concern := range concerns {
+		knownConcerns[concern.key] = concern
+	}
 	var err error
 	for _, mode := range []string{"declaration_body", "focused", "body"} {
-		pack, err = enrichContextCoreSourceMode(pack, request, options, state, boundaries, mode)
+		pack, err = enrichContextCoreSourceMode(
+			pack,
+			request,
+			options,
+			knownConcerns,
+			state,
+			boundaries,
+			mode,
+		)
 		if err != nil {
 			return ContextPack{}, err
 		}
@@ -3310,6 +3324,7 @@ func enrichContextCoreSourceMode(
 	pack ContextPack,
 	request ContextRequest,
 	options []contextSourceOption,
+	knownConcerns map[string]contextConcern,
 	state contextSourceSelectionState,
 	boundaries []contextSourceBoundary,
 	mode string,
@@ -3332,7 +3347,11 @@ func enrichContextCoreSourceMode(
 		for _, option := range options {
 			if contextSourceCandidateKey(option.candidate) != candidateKey ||
 				option.section.RenderMode != mode ||
-				!contextSourceOptionPreservesConcernEvidence(selected, option) {
+				!contextSourceOptionPreservesConcernEvidence(
+					selected,
+					option,
+					knownConcerns,
+				) {
 				continue
 			}
 			if !found || contextSourceOptionLess(option, upgrade) {
@@ -3384,9 +3403,12 @@ func selectedContextSourceOption(
 func contextSourceOptionPreservesConcernEvidence(
 	selected contextSourceOption,
 	replacement contextSourceOption,
+	knownConcerns map[string]contextConcern,
 ) bool {
-	for _, concernKey := range selected.concernKeys {
-		if !slices.Contains(replacement.concernKeys, concernKey) {
+	selectedProof := contextSourceOptionProvenConcernKeys(selected, knownConcerns)
+	replacementProof := contextSourceOptionProvenConcernKeys(replacement, knownConcerns)
+	for concernKey := range selectedProof {
+		if !replacementProof[concernKey] {
 			return false
 		}
 	}

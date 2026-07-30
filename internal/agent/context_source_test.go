@@ -4849,6 +4849,7 @@ func TestEnrichContextCoreSourceOptionsFocusesEveryBoundaryBeforeBodies(t *testi
 		base,
 		ContextRequest{BudgetTokens: budget},
 		options,
+		nil,
 		contextSourceSelectionState{selectedCandidates: map[string]bool{
 			contextSourceCandidateKey(endpoint): true,
 			contextSourceCandidateKey(service):  true,
@@ -4867,10 +4868,10 @@ func TestEnrichContextCoreSourceOptionsFocusesEveryBoundaryBeforeBodies(t *testi
 
 func TestContextCoreSourceEnrichmentPreservesConcernEvidence(t *testing.T) {
 	const authConcern = "authentication:libraries/order-client#client_transport"
-	candidate := sourceCandidate{
-		FactID: "order-contract", Project: "libraries/order-client",
-		Path: "OrderClient.java", Role: "contract",
-	}
+	concerns := []contextConcern{{
+		key: authConcern, kind: contextConcernAuth, required: true,
+		candidateFactIDs: []string{"order-contract"},
+	}}
 	selected := ContextSourceSection{
 		Project: "libraries/order-client", Path: "OrderClient.java",
 		StartLine: 7, EndLine: 19, Role: "contract", RenderMode: "focused",
@@ -4883,20 +4884,32 @@ func TestContextCoreSourceEnrichmentPreservesConcernEvidence(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name               string
+		candidateFactID    string
 		replacementConcern []string
 		want               ContextSourceSection
 	}{
 		{
-			name: "discarding concern evidence is rejected",
-			want: selected,
+			name:            "discarding concern evidence is rejected",
+			candidateFactID: "order-contract",
+			want:            selected,
 		},
 		{
 			name:               "preserving concern evidence is allowed",
+			candidateFactID:    "order-contract",
 			replacementConcern: []string{authConcern},
 			want:               declarationBody,
 		},
+		{
+			name:            "unbound raw concern does not block enrichment",
+			candidateFactID: "order-service",
+			want:            declarationBody,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			candidate := sourceCandidate{
+				FactID: test.candidateFactID, Project: "libraries/order-client",
+				Path: "OrderClient.java", Role: "contract",
+			}
 			got, err := enrichContextCoreSourceOptions(
 				ContextPack{SourceSections: []ContextSourceSection{selected}},
 				ContextRequest{BudgetTokens: DefaultContextBudgetTokens},
@@ -4910,10 +4923,11 @@ func TestContextCoreSourceEnrichmentPreservesConcernEvidence(t *testing.T) {
 						concernKeys: test.replacementConcern,
 					},
 				},
+				concerns,
 				contextSourceSelectionState{selectedCandidates: map[string]bool{
 					contextSourceCandidateKey(candidate): true,
 				}},
-				[]contextSourceBoundary{{factID: "order-contract"}},
+				[]contextSourceBoundary{{factID: test.candidateFactID}},
 			)
 			if err != nil {
 				t.Fatal(err)
