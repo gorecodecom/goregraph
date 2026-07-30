@@ -543,21 +543,114 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 	if section.RenderMode == "signature" {
 		return false
 	}
-	for _, line := range strings.Split(contextSourceSemanticContent(section.Content), "\n") {
+	content := contextSourceSemanticContent(section.Content)
+	lines := strings.Split(content, "\n")
+	for index, line := range lines {
 		line = strings.TrimSpace(line)
-		lower := strings.ToLower(line)
 		if line == "" || strings.HasPrefix(line, "@") {
 			continue
 		}
-		if inlineBody, declaration := contextSourceDeclarationHeaderLine(lower); declaration {
-			for _, member := range contextSourceInlineDeclarationMembers(inlineBody) {
-				if contextSourceDomainModelFieldLine(member) {
-					return true
-				}
-			}
+		declaration, found := contextSourceTypeDeclarationLine(line)
+		if !found {
 			continue
 		}
-		if contextSourceDomainModelFieldLine(line) {
+		if contextSourceDeclarationHasDomainField(declaration) {
+			return true
+		}
+		body := declaration.inlineBody
+		if following := strings.Join(lines[index+1:], "\n"); following != "" {
+			if body != "" {
+				body += "\n"
+			}
+			body += following
+		}
+		if declaration.inlineBody == "" {
+			trimmed := strings.TrimLeft(body, " \t\r\n")
+			if strings.HasPrefix(trimmed, "{") {
+				body = strings.TrimPrefix(trimmed, "{")
+			}
+		}
+		if contextSourceDomainModelMembers(body) {
+			return true
+		}
+		return false
+	}
+	return contextSourceDomainModelMembers(content)
+}
+
+type contextSourceTypeDeclaration struct {
+	header     string
+	inlineBody string
+	kind       string
+}
+
+func contextSourceTypeDeclarationLine(line string) (contextSourceTypeDeclaration, bool) {
+	line = strings.TrimSpace(line)
+	header := line
+	inlineBody := ""
+	if opening := strings.Index(line, "{"); opening >= 0 {
+		header = strings.TrimSpace(line[:opening])
+		inlineBody = line[opening+1:]
+	}
+	fields := strings.Fields(strings.TrimSuffix(header, ":"))
+	for len(fields) > 0 && contextSourceDeclarationModifier(fields[0]) {
+		fields = fields[1:]
+	}
+	if len(fields) < 2 {
+		return contextSourceTypeDeclaration{}, false
+	}
+	switch fields[0] {
+	case "class", "interface", "struct", "record", "enum", "type":
+		return contextSourceTypeDeclaration{
+			header:     header,
+			inlineBody: inlineBody,
+			kind:       fields[0],
+		}, true
+	default:
+		return contextSourceTypeDeclaration{}, false
+	}
+}
+
+func contextSourceDeclarationHasDomainField(declaration contextSourceTypeDeclaration) bool {
+	parameters, found := contextSourceDeclarationParameters(declaration.header)
+	if !found || strings.TrimSpace(parameters) == "" {
+		return false
+	}
+	if declaration.kind == "record" {
+		return true
+	}
+	fields := strings.Fields(strings.NewReplacer(",", " ", "\n", " ").Replace(parameters))
+	for index, field := range fields {
+		if (field == "val" || field == "var") && index+1 < len(fields) {
+			return true
+		}
+	}
+	return false
+}
+
+func contextSourceDeclarationParameters(header string) (string, bool) {
+	opening := strings.Index(header, "(")
+	if opening < 0 {
+		return "", false
+	}
+	depth := 0
+	for index := opening; index < len(header); index++ {
+		switch header[index] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return header[opening+1 : index], true
+			}
+		}
+	}
+	return "", false
+}
+
+func contextSourceDomainModelMembers(body string) bool {
+	for _, member := range contextSourceInlineDeclarationMembers(body) {
+		if contextSourceDomainModelFieldLine(member) {
 			return true
 		}
 	}
@@ -569,15 +662,11 @@ func contextSourceInlineDeclarationMembers(body string) []string {
 	memberStart := 0
 	parenthesisDepth := 0
 	braceDepth := 0
-	memberHasParameters := false
 	blockEndsMember := false
 
 	for index, character := range body {
 		switch character {
 		case '(':
-			if braceDepth == 0 && parenthesisDepth == 0 {
-				memberHasParameters = true
-			}
 			parenthesisDepth++
 		case ')':
 			if parenthesisDepth > 0 {
@@ -585,7 +674,7 @@ func contextSourceInlineDeclarationMembers(body string) []string {
 			}
 		case '{':
 			if braceDepth == 0 {
-				blockEndsMember = memberHasParameters && parenthesisDepth == 0
+				blockEndsMember = parenthesisDepth == 0
 			}
 			braceDepth++
 		case '}':
@@ -597,7 +686,6 @@ func contextSourceInlineDeclarationMembers(body string) []string {
 			if braceDepth == 0 && blockEndsMember {
 				members = append(members, body[memberStart:index+1])
 				memberStart = index + 1
-				memberHasParameters = false
 				blockEndsMember = false
 			}
 		case ';':
@@ -606,7 +694,6 @@ func contextSourceInlineDeclarationMembers(body string) []string {
 					members = append(members, body[memberStart:index+1])
 				}
 				memberStart = index + 1
-				memberHasParameters = false
 				blockEndsMember = false
 			}
 		}
@@ -622,36 +709,38 @@ func contextSourceDomainModelFieldLine(line string) bool {
 	if line == "" || line == "{" || line == "}" || strings.Contains(line, "(") {
 		return false
 	}
+	if _, declaration := contextSourceTypeDeclarationLine(line); declaration {
+		return false
+	}
+	fieldHeader := line
+	if opening := strings.Index(fieldHeader, "{"); opening >= 0 {
+		fieldHeader = fieldHeader[:opening]
+	}
+	fields := strings.Fields(strings.TrimSpace(fieldHeader))
+	for len(fields) > 0 && contextSourceDeclarationModifier(fields[0]) {
+		fields = fields[1:]
+	}
+	if len(fields) == 0 || contextSourceDomainModelStatement(fields[0]) {
+		return false
+	}
 	if strings.HasSuffix(line, ";") ||
 		strings.Contains(line, ": ") ||
 		strings.Contains(line, "\t") ||
-		len(strings.Fields(line)) >= 2 {
+		len(fields) >= 2 {
 		return true
 	}
 	return false
 }
 
-func contextSourceDeclarationHeaderLine(line string) (string, bool) {
-	inlineBody := ""
-	if opening := strings.Index(line, "{"); opening >= 0 {
-		inlineBody = line[opening+1:]
-		line = line[:opening]
-	}
-	if strings.Contains(line, ";") {
-		return "", false
-	}
-	fields := strings.Fields(strings.TrimSuffix(strings.TrimSpace(line), ":"))
-	for len(fields) > 0 && contextSourceDeclarationModifier(fields[0]) {
-		fields = fields[1:]
-	}
-	if len(fields) < 2 {
-		return "", false
-	}
-	switch fields[0] {
-	case "class", "interface", "struct", "record", "enum", "type":
-		return inlineBody, true
+func contextSourceDomainModelStatement(value string) bool {
+	value = strings.ToLower(strings.Trim(value, "{}[]();:,"))
+	switch value {
+	case "assert", "break", "case", "catch", "continue", "default", "do", "else",
+		"finally", "for", "goto", "if", "import", "module", "namespace", "package",
+		"return", "switch", "throw", "using", "while", "yield":
+		return true
 	default:
-		return "", false
+		return false
 	}
 }
 

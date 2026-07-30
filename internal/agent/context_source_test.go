@@ -1318,6 +1318,48 @@ func TestContextSourceSectionRejectsDeclarationOnlyDomainStructure(t *testing.T)
 	}
 }
 
+func TestContextSourceSectionRecognizesOnlyStructuralDomainFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "rejects package preamble",
+			content: "package example;\nclass Job {}",
+		},
+		{
+			name:    "rejects callable statement",
+			content: "class Job { void run() {\n return value;\n} }",
+		},
+		{
+			name:    "rejects nested type field",
+			content: "class Job { class Details { long catalogId; } }",
+		},
+		{
+			name:    "accepts positional record component",
+			content: "public record Job(String catalogId) {}",
+			want:    true,
+		},
+		{
+			name:    "accepts Kotlin primary-constructor property",
+			content: "data class Job(val catalogId: Long)",
+			want:    true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			section := ContextSourceSection{
+				RenderMode: "declaration_body",
+				Content:    test.content,
+			}
+			if got := contextSourceSectionSupportsDomainModel(section); got != test.want {
+				t.Fatalf("domain structure = %v, want %v for %q", got, test.want, test.content)
+			}
+		})
+	}
+}
+
 func TestContextSourceSectionSupportsDomainFieldsWithDeclarationKeywordTypes(t *testing.T) {
 	for _, content := range []string{
 		"private Record metadata;",
