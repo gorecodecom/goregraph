@@ -1785,14 +1785,14 @@ func renderNumberedSource(lines []string, start, end int) string {
 
 func resolveSourcePath(loaded loadedContextIndex, candidate sourceCandidate) (string, error) {
 	path := strings.TrimSpace(candidate.Path)
-	if path == "" || filepath.IsAbs(path) {
+	if path == "" || isPortableAbsolutePath(path) {
 		return "", fmt.Errorf("source path is unsafe")
 	}
 
 	projectRoot := filepath.Clean(loaded.ScopeRoot)
 	if loaded.Workspace {
 		project := strings.TrimSpace(candidate.Project)
-		if project == "" || filepath.IsAbs(project) {
+		if project == "" || isPortableAbsolutePath(project) {
 			return "", fmt.Errorf("source path is unsafe")
 		}
 		projectRoot = filepath.Clean(filepath.Join(loaded.ScopeRoot, project))
@@ -1832,6 +1832,17 @@ func resolveSourcePath(loaded loadedContextIndex, candidate sourceCandidate) (st
 		return "", fmt.Errorf("source file is not regular")
 	}
 	return resolvedCandidate, nil
+}
+
+func isPortableAbsolutePath(path string) bool {
+	if filepath.IsAbs(path) ||
+		strings.HasPrefix(path, "/") ||
+		strings.HasPrefix(path, `\`) {
+		return true
+	}
+	return len(path) >= 2 &&
+		(path[0] >= 'A' && path[0] <= 'Z' || path[0] >= 'a' && path[0] <= 'z') &&
+		path[1] == ':'
 }
 
 func pathIsWithin(root, path string) bool {

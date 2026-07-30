@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -15,6 +16,18 @@ import (
 
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
+
+func TestRunnerBinaryModeSupportsWindowsWithoutPOSIXExecuteBits(t *testing.T) {
+	if !runnerBinaryModeIsExecutable(0o600, "windows") {
+		t.Fatal("Windows regular binary mode was rejected without POSIX execute bits")
+	}
+	if runnerBinaryModeIsExecutable(0o600, "linux") {
+		t.Fatal("POSIX regular binary mode was accepted without execute bits")
+	}
+	if !runnerBinaryModeIsExecutable(0o700, "linux") {
+		t.Fatal("POSIX executable binary mode was rejected")
+	}
+}
 
 func TestDecodeContextPackAcceptsProductionSchema(t *testing.T) {
 	body := []byte(fmt.Sprintf(
@@ -842,6 +855,9 @@ var runnerCaseIDs = []string{
 
 func newRunnerFixture(t *testing.T, phase, target string, runs int) runnerFixture {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("runner integration fixtures require directly executable POSIX shell scripts")
+	}
 	root := t.TempDir()
 	matrixRoot := filepath.Join(root, "matrix")
 	if err := os.Mkdir(matrixRoot, 0o700); err != nil {

@@ -325,6 +325,10 @@ func synchronizeDocuments(root string, specs []documentSpec, write bool) error {
 }
 
 func replaceGeneratedBlocks(body string, blocks []generatedBlock) (string, []string, error) {
+	lineEnding := "\n"
+	if strings.Contains(body, "\r\n") {
+		lineEnding = "\r\n"
+	}
 	expected := make(map[string]generatedBlock, len(blocks))
 	for _, block := range blocks {
 		if block.Name == "" {
@@ -384,7 +388,9 @@ func replaceGeneratedBlocks(body string, blocks []generatedBlock) (string, []str
 			return "", nil, fmt.Errorf("missing end marker for generated block %s", block.Name)
 		}
 		end := start + len(startMarker) + endRelative + len(endMarker)
-		desired := startMarker + "\n" + strings.TrimRight(block.Body, "\n") + "\n" + endMarker
+		blockBody := strings.ReplaceAll(strings.TrimRight(block.Body, "\r\n"), "\r\n", "\n")
+		blockBody = strings.ReplaceAll(blockBody, "\n", lineEnding)
+		desired := startMarker + lineEnding + blockBody + lineEnding + endMarker
 		replacements = append(replacements, replacement{
 			start: start, end: end, desired: desired, name: block.Name,
 		})

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -22,13 +23,13 @@ var gitFixtureTemplate struct {
 }
 
 func TestMain(m *testing.M) {
-	if os.Getenv("GOREGRAPH_TEST_SSH_ARGUMENTS") != "" && filepath.Base(os.Args[0]) == "ssh" {
+	if os.Getenv("GOREGRAPH_TEST_SSH_ARGUMENTS") != "" && testProcessName("ssh") {
 		recordSSHInvocation()
 	}
-	if os.Getenv("GOREGRAPH_TEST_GIT_LOG") != "" && filepath.Base(os.Args[0]) == "git" {
+	if os.Getenv("GOREGRAPH_TEST_GIT_LOG") != "" && testProcessName("git") {
 		runGitLoggingProcess()
 	}
-	if os.Getenv("GOREGRAPH_TEST_GIT_BARRIER_DIR") != "" && filepath.Base(os.Args[0]) == "git" {
+	if os.Getenv("GOREGRAPH_TEST_GIT_BARRIER_DIR") != "" && testProcessName("git") {
 		runGitBarrierProcess()
 	}
 	for _, environment := range []string{
@@ -46,6 +47,22 @@ func TestMain(m *testing.M) {
 		_ = os.RemoveAll(gitFixtureTemplate.root)
 	}
 	os.Exit(code)
+}
+
+func testProcessName(name string) bool {
+	actual := filepath.Base(os.Args[0])
+	if runtime.GOOS == "windows" {
+		actual = strings.TrimSuffix(strings.ToLower(actual), ".exe")
+		name = strings.ToLower(name)
+	}
+	return actual == name
+}
+
+func testExecutableName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 func recordSSHInvocation() {
@@ -1041,7 +1058,7 @@ func TestRunExecuteUsesBoundedNonInteractiveSSH(t *testing.T) {
 		t.Fatalf("locate test executable: %v", err)
 	}
 	fakeSSHDirectory := t.TempDir()
-	symlinkOrSkip(t, executable, filepath.Join(fakeSSHDirectory, "ssh"))
+	symlinkOrSkip(t, executable, filepath.Join(fakeSSHDirectory, testExecutableName("ssh")))
 	argumentsPath := filepath.Join(t.TempDir(), "ssh-arguments")
 	t.Setenv("GOREGRAPH_TEST_SSH_ARGUMENTS", argumentsPath)
 	t.Setenv("PATH", fakeSSHDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -1221,7 +1238,7 @@ func installGitFetchBarrier(t *testing.T) string {
 		t.Fatalf("locate test executable: %v", err)
 	}
 	wrapperDirectory := t.TempDir()
-	symlinkOrSkip(t, executable, filepath.Join(wrapperDirectory, "git"))
+	symlinkOrSkip(t, executable, filepath.Join(wrapperDirectory, testExecutableName("git")))
 	t.Setenv("GOREGRAPH_TEST_GIT_BARRIER_DIR", barrierDirectory)
 	t.Setenv("GOREGRAPH_TEST_REAL_GIT", realGit)
 	t.Setenv("PATH", wrapperDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -1239,7 +1256,7 @@ func installGitCommandLog(t *testing.T) string {
 		t.Fatalf("locate test executable: %v", err)
 	}
 	wrapperDirectory := t.TempDir()
-	symlinkOrSkip(t, executable, filepath.Join(wrapperDirectory, "git"))
+	symlinkOrSkip(t, executable, filepath.Join(wrapperDirectory, testExecutableName("git")))
 	logPath := filepath.Join(t.TempDir(), "git-commands")
 	t.Setenv("GOREGRAPH_TEST_GIT_LOG", logPath)
 	t.Setenv("GOREGRAPH_TEST_REAL_GIT", realGit)
@@ -1631,7 +1648,7 @@ func TestRunExecuteRejectsNonSchemeRemoteHelperWithoutInvokingIt(t *testing.T) {
 		t.Fatalf("locate test executable: %v", err)
 	}
 	helperDirectory := t.TempDir()
-	symlinkOrSkip(t, executable, filepath.Join(helperDirectory, "git-remote-1foo"))
+	symlinkOrSkip(t, executable, filepath.Join(helperDirectory, testExecutableName("git-remote-1foo")))
 	t.Setenv("PATH", helperDirectory+string(os.PathListSeparator)+os.Getenv("PATH"))
 	git(t, fixture.work, "remote", "set-url", "origin", "1foo::payload")
 	headBefore := revParse(t, fixture.work, "HEAD")

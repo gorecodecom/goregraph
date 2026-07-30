@@ -6387,6 +6387,8 @@ func TestResolveSourcePathRejectsUnsafePaths(t *testing.T) {
 		file   sourceCandidate
 	}{
 		{name: "absolute fact path", loaded: loadedContextIndex{ScopeRoot: root}, file: sourceCandidate{Path: "/etc/passwd"}},
+		{name: "Windows absolute fact path", loaded: loadedContextIndex{ScopeRoot: root}, file: sourceCandidate{Path: `C:\Windows\system32\drivers\etc\hosts`}},
+		{name: "UNC fact path", loaded: loadedContextIndex{ScopeRoot: root}, file: sourceCandidate{Path: `\\server\share\secret.java`}},
 		{name: "fact path traversal", loaded: loadedContextIndex{ScopeRoot: root}, file: sourceCandidate{Path: "../../outside.java"}},
 		{name: "workspace project traversal", loaded: loadedContextIndex{ScopeRoot: root, Workspace: true}, file: sourceCandidate{Project: "../../outside", Path: "inside.java"}},
 		{name: "escaping symlink", loaded: loadedContextIndex{ScopeRoot: root}, file: sourceCandidate{Path: "src/escape.java"}},

@@ -60,6 +60,30 @@ func TestSynchronizeDocumentsChecksThenWritesOnlyGeneratedBlocks(t *testing.T) {
 	}
 }
 
+func TestSynchronizeDocumentsAcceptsCurrentCRLFBlocks(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "README.md")
+	body := "hand-written before\r\n" +
+		"<!-- goregraph:generated example start -->\r\n" +
+		"fresh line one\r\nfresh line two\r\n" +
+		"<!-- goregraph:generated example end -->\r\n" +
+		"hand-written after\r\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specs := []documentSpec{{
+		Path: "README.md",
+		Blocks: []generatedBlock{{
+			Name: "example",
+			Body: "fresh line one\nfresh line two",
+		}},
+	}}
+
+	if err := synchronizeDocuments(root, specs, false); err != nil {
+		t.Fatalf("CRLF check: %v", err)
+	}
+}
+
 func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	languageCoverage := renderLanguageCoverage()
 	for _, want := range []string{

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -300,7 +301,7 @@ func validateRunnerPaths(config RunnerConfig) error {
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("%s must be a regular file", input.name)
 		}
-		if input.executable && info.Mode().Perm()&0o111 == 0 {
+		if input.executable && !runnerBinaryModeIsExecutable(info.Mode(), runtime.GOOS) {
 			return fmt.Errorf("%s must be executable", input.name)
 		}
 	}
@@ -328,6 +329,10 @@ func validateRunnerPaths(config RunnerConfig) error {
 		return fmt.Errorf("inspect output path: %w", err)
 	}
 	return nil
+}
+
+func runnerBinaryModeIsExecutable(mode fs.FileMode, goos string) bool {
+	return goos == "windows" || mode.Perm()&0o111 != 0
 }
 
 func loadRegressionCases(config RunnerConfig, matrix Matrix) ([]*regressionCase, error) {
