@@ -332,18 +332,41 @@ func TestBuildContextProvesReleaseQualityWithoutPrivateRules(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{
-		"BaseCatalogJobEntity.java",
-		"JobClientConfig.java",
-		"JobClientAuth.java",
-		"JobSecurity.java",
-		"CatalogJobRepository.java",
-		"CatalogChangeJobRepository.java",
-		"JobManagementControllerTest.java",
-		"JobServiceTest.java",
+	hasProjectPath := func(project, path string) bool {
+		project = normalizeContextProject(project)
+		path = contextPackSourceFile(path)
+		for _, file := range pack.Files {
+			if normalizeContextProject(file.Project) == project &&
+				contextPackSourceFile(file.Path) == path {
+				return true
+			}
+		}
+		for _, section := range pack.SourceSections {
+			if normalizeContextProject(section.Project) == project &&
+				contextPackSourceFile(section.Path) == path {
+				return true
+			}
+		}
+		return false
+	}
+	for _, want := range []struct {
+		project string
+		path    string
+	}{
+		{project: "services/jobs", path: "src/main/java/example/BaseCatalogJobEntity.java"},
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientConfig.java"},
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientAuth.java"},
+		{project: "services/jobs", path: "src/main/java/example/JobSecurity.java"},
+		{project: "services/jobs", path: "src/main/java/example/CatalogJobRepository.java"},
+		{project: "services/jobs", path: "src/main/java/example/CatalogChangeJobRepository.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobManagementControllerTest.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobServiceTest.java"},
 	} {
-		if !contextPackContainsFileSuffix(pack, want) {
-			t.Errorf("required production/test inventory %q missing", want)
+		if !hasProjectPath(want.project, want.path) {
+			t.Errorf(
+				"required production/test inventory %q missing",
+				want.project+":"+want.path,
+			)
 		}
 	}
 	for _, want := range []string{
@@ -361,9 +384,12 @@ func TestBuildContextProvesReleaseQualityWithoutPrivateRules(t *testing.T) {
 		t.Fatal("wrong-project duplicate model displaced provider evidence")
 	}
 	if pack.EstimatedTokens > DefaultContextBudgetTokens ||
-		len(pack.Files) > DefaultContextMaxFiles ||
-		len(pack.SourceSections) > MaxContextSourceSections {
-		t.Fatalf("release-quality pack exceeds limits: %#v", pack)
+		contextSourceFileCount(pack) > DefaultContextMaxFiles {
+		t.Fatalf(
+			"release-quality pack exceeds limits: tokens=%d aggregate_files=%d",
+			pack.EstimatedTokens,
+			contextSourceFileCount(pack),
+		)
 	}
 }
 
