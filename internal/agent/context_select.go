@@ -3317,15 +3317,22 @@ func enrichContextCoreSourceMode(
 	enriched := make(map[string]bool, len(boundaries))
 	desiredMode := contextSourceRenderModeOrder(mode)
 	for _, boundary := range boundaries {
-		candidateKey, sectionIndex, currentMode, ok := selectedContextSourceOption(pack, options, state, boundary)
-		if !ok || enriched[candidateKey] || currentMode <= desiredMode {
+		selected, sectionIndex, ok := selectedContextSourceOption(pack, options, state, boundary)
+		if !ok {
+			continue
+		}
+		candidateKey := contextSourceCandidateKey(selected.candidate)
+		currentMode := contextSourceRenderModeOrder(selected.section.RenderMode)
+		if enriched[candidateKey] || currentMode <= desiredMode {
 			continue
 		}
 		enriched[candidateKey] = true
 		upgrade := contextSourceOption{}
 		found := false
 		for _, option := range options {
-			if contextSourceCandidateKey(option.candidate) != candidateKey || option.section.RenderMode != mode {
+			if contextSourceCandidateKey(option.candidate) != candidateKey ||
+				option.section.RenderMode != mode ||
+				!contextSourceOptionPreservesConcernEvidence(selected, option) {
 				continue
 			}
 			if !found || contextSourceOptionLess(option, upgrade) {
@@ -3358,7 +3365,7 @@ func selectedContextSourceOption(
 	options []contextSourceOption,
 	state contextSourceSelectionState,
 	boundary contextSourceBoundary,
-) (string, int, int, bool) {
+) (contextSourceOption, int, bool) {
 	for _, option := range options {
 		key := contextSourceCandidateKey(option.candidate)
 		if !state.selectedCandidates[key] ||
@@ -3367,11 +3374,23 @@ func selectedContextSourceOption(
 		}
 		for sectionIndex, section := range pack.SourceSections {
 			if section == option.section {
-				return key, sectionIndex, contextSourceRenderModeOrder(section.RenderMode), true
+				return option, sectionIndex, true
 			}
 		}
 	}
-	return "", 0, 0, false
+	return contextSourceOption{}, 0, false
+}
+
+func contextSourceOptionPreservesConcernEvidence(
+	selected contextSourceOption,
+	replacement contextSourceOption,
+) bool {
+	for _, concernKey := range selected.concernKeys {
+		if !slices.Contains(replacement.concernKeys, concernKey) {
+			return false
+		}
+	}
+	return true
 }
 
 func contextSourceBoundaryCovered(boundary contextSourceBoundary, state contextSourceSelectionState) bool {

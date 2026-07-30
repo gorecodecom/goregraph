@@ -3046,6 +3046,126 @@ final class InternalAuditClientRetry {
 	}
 }
 
+func TestContextSourceRendersBasicAuthenticationWithSelectedContractBoundary(t *testing.T) {
+	const clientProject = "libraries/order-client"
+	root := t.TempDir()
+	lines := []string{
+		"package example;",
+		"",
+		"@Component",
+		"final class OrderClient {",
+		"  private RestClient restClient;",
+		"",
+		"  @PostConstruct",
+		"  void initialize() {",
+		"    restClient = RestClient.builder()",
+		"      .requestFactory(requestFactory)",
+		"      .requestInterceptor(new BasicAuthenticationInterceptor(",
+		"        username,",
+		"        password))",
+		"      .build();",
+		"  }",
+		"",
+		"  /** Loads one order. */",
+		"  @Retryable(maxAttempts = 3)",
+		"  Order loadOrder() {",
+		`    return restClient.get().uri("/orders/7").retrieve().body(Order.class);`,
+		"  }",
+	}
+	contractLine := len(lines) - 2
+	for index := range 40 {
+		lines = append(lines, fmt.Sprintf("  private int cacheSlot%d;", index))
+	}
+	lines = append(lines, "}")
+	writeSourceFile(t, root, "OrderClient.java", strings.Join(lines, "\n")+"\n")
+	writeSourceFile(t, root, "OrderController.java", strings.Join([]string{
+		"package example;",
+		"",
+		"final class OrderController {",
+		"  Order loadOrder() {",
+		"    return orderClient.loadOrder();",
+		"  }",
+		"}",
+	}, "\n")+"\n")
+	pack := ContextPack{
+		Schema:         1,
+		Query:          "Inspect libraries/order-client client authentication.",
+		selectionQuery: "Inspect libraries/order-client client authentication.",
+		Confidence:     "EXACT",
+		BudgetTokens:   1000,
+		Concerns: []ContextConcern{{
+			Kind: contextConcernAuth, Project: clientProject,
+		}},
+		Entrypoints: []ContextLocation{{
+			ID: "order-entry", Project: clientProject, Kind: "symbol",
+			File: "OrderController.java", Line: 4,
+		}},
+		Contracts: []ContextLocation{{
+			ID: "order-contract", Project: clientProject, Kind: "api_contract",
+			File: "OrderClient.java", Line: contractLine,
+		}},
+		selectedSourceFactIDs: []string{"order-entry", "order-contract"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "order-entry", Project: clientProject, Kind: "symbol",
+			Name: "loadOrder", Qualified: "OrderController.loadOrder",
+			File: "OrderController.java", Line: 4, Confidence: "EXACT",
+			Search: "OrderController loadOrder",
+		},
+		{
+			ID: "order-contract", Project: clientProject, Kind: "api_contract",
+			Name: "GET /orders/{id}", Qualified: "OrderClient.loadOrder",
+			HTTPMethod: "GET", Path: "/orders/{id}", File: "OrderClient.java",
+			Line: contractLine, Summary: "auth basic",
+			Confidence: "PARTIAL", Search: "order client authentication basic",
+		},
+		{
+			ID: "order-client-owner", Project: clientProject, Kind: "symbol",
+			Name: "OrderClient", Qualified: "example.OrderClient",
+			File: "OrderClient.java", Line: 4, Confidence: "EXACT",
+			Search: "OrderClient Order Client OrderClient.java java",
+		},
+	}, Edges: []scan.AgentContextEdgeRecord{{
+		FromFactID: "order-entry",
+		ToFactID:   "order-contract",
+		Kind:       "call",
+	}}}
+
+	got, err := attachContextSource(
+		pack,
+		loadedContextIndex{ScopeRoot: root, Index: index},
+		ContextRequest{
+			BudgetTokens: 1000,
+			MaxFiles:     DefaultContextMaxFiles,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientSections := []ContextSourceSection{}
+	for _, section := range got.SourceSections {
+		if section.Path == "OrderClient.java" {
+			clientSections = append(clientSections, section)
+		}
+	}
+	if len(clientSections) != 1 ||
+		!strings.Contains(clientSections[0].Content, "BasicAuthenticationInterceptor") ||
+		!strings.Contains(clientSections[0].Content, "Order loadOrder()") {
+		t.Fatalf("joint client authentication and contract proof missing: %#v", clientSections)
+	}
+	authCovered := false
+	for _, concern := range got.Concerns {
+		if contextPublicConcernKey(concern) == contextConcernAuth+":"+clientProject &&
+			concern.Covered {
+			authCovered = true
+		}
+	}
+	if !authCovered {
+		t.Fatalf("rendered client authentication was not covered: %#v", got.Concerns)
+	}
+}
+
 func TestRecoveryFacetCandidatesRequireRecoveryEvidence(t *testing.T) {
 	const project = "libraries/job-client"
 	exception := scan.AgentContextFactRecord{
@@ -4742,6 +4862,66 @@ func TestEnrichContextCoreSourceOptionsFocusesEveryBoundaryBeforeBodies(t *testi
 		if section.RenderMode == "signature" {
 			t.Fatalf("core section remained a signature despite room for both focused sections: %#v", got.SourceSections)
 		}
+	}
+}
+
+func TestContextCoreSourceEnrichmentPreservesConcernEvidence(t *testing.T) {
+	const authConcern = "authentication:libraries/order-client#client_transport"
+	candidate := sourceCandidate{
+		FactID: "order-contract", Project: "libraries/order-client",
+		Path: "OrderClient.java", Role: "contract",
+	}
+	selected := ContextSourceSection{
+		Project: "libraries/order-client", Path: "OrderClient.java",
+		StartLine: 7, EndLine: 19, Role: "contract", RenderMode: "focused",
+		Content: "new BasicAuthenticationInterceptor(username, password)\nOrder loadOrder() {",
+	}
+	declarationBody := ContextSourceSection{
+		Project: "libraries/order-client", Path: "OrderClient.java",
+		StartLine: 18, EndLine: 21, Role: "contract", RenderMode: "declaration_body",
+		Content: "Order loadOrder() {\n  return restClient.get();\n}",
+	}
+	for _, test := range []struct {
+		name               string
+		replacementConcern []string
+		want               ContextSourceSection
+	}{
+		{
+			name: "discarding concern evidence is rejected",
+			want: selected,
+		},
+		{
+			name:               "preserving concern evidence is allowed",
+			replacementConcern: []string{authConcern},
+			want:               declarationBody,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := enrichContextCoreSourceOptions(
+				ContextPack{SourceSections: []ContextSourceSection{selected}},
+				ContextRequest{BudgetTokens: DefaultContextBudgetTokens},
+				[]contextSourceOption{
+					{
+						candidate: candidate, section: selected,
+						concernKeys: []string{authConcern},
+					},
+					{
+						candidate: candidate, section: declarationBody,
+						concernKeys: test.replacementConcern,
+					},
+				},
+				contextSourceSelectionState{selectedCandidates: map[string]bool{
+					contextSourceCandidateKey(candidate): true,
+				}},
+				[]contextSourceBoundary{{factID: "order-contract"}},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.SourceSections) != 1 || got.SourceSections[0] != test.want {
+				t.Fatalf("unexpected enriched source section: %#v", got.SourceSections)
+			}
+		})
 	}
 }
 
