@@ -14,6 +14,166 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
+func TestImproveContextSourceSelectionReplacesOnlyUnprotectedEvidence(t *testing.T) {
+	entryConcern := newContextConcern(
+		contextConcernEntrypoint,
+		"",
+		true,
+		[]string{"entrypoint"},
+		"selected entrypoint",
+	)
+	authConcern := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernAuth,
+			"libraries/job-client",
+			true,
+			[]string{"client-auth"},
+			"selected client authentication",
+		),
+		"client_transport",
+		[]string{"client-auth"},
+		"client transport authentication",
+	)
+	configConcern := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernConfiguration,
+			"libraries/job-client",
+			true,
+			[]string{"client-config"},
+			"selected client configuration",
+		),
+		"binding",
+		[]string{"client-config"},
+		"client configuration binding",
+	)
+	option := func(
+		id string,
+		path string,
+		content string,
+		keys ...string,
+	) contextSourceOption {
+		return contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: id, FactIDs: []string{id},
+				Project: "libraries/job-client", Path: path,
+			},
+			section: ContextSourceSection{
+				Project: "libraries/job-client", Path: path,
+				StartLine: 1, EndLine: 4,
+				RenderMode: "declaration_body", Content: content,
+			},
+			estimated: 40, concernKeys: keys,
+			projectKey: "libraries/job-client", profiled: true,
+		}
+	}
+	entry := option(
+		"entrypoint",
+		"Entrypoint.java",
+		"void deleteItem() { service.delete(); }",
+		entryConcern.key,
+	)
+	entry.candidate.Role = "entrypoint"
+	generic := option(
+		"generic",
+		"GenericHelper.java",
+		"void format() { formatter.apply(); }",
+	)
+	auth := option(
+		"client-auth",
+		"JobClientAuth.java",
+		"void apply() { headers.setBasicAuth(user, password); }",
+		authConcern.key,
+	)
+	base := ContextPack{
+		Schema: 1, Query: "delete jobs with authentication",
+		Confidence: "EXACT", BudgetTokens: DefaultContextBudgetTokens,
+	}
+	current := cloneContextPack(base)
+	current.SourceSections = []ContextSourceSection{entry.section, generic.section}
+	var err error
+	current, err = finalizeContextEstimate(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     2,
+	}
+	concerns := []contextConcern{entryConcern, authConcern}
+	options := []contextSourceOption{entry, generic, auth}
+
+	got, err := improveContextSourceSelection(
+		base,
+		current,
+		request,
+		options,
+		concerns,
+		[]contextSourceBoundary{{factID: "entrypoint"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := contextSourcePathSet(got)
+	if !paths["Entrypoint.java"] || !paths["JobClientAuth.java"] ||
+		paths["GenericHelper.java"] {
+		t.Fatalf("substitution selected %#v", paths)
+	}
+
+	reversed := slices.Clone(options)
+	slices.Reverse(reversed)
+	reversedPack, err := improveContextSourceSelection(
+		base,
+		current,
+		request,
+		reversed,
+		concerns,
+		[]contextSourceBoundary{{factID: "entrypoint"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(reversedPack.SourceSections, got.SourceSections) {
+		t.Fatalf(
+			"reversed options changed substitution:\ngot  %#v\nwant %#v",
+			reversedPack.SourceSections,
+			got.SourceSections,
+		)
+	}
+
+	protected := option(
+		"client-config",
+		"JobClientConfig.java",
+		"@ConfigurationProperties(prefix = \"jobs\") class JobClientConfig {}",
+		configConcern.key,
+	)
+	protectedCurrent := cloneContextPack(base)
+	protectedCurrent.SourceSections = []ContextSourceSection{
+		entry.section,
+		protected.section,
+	}
+	protectedCurrent, err = finalizeContextEstimate(protectedCurrent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protectedPack, err := improveContextSourceSelection(
+		base,
+		protectedCurrent,
+		request,
+		[]contextSourceOption{entry, protected, auth},
+		[]contextConcern{entryConcern, configConcern, authConcern},
+		[]contextSourceBoundary{{factID: "entrypoint"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	protectedPaths := contextSourcePathSet(protectedPack)
+	if !protectedPaths["Entrypoint.java"] ||
+		!protectedPaths["JobClientConfig.java"] ||
+		protectedPaths["JobClientAuth.java"] {
+		t.Fatalf("unique required proof was removed: %#v", protectedPaths)
+	}
+}
+
 func TestContextSourceProofFrontierLooksPastNonProvingCandidates(t *testing.T) {
 	concern := newContextConcern(
 		contextConcernConfiguration,

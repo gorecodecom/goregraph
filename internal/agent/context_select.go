@@ -39,6 +39,20 @@ type contextSourceSelectionState struct {
 	selectedEvidenceFamilies map[string]int
 }
 
+func newContextSourceSelectionState(
+	candidateCount int,
+	concernCount int,
+) contextSourceSelectionState {
+	return contextSourceSelectionState{
+		selectedCandidates:       make(map[string]bool, candidateCount),
+		selectedFactIDs:          make(map[string]bool, candidateCount),
+		selectedProjects:         make(map[string]bool),
+		coveredConcerns:          make(map[string]bool, concernCount),
+		coveredRoles:             make(map[string]bool),
+		selectedEvidenceFamilies: make(map[string]int),
+	}
+}
+
 const contextPublicSourceConcernRank = 1_000_000
 
 func selectContextSourceOptions(
@@ -73,18 +87,12 @@ func selectContextSourceOptions(
 	}
 	options = contextSourceProofFrontier(pack, options, concerns)
 
+	basePack := cloneContextPack(pack)
 	pack = cloneContextPack(pack)
 	pack.SourceSections = nil
 	pack.SourceOmissions = nil
 	pack.SourceUnrepresented = len(candidates)
-	state := contextSourceSelectionState{
-		selectedCandidates:       make(map[string]bool, len(candidates)),
-		selectedFactIDs:          make(map[string]bool, len(candidates)),
-		selectedProjects:         make(map[string]bool),
-		coveredConcerns:          make(map[string]bool, len(concerns)),
-		coveredRoles:             make(map[string]bool),
-		selectedEvidenceFamilies: make(map[string]int),
-	}
+	state := newContextSourceSelectionState(len(candidates), len(concerns))
 	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
 	pack, err = finalizeContextEstimate(pack)
 	if err != nil {
@@ -163,6 +171,17 @@ func selectContextSourceOptions(
 		if err != nil {
 			return ContextPack{}, err
 		}
+	}
+	pack, err = improveContextSourceSelection(
+		basePack,
+		pack,
+		sectionRequest,
+		options,
+		concerns,
+		coreBoundaries,
+	)
+	if err != nil {
+		return ContextPack{}, err
 	}
 	covered := contextSourceCoverageFromFinalSections(pack, concerns, options)
 	applyContextSourceCoverage(&pack, concerns, covered)
