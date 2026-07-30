@@ -273,6 +273,21 @@ func TestContextSourceSectionSupportsInlineDomainFieldAfterConstructor(t *testin
 	}
 }
 
+func TestContextSourceSectionRejectsEmptyMemberAsDomainStructureAfterInlineCallable(t *testing.T) {
+	for _, content := range []string{
+		"public class Job { public Job() {}; }",
+		"public class Job { public void run() {}; }",
+	} {
+		section := ContextSourceSection{
+			RenderMode: "declaration_body",
+			Content:    content,
+		}
+		if contextSourceSectionSupportsDomainModel(section) {
+			t.Errorf("empty member accepted as domain structure: %q", content)
+		}
+	}
+}
+
 func TestContextSourceSectionSupportsOnlyMatchingEvidenceFacet(t *testing.T) {
 	base := newContextConcern(
 		contextConcernSideEffects,

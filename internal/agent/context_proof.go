@@ -70,7 +70,9 @@ func contextSourceInlineDeclarationMembers(body string) []string {
 			}
 		case ';':
 			if braceDepth == 0 && parenthesisDepth == 0 {
-				members = append(members, body[memberStart:index+1])
+				if strings.TrimSpace(body[memberStart:index]) != "" {
+					members = append(members, body[memberStart:index+1])
+				}
 				memberStart = index + 1
 				memberHasParameters = false
 				blockEndsMember = false
