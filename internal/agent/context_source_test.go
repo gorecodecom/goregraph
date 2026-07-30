@@ -7,11 +7,105 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
+
+func TestContextSourceProofFrontierLooksPastNonProvingCandidates(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernConfiguration,
+		"libraries/job-client",
+		true,
+		[]string{"weak-1", "weak-2", "weak-3", "weak-4", "config"},
+		"requested client configuration",
+	)
+	options := make([]contextSourceOption, 0, 7)
+	for index := 1; index <= 4; index++ {
+		id := fmt.Sprintf("weak-%d", index)
+		options = append(options, contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: id, Project: "libraries/job-client",
+				Path: id + ".java",
+			},
+			section: ContextSourceSection{
+				Project: "libraries/job-client", Path: id + ".java",
+				RenderMode: "signature", Content: "class Candidate {}",
+			},
+		})
+	}
+	config := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "config", Project: "libraries/job-client",
+			Path: "JobClientConfig.java",
+		},
+		section: ContextSourceSection{
+			Project: "libraries/job-client", Path: "JobClientConfig.java",
+			RenderMode: "declaration_body",
+			Content:    "@ConfigurationProperties(prefix = \"jobs\")\nclass JobClientConfig {}",
+		},
+		concernKeys: []string{concern.key},
+	}
+	options = append(options, config)
+	config.section.RenderMode = "signature"
+	options = append(options, config)
+	weakOne := options[0]
+	weakOne.section.RenderMode = "focused"
+	options = append(options, weakOne)
+
+	got := contextSourceProofFrontier(
+		ContextPack{selectedSourceFactIDs: []string{"weak-1"}},
+		options,
+		[]contextConcern{concern},
+	)
+	ids := map[string]bool{}
+	modesByCandidate := map[string]int{}
+	provingByConcern := map[string]map[string]bool{}
+	for _, option := range got {
+		key := contextSourceCandidateKey(option.candidate)
+		ids[option.candidate.FactID] = true
+		modesByCandidate[key]++
+		for _, concernKey := range option.concernKeys {
+			if provingByConcern[concernKey] == nil {
+				provingByConcern[concernKey] = map[string]bool{}
+			}
+			provingByConcern[concernKey][key] = true
+		}
+	}
+	if !ids["weak-1"] || !ids["config"] {
+		t.Fatalf("proof frontier = %#v, want selected core and proving config", ids)
+	}
+	if modesByCandidate[contextSourceCandidateKey(options[0].candidate)] != 2 ||
+		modesByCandidate[contextSourceCandidateKey(config.candidate)] != 2 {
+		t.Fatalf("proof frontier split retained render modes: %#v", modesByCandidate)
+	}
+	if len(provingByConcern[concern.key]) > maximumContextSourceProvingCandidates {
+		t.Fatalf("proof frontier retained %d proving candidates, want at most %d", len(provingByConcern[concern.key]), maximumContextSourceProvingCandidates)
+	}
+
+	reversed := slices.Clone(options)
+	slices.Reverse(reversed)
+	reversedGot := contextSourceProofFrontier(
+		ContextPack{selectedSourceFactIDs: []string{"weak-1"}},
+		reversed,
+		[]contextConcern{concern},
+	)
+	sort.Slice(got, func(left, right int) bool { return contextSourceOptionLess(got[left], got[right]) })
+	sort.Slice(reversedGot, func(left, right int) bool {
+		return contextSourceOptionLess(reversedGot[left], reversedGot[right])
+	})
+	gotKeys := make([]string, len(got))
+	reversedKeys := make([]string, len(reversedGot))
+	for index := range got {
+		gotKeys[index] = contextSourceCandidateKey(got[index].candidate)
+		reversedKeys[index] = contextSourceCandidateKey(reversedGot[index].candidate)
+	}
+	if !slices.Equal(gotKeys, reversedKeys) {
+		t.Fatalf("proof frontier candidate keys = %#v, want deterministic %#v", gotKeys, reversedKeys)
+	}
+}
 
 func TestApplyContextSourceCoverageRequiresEveryInternalFacet(t *testing.T) {
 	base := newContextConcern(

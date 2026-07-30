@@ -163,7 +163,10 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 	return merged
 }
 
-const maximumContextSourceConcernCandidates = 4
+const (
+	maximumContextSourcePlanningCandidates = 8
+	maximumContextSourceProvingCandidates  = 4
+)
 
 func contextSourceCandidatesForConcerns(
 	pack ContextPack,
@@ -269,8 +272,8 @@ func contextSourceCandidatesForConcernsWithModels(
 			return factLess(facts[left], facts[right])
 		})
 		limit := len(facts)
-		if limit > maximumContextSourceConcernCandidates {
-			limit = maximumContextSourceConcernCandidates
+		if limit > maximumContextSourcePlanningCandidates {
+			limit = maximumContextSourcePlanningCandidates
 		}
 		selectedForConcern := make(map[string]bool, limit+2)
 		for _, fact := range facts[:limit] {

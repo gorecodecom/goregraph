@@ -71,6 +71,7 @@ func selectContextSourceOptions(
 	if err != nil {
 		return ContextPack{}, err
 	}
+	options = contextSourceProofFrontier(pack, options, concerns)
 
 	pack = cloneContextPack(pack)
 	pack.SourceSections = nil
@@ -1520,6 +1521,67 @@ func contextSourceRenderOptionsWithModels(
 	}
 	sort.Slice(options, func(i, j int) bool { return contextSourceOptionLess(options[i], options[j]) })
 	return options, failures, nil
+}
+
+func contextSourceProofFrontier(
+	pack ContextPack,
+	options []contextSourceOption,
+	concerns []contextConcern,
+) []contextSourceOption {
+	coreFacts := make(map[string]bool, len(pack.selectedSourceFactIDs))
+	for _, factID := range pack.selectedSourceFactIDs {
+		coreFacts[factID] = true
+	}
+	keepCandidates := make(map[string]bool)
+	for _, option := range options {
+		for _, factID := range contextSourceCandidateFactIDs(option.candidate) {
+			if coreFacts[factID] {
+				keepCandidates[contextSourceCandidateKey(option.candidate)] = true
+			}
+		}
+	}
+	for _, concern := range concerns {
+		if !concern.required {
+			continue
+		}
+		proving := 0
+		firstCandidate := ""
+		for _, option := range options {
+			key := contextSourceCandidateKey(option.candidate)
+			if firstCandidate == "" && contextSourceOptionMatchesConcernFacts(option, concern) {
+				firstCandidate = key
+			}
+			if proving >= maximumContextSourceProvingCandidates ||
+				!contextSourceOptionHasConcern(option, concern.key) ||
+				keepCandidates[key] {
+				continue
+			}
+			keepCandidates[key] = true
+			proving++
+		}
+		if proving == 0 && firstCandidate != "" {
+			keepCandidates[firstCandidate] = true
+		}
+	}
+	result := make([]contextSourceOption, 0, len(options))
+	for _, option := range options {
+		if keepCandidates[contextSourceCandidateKey(option.candidate)] {
+			result = append(result, option)
+		}
+	}
+	return result
+}
+
+func contextSourceOptionMatchesConcernFacts(
+	option contextSourceOption,
+	concern contextConcern,
+) bool {
+	for _, factID := range concern.candidateFactIDs {
+		if contextSourceCandidateHasFact(option.candidate, factID) {
+			return true
+		}
+	}
+	return false
 }
 
 func appendContextSourceCandidateOptions(
