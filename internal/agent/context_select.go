@@ -60,6 +60,12 @@ func selectContextSourceOptions(
 	loaded loadedContextIndex,
 	request ContextRequest,
 ) (ContextPack, error) {
+	if request.BudgetTokens <= 0 {
+		request.BudgetTokens = DefaultContextBudgetTokens
+	}
+	if request.MaxFiles <= 0 {
+		request.MaxFiles = DefaultContextMaxFiles
+	}
 	pack = contextPackWithSelectedClientPublicConcerns(pack)
 	concerns := contextSourceConcerns(pack, loaded.Index)
 	requestedModelIDs := contextRequestedDomainModelIDsFromConcerns(
@@ -113,6 +119,26 @@ func selectContextSourceOptions(
 	)
 	if err != nil {
 		return ContextPack{}, err
+	}
+	if request.BudgetTokens >= DefaultContextBudgetTokens {
+		basePack, err = appendContextEvidenceInventory(
+			basePack,
+			sectionRequest,
+			options,
+			concerns,
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		pack, err = appendContextEvidenceInventory(
+			pack,
+			sectionRequest,
+			options,
+			concerns,
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
 	}
 
 	coreBoundaries := contextCoreSourceBoundaries(pack, loaded.Index, distances)
@@ -212,6 +238,15 @@ func selectContextSourceOptions(
 		pack.SourceUnrepresented = 0
 	}
 	pack.SourceSections = contextSourceSectionsProductionFirst(pack.SourceSections)
+	pack, err = appendContextEvidenceInventory(
+		pack,
+		request,
+		options,
+		concerns,
+	)
+	if err != nil {
+		return ContextPack{}, err
+	}
 	covered = contextSourceCoverageFromFinalSections(pack, concerns, options)
 	applyContextSourceCoverage(&pack, concerns, covered)
 	return finalizeContextPackWithinBudget(pack, request)
@@ -3563,74 +3598,32 @@ func addContextSourceOption(
 }
 
 func contextProjectedSourceFile(
-	pack ContextPack,
+	_ ContextPack,
 	option contextSourceOption,
 	concerns []contextConcern,
 ) (ContextFile, string, bool) {
-	if file, publish := contextProjectedClientSupportFile(pack, option, concerns); publish {
-		return file, "selected client support source exceeds the response file budget", true
-	}
-	if file, publish := contextProjectedSideEffectFile(option, concerns); publish {
-		return file, "selected side-effect source exceeds the response file budget", true
+	if file, publish := contextProjectedRequiredEvidenceFile(option, concerns); publish {
+		return file, "selected required evidence exceeds the response file budget", true
 	}
 	return ContextFile{}, "", false
 }
 
-func contextProjectedClientSupportFile(
-	pack ContextPack,
+func contextProjectedRequiredEvidenceFile(
 	option contextSourceOption,
 	concerns []contextConcern,
 ) (ContextFile, bool) {
-	concernKeys := make(map[string]bool, len(option.concernKeys))
-	for _, key := range option.concernKeys {
-		concernKeys[key] = true
+	if !option.profiled {
+		return ContextFile{}, false
 	}
 	project := normalizeContextProject(option.candidate.Project)
-	selectedContractProject := false
-	for _, contract := range pack.Contracts {
-		if normalizeContextProject(contract.Project) == project {
-			selectedContractProject = true
-			break
-		}
-	}
-	if !selectedContractProject {
+	if project == "" ||
+		project != normalizeContextProject(option.section.Project) {
 		return ContextFile{}, false
 	}
 	for _, concern := range concerns {
 		if !concern.required ||
-			!concernKeys[concern.key] ||
-			concern.project != project ||
-			concern.kind != contextConcernAuth &&
-				concern.kind != contextConcernConfiguration &&
-				concern.kind != contextConcernResilience {
-			continue
-		}
-		return ContextFile{
-			Project:   option.section.Project,
-			Path:      option.section.Path,
-			StartLine: option.section.StartLine,
-			EndLine:   option.section.EndLine,
-			Role:      "related_project",
-			Reason:    "selected client support evidence",
-		}, true
-	}
-	return ContextFile{}, false
-}
-
-func contextProjectedSideEffectFile(
-	option contextSourceOption,
-	concerns []contextConcern,
-) (ContextFile, bool) {
-	project := normalizeContextProject(option.candidate.Project)
-	if project == "" {
-		return ContextFile{}, false
-	}
-	for _, concern := range concerns {
-		concernProject := normalizeContextProject(concern.project)
-		if !concern.required ||
-			concern.kind != contextConcernSideEffects ||
-			concernProject == "" ||
-			concernProject != project ||
+			concern.project != "" &&
+				normalizeContextProject(concern.project) != project ||
 			!contextSourceOptionHasConcern(option, concern.key) {
 			continue
 		}
@@ -3639,8 +3632,8 @@ func contextProjectedSideEffectFile(
 			Path:      option.section.Path,
 			StartLine: option.section.StartLine,
 			EndLine:   option.section.EndLine,
-			Role:      "related_project",
-			Reason:    "selected side-effect evidence",
+			Role:      contextSourceConcernRole(concern.kind),
+			Reason:    "selected required " + strings.ReplaceAll(concern.kind, "_", " ") + " evidence",
 		}, true
 	}
 	return ContextFile{}, false

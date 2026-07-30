@@ -7,6 +7,413 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
+type contextEvidenceInventoryCandidate struct {
+	file       ContextFile
+	facets     map[string]bool
+	production bool
+	quality    int
+	dominated  bool
+}
+
+type contextEvidenceInventoryScore struct {
+	productionFacets  int
+	productionPaths   int
+	productionWeak    int
+	productionQuality int
+	testFacets        int
+	testPaths         int
+	testWeak          int
+	testQuality       int
+	key               string
+}
+
+func appendContextEvidenceInventory(
+	pack ContextPack,
+	request ContextRequest,
+	options []contextSourceOption,
+	concerns []contextConcern,
+) (ContextPack, error) {
+	candidates := contextEvidenceInventoryCandidates(pack, options, concerns)
+	currentScore := contextEvidenceInventoryScoreFor(pack, candidates)
+	for _, required := range candidates {
+		if contextEvidenceInventoryPathRepresented(pack, required.file) {
+			continue
+		}
+		best := ContextPack{}
+		bestScore := contextEvidenceInventoryScore{}
+		found := false
+		replacementIndexes := []int{-1}
+		if len(pack.Files) >= request.MaxFiles {
+			replacementIndexes = replacementIndexes[:0]
+			for index, file := range pack.Files {
+				if !contextEvidenceInventoryMandatoryFile(pack, file) {
+					replacementIndexes = append(replacementIndexes, index)
+				}
+			}
+		}
+		for _, replacementIndex := range replacementIndexes {
+			trial := cloneContextPack(pack)
+			if replacementIndex >= 0 {
+				trial.Files = append(trial.Files[:replacementIndex], trial.Files[replacementIndex+1:]...)
+			}
+			if !mergeContextFile(&trial, required.file, request.MaxFiles) {
+				continue
+			}
+			if contextSourceFileCount(trial) > request.MaxFiles {
+				continue
+			}
+			trial, err := finalizeContextEstimate(trial)
+			if err != nil {
+				return ContextPack{}, err
+			}
+			fits, err := contextSourcePackFits(trial, request)
+			if err != nil {
+				return ContextPack{}, err
+			}
+			if !fits {
+				continue
+			}
+			score := contextEvidenceInventoryScoreFor(trial, candidates)
+			if !betterContextEvidenceInventoryScore(score, currentScore) ||
+				found && !betterContextEvidenceInventoryScore(score, bestScore) {
+				continue
+			}
+			best = trial
+			bestScore = score
+			found = true
+		}
+		if found {
+			pack = best
+			currentScore = bestScore
+		}
+	}
+	return pack, nil
+}
+
+func contextEvidenceInventoryCandidates(
+	pack ContextPack,
+	options []contextSourceOption,
+	concerns []contextConcern,
+) []contextEvidenceInventoryCandidate {
+	ordered := append([]contextSourceOption(nil), options...)
+	sort.Slice(ordered, func(i, j int) bool {
+		return contextSourceOptionLess(ordered[i], ordered[j])
+	})
+	concernByKey := make(map[string]contextConcern, len(concerns))
+	for _, concern := range concerns {
+		if concern.required {
+			concernByKey[concern.key] = concern
+		}
+	}
+	byPath := make(map[string]*contextEvidenceInventoryCandidate)
+	for _, option := range ordered {
+		if !option.profiled {
+			continue
+		}
+		matched := make([]contextConcern, 0, len(option.concernKeys))
+		for _, key := range option.concernKeys {
+			if concern, ok := concernByKey[key]; ok &&
+				contextEvidenceInventoryConcernIsExact(concern) &&
+				!(concern.kind == contextConcernDomainModel &&
+					contextEvidenceInventoryPrimaryProjectDuplicate(pack, option, options)) {
+				matched = append(matched, concern)
+			}
+		}
+		if len(matched) == 0 {
+			continue
+		}
+		sort.Slice(matched, func(i, j int) bool { return matched[i].key < matched[j].key })
+		pathKey := contextEvidenceInventoryPathKey(option.section.Project, option.section.Path)
+		candidate := byPath[pathKey]
+		if candidate == nil {
+			candidate = &contextEvidenceInventoryCandidate{
+				file: ContextFile{
+					Project:   option.section.Project,
+					Path:      option.section.Path,
+					StartLine: option.section.StartLine,
+					EndLine:   option.section.EndLine,
+				},
+				facets:     make(map[string]bool),
+				production: option.candidate.Role != "test",
+				quality:    contextSourceEffectiveQuality(pack, option),
+			}
+			byPath[pathKey] = candidate
+		} else {
+			candidate.file.StartLine = minimumPositiveContextLine(
+				candidate.file.StartLine,
+				option.section.StartLine,
+			)
+			if option.section.EndLine > candidate.file.EndLine {
+				candidate.file.EndLine = option.section.EndLine
+			}
+			candidate.production = candidate.production || option.candidate.Role != "test"
+			candidate.quality = max(candidate.quality, contextSourceEffectiveQuality(pack, option))
+		}
+		for _, concern := range matched {
+			candidate.facets[concern.key] = true
+			candidate.file.Role = mergeContextList(
+				candidate.file.Role,
+				contextSourceConcernRole(concern.kind),
+				",",
+			)
+			candidate.file.Reason = mergeContextList(
+				candidate.file.Reason,
+				"selected required "+strings.ReplaceAll(concern.kind, "_", " ")+" evidence",
+				";",
+			)
+		}
+	}
+	result := make([]contextEvidenceInventoryCandidate, 0, len(byPath))
+	for _, candidate := range byPath {
+		result = append(result, *candidate)
+	}
+	for index := range result {
+		for otherIndex := range result {
+			if index == otherIndex ||
+				result[index].production != result[otherIndex].production ||
+				normalizeContextProject(result[index].file.Project) !=
+					normalizeContextProject(result[otherIndex].file.Project) ||
+				result[index].file.Role != result[otherIndex].file.Role ||
+				!contextEvidenceInventoryFacetSubset(result[index].facets, result[otherIndex].facets) ||
+				len(result[index].facets) >= len(result[otherIndex].facets) {
+				continue
+			}
+			result[index].dominated = true
+			break
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return contextEvidenceInventoryCandidateBetter(result[i], result[j])
+	})
+	return result
+}
+
+func contextEvidenceInventoryConcernIsExact(concern contextConcern) bool {
+	return concern.kind != contextConcernProject &&
+		concern.kind != contextConcernPrimaryPath
+}
+
+func contextEvidenceInventoryPrimaryProjectDuplicate(
+	pack ContextPack,
+	option contextSourceOption,
+	options []contextSourceOption,
+) bool {
+	if len(pack.Entrypoints) == 0 {
+		return false
+	}
+	primaryProject := normalizeContextProject(pack.Entrypoints[0].Project)
+	if primaryProject == "" ||
+		normalizeContextProject(option.candidate.Project) != primaryProject {
+		return false
+	}
+	identity := compactContextIdentifier(firstNonEmptyContext(
+		option.candidate.Name,
+		option.candidate.Qualified,
+	))
+	if identity == "" {
+		return false
+	}
+	for _, other := range options {
+		if normalizeContextProject(other.candidate.Project) == primaryProject ||
+			compactContextIdentifier(firstNonEmptyContext(
+				other.candidate.Name,
+				other.candidate.Qualified,
+			)) != identity {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func contextEvidenceInventoryCandidateBetter(
+	left contextEvidenceInventoryCandidate,
+	right contextEvidenceInventoryCandidate,
+) bool {
+	if left.production != right.production {
+		return left.production
+	}
+	if left.dominated != right.dominated {
+		return !left.dominated
+	}
+	if len(left.facets) != len(right.facets) {
+		return len(left.facets) > len(right.facets)
+	}
+	if left.quality != right.quality {
+		return left.quality > right.quality
+	}
+	return contextEvidenceInventoryPathKey(left.file.Project, left.file.Path) <
+		contextEvidenceInventoryPathKey(right.file.Project, right.file.Path)
+}
+
+func contextEvidenceInventoryFacetSubset(left, right map[string]bool) bool {
+	for key := range left {
+		if !right[key] {
+			return false
+		}
+	}
+	return true
+}
+
+func contextEvidenceInventoryScoreFor(
+	pack ContextPack,
+	candidates []contextEvidenceInventoryCandidate,
+) contextEvidenceInventoryScore {
+	productionFacets := make(map[string]bool)
+	testFacets := make(map[string]bool)
+	representedKeys := make([]string, 0, len(candidates))
+	score := contextEvidenceInventoryScore{}
+	for _, candidate := range candidates {
+		if !contextEvidenceInventoryPathRepresented(pack, candidate.file) {
+			continue
+		}
+		if candidate.dominated &&
+			contextEvidenceInventoryRepresentedDominator(pack, candidate, candidates) {
+			continue
+		}
+		representedKeys = append(
+			representedKeys,
+			contextEvidenceInventoryPathKey(candidate.file.Project, candidate.file.Path),
+		)
+		if candidate.production {
+			score.productionPaths++
+			if candidate.dominated {
+				score.productionWeak++
+			}
+			score.productionQuality += candidate.quality
+			for key := range candidate.facets {
+				productionFacets[key] = true
+			}
+			continue
+		}
+		score.testPaths++
+		if candidate.dominated {
+			score.testWeak++
+		}
+		score.testQuality += candidate.quality
+		for key := range candidate.facets {
+			testFacets[key] = true
+		}
+	}
+	score.productionFacets = len(productionFacets)
+	score.testFacets = len(testFacets)
+	sort.Strings(representedKeys)
+	score.key = strings.Join(representedKeys, "\x00")
+	return score
+}
+
+func contextEvidenceInventoryRepresentedDominator(
+	pack ContextPack,
+	candidate contextEvidenceInventoryCandidate,
+	candidates []contextEvidenceInventoryCandidate,
+) bool {
+	for _, other := range candidates {
+		if candidate.production != other.production ||
+			normalizeContextProject(candidate.file.Project) !=
+				normalizeContextProject(other.file.Project) ||
+			candidate.file.Role != other.file.Role ||
+			len(candidate.facets) >= len(other.facets) ||
+			!contextEvidenceInventoryFacetSubset(candidate.facets, other.facets) ||
+			!contextEvidenceInventoryPathRepresented(pack, other.file) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func betterContextEvidenceInventoryScore(
+	left contextEvidenceInventoryScore,
+	right contextEvidenceInventoryScore,
+) bool {
+	switch {
+	case left.productionFacets != right.productionFacets:
+		return left.productionFacets > right.productionFacets
+	case left.productionWeak != right.productionWeak:
+		return left.productionWeak < right.productionWeak
+	case left.productionPaths != right.productionPaths:
+		return left.productionPaths > right.productionPaths
+	case left.productionQuality != right.productionQuality:
+		return left.productionQuality > right.productionQuality
+	case left.testFacets != right.testFacets:
+		return left.testFacets > right.testFacets
+	case left.testWeak != right.testWeak:
+		return left.testWeak < right.testWeak
+	case left.testPaths != right.testPaths:
+		return left.testPaths > right.testPaths
+	case left.testQuality != right.testQuality:
+		return left.testQuality > right.testQuality
+	default:
+		return left.key < right.key
+	}
+}
+
+func contextEvidenceInventoryPathRepresented(pack ContextPack, file ContextFile) bool {
+	key := contextEvidenceInventoryPathKey(file.Project, file.Path)
+	for _, current := range pack.Files {
+		if contextEvidenceInventoryPathKey(current.Project, current.Path) == key {
+			return true
+		}
+	}
+	for _, section := range pack.SourceSections {
+		if contextEvidenceInventoryPathKey(section.Project, section.Path) == key {
+			return true
+		}
+	}
+	return false
+}
+
+func contextEvidenceInventoryPathKey(project, path string) string {
+	return normalizeContextProject(project) + "\x00" + contextPackSourceFile(path)
+}
+
+func contextEvidenceInventoryMandatoryFile(pack ContextPack, file ContextFile) bool {
+	if contextEvidenceInventoryRoleContains(
+		file.Role,
+		"entrypoint",
+		"contract",
+		"endpoint",
+		"endpoint_consumer",
+	) || strings.Contains(file.Reason, "selected required primary path evidence") {
+		return true
+	}
+	key := contextEvidenceInventoryPathKey(file.Project, file.Path)
+	for _, location := range pack.Entrypoints {
+		if contextEvidenceInventoryPathKey(location.Project, location.File) == key {
+			return true
+		}
+	}
+	for _, location := range pack.Contracts {
+		if contextEvidenceInventoryPathKey(location.Project, location.File) == key {
+			return true
+		}
+	}
+	for _, endpoint := range pack.Endpoints {
+		if contextEvidenceInventoryPathKey(endpoint.Provider, endpoint.File) == key {
+			return true
+		}
+		for _, consumer := range endpoint.Consumers {
+			if contextEvidenceInventoryPathKey(consumer.Project, consumer.File) == key {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func contextEvidenceInventoryRoleContains(role string, wanted ...string) bool {
+	values := make(map[string]bool)
+	for _, value := range strings.Split(role, ",") {
+		values[strings.TrimSpace(value)] = true
+	}
+	for _, value := range wanted {
+		if values[value] {
+			return true
+		}
+	}
+	return false
+}
+
 func contextSourceCoverageFromFinalSections(
 	pack ContextPack,
 	concerns []contextConcern,

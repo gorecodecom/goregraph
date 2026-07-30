@@ -444,6 +444,242 @@ func TestContextSourceCoverageFromFinalSectionsRejectsStaleProof(t *testing.T) {
 	}
 }
 
+func TestAppendContextEvidenceInventoryIsBoundedAndDoesNotCreateCoverage(t *testing.T) {
+	const optionCount = 20
+	concerns := make([]contextConcern, 0, optionCount)
+	options := make([]contextSourceOption, 0, optionCount)
+	for index := 0; index < optionCount; index++ {
+		key := fmt.Sprintf("domain_model:project-%02d", index)
+		project := fmt.Sprintf("services/project-%02d", index)
+		concerns = append(concerns, contextConcern{
+			key:      key,
+			kind:     contextConcernDomainModel,
+			project:  project,
+			required: true,
+		})
+		options = append(options, contextSourceOption{
+			candidate: sourceCandidate{
+				FactID:  fmt.Sprintf("model-%02d", index),
+				Project: project,
+				Path:    fmt.Sprintf("src/Model%02d.java", index),
+				Role:    contextConcernDomainModel,
+			},
+			section: ContextSourceSection{
+				Project:    project,
+				Path:       fmt.Sprintf("src/Model%02d.java", index),
+				StartLine:  1,
+				EndLine:    3,
+				Role:       contextConcernDomainModel,
+				RenderMode: "declaration_body",
+				Content:    fmt.Sprintf("class Model%02d {}", index),
+			},
+			concernKeys: []string{key},
+			projectKey:  project,
+			required:    true,
+			profiled:    true,
+		})
+	}
+	request := ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	}
+	pack, err := finalizeContextEstimate(ContextPack{
+		Schema:       1,
+		Query:        "compare required domain models",
+		BudgetTokens: request.BudgetTokens,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := appendContextEvidenceInventory(pack, request, options, concerns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Files) != DefaultContextMaxFiles {
+		t.Fatalf("inventory files = %d, want %d", len(got.Files), DefaultContextMaxFiles)
+	}
+	covered := contextSourceCoverageFromFinalSections(got, concerns, options)
+	for _, concern := range concerns {
+		if covered[concern.key] {
+			t.Fatalf("metadata-only inventory became source coverage for %q", concern.key)
+		}
+	}
+}
+
+func TestAppendContextEvidenceInventoryRepairsSaturatedPack(t *testing.T) {
+	concerns, options := contextEvidenceInventoryRepairFixture()
+	files := []ContextFile{
+		{
+			Project: "services/catalog", Path: "src/CatalogController.java",
+			Role: "entrypoint", Reason: "selected entrypoint",
+		},
+		{
+			Project: "services/jobs", Path: "src/ExistingModel.java",
+			Role: contextConcernDomainModel, Reason: "selected required domain model evidence",
+		},
+	}
+	optionalCount := DefaultContextMaxFiles - len(files)
+	for index := 0; index < optionalCount; index++ {
+		files = append(files, ContextFile{
+			Project: "services/optional",
+			Path:    fmt.Sprintf("src/Optional%02d.java", index),
+			Role:    "related_project",
+			Reason:  "full task project match",
+		})
+	}
+	sortContextFiles(files)
+	request := ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	}
+	pack, err := finalizeContextEstimate(ContextPack{
+		Schema:       1,
+		Query:        "prepare required release evidence",
+		BudgetTokens: request.BudgetTokens,
+		Files:        files,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := appendContextEvidenceInventory(pack, request, options, concerns)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got.Files) != DefaultContextMaxFiles {
+		t.Fatalf("inventory files = %d, want %d", len(got.Files), DefaultContextMaxFiles)
+	}
+	for _, want := range []string{
+		"src/CatalogController.java",
+		"src/ExistingModel.java",
+		"src/JobClientConfig.java",
+		"src/JobClientAuth.java",
+		"src/JobManagementControllerTest.java",
+		"src/JobServiceTest.java",
+	} {
+		if !contextPackContainsFileSuffix(got, want) {
+			t.Errorf("strictly improving inventory omitted %q", want)
+		}
+	}
+	if len(got.SourceSections) != 0 {
+		t.Fatalf("metadata repair changed rendered sections: %#v", got.SourceSections)
+	}
+	covered := contextSourceCoverageFromFinalSections(got, concerns, options)
+	for _, concern := range concerns {
+		if covered[concern.key] {
+			t.Fatalf("metadata repair became source coverage for %q", concern.key)
+		}
+	}
+}
+
+func TestAppendContextEvidenceInventoryIsDeterministicAndKeepsSameRolePaths(t *testing.T) {
+	concerns, options := contextEvidenceInventoryRepairFixture()
+	files := make([]ContextFile, 0, DefaultContextMaxFiles)
+	for index := 0; index < DefaultContextMaxFiles; index++ {
+		files = append(files, ContextFile{
+			Project: "services/optional",
+			Path:    fmt.Sprintf("src/Optional%02d.java", index),
+			Role:    "related_project",
+			Reason:  "full task project match",
+		})
+	}
+	request := ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	}
+	pack, err := finalizeContextEstimate(ContextPack{
+		Schema:       1,
+		Query:        "prepare required release evidence",
+		BudgetTokens: request.BudgetTokens,
+		Files:        files,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	forward, err := appendContextEvidenceInventory(pack, request, options, concerns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversedOptions := slices.Clone(options)
+	slices.Reverse(reversedOptions)
+	reversed, err := appendContextEvidenceInventory(pack, request, reversedOptions, concerns)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(forward, reversed) {
+		t.Fatalf("reversed options changed repaired inventory:\nforward: %#v\nreverse: %#v", forward.Files, reversed.Files)
+	}
+	for _, want := range []string{
+		"src/JobManagementControllerTest.java",
+		"src/JobServiceTest.java",
+	} {
+		if !contextPackContainsFileSuffix(forward, want) {
+			t.Errorf("same-role required inventory omitted %q", want)
+		}
+	}
+}
+
+func contextEvidenceInventoryRepairFixture() ([]contextConcern, []contextSourceOption) {
+	type evidence struct {
+		key     string
+		kind    string
+		project string
+		path    string
+	}
+	required := []evidence{
+		{
+			key: "domain_model:services/jobs#existing", kind: contextConcernDomainModel,
+			project: "services/jobs", path: "src/ExistingModel.java",
+		},
+		{
+			key: "configuration:libraries/job-client#binding", kind: contextConcernConfiguration,
+			project: "libraries/job-client", path: "src/JobClientConfig.java",
+		},
+		{
+			key: "authentication:libraries/job-client#transport", kind: contextConcernAuth,
+			project: "libraries/job-client", path: "src/JobClientAuth.java",
+		},
+		{
+			key: "tests:services/jobs#controller", kind: contextConcernTests,
+			project: "services/jobs", path: "src/JobManagementControllerTest.java",
+		},
+		{
+			key: "tests:services/jobs#service", kind: contextConcernTests,
+			project: "services/jobs", path: "src/JobServiceTest.java",
+		},
+	}
+	concerns := make([]contextConcern, 0, len(required))
+	options := make([]contextSourceOption, 0, len(required))
+	for index, item := range required {
+		role := contextSourceConcernRole(item.kind)
+		concerns = append(concerns, contextConcern{
+			key: item.key, kind: item.kind, project: item.project, required: true,
+		})
+		options = append(options, contextSourceOption{
+			candidate: sourceCandidate{
+				FactID:  fmt.Sprintf("required-%02d", index),
+				Project: item.project,
+				Path:    item.path,
+				Role:    role,
+			},
+			section: ContextSourceSection{
+				Project: item.project, Path: item.path,
+				StartLine: 1, EndLine: 3, Role: role,
+				RenderMode: "declaration_body",
+				Content:    fmt.Sprintf("class Evidence%02d {}", index),
+			},
+			concernKeys: []string{item.key},
+			projectKey:  item.project,
+			required:    true,
+			profiled:    true,
+		})
+	}
+	return concerns, options
+}
+
 func TestContextDomainModelEvidenceConcernsScopeModelsAndLinkedBase(t *testing.T) {
 	index := scan.AgentContextIndexRecord{
 		Facts: []scan.AgentContextFactRecord{
@@ -5634,7 +5870,7 @@ func TestAddContextSourceOptionPublishesRequiredSideEffectSource(t *testing.T) {
 	wantFiles := []ContextFile{{
 		Project: "services/jobs", Path: "JobHousekeeping.java",
 		StartLine: 4, EndLine: 6,
-		Role: "related_project", Reason: "selected side-effect evidence",
+		Role: "call_chain", Reason: "selected required side effects evidence",
 	}}
 	if !reflect.DeepEqual(got.Files, wantFiles) {
 		t.Fatalf("published side-effect files = %#v, want %#v", got.Files, wantFiles)
@@ -5726,8 +5962,8 @@ func TestAddContextSourceOptionMergesProjectedSideEffectFile(t *testing.T) {
 	wantFiles := []ContextFile{{
 		Project: "services/jobs", Path: "JobHousekeeping.java",
 		StartLine: 4, EndLine: 12,
-		Role:       "call_chain,related_project",
-		Reason:     "selected call;selected side-effect evidence",
+		Role:       "call_chain",
+		Reason:     "selected call;selected required side effects evidence",
 		Confidence: "EXTRACTED",
 	}}
 	if !reflect.DeepEqual(got.Files, wantFiles) {
@@ -5793,55 +6029,6 @@ func TestAddContextSourceOptionDoesNotProjectUnqualifiedSections(t *testing.T) {
 				"job side effects",
 			),
 			concernKeys: []string{contextConcernSideEffects + ":services/jobs"},
-		},
-		{
-			name: "persistence concern",
-			concern: newContextConcern(
-				contextConcernPersistence,
-				"services/jobs",
-				true,
-				[]string{"housekeeping"},
-				"job persistence",
-			),
-			concernKeys: []string{contextConcernPersistence + ":services/jobs"},
-		},
-		{
-			name: "domain model concern",
-			concern: newContextConcern(
-				contextConcernDomainModel,
-				"services/jobs",
-				true,
-				[]string{"housekeeping"},
-				"job domain",
-			),
-			concernKeys: []string{contextConcernDomainModel + ":services/jobs"},
-		},
-		{
-			name: "ordinary call chain",
-			concern: newContextConcern(
-				contextConcernPrimaryPath,
-				"services/jobs",
-				true,
-				[]string{"housekeeping"},
-				"primary path",
-			),
-			concernKeys: []string{contextConcernPrimaryPath + ":services/jobs"},
-		},
-		{
-			name: "test concern",
-			section: ContextSourceSection{
-				Project: "services/jobs", Path: "JobHousekeepingTest.java",
-				StartLine: 4, EndLine: 6, Role: "test",
-				RenderMode: "declaration_body", Content: "@Test void publishRemoval() {}",
-			},
-			concern: newContextConcern(
-				contextConcernTests,
-				"services/jobs",
-				true,
-				[]string{"housekeeping"},
-				"job tests",
-			),
-			concernKeys: []string{contextConcernTests + ":services/jobs"},
 		},
 	}
 	for _, test := range tests {
@@ -5954,7 +6141,7 @@ func contextSideEffectProjectionFixture() (
 }`,
 		},
 		estimated: 40, concernKeys: []string{concernKey},
-		projectKey: "services/jobs", required: true,
+		projectKey: "services/jobs", required: true, profiled: true,
 	}
 	concerns := []contextConcern{
 		newContextConcern(
