@@ -281,8 +281,15 @@ func contextSourceCandidatesForConcernsWithModels(
 			selectedForConcern[fact.ID] = true
 		}
 		if concern.kind == contextConcernPersistence {
+			remaining := maximumContextSourcePlanningCandidates - len(selectedForConcern)
+			if remaining > 2 {
+				remaining = 2
+			}
 			paired := 0
 			for _, fact := range facts {
+				if paired == remaining {
+					break
+				}
 				if selectedForConcern[fact.ID] ||
 					!contextPersistenceFactMatchesRequestedDomainModel(
 						pack,
@@ -295,9 +302,6 @@ func contextSourceCandidatesForConcernsWithModels(
 				selected[fact.ID] = true
 				selectedForConcern[fact.ID] = true
 				paired++
-				if paired == 2 {
-					break
-				}
 			}
 		}
 	}

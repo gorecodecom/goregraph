@@ -19,7 +19,7 @@ func TestContextSourceProofFrontierLooksPastNonProvingCandidates(t *testing.T) {
 		contextConcernConfiguration,
 		"libraries/job-client",
 		true,
-		[]string{"weak-1", "weak-2", "weak-3", "weak-4", "config"},
+		[]string{"weak-1", "weak-2", "weak-3", "weak-4", "config", "config-2", "config-3", "config-4", "config-5"},
 		"requested client configuration",
 	)
 	options := make([]contextSourceOption, 0, 7)
@@ -51,6 +51,20 @@ func TestContextSourceProofFrontierLooksPastNonProvingCandidates(t *testing.T) {
 	options = append(options, config)
 	config.section.RenderMode = "signature"
 	options = append(options, config)
+	for index := 2; index <= 5; index++ {
+		id := fmt.Sprintf("config-%d", index)
+		options = append(options, contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: id, Project: "libraries/job-client",
+				Path: id + ".java",
+			},
+			section: ContextSourceSection{
+				Project: "libraries/job-client", Path: id + ".java",
+				RenderMode: "declaration_body", Content: "@ConfigurationProperties(prefix = \"jobs\")",
+			},
+			concernKeys: []string{concern.key},
+		})
+	}
 	weakOne := options[0]
 	weakOne.section.RenderMode = "focused"
 	options = append(options, weakOne)
@@ -100,10 +114,85 @@ func TestContextSourceProofFrontierLooksPastNonProvingCandidates(t *testing.T) {
 	reversedKeys := make([]string, len(reversedGot))
 	for index := range got {
 		gotKeys[index] = contextSourceCandidateKey(got[index].candidate)
+	}
+	for index := range reversedGot {
 		reversedKeys[index] = contextSourceCandidateKey(reversedGot[index].candidate)
 	}
 	if !slices.Equal(gotKeys, reversedKeys) {
 		t.Fatalf("proof frontier candidate keys = %#v, want deterministic %#v", gotKeys, reversedKeys)
+	}
+}
+
+func TestContextSourcePersistencePlanningReservesPairingWithinCeiling(t *testing.T) {
+	queryTokens := make([]string, 0, 104)
+	for _, prefix := range []string{"signal", "marker", "beacon", "channel"} {
+		for suffix := 'a'; suffix <= 'z'; suffix++ {
+			queryTokens = append(queryTokens, prefix+string(suffix))
+		}
+	}
+	query := "Analyze services/jobs " + strings.Join(queryTokens, " ") + " target job domain model persistence."
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "target-job", Project: "services/jobs", Kind: "symbol",
+			Name: "TargetJobEntity", Qualified: "TargetJobEntity", File: "TargetJobEntity.java",
+			Search: "target job",
+		},
+		{
+			ID: "target-job-archive", Project: "services/jobs", Kind: "symbol",
+			Name: "TargetJobArchiveEntity", Qualified: "TargetJobArchiveEntity", File: "TargetJobArchiveEntity.java",
+			Search: "target job archive",
+		},
+	}
+	candidateIDs := make([]string, 0, 10)
+	for index := 1; index <= 8; index++ {
+		id := fmt.Sprintf("noise-%d", index)
+		candidateIDs = append(candidateIDs, id)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Project: "services/jobs", Kind: contextConcernPersistence,
+			Name: fmt.Sprintf("Noise%dRepository", index), Qualified: fmt.Sprintf("Noise%dRepository.find", index),
+			File: fmt.Sprintf("Noise%dRepository.java", index), Search: strings.Join(queryTokens, " "),
+		})
+	}
+	for _, fact := range []scan.AgentContextFactRecord{
+		{
+			ID: "target-job-repository", Project: "services/jobs", Kind: contextConcernPersistence,
+			Name: "find", Qualified: "TargetJobRepository.find", File: "TargetJobRepository.java",
+			Search: "target job persistence",
+		},
+		{
+			ID: "target-job-archive-repository", Project: "services/jobs", Kind: contextConcernPersistence,
+			Name: "find", Qualified: "TargetJobArchiveRepository.find", File: "TargetJobArchiveRepository.java",
+			Search: "target job archive persistence",
+		},
+	} {
+		candidateIDs = append(candidateIDs, fact.ID)
+		facts = append(facts, fact)
+	}
+	candidates := contextSourceCandidatesForConcernsWithModels(
+		ContextPack{
+			Query:                 query,
+			selectedSourceFactIDs: []string{"target-job", "target-job-archive"},
+		},
+		scan.AgentContextIndexRecord{Facts: facts},
+		[]contextConcern{newContextConcern(
+			contextConcernPersistence,
+			"services/jobs",
+			true,
+			candidateIDs,
+			"requested persistence",
+		)},
+		map[string]bool{"target-job": true, "target-job-archive": true},
+	)
+	planned := map[string]bool{}
+	for _, candidate := range candidates {
+		for _, factID := range contextSourceCandidateFactIDs(candidate) {
+			if slices.Contains(candidateIDs, factID) {
+				planned[factID] = true
+			}
+		}
+	}
+	if len(planned) > maximumContextSourcePlanningCandidates {
+		t.Fatalf("persistence planning selected %d facts, want at most %d: %#v", len(planned), maximumContextSourcePlanningCandidates, planned)
 	}
 }
 

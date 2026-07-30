@@ -1528,6 +1528,10 @@ func contextSourceProofFrontier(
 	options []contextSourceOption,
 	concerns []contextConcern,
 ) []contextSourceOption {
+	options = slices.Clone(options)
+	sort.Slice(options, func(left, right int) bool {
+		return contextSourceOptionLess(options[left], options[right])
+	})
 	coreFacts := make(map[string]bool, len(pack.selectedSourceFactIDs))
 	for _, factID := range pack.selectedSourceFactIDs {
 		coreFacts[factID] = true
