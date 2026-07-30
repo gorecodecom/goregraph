@@ -1333,8 +1333,27 @@ func TestContextSourceSectionRecognizesOnlyStructuralDomainFields(t *testing.T) 
 			content: "class Job { void run() {\n return value;\n} }",
 		},
 		{
+			name:    "rejects callable method",
+			content: "class Job { private UUID id() { return UUID.randomUUID(); } }",
+		},
+		{
 			name:    "rejects nested type field",
 			content: "class Job { class Details { long catalogId; } }",
+		},
+		{
+			name:    "accepts annotated direct field",
+			content: "class Job { @Column(name = \"catalog_id\")\n private long catalogId; }",
+			want:    true,
+		},
+		{
+			name:    "accepts attributed direct field",
+			content: "class Job { [Column(\"catalog_id\")]\n private long catalogId; }",
+			want:    true,
+		},
+		{
+			name:    "accepts initialized direct field",
+			content: "class Job { private final UUID id = UUID.randomUUID(); }",
+			want:    true,
 		},
 		{
 			name:    "accepts positional record component",
@@ -1364,6 +1383,48 @@ func TestContextSourceSectionRecognizesOnlyStructuralDomainFields(t *testing.T) 
 		{
 			name:    "rejects multiline plain constructor parameter",
 			content: "class Job(\n catalogId: Long\n)",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			section := ContextSourceSection{
+				RenderMode: "declaration_body",
+				Content:    test.content,
+			}
+			if got := contextSourceSectionSupportsDomainModel(section); got != test.want {
+				t.Fatalf("domain structure = %v, want %v for %q", got, test.want, test.content)
+			}
+		})
+	}
+}
+
+func TestContextSourceSectionUsesPythonClassIndentationForDomainFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "rejects module field after class dedent",
+			content: "class Job:\n    pass\n\ncatalog_id: int",
+		},
+		{
+			name:    "accepts direct class field after method",
+			content: "class Job:\n    def run(self):\n        return None\n    catalog_id: int",
+			want:    true,
+		},
+		{
+			name:    "rejects field nested in method",
+			content: "class Job:\n    def run(self):\n        catalog_id: int",
+		},
+		{
+			name:    "rejects field nested in class",
+			content: "class Job:\n    class Details:\n        catalog_id: int",
+		},
+		{
+			name:    "preserves direct snippet fallback",
+			content: "catalog_id: int",
+			want:    true,
 		},
 	}
 	for _, test := range tests {

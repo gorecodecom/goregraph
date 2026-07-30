@@ -562,6 +562,14 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 		if contextSourceDeclarationHasDomainField(declaration) {
 			return true
 		}
+		if supported, pythonClass := contextSourcePythonClassSupportsDomainField(
+			lines,
+			index,
+			declarationEnd,
+			declaration,
+		); pythonClass {
+			return supported
+		}
 		body := declaration.inlineBody
 		if following := strings.Join(lines[declarationEnd+1:], "\n"); following != "" {
 			if body != "" {
@@ -648,6 +656,78 @@ func contextSourceParenthesisDepth(value string) int {
 		}
 	}
 	return depth
+}
+
+func contextSourcePythonClassSupportsDomainField(
+	lines []string,
+	declarationStart int,
+	declarationEnd int,
+	declaration contextSourceTypeDeclaration,
+) (bool, bool) {
+	if declaration.kind != "class" || declaration.inlineBody != "" {
+		return false, false
+	}
+	colon := contextSourceTopLevelSeparator(declaration.header, ':')
+	if colon < 0 {
+		return false, false
+	}
+	if inlineSuite := strings.TrimSpace(declaration.header[colon+1:]); inlineSuite != "" {
+		if contextSourcePythonDomainModelFieldLine(inlineSuite) {
+			return true, true
+		}
+		if !contextSourceDomainModelStatement(strings.Fields(inlineSuite)[0]) &&
+			inlineSuite != "pass" {
+			return false, false
+		}
+		return false, true
+	}
+
+	classIndent := sourceLeadingIndent(lines[declarationStart])
+	bodyIndent := -1
+	for _, line := range lines[declarationEnd+1:] {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		indent := sourceLeadingIndent(line)
+		if indent <= classIndent {
+			break
+		}
+		if bodyIndent < 0 {
+			bodyIndent = indent
+		}
+		if indent != bodyIndent {
+			continue
+		}
+		member := strings.TrimSpace(line)
+		if strings.HasPrefix(member, "def ") ||
+			strings.HasPrefix(member, "async def ") ||
+			strings.HasPrefix(member, "class ") {
+			continue
+		}
+		if contextSourcePythonDomainModelFieldLine(member) {
+			return true, true
+		}
+	}
+	return false, true
+}
+
+func contextSourcePythonDomainModelFieldLine(line string) bool {
+	declaration := contextSourceDomainModelDeclaration(line)
+	colon := contextSourceTopLevelSeparator(declaration, ':')
+	if colon <= 0 {
+		return false
+	}
+	name := strings.TrimSpace(declaration[:colon])
+	for index, character := range name {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			character == '_' ||
+			(index > 0 && character >= '0' && character <= '9') {
+			continue
+		}
+		return false
+	}
+	return contextSourceDomainModelFieldLine(declaration)
 }
 
 func contextSourceDeclarationHasDomainField(declaration contextSourceTypeDeclaration) bool {
@@ -744,7 +824,7 @@ func contextSourceInlineDeclarationMembers(body string) []string {
 }
 
 func contextSourceDomainModelFieldLine(line string) bool {
-	line = strings.TrimSpace(line)
+	line = contextSourceDomainModelDeclaration(line)
 	if line == "" || line == "{" || line == "}" || strings.Contains(line, "(") {
 		return false
 	}
@@ -769,6 +849,153 @@ func contextSourceDomainModelFieldLine(line string) bool {
 		return true
 	}
 	return false
+}
+
+func contextSourceDomainModelDeclaration(line string) string {
+	line = strings.TrimSpace(line)
+	for line != "" {
+		switch line[0] {
+		case '@':
+			end, found := contextSourceLeadingAnnotationEnd(line)
+			if !found {
+				return line
+			}
+			line = strings.TrimSpace(line[end:])
+		case '[':
+			end, found := contextSourceBalancedDelimiterEnd(line, 0, '[', ']')
+			if !found {
+				return line
+			}
+			line = strings.TrimSpace(line[end:])
+		default:
+			if initializer := contextSourceTopLevelSeparator(line, '='); initializer >= 0 {
+				line = line[:initializer]
+			}
+			return strings.TrimSpace(line)
+		}
+	}
+	return ""
+}
+
+func contextSourceLeadingAnnotationEnd(line string) (int, bool) {
+	if line == "" || line[0] != '@' {
+		return 0, false
+	}
+	end := 1
+	for end < len(line) {
+		character := line[end]
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '_' || character == '.' || character == '$' || character == ':' {
+			end++
+			continue
+		}
+		break
+	}
+	if end == 1 {
+		return 0, false
+	}
+	parenthesis := end
+	for parenthesis < len(line) {
+		switch line[parenthesis] {
+		case ' ', '\t', '\r', '\n':
+			parenthesis++
+		default:
+			if line[parenthesis] == '(' {
+				return contextSourceBalancedDelimiterEnd(line, parenthesis, '(', ')')
+			}
+			return end, true
+		}
+	}
+	return end, true
+}
+
+func contextSourceBalancedDelimiterEnd(
+	value string,
+	start int,
+	opening byte,
+	closing byte,
+) (int, bool) {
+	depth := 0
+	quote := byte(0)
+	escaped := false
+	for index := start; index < len(value); index++ {
+		character := value[index]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+			} else if character == '\\' {
+				escaped = true
+			} else if character == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch character {
+		case '\'', '"', '`':
+			quote = character
+		case opening:
+			depth++
+		case closing:
+			depth--
+			if depth == 0 {
+				return index + 1, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func contextSourceTopLevelSeparator(value string, separator byte) int {
+	parentheses := 0
+	brackets := 0
+	braces := 0
+	quote := byte(0)
+	escaped := false
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+			} else if character == '\\' {
+				escaped = true
+			} else if character == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch character {
+		case '\'', '"', '`':
+			quote = character
+		case '(':
+			parentheses++
+		case ')':
+			if parentheses > 0 {
+				parentheses--
+			}
+		case '[':
+			brackets++
+		case ']':
+			if brackets > 0 {
+				brackets--
+			}
+		case '{':
+			braces++
+		case '}':
+			if braces > 0 {
+				braces--
+			}
+		default:
+			if character == separator &&
+				parentheses == 0 &&
+				brackets == 0 &&
+				braces == 0 {
+				return index
+			}
+		}
+	}
+	return -1
 }
 
 func contextSourceDomainModelStatement(value string) bool {
