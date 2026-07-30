@@ -18,18 +18,30 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 			continue
 		}
 		if inlineBody, declaration := contextSourceDeclarationHeaderLine(lower); declaration {
-			line = strings.TrimSpace(inlineBody)
-			lower = strings.ToLower(line)
-		}
-		if line == "" || line == "{" || line == "}" || strings.Contains(line, "(") {
+			for _, member := range strings.Split(inlineBody, ";") {
+				if contextSourceDomainModelFieldLine(member) {
+					return true
+				}
+			}
 			continue
 		}
-		if strings.HasSuffix(line, ";") ||
-			strings.Contains(line, ": ") ||
-			strings.Contains(line, "\t") ||
-			len(strings.Fields(line)) >= 2 {
+		if contextSourceDomainModelFieldLine(line) {
 			return true
 		}
+	}
+	return false
+}
+
+func contextSourceDomainModelFieldLine(line string) bool {
+	line = strings.TrimSpace(line)
+	if line == "" || line == "{" || line == "}" || strings.Contains(line, "(") {
+		return false
+	}
+	if strings.HasSuffix(line, ";") ||
+		strings.Contains(line, ": ") ||
+		strings.Contains(line, "\t") ||
+		len(strings.Fields(line)) >= 2 {
+		return true
 	}
 	return false
 }
