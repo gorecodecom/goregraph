@@ -1342,9 +1342,28 @@ func TestContextSourceSectionRecognizesOnlyStructuralDomainFields(t *testing.T) 
 			want:    true,
 		},
 		{
+			name:    "accepts C# positional record component",
+			content: "public record Job(string CatalogId);",
+			want:    true,
+		},
+		{
+			name:    "accepts multiline positional record component",
+			content: "public record Job(\n String catalogId\n) {}",
+			want:    true,
+		},
+		{
 			name:    "accepts Kotlin primary-constructor property",
 			content: "data class Job(val catalogId: Long)",
 			want:    true,
+		},
+		{
+			name:    "accepts multiline Kotlin primary-constructor property",
+			content: "data class Job(\n val catalogId: Long\n)",
+			want:    true,
+		},
+		{
+			name:    "rejects multiline plain constructor parameter",
+			content: "class Job(\n catalogId: Long\n)",
 		},
 	}
 	for _, test := range tests {

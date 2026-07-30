@@ -554,11 +554,16 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 		if !found {
 			continue
 		}
+		declaration, declarationEnd := contextSourceCompleteTypeDeclaration(
+			lines,
+			index,
+			declaration,
+		)
 		if contextSourceDeclarationHasDomainField(declaration) {
 			return true
 		}
 		body := declaration.inlineBody
-		if following := strings.Join(lines[index+1:], "\n"); following != "" {
+		if following := strings.Join(lines[declarationEnd+1:], "\n"); following != "" {
 			if body != "" {
 				body += "\n"
 			}
@@ -609,6 +614,40 @@ func contextSourceTypeDeclarationLine(line string) (contextSourceTypeDeclaration
 	default:
 		return contextSourceTypeDeclaration{}, false
 	}
+}
+
+func contextSourceCompleteTypeDeclaration(
+	lines []string,
+	start int,
+	declaration contextSourceTypeDeclaration,
+) (contextSourceTypeDeclaration, int) {
+	end := start
+	depth := contextSourceParenthesisDepth(declaration.header)
+	for depth > 0 && end+1 < len(lines) {
+		end++
+		line := strings.TrimSpace(lines[end])
+		headerPart := line
+		if opening := strings.Index(line, "{"); opening >= 0 {
+			headerPart = strings.TrimSpace(line[:opening])
+			declaration.inlineBody = line[opening+1:]
+		}
+		declaration.header += "\n" + headerPart
+		depth += contextSourceParenthesisDepth(headerPart)
+	}
+	return declaration, end
+}
+
+func contextSourceParenthesisDepth(value string) int {
+	depth := 0
+	for _, character := range value {
+		switch character {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+	}
+	return depth
 }
 
 func contextSourceDeclarationHasDomainField(declaration contextSourceTypeDeclaration) bool {
