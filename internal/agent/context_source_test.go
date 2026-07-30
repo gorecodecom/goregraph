@@ -117,6 +117,95 @@ func TestContextDomainModelEvidenceConcernsScopeModelsAndLinkedBase(t *testing.T
 	}
 }
 
+func TestContextSourceOptionConcernsRequireRenderedDomainStructure(t *testing.T) {
+	concern := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernDomainModel,
+			"services/jobs",
+			true,
+			[]string{"job-model", "base-model"},
+			"requested job model",
+		),
+		"model:job-model",
+		[]string{"job-model", "base-model"},
+		"requested job model fields",
+	)
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "job-model", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobEntity",
+		},
+		{
+			ID: "base-model", Project: "services/jobs", Kind: "symbol",
+			Name: "BaseCatalogJobEntity",
+		},
+	}}
+	candidate := sourceCandidate{
+		FactID: "base-model", FactIDs: []string{"base-model"},
+		Project: "services/jobs", Role: contextConcernDomainModel,
+	}
+	tests := []struct {
+		name    string
+		section ContextSourceSection
+		want    bool
+	}{
+		{
+			name: "rejects signature",
+			section: ContextSourceSection{
+				Project: "services/jobs", Role: contextConcernDomainModel,
+				RenderMode: "signature", Content: "@Entity\nclass BaseCatalogJobEntity {",
+			},
+		},
+		{
+			name: "rejects wrong project",
+			section: ContextSourceSection{
+				Project: "services/catalog", Role: contextConcernDomainModel,
+				RenderMode: "declaration_body",
+				Content:    "class CatalogJobEntity {\n  long catalogId;\n}",
+			},
+		},
+		{
+			name: "accepts field body",
+			section: ContextSourceSection{
+				Project: "services/jobs", Role: contextConcernDomainModel,
+				RenderMode: "declaration_body",
+				Content:    "class BaseCatalogJobEntity {\n  long catalogId;\n  long itemId;\n}",
+			},
+			want: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			keys, _ := contextSourceOptionConcerns(
+				candidate,
+				test.section,
+				[]contextConcern{concern},
+				index,
+			)
+			if got := slices.Contains(keys, concern.key); got != test.want {
+				t.Fatalf("domain proof = %v, want %v, keys %v", got, test.want, keys)
+			}
+		})
+	}
+}
+
+func TestContextSourceSectionSupportsLanguageNeutralDomainStructure(t *testing.T) {
+	for _, content := range []string{
+		"type Job struct {\n  CatalogID int64\n}",
+		"interface Job {\n  catalogId: number;\n}",
+		"class Job:\n    catalog_id: int",
+		"class JobEntity {\n  private long catalogId;\n}",
+	} {
+		section := ContextSourceSection{
+			RenderMode: "declaration_body",
+			Content:    content,
+		}
+		if !contextSourceSectionSupportsDomainModel(section) {
+			t.Errorf("domain structure rejected: %q", content)
+		}
+	}
+}
+
 func TestContextSourceSectionSupportsOnlyMatchingEvidenceFacet(t *testing.T) {
 	base := newContextConcern(
 		contextConcernSideEffects,

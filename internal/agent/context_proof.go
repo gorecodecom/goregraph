@@ -7,6 +7,31 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
+func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool {
+	if section.RenderMode == "signature" {
+		return false
+	}
+	for _, line := range strings.Split(contextSourceSemanticContent(section.Content), "\n") {
+		line = strings.TrimSpace(line)
+		lower := strings.ToLower(line)
+		if line == "" || strings.HasPrefix(line, "@") ||
+			line == "{" || line == "}" ||
+			strings.HasPrefix(lower, "class ") ||
+			strings.HasPrefix(lower, "interface ") ||
+			strings.HasPrefix(lower, "type ") && strings.HasSuffix(line, "{") ||
+			strings.Contains(line, "(") {
+			continue
+		}
+		if strings.HasSuffix(line, ";") ||
+			strings.Contains(line, ": ") ||
+			strings.Contains(line, "\t") ||
+			len(strings.Fields(line)) >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
 func contextDomainModelEvidenceConcerns(
 	base contextConcern,
 	index scan.AgentContextIndexRecord,

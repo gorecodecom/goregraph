@@ -2102,7 +2102,9 @@ func contextSourceOptionConcernsWithAction(
 			required = true
 			continue
 		}
-		if covered && contextSourceRequiresRenderedConcernEvidence(concern.kind) {
+		if covered && concern.kind == contextConcernDomainModel {
+			covered = contextSourceSectionSupportsDomainModel(section)
+		} else if covered && contextSourceRequiresRenderedConcernEvidence(concern.kind) {
 			covered = contextSourceSectionSupportsConcern(section, concern)
 		}
 		if concern.kind == contextConcernProject {
@@ -2270,6 +2272,8 @@ func contextSourceSectionSupportsConcern(
 	semanticContent := contextSourceSemanticContent(section.Content)
 	content := strings.ToLower(semanticContent)
 	switch concern.kind {
+	case contextConcernDomainModel:
+		return contextSourceSectionSupportsDomainModel(section)
 	case contextConcernAuth:
 		return contextSourceContainsAny(content,
 			"@securityrequirement",
@@ -2806,6 +2810,7 @@ func contextSourceRequiresRenderedConcernEvidence(kind string) bool {
 	case contextConcernAuth,
 		contextConcernConfiguration,
 		contextConcernResilience,
+		contextConcernDomainModel,
 		contextConcernPersistence,
 		contextConcernSideEffects,
 		contextConcernTests:
