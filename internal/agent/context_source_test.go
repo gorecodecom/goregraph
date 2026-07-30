@@ -444,6 +444,37 @@ func TestContextSourceCoverageFromFinalSectionsRejectsStaleProof(t *testing.T) {
 	}
 }
 
+func TestContextSourceCoverageFromFinalSectionsRejectsUnboundProof(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernPersistence,
+		"services/jobs",
+		true,
+		[]string{"job-repository"},
+		"requested persistence",
+	)
+	option := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "job-service", FactIDs: []string{"job-service"},
+			Project: "services/jobs", Role: "call_chain",
+		},
+		section: ContextSourceSection{
+			Project: "services/jobs", Role: "call_chain",
+			RenderMode: "declaration_body",
+			Content:    "return service.repository.DeleteByJobID(jobID)",
+		},
+		concernKeys: []string{concern.key},
+	}
+
+	covered := contextSourceCoverageFromFinalSections(
+		ContextPack{SourceSections: []ContextSourceSection{option.section}},
+		[]contextConcern{concern},
+		[]contextSourceOption{option},
+	)
+	if covered[concern.key] {
+		t.Fatalf("unbound final section proved persistence: %#v", covered)
+	}
+}
+
 func TestAppendContextEvidenceInventoryIsBoundedAndDoesNotCreateCoverage(t *testing.T) {
 	const optionCount = 20
 	concerns := make([]contextConcern, 0, optionCount)

@@ -501,9 +501,9 @@ func contextSourceCoverageFromFinalSections(
 	concerns []contextConcern,
 	options []contextSourceOption,
 ) map[string]bool {
-	known := make(map[string]bool, len(concerns))
+	known := make(map[string]contextConcern, len(concerns))
 	for _, concern := range concerns {
-		known[concern.key] = true
+		known[concern.key] = concern
 	}
 	covered := make(map[string]bool, len(concerns))
 	for _, section := range pack.SourceSections {
@@ -512,9 +512,16 @@ func contextSourceCoverageFromFinalSections(
 				continue
 			}
 			for _, key := range option.concernKeys {
-				if known[key] {
-					covered[key] = true
+				concern, ok := known[key]
+				if !ok {
+					continue
 				}
+				if concern.kind != contextConcernProject &&
+					len(concern.candidateFactIDs) > 0 &&
+					!contextSourceOptionMatchesConcernFacts(option, concern) {
+					continue
+				}
+				covered[key] = true
 			}
 		}
 	}
