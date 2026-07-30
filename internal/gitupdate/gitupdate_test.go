@@ -1050,6 +1050,9 @@ func TestRunExecutePinsFetchAndSwitchSafetyFlags(t *testing.T) {
 }
 
 func TestRunExecuteUsesBoundedNonInteractiveSSH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Git for Windows resolves its bundled SSH before the PATH test wrapper")
+	}
 	fixture := newGitFixture(t)
 	git(t, fixture.work, "remote", "set-url", "origin", "git@example.invalid:owner/repository.git")
 
@@ -1086,6 +1089,19 @@ func TestRunExecuteUsesBoundedNonInteractiveSSH(t *testing.T) {
 	} {
 		if !strings.Contains(invocation, expected) {
 			t.Fatalf("fake SSH invocation does not contain %q:\n%s", expected, invocation)
+		}
+	}
+}
+
+func TestFetchEnvironmentBoundsSSHAndDisablesPrompts(t *testing.T) {
+	environment := fetchEnvironment("git@example.invalid:owner/repository.git")
+	for _, expected := range []string{
+		"GIT_TERMINAL_PROMPT=0",
+		"GCM_INTERACTIVE=never",
+		"GIT_SSH_COMMAND=ssh -oBatchMode=yes -oStrictHostKeyChecking=yes",
+	} {
+		if !containsArgument(environment, expected) {
+			t.Fatalf("fetch environment does not contain %q: %v", expected, environment)
 		}
 	}
 }
