@@ -206,6 +206,23 @@ func TestContextSourceSectionSupportsLanguageNeutralDomainStructure(t *testing.T
 	}
 }
 
+func TestContextSourceSectionRejectsDeclarationOnlyDomainStructure(t *testing.T) {
+	for _, content := range []string{
+		"public class Job {}",
+		"public class Job {\n  public Job() {}\n}",
+		"export class Job {}",
+		"type Job struct {}",
+	} {
+		section := ContextSourceSection{
+			RenderMode: "declaration_body",
+			Content:    content,
+		}
+		if contextSourceSectionSupportsDomainModel(section) {
+			t.Errorf("declaration-only domain structure accepted: %q", content)
+		}
+	}
+}
+
 func TestContextSourceSectionSupportsOnlyMatchingEvidenceFacet(t *testing.T) {
 	base := newContextConcern(
 		contextConcernSideEffects,

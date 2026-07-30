@@ -16,9 +16,7 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 		lower := strings.ToLower(line)
 		if line == "" || strings.HasPrefix(line, "@") ||
 			line == "{" || line == "}" ||
-			strings.HasPrefix(lower, "class ") ||
-			strings.HasPrefix(lower, "interface ") ||
-			strings.HasPrefix(lower, "type ") && strings.HasSuffix(line, "{") ||
+			contextSourceDeclarationHeaderLine(lower) ||
 			strings.Contains(line, "(") {
 			continue
 		}
@@ -26,6 +24,16 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 			strings.Contains(line, ": ") ||
 			strings.Contains(line, "\t") ||
 			len(strings.Fields(line)) >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+func contextSourceDeclarationHeaderLine(line string) bool {
+	for _, field := range strings.Fields(strings.TrimRight(line, "{}: \t")) {
+		switch field {
+		case "class", "interface", "struct", "record", "enum", "type":
 			return true
 		}
 	}
