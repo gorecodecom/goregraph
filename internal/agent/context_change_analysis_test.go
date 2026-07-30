@@ -384,10 +384,12 @@ func TestBuildContextProvesReleaseQualityWithoutPrivateRules(t *testing.T) {
 		t.Fatal("wrong-project duplicate model displaced provider evidence")
 	}
 	if pack.EstimatedTokens > DefaultContextBudgetTokens ||
+		len(pack.SourceSections) > MaxContextSourceSections ||
 		contextSourceFileCount(pack) > DefaultContextMaxFiles {
 		t.Fatalf(
-			"release-quality pack exceeds limits: tokens=%d aggregate_files=%d",
+			"release-quality pack exceeds limits: tokens=%d sections=%d aggregate_files=%d",
 			pack.EstimatedTokens,
+			len(pack.SourceSections),
 			contextSourceFileCount(pack),
 		)
 	}
