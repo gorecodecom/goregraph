@@ -672,25 +672,27 @@ func contextSourcePythonClassSupportsDomainField(
 	if declaration.kind != "class" || declaration.hasBodyBrace {
 		return false, false
 	}
-	for _, line := range lines[declarationEnd+1:] {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "{") {
-			return false, false
-		}
-		break
-	}
 	colon := contextSourceTopLevelSeparator(declaration.header, ':')
 	if colon < 0 {
 		return false, false
 	}
-	if inlineSuite := strings.TrimSpace(declaration.header[colon+1:]); inlineSuite != "" {
+	classIndent := sourceLeadingIndent(lines[declarationStart])
+	inlineSuite := strings.TrimSpace(declaration.header[colon+1:])
+	for _, line := range lines[declarationEnd+1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "{") &&
+			(sourceLeadingIndent(line) <= classIndent || inlineSuite != "") {
+			return false, false
+		}
+		break
+	}
+	if inlineSuite != "" {
 		return contextSourcePythonDomainModelFieldLine(inlineSuite), true
 	}
 
-	classIndent := sourceLeadingIndent(lines[declarationStart])
 	bodyIndent := -1
 	for _, line := range lines[declarationEnd+1:] {
 		if strings.TrimSpace(line) == "" {

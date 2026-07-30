@@ -1437,6 +1437,14 @@ func TestContextSourceSectionUsesPythonClassIndentationForDomainFields(t *testin
 			content: "class Job:\n    class Details:\n        catalog_id: int",
 		},
 		{
+			name:    "rejects direct dict expression",
+			content: "class Job:\n    {\"metadata\": int}",
+		},
+		{
+			name:    "rejects direct set expression",
+			content: "class Job:\n    {metadata}",
+		},
+		{
 			name:    "rejects module field after inline ellipsis suite",
 			content: "class Job: ...\n\ncatalog_id: int",
 		},
@@ -1510,6 +1518,11 @@ func TestContextSourceSectionPreservesBraceLanguageClassBodies(t *testing.T) {
 		{
 			name:    "accepts field after following-line brace",
 			content: "class Job : Base\n{\n private long catalogId;\n}",
+			want:    true,
+		},
+		{
+			name:    "accepts field after indented following-line brace",
+			content: "class Job : Base\n    {\n      private long catalogId;\n    }",
 			want:    true,
 		},
 		{
