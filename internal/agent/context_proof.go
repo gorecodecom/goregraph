@@ -302,7 +302,13 @@ func contextEvidenceInventoryDuplicateAddsMissingRequestedFacet(
 			!counterpart.dominated {
 			continue
 		}
-		if contextEvidenceInventoryRepresentedDominator(pack, counterpart, candidates) {
+		dominator, represented := contextEvidenceInventoryRepresentedDominatorCandidate(
+			pack,
+			counterpart,
+			candidates,
+		)
+		if represented &&
+			contextEvidenceInventoryFacetSubset(candidate.facets, dominator.facets) {
 			return false
 		}
 	}
@@ -370,6 +376,19 @@ func contextEvidenceInventoryRepresentedDominator(
 	candidate contextEvidenceInventoryCandidate,
 	candidates []contextEvidenceInventoryCandidate,
 ) bool {
+	_, represented := contextEvidenceInventoryRepresentedDominatorCandidate(
+		pack,
+		candidate,
+		candidates,
+	)
+	return represented
+}
+
+func contextEvidenceInventoryRepresentedDominatorCandidate(
+	pack ContextPack,
+	candidate contextEvidenceInventoryCandidate,
+	candidates []contextEvidenceInventoryCandidate,
+) (contextEvidenceInventoryCandidate, bool) {
 	for _, other := range candidates {
 		if candidate.production != other.production ||
 			normalizeContextProject(candidate.file.Project) !=
@@ -380,9 +399,9 @@ func contextEvidenceInventoryRepresentedDominator(
 			!contextEvidenceInventoryPathRepresented(pack, other.file) {
 			continue
 		}
-		return true
+		return other, true
 	}
-	return false
+	return contextEvidenceInventoryCandidate{}, false
 }
 
 func betterContextEvidenceInventoryScore(

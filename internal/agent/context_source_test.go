@@ -868,6 +868,150 @@ func TestAppendContextEvidenceInventoryReplacesOptionalFilesForSaturatedRequeste
 	}
 }
 
+func TestAppendContextEvidenceInventoryKeepsMissingFacetWithRepresentedProviderDominator(t *testing.T) {
+	const (
+		catalogConcernKey = "domain_model:services/catalog#catalog"
+		jobsConcernKey    = "domain_model:services/jobs#jobs"
+		baseConcernKey    = "domain_model:services/jobs#base"
+	)
+	sourceSections := []ContextSourceSection{{
+		Project:    "services/jobs",
+		Path:       "src/jobs/BaseCatalogJobEntity.java",
+		StartLine:  1,
+		EndLine:    1,
+		Role:       contextConcernDomainModel,
+		RenderMode: "declaration_body",
+		Content:    "class BaseCatalogJobEntity {}",
+	}}
+	for index := 1; index < DefaultContextMaxFiles-2; index++ {
+		sourceSections = append(sourceSections, ContextSourceSection{
+			Project:    fmt.Sprintf("services/rendered-%02d", index),
+			Path:       fmt.Sprintf("src/Rendered%02d.java", index),
+			StartLine:  1,
+			EndLine:    1,
+			Role:       contextConcernDomainModel,
+			RenderMode: "declaration_body",
+			Content:    "final class Rendered {}",
+		})
+	}
+	request := ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	}
+	pack, err := finalizeContextEstimate(ContextPack{
+		Schema:       1,
+		Query:        "compare services/catalog CatalogJobEntity with services/jobs CatalogJobEntity",
+		BudgetTokens: request.BudgetTokens,
+		Entrypoints: []ContextLocation{{
+			Project: "services/catalog",
+		}},
+		Files: []ContextFile{
+			{
+				Project: "services/optional",
+				Path:    "src/OptionalOne.java",
+				Role:    "related_project",
+				Reason:  "full task project match",
+			},
+			{
+				Project: "services/optional",
+				Path:    "src/OptionalTwo.java",
+				Role:    "related_project",
+				Reason:  "full task project match",
+			},
+		},
+		SourceSections: sourceSections,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	concerns := []contextConcern{
+		{
+			key: catalogConcernKey, kind: contextConcernDomainModel,
+			project: "services/catalog", required: true,
+		},
+		{
+			key: jobsConcernKey, kind: contextConcernDomainModel,
+			project: "services/jobs", required: true,
+		},
+		{
+			key: baseConcernKey, kind: contextConcernDomainModel,
+			project: "services/jobs", required: true,
+		},
+	}
+	modelOption := func(
+		factID string,
+		project string,
+		path string,
+		name string,
+		concernKeys ...string,
+	) contextSourceOption {
+		return contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: factID, Project: project, Path: path,
+				Role: contextConcernDomainModel, Kind: "symbol", Name: name,
+			},
+			section: ContextSourceSection{
+				Project: project, Path: path, StartLine: 1, EndLine: 1,
+				Role: contextConcernDomainModel, RenderMode: "declaration_body",
+				Content: "class " + name + " {}",
+			},
+			concernKeys:    concernKeys,
+			projectKey:     project,
+			required:       true,
+			requestedModel: true,
+			profiled:       true,
+		}
+	}
+	options := []contextSourceOption{
+		modelOption(
+			"catalog-model",
+			"services/catalog",
+			"src/catalog/CatalogJobEntity.java",
+			"CatalogJobEntity",
+			catalogConcernKey,
+		),
+		modelOption(
+			"jobs-model",
+			"services/jobs",
+			"src/jobs/CatalogJobEntity.java",
+			"CatalogJobEntity",
+			jobsConcernKey,
+		),
+		modelOption(
+			"jobs-base-model",
+			"services/jobs",
+			"src/jobs/BaseCatalogJobEntity.java",
+			"BaseCatalogJobEntity",
+			jobsConcernKey,
+			baseConcernKey,
+		),
+	}
+
+	got, err := appendContextEvidenceInventory(pack, request, options, concerns)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !contextEvidenceInventoryPathRepresented(got, ContextFile{
+		Project: "services/catalog",
+		Path:    "src/catalog/CatalogJobEntity.java",
+	}) {
+		t.Fatal("represented provider dominator incorrectly suppressed the missing catalog facet")
+	}
+	if !contextEvidenceInventoryPathRepresented(got, ContextFile{
+		Project: "services/jobs",
+		Path:    "src/jobs/BaseCatalogJobEntity.java",
+	}) {
+		t.Fatal("represented provider dominator was removed")
+	}
+	if count := contextSourceFileCount(got); count != DefaultContextMaxFiles {
+		t.Fatalf("aggregate source file count = %d, want %d", count, DefaultContextMaxFiles)
+	}
+	if !reflect.DeepEqual(got.SourceSections, pack.SourceSections) {
+		t.Fatalf("source sections changed during evidence repair:\nwant: %#v\ngot:  %#v", pack.SourceSections, got.SourceSections)
+	}
+}
+
 func TestAppendContextEvidenceInventoryIsDeterministicAndKeepsSameRolePaths(t *testing.T) {
 	concerns, options := contextEvidenceInventoryRepairFixture()
 	files := make([]ContextFile, 0, DefaultContextMaxFiles)

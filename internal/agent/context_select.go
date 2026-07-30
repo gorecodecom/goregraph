@@ -1668,6 +1668,10 @@ func appendContextSourceCandidateOptions(
 		candidate,
 		requestedModelIDs,
 	)
+	if requestedModel &&
+		contextSourceInferredPrimaryProjectModelDuplicate(pack, index, candidate) {
+		requestedModel = false
+	}
 	stableMatches := contextSourceStableDomainMatchesForFacts(facts, domainTokens)
 	requestedActions := contextEndpointRequestedActions(contextSelectionQuery(pack))
 	actionAligned := len(requestedActions) == 0 ||
@@ -2054,6 +2058,35 @@ func contextSourceCandidateHasRequestedModel(
 		if requestedModelIDs[factID] {
 			return true
 		}
+	}
+	return false
+}
+
+func contextSourceInferredPrimaryProjectModelDuplicate(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	candidate sourceCandidate,
+) bool {
+	if len(pack.Entrypoints) == 0 ||
+		normalizeContextProject(candidate.Project) !=
+			normalizeContextProject(pack.Entrypoints[0].Project) {
+		return false
+	}
+	identity := compactContextIdentifier(firstNonEmptyContext(
+		candidate.Name,
+		candidate.Qualified,
+	))
+	if identity == "" ||
+		strings.Contains(compactContextIdentifier(contextSelectionQuery(pack)), identity) {
+		return false
+	}
+	for _, fact := range index.Facts {
+		if normalizeContextProject(fact.Project) ==
+			normalizeContextProject(candidate.Project) ||
+			compactContextIdentifier(firstNonEmptyContext(fact.Name, fact.Qualified)) != identity {
+			continue
+		}
+		return true
 	}
 	return false
 }
