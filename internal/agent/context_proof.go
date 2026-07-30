@@ -7,6 +7,31 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
+func contextSourceCoverageFromFinalSections(
+	pack ContextPack,
+	concerns []contextConcern,
+	options []contextSourceOption,
+) map[string]bool {
+	known := make(map[string]bool, len(concerns))
+	for _, concern := range concerns {
+		known[concern.key] = true
+	}
+	covered := make(map[string]bool, len(concerns))
+	for _, section := range pack.SourceSections {
+		for _, option := range options {
+			if option.section != section {
+				continue
+			}
+			for _, key := range option.concernKeys {
+				if known[key] {
+					covered[key] = true
+				}
+			}
+		}
+	}
+	return covered
+}
+
 func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool {
 	if section.RenderMode == "signature" {
 		return false

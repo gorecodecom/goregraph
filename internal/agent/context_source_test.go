@@ -41,8 +41,10 @@ func TestApplyContextSourceCoverageRequiresEveryInternalFacet(t *testing.T) {
 		[]contextConcern{regular, change},
 		map[string]bool{regular.key: true},
 	)
-	if pack.SourceCoverage != "partial" || pack.Concerns[0].Covered {
-		t.Fatalf("one of two persistence facets reported complete: %#v", pack)
+	if pack.SourceCoverage != "partial" ||
+		pack.SourceUnrepresented != 1 ||
+		pack.Concerns[0].Covered {
+		t.Fatalf("partial final proof was reported complete: %#v", pack)
 	}
 
 	applyContextSourceCoverage(
@@ -52,6 +54,50 @@ func TestApplyContextSourceCoverageRequiresEveryInternalFacet(t *testing.T) {
 	)
 	if pack.SourceCoverage != "complete" || !pack.Concerns[0].Covered {
 		t.Fatalf("all persistence facets did not aggregate: %#v", pack)
+	}
+}
+
+func TestContextSourceCoverageFromFinalSectionsRejectsStaleProof(t *testing.T) {
+	concern := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernAuth,
+			"libraries/job-client",
+			true,
+			[]string{"client-auth"},
+			"selected client authentication",
+		),
+		"client_transport",
+		[]string{"client-auth"},
+		"client transport authentication",
+	)
+	proving := contextSourceOption{
+		candidate: sourceCandidate{FactID: "client-auth"},
+		section: ContextSourceSection{
+			Project: "libraries/job-client", Path: "JobClient.java",
+			StartLine: 10, EndLine: 14, RenderMode: "focused",
+			Content: "headers.setBasicAuth(user, password);",
+		},
+		concernKeys: []string{concern.key},
+	}
+	nonProvingUpgrade := contextSourceOption{
+		candidate: proving.candidate,
+		section: ContextSourceSection{
+			Project: "libraries/job-client", Path: "JobClient.java",
+			StartLine: 20, EndLine: 28, RenderMode: "declaration_body",
+			Content: "List<Job> listJobs() {\n  return client.get(path);\n}",
+		},
+	}
+	pack := ContextPack{
+		SourceSections: []ContextSourceSection{nonProvingUpgrade.section},
+	}
+
+	covered := contextSourceCoverageFromFinalSections(
+		pack,
+		[]contextConcern{concern},
+		[]contextSourceOption{proving, nonProvingUpgrade},
+	)
+	if covered[concern.key] {
+		t.Fatalf("stale authentication proof survived final section audit: %#v", covered)
 	}
 }
 

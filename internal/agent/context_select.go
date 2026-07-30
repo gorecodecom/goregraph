@@ -163,7 +163,8 @@ func selectContextSourceOptions(
 			return ContextPack{}, err
 		}
 	}
-	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
+	covered := contextSourceCoverageFromFinalSections(pack, concerns, options)
+	applyContextSourceCoverage(&pack, concerns, covered)
 	for _, omission := range contextSourceEvidenceOmissionsWithOptions(
 		pack,
 		loaded.Index,
@@ -171,7 +172,7 @@ func selectContextSourceOptions(
 		candidates,
 		options,
 		failures,
-		state.coveredConcerns,
+		covered,
 	) {
 		candidate := cloneContextPack(pack)
 		candidate.SourceOmissions = append(candidate.SourceOmissions, omission)
@@ -191,6 +192,8 @@ func selectContextSourceOptions(
 		pack.SourceUnrepresented = 0
 	}
 	pack.SourceSections = contextSourceSectionsProductionFirst(pack.SourceSections)
+	covered = contextSourceCoverageFromFinalSections(pack, concerns, options)
+	applyContextSourceCoverage(&pack, concerns, covered)
 	return finalizeContextPackWithinBudget(pack, request)
 }
 
