@@ -263,6 +263,16 @@ func TestContextSourceSectionSupportsInlineDomainFieldBeforeConstructor(t *testi
 	}
 }
 
+func TestContextSourceSectionSupportsInlineDomainFieldAfterConstructor(t *testing.T) {
+	section := ContextSourceSection{
+		RenderMode: "declaration_body",
+		Content:    "public class Job { public Job() {} private String id; }",
+	}
+	if !contextSourceSectionSupportsDomainModel(section) {
+		t.Fatal("inline domain field after constructor was rejected")
+	}
+}
+
 func TestContextSourceSectionSupportsOnlyMatchingEvidenceFacet(t *testing.T) {
 	base := newContextConcern(
 		contextConcernSideEffects,

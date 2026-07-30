@@ -18,7 +18,7 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 			continue
 		}
 		if inlineBody, declaration := contextSourceDeclarationHeaderLine(lower); declaration {
-			for _, member := range strings.Split(inlineBody, ";") {
+			for _, member := range contextSourceInlineDeclarationMembers(inlineBody) {
 				if contextSourceDomainModelFieldLine(member) {
 					return true
 				}
@@ -30,6 +30,57 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 		}
 	}
 	return false
+}
+
+func contextSourceInlineDeclarationMembers(body string) []string {
+	var members []string
+	memberStart := 0
+	parenthesisDepth := 0
+	braceDepth := 0
+	memberHasParameters := false
+	blockEndsMember := false
+
+	for index, character := range body {
+		switch character {
+		case '(':
+			if braceDepth == 0 && parenthesisDepth == 0 {
+				memberHasParameters = true
+			}
+			parenthesisDepth++
+		case ')':
+			if parenthesisDepth > 0 {
+				parenthesisDepth--
+			}
+		case '{':
+			if braceDepth == 0 {
+				blockEndsMember = memberHasParameters && parenthesisDepth == 0
+			}
+			braceDepth++
+		case '}':
+			if braceDepth == 0 {
+				members = append(members, body[memberStart:index])
+				return members
+			}
+			braceDepth--
+			if braceDepth == 0 && blockEndsMember {
+				members = append(members, body[memberStart:index+1])
+				memberStart = index + 1
+				memberHasParameters = false
+				blockEndsMember = false
+			}
+		case ';':
+			if braceDepth == 0 && parenthesisDepth == 0 {
+				members = append(members, body[memberStart:index+1])
+				memberStart = index + 1
+				memberHasParameters = false
+				blockEndsMember = false
+			}
+		}
+	}
+	if memberStart < len(body) {
+		members = append(members, body[memberStart:])
+	}
+	return members
 }
 
 func contextSourceDomainModelFieldLine(line string) bool {
