@@ -469,6 +469,17 @@ func expandContextEvidenceConcernsWithProfile(
 	result := make([]contextConcern, 0, len(concerns)+len(requestedModels))
 	for _, concern := range concerns {
 		switch concern.kind {
+		case contextConcernDomainModel:
+			modelConcerns := contextDomainModelEvidenceConcerns(
+				concern,
+				index,
+				requestedModels,
+			)
+			if len(modelConcerns) == 0 {
+				result = append(result, concern)
+			} else {
+				result = append(result, modelConcerns...)
+			}
 		case contextConcernAuth:
 			added := false
 			if contractProjects[concern.project] {

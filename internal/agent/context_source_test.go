@@ -55,6 +55,68 @@ func TestApplyContextSourceCoverageRequiresEveryInternalFacet(t *testing.T) {
 	}
 }
 
+func TestContextDomainModelEvidenceConcernsScopeModelsAndLinkedBase(t *testing.T) {
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "consumer-job", Project: "services/catalog", Kind: "symbol",
+				Name: "CatalogJobEntity", Qualified: "catalog.CatalogJobEntity",
+				File: "CatalogJobEntity.java",
+			},
+			{
+				ID: "regular-job", Project: "services/jobs", Kind: "symbol",
+				Name: "CatalogJobEntity", Qualified: "jobs.CatalogJobEntity",
+				File: "CatalogJobEntity.java",
+			},
+			{
+				ID: "change-job", Project: "services/jobs", Kind: "symbol",
+				Name: "CatalogChangeJobEntity", Qualified: "jobs.CatalogChangeJobEntity",
+				File: "CatalogChangeJobEntity.java",
+			},
+			{
+				ID: "base-job", Project: "services/jobs", Kind: "symbol",
+				Name: "BaseCatalogJobEntity", Qualified: "jobs.BaseCatalogJobEntity",
+				File: "BaseCatalogJobEntity.java",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{
+			{
+				ID: "regular-extends-base", FromFactID: "regular-job",
+				ToFactID: "base-job", Kind: "extends", Confidence: "EXACT",
+			},
+			{
+				ID: "change-extends-base", FromFactID: "change-job",
+				ToFactID: "base-job", Kind: "extends", Confidence: "EXACT",
+			},
+		},
+	}
+	base := newContextConcern(
+		contextConcernDomainModel,
+		"",
+		true,
+		[]string{"consumer-job", "regular-job", "change-job"},
+		"requested task types and lookup attributes",
+	)
+
+	got := contextDomainModelEvidenceConcerns(
+		base,
+		index,
+		map[string]bool{"regular-job": true, "change-job": true},
+	)
+	if len(got) != 2 {
+		t.Fatalf("domain evidence concerns = %#v, want two requested models", got)
+	}
+	for _, concern := range got {
+		if concern.project != "services/jobs" ||
+			concern.publicKey != contextConcernDomainModel ||
+			!strings.HasPrefix(concern.facet, "model:") ||
+			!slices.Contains(concern.candidateFactIDs, "base-job") ||
+			slices.Contains(concern.candidateFactIDs, "consumer-job") {
+			t.Fatalf("scoped domain concern = %#v", concern)
+		}
+	}
+}
+
 func TestContextSourceSectionSupportsOnlyMatchingEvidenceFacet(t *testing.T) {
 	base := newContextConcern(
 		contextConcernSideEffects,
