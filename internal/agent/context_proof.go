@@ -592,18 +592,21 @@ func contextSourceSectionSupportsDomainModel(section ContextSourceSection) bool 
 }
 
 type contextSourceTypeDeclaration struct {
-	header     string
-	inlineBody string
-	kind       string
+	header       string
+	inlineBody   string
+	kind         string
+	hasBodyBrace bool
 }
 
 func contextSourceTypeDeclarationLine(line string) (contextSourceTypeDeclaration, bool) {
 	line = strings.TrimSpace(line)
 	header := line
 	inlineBody := ""
+	hasBodyBrace := false
 	if opening := strings.Index(line, "{"); opening >= 0 {
 		header = strings.TrimSpace(line[:opening])
 		inlineBody = line[opening+1:]
+		hasBodyBrace = true
 	}
 	fields := strings.Fields(strings.TrimSuffix(header, ":"))
 	for len(fields) > 0 && contextSourceDeclarationModifier(fields[0]) {
@@ -615,9 +618,10 @@ func contextSourceTypeDeclarationLine(line string) (contextSourceTypeDeclaration
 	switch fields[0] {
 	case "class", "interface", "struct", "record", "enum", "type":
 		return contextSourceTypeDeclaration{
-			header:     header,
-			inlineBody: inlineBody,
-			kind:       fields[0],
+			header:       header,
+			inlineBody:   inlineBody,
+			kind:         fields[0],
+			hasBodyBrace: hasBodyBrace,
 		}, true
 	default:
 		return contextSourceTypeDeclaration{}, false
@@ -638,6 +642,7 @@ func contextSourceCompleteTypeDeclaration(
 		if opening := strings.Index(line, "{"); opening >= 0 {
 			headerPart = strings.TrimSpace(line[:opening])
 			declaration.inlineBody = line[opening+1:]
+			declaration.hasBodyBrace = true
 		}
 		declaration.header += "\n" + headerPart
 		depth += contextSourceParenthesisDepth(headerPart)
@@ -664,8 +669,18 @@ func contextSourcePythonClassSupportsDomainField(
 	declarationEnd int,
 	declaration contextSourceTypeDeclaration,
 ) (bool, bool) {
-	if declaration.kind != "class" || declaration.inlineBody != "" {
+	if declaration.kind != "class" || declaration.hasBodyBrace {
 		return false, false
+	}
+	for _, line := range lines[declarationEnd+1:] {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "{") {
+			return false, false
+		}
+		break
 	}
 	colon := contextSourceTopLevelSeparator(declaration.header, ':')
 	if colon < 0 {

@@ -1496,6 +1496,44 @@ func TestContextSourceSectionUsesPythonClassIndentationForDomainFields(t *testin
 	}
 }
 
+func TestContextSourceSectionPreservesBraceLanguageClassBodies(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "accepts field after declaration-line brace",
+			content: "class Job : Base {\n private long catalogId;\n}",
+			want:    true,
+		},
+		{
+			name:    "accepts field after following-line brace",
+			content: "class Job : Base\n{\n private long catalogId;\n}",
+			want:    true,
+		},
+		{
+			name:    "rejects empty declaration-line brace body",
+			content: "class Job : Base {\n}",
+		},
+		{
+			name:    "rejects empty following-line brace body",
+			content: "class Job : Base\n{\n}",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			section := ContextSourceSection{
+				RenderMode: "declaration_body",
+				Content:    test.content,
+			}
+			if got := contextSourceSectionSupportsDomainModel(section); got != test.want {
+				t.Fatalf("domain structure = %v, want %v for %q", got, test.want, test.content)
+			}
+		})
+	}
+}
+
 func TestContextSourceSectionSupportsDomainFieldsWithDeclarationKeywordTypes(t *testing.T) {
 	for _, content := range []string{
 		"private Record metadata;",
