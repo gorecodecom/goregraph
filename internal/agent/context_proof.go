@@ -8,11 +8,12 @@ import (
 )
 
 type contextEvidenceInventoryCandidate struct {
-	file       ContextFile
-	facets     map[string]bool
-	production bool
-	quality    int
-	dominated  bool
+	file                    ContextFile
+	facets                  map[string]bool
+	production              bool
+	quality                 int
+	dominated               bool
+	primaryProjectDuplicate bool
 }
 
 type contextEvidenceInventoryScore struct {
@@ -39,11 +40,16 @@ func appendContextEvidenceInventory(
 		if contextEvidenceInventoryPathRepresented(pack, required.file) {
 			continue
 		}
+		if contextSourceFileCount(pack) >= request.MaxFiles &&
+			required.primaryProjectDuplicate {
+			continue
+		}
 		best := ContextPack{}
 		bestScore := contextEvidenceInventoryScore{}
 		found := false
 		replacementIndexes := []int{-1}
-		if len(pack.Files) >= request.MaxFiles {
+		if len(pack.Files) >= request.MaxFiles ||
+			contextSourceFileCount(pack) >= request.MaxFiles {
 			replacementIndexes = replacementIndexes[:0]
 			for index, file := range pack.Files {
 				if !contextEvidenceInventoryMandatoryFile(pack, file) {
@@ -122,6 +128,14 @@ func contextEvidenceInventoryCandidates(
 		if len(matched) == 0 {
 			continue
 		}
+		primaryProjectDuplicate := false
+		for _, concern := range matched {
+			if concern.kind == contextConcernDomainModel &&
+				contextEvidenceInventoryPrimaryProjectDuplicateCandidate(pack, option, options) {
+				primaryProjectDuplicate = true
+				break
+			}
+		}
 		sort.Slice(matched, func(i, j int) bool { return matched[i].key < matched[j].key })
 		pathKey := contextEvidenceInventoryPathKey(option.section.Project, option.section.Path)
 		candidate := byPath[pathKey]
@@ -133,9 +147,10 @@ func contextEvidenceInventoryCandidates(
 					StartLine: option.section.StartLine,
 					EndLine:   option.section.EndLine,
 				},
-				facets:     make(map[string]bool),
-				production: option.candidate.Role != "test",
-				quality:    contextSourceEffectiveQuality(pack, option),
+				facets:                  make(map[string]bool),
+				production:              option.candidate.Role != "test",
+				quality:                 contextSourceEffectiveQuality(pack, option),
+				primaryProjectDuplicate: primaryProjectDuplicate,
 			}
 			byPath[pathKey] = candidate
 		} else {
@@ -148,6 +163,8 @@ func contextEvidenceInventoryCandidates(
 			}
 			candidate.production = candidate.production || option.candidate.Role != "test"
 			candidate.quality = max(candidate.quality, contextSourceEffectiveQuality(pack, option))
+			candidate.primaryProjectDuplicate =
+				candidate.primaryProjectDuplicate || primaryProjectDuplicate
 		}
 		for _, concern := range matched {
 			candidate.facets[concern.key] = true
@@ -198,6 +215,17 @@ func contextEvidenceInventoryPrimaryProjectDuplicate(
 	option contextSourceOption,
 	options []contextSourceOption,
 ) bool {
+	if option.requestedModel {
+		return false
+	}
+	return contextEvidenceInventoryPrimaryProjectDuplicateCandidate(pack, option, options)
+}
+
+func contextEvidenceInventoryPrimaryProjectDuplicateCandidate(
+	pack ContextPack,
+	option contextSourceOption,
+	options []contextSourceOption,
+) bool {
 	if len(pack.Entrypoints) == 0 {
 		return false
 	}
@@ -232,6 +260,9 @@ func contextEvidenceInventoryCandidateBetter(
 ) bool {
 	if left.production != right.production {
 		return left.production
+	}
+	if left.primaryProjectDuplicate != right.primaryProjectDuplicate {
+		return !left.primaryProjectDuplicate
 	}
 	if left.dominated != right.dominated {
 		return !left.dominated
