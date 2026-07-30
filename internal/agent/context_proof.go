@@ -14,6 +14,7 @@ type contextEvidenceInventoryCandidate struct {
 	quality                 int
 	dominated               bool
 	primaryProjectDuplicate bool
+	modelIdentity           string
 }
 
 type contextEvidenceInventoryScore struct {
@@ -40,8 +41,8 @@ func appendContextEvidenceInventory(
 		if contextEvidenceInventoryPathRepresented(pack, required.file) {
 			continue
 		}
-		if contextSourceFileCount(pack) >= request.MaxFiles &&
-			required.primaryProjectDuplicate {
+		if required.primaryProjectDuplicate &&
+			!contextEvidenceInventoryDuplicateAddsMissingRequestedFacet(pack, required, candidates) {
 			continue
 		}
 		best := ContextPack{}
@@ -151,6 +152,10 @@ func contextEvidenceInventoryCandidates(
 				production:              option.candidate.Role != "test",
 				quality:                 contextSourceEffectiveQuality(pack, option),
 				primaryProjectDuplicate: primaryProjectDuplicate,
+				modelIdentity: compactContextIdentifier(firstNonEmptyContext(
+					option.candidate.Name,
+					option.candidate.Qualified,
+				)),
 			}
 			byPath[pathKey] = candidate
 		} else {
@@ -165,6 +170,12 @@ func contextEvidenceInventoryCandidates(
 			candidate.quality = max(candidate.quality, contextSourceEffectiveQuality(pack, option))
 			candidate.primaryProjectDuplicate =
 				candidate.primaryProjectDuplicate || primaryProjectDuplicate
+			if candidate.modelIdentity == "" {
+				candidate.modelIdentity = compactContextIdentifier(firstNonEmptyContext(
+					option.candidate.Name,
+					option.candidate.Qualified,
+				))
+			}
 		}
 		for _, concern := range matched {
 			candidate.facets[concern.key] = true
@@ -275,6 +286,27 @@ func contextEvidenceInventoryCandidateBetter(
 	}
 	return contextEvidenceInventoryPathKey(left.file.Project, left.file.Path) <
 		contextEvidenceInventoryPathKey(right.file.Project, right.file.Path)
+}
+
+func contextEvidenceInventoryDuplicateAddsMissingRequestedFacet(
+	pack ContextPack,
+	candidate contextEvidenceInventoryCandidate,
+	candidates []contextEvidenceInventoryCandidate,
+) bool {
+	for _, counterpart := range candidates {
+		if counterpart.primaryProjectDuplicate ||
+			counterpart.modelIdentity == "" ||
+			counterpart.modelIdentity != candidate.modelIdentity ||
+			normalizeContextProject(counterpart.file.Project) ==
+				normalizeContextProject(candidate.file.Project) ||
+			!counterpart.dominated {
+			continue
+		}
+		if contextEvidenceInventoryRepresentedDominator(pack, counterpart, candidates) {
+			return false
+		}
+	}
+	return true
 }
 
 func contextEvidenceInventoryFacetSubset(left, right map[string]bool) bool {
