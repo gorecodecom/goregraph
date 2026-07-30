@@ -17,18 +17,20 @@ import (
 )
 
 type sourceCandidate struct {
-	FactID      string
-	FactIDs     []string
-	Project     string
-	Path        string
-	StartLine   int
-	EndLine     int
-	Role        string
-	Kind        string
-	Name        string
-	Qualified   string
-	SourceState string
-	Priority    int
+	FactID         string
+	FactIDs        []string
+	Project        string
+	Path           string
+	StartLine      int
+	EndLine        int
+	Role           string
+	Kind           string
+	Name           string
+	Qualified      string
+	SourceState    string
+	Priority       int
+	InventoryOnly  bool
+	InventoryGroup string
 }
 
 type sourceFile struct {

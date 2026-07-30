@@ -3813,6 +3813,250 @@ interface JobRepository extends CrudRepository<JobEntity, Long> {
 	}
 }
 
+func TestContextEvidenceInventoryKeepsDistinctInheritedDeleteRepositories(t *testing.T) {
+	const project = "services/jobs"
+	repositories := []struct {
+		factID string
+		model  string
+		path   string
+	}{
+		{
+			factID: "pending-delete", model: "PendingJob",
+			path: "src/main/java/example/PendingJobRepository.java",
+		},
+		{
+			factID: "archived-delete", model: "ArchivedJob",
+			path: "src/main/java/example/ArchivedJobRepository.java",
+		},
+	}
+	root := t.TempDir()
+	facts := make([]scan.AgentContextFactRecord, 0, 2*len(repositories))
+	candidates := make([]sourceCandidate, 0, len(repositories))
+	concerns := make([]contextConcern, 0, len(repositories))
+	for _, repository := range repositories {
+		owner := repository.model + "Repository"
+		writeSourceFile(t, root, filepath.Join(project, repository.path), fmt.Sprintf(`package example;
+interface %s extends JpaRepository<%s, Long> {
+}
+`, owner, repository.model))
+		confidence := "EXTRACTED"
+		if repository.model == "PendingJob" {
+			confidence = "EXACT"
+		}
+		facts = append(facts,
+			scan.AgentContextFactRecord{
+				ID: repository.factID, Project: project, Kind: contextConcernPersistence,
+				Name: "delete", Qualified: owner + ".delete",
+				File: repository.path, Line: 2, Confidence: confidence,
+				Search: "delete job repository",
+			},
+			scan.AgentContextFactRecord{
+				ID: repository.factID + "-owner", Project: project, Kind: "symbol",
+				Name: owner, Qualified: "example." + owner,
+				File: repository.path, Line: 2, Confidence: "EXACT",
+				Search: owner + " repository",
+			},
+		)
+		candidates = append(candidates, sourceCandidate{
+			FactID: repository.factID, FactIDs: []string{repository.factID},
+			Project: project, Path: repository.path, StartLine: 2,
+			Role: contextConcernPersistence, Kind: contextConcernPersistence,
+			Name: "delete", Qualified: owner + ".delete",
+		})
+		concerns = append(concerns, contextConcern{
+			key:  "persistence:" + project + "#model:" + repository.model,
+			kind: contextConcernPersistence, project: project, required: true,
+			facet:            "delete",
+			candidateFactIDs: []string{repository.factID},
+			reason:           "required delete persistence evidence for " + repository.model,
+		})
+	}
+	files := make([]ContextFile, 0, DefaultContextMaxFiles)
+	for index := 0; index < DefaultContextMaxFiles; index++ {
+		files = append(files, ContextFile{
+			Project: "services/optional",
+			Path:    fmt.Sprintf("src/Optional%02d.java", index),
+			Role:    "related_project",
+			Reason:  "optional related source",
+		})
+	}
+	pack, err := finalizeContextEstimate(ContextPack{
+		Schema: 1, Query: "remove pending and archived jobs",
+		BudgetTokens: DefaultContextBudgetTokens,
+		Files:        files,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := scan.AgentContextIndexRecord{Facts: facts}
+	options, failures, err := contextSourceRenderOptions(
+		pack,
+		loadedContextIndex{ScopeRoot: root, Workspace: true, Index: index},
+		candidates,
+		concerns,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options = contextSourceProofFrontier(pack, options, concerns)
+	reversedCandidates := slices.Clone(candidates)
+	slices.Reverse(reversedCandidates)
+	reversedOptions, _, err := contextSourceRenderOptions(
+		pack,
+		loadedContextIndex{ScopeRoot: root, Workspace: true, Index: index},
+		reversedCandidates,
+		concerns,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversedOptions = contextSourceProofFrontier(pack, reversedOptions, concerns)
+	representativePath := func(candidateOptions []contextSourceOption) string {
+		paths := make(map[string]bool)
+		for _, option := range candidateOptions {
+			if !option.candidate.InventoryOnly {
+				paths[option.candidate.Path] = true
+			}
+		}
+		if len(paths) != 1 {
+			t.Fatalf("renderable inherited owner paths = %#v, want one", paths)
+		}
+		for path := range paths {
+			return path
+		}
+		return ""
+	}
+	if gotPath, reversedPath := representativePath(options), representativePath(reversedOptions); gotPath != repositories[0].path || reversedPath != gotPath {
+		t.Fatalf(
+			"inherited owner representative = %q / reversed %q, want stronger %q",
+			gotPath,
+			reversedPath,
+			repositories[0].path,
+		)
+	}
+	request := ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	}
+	got, err := appendContextEvidenceInventory(
+		pack,
+		request,
+		options,
+		concerns,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, repository := range repositories {
+		if !contextPackContainsFileSuffix(got, repository.path) {
+			t.Errorf(
+				"inherited delete repository %q missing; render failures: %#v",
+				repository.path,
+				failures,
+			)
+		}
+	}
+	if len(got.Files) != DefaultContextMaxFiles ||
+		contextSourceFileCount(got) > DefaultContextMaxFiles ||
+		got.EstimatedTokens > DefaultContextBudgetTokens {
+		t.Fatalf(
+			"repository inventory exceeded limits: files=%d aggregate=%d tokens=%d",
+			len(got.Files),
+			contextSourceFileCount(got),
+			got.EstimatedTokens,
+		)
+	}
+	state := newContextSourceSelectionState(len(options), len(concerns))
+	representative := contextSourceOption{}
+	for _, option := range options {
+		if !option.candidate.InventoryOnly {
+			representative = option
+			break
+		}
+	}
+	fits, fitErr := contextSourceOptionFits(
+		got,
+		request,
+		representative,
+		concerns,
+		state,
+	)
+	if fitErr != nil {
+		t.Fatal(fitErr)
+	}
+	if !fits {
+		t.Fatalf("stronger inherited owner %q was not renderable", representative.candidate.Path)
+	}
+	selected, state, err := addContextSourceOption(
+		got,
+		request,
+		representative,
+		concerns,
+		state,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, option := range options {
+		if option.candidate.Path == representative.candidate.Path {
+			continue
+		}
+		fits, fitErr = contextSourceOptionFits(selected, request, option, concerns, state)
+		if fitErr != nil {
+			t.Fatal(fitErr)
+		}
+		if fits {
+			t.Errorf(
+				"second inherited delete owner %q became rendered coverage",
+				option.candidate.Path,
+			)
+		}
+	}
+	covered := contextSourceCoverageFromFinalSections(selected, concerns, options)
+	coveredCount := 0
+	for _, concern := range concerns {
+		if covered[concern.key] {
+			coveredCount++
+		}
+	}
+	if coveredCount != 1 {
+		t.Fatalf("rendered model-scoped persistence coverage = %#v, want one distinct facet", covered)
+	}
+	omissions := contextSourceEvidenceOmissionsWithOptions(
+		selected,
+		index,
+		concerns,
+		candidates,
+		options,
+		failures,
+		covered,
+	)
+	if len(omissions) != 1 ||
+		!strings.HasSuffix(omissions[0].Path, repositories[1].path) ||
+		!strings.Contains(omissions[0].Reason, "missing evidence") {
+		t.Fatalf(
+			"representative %q covered %#v; unrendered inherited owner omissions = %#v",
+			representative.candidate.Path,
+			covered,
+			omissions,
+		)
+	}
+	if contextGenericPersistenceFact(scan.AgentContextFactRecord{
+		Kind: "symbol",
+		Name: "delete",
+	}) {
+		t.Fatal("non-persistence delete was classified as inherited persistence")
+	}
+	if contextGenericPersistenceFact(scan.AgentContextFactRecord{
+		Kind: contextConcernPersistence,
+		Name: "delete",
+	}) {
+		t.Fatal("explicit delete was globally classified as generic persistence")
+	}
+}
+
 func TestRenderSourceCandidateRelocatesUniqueDeclaration(t *testing.T) {
 	lines := []string{
 		"package users;",

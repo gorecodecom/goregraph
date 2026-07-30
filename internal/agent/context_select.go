@@ -1628,7 +1628,55 @@ func contextSourceProofFrontier(
 			result = append(result, option)
 		}
 	}
-	return result
+	return contextSourceCapInheritedOwnerRendering(pack, result, concerns)
+}
+
+func contextSourceCapInheritedOwnerRendering(
+	pack ContextPack,
+	options []contextSourceOption,
+	concerns []contextConcern,
+) []contextSourceOption {
+	knownConcerns := make(map[string]contextConcern, len(concerns))
+	for _, concern := range concerns {
+		knownConcerns[concern.key] = concern
+	}
+	for index := range options {
+		if options[index].candidate.InventoryGroup == "" {
+			continue
+		}
+		proven := contextSourceOptionProvenConcernKeys(options[index], knownConcerns)
+		keys := make([]string, 0, len(options[index].concernKeys))
+		for _, key := range options[index].concernKeys {
+			if proven[key] {
+				keys = append(keys, key)
+			}
+		}
+		options[index].concernKeys = keys
+	}
+	representatives := make(map[string]contextSourceOption)
+	for _, option := range options {
+		group := option.candidate.InventoryGroup
+		if group == "" {
+			continue
+		}
+		current, found := representatives[group]
+		if !found || betterContextProjectBoundaryOption(pack, option, current) {
+			representatives[group] = option
+		}
+	}
+	representativeKeys := make(map[string]string, len(representatives))
+	for group, option := range representatives {
+		representativeKeys[group] = contextSourceCandidateKey(option.candidate)
+	}
+	for index := range options {
+		group := options[index].candidate.InventoryGroup
+		if group == "" {
+			continue
+		}
+		options[index].candidate.InventoryOnly =
+			contextSourceCandidateKey(options[index].candidate) != representativeKeys[group]
+	}
+	return options
 }
 
 func contextSourceOptionMatchesConcernFacts(
@@ -1828,7 +1876,7 @@ func contextInheritedOwnerCandidate(
 			break
 		}
 	}
-	if inherited.ID == "" || !contextGenericPersistenceFact(inherited) {
+	if inherited.ID == "" || !contextInheritedPersistenceFact(inherited) {
 		return sourceCandidate{}, false
 	}
 	ownerQualified := contextQualifiedOwner(inherited.Qualified)
@@ -1880,6 +1928,11 @@ func contextInheritedOwnerCandidate(
 	result.StartLine = owner.Line
 	result.EndLine = owner.EndLine
 	result.SourceState = "inherited_owner_current"
+	if normalizedContextConcernKind(inherited.Kind) == contextConcernPersistence &&
+		strings.EqualFold(strings.TrimSpace(inherited.Name), "delete") {
+		result.InventoryGroup = normalizeContextProject(inherited.Project) +
+			"\x00" + contextConcernPersistence
+	}
 	return result, true
 }
 
@@ -1887,10 +1940,18 @@ func contextInheritedFactMatchesOwner(
 	fact scan.AgentContextFactRecord,
 	owner sourceCandidate,
 ) bool {
-	return contextGenericPersistenceFact(fact) &&
+	return contextInheritedPersistenceFact(fact) &&
 		normalizeContextProject(fact.Project) == normalizeContextProject(owner.Project) &&
 		filepath.ToSlash(fact.File) == filepath.ToSlash(owner.Path) &&
 		contextQualifiedOwner(fact.Qualified) == strings.TrimSpace(owner.Qualified)
+}
+
+func contextInheritedPersistenceFact(fact scan.AgentContextFactRecord) bool {
+	if contextGenericPersistenceFact(fact) {
+		return true
+	}
+	return normalizedContextConcernKind(fact.Kind) == contextConcernPersistence &&
+		strings.EqualFold(strings.TrimSpace(fact.Name), "delete")
 }
 
 func contextQualifiedOwner(qualified string) string {
@@ -3534,6 +3595,9 @@ func contextSourceOptionFits(
 	concerns []contextConcern,
 	state contextSourceSelectionState,
 ) (bool, error) {
+	if option.candidate.InventoryOnly {
+		return false, nil
+	}
 	reusesSection := contextSourceSectionAlreadyPresent(pack, option.section)
 	if len(pack.SourceSections) >= MaxContextSourceSections && !reusesSection {
 		return false, nil
