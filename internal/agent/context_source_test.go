@@ -1288,6 +1288,7 @@ func TestContextSourceSectionSupportsLanguageNeutralDomainStructure(t *testing.T
 	for _, content := range []string{
 		"type Job struct {\n  CatalogID int64\n}",
 		"interface Job {\n  catalogId: number;\n}",
+		"export default class Job {\n  catalogId: number;\n}",
 		"class Job:\n    catalog_id: int",
 		"class JobEntity {\n  private long catalogId;\n}",
 	} {
@@ -1306,6 +1307,8 @@ func TestContextSourceSectionRejectsDeclarationOnlyDomainStructure(t *testing.T)
 		"public class Job {}",
 		"public class Job {\n  public Job() {}\n}",
 		"export class Job {}",
+		"export default class Job {}",
+		"export declare interface Job {}",
 		"type Job struct {}",
 	} {
 		section := ContextSourceSection{

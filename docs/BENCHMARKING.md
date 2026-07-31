@@ -49,7 +49,7 @@ The baseline instruction is exactly this one line:
 Do not use the goregraph CLI, MCP tools, goregraph-out, or .goregraph-workspace files.
 ```
 
-The assisted instruction is exactly these eleven lines:
+The assisted instruction is exactly these twelve lines:
 
 <!-- goregraph:generated agent-instruction start -->
 ```text

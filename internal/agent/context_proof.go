@@ -1042,7 +1042,7 @@ func contextSourceDomainModelStatement(value string) bool {
 
 func contextSourceDeclarationModifier(value string) bool {
 	switch value {
-	case "public", "protected", "private", "internal", "export", "abstract",
+	case "public", "protected", "private", "internal", "export", "default", "declare", "abstract",
 		"final", "sealed", "static", "partial", "readonly", "open", "data":
 		return true
 	default:
