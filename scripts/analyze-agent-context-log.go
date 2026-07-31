@@ -30,11 +30,32 @@ type metrics struct {
 	sourcePaths                                                       map[string]struct{}
 	includedSourceRanges, authorizedOmissionRanges                    []sourceRange
 	currentSourceTargets                                              []sourceRange
+	workspace, commandDirectory                                       string
+	eventOrder                                                        int
+	currentItemID, currentCommand                                     string
+	skillReads                                                        []skillReadEvidence
+	skillReadEvents                                                   map[int]struct{}
+	currentSkillTargets                                               map[string]struct{}
 }
 
 type analysis struct {
-	metrics metrics
-	tokens  int64
+	metrics      metrics
+	legacyTokens int64
+	usage        agentmetrics.TokenUsage
+	usageErr     error
+}
+
+type analyzerConfig struct {
+	mode      string
+	workspace string
+	path      string
+}
+
+type skillReadEvidence struct {
+	EventOrder int    `json:"event_order"`
+	ItemID     string `json:"item_id"`
+	Command    string `json:"command"`
+	Target     string `json:"target"`
 }
 
 type parsedContextPack struct {
@@ -53,28 +74,46 @@ type sourceRange struct {
 }
 
 func main() {
-	mode, path, err := arguments(os.Args[1:])
+	config, err := arguments(os.Args[1:])
 	if err != nil {
 		die(err)
 	}
-	if mode == "header" {
+	if config.mode == "header" {
 		fmt.Println(header)
 		return
 	}
-	result, err := analyze(path)
+	result, err := analyze(config.path, config.workspace)
 	if err != nil {
 		die(err)
 	}
-	if mode == "tokens" {
-		fmt.Println(result.tokens)
+	switch config.mode {
+	case "tokens":
+		fmt.Println(result.legacyTokens)
+		return
+	case "usage":
+		if result.usageErr != nil {
+			die(result.usageErr)
+		}
+		fmt.Println(result.usage.TSV())
+		return
+	case "skill-reads":
+		if result.metrics.workspace == "" {
+			die(errors.New("--skill-reads requires --workspace"))
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(result.metrics.skillReads); err != nil {
+			die(err)
+		}
 		return
 	}
-	fmt.Printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+	if result.metrics.toolCalls == 0 {
+		die(errors.New("transcript has no parseable terminal tool items"))
+	}
+	fmt.Printf("%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
 		result.metrics.toolCalls, result.metrics.goregraphCalls, result.metrics.fullPacks,
 		result.metrics.compactPacks, result.metrics.repeatedPacks, result.metrics.navigationCalls,
 		result.metrics.sourceReadCalls, result.metrics.boundedOmissionReadCalls,
 		result.metrics.unauthorizedSourceReads, result.metrics.includedSourceRereads,
-		len(result.metrics.sourcePaths))
+		len(result.metrics.sourcePaths), len(result.metrics.skillReadEvents))
 }
 
 func die(err error) {
@@ -82,43 +121,67 @@ func die(err error) {
 	os.Exit(2)
 }
 
-func arguments(args []string) (string, string, error) {
-	mode := "metrics"
-	if len(args) > 0 && (args[0] == "--header" || args[0] == "--tokens") {
-		mode = strings.TrimPrefix(args[0], "--")
+func arguments(args []string) (analyzerConfig, error) {
+	config := analyzerConfig{mode: "metrics"}
+	for len(args) > 0 {
+		argument := args[0]
 		args = args[1:]
+		switch argument {
+		case "--header", "--tokens", "--usage", "--skill-reads":
+			if config.mode != "metrics" {
+				return analyzerConfig{}, errors.New("only one analyzer output mode may be specified")
+			}
+			config.mode = strings.TrimPrefix(argument, "--")
+		case "--workspace":
+			if config.workspace != "" || len(args) == 0 {
+				return analyzerConfig{}, errors.New("--workspace requires one absolute path")
+			}
+			config.workspace = args[0]
+			args = args[1:]
+			if !filepath.IsAbs(config.workspace) {
+				return analyzerConfig{}, fmt.Errorf("workspace must be an absolute path: %s", config.workspace)
+			}
+		default:
+			if config.path != "" {
+				return analyzerConfig{}, errors.New("usage: analyze-agent-context-log.go [--header|--tokens|--usage|--skill-reads] [--workspace /absolute/path] /absolute/path/to/transcript.jsonl")
+			}
+			config.path = argument
+		}
 	}
-	if len(args) != 1 {
-		return "", "", errors.New("usage: analyze-agent-context-log.go [--header|--tokens] /absolute/path/to/transcript.jsonl")
+	if config.path == "" {
+		return analyzerConfig{}, errors.New("usage: analyze-agent-context-log.go [--header|--tokens|--usage|--skill-reads] [--workspace /absolute/path] /absolute/path/to/transcript.jsonl")
 	}
-	if !filepath.IsAbs(args[0]) {
-		return "", "", fmt.Errorf("transcript must be an absolute path: %s", args[0])
+	if !filepath.IsAbs(config.path) {
+		return analyzerConfig{}, fmt.Errorf("transcript must be an absolute path: %s", config.path)
 	}
-	info, err := os.Stat(args[0])
+	info, err := os.Stat(config.path)
 	if err != nil {
-		return "", "", err
+		return analyzerConfig{}, err
 	}
 	if !info.Mode().IsRegular() {
-		return "", "", fmt.Errorf("transcript must be a regular file: %s", args[0])
+		return analyzerConfig{}, fmt.Errorf("transcript must be a regular file: %s", config.path)
 	}
-	return mode, args[0], nil
+	return config, nil
 }
 
-func analyze(path string) (analysis, error) {
+func analyze(path, workspace string) (analysis, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return analysis{}, err
 	}
 	defer file.Close()
 	result := analysis{metrics: metrics{
-		sourcePaths: make(map[string]struct{}),
+		sourcePaths:      make(map[string]struct{}),
+		workspace:        workspace,
+		commandDirectory: workspace,
+		skillReadEvents:  make(map[int]struct{}),
 	}}
 	completed := make(map[string]string)
 	fullIDs := make(map[string]struct{})
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	lineNumber := 0
-	seenTool, seenUsage := false, false
+	seenUsage := false
 	for scanner.Scan() {
 		lineNumber++
 		line := bytes.TrimSpace(scanner.Bytes())
@@ -131,24 +194,24 @@ func analyze(path string) (analysis, error) {
 		}
 		switch outer.Type {
 		case "item.completed":
-			tool, err := processCompleted(outer.Item, completed, fullIDs, &result.metrics)
+			_, err := processCompleted(outer.Item, completed, fullIDs, &result.metrics)
 			if err != nil {
 				return analysis{}, fmt.Errorf("invalid completed item at line %d: %w", lineNumber, err)
 			}
-			seenTool = seenTool || tool
 		case "turn.completed":
-			tokens, err := tokenUsage(outer.Usage)
+			legacyTokens, err := legacyTokenUsage(outer.Usage)
 			if err != nil {
 				return analysis{}, fmt.Errorf("turn.completed at line %d: %w", lineNumber, err)
 			}
-			result.tokens, seenUsage = tokens, true
+			usage, usageErr := agentmetrics.ParseTokenUsage(outer.Usage)
+			result.legacyTokens = legacyTokens
+			result.usage = usage
+			result.usageErr = usageErr
+			seenUsage = true
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return analysis{}, err
-	}
-	if !seenTool || result.metrics.toolCalls == 0 {
-		return analysis{}, errors.New("transcript has no parseable terminal tool items")
 	}
 	if !seenUsage {
 		return analysis{}, errors.New("transcript has no turn.completed usage")
@@ -176,6 +239,7 @@ func processCompleted(raw json.RawMessage, completed map[string]string, fullIDs 
 		return isToolType(itemType), nil
 	}
 	completed[id] = canonical
+	metrics.eventOrder++
 	if isNonToolType(itemType) {
 		return false, nil
 	}
@@ -183,6 +247,10 @@ func processCompleted(raw json.RawMessage, completed map[string]string, fullIDs 
 		return false, fmt.Errorf("unknown completed item type: %s", itemType)
 	}
 	metrics.toolCalls++
+	metrics.commandDirectory = metrics.workspace
+	metrics.currentItemID = id
+	metrics.currentCommand = ""
+	metrics.currentSkillTargets = make(map[string]struct{})
 	contextCall := false
 	includedReread := false
 	switch itemType {
@@ -191,6 +259,7 @@ func processCompleted(raw json.RawMessage, completed map[string]string, fullIDs 
 		if err != nil {
 			return false, err
 		}
+		metrics.currentCommand = command
 		contextCall, includedReread = classifyCommand(command, metrics)
 	case "mcp_tool_call":
 		contextCall = stringValue(item, "tool") == "task_context" || stringValue(item, "name") == "task_context"
@@ -246,7 +315,7 @@ func isNonToolType(itemType string) bool {
 	}
 }
 
-func tokenUsage(raw json.RawMessage) (int64, error) {
+func legacyTokenUsage(raw json.RawMessage) (int64, error) {
 	var usage map[string]json.RawMessage
 	if len(raw) == 0 || json.Unmarshal(raw, &usage) != nil {
 		return 0, errors.New("usage is missing or invalid")
@@ -348,9 +417,14 @@ func classifyCommand(command string, metrics *metrics) (bool, bool) {
 		return false, false
 	}
 	metrics.currentSourceTargets = nil
+	metrics.commandDirectory = metrics.workspace
 	contextCall, navigation, sourceRead, includedReread := false, false, false, false
 	searchOrInventory := false
 	for _, segment := range shellSegments(words) {
+		if len(segment) == 2 && segment[0] == "cd" && filepath.IsAbs(segment[1]) {
+			metrics.commandDirectory = segment[1]
+			continue
+		}
 		context, navigates, reads, included, searches := classifySimpleCommand(segment, metrics)
 		contextCall = contextCall || context
 		navigation = navigation || navigates
@@ -453,6 +527,7 @@ func recordSearchTargets(words []string, metrics *metrics) (bool, bool) {
 			patternSeen = true
 			continue
 		}
+		recordCommandTarget(word, metrics)
 		recorded, included := recordSourcePath(word, 0, 0, metrics)
 		found = recorded || found
 		includedReread = includedReread || included
@@ -467,6 +542,7 @@ func recordFindTargets(words []string, metrics *metrics) (bool, bool) {
 		case "-name", "-iname", "-path", "-ipath", "-type", "-exec", "-execdir", "-ok", "-okdir", "-print", "-print0", "-delete", "-quit":
 			return found, includedReread
 		}
+		recordCommandTarget(word, metrics)
 		recorded, included := recordSourcePath(word, 0, 0, metrics)
 		found = recorded || found
 		includedReread = includedReread || included
@@ -514,11 +590,34 @@ func recordReadTargets(command string, words []string, metrics *metrics) (bool, 
 			startLine, endLine = sedSourceRange(word)
 			continue
 		}
+		recordCommandTarget(word, metrics)
 		recorded, included := recordSourcePath(word, startLine, endLine, metrics)
 		found = recorded || found
 		includedReread = includedReread || included
 	}
 	return found, includedReread
+}
+
+func recordCommandTarget(target string, metrics *metrics) {
+	normalized, ok := agentmetrics.ClassifyExternalSkillTarget(
+		metrics.workspace,
+		metrics.commandDirectory,
+		target,
+	)
+	if !ok {
+		return
+	}
+	if _, exists := metrics.currentSkillTargets[normalized]; exists {
+		return
+	}
+	metrics.currentSkillTargets[normalized] = struct{}{}
+	metrics.skillReads = append(metrics.skillReads, skillReadEvidence{
+		EventOrder: metrics.eventOrder,
+		ItemID:     metrics.currentItemID,
+		Command:    metrics.currentCommand,
+		Target:     normalized,
+	})
+	metrics.skillReadEvents[metrics.eventOrder] = struct{}{}
 }
 
 func sedSourceRange(script string) (int, int) {

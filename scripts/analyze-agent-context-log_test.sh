@@ -45,15 +45,31 @@ cat >"$temporary_directory/transcript.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"web-search","type":"web_search","query":"route"}}
 {"type":"item.completed","item":{"id":"collaboration","type":"collab_tool_call","target":"helper"}}
 {"type":"item.completed","item":{"id":"assistant-message","type":"agent_message","text":"not a tool"}}
-{"type":"turn.completed","usage":{"input_tokens":60000,"cached_input_tokens":10000,"output_tokens":30000,"total_tokens":100000}}
+{"type":"turn.completed","usage":{"input_tokens":182151,"cached_input_tokens":146944,"output_tokens":6160,"reasoning_output_tokens":3195}}
 EOF
 
-expected_header=$'tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files'
+expected_header=$'tool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\texternal_skill_read_calls'
 header=$(bash "$analyzer" --header "$temporary_directory/transcript.jsonl")
 [ "$header" = "$expected_header" ] || fail "header = $header"
 
 row=$(bash "$analyzer" "$temporary_directory/transcript.jsonl")
-[ "$row" = $'21\t4\t2\t1\t1\t15\t8\t0\t15\t0\t13' ] || fail "row = $row"
+[ "$row" = $'21\t4\t2\t1\t1\t15\t8\t0\t15\t0\t13\t0' ] || fail "row = $row"
+
+usage=$(bash "$analyzer" --usage "$temporary_directory/transcript.jsonl")
+[ "$usage" = $'182151\t146944\t35207\t6160\t3195\t188311\t41367' ] ||
+  fail "usage row = $usage"
+
+cat >"$temporary_directory/invalid-usage.jsonl" <<'EOF'
+{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":11,"output_tokens":1,"reasoning_output_tokens":0}}
+EOF
+if bash "$analyzer" --usage "$temporary_directory/invalid-usage.jsonl" \
+  >"$temporary_directory/invalid-usage.stdout" \
+  2>"$temporary_directory/invalid-usage.stderr"; then
+  fail "usage with cached input greater than input passed"
+fi
+grep -q 'cached_input_tokens exceeds input_tokens' \
+  "$temporary_directory/invalid-usage.stderr" ||
+  fail "invalid usage error was not specific"
 
 cat >"$temporary_directory/included-rereads.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"before-pack","type":"command_execution","command":"cat /work/services/catalog/src/CatalogService.java","exit_code":0}}
@@ -71,7 +87,9 @@ cat >"$temporary_directory/included-rereads.jsonl" <<'EOF'
 EOF
 
 reread_row=$(bash "$analyzer" "$temporary_directory/included-rereads.jsonl")
-IFS=$'\t' read -r _ _ _ _ _ _ _ bounded_reads unauthorized_reads included_rereads _ extra <<EOF
+[ "$reread_row" = $'10\t3\t3\t0\t0\t7\t5\t0\t7\t4\t4\t0' ] ||
+  fail "included reread row = $reread_row"
+IFS=$'\t' read -r _ _ _ _ _ _ _ bounded_reads unauthorized_reads included_rereads _ _ extra <<EOF
 $reread_row
 EOF
 [ -z "${extra:-}" ] || fail "included reread row has extra fields: $reread_row"
@@ -98,8 +116,51 @@ cat >"$temporary_directory/bounded-omissions.jsonl" <<'EOF'
 EOF
 
 bounded_row=$(bash "$analyzer" "$temporary_directory/bounded-omissions.jsonl")
-[ "$bounded_row" = $'13\t2\t2\t0\t0\t11\t9\t3\t8\t1\t5' ] ||
+[ "$bounded_row" = $'13\t2\t2\t0\t0\t11\t9\t3\t8\t1\t5\t0' ] ||
   fail "bounded omission row = $bounded_row"
+
+legacy_tokens=$(bash "$analyzer" --tokens "$temporary_directory/included-rereads.jsonl")
+[ "$legacy_tokens" = "100" ] || fail "legacy tokens = $legacy_tokens"
+
+mkdir -p "$temporary_directory/workspace/testdata/skills/example"
+cat >"$temporary_directory/skill-reads.jsonl" <<EOF
+{"type":"item.completed","item":{"id":"skill-one","type":"command_execution","command":"cat /Users/me/.codex/skills/brainstorming/SKILL.md","exit_code":0}}
+{"type":"item.completed","item":{"id":"ordinary-external","type":"command_execution","command":"cat /opt/source/config.json","exit_code":0}}
+{"type":"item.completed","item":{"id":"workspace-skill","type":"command_execution","command":"cat $temporary_directory/workspace/testdata/skills/example/SKILL.md","exit_code":0}}
+{"type":"item.completed","item":{"id":"skill-two","type":"command_execution","command":"rg -n Rule /opt/codex/plugins/vendor/skills/tdd/references/guide.md","exit_code":0}}
+{"type":"item.completed","item":{"id":"skill-two-targets","type":"command_execution","command":"cat /opt/codex/plugins/vendor/skills/review/SKILL.md /opt/codex/plugins/vendor/skills/review/references/checklist.md","exit_code":0}}
+{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":5,"reasoning_output_tokens":1}}
+EOF
+
+header=$(bash "$analyzer" --header "$temporary_directory/transcript.jsonl")
+case "$header" in
+  *$'\texternal_skill_read_calls') ;;
+  *) fail "analyzer header lacks external_skill_read_calls: $header" ;;
+esac
+
+skill_row=$(bash "$analyzer" \
+  --workspace "$temporary_directory/workspace" \
+  "$temporary_directory/skill-reads.jsonl")
+[ "${skill_row##*$'\t'}" = "3" ] || fail "skill-read count row = $skill_row"
+
+skill_evidence=$(bash "$analyzer" \
+  --workspace "$temporary_directory/workspace" \
+  --skill-reads "$temporary_directory/skill-reads.jsonl")
+printf '%s\n' "$skill_evidence" | grep -q '"event_order":1' ||
+  fail "first skill event order missing"
+printf '%s\n' "$skill_evidence" | grep -q '/Users/me/.codex/skills/brainstorming/SKILL.md' ||
+  fail "first generic skill target missing"
+printf '%s\n' "$skill_evidence" | grep -q '"event_order":4' ||
+  fail "second skill event order missing"
+printf '%s\n' "$skill_evidence" | grep -q '/opt/codex/plugins/vendor/skills/tdd/references/guide.md' ||
+  fail "second generic skill target missing"
+case "$skill_evidence" in
+  *ordinary-external*|*workspace-skill*) fail "non-contaminating target entered evidence" ;;
+esac
+target_count=$(printf '%s\n' "$skill_evidence" |
+  grep -o '"target":"/opt/codex/plugins/vendor/skills/review[^" ]*' |
+  wc -l | tr -d ' ')
+[ "$target_count" = "2" ] || fail "multi-target skill evidence = $skill_evidence"
 
 cat >"$temporary_directory/fallback-usage.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"search","type":"web_search","query":"route"}}
