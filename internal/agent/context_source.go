@@ -891,13 +891,39 @@ func redactContextConfigurationValues(path, content string) string {
 		return content
 	}
 	lines := strings.Split(content, "\n")
+	yamlBlockIndent := -1
+	propertiesContinuation := false
 	for index, line := range lines {
 		prefix, source := contextConfigurationLinePrefix(line)
 		trimmed := strings.TrimSpace(source)
+		if isContextConfigurationYAML(path) && yamlBlockIndent >= 0 {
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+				continue
+			}
+			indent := contextConfigurationIndent(source)
+			if indent > yamlBlockIndent {
+				lines[index] = prefix + source[:indent] + "<redacted>"
+				continue
+			}
+			yamlBlockIndent = -1
+		}
+		if !isContextConfigurationYAML(path) && propertiesContinuation {
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+				continue
+			}
+			lines[index] = prefix + source[:contextConfigurationIndent(source)] + "<redacted>"
+			propertiesContinuation = contextConfigurationPropertyContinues(source)
+			continue
+		}
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
 			continue
 		}
 		if isContextConfigurationYAML(path) {
+			if delimiter, blockIndent, block := contextConfigurationYAMLBlockScalar(source); block {
+				lines[index] = prefix + source[:delimiter+1] + " <redacted>"
+				yamlBlockIndent = blockIndent
+				continue
+			}
 			if listPrefix, scalar := contextConfigurationYAMLListScalar(source); scalar {
 				lines[index] = prefix + listPrefix + "<redacted>"
 				continue
@@ -909,13 +935,38 @@ func redactContextConfigurationValues(path, content string) string {
 		}
 		if delimiter := strings.IndexAny(source, "=:"); delimiter >= 0 {
 			lines[index] = prefix + source[:delimiter+1] + "<redacted>"
+			propertiesContinuation = contextConfigurationPropertyContinues(source)
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
+func contextConfigurationYAMLBlockScalar(line string) (int, int, bool) {
+	delimiter := strings.Index(line, ":")
+	if delimiter < 0 {
+		return 0, 0, false
+	}
+	value := strings.TrimSpace(line[delimiter+1:])
+	if value == "" || value[0] != '|' && value[0] != '>' {
+		return 0, 0, false
+	}
+	return delimiter, contextConfigurationIndent(line), true
+}
+
+func contextConfigurationPropertyContinues(line string) bool {
+	backslashes := 0
+	for index := len(line) - 1; index >= 0 && line[index] == '\\'; index-- {
+		backslashes++
+	}
+	return backslashes%2 == 1
+}
+
+func contextConfigurationIndent(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " \t"))
+}
+
 func contextConfigurationYAMLListScalar(line string) (string, bool) {
-	start := len(line) - len(strings.TrimLeft(line, " \t"))
+	start := contextConfigurationIndent(line)
 	if start >= len(line) || line[start] != '-' {
 		return "", false
 	}

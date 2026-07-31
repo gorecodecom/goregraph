@@ -5284,6 +5284,102 @@ func TestRenderSourceCandidateRedactsConfigurationValues(t *testing.T) {
 	}
 }
 
+func TestRenderSourceCandidateRedactsMultilineConfigurationValues(t *testing.T) {
+	properties := []string{
+		"auth.password=first\\\\\\",
+		"  # continuation comment",
+		"",
+		"  SENTINEL_PROPERTIES_CONTINUATION\\",
+		"  SENTINEL_PROPERTIES_TERMINAL",
+		"plain.value=after-continuation",
+		"escaped.value=two-backslashes\\\\",
+		"next.value=SENTINEL_AFTER_EVEN_BACKSLASH",
+	}
+	propertyCandidate := sourceCandidate{
+		Path: "src/main/resources/bootstrap.properties", StartLine: 1, EndLine: len(properties),
+		Kind: "configuration", Name: "auth", Qualified: "auth",
+	}
+	propertySection, err := renderSourceCandidate(
+		propertyCandidate,
+		sourceFile{Path: propertyCandidate.Path, Lines: properties},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"first", "SENTINEL_PROPERTIES_CONTINUATION", "SENTINEL_PROPERTIES_TERMINAL", "after-continuation", "two-backslashes", "SENTINEL_AFTER_EVEN_BACKSLASH"} {
+		if strings.Contains(propertySection.Content, value) {
+			t.Fatalf("rendered properties retain %q:\n%s", value, propertySection.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\tauth.password=<redacted>",
+		"2\t  # continuation comment",
+		"3\t",
+		"4\t  <redacted>",
+		"5\t  <redacted>",
+		"6\tplain.value=<redacted>",
+		"7\tescaped.value=<redacted>",
+		"8\tnext.value=<redacted>",
+	} {
+		if !strings.Contains(propertySection.Content, line) {
+			t.Fatalf("rendered properties missing %q:\n%s", line, propertySection.Content)
+		}
+	}
+
+	yaml := []string{
+		"credentials:",
+		"  password: |-",
+		"    SENTINEL_YAML_LITERAL",
+		"    # block comment",
+		"",
+		"    SENTINEL_YAML_LITERAL_SECOND",
+		"  token: >2-",
+		"    SENTINEL_YAML_FOLDED",
+		"  plain: next-value",
+		"  entries:",
+		"    - password: |+",
+		"        SENTINEL_YAML_LIST_BLOCK",
+		"    - name: next-entry",
+	}
+	yamlCandidate := sourceCandidate{
+		Path: "src/test/resources/application-test.yml", StartLine: 1, EndLine: len(yaml),
+		Kind: "configuration", Name: "credentials", Qualified: "credentials",
+	}
+	yamlSection, err := renderSourceCandidate(
+		yamlCandidate,
+		sourceFile{Path: yamlCandidate.Path, Lines: yaml},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"SENTINEL_YAML_LITERAL", "SENTINEL_YAML_LITERAL_SECOND", "SENTINEL_YAML_FOLDED", "next-value", "SENTINEL_YAML_LIST_BLOCK", "next-entry"} {
+		if strings.Contains(yamlSection.Content, value) {
+			t.Fatalf("rendered YAML retains %q:\n%s", value, yamlSection.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\tcredentials:",
+		"2\t  password: <redacted>",
+		"3\t    <redacted>",
+		"4\t    # block comment",
+		"5\t",
+		"6\t    <redacted>",
+		"7\t  token: <redacted>",
+		"8\t    <redacted>",
+		"9\t  plain: <redacted>",
+		"10\t  entries:",
+		"11\t    - password: <redacted>",
+		"12\t        <redacted>",
+		"13\t    - <redacted>",
+	} {
+		if !strings.Contains(yamlSection.Content, line) {
+			t.Fatalf("rendered YAML missing %q:\n%s", line, yamlSection.Content)
+		}
+	}
+}
+
 func TestRenderSourceCandidateDoesNotTreatSameLineCallAsDeclaration(t *testing.T) {
 	candidate := sourceCandidate{Path: "module.ts", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
 	line := "export function deleteUser() { deleteUser(); }"
