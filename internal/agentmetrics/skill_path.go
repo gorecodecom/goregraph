@@ -30,7 +30,7 @@ func ClassifyExternalSkillTarget(
 	if !ok || targetWindows != workspaceWindows || pathWithin(targetPath, workspacePath) {
 		return "", false
 	}
-	if !isSkillBundlePath(targetPath) {
+	if !isSkillBundlePath(targetPath, targetWindows) {
 		return "", false
 	}
 	return targetPath, true
@@ -60,10 +60,13 @@ func pathWithin(candidate, root string) bool {
 	return candidate == root || strings.HasPrefix(candidate, strings.TrimSuffix(root, "/")+"/")
 }
 
-func isSkillBundlePath(value string) bool {
+func isSkillBundlePath(value string, windows bool) bool {
 	parts := strings.Split(strings.Trim(value, "/"), "/")
 	for _, part := range parts {
-		if strings.EqualFold(part, "SKILL.md") || strings.EqualFold(part, "skills") {
+		if windows && (strings.EqualFold(part, "SKILL.md") || strings.EqualFold(part, "skills")) {
+			return true
+		}
+		if !windows && (part == "SKILL.md" || part == "skills") {
 			return true
 		}
 	}

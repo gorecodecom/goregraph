@@ -64,6 +64,13 @@ func TestClassifyExternalSkillTarget(t *testing.T) {
 			target:           "/opt/skills-old/review/guide.md",
 			matched:          false,
 		},
+		{
+			name:             "mixed-case Unix skill components",
+			workspace:        "/work/repo",
+			commandDirectory: "/work/repo",
+			target:           "/opt/SKILLS/tdd/skill.md",
+			matched:          false,
+		},
 	}
 
 	for _, test := range tests {
