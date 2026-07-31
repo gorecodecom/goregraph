@@ -332,14 +332,21 @@ fi
 for argument in "${codex_args[@]}"; do
   printf '%s\n' "$argument" >>"$output/codex-args.txt"
 done
+if ! codex plugin list --json \
+  >"$output/codex-plugins.json" \
+  2>"$output/codex-plugins.stderr"; then
+  die "cannot capture Codex plugin inventory; no benchmark run started"
+fi
+[ -s "$output/codex-plugins.json" ] ||
+  die "Codex plugin inventory is empty; no benchmark run started"
 codex --version >"$output/codex-version.txt" 2>&1
 goregraph version >"$output/goregraph-version.txt" 2>&1
 goregraph context "$workspace" --query "benchmark context preflight" --format json \
   >"$output/context-preflight.json"
 
-printf 'variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\tlog\n' >"$output/summary.tsv"
-baseline_tokens="$temporary_directory/baseline.tokens"
-assisted_tokens="$temporary_directory/assisted.tokens"
+printf 'variant\trun\teffective_tokens\tinput_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\texternal_skill_read_calls\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\tlog\n' >"$output/summary.tsv"
+baseline_effective_tokens="$temporary_directory/baseline.effective-tokens"
+assisted_effective_tokens="$temporary_directory/assisted.effective-tokens"
 baseline_tool_calls="$temporary_directory/baseline.tool-calls"
 assisted_tool_calls="$temporary_directory/assisted.tool-calls"
 baseline_navigation_calls="$temporary_directory/baseline.navigation-calls"
@@ -348,8 +355,8 @@ baseline_source_read_calls="$temporary_directory/baseline.source-read-calls"
 assisted_source_read_calls="$temporary_directory/assisted.source-read-calls"
 assisted_repeated_full_packs="$temporary_directory/assisted.repeated-full-packs"
 assisted_included_source_rereads="$temporary_directory/assisted.included-source-rereads"
-: >"$baseline_tokens"
-: >"$assisted_tokens"
+: >"$baseline_effective_tokens"
+: >"$assisted_effective_tokens"
 : >"$baseline_tool_calls"
 : >"$assisted_tool_calls"
 : >"$baseline_navigation_calls"
@@ -359,8 +366,8 @@ assisted_included_source_rereads="$temporary_directory/assisted.included-source-
 : >"$assisted_repeated_full_packs"
 : >"$assisted_included_source_rereads"
 
-extract_tokens() {
-  go run "$analyzer_go" --tokens "$1"
+extract_usage() {
+  bash "$analyzer" --workspace "$workspace" --usage "$1"
 }
 
 run_variant() {
@@ -378,14 +385,19 @@ run_variant() {
   [ "$codex_status" -eq 0 ] ||
     die "$variant run $run_number failed with exit $codex_status; JSONL log retained at $log_path; stderr retained at $stderr_path"
 
-  tokens=$(extract_tokens "$log_path")
-  [ -n "$tokens" ] || die "cannot extract tokens from $log_path"
-  metrics=$(bash "$analyzer" "$log_path") ||
+  usage=$(extract_usage "$log_path")
+  IFS=$'\t' read -r input_tokens cached_input_tokens uncached_input_tokens \
+    output_tokens reasoning_output_tokens total_tokens effective_tokens <<EOF
+$usage
+EOF
+  [ -n "$effective_tokens" ] || die "cannot extract token usage from $log_path"
+  metrics=$(bash "$analyzer" --workspace "$workspace" "$log_path") ||
     die "cannot analyze transcript: $log_path"
   printf '%s\n' "$metrics" >"$metrics_path"
   IFS=$'\t' read -r tool_calls goregraph_calls full_context_packs compact_duplicate_packs \
     repeated_full_packs raw_navigation_calls source_read_calls bounded_omission_read_calls \
-    unauthorized_source_read_calls included_source_rereads unique_source_files extra_metrics <<EOF
+    unauthorized_source_read_calls included_source_rereads unique_source_files \
+    external_skill_read_calls extra_metrics <<EOF
 $metrics
 EOF
   [ -z "${extra_metrics:-}" ] || die "invalid analyzer result: $metrics_path"
@@ -393,19 +405,24 @@ EOF
     "$compact_duplicate_packs" "$repeated_full_packs" "$raw_navigation_calls" \
     "$source_read_calls" "$bounded_omission_read_calls" \
     "$unauthorized_source_read_calls" "$included_source_rereads" \
-    "$unique_source_files"; do
+    "$unique_source_files" "$external_skill_read_calls"; do
     case "$metric" in
       *[!0-9]*|"") die "invalid analyzer result: $metrics_path" ;;
     esac
   done
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$variant" "$run_number" "$tokens" "$tool_calls" "$goregraph_calls" \
+  bash "$analyzer" --workspace "$workspace" --skill-reads "$log_path" \
+    >"$log_path.skill-reads.json"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$variant" "$run_number" "$effective_tokens" "$input_tokens" \
+    "$cached_input_tokens" "$uncached_input_tokens" "$output_tokens" \
+    "$reasoning_output_tokens" "$total_tokens" "$external_skill_read_calls" \
+    "$tool_calls" "$goregraph_calls" \
     "$full_context_packs" "$compact_duplicate_packs" "$repeated_full_packs" \
     "$raw_navigation_calls" "$source_read_calls" "$bounded_omission_read_calls" \
     "$unauthorized_source_read_calls" "$included_source_rereads" \
     "$unique_source_files" "$log_path" \
     >>"$output/summary.tsv"
-  printf '%s\n' "$tokens" >>"$temporary_directory/$variant.tokens"
+  printf '%s\n' "$effective_tokens" >>"$temporary_directory/$variant.effective-tokens"
   printf '%s\n' "$tool_calls" >>"$temporary_directory/$variant.tool-calls"
   printf '%s\n' "$raw_navigation_calls" >>"$temporary_directory/$variant.navigation-calls"
   printf '%s\n' "$source_read_calls" >>"$temporary_directory/$variant.source-read-calls"
@@ -413,6 +430,8 @@ EOF
     printf '%s\n' "$repeated_full_packs" >>"$assisted_repeated_full_packs"
     printf '%s\n' "$included_source_rereads" >>"$assisted_included_source_rereads"
   fi
+  [ "$external_skill_read_calls" -eq 0 ] ||
+    die "$variant run $run_number read $external_skill_read_calls external skill files; matrix stopped and evidence retained"
 }
 
 run_number=1
@@ -432,15 +451,15 @@ median() {
   sort -n "$1" | sed -n "${middle}p"
 }
 
-baseline_median=$(median "$baseline_tokens")
-assisted_median=$(median "$assisted_tokens")
+baseline_effective_median=$(median "$baseline_effective_tokens")
+assisted_effective_median=$(median "$assisted_effective_tokens")
 baseline_tool_median=$(median "$baseline_tool_calls")
 assisted_tool_median=$(median "$assisted_tool_calls")
 baseline_navigation_median=$(median "$baseline_navigation_calls")
 assisted_navigation_median=$(median "$assisted_navigation_calls")
 baseline_source_read_median=$(median "$baseline_source_read_calls")
 assisted_source_read_median=$(median "$assisted_source_read_calls")
-[ -n "$baseline_median" ] && [ -n "$assisted_median" ] && \
+[ -n "$baseline_effective_median" ] && [ -n "$assisted_effective_median" ] && \
   [ -n "$baseline_tool_median" ] && [ -n "$assisted_tool_median" ] && \
   [ -n "$baseline_navigation_median" ] && [ -n "$assisted_navigation_median" ] && \
   [ -n "$baseline_source_read_median" ] && [ -n "$assisted_source_read_median" ] ||
@@ -448,15 +467,15 @@ assisted_source_read_median=$(median "$assisted_source_read_calls")
 assisted_repeated_full_packs=$(awk '{ total += $1 } END { print total + 0 }' "$assisted_repeated_full_packs")
 assisted_included_source_rereads=$(awk '{ total += $1 } END { print total + 0 }' "$assisted_included_source_rereads")
 
-printf 'baseline\tmedian\t%s\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\t-\t-\t-\n' \
-  "$baseline_median" "$baseline_tool_median" "$baseline_navigation_median" \
+printf 'baseline\tmedian\t%s\t-\t-\t-\t-\t-\t-\t-\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\t-\t-\t-\n' \
+  "$baseline_effective_median" "$baseline_tool_median" "$baseline_navigation_median" \
   "$baseline_source_read_median" >>"$output/summary.tsv"
-printf 'assisted\tmedian\t%s\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\t-\t-\t-\n' \
-  "$assisted_median" "$assisted_tool_median" "$assisted_navigation_median" \
+printf 'assisted\tmedian\t%s\t-\t-\t-\t-\t-\t-\t-\t%s\t-\t-\t-\t-\t%s\t%s\t-\t-\t-\t-\t-\n' \
+  "$assisted_effective_median" "$assisted_tool_median" "$assisted_navigation_median" \
   "$assisted_source_read_median" >>"$output/summary.tsv"
 
-printf 'Baseline median: %s tokens\n' "$baseline_median"
-printf 'Assisted median: %s tokens\n' "$assisted_median"
+printf 'Baseline median: %s effective tokens\n' "$baseline_effective_median"
+printf 'Assisted median: %s effective tokens\n' "$assisted_effective_median"
 printf 'Baseline/assisted tool-call medians: %s/%s\n' "$baseline_tool_median" "$assisted_tool_median"
 printf 'Baseline/assisted raw-navigation medians: %s/%s\n' \
   "$baseline_navigation_median" "$assisted_navigation_median"
@@ -464,10 +483,10 @@ printf 'Baseline/assisted source-read medians: %s/%s\n' \
   "$baseline_source_read_median" "$assisted_source_read_median"
 printf 'Complete the quality rubric in docs/BENCHMARKING.md before release.\n'
 
-[ $((assisted_median * 5)) -le $((baseline_median * 4)) ] ||
-  die "assisted median exceeds 80% of matched baseline"
-[ "$assisted_median" -le 116560 ] ||
-  die "assisted median exceeds the recorded-baseline gate of 116560"
+[ $((assisted_effective_median * 5)) -le $((baseline_effective_median * 4)) ] ||
+  die "assisted effective-token median exceeds 80% of matched baseline"
+[ "$assisted_effective_median" -le 116560 ] ||
+  die "assisted effective-token median exceeds prospective cap of 116560"
 [ "$baseline_source_read_median" -gt 0 ] ||
   die "baseline source-read median is zero; benchmark cannot measure source-replacement savings"
 [ $((assisted_tool_median * 10)) -le $((baseline_tool_median * 7)) ] ||

@@ -25,6 +25,11 @@ mkdir -p "$temporary_directory/bin" "$temporary_directory/workspace"
 cat >"$temporary_directory/bin/codex" <<'EOF'
 #!/usr/bin/env bash
 set -eu
+if [ "${1:-}" = "plugin" ] && [ "${2:-}" = "list" ] && [ "${3:-}" = "--json" ]; then
+  [ "${FAKE_PLUGIN_LIST_FAIL:-0}" = "0" ] || exit 9
+  printf '[{"id":"workflow-tools","enabled":true}]\n'
+  exit 0
+fi
 if [ "${1:-}" = "--version" ]; then
   printf 'codex-test 1.0\n'
   exit 0
@@ -50,7 +55,6 @@ prompt=$(cat)
 case "$prompt" in
   *"Treat source_sections as current source already read"*"run no source-reading commands"*"mark details absent from them as unknown"*)
     printf 'a\n' >>"$FAKE_ORDER"
-    tokens=${FAKE_ASSISTED_TOKENS:-80000}
     context_pack='# Context Pack\n\nContext ID: assisted-pack\n'
     if [ "${FAKE_ASSISTED_INCLUDED_REREAD:-0}" = "1" ]; then
       context_pack='# Context Pack\n\nContext ID: assisted-pack\nSource coverage: complete\n\n## Source sections\n\n### 1. `src/Service.java:1-40`\n'
@@ -80,7 +84,9 @@ case "$prompt" in
     ;;
   *)
     printf 'b\n' >>"$FAKE_ORDER"
-    tokens=${FAKE_BASELINE_TOKENS:-100000}
+    if [ "${FAKE_BASELINE_SKILL_READ:-0}" = "1" ]; then
+      emit_command 'cat /opt/codex/plugins/vendor/skills/brainstorming/SKILL.md'
+    fi
     if [ "${FAKE_BASELINE_ZERO_SOURCE_READS:-0}" = "1" ]; then
       for number in 1 2 3 4 5 6 7 8 9 10; do
         emit_command 'make test'
@@ -99,7 +105,17 @@ case "$prompt" in
     fi
     ;;
 esac
-printf '{"type":"turn.completed","usage":{"input_tokens":%s,"cached_input_tokens":0,"output_tokens":0,"total_tokens":%s}}\n' "$tokens" "$tokens"
+if [ "$prompt" != "${prompt#*Treat source_sections as current source already read}" ]; then
+  if [ -n "${FAKE_ASSISTED_TOKENS:-}" ]; then
+    printf '{"type":"turn.completed","usage":{"input_tokens":%s,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0}}\n' "$FAKE_ASSISTED_TOKENS"
+  else
+    printf '{"type":"turn.completed","usage":{"input_tokens":170000,"cached_input_tokens":110000,"output_tokens":10000,"reasoning_output_tokens":4000}}\n'
+  fi
+elif [ -n "${FAKE_BASELINE_TOKENS:-}" ]; then
+  printf '{"type":"turn.completed","usage":{"input_tokens":%s,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0}}\n' "$FAKE_BASELINE_TOKENS"
+else
+  printf '{"type":"turn.completed","usage":{"input_tokens":190000,"cached_input_tokens":90000,"output_tokens":10000,"reasoning_output_tokens":4000}}\n'
+fi
 EOF
 
 cat >"$temporary_directory/bin/goregraph" <<'EOF'
@@ -148,8 +164,10 @@ run_harness() {
   CODEX_BENCHMARK_ARGS=${2:-$safe_args} \
     PATH="$temporary_directory/bin:$go_bin:/usr/bin:/bin" \
     FAKE_ORDER="$temporary_directory/$result_name.order" \
-    FAKE_BASELINE_TOKENS=${FAKE_BASELINE_TOKENS:-100000} \
-    FAKE_ASSISTED_TOKENS=${FAKE_ASSISTED_TOKENS:-80000} \
+    FAKE_BASELINE_TOKENS=${FAKE_BASELINE_TOKENS:-} \
+    FAKE_ASSISTED_TOKENS=${FAKE_ASSISTED_TOKENS:-} \
+    FAKE_BASELINE_SKILL_READ=${FAKE_BASELINE_SKILL_READ:-0} \
+    FAKE_PLUGIN_LIST_FAIL=${FAKE_PLUGIN_LIST_FAIL:-0} \
     FAKE_ASSISTED_EXTRA_TOOLS=${FAKE_ASSISTED_EXTRA_TOOLS:-0} \
     FAKE_ASSISTED_EXTRA_SOURCE_READS=${FAKE_ASSISTED_EXTRA_SOURCE_READS:-0} \
     FAKE_ASSISTED_COMPACT_DUPLICATE=${FAKE_ASSISTED_COMPACT_DUPLICATE:-0} \
@@ -169,25 +187,62 @@ run_harness() {
 run_harness pass >/dev/null
 actual_order=$(tr -d '\n' <"$temporary_directory/pass.order")
 [ "$actual_order" = "baabba" ] || fail "run order = $actual_order, want baabba"
-grep -q $'^variant\trun\ttokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\tlog$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^variant\trun\teffective_tokens\tinput_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\texternal_skill_read_calls\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\tlog$' "$temporary_directory/pass/summary.tsv" ||
   fail "summary schema missing"
-grep -q $'^baseline\tmedian\t100000\t10\t-\t-\t-\t-\t6\t4\t-\t-\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^baseline\tmedian\t110000\t-\t-\t-\t-\t-\t-\t-\t10\t-\t-\t-\t-\t6\t4\t-\t-\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
   fail "baseline median missing"
-grep -q $'^assisted\tmedian\t80000\t6\t-\t-\t-\t-\t2\t2\t-\t-\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
+grep -q $'^assisted\tmedian\t70000\t-\t-\t-\t-\t-\t-\t-\t6\t-\t-\t-\t-\t2\t2\t-\t-\t-\t-\t-$' "$temporary_directory/pass/summary.tsv" ||
   fail "assisted median missing"
+[ -s "$temporary_directory/pass/codex-plugins.json" ] ||
+  fail "Codex plugin inventory was not retained"
 [ -s "$temporary_directory/pass/assisted-1.log.metrics.tsv" ] ||
   fail "analyzer result was not retained"
 [ -s "$temporary_directory/pass/assisted-1.log.stderr" ] ||
   fail "Codex stderr was not retained separately"
 
-FAKE_ASSISTED_TOKENS=80001
+FAKE_ASSISTED_TOKENS=88001
 export FAKE_ASSISTED_TOKENS
 if run_harness over-eighty >/dev/null 2>&1; then
   fail "80% plus one token passed"
 fi
-grep -q $'^assisted\tmedian\t80001\t6\t-\t-\t-\t-\t2\t2\t-\t-\t-\t-\t-$' "$temporary_directory/over-eighty/summary.tsv" ||
+grep -q $'^assisted\tmedian\t88001\t' "$temporary_directory/over-eighty/summary.tsv" ||
   fail "failed gate did not retain median evidence"
 unset FAKE_ASSISTED_TOKENS
+
+FAKE_BASELINE_TOKENS=200000
+FAKE_ASSISTED_TOKENS=116561
+export FAKE_BASELINE_TOKENS FAKE_ASSISTED_TOKENS
+if run_harness over-absolute-cap >/dev/null 2>&1; then
+  fail "116561 assisted effective tokens passed the absolute cap"
+fi
+grep -q $'^assisted\tmedian\t116561\t' \
+  "$temporary_directory/over-absolute-cap/summary.tsv" ||
+  fail "absolute-cap failure did not retain assisted effective-token evidence"
+unset FAKE_BASELINE_TOKENS FAKE_ASSISTED_TOKENS
+
+FAKE_BASELINE_SKILL_READ=1
+export FAKE_BASELINE_SKILL_READ
+if run_harness contaminated >/dev/null 2>&1; then
+  fail "contaminated baseline passed"
+fi
+unset FAKE_BASELINE_SKILL_READ
+[ "$(tr -d '\n' <"$temporary_directory/contaminated.order")" = "b" ] ||
+  fail "harness did not stop after first contaminated run"
+grep -q $'^baseline\t1\t.*\t1\t' "$temporary_directory/contaminated/summary.tsv" ||
+  fail "contaminated run was not retained in summary"
+[ -s "$temporary_directory/contaminated/baseline-1.log.skill-reads.json" ] ||
+  fail "ordered skill evidence was not retained"
+[ ! -e "$temporary_directory/contaminated/assisted-1.log" ] ||
+  fail "harness launched a run after contamination"
+
+FAKE_PLUGIN_LIST_FAIL=1
+export FAKE_PLUGIN_LIST_FAIL
+if run_harness plugin-inventory-failure >/dev/null 2>&1; then
+  fail "missing plugin inventory passed"
+fi
+unset FAKE_PLUGIN_LIST_FAIL
+[ ! -s "$temporary_directory/plugin-inventory-failure.order" ] ||
+  fail "Codex run started after plugin inventory failure"
 
 FAKE_ASSISTED_EXTRA_TOOLS=2
 export FAKE_ASSISTED_EXTRA_TOOLS
