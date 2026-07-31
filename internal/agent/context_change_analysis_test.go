@@ -16,6 +16,7 @@ const (
 	missingContractEnglishQuery = "When DELETE /catalog/items/{itemId} removes an item in services/catalog, plan cleanup of related jobs through libraries/job-client and services/jobs. Cover the current path, missing HTTP contract, task types and lookup attributes, authentication, configuration, retry behavior, persistence, side effects, and tests."
 	missingContractGermanQuery  = "Wenn DELETE /catalog/items/{itemId} einen Eintrag in services/catalog löscht, plane das Entfernen verbundener Aufgaben über libraries/job-client und services/jobs. Berücksichtige aktuellen Pfad, fehlenden HTTP-Vertrag, Aufgabenarten und Suchattribute, Authentifizierung, Konfiguration, Wiederholung, Persistenz, Nebenwirkungen und Tests."
 	releaseQualityQuery         = "When DELETE /catalog/items/{itemId} removes an item in services/catalog, plan a release-ready cleanup of related jobs through libraries/job-client and services/jobs. Cover the provider base job model in services/jobs and its catalogId/itemId lookup attributes, JobClientConfig Spring configuration properties for base URL, credentials, timeouts and retry limits, JobClientAuth setBasicAuth headers, JobSecurity technical-role policy, CatalogJobRepository and CatalogChangeJobRepository persistence, and JobManagementControllerTest and JobServiceTest coverage."
+	broadReleaseQualityQuery    = "When DELETE /catalog/items/{itemId} removes an item in services/catalog, analyze the current and required cross-service cleanup through libraries/job-client and services/jobs. Cover the public and internal HTTP contracts, both job types and lookup attributes, client and provider authentication and configuration, retry and failure behavior, persistence, side effects, and the exact production and executable test files required for a release-ready change."
 )
 
 func TestBuildContextBudgetsFinalDecisionMetadata(t *testing.T) {
@@ -393,6 +394,118 @@ func TestBuildContextProvesReleaseQualityWithoutPrivateRules(t *testing.T) {
 			contextSourceFileCount(pack),
 		)
 	}
+}
+
+func TestBuildContextBalancesBroadReleaseEvidence(t *testing.T) {
+	root := writeReleaseQualityMissingContractFixture(t)
+	const budgetTokens = 4000
+	const maxFiles = 12
+
+	var (
+		firstBuild []byte
+		pack       ContextPack
+	)
+	for build := 0; build < 3; build++ {
+		candidate, err := BuildContext(ContextRequest{
+			Root: root, Query: broadReleaseQualityQuery,
+			BudgetTokens: budgetTokens, MaxFiles: maxFiles,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.Marshal(candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if build == 0 {
+			firstBuild = encoded
+			pack = candidate
+		} else if string(encoded) != string(firstBuild) {
+			t.Fatalf("build %d changed the context pack:\nfirst: %s\nnext:  %s", build+1, firstBuild, encoded)
+		}
+	}
+
+	for _, want := range []struct {
+		project string
+		path    string
+	}{
+		{project: "libraries/job-client", path: "src/main/java/example/JobClient.java"},
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientConfig.java"},
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientAuth.java"},
+		{project: "services/catalog", path: "src/main/resources/application.yml"},
+		{project: "services/catalog", path: "src/test/resources/application-test.yml"},
+		{project: "services/jobs", path: "src/main/java/example/BaseCatalogJobEntity.java"},
+		{project: "services/jobs", path: "src/main/java/example/JobManagementController.java"},
+		{project: "services/jobs", path: "src/main/java/example/JobSecurity.java"},
+		{project: "services/jobs", path: "src/main/java/example/CatalogJobRepository.java"},
+		{project: "services/jobs", path: "src/main/java/example/CatalogChangeJobRepository.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobManagementControllerTest.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobServiceTest.java"},
+	} {
+		if !contextPackRepresentsSourcePath(pack, want.project, want.path) {
+			t.Errorf("required broad release evidence %q missing", want.project+":"+want.path)
+		}
+	}
+	if contextPackRepresentsSourcePath(
+		pack,
+		"services/catalog",
+		"src/main/java/example/CatalogJobEntity.java",
+	) {
+		t.Error("wrong-project duplicate model displaced provider evidence")
+	}
+	for _, sentinel := range []string{
+		"https://jobs.invalid",
+		"fixture-client-user",
+		"fixture-client-password",
+		"https://jobs-test.invalid",
+		"fixture-test-user",
+		"fixture-test-password",
+	} {
+		if strings.Contains(string(firstBuild), sentinel) {
+			t.Errorf("sentinel configuration value %q leaked into final context", sentinel)
+		}
+	}
+	if pack.BudgetTokens != budgetTokens ||
+		contextSourceFileCount(pack) != maxFiles ||
+		len(pack.SourceSections) != maxFiles ||
+		len(pack.SourceOmissions) != 3 {
+		t.Errorf(
+			"broad release bounds = tokens %d/%d aggregate_files %d/%d sections %d/%d omissions %d/3",
+			pack.BudgetTokens,
+			budgetTokens,
+			contextSourceFileCount(pack),
+			maxFiles,
+			len(pack.SourceSections),
+			maxFiles,
+			len(pack.SourceOmissions),
+		)
+	}
+}
+
+func contextPackRepresentsSourcePath(pack ContextPack, project, path string) bool {
+	project = normalizeContextProject(project)
+	path = contextPackSourceFile(path)
+	matches := func(actualProject, actualPath string) bool {
+		return normalizeContextProject(actualProject) == project &&
+			contextPackSourceFile(actualPath) == path
+	}
+	for _, section := range pack.SourceSections {
+		if matches(section.Project, section.Path) {
+			return true
+		}
+	}
+	for _, file := range pack.Files {
+		if matches(file.Project, file.Path) {
+			return true
+		}
+	}
+	for _, omission := range pack.SourceOmissions {
+		if matches(omission.Project, omission.Path) &&
+			omission.StartLine > 0 && omission.EndLine >= omission.StartLine {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCompileContextPackKeepsTestForAcceptedRelatedProvider(t *testing.T) {
@@ -1736,8 +1849,26 @@ func writeReleaseQualityMissingContractFixture(t *testing.T) string {
 	writeContextSourceFile(
 		t,
 		root,
+		filepath.Join("services/jobs", "src/main/java/example/JobManagementController.java"),
+		contextReleaseQualityManagementControllerFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
 		filepath.Join("services/jobs", "src/test/java/example/JobServiceTest.java"),
 		contextReleaseQualityServiceTestFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("services/catalog", "src/main/resources/application.yml"),
+		contextReleaseQualityApplicationConfigurationFixtureSource(false),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("services/catalog", "src/test/resources/application-test.yml"),
+		contextReleaseQualityApplicationConfigurationFixtureSource(true),
 	)
 	return root
 }
@@ -1787,6 +1918,20 @@ func releaseQualityMissingContractIndex() scan.AgentContextIndexRecord {
 			File: "src/test/java/example/JobServiceTest.java",
 			Line: 8, EndLine: 15, Confidence: "EXACT",
 			Search: "job deletion persistence side effects test",
+		},
+		scan.AgentContextFactRecord{
+			ID: "catalog-job-client-configuration", Project: "services/catalog", Kind: "configuration",
+			Name: "jobClientConfiguration", Qualified: "catalog.application.jobClientConfiguration",
+			File: "src/main/resources/application.yml",
+			Line: 1, EndLine: 6, Confidence: "EXACT",
+			Search: "catalog job client configuration base url credentials timeout retries",
+		},
+		scan.AgentContextFactRecord{
+			ID: "catalog-job-client-test-configuration", Project: "services/catalog", Kind: "configuration",
+			Name: "jobClientTestConfiguration", Qualified: "catalog.applicationTest.jobClientConfiguration",
+			File: "src/test/resources/application-test.yml",
+			Line: 1, EndLine: 6, Confidence: "EXACT",
+			Search: "catalog job client test profile configuration base url credentials timeout retries",
 		},
 	)
 	index.Edges = append(
@@ -1978,6 +2123,37 @@ func contextReleaseQualityServerPolicyFixtureSource() string {
 	lines[12] = "  }"
 	lines[13] = "}"
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextReleaseQualityManagementControllerFixtureSource() string {
+	lines := numberedSourceLines(20)
+	lines[9] = "@RestController"
+	lines[10] = "class JobManagementController {"
+	lines[11] = "  @GetMapping(\"/job-management/jobs\")"
+	lines[12] = "  List<JobPayload> listJobs() { return jobService.listJobs(); }"
+	lines[13] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextReleaseQualityApplicationConfigurationFixtureSource(testProfile bool) string {
+	if testProfile {
+		return strings.Join([]string{
+			"jobs:",
+			"  base-url: https://jobs-test.invalid",
+			"  username: fixture-test-user",
+			"  password: fixture-test-password",
+			"  connect-timeout: 5s",
+			"  max-retries: 1",
+		}, "\n") + "\n"
+	}
+	return strings.Join([]string{
+		"jobs:",
+		"  base-url: https://jobs.invalid",
+		"  username: fixture-client-user",
+		"  password: fixture-client-password",
+		"  connect-timeout: 1s",
+		"  max-retries: 3",
+	}, "\n") + "\n"
 }
 
 func contextReleaseQualityServiceTestFixtureSource() string {
