@@ -94,9 +94,10 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
 The exact matched-prompt protocol and treatment instructions are defined in
 [`BENCHMARKING.md`](BENCHMARKING.md). The baseline may append only the specified
 one-line prohibition; the assisted variant may append only the specified
-eleven-line bounded Context instruction. All other prompt and execution inputs
-must be identical, including skill availability. Control skill isolation in the
-invocation, never by adding “do not use skills” to a treatment prompt. Retain
+twelve-line bounded Context instruction. All other prompt and execution inputs
+must be identical, including plugin and skill availability. Record identical
+plugin versions and per-skill states, verify the effective configuration in a
+smoke transcript, and never control skills through a treatment prompt. Retain
 every raw JSONL transcript, separate stderr log, analyzer result, `summary.tsv`,
 and the signed manual rubric outside the repository. The harness supplies
 `--json`; callers must not supply it through `CODEX_BENCHMARK_ARGS`.

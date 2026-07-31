@@ -1154,6 +1154,20 @@ other specialist queries remain available for manual compatibility. They are not
 part of the normal AI workflow. Workspace-root Context Packs remain neutral and
 derive requested scope only from the actual invocation.
 
+## Agent workflow skills and plugins
+
+GoreGraph is compatible with task-scoped skills such as brainstorming,
+planning, testing, and review. The generated Agent Guide should remain the
+authority for source acquisition; complementary workflow skills should run
+after the guide and Context Pack have established the source boundary.
+
+Always-on bootstrap or broad debugging skills that require their own reads
+before project instructions can preempt that workflow. Their precedence is
+controlled by the agent host, not by GoreGraph. For controlled benchmarks,
+record plugin versions and per-skill states, verify the effective setup in a
+smoke transcript, and treat pre-guide external skill reads as environment
+contamination. Do not add skill-control instructions to the task prompt.
+
 ## Agent context benchmark and release gate
 
 The 1.3.0 Context integration uses a matched-prompt three-by-three benchmark:
@@ -1184,7 +1198,7 @@ The benchmark consumes Codex JSONL logs and distinguishes compact
 are retained as diagnostic evidence, while a repeated full `context_id` fails
 the release gate.
 
-The exact one-line baseline instruction, eleven-line assisted instruction,
+The exact one-line baseline instruction, twelve-line assisted instruction,
 execution protocol, rubric, and dashboard-only decision when a gate fails are
 defined in [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md). A failed gate blocks
 the 1.3.0 release.

@@ -23,8 +23,11 @@ Every baseline and assisted run must use:
 
 The only treatment difference is the instruction appended to the neutral base
 prompt. Do not add, remove, paraphrase, or reorder any other text.
-Control skill isolation through the Codex invocation, not through either
-treatment prompt. In particular, never add “do not use skills” to one prompt.
+Configure identical plugin and skill states outside the treatment prompt. Do
+not assume that `--ignore-user-config` disables plugin-provided skills: verify
+the effective setup with a smoke transcript, and record plugin versions and
+per-skill states with the retained evidence. Never add “do not use skills” or
+equivalent control text to either treatment prompt.
 
 Set `CODEX_BENCHMARK_ARGS` as one literal argument per line. The harness rejects
 space-split or executable shell text and never evaluates this value:
@@ -181,8 +184,10 @@ earlier ambiguous single duplicate-pack column.
 No current controlled three-by-three result has passed the release gates. The retained one-pair runs are diagnostic only and cannot establish release proof. Publication remains blocked until a fresh matched three-by-three run passes the token and structural gates and receives the required signed 12-point quality review.
 <!-- goregraph:generated release-evidence-status end -->
 
-A release run must isolate skills in the invocation for both treatments; prompt
-text must not be used to disable skills for only one variant.
+A release run must use the same recorded plugin and skill configuration for
+both treatments. External skill reads before the generated Agent Guide in an
+assisted transcript are environment contamination and require a clean rerun;
+prompt text must not be used to disable skills for either variant.
 
 ## Twelve-point quality rubric
 
