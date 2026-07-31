@@ -410,6 +410,7 @@ run_variant() {
   codex "${effective_codex_args[@]}" <"$prompt_path" >"$log_path" 2>"$stderr_path"
   codex_status=$?
   set -e
+  verify_workspace_snapshot
   [ "$codex_status" -eq 0 ] ||
     die "$variant run $run_number failed with exit $codex_status; JSONL log retained at $log_path; stderr retained at $stderr_path"
 

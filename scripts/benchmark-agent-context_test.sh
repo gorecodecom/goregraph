@@ -58,7 +58,15 @@ emit_command() {
   fi
 }
 prompt=$(cat)
-if [ "${FAKE_MUTATE_WORKSPACE:-0}" = "1" ]; then
+mutate_workspace=${FAKE_MUTATE_WORKSPACE:-0}
+if [ "${FAKE_MUTATE_FINAL_RUN:-0}" = "1" ]; then
+  completed_runs=0
+  if [ -e "$FAKE_ORDER" ]; then
+    completed_runs=$(awk 'END { print NR + 0 }' "$FAKE_ORDER")
+  fi
+  [ "$completed_runs" -ne 5 ] || mutate_workspace=1
+fi
+if [ "$mutate_workspace" = "1" ]; then
   printf 'mutation\n' >>"$FAKE_WORKSPACE/service.txt"
 fi
 case "$prompt" in
@@ -197,6 +205,7 @@ run_harness() {
     FAKE_ASSISTED_REPEATED_FULL=${FAKE_ASSISTED_REPEATED_FULL:-0} \
     FAKE_ASSISTED_INCLUDED_REREAD=${FAKE_ASSISTED_INCLUDED_REREAD:-0} \
     FAKE_MUTATE_WORKSPACE=${FAKE_MUTATE_WORKSPACE:-0} \
+    FAKE_MUTATE_FINAL_RUN=${FAKE_MUTATE_FINAL_RUN:-0} \
     /bin/bash "$harness" \
       --workspace "$canonical_workspace" \
       --prompt "$temporary_directory/base-prompt.txt" \
@@ -272,6 +281,38 @@ printf 'fixture\n' >"$canonical_workspace/service.txt"
   fail "harness started another run after workspace mutation"
 [ ! -e "$temporary_directory/workspace-mutated/assisted-1.log" ] ||
   fail "assisted run started after workspace mutation"
+
+FAKE_MUTATE_FINAL_RUN=1
+export FAKE_MUTATE_FINAL_RUN
+if run_harness final-workspace-mutated \
+  >"$temporary_directory/final-workspace-mutated.stdout" \
+  2>"$temporary_directory/final-workspace-mutated.stderr"; then
+  fail "final workspace mutation passed"
+fi
+unset FAKE_MUTATE_FINAL_RUN
+printf 'fixture\n' >"$canonical_workspace/service.txt"
+[ "$(tr -d '\n' <"$temporary_directory/final-workspace-mutated.order")" = "baabba" ] ||
+  fail "final workspace mutation did not occur during the sixth run"
+[ -s "$temporary_directory/final-workspace-mutated/assisted-3.log" ] ||
+  fail "final mutated run transcript was not retained"
+[ -s "$temporary_directory/final-workspace-mutated/assisted-3.log.stderr" ] ||
+  fail "final mutated run stderr was not retained"
+[ ! -e "$temporary_directory/final-workspace-mutated/assisted-3.log.metrics.tsv" ] ||
+  fail "final mutated run was analyzed"
+[ ! -e "$temporary_directory/final-workspace-mutated/assisted-3.log.skill-reads.json" ] ||
+  fail "final mutated run produced skill-read evidence"
+run_rows=$(awk -F '\t' '$2 ~ /^[1-3]$/ { rows++ } END { print rows + 0 }' \
+  "$temporary_directory/final-workspace-mutated/summary.tsv")
+[ "$run_rows" -eq 5 ] || fail "final workspace mutation retained $run_rows run rows, want 5"
+if grep -q $'\tmedian\t' "$temporary_directory/final-workspace-mutated/summary.tsv"; then
+  fail "final workspace mutation produced aggregate median evidence"
+fi
+if grep -q 'Token and structural gates passed' \
+  "$temporary_directory/final-workspace-mutated.stdout"; then
+  fail "final workspace mutation produced a passing aggregate verdict"
+fi
+grep -q 'workspace snapshot changed' "$temporary_directory/final-workspace-mutated.stderr" ||
+  fail "final workspace mutation did not report the snapshot failure"
 
 FAKE_ASSISTED_TOKENS=88001
 export FAKE_ASSISTED_TOKENS
@@ -421,8 +462,15 @@ fi
   fail "Codex ran before blank model rejection"
 
 sentinel="$temporary_directory/injected"
-literal_args=${safe_args/test-model/\$\(touch "$sentinel"\)}
+literal_argument="\$(touch \"$sentinel\")"
+literal_args=${safe_args/test model/$literal_argument}
+case "$literal_args" in
+  *"$literal_argument"*) ;;
+  *) fail "literal argument fixture does not contain the injection payload" ;;
+esac
 run_harness literal-argument "$literal_args" >/dev/null
 [ ! -e "$sentinel" ] || fail "literal Codex argument executed shell text"
+grep -Fqx -- "$literal_argument" "$temporary_directory/literal-argument/codex-args.txt" ||
+  fail "literal Codex argument was not retained losslessly"
 
 printf 'PASS: benchmark-agent-context harness\n'
