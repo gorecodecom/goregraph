@@ -2196,6 +2196,86 @@ func TestExistingFlowOmissionsPreserveConcernRank(t *testing.T) {
 	}
 }
 
+func TestMissingTransitionOmissionsPreferUnrepresentedPublicAreas(t *testing.T) {
+	const query = "DELETE /orders/{orderID}; the required future HTTP contract is missing"
+	pack := ContextPack{Query: query, selectionQuery: query}
+	baseDomain := newContextConcern(
+		contextConcernDomainModel,
+		"services/orders",
+		true,
+		[]string{"order", "order-change"},
+		"order models",
+	)
+	basePersistence := newContextConcern(
+		contextConcernPersistence,
+		"services/orders",
+		true,
+		[]string{"order-repository", "order-change-repository"},
+		"order persistence",
+	)
+	concerns := []contextConcern{
+		newContextEvidenceConcern(baseDomain, "order", []string{"order"}, "order model"),
+		newContextEvidenceConcern(baseDomain, "order-change", []string{"order-change"}, "order change model"),
+		newContextEvidenceConcern(basePersistence, "order", []string{"order-repository"}, "order repository"),
+		newContextEvidenceConcern(basePersistence, "order-change", []string{"order-change-repository"}, "order change repository"),
+		newContextConcern(contextConcernAuth, "services/orders", true, []string{"auth"}, "order authentication"),
+		newContextConcern(contextConcernConfiguration, "services/orders", true, []string{"config"}, "order configuration"),
+		newContextConcern(contextConcernSideEffects, "services/orders", true, []string{"events"}, "order side effects"),
+		newContextConcern(contextConcernTests, "services/orders", true, []string{"order-test"}, "order tests"),
+	}
+	candidate := func(id, path, role string) sourceCandidate {
+		return sourceCandidate{
+			FactID: id, FactIDs: []string{id}, Project: "services/orders", Path: path,
+			StartLine: 1, EndLine: 3, Role: role,
+		}
+	}
+	candidates := []sourceCandidate{
+		candidate("order", "Order.java", contextConcernDomainModel),
+		candidate("order-change", "OrderChange.java", contextConcernDomainModel),
+		candidate("order-repository", "OrderRepository.java", contextConcernPersistence),
+		candidate("order-change-repository", "OrderChangeRepository.java", contextConcernPersistence),
+		candidate("auth", "OrderAuth.java", "call_chain"),
+		candidate("config", "OrderConfig.java", "call_chain"),
+		candidate("events", "OrderEvents.java", "call_chain"),
+		candidate("order-test", "OrderServiceTest.java", "test"),
+	}
+	options := make([]contextSourceOption, 0, len(candidates))
+	for index, optionCandidate := range candidates {
+		options = append(options, contextSourceOption{
+			candidate: optionCandidate,
+			section: ContextSourceSection{
+				Project: optionCandidate.Project, Path: optionCandidate.Path,
+				StartLine: optionCandidate.StartLine, EndLine: optionCandidate.EndLine,
+			},
+			concernKeys: []string{concerns[index].key},
+		})
+	}
+	pack.SourceSections = []ContextSourceSection{options[0].section, options[2].section}
+
+	got := contextSourceEvidenceOmissionsWithOptions(
+		pack,
+		scan.AgentContextIndexRecord{},
+		concerns,
+		candidates,
+		options,
+		nil,
+		map[string]bool{},
+	)
+	if len(got) != MaxContextSourceOmissions {
+		t.Fatalf("omissions = %#v, want %d", got, MaxContextSourceOmissions)
+	}
+	publicAreas := map[string]bool{}
+	for _, omission := range got {
+		if omission.Role == contextConcernDomainModel || omission.Role == contextConcernPersistence {
+			t.Fatalf("rendered public area displaced an unrepresented one: %#v", got)
+		}
+		publicAreas[omission.Path] = true
+	}
+	if len(publicAreas) != MaxContextSourceOmissions {
+		t.Fatalf("omissions = %#v, want %d distinct unrepresented public areas", got, MaxContextSourceOmissions)
+	}
+}
+
 func TestExistingFlowOmissionsPreserveQualityBeforeFacetCoverage(t *testing.T) {
 	const query = "Explain the existing DELETE /jobs/{jobId} side effects."
 	base := newContextConcern(

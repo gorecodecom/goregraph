@@ -4118,7 +4118,7 @@ func contextSourceEvidenceOmissionsWithOptions(
 		ranks[key] = max(ranks[key], concern.rank)
 		priorities[key] = max(
 			priorities[key],
-			contextSourceOmissionPriority(pack, concern, omission),
+			contextSourceOmissionPriority(pack, concern, omission, concerns, options),
 		)
 		if concern.facet == "" {
 			continue
@@ -4161,6 +4161,8 @@ func contextSourceOmissionPriority(
 	pack ContextPack,
 	concern contextConcern,
 	omission ContextSourceOmission,
+	concerns []contextConcern,
+	options []contextSourceOption,
 ) int {
 	if contextPackSourceFile(omission.Path) == "" {
 		return 0
@@ -4168,30 +4170,61 @@ func contextSourceOmissionPriority(
 	if !contextQueryPlansMissingTransition(contextSelectionQuery(pack)) {
 		return 100
 	}
+	priority := 0
+	if !contextSourcePublicAreaRendered(pack, concern, concerns, options) {
+		priority = 1000
+	}
 	switch {
 	case concern.kind == contextConcernSideEffects &&
 		contextPackHasMissingContractProject(pack, concern.project) &&
 		omission.Role == contextSourceConcernRole(contextConcernSideEffects):
-		return 700
+		return priority + 700
 	case concern.kind == contextConcernTests &&
 		contextPackHasMissingContractProject(pack, concern.project) &&
 		omission.Role == contextSourceConcernRole(contextConcernTests):
-		return 600
+		return priority + 600
 	case concern.kind == contextConcernPersistence &&
 		contextPackHasMissingContractProject(pack, concern.project) &&
 		omission.Role == contextSourceConcernRole(contextConcernPersistence):
-		return 500
+		return priority + 500
 	case concern.kind == contextConcernDomainModel &&
 		omission.Role == contextSourceConcernRole(contextConcernDomainModel):
-		return 400
+		return priority + 400
 	case concern.kind == contextConcernHTTPContract ||
 		concern.kind == contextConcernConfiguration ||
 		concern.kind == contextConcernAuth ||
 		concern.kind == contextConcernResilience:
-		return 300
+		return priority + 300
 	default:
-		return 100
+		return priority + 100
 	}
+}
+
+func contextSourcePublicAreaRendered(
+	pack ContextPack,
+	concern contextConcern,
+	concerns []contextConcern,
+	options []contextSourceOption,
+) bool {
+	publicKey := firstNonEmptyContext(concern.publicKey, concern.key)
+	known := make(map[string]contextConcern, len(concerns))
+	for _, candidate := range concerns {
+		known[candidate.key] = candidate
+	}
+	for _, section := range pack.SourceSections {
+		for _, option := range options {
+			if option.section != section {
+				continue
+			}
+			for key := range contextSourceOptionProvenConcernKeys(option, known) {
+				candidate := known[key]
+				if candidate.required && firstNonEmptyContext(candidate.publicKey, candidate.key) == publicKey {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func contextPackHasMissingContractProject(
