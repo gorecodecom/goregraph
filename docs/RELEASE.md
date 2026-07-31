@@ -98,7 +98,11 @@ twelve-line bounded Context instruction. All other prompt and execution inputs
 must be identical, including plugin and skill availability. Never control
 skills through a treatment prompt. `--ignore-user-config` is not a
 skill-isolation guarantee. The harness records plugin state but never mutates
-it. Retain every raw JSONL transcript, separate stderr log, analyzer result,
+it. Because that flag also ignores stored per-skill switches, the harness may
+receive at most one explicit `skills.config=[...]` override through
+`CODEX_BENCHMARK_ARGS`; it must be identical for both variants and is retained
+in the effective argument vector. Retain every raw JSONL transcript, separate
+stderr log, analyzer result,
 `summary.tsv`, and the signed manual rubric outside the repository. The harness
 supplies `--json`; callers must not supply it through
 `CODEX_BENCHMARK_ARGS`.

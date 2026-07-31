@@ -64,6 +64,13 @@ is_reasoning_config() {
   return 1
 }
 
+is_skill_config() {
+  case "$1" in
+    skills.config=\[*\]) return 0 ;;
+  esac
+  return 1
+}
+
 require_nonblank_model() {
   case "$1" in
     *[![:space:]]*) return 0 ;;
@@ -176,6 +183,7 @@ sandbox_count=0
 exec_count=0
 model_count=0
 reasoning_count=0
+skill_config_count=0
 color_count=0
 skip_git_count=0
 ephemeral_count=0
@@ -226,14 +234,24 @@ while [ "$index" -lt "${#codex_args[@]}" ]; do
     -c|--config)
       index=$((index + 1))
       [ "$index" -lt "${#codex_args[@]}" ] || die "$argument requires a value"
-      is_reasoning_config "${codex_args[$index]}" ||
-        die "unsupported Codex config override: ${codex_args[$index]}"
-      reasoning_count=$((reasoning_count + 1))
+      config_override=${codex_args[$index]}
+      if is_reasoning_config "$config_override"; then
+        reasoning_count=$((reasoning_count + 1))
+      elif is_skill_config "$config_override"; then
+        skill_config_count=$((skill_config_count + 1))
+      else
+        die "unsupported Codex config override: $config_override"
+      fi
       ;;
     --config=*)
-      is_reasoning_config "${argument#--config=}" ||
-        die "unsupported Codex config override: ${argument#--config=}"
-      reasoning_count=$((reasoning_count + 1))
+      config_override=${argument#--config=}
+      if is_reasoning_config "$config_override"; then
+        reasoning_count=$((reasoning_count + 1))
+      elif is_skill_config "$config_override"; then
+        skill_config_count=$((skill_config_count + 1))
+      else
+        die "unsupported Codex config override: $config_override"
+      fi
       ;;
     --color)
       index=$((index + 1))
@@ -272,6 +290,7 @@ done
 [ "$exec_count" -eq 1 ] || die "CODEX_BENCHMARK_ARGS must contain exactly one exec argument"
 [ "$model_count" -eq 1 ] || die "CODEX_BENCHMARK_ARGS must set one explicit model"
 [ "$reasoning_count" -eq 1 ] || die "CODEX_BENCHMARK_ARGS must set model_reasoning_effort exactly once"
+[ "$skill_config_count" -le 1 ] || die "CODEX_BENCHMARK_ARGS may set skills.config at most once"
 [ "$color_count" -eq 1 ] || die "CODEX_BENCHMARK_ARGS must set color never exactly once"
 [ "$skip_git_count" -eq 1 ] || die "CODEX_BENCHMARK_ARGS must contain --skip-git-repo-check exactly once"
 [ "$ephemeral_count" -eq 1 ] || die "CODEX_BENCHMARK_ARGS must contain --ephemeral exactly once"

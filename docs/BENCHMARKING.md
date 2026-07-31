@@ -38,7 +38,7 @@ Set `CODEX_BENCHMARK_ARGS` as one literal argument per line. The harness rejects
 space-split or executable shell text and never evaluates this value:
 
 ```bash
-export CODEX_BENCHMARK_ARGS=$'-a\nnever\nexec\n--sandbox\nread-only\n--skip-git-repo-check\n--ephemeral\n--ignore-user-config\n--ignore-rules\n--color\nnever\n-m\n<model>\n-c\nmodel_reasoning_effort="high"'
+export CODEX_BENCHMARK_ARGS=$'-a\nnever\nexec\n--sandbox\nread-only\n--skip-git-repo-check\n--ephemeral\n--ignore-user-config\n--ignore-rules\n--color\nnever\n-m\n<model>\n-c\nmodel_reasoning_effort="high"\n-c\nskills.config=[{path="/absolute/path/to/always-on-bootstrap/SKILL.md",enabled=false}]'
 ```
 
 The vector must contain exactly one `exec`, explicit model and reasoning
@@ -47,6 +47,15 @@ settings, approval mode `never`, sandbox `read-only`, `--ephemeral`,
 mode `never`. The harness owns the workspace and prompt arguments. It rejects
 web search, extra directories, JSON mode, danger flags, and duplicate
 controlled settings.
+
+`--ignore-user-config` also discards per-skill switches stored by the Codex UI
+or in `config.toml`. To reproduce an intentional benchmark skill state without
+changing either treatment prompt, the harness permits at most one additional
+`skills.config=[...]` override. Use absolute skill paths, pass the identical
+override to both variants through `CODEX_BENCHMARK_ARGS`, and retain the exact
+effective vector in `codex-args.txt`. This controlled override is not a general
+recommendation to disable complementary Brainstorming, TDD, debugging, or
+review skills during normal GoreGraph use.
 
 The baseline instruction is exactly this one line:
 

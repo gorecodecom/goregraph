@@ -440,6 +440,13 @@ fi
 [ ! -s "$temporary_directory/unsafe-config.order" ] ||
   fail "Codex ran before unsafe config rejection"
 
+controlled_skill_config='skills.config=[{path="/opt/superpowers/using-superpowers/SKILL.md",enabled=false},{path="/opt/superpowers/systematic-debugging/SKILL.md",enabled=false}]'
+controlled_skill_args="${safe_args}"$'\n-c\n'"$controlled_skill_config"
+run_harness controlled-skill-config "$controlled_skill_args" >/dev/null
+grep -Fqx -- "$controlled_skill_config" \
+  "$temporary_directory/controlled-skill-config/codex-args.txt" ||
+  fail "controlled skill config was not retained losslessly"
+
 json_args="${safe_args}"$'\n--json'
 if run_harness user-json "$json_args" >/dev/null 2>&1; then
   fail "user-supplied JSON mode passed"
