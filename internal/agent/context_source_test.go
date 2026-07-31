@@ -5287,13 +5287,17 @@ func TestRenderSourceCandidateRedactsConfigurationValues(t *testing.T) {
 func TestRenderSourceCandidateRedactsMultilineConfigurationValues(t *testing.T) {
 	properties := []string{
 		"auth.password=first\\\\\\",
-		"  # continuation comment",
+		"  #SENTINEL_PROPERTIES_HASH_PAYLOAD\\",
+		"  !SENTINEL_PROPERTIES_BANG_PAYLOAD",
 		"",
-		"  SENTINEL_PROPERTIES_CONTINUATION\\",
-		"  SENTINEL_PROPERTIES_TERMINAL",
+		"# external property comment",
 		"plain.value=after-continuation",
 		"escaped.value=two-backslashes\\\\",
 		"next.value=SENTINEL_AFTER_EVEN_BACKSLASH",
+		"blank.password=before-blank\\",
+		"",
+		"# property comment after terminated blank",
+		"after-blank.value=SENTINEL_AFTER_BLANK",
 	}
 	propertyCandidate := sourceCandidate{
 		Path: "src/main/resources/bootstrap.properties", StartLine: 1, EndLine: len(properties),
@@ -5307,20 +5311,24 @@ func TestRenderSourceCandidateRedactsMultilineConfigurationValues(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, value := range []string{"first", "SENTINEL_PROPERTIES_CONTINUATION", "SENTINEL_PROPERTIES_TERMINAL", "after-continuation", "two-backslashes", "SENTINEL_AFTER_EVEN_BACKSLASH"} {
+	for _, value := range []string{"first", "SENTINEL_PROPERTIES_HASH_PAYLOAD", "SENTINEL_PROPERTIES_BANG_PAYLOAD", "after-continuation", "two-backslashes", "SENTINEL_AFTER_EVEN_BACKSLASH", "before-blank", "SENTINEL_AFTER_BLANK"} {
 		if strings.Contains(propertySection.Content, value) {
 			t.Fatalf("rendered properties retain %q:\n%s", value, propertySection.Content)
 		}
 	}
 	for _, line := range []string{
 		"1\tauth.password=<redacted>",
-		"2\t  # continuation comment",
-		"3\t",
-		"4\t  <redacted>",
-		"5\t  <redacted>",
+		"2\t  <redacted>",
+		"3\t  <redacted>",
+		"4\t",
+		"5\t# external property comment",
 		"6\tplain.value=<redacted>",
 		"7\tescaped.value=<redacted>",
 		"8\tnext.value=<redacted>",
+		"9\tblank.password=<redacted>",
+		"10\t",
+		"11\t# property comment after terminated blank",
+		"12\tafter-blank.value=<redacted>",
 	} {
 		if !strings.Contains(propertySection.Content, line) {
 			t.Fatalf("rendered properties missing %q:\n%s", line, propertySection.Content)
@@ -5328,10 +5336,12 @@ func TestRenderSourceCandidateRedactsMultilineConfigurationValues(t *testing.T) 
 	}
 
 	yaml := []string{
+		"# external YAML comment",
 		"credentials:",
 		"  password: |-",
 		"    SENTINEL_YAML_LITERAL",
-		"    # block comment",
+		"    #SENTINEL_YAML_HASH_PAYLOAD",
+		"    !SENTINEL_YAML_BANG_PAYLOAD",
 		"",
 		"    SENTINEL_YAML_LITERAL_SECOND",
 		"  token: >2-",
@@ -5341,6 +5351,16 @@ func TestRenderSourceCandidateRedactsMultilineConfigurationValues(t *testing.T) 
 		"    - password: |+",
 		"        SENTINEL_YAML_LIST_BLOCK",
 		"    - name: next-entry",
+		"  literal-items:",
+		"    - |",
+		"      #SENTINEL_YAML_LIST_HASH_PAYLOAD",
+		"      !SENTINEL_YAML_LIST_BANG_PAYLOAD",
+		"    - sibling-value",
+		"  folded-items:",
+		"    - >-",
+		"      SENTINEL_YAML_LIST_FOLDED",
+		"    - sibling-folded",
+		"# external YAML after",
 	}
 	yamlCandidate := sourceCandidate{
 		Path: "src/test/resources/application-test.yml", StartLine: 1, EndLine: len(yaml),
@@ -5354,25 +5374,37 @@ func TestRenderSourceCandidateRedactsMultilineConfigurationValues(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, value := range []string{"SENTINEL_YAML_LITERAL", "SENTINEL_YAML_LITERAL_SECOND", "SENTINEL_YAML_FOLDED", "next-value", "SENTINEL_YAML_LIST_BLOCK", "next-entry"} {
+	for _, value := range []string{"SENTINEL_YAML_LITERAL", "SENTINEL_YAML_HASH_PAYLOAD", "SENTINEL_YAML_BANG_PAYLOAD", "SENTINEL_YAML_LITERAL_SECOND", "SENTINEL_YAML_FOLDED", "next-value", "SENTINEL_YAML_LIST_BLOCK", "next-entry", "SENTINEL_YAML_LIST_HASH_PAYLOAD", "SENTINEL_YAML_LIST_BANG_PAYLOAD", "sibling-value", "SENTINEL_YAML_LIST_FOLDED", "sibling-folded"} {
 		if strings.Contains(yamlSection.Content, value) {
 			t.Fatalf("rendered YAML retains %q:\n%s", value, yamlSection.Content)
 		}
 	}
 	for _, line := range []string{
-		"1\tcredentials:",
-		"2\t  password: <redacted>",
-		"3\t    <redacted>",
-		"4\t    # block comment",
-		"5\t",
+		"1\t# external YAML comment",
+		"2\tcredentials:",
+		"3\t  password: <redacted>",
+		"4\t    <redacted>",
+		"5\t    <redacted>",
 		"6\t    <redacted>",
-		"7\t  token: <redacted>",
+		"7\t",
 		"8\t    <redacted>",
-		"9\t  plain: <redacted>",
-		"10\t  entries:",
-		"11\t    - password: <redacted>",
-		"12\t        <redacted>",
-		"13\t    - <redacted>",
+		"9\t  token: <redacted>",
+		"10\t    <redacted>",
+		"11\t  plain: <redacted>",
+		"12\t  entries:",
+		"13\t    - password: <redacted>",
+		"14\t        <redacted>",
+		"15\t    - <redacted>",
+		"16\t  literal-items:",
+		"17\t    - <redacted>",
+		"18\t      <redacted>",
+		"19\t      <redacted>",
+		"20\t    - <redacted>",
+		"21\t  folded-items:",
+		"22\t    - <redacted>",
+		"23\t      <redacted>",
+		"24\t    - <redacted>",
+		"25\t# external YAML after",
 	} {
 		if !strings.Contains(yamlSection.Content, line) {
 			t.Fatalf("rendered YAML missing %q:\n%s", line, yamlSection.Content)

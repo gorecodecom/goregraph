@@ -897,7 +897,7 @@ func redactContextConfigurationValues(path, content string) string {
 		prefix, source := contextConfigurationLinePrefix(line)
 		trimmed := strings.TrimSpace(source)
 		if isContextConfigurationYAML(path) && yamlBlockIndent >= 0 {
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+			if trimmed == "" {
 				continue
 			}
 			indent := contextConfigurationIndent(source)
@@ -908,7 +908,8 @@ func redactContextConfigurationValues(path, content string) string {
 			yamlBlockIndent = -1
 		}
 		if !isContextConfigurationYAML(path) && propertiesContinuation {
-			if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+			if trimmed == "" {
+				propertiesContinuation = false
 				continue
 			}
 			lines[index] = prefix + source[:contextConfigurationIndent(source)] + "<redacted>"
@@ -919,8 +920,8 @@ func redactContextConfigurationValues(path, content string) string {
 			continue
 		}
 		if isContextConfigurationYAML(path) {
-			if delimiter, blockIndent, block := contextConfigurationYAMLBlockScalar(source); block {
-				lines[index] = prefix + source[:delimiter+1] + " <redacted>"
+			if header, blockIndent, block := contextConfigurationYAMLBlockScalar(source); block {
+				lines[index] = prefix + header + "<redacted>"
 				yamlBlockIndent = blockIndent
 				continue
 			}
@@ -941,16 +942,28 @@ func redactContextConfigurationValues(path, content string) string {
 	return strings.Join(lines, "\n")
 }
 
-func contextConfigurationYAMLBlockScalar(line string) (int, int, bool) {
+func contextConfigurationYAMLBlockScalar(line string) (string, int, bool) {
 	delimiter := strings.Index(line, ":")
-	if delimiter < 0 {
-		return 0, 0, false
+	if delimiter >= 0 && contextConfigurationYAMLBlockIndicator(line[delimiter+1:]) {
+		return line[:delimiter+1] + " ", contextConfigurationIndent(line), true
 	}
-	value := strings.TrimSpace(line[delimiter+1:])
-	if value == "" || value[0] != '|' && value[0] != '>' {
-		return 0, 0, false
+	start := contextConfigurationIndent(line)
+	if start >= len(line) || line[start] != '-' {
+		return "", 0, false
 	}
-	return delimiter, contextConfigurationIndent(line), true
+	valueStart := start + 1
+	for valueStart < len(line) && (line[valueStart] == ' ' || line[valueStart] == '\t') {
+		valueStart++
+	}
+	if !contextConfigurationYAMLBlockIndicator(line[valueStart:]) {
+		return "", 0, false
+	}
+	return line[:valueStart], start, true
+}
+
+func contextConfigurationYAMLBlockIndicator(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && (value[0] == '|' || value[0] == '>')
 }
 
 func contextConfigurationPropertyContinues(line string) bool {
