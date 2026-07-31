@@ -242,7 +242,7 @@ func collectValidRuns(build, caseID string, runs []ReviewedRun, failures *[]stri
 		if err := validateReview(run.Review); err != nil {
 			*failures = append(*failures, fmt.Sprintf("%s run %d attempt %d has invalid review: %v", build, run.Review.Run, run.Review.Attempt, err))
 		}
-		if err := validateMetrics(run.Metrics); err != nil {
+		if err := validateMetrics(run.Metrics, run.Invalid); err != nil {
 			*failures = append(*failures, fmt.Sprintf("%s run %d attempt %d has invalid metrics: %v", build, run.Review.Run, run.Review.Attempt, err))
 		}
 		if run.Review.CaseID != caseID {
@@ -300,17 +300,7 @@ func collectValidRuns(build, caseID string, runs []ReviewedRun, failures *[]stri
 	return valid
 }
 
-func validateMetrics(metrics RunMetrics) error {
-	if _, err := agentmetrics.ParseTokenUsageRow(metrics.TokenUsage.TSV()); err != nil {
-		return fmt.Errorf("token_usage: %w", err)
-	}
-	if metrics.Tokens != metrics.TokenUsage.TotalTokens {
-		return fmt.Errorf(
-			"tokens %d does not match token_usage.total_tokens %d",
-			metrics.Tokens,
-			metrics.TokenUsage.TotalTokens,
-		)
-	}
+func validateMetrics(metrics RunMetrics, invalid *InvalidRun) error {
 	for _, field := range []struct {
 		name  string
 		value int64
@@ -330,6 +320,22 @@ func validateMetrics(metrics RunMetrics) error {
 		if field.value < 0 {
 			return fmt.Errorf("%s must not be negative", field.name)
 		}
+	}
+	if invalid != nil &&
+		invalid.InfrastructureFailure &&
+		metrics.Tokens == 0 &&
+		metrics.TokenUsage == (agentmetrics.TokenUsage{}) {
+		return nil
+	}
+	if _, err := agentmetrics.ParseTokenUsageRow(metrics.TokenUsage.TSV()); err != nil {
+		return fmt.Errorf("token_usage: %w", err)
+	}
+	if metrics.Tokens != metrics.TokenUsage.TotalTokens {
+		return fmt.Errorf(
+			"tokens %d does not match token_usage.total_tokens %d",
+			metrics.Tokens,
+			metrics.TokenUsage.TotalTokens,
+		)
 	}
 	return nil
 }

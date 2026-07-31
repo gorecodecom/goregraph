@@ -310,6 +310,7 @@ func TestEvaluateCase(t *testing.T) {
 	t.Run("accepts an infrastructure replacement in the same logical run", func(t *testing.T) {
 		contract, golden, candidate, hypothesis, diff := passingCase()
 		failedAttempt := candidate[0]
+		failedAttempt.Metrics = RunMetrics{}
 		failedAttempt.Invalid = &InvalidRun{
 			InfrastructureFailure: true,
 			Reason:                "The local Codex process exited before responding.",
@@ -323,6 +324,65 @@ func TestEvaluateCase(t *testing.T) {
 			t.Fatalf("replacement report = %#v", report)
 		}
 	})
+
+	t.Run("rejects negative diagnostics on an infrastructure replacement", func(t *testing.T) {
+		contract, golden, candidate, hypothesis, diff := passingCase()
+		failedAttempt := candidate[0]
+		failedAttempt.Metrics = RunMetrics{ExternalSkillReadCalls: -1}
+		failedAttempt.Invalid = &InvalidRun{
+			InfrastructureFailure: true,
+			Reason:                "The local Codex process exited before responding.",
+			RetainedLog:           "candidate-run-1-attempt-1.jsonl",
+		}
+		candidate[0].Review.Attempt = 2
+		candidate = append([]ReviewedRun{failedAttempt}, candidate...)
+
+		requireGateFailure(
+			t,
+			EvaluateCase(contract, golden, candidate, hypothesis, diff),
+			"external_skill_read_calls must not be negative",
+		)
+	})
+
+	for _, test := range []struct {
+		name    string
+		metrics RunMetrics
+		failure string
+	}{
+		{
+			name: "nonzero token usage",
+			metrics: RunMetrics{
+				TokenUsage: tokenUsage(1),
+			},
+			failure: "tokens 0 does not match token_usage.total_tokens 1",
+		},
+		{
+			name: "partial token usage",
+			metrics: RunMetrics{
+				TokenUsage: agentmetrics.TokenUsage{InputTokens: 1},
+			},
+			failure: "token_usage",
+		},
+	} {
+		t.Run("rejects "+test.name+" on an infrastructure replacement", func(t *testing.T) {
+			contract, golden, candidate, hypothesis, diff := passingCase()
+			failedAttempt := candidate[0]
+			failedAttempt.Metrics = test.metrics
+			failedAttempt.Invalid = &InvalidRun{
+				InfrastructureFailure: true,
+				Reason:                "The local Codex process exited after partial usage.",
+				RetainedLog:           "candidate-run-1-attempt-1.jsonl",
+			}
+			candidate[0].Review.Attempt = 2
+			candidate = append([]ReviewedRun{failedAttempt}, candidate...)
+
+			requireGateFailure(
+				t,
+				EvaluateCase(contract, golden, candidate, hypothesis, diff),
+				test.failure,
+			)
+		})
+	}
 
 	t.Run("accepts a contract without forbidden outcomes", func(t *testing.T) {
 		contract, golden, candidate, hypothesis, diff := passingCase()
