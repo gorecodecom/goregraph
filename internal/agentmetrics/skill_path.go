@@ -6,6 +6,8 @@ import (
 	"unicode"
 )
 
+// ClassifyExternalSkillTarget resolves target from commandDirectory and reports
+// normalized skill-bundle targets outside workspace.
 func ClassifyExternalSkillTarget(
 	workspace string,
 	commandDirectory string,

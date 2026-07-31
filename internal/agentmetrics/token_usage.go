@@ -9,8 +9,10 @@ import (
 	"strings"
 )
 
+// TokenUsageHeader is the stable tab-separated column order returned by TokenUsage.TSV.
 const TokenUsageHeader = "input_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\teffective_tokens"
 
+// TokenUsage records raw Codex counters and derived benchmark token totals.
 type TokenUsage struct {
 	InputTokens           int64 `json:"input_tokens"`
 	CachedInputTokens     int64 `json:"cached_input_tokens"`
@@ -21,6 +23,7 @@ type TokenUsage struct {
 	EffectiveTokens       int64 `json:"effective_tokens"`
 }
 
+// ParseTokenUsage parses current Codex usage JSON and validates counter relationships.
 func ParseTokenUsage(raw []byte) (TokenUsage, error) {
 	var values map[string]json.RawMessage
 	if len(raw) == 0 || json.Unmarshal(raw, &values) != nil {
@@ -67,6 +70,7 @@ func ParseTokenUsage(raw []byte) (TokenUsage, error) {
 	}, nil
 }
 
+// TSV returns usage in TokenUsageHeader's tab-separated column order.
 func (usage TokenUsage) TSV() string {
 	return fmt.Sprintf(
 		"%d\t%d\t%d\t%d\t%d\t%d\t%d",
@@ -80,6 +84,7 @@ func (usage TokenUsage) TSV() string {
 	)
 }
 
+// ParseTokenUsageRow parses and validates a row in TokenUsageHeader's column order.
 func ParseTokenUsageRow(row string) (TokenUsage, error) {
 	fields := strings.Split(strings.TrimSpace(row), "\t")
 	if len(fields) != 7 {
