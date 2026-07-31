@@ -21,6 +21,7 @@ fail() {
 }
 
 mkdir -p "$temporary_directory/bin" "$temporary_directory/workspace"
+canonical_workspace=$(cd -P -- "$temporary_directory/workspace" && pwd -P)
 
 cat >"$temporary_directory/bin/codex" <<'EOF'
 #!/usr/bin/env bash
@@ -84,9 +85,20 @@ case "$prompt" in
     ;;
   *)
     printf 'b\n' >>"$FAKE_ORDER"
-    if [ "${FAKE_BASELINE_SKILL_READ:-0}" = "1" ]; then
-      emit_command 'cat /opt/codex/plugins/vendor/skills/brainstorming/SKILL.md'
-    fi
+    case "${FAKE_BASELINE_SKILL_READ:-none}" in
+      executable)
+        emit_command '/bin/cat /opt/codex/plugins/vendor/skills/brainstorming/SKILL.md'
+        ;;
+      inventory)
+        emit_command '/usr/bin/rg --files /opt/codex/plugins/vendor/skills/review'
+        ;;
+      relative)
+        emit_command "/bin/zsh -lc 'cd ../external/skills/review && cat SKILL.md'"
+        ;;
+      workspace)
+        emit_command "/bin/cat $FAKE_WORKSPACE/testdata/skills/example/SKILL.md"
+        ;;
+    esac
     if [ "${FAKE_BASELINE_ZERO_SOURCE_READS:-0}" = "1" ]; then
       for number in 1 2 3 4 5 6 7 8 9 10; do
         emit_command 'make test'
@@ -163,6 +175,7 @@ run_harness() {
   result_name=$1
   CODEX_BENCHMARK_ARGS=${2:-$safe_args} \
     PATH="$temporary_directory/bin:$go_bin:/usr/bin:/bin" \
+    FAKE_WORKSPACE="$canonical_workspace" \
     FAKE_ORDER="$temporary_directory/$result_name.order" \
     FAKE_BASELINE_TOKENS=${FAKE_BASELINE_TOKENS:-} \
     FAKE_ASSISTED_TOKENS=${FAKE_ASSISTED_TOKENS:-} \
@@ -220,20 +233,34 @@ grep -q $'^assisted\tmedian\t116561\t' \
   fail "absolute-cap failure did not retain assisted effective-token evidence"
 unset FAKE_BASELINE_TOKENS FAKE_ASSISTED_TOKENS
 
-FAKE_BASELINE_SKILL_READ=1
+for contamination_mode in executable inventory relative; do
+  result_name="contaminated-$contamination_mode"
+  FAKE_BASELINE_SKILL_READ=$contamination_mode
+  export FAKE_BASELINE_SKILL_READ
+  if run_harness "$result_name" >/dev/null 2>&1; then
+    fail "$contamination_mode contaminated baseline passed"
+  fi
+  unset FAKE_BASELINE_SKILL_READ
+  [ "$(tr -d '\n' <"$temporary_directory/$result_name.order")" = "b" ] ||
+    fail "harness did not stop after first $contamination_mode contaminated run"
+  awk -F '\t' '$1 == "baseline" && $2 == "1" { found = 1; if ($10 != 1) exit 1 } END { if (!found) exit 1 }' \
+    "$temporary_directory/$result_name/summary.tsv" ||
+    fail "$contamination_mode contaminated run was not retained in summary"
+  [ -s "$temporary_directory/$result_name/baseline-1.log.skill-reads.json" ] ||
+    fail "$contamination_mode ordered skill evidence was not retained"
+  [ ! -e "$temporary_directory/$result_name/assisted-1.log" ] ||
+    fail "harness launched a run after $contamination_mode contamination"
+done
+
+FAKE_BASELINE_SKILL_READ=workspace
 export FAKE_BASELINE_SKILL_READ
-if run_harness contaminated >/dev/null 2>&1; then
-  fail "contaminated baseline passed"
-fi
+run_harness workspace-skill >/dev/null
 unset FAKE_BASELINE_SKILL_READ
-[ "$(tr -d '\n' <"$temporary_directory/contaminated.order")" = "b" ] ||
-  fail "harness did not stop after first contaminated run"
-grep -q $'^baseline\t1\t.*\t1\t' "$temporary_directory/contaminated/summary.tsv" ||
-  fail "contaminated run was not retained in summary"
-[ -s "$temporary_directory/contaminated/baseline-1.log.skill-reads.json" ] ||
-  fail "ordered skill evidence was not retained"
-[ ! -e "$temporary_directory/contaminated/assisted-1.log" ] ||
-  fail "harness launched a run after contamination"
+[ "$(tr -d '\n' <"$temporary_directory/workspace-skill.order")" = "baabba" ] ||
+  fail "workspace-local skill path stopped the matrix"
+awk -F '\t' '$1 == "baseline" && $2 ~ /^[1-3]$/ { found++; if ($10 != 0) exit 1 } END { if (found != 3) exit 1 }' \
+  "$temporary_directory/workspace-skill/summary.tsv" ||
+  fail "workspace-local skill path was classified as external"
 
 FAKE_PLUGIN_LIST_FAIL=1
 export FAKE_PLUGIN_LIST_FAIL

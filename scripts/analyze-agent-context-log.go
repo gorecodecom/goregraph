@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -354,9 +355,20 @@ func unwrapCommand(command string) (string, error) {
 	return command, nil
 }
 
+func executableName(value string) string {
+	windows := strings.Contains(value, `\`) ||
+		(len(value) >= 2 && unicode.IsLetter(rune(value[0])) && value[1] == ':')
+	name := pathpkg.Base(strings.ReplaceAll(value, `\`, "/"))
+	if windows {
+		name = strings.ToLower(name)
+		name = strings.TrimSuffix(name, ".exe")
+	}
+	return name
+}
+
 func isShell(name string) bool {
-	switch name {
-	case "/bin/sh", "/bin/bash", "/bin/zsh", "sh", "bash", "zsh":
+	switch executableName(name) {
+	case "sh", "bash", "zsh":
 		return true
 	default:
 		return false
@@ -421,8 +433,10 @@ func classifyCommand(command string, metrics *metrics) (bool, bool) {
 	contextCall, navigation, sourceRead, includedReread := false, false, false, false
 	searchOrInventory := false
 	for _, segment := range shellSegments(words) {
-		if len(segment) == 2 && segment[0] == "cd" && filepath.IsAbs(segment[1]) {
-			metrics.commandDirectory = segment[1]
+		if len(segment) == 2 && executableName(segment[0]) == "cd" {
+			if directory, ok := resolveCommandDirectory(metrics.commandDirectory, segment[1]); ok {
+				metrics.commandDirectory = directory
+			}
 			continue
 		}
 		context, navigates, reads, included, searches := classifySimpleCommand(segment, metrics)
@@ -449,6 +463,26 @@ func classifyCommand(command string, metrics *metrics) (bool, bool) {
 	return contextCall, includedReread
 }
 
+func resolveCommandDirectory(current, target string) (string, bool) {
+	current = strings.TrimSpace(strings.ReplaceAll(current, `\`, "/"))
+	target = strings.TrimSpace(strings.ReplaceAll(target, `\`, "/"))
+	if target == "" || !isAbsoluteCommandPath(current) {
+		return "", false
+	}
+	if isAbsoluteCommandPath(target) {
+		return pathpkg.Clean(target), true
+	}
+	return pathpkg.Join(current, target), true
+}
+
+func isAbsoluteCommandPath(value string) bool {
+	if strings.HasPrefix(value, "/") {
+		return true
+	}
+	return len(value) >= 3 && unicode.IsLetter(rune(value[0])) &&
+		value[1] == ':' && value[2] == '/'
+}
+
 func shellSegments(words []string) [][]string {
 	segments := make([][]string, 0, 1)
 	current := make([]string, 0, len(words))
@@ -472,23 +506,24 @@ func classifySimpleCommand(words []string, metrics *metrics) (bool, bool, bool, 
 	if len(words) == 0 {
 		return false, false, false, false, false
 	}
-	switch words[0] {
+	command := executableName(words[0])
+	switch command {
 	case "goregraph":
 		return len(words) > 1 && words[1] == "context", false, false, false, false
 	case "rg", "grep":
-		_, included := recordSearchTargets(words[1:], metrics)
+		_, included := recordSearchTargets(command, words[1:], metrics)
 		return false, true, false, included, true
 	case "find":
 		_, included := recordFindTargets(words[1:], metrics)
 		return false, true, false, included, true
 	case "sed", "nl", "cat", "head", "tail":
-		reads, included := recordReadTargets(words[0], words[1:], metrics)
+		reads, included := recordReadTargets(command, words[1:], metrics)
 		return false, reads, reads, included, false
 	}
 	return false, false, false, false, false
 }
 
-func recordSearchTargets(words []string, metrics *metrics) (bool, bool) {
+func recordSearchTargets(command string, words []string, metrics *metrics) (bool, bool) {
 	patternSeen, optionValue, optionIsPattern, endOptions := false, false, false, false
 	found, includedReread := false, false
 	for _, word := range words {
@@ -503,6 +538,11 @@ func recordSearchTargets(words []string, metrics *metrics) (bool, bool) {
 			switch word {
 			case "--":
 				endOptions = true
+				continue
+			case "--files":
+				if command == "rg" {
+					patternSeen = true
+				}
 				continue
 			case "-e", "--regexp", "-f", "--file":
 				optionValue, optionIsPattern = true, true

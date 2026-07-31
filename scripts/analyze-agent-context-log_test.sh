@@ -129,6 +129,11 @@ cat >"$temporary_directory/skill-reads.jsonl" <<EOF
 {"type":"item.completed","item":{"id":"workspace-skill","type":"command_execution","command":"cat $temporary_directory/workspace/testdata/skills/example/SKILL.md","exit_code":0}}
 {"type":"item.completed","item":{"id":"skill-two","type":"command_execution","command":"rg -n Rule /opt/codex/plugins/vendor/skills/tdd/references/guide.md","exit_code":0}}
 {"type":"item.completed","item":{"id":"skill-two-targets","type":"command_execution","command":"cat /opt/codex/plugins/vendor/skills/review/SKILL.md /opt/codex/plugins/vendor/skills/review/references/checklist.md","exit_code":0}}
+{"type":"item.completed","item":{"id":"path-executable","type":"command_execution","command":"/bin/cat /opt/codex/plugins/vendor/skills/review/SKILL.md","exit_code":0}}
+{"type":"item.completed","item":{"id":"patternless-inventory","type":"command_execution","command":"/usr/bin/rg --files /opt/codex/plugins/vendor/skills/review","exit_code":0}}
+{"type":"item.completed","item":{"id":"relative-skill-directory","type":"command_execution","command":"/bin/zsh -lc 'cd ../external/skills/review && cat SKILL.md'","exit_code":0}}
+{"type":"item.completed","item":{"id":"workspace-inventory","type":"command_execution","command":"/usr/bin/rg --files $temporary_directory/workspace/testdata/skills/example","exit_code":0}}
+{"type":"item.completed","item":{"id":"workspace-relative","type":"command_execution","command":"/bin/zsh -lc 'cd testdata/skills/example && /bin/cat SKILL.md'","exit_code":0}}
 {"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":5,"reasoning_output_tokens":1}}
 EOF
 
@@ -141,7 +146,7 @@ esac
 skill_row=$(bash "$analyzer" \
   --workspace "$temporary_directory/workspace" \
   "$temporary_directory/skill-reads.jsonl")
-[ "${skill_row##*$'\t'}" = "3" ] || fail "skill-read count row = $skill_row"
+[ "${skill_row##*$'\t'}" = "6" ] || fail "skill-read count row = $skill_row"
 
 skill_evidence=$(bash "$analyzer" \
   --workspace "$temporary_directory/workspace" \
@@ -158,9 +163,22 @@ case "$skill_evidence" in
   *ordinary-external*|*workspace-skill*) fail "non-contaminating target entered evidence" ;;
 esac
 target_count=$(printf '%s\n' "$skill_evidence" |
-  grep -o '"target":"/opt/codex/plugins/vendor/skills/review[^" ]*' |
+  grep -o '"item_id":"skill-two-targets"' |
   wc -l | tr -d ' ')
 [ "$target_count" = "2" ] || fail "multi-target skill evidence = $skill_evidence"
+printf '%s\n' "$skill_evidence" | grep -q '"target":"/opt/codex/plugins/vendor/skills/review/SKILL.md"' ||
+  fail "path-qualified executable target missing"
+printf '%s\n' "$skill_evidence" | grep -q '"target":"/opt/codex/plugins/vendor/skills/review"' ||
+  fail "patternless inventory target missing"
+case "$skill_evidence" in
+  *'"item_id":"relative-skill-directory"'*'/external/skills/review/SKILL.md"'*) ;;
+  *) fail "relative skill-directory target missing" ;;
+esac
+case "$skill_evidence" in
+  *"$temporary_directory/workspace/testdata/skills/example"*)
+    fail "workspace-local skill target entered evidence"
+    ;;
+esac
 
 cat >"$temporary_directory/fallback-usage.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"search","type":"web_search","query":"route"}}
