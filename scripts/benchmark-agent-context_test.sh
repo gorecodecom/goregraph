@@ -20,13 +20,18 @@ fail() {
   exit 1
 }
 
-mkdir -p "$temporary_directory/bin" "$temporary_directory/workspace"
-canonical_workspace=$(cd -P -- "$temporary_directory/workspace" && pwd -P)
+mkdir -p "$temporary_directory/bin" "$temporary_directory/workspace with space"
+canonical_workspace=$(cd -P -- "$temporary_directory/workspace with space" && pwd -P)
 
 cat >"$temporary_directory/bin/codex" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 if [ "${1:-}" = "plugin" ] && [ "${2:-}" = "list" ] && [ "${3:-}" = "--json" ]; then
+  if [ "${FAKE_REQUIRE_IDENTITY_ARTIFACTS:-0}" = "1" ]; then
+    [ "$(cat "$FAKE_OUTPUT/workspace.txt")" = "$FAKE_WORKSPACE" ] || exit 7
+    grep -Eq '^[0-9a-f]{64}$' "$FAKE_OUTPUT/workspace.sha256" || exit 7
+    [ -s "$FAKE_OUTPUT/codex-args.txt" ] || exit 7
+  fi
   [ "${FAKE_PLUGIN_LIST_FAIL:-0}" = "0" ] || exit 9
   printf '[{"id":"workflow-tools","enabled":true}]\n'
   exit 0
@@ -53,6 +58,9 @@ emit_command() {
   fi
 }
 prompt=$(cat)
+if [ "${FAKE_MUTATE_WORKSPACE:-0}" = "1" ]; then
+  printf 'mutation\n' >>"$FAKE_WORKSPACE/service.txt"
+fi
 case "$prompt" in
   *"Treat source_sections as current source already read"*"run no source-reading commands"*"mark details absent from them as unknown"*)
     printf 'a\n' >>"$FAKE_ORDER"
@@ -96,7 +104,7 @@ case "$prompt" in
         emit_command "/bin/zsh -lc 'cd ../external/skills/review && cat SKILL.md'"
         ;;
       workspace)
-        emit_command "/bin/cat $FAKE_WORKSPACE/testdata/skills/example/SKILL.md"
+        emit_command "/bin/cat '$FAKE_WORKSPACE/testdata/skills/example/SKILL.md'"
         ;;
     esac
     if [ "${FAKE_BASELINE_ZERO_SOURCE_READS:-0}" = "1" ]; then
@@ -160,10 +168,10 @@ If fallback_required is true, confidence is low, or there is not exactly one rel
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
 EOF
-printf 'fixture\n' >"$temporary_directory/workspace/service.txt"
+printf 'fixture\n' >"$canonical_workspace/service.txt"
 chmod +x "$temporary_directory/bin/codex" "$temporary_directory/bin/goregraph"
 
-safe_args=$'-a\nnever\nexec\n--sandbox\nread-only\n--skip-git-repo-check\n--ephemeral\n--ignore-user-config\n--ignore-rules\n--color\nnever\n-m\ntest-model\n-c\nmodel_reasoning_effort="high"'
+safe_args=$'-a\nnever\nexec\n--sandbox\nread-only\n--skip-git-repo-check\n--ephemeral\n--ignore-user-config\n--ignore-rules\n--color\nnever\n-m\ntest model\n-c\nmodel_reasoning_effort="high"'
 
 : >"$temporary_directory/first-line-only.order"
 printf 'Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller'\''s problem statement and requested evidence scope in the query.\n' |
@@ -176,6 +184,8 @@ run_harness() {
   CODEX_BENCHMARK_ARGS=${2:-$safe_args} \
     PATH="$temporary_directory/bin:$go_bin:/usr/bin:/bin" \
     FAKE_WORKSPACE="$canonical_workspace" \
+    FAKE_OUTPUT="$temporary_directory/$result_name" \
+    FAKE_REQUIRE_IDENTITY_ARTIFACTS=1 \
     FAKE_ORDER="$temporary_directory/$result_name.order" \
     FAKE_BASELINE_TOKENS=${FAKE_BASELINE_TOKENS:-} \
     FAKE_ASSISTED_TOKENS=${FAKE_ASSISTED_TOKENS:-} \
@@ -186,8 +196,9 @@ run_harness() {
     FAKE_ASSISTED_COMPACT_DUPLICATE=${FAKE_ASSISTED_COMPACT_DUPLICATE:-0} \
     FAKE_ASSISTED_REPEATED_FULL=${FAKE_ASSISTED_REPEATED_FULL:-0} \
     FAKE_ASSISTED_INCLUDED_REREAD=${FAKE_ASSISTED_INCLUDED_REREAD:-0} \
+    FAKE_MUTATE_WORKSPACE=${FAKE_MUTATE_WORKSPACE:-0} \
     /bin/bash "$harness" \
-      --workspace "$temporary_directory/workspace" \
+      --workspace "$canonical_workspace" \
       --prompt "$temporary_directory/base-prompt.txt" \
       --baseline-instruction "${BASELINE_INSTRUCTION:-$temporary_directory/baseline-instruction.txt}" \
       --assisted-instruction "${ASSISTED_INSTRUCTION:-$temporary_directory/assisted-instruction.txt}" \
@@ -212,6 +223,55 @@ grep -q $'^assisted\tmedian\t70000\t-\t-\t-\t-\t-\t-\t-\t6\t-\t-\t-\t-\t2\t2\t-\
   fail "analyzer result was not retained"
 [ -s "$temporary_directory/pass/assisted-1.log.stderr" ] ||
   fail "Codex stderr was not retained separately"
+[ "$(cat "$temporary_directory/pass/workspace.txt")" = "$canonical_workspace" ] ||
+  fail "canonical benchmark workspace was not retained"
+grep -Eq '^[0-9a-f]{64}$' "$temporary_directory/pass/workspace.sha256" ||
+  fail "workspace snapshot identity was not retained"
+expected_codex_args="$temporary_directory/expected-codex-args.txt"
+printf '%s\n' \
+  '-a' \
+  'never' \
+  'exec' \
+  '--sandbox' \
+  'read-only' \
+  '--skip-git-repo-check' \
+  '--ephemeral' \
+  '--ignore-user-config' \
+  '--ignore-rules' \
+  '--color' \
+  'never' \
+  '-m' \
+  'test model' \
+  '-c' \
+  'model_reasoning_effort="high"' \
+  '--json' \
+  '-C' \
+  "$canonical_workspace" \
+  '-' >"$expected_codex_args"
+cmp -s "$expected_codex_args" "$temporary_directory/pass/codex-args.txt" ||
+  fail "complete effective Codex argument vector was not retained"
+
+mkfifo "$canonical_workspace/unsupported.pipe"
+if run_harness workspace-identity-failure >/dev/null 2>&1; then
+  fail "unsupported workspace identity passed"
+fi
+rm -f -- "$canonical_workspace/unsupported.pipe"
+[ ! -s "$temporary_directory/workspace-identity-failure.order" ] ||
+  fail "Codex run started after workspace identity failure"
+[ ! -e "$temporary_directory/workspace-identity-failure/codex-plugins.json" ] ||
+  fail "Codex plugin inventory started before workspace identity was established"
+
+FAKE_MUTATE_WORKSPACE=1
+export FAKE_MUTATE_WORKSPACE
+if run_harness workspace-mutated >/dev/null 2>&1; then
+  fail "workspace mutation passed"
+fi
+unset FAKE_MUTATE_WORKSPACE
+printf 'fixture\n' >"$canonical_workspace/service.txt"
+[ "$(tr -d '\n' <"$temporary_directory/workspace-mutated.order")" = "b" ] ||
+  fail "harness started another run after workspace mutation"
+[ ! -e "$temporary_directory/workspace-mutated/assisted-1.log" ] ||
+  fail "assisted run started after workspace mutation"
 
 FAKE_ASSISTED_TOKENS=88001
 export FAKE_ASSISTED_TOKENS
@@ -261,6 +321,9 @@ unset FAKE_BASELINE_SKILL_READ
 awk -F '\t' '$1 == "baseline" && $2 ~ /^[1-3]$/ { found++; if ($10 != 0) exit 1 } END { if (found != 3) exit 1 }' \
   "$temporary_directory/workspace-skill/summary.tsv" ||
   fail "workspace-local skill path was classified as external"
+cmp -s "$temporary_directory/pass/workspace.sha256" \
+  "$temporary_directory/workspace-skill/workspace.sha256" ||
+  fail "identical workspace snapshots produced different identities"
 
 FAKE_PLUGIN_LIST_FAIL=1
 export FAKE_PLUGIN_LIST_FAIL
@@ -350,7 +413,7 @@ fi
 [ ! -s "$temporary_directory/empty-reasoning.order" ] ||
   fail "Codex ran before empty reasoning rejection"
 
-blank_model_args=${safe_args/test-model/   }
+blank_model_args=${safe_args/test model/   }
 if run_harness blank-model "$blank_model_args" >/dev/null 2>&1; then
   fail "blank model setting passed"
 fi

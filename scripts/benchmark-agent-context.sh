@@ -6,6 +6,7 @@ export LC_ALL=C
 script_dir=$(cd -P -- "$(dirname -- "$0")" && pwd -P)
 analyzer="$script_dir/analyze-agent-context-log.sh"
 analyzer_go="$script_dir/analyze-agent-context-log.go"
+workspace_identity_go="$script_dir/benchmark-workspace-identity/main.go"
 
 usage() {
   cat <<'EOF'
@@ -123,6 +124,8 @@ done
   die "transcript analyzer is not a readable regular file: $analyzer"
 [ -f "$analyzer_go" ] && [ -r "$analyzer_go" ] ||
   die "transcript analyzer helper is not a readable regular file: $analyzer_go"
+[ -f "$workspace_identity_go" ] && [ -r "$workspace_identity_go" ] ||
+  die "workspace identity helper is not a readable regular file: $workspace_identity_go"
 
 require_absolute "--workspace" "$workspace"
 require_absolute "--prompt" "$prompt"
@@ -275,6 +278,7 @@ done
 [ "$ignore_rules_count" -eq 1 ] || die "CODEX_BENCHMARK_ARGS must contain --ignore-rules exactly once"
 [ "$ignore_user_config_count" -eq 1 ] ||
   die "CODEX_BENCHMARK_ARGS must contain --ignore-user-config exactly once"
+effective_codex_args=("${codex_args[@]}" --json -C "$workspace" -)
 
 mkdir -- "$output"
 mkdir -- "$output/inputs"
@@ -328,8 +332,24 @@ fi
   cat "$expected_assisted_file"
 } >"$output/assisted-prompt.txt"
 
+goregraph version >"$output/goregraph-version.txt" 2>&1
+goregraph context "$workspace" --query "benchmark context preflight" --format json \
+  >"$output/context-preflight.json"
+
+printf '%s\n' "$workspace" >"$output/workspace.txt"
+workspace_snapshot_stderr="$output/workspace.sha256.stderr"
+if ! workspace_snapshot=$(go run "$workspace_identity_go" "$workspace" 2>"$workspace_snapshot_stderr"); then
+  die "cannot establish workspace snapshot identity; no benchmark run started"
+fi
+case "$workspace_snapshot" in
+  *[!0-9a-f]*|"") die "workspace snapshot identity is invalid; no benchmark run started" ;;
+esac
+[ "${#workspace_snapshot}" -eq 64 ] ||
+  die "workspace snapshot identity is invalid; no benchmark run started"
+printf '%s\n' "$workspace_snapshot" >"$output/workspace.sha256"
+
 : >"$output/codex-args.txt"
-for argument in "${codex_args[@]}"; do
+for argument in "${effective_codex_args[@]}"; do
   printf '%s\n' "$argument" >>"$output/codex-args.txt"
 done
 if ! codex plugin list --json \
@@ -340,9 +360,6 @@ fi
 [ -s "$output/codex-plugins.json" ] ||
   die "Codex plugin inventory is empty; no benchmark run started"
 codex --version >"$output/codex-version.txt" 2>&1
-goregraph version >"$output/goregraph-version.txt" 2>&1
-goregraph context "$workspace" --query "benchmark context preflight" --format json \
-  >"$output/context-preflight.json"
 
 printf 'variant\trun\teffective_tokens\tinput_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\texternal_skill_read_calls\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\tlog\n' >"$output/summary.tsv"
 baseline_effective_tokens="$temporary_directory/baseline.effective-tokens"
@@ -370,6 +387,16 @@ extract_usage() {
   bash "$analyzer" --workspace "$workspace" --usage "$1"
 }
 
+verify_workspace_snapshot() {
+  if ! current_workspace_snapshot=$(
+    go run "$workspace_identity_go" "$workspace" 2>>"$workspace_snapshot_stderr"
+  ); then
+    die "cannot verify workspace snapshot identity; no further benchmark run started"
+  fi
+  [ "$current_workspace_snapshot" = "$workspace_snapshot" ] ||
+    die "workspace snapshot changed; no further benchmark run started"
+}
+
 run_variant() {
   variant=$1
   run_number=$2
@@ -378,8 +405,9 @@ run_variant() {
   stderr_path="$log_path.stderr"
   metrics_path="$log_path.metrics.tsv"
 
+  verify_workspace_snapshot
   set +e
-  codex "${codex_args[@]}" --json -C "$workspace" - <"$prompt_path" >"$log_path" 2>"$stderr_path"
+  codex "${effective_codex_args[@]}" <"$prompt_path" >"$log_path" 2>"$stderr_path"
   codex_status=$?
   set -e
   [ "$codex_status" -eq 0 ] ||
