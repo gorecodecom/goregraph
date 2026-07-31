@@ -1,16 +1,16 @@
-# Token Metric and Release Qualification Implementation Plan
+# Deterministic Release Benchmark Metrics and Skill Isolation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Define a prospective, reproducible Codex token metric and use it with the existing structural and quality gates to qualify the stabilized GoreGraph candidate for release.
+**Goal:** Make future GoreGraph release benchmarks use strict effective-token accounting and reject uncontrolled external skill reads without changing normal skill-enabled workflows.
 
-**Architecture:** Parse every current `turn.completed.usage` component once into a shared strict value type, preserve raw totals for diagnostics, and gate on uncached input plus output tokens. Migrate the transcript analyzer, monotonic runner, and matched release harness to explicit metric columns before any candidate release matrix is run.
+**Architecture:** Parse every current `turn.completed.usage` component once into a shared strict value type, preserve raw totals for diagnostics, and gate on uncached input plus output tokens. Add a plugin-agnostic path classifier and ordered analyzer evidence for external skill reads, then make the controlled release harness record Codex configuration and stop after its first contaminated run. Migrate regression and release artifacts before any new candidate matrix is run.
 
 **Tech Stack:** Go 1.23, Go standard library, Bash with `set -euo pipefail`, TSV benchmark artifacts, existing agent benchmark runner and documentation synchronizer
 
 ## Global Constraints
 
-- This plan starts only after the rendered-evidence stabilization plan passes its complete local acceptance and one authorized private G1 smoke run.
+- The approved design is `docs/superpowers/specs/2026-07-31-release-benchmark-metric-and-skill-isolation-design.md`.
 - `effective_tokens = input_tokens - cached_input_tokens + output_tokens`.
 - `total_tokens = input_tokens + output_tokens`.
 - `reasoning_output_tokens` is recorded separately and remains a subset of `output_tokens`; it is never added again.
@@ -20,9 +20,19 @@
 - Assisted total source-read median must be at most 50% of baseline.
 - Maximum Context Pack size remains 4,000 estimated tokens, 12 files, and 12 source sections.
 - The completed 2026-07-30 release benchmark remains immutable and failed; new metric semantics never rescore it.
+- The retained candidate matrix recorded raw total-token medians of 2,551,495 baseline and 147,212 assisted; its 116,560 absolute gate failed.
+- Prospective offline effective-token medians of 164,295 baseline and 39,180 assisted are diagnostic only and do not alter that verdict.
+- Controlled baseline and assisted release runs each require `external_skill_read_calls = 0` across the complete transcript.
+- Skill detection is based on normalized command targets outside the benchmark workspace and never on plugin names, skill names, or prompt wording.
+- Normal GoreGraph use remains compatible with task-scoped Brainstorming, TDD, debugging, and review skills.
+- The harness records plugin inventory but never changes global Codex or plugin configuration.
+- A contaminated run is retained and fails the matrix immediately; it is never removed, retried, or replaced automatically.
+- macOS, Linux, and Windows-shaped paths must produce deterministic classification results.
+- Language-support and analysis-depth claims remain derived from implemented scanners; this benchmark-only change must not broaden them.
 - Thresholds and metric names are committed before the final candidate matrix.
 - No external private-workspace run starts without active authorization.
-- No release, tag, publication workflow, package-manager update, or push is part of this plan.
+- No release, tag, publication workflow, or package-manager update is part of this plan.
+- Execute implementation in an isolated linked worktree for `fix/release-benchmark-metrics`; return the primary checkout to `main` before creating it.
 
 ---
 
@@ -30,16 +40,18 @@
 
 - Create `internal/agentmetrics/token_usage.go`: strict parsing, validation, derived values, TSV header, and TSV row parsing for Codex usage.
 - Create `internal/agentmetrics/token_usage_test.go`: table-driven usage semantics and invalid-input tests.
-- Modify `internal/agentmetrics/schema.go`: explicit release and regression summary columns.
-- Modify `scripts/analyze-agent-context-log.go`: additive `--usage` output while retaining legacy `--tokens`.
-- Modify `scripts/analyze-agent-context-log_test.sh`: real current usage shapes, cache arithmetic, and invalid-usage coverage.
-- Modify `internal/agentbench/runner.go`: consume one strict usage row and persist all token components.
+- Create `internal/agentmetrics/skill_path.go`: cross-platform external skill-target normalization and classification.
+- Create `internal/agentmetrics/skill_path_test.go`: Unix-, Windows-, relative-, in-workspace-, and ambiguous-path cases.
+- Modify `internal/agentmetrics/schema.go`: explicit release and regression token and contamination columns.
+- Modify `scripts/analyze-agent-context-log.go`: additive `--usage`, `--workspace`, and `--skill-reads` output while retaining legacy `--tokens`.
+- Modify `scripts/analyze-agent-context-log_test.sh`: current usage shapes, cache arithmetic, invalid usage, ordered skill evidence, and generic path coverage.
+- Modify `internal/agentbench/runner.go`: consume one strict usage row and persist all token and contamination components.
 - Modify `internal/agentbench/review.go`: validate token consistency and compare `effective_tokens`.
 - Modify `internal/agentbench/contract.go`: freeze token metric name in monotonic contracts.
 - Modify `internal/agentbench/*_test.go`, `scripts/agent-context-regression/main_test.go`, and `testdata/agent-context-regression/*/contract.json`: migrate strict fixtures and expectations.
-- Modify `scripts/benchmark-agent-context.sh` and `scripts/benchmark-agent-context_test.sh`: gate the matched release benchmark on explicit effective tokens.
+- Modify `scripts/benchmark-agent-context.sh` and `scripts/benchmark-agent-context_test.sh`: gate the matched release benchmark on explicit effective tokens and zero external skill reads, record plugin inventory, and stop after the first contamination.
 - Create `scripts/calibrate-agent-context-tokens.sh` and `scripts/calibrate-agent-context-tokens_test.sh`: deterministic control report for six retained transcripts.
-- Modify `scripts/sync-docs/main.go`, `scripts/sync-docs/main_test.go`, `README.md`, `docs/BENCHMARKING.md`, and `docs/RELEASE.md`: publish the exact prospective metric and truthful release status.
+- Modify `scripts/sync-docs/main.go`, `scripts/sync-docs/main_test.go`, `README.md`, `docs/BENCHMARKING.md`, `docs/RELEASE.md`, and `docs/OUTPUTS.md`: publish exact metric semantics, normal skill compatibility, controlled isolation requirements, and truthful release status.
 
 ### Task 1: Strict shared token-usage model
 
@@ -322,7 +334,218 @@ git commit -m "Define prospective Codex token usage" -m "- Parse current input, 
 - Provide validated TSV serialization for benchmark consumers"
 ```
 
-### Task 2: Add explicit usage output to the transcript analyzer
+### Task 2: Cross-platform external skill-target classification
+
+**Files:**
+
+- Create: `internal/agentmetrics/skill_path.go`
+- Create: `internal/agentmetrics/skill_path_test.go`
+
+**Interfaces:**
+
+- Produces: `ClassifyExternalSkillTarget(workspace, commandDirectory, target string) (string, bool)`.
+- Returns a normalized target only when the resolved target is outside the benchmark workspace and is either `SKILL.md`, a skill directory, or below a `skills` path component.
+- Does not inspect plugin names, skill names, prompt prose, or command output.
+- Treats Windows drive paths case-insensitively while preserving case-sensitive Unix path comparison.
+
+- [ ] **Step 1: Write failing table-driven classifier tests**
+
+Create `internal/agentmetrics/skill_path_test.go`:
+
+```go
+package agentmetrics
+
+import "testing"
+
+func TestClassifyExternalSkillTarget(t *testing.T) {
+	tests := []struct {
+		name             string
+		workspace        string
+		commandDirectory string
+		target           string
+		want             string
+		matched          bool
+	}{
+		{
+			name:             "macOS skill file",
+			workspace:        "/work/repo",
+			commandDirectory: "/work/repo",
+			target:           "/Users/me/.codex/skills/brainstorming/SKILL.md",
+			want:             "/Users/me/.codex/skills/brainstorming/SKILL.md",
+			matched:          true,
+		},
+		{
+			name:             "Linux plugin reference",
+			workspace:        "/work/repo",
+			commandDirectory: "/work/repo",
+			target:           "/opt/codex/plugins/vendor/skills/tdd/references/guide.md",
+			want:             "/opt/codex/plugins/vendor/skills/tdd/references/guide.md",
+			matched:          true,
+		},
+		{
+			name:             "relative target from external skill directory",
+			workspace:        "/work/repo",
+			commandDirectory: "/opt/codex/plugins/vendor/skills/review",
+			target:           "references/checklist.md",
+			want:             "/opt/codex/plugins/vendor/skills/review/references/checklist.md",
+			matched:          true,
+		},
+		{
+			name:             "Windows skill file",
+			workspace:        `C:\\work\\repo`,
+			commandDirectory: `C:\\work\\repo`,
+			target:           `C:\\Users\\Me\\.codex\\skills\\TDD\\SKILL.md`,
+			want:             "c:/users/me/.codex/skills/tdd/skill.md",
+			matched:          true,
+		},
+		{
+			name:             "workspace-local skill fixture",
+			workspace:        "/work/repo",
+			commandDirectory: "/work/repo",
+			target:           "/work/repo/testdata/skills/example/SKILL.md",
+			matched:          false,
+		},
+		{
+			name:             "ordinary external source",
+			workspace:        "/work/repo",
+			commandDirectory: "/work/repo",
+			target:           "/opt/source/Service.java",
+			matched:          false,
+		},
+		{
+			name:             "similar component is not skill directory",
+			workspace:        "/work/repo",
+			commandDirectory: "/work/repo",
+			target:           "/opt/skills-old/review/guide.md",
+			matched:          false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, matched := ClassifyExternalSkillTarget(
+				test.workspace,
+				test.commandDirectory,
+				test.target,
+			)
+			if got != test.want || matched != test.matched {
+				t.Fatalf("classification = %q, %v; want %q, %v", got, matched, test.want, test.matched)
+			}
+		})
+	}
+}
+
+func TestClassifyExternalSkillTargetRejectsAmbiguousRoots(t *testing.T) {
+	for _, values := range [][3]string{
+		{"work/repo", "/work/repo", "/opt/skills/tdd/SKILL.md"},
+		{"/work/repo", "work/repo", "SKILL.md"},
+		{"/work/repo", "/work/repo", ""},
+	} {
+		if got, ok := ClassifyExternalSkillTarget(values[0], values[1], values[2]); ok || got != "" {
+			t.Fatalf("ambiguous classification = %q, %v for %#v", got, ok, values)
+		}
+	}
+}
+```
+
+- [ ] **Step 2: Run the focused test and verify the API is absent**
+
+```bash
+go test ./internal/agentmetrics -run 'TestClassifyExternalSkillTarget' -count=1
+```
+
+Expected: FAIL because `ClassifyExternalSkillTarget` is undefined.
+
+- [ ] **Step 3: Implement normalization and classification**
+
+Create `internal/agentmetrics/skill_path.go`:
+
+```go
+package agentmetrics
+
+import (
+	pathpkg "path"
+	"strings"
+	"unicode"
+)
+
+func ClassifyExternalSkillTarget(
+	workspace string,
+	commandDirectory string,
+	target string,
+) (string, bool) {
+	workspacePath, workspaceWindows, ok := normalizeAbsolutePath(workspace)
+	if !ok {
+		return "", false
+	}
+	commandPath, commandWindows, ok := normalizeAbsolutePath(commandDirectory)
+	if !ok || commandWindows != workspaceWindows {
+		return "", false
+	}
+	target = strings.TrimSpace(strings.ReplaceAll(target, `\`, "/"))
+	if target == "" {
+		return "", false
+	}
+	if !isAbsoluteComparablePath(target) {
+		target = pathpkg.Join(commandPath, target)
+	}
+	targetPath, targetWindows, ok := normalizeAbsolutePath(target)
+	if !ok || targetWindows != workspaceWindows || pathWithin(targetPath, workspacePath) {
+		return "", false
+	}
+	if !isSkillBundlePath(targetPath) {
+		return "", false
+	}
+	return targetPath, true
+}
+
+func normalizeAbsolutePath(value string) (string, bool, bool) {
+	value = strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
+	if !isAbsoluteComparablePath(value) {
+		return "", false, false
+	}
+	windows := len(value) >= 3 && unicode.IsLetter(rune(value[0])) && value[1] == ':'
+	value = pathpkg.Clean(value)
+	if windows {
+		value = strings.ToLower(value)
+	}
+	return value, windows, true
+}
+
+func isAbsoluteComparablePath(value string) bool {
+	if strings.HasPrefix(value, "/") {
+		return true
+	}
+	return len(value) >= 3 && unicode.IsLetter(rune(value[0])) && value[1] == ':' && value[2] == '/'
+}
+
+func pathWithin(candidate, root string) bool {
+	return candidate == root || strings.HasPrefix(candidate, strings.TrimSuffix(root, "/")+"/")
+}
+
+func isSkillBundlePath(value string) bool {
+	parts := strings.Split(strings.Trim(value, "/"), "/")
+	for _, part := range parts {
+		if strings.EqualFold(part, "SKILL.md") || strings.EqualFold(part, "skills") {
+			return true
+		}
+	}
+	return false
+}
+```
+
+- [ ] **Step 4: Format, test, and commit the classifier**
+
+```bash
+gofmt -w internal/agentmetrics/skill_path.go internal/agentmetrics/skill_path_test.go
+go test ./internal/agentmetrics -count=1
+git add internal/agentmetrics/skill_path.go internal/agentmetrics/skill_path_test.go
+git commit -m "Classify external skill read targets" -m "- Normalize Unix and Windows-shaped command targets deterministically
+- Exclude workspace-local and ambiguous paths from contamination counts
+- Detect skill bundles without coupling metrics to plugin or skill names"
+```
+
+### Task 3: Add usage and skill-read output to the transcript analyzer
 
 **Files:**
 
@@ -332,6 +555,9 @@ git commit -m "Define prospective Codex token usage" -m "- Parse current input, 
 **Interfaces:**
 
 - Adds analyzer mode `--usage`.
+- Adds optional `--workspace /absolute/path` and JSON mode `--skill-reads`.
+- Appends `external_skill_read_calls` to `agentmetrics.AnalyzerHeader` and the normal metrics row.
+- `--skill-reads` emits an ordered JSON array with `event_order`, `item_id`, `command`, and normalized `target` fields.
 - Preserves `--tokens` as a legacy diagnostic that follows the existing
   `total_tokens` preference.
 - `--usage` requires current input/output counters and prints
@@ -370,15 +596,74 @@ grep -q 'cached_input_tokens exceeds input_tokens' \
   fail "invalid usage error was not specific"
 ```
 
-- [ ] **Step 2: Run the analyzer test and confirm `--usage` is rejected**
+Keep `included-rereads.jsonl` as a `total_tokens`-only fixture and add:
+
+```bash
+legacy_tokens=$(bash "$analyzer" --tokens "$temporary_directory/included-rereads.jsonl")
+[ "$legacy_tokens" = "100" ] || fail "legacy tokens = $legacy_tokens"
+```
+
+This proves strict prospective parsing is additive and does not make retained
+legacy diagnostics unreadable.
+
+- [ ] **Step 2: Add failing generic skill-read evidence assertions**
+
+Create the workspace and fixture with these terminal commands in this order:
+
+```bash
+mkdir -p "$temporary_directory/workspace/testdata/skills/example"
+cat >"$temporary_directory/skill-reads.jsonl" <<EOF
+{"type":"item.completed","item":{"id":"skill-one","type":"command_execution","command":"cat /Users/me/.codex/skills/brainstorming/SKILL.md","exit_code":0}}
+{"type":"item.completed","item":{"id":"ordinary-external","type":"command_execution","command":"cat /opt/source/config.json","exit_code":0}}
+{"type":"item.completed","item":{"id":"workspace-skill","type":"command_execution","command":"cat $temporary_directory/workspace/testdata/skills/example/SKILL.md","exit_code":0}}
+{"type":"item.completed","item":{"id":"skill-two","type":"command_execution","command":"rg -n Rule /opt/codex/plugins/vendor/skills/tdd/references/guide.md","exit_code":0}}
+{"type":"item.completed","item":{"id":"skill-two-targets","type":"command_execution","command":"cat /opt/codex/plugins/vendor/skills/review/SKILL.md /opt/codex/plugins/vendor/skills/review/references/checklist.md","exit_code":0}}
+{"type":"turn.completed","usage":{"input_tokens":20,"cached_input_tokens":5,"output_tokens":5,"reasoning_output_tokens":1}}
+EOF
+```
+
+Assert:
+
+```bash
+header=$(bash "$analyzer" --header "$temporary_directory/transcript.jsonl")
+case "$header" in
+  *$'\texternal_skill_read_calls') ;;
+  *) fail "analyzer header lacks external_skill_read_calls: $header" ;;
+esac
+
+skill_row=$(bash "$analyzer" \
+  --workspace "$temporary_directory/workspace" \
+  "$temporary_directory/skill-reads.jsonl")
+[ "${skill_row##*$'\t'}" = "3" ] || fail "skill-read count row = $skill_row"
+
+skill_evidence=$(bash "$analyzer" \
+  --workspace "$temporary_directory/workspace" \
+  --skill-reads "$temporary_directory/skill-reads.jsonl")
+printf '%s\n' "$skill_evidence" | grep -q '"event_order":1' ||
+  fail "first skill event order missing"
+printf '%s\n' "$skill_evidence" | grep -q '/Users/me/.codex/skills/brainstorming/SKILL.md' ||
+  fail "first generic skill target missing"
+printf '%s\n' "$skill_evidence" | grep -q '"event_order":4' ||
+  fail "second skill event order missing"
+printf '%s\n' "$skill_evidence" | grep -q '/opt/codex/plugins/vendor/skills/tdd/references/guide.md' ||
+  fail "second generic skill target missing"
+case "$skill_evidence" in
+  *ordinary-external*|*workspace-skill*) fail "non-contaminating target entered evidence" ;;
+esac
+target_count=$(printf '%s\n' "$skill_evidence" | grep -o '/opt/codex/plugins/vendor/skills/review[^" ]*' | wc -l | tr -d ' ')
+[ "$target_count" = "2" ] || fail "multi-target skill evidence = $skill_evidence"
+```
+
+- [ ] **Step 3: Run the analyzer test and confirm the new modes are rejected**
 
 ```bash
 bash scripts/analyze-agent-context-log_test.sh
 ```
 
-Expected: FAIL because the analyzer accepts only `--header` and `--tokens`.
+Expected: FAIL because the analyzer accepts neither `--usage`, `--workspace`,
+nor `--skill-reads`.
 
-- [ ] **Step 3: Parse strict and legacy token views independently**
+- [ ] **Step 4: Parse strict and legacy token views independently**
 
 Modify `analysis`:
 
@@ -387,6 +672,7 @@ type analysis struct {
 	metrics      metrics
 	legacyTokens int64
 	usage        agentmetrics.TokenUsage
+	usageErr     error
 }
 ```
 
@@ -397,34 +683,45 @@ legacyTokens, err := legacyTokenUsage(outer.Usage)
 if err != nil {
 	return analysis{}, fmt.Errorf("turn.completed at line %d: %w", lineNumber, err)
 }
-usage, err := agentmetrics.ParseTokenUsage(outer.Usage)
-if err != nil {
-	return analysis{}, fmt.Errorf("turn.completed at line %d: %w", lineNumber, err)
-}
+usage, usageErr := agentmetrics.ParseTokenUsage(outer.Usage)
 result.legacyTokens = legacyTokens
 result.usage = usage
+result.usageErr = usageErr
 seenUsage = true
 ```
 
 Rename the current `tokenUsage` function to `legacyTokenUsage`; do not alter
-its behavior.
-
-- [ ] **Step 4: Add `--usage` argument and output**
-
-Accept `--usage` beside the existing modes:
+its behavior. Structural metrics, `--tokens`, and `--skill-reads` continue to
+accept a legacy event when `legacyTokenUsage` succeeds. In the `usage` output
+case, return the saved strict error before printing:
 
 ```go
-if len(args) > 0 &&
-	(args[0] == "--header" || args[0] == "--tokens" || args[0] == "--usage") {
-	mode = strings.TrimPrefix(args[0], "--")
-	args = args[1:]
+case "usage":
+	if result.usageErr != nil {
+		die(result.usageErr)
+	}
+	fmt.Println(result.usage.TSV())
+	return
+```
+
+- [ ] **Step 5: Add analyzer configuration and output modes**
+
+Replace positional mode parsing with one pass that accepts `--workspace` once
+and exactly one of `--header`, `--tokens`, `--usage`, or `--skill-reads` in any
+order. Use this configuration:
+
+```go
+type analyzerConfig struct {
+	mode      string
+	workspace string
+	path      string
 }
 ```
 
 Update usage text to:
 
 ```text
-usage: analyze-agent-context-log.go [--header|--tokens|--usage] /absolute/path/to/transcript.jsonl
+usage: analyze-agent-context-log.go [--header|--tokens|--usage|--skill-reads] [--workspace /absolute/path] /absolute/path/to/transcript.jsonl
 ```
 
 In `main`:
@@ -435,14 +732,78 @@ case "tokens":
 	fmt.Println(result.legacyTokens)
 	return
 case "usage":
+	if result.usageErr != nil {
+		die(result.usageErr)
+	}
 	fmt.Println(result.usage.TSV())
+	return
+case "skill-reads":
+	if result.metrics.workspace == "" {
+		die(errors.New("--skill-reads requires --workspace"))
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(result.metrics.skillReads); err != nil {
+		die(err)
+	}
 	return
 }
 ```
 
-- [ ] **Step 5: Prove no navigation metric changed**
+- [ ] **Step 6: Record ordered command-target evidence**
 
-Keep every existing expected navigation row byte-for-byte unchanged. Run:
+Add:
+
+```go
+type skillReadEvidence struct {
+	EventOrder int    `json:"event_order"`
+	ItemID     string `json:"item_id"`
+	Command    string `json:"command"`
+	Target     string `json:"target"`
+}
+```
+
+Extend `metrics` with `workspace`, `commandDirectory`, `eventOrder`, current
+item/command fields, `skillReads []skillReadEvidence`, and
+`skillReadEvents map[int]struct{}`. Initialize the command directory from
+`--workspace`. Increment `eventOrder` once for every unique completed item
+before classifying it. For every target already parsed
+by `recordSearchTargets`, `recordFindTargets`, and `recordReadTargets`, call:
+
+```go
+func recordCommandTarget(target string, metrics *metrics) {
+	normalized, ok := agentmetrics.ClassifyExternalSkillTarget(
+		metrics.workspace,
+		metrics.commandDirectory,
+		target,
+	)
+	if !ok {
+		return
+	}
+	metrics.skillReads = append(metrics.skillReads, skillReadEvidence{
+		EventOrder: metrics.eventOrder,
+		ItemID:     metrics.currentItemID,
+		Command:    metrics.currentCommand,
+		Target:     normalized,
+	})
+	metrics.skillReadEvents[metrics.eventOrder] = struct{}{}
+}
+```
+
+Call it before source-extension filtering so `SKILL.md` and skill references
+are visible without changing source-read metrics. Do not call it for
+`file_change`. When a compound-command segment is exactly `cd <absolute-path>`,
+set `commandDirectory` to that path for subsequent segments in the same
+command. Reset it to the benchmark workspace before the next terminal item.
+Deduplicate identical normalized targets within one terminal item before
+appending evidence; two distinct skill targets retain two evidence entries but
+the event map still counts the terminal call once.
+
+Append `len(result.metrics.skillReadEvents)` to the normal metric row and
+`external_skill_read_calls` to `agentmetrics.AnalyzerHeader`.
+
+- [ ] **Step 7: Prove navigation metrics are unchanged and evidence is stable**
+
+Keep the first eleven fields of every existing expected navigation row
+unchanged, append the expected zero contamination count, and run:
 
 ```bash
 gofmt -w scripts/analyze-agent-context-log.go
@@ -451,16 +812,16 @@ bash scripts/analyze-agent-context-log_test.sh
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit additive analyzer usage**
+- [ ] **Step 8: Commit additive analyzer evidence**
 
 ```bash
 git add scripts/analyze-agent-context-log.go scripts/analyze-agent-context-log_test.sh
-git commit -m "Expose explicit transcript token usage" -m "- Add strict current-counter usage output to the transcript analyzer
+git commit -m "Expose deterministic transcript benchmark evidence" -m "- Add strict current-counter usage output to the transcript analyzer
 - Preserve the legacy token-total mode for retained diagnostics
-- Reject inconsistent cache and reasoning counters"
+- Record ordered external skill reads without plugin-specific rules"
 ```
 
-### Task 3: Migrate monotonic runner and gate contracts
+### Task 4: Migrate monotonic runner and gate contracts
 
 **Files:**
 
@@ -484,6 +845,7 @@ git commit -m "Expose explicit transcript token usage" -m "- Add strict current-
 - Adds `EfficiencyLimits.TokenMetric string` fixed to
   `uncached_input_plus_output`.
 - Adds `RunMetrics.TokenUsage agentmetrics.TokenUsage`.
+- Adds `RunMetrics.ExternalSkillReadCalls int64` and persists it for diagnosis.
 - Keeps `RunMetrics.Tokens` as the raw `input_tokens + output_tokens`
   diagnostic for JSON compatibility.
 - Comparative token gates use `RunMetrics.TokenUsage.EffectiveTokens`.
@@ -586,8 +948,9 @@ In `review.go`:
 
 ```go
 type RunMetrics struct {
-	Tokens     int64                   `json:"tokens"`
-	TokenUsage agentmetrics.TokenUsage `json:"token_usage"`
+	Tokens                  int64                   `json:"tokens"`
+	TokenUsage              agentmetrics.TokenUsage `json:"token_usage"`
+	ExternalSkillReadCalls int64                   `json:"external_skill_read_calls"`
 	// existing non-token fields remain unchanged
 }
 ```
@@ -603,7 +966,8 @@ Change:
 
 ```go
 type transcriptMetrics struct {
-	usage agentmetrics.TokenUsage
+	usage                  agentmetrics.TokenUsage
+	externalSkillReadCalls int64
 	// existing fields
 }
 ```
@@ -617,15 +981,17 @@ if err != nil {
 }
 ```
 
-Carry `usage` through failure artifacts, `.metrics.tsv`, review templates, and
-`summary.tsv`.
+Invoke the normal analyzer metrics mode with `--workspace plan.workspace`,
+parse the appended `external_skill_read_calls` field as a non-negative integer,
+and carry both values through failure artifacts, `.metrics.tsv`, review
+templates, and `summary.tsv`.
 
 - [ ] **Step 5: Make summary columns explicit**
 
 Set the regression header to:
 
 ```go
-const RegressionSummaryHeader = "case\tquery\tbuild\trun\tattempt\teffective_tokens\tinput_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\tlog"
+const RegressionSummaryHeader = "case\tquery\tbuild\trun\tattempt\teffective_tokens\tinput_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\texternal_skill_read_calls\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\tlog"
 ```
 
 Update `writeRunMetrics` and `appendSummary` in that exact order.
@@ -663,6 +1029,10 @@ if [ "${1:-}" = "--usage" ]; then
 fi
 ```
 
+Make the fake analyzer normal row end in `0`, assert the regression summary's
+`external_skill_read_calls` column is zero, and add a fixture row ending in `2`
+to prove the value is retained as evidence without becoming a monotonic gate.
+
 Add `"token_metric": "uncached_input_plus_output"` to every committed
 regression contract and every in-memory valid contract fixture.
 
@@ -682,10 +1052,10 @@ Expected: PASS.
 git add internal/agentmetrics/schema.go internal/agentbench scripts/agent-context-regression testdata/agent-context-regression
 git commit -m "Gate agent regressions on effective tokens" -m "- Persist every raw and derived Codex usage counter in runner artifacts
 - Freeze monotonic contracts to uncached input plus output tokens
-- Keep raw total tokens as an explicit diagnostic rather than the gate value"
+- Keep raw totals and external skill reads as explicit diagnostics"
 ```
 
-### Task 4: Migrate the matched release harness
+### Task 5: Migrate and isolate the matched release harness
 
 **Files:**
 
@@ -696,8 +1066,12 @@ git commit -m "Gate agent regressions on effective tokens" -m "- Persist every r
 **Interfaces:**
 
 - Release summary uses the same seven token columns as the regression summary.
+- Release summary adds `external_skill_read_calls` after `total_tokens`.
 - Release gates compare `effective_tokens`.
 - The absolute prospective cap remains exactly 116,560.
+- Both variants require zero external skill reads over their entire transcript.
+- The harness captures `codex plugin list --json` before the first external run and never changes plugin state.
+- The first contaminated run is retained and terminates the matrix without retry or replacement.
 
 - [ ] **Step 1: Write a cache-sensitive release harness test**
 
@@ -716,21 +1090,70 @@ printf '{"type":"turn.completed","usage":{"input_tokens":170000,"cached_input_to
 The raw totals are close, but effective totals are `110000` baseline and
 `70000` assisted. Assert the run passes both token gates.
 
-- [ ] **Step 2: Run the release harness test and confirm old totals fail**
+- [ ] **Step 2: Add fail-first contamination and inventory tests**
+
+Extend the fake `codex` before its normal execution path:
+
+```bash
+if [ "${1:-}" = "plugin" ] && [ "${2:-}" = "list" ] && [ "${3:-}" = "--json" ]; then
+  [ "${FAKE_PLUGIN_LIST_FAIL:-0}" = "0" ] || exit 9
+  printf '[{"id":"workflow-tools","enabled":true}]\n'
+  exit 0
+fi
+```
+
+In the baseline branch, emit a generic external skill read when requested:
+
+```bash
+if [ "${FAKE_BASELINE_SKILL_READ:-0}" = "1" ]; then
+  emit_command 'cat /opt/codex/plugins/vendor/skills/brainstorming/SKILL.md'
+fi
+```
+
+Forward both environment variables through `run_harness`, then add:
+
+```bash
+FAKE_BASELINE_SKILL_READ=1
+export FAKE_BASELINE_SKILL_READ
+if run_harness contaminated >/dev/null 2>&1; then
+  fail "contaminated baseline passed"
+fi
+unset FAKE_BASELINE_SKILL_READ
+[ "$(tr -d '\n' <"$temporary_directory/contaminated.order")" = "b" ] ||
+  fail "harness did not stop after first contaminated run"
+grep -q $'^baseline\t1\t.*\t1\t' "$temporary_directory/contaminated/summary.tsv" ||
+  fail "contaminated run was not retained in summary"
+[ -s "$temporary_directory/contaminated/baseline-1.log.skill-reads.json" ] ||
+  fail "ordered skill evidence was not retained"
+[ ! -e "$temporary_directory/contaminated/assisted-1.log" ] ||
+  fail "harness launched a run after contamination"
+
+FAKE_PLUGIN_LIST_FAIL=1
+export FAKE_PLUGIN_LIST_FAIL
+if run_harness plugin-inventory-failure >/dev/null 2>&1; then
+  fail "missing plugin inventory passed"
+fi
+unset FAKE_PLUGIN_LIST_FAIL
+[ ! -s "$temporary_directory/plugin-inventory-failure.order" ] ||
+  fail "Codex run started after plugin inventory failure"
+```
+
+- [ ] **Step 3: Run the release harness test and confirm old behavior fails**
 
 ```bash
 bash scripts/benchmark-agent-context_test.sh
 ```
 
-Expected: FAIL because the harness still extracts legacy aggregate tokens.
+Expected: FAIL because the harness still extracts legacy aggregate tokens,
+does not capture plugin inventory, and does not reject skill reads.
 
-- [ ] **Step 3: Parse one explicit usage row per run**
+- [ ] **Step 4: Parse one explicit usage row per run**
 
 Replace `extract_tokens` with:
 
 ```bash
 extract_usage() {
-  go run "$analyzer_go" --usage "$1"
+  bash "$analyzer" --workspace "$workspace" --usage "$1"
 }
 ```
 
@@ -748,18 +1171,18 @@ EOF
 Write all seven fields to the summary and append only `effective_tokens` to the
 median input file.
 
-- [ ] **Step 4: Replace ambiguous summary headers**
+- [ ] **Step 5: Replace ambiguous summary headers**
 
 Set:
 
 ```go
-const ReleaseSummaryHeader = "variant\trun\teffective_tokens\tinput_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\tlog"
+const ReleaseSummaryHeader = "variant\trun\teffective_tokens\tinput_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\texternal_skill_read_calls\ttool_calls\tgoregraph_calls\tfull_context_packs\tcompact_duplicate_packs\trepeated_full_packs\traw_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tunique_source_files\tlog"
 ```
 
 Use this exact order in `benchmark-agent-context.sh` and its expected-header
 test.
 
-- [ ] **Step 5: Keep both prospective gates strict**
+- [ ] **Step 6: Keep both prospective gates strict**
 
 Rename shell variables to `baseline_effective_median` and
 `assisted_effective_median`. Keep:
@@ -787,7 +1210,41 @@ grep -q $'^assisted\tmedian\t116561\t' \
 unset FAKE_BASELINE_TOKENS FAKE_ASSISTED_TOKENS
 ```
 
-- [ ] **Step 6: Run both shell harness suites**
+- [ ] **Step 7: Capture configuration and stop after contamination**
+
+Before `codex --version` and before any prompt execution, add:
+
+```bash
+if ! codex plugin list --json \
+  >"$output/codex-plugins.json" \
+  2>"$output/codex-plugins.stderr"; then
+  die "cannot capture Codex plugin inventory; no benchmark run started"
+fi
+[ -s "$output/codex-plugins.json" ] ||
+  die "Codex plugin inventory is empty; no benchmark run started"
+```
+
+Keep the existing exact `codex-args.txt` and `codex-version.txt` artifacts. In
+`run_variant`, invoke normal metrics with `--workspace "$workspace"`, parse
+the appended `external_skill_read_calls`, and write ordered evidence before
+appending the summary row:
+
+```bash
+bash "$analyzer" --workspace "$workspace" --skill-reads "$log_path" \
+  >"$log_path.skill-reads.json"
+```
+
+After the complete run row and evidence files are safely written, enforce:
+
+```bash
+[ "$external_skill_read_calls" -eq 0 ] ||
+  die "$variant run $run_number read $external_skill_read_calls external skill files; matrix stopped and evidence retained"
+```
+
+Do not add a retry loop or replacement-run counter. This check remains inside
+`run_variant`, so the alternating outer loop cannot start the next variant.
+
+- [ ] **Step 8: Run both shell harness suites**
 
 ```bash
 gofmt -w internal/agentmetrics/schema.go
@@ -798,16 +1255,16 @@ bash scripts/benchmark-agent-context-regression_test.sh
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit the release harness migration**
+- [ ] **Step 9: Commit the release harness migration**
 
 ```bash
 git add internal/agentmetrics/schema.go scripts/benchmark-agent-context.sh scripts/benchmark-agent-context_test.sh
 git commit -m "Gate release benchmarks on effective tokens" -m "- Record raw, cached, uncached, output, reasoning, total, and effective usage
-- Compare matched medians using uncached input plus output
-- Retain the prospective 116560-token cap and structural gates"
+- Reject generic external skill reads in either controlled variant
+- Capture plugin inventory and retain the first contaminated run"
 ```
 
-### Task 5: Deterministic retained-log calibration report
+### Task 6: Deterministic retained-log calibration report
 
 **Files:**
 
@@ -940,7 +1397,7 @@ git commit -m "Add deterministic token calibration report" -m "- Recalculate exp
 - Keep retained evidence and calibration output outside the repository"
 ```
 
-### Task 6: Publish metric and release-status truth
+### Task 7: Publish metric, skill policy, and release-status truth
 
 **Files:**
 
@@ -949,12 +1406,15 @@ git commit -m "Add deterministic token calibration report" -m "- Recalculate exp
 - Modify: `README.md`
 - Modify: `docs/BENCHMARKING.md`
 - Modify: `docs/RELEASE.md`
+- Modify: `docs/OUTPUTS.md`
 
 **Interfaces:**
 
 - Generated metric blocks use `agentmetrics.ReleaseSummaryHeader` and
   `agentmetrics.RegressionSummaryHeader`.
 - Documentation defines effective, total, cached, and reasoning semantics once.
+- Documentation distinguishes normal skill compatibility from the controlled
+  release matrix's zero-skill-read requirement.
 - Release evidence status states that the retained 3×3 result failed and is not
   rescored.
 
@@ -967,6 +1427,7 @@ for _, want := range []string{
 	"effective_tokens",
 	"cached_input_tokens",
 	"reasoning_output_tokens",
+	"external_skill_read_calls",
 	"uncached input plus output",
 	"reasoning output is already part of output",
 } {
@@ -982,6 +1443,7 @@ Require release evidence to contain:
 "latest controlled three-by-three release benchmark did not pass"
 "remains failed"
 "prospectively calibrated"
+"zero external skill reads"
 ```
 
 - [ ] **Step 2: Run sync-docs tests and confirm stale wording**
@@ -999,6 +1461,8 @@ Extend `renderAgentBenchmarkMetrics` with:
 
 ```text
 `effective_tokens` is `input_tokens - cached_input_tokens + output_tokens` and is the prospective comparison metric. `total_tokens` is `input_tokens + output_tokens`. `reasoning_output_tokens` is recorded separately but is already part of `output_tokens`, so it is not added again.
+
+`external_skill_read_calls` counts transcript-observed read or search targets outside the benchmark workspace that resolve to a skill bundle. Controlled baseline and assisted release runs require zero; normal GoreGraph workflows may continue to use task-scoped skills.
 ```
 
 Keep all existing source-read classifications.
@@ -1009,16 +1473,19 @@ Set `renderCurrentReleaseEvidenceStatus` to:
 
 ```go
 return "The latest controlled three-by-three release benchmark did not pass: " +
-	"assisted answer quality remained below baseline and its legacy absolute-token " +
-	"gate used an aggregate that is not the prospectively frozen metric. " +
-	"The retained result remains failed and is not rescored. Publication remains " +
-	"blocked until a fresh prospectively calibrated three-by-three run passes " +
-	"all gates and receives the required signed 12-point quality review."
+	"its raw total-token medians were 2551495 baseline and 147212 assisted, so " +
+	"the assisted result exceeded the legacy 116560 absolute cap. The retained " +
+	"result remains failed and is not rescored. A prospective offline calculation " +
+	"produced effective-token medians of 164295 and 39180, but both variants also " +
+	"contained external skill reads. Publication remains blocked until a fresh " +
+	"prospectively calibrated matrix has zero external skill reads and receives " +
+	"the required signed 12-point quality review."
 ```
 
 - [ ] **Step 5: Update hand-written token-gate sections**
 
-In `docs/BENCHMARKING.md`, `README.md`, and `docs/RELEASE.md` state exactly:
+In `docs/BENCHMARKING.md`, `README.md`, `docs/RELEASE.md`, and
+`docs/OUTPUTS.md` state exactly:
 
 - the prospective formula;
 - both raw and effective counters are retained;
@@ -1026,6 +1493,11 @@ In `docs/BENCHMARKING.md`, `README.md`, and `docs/RELEASE.md` state exactly:
 - the 116,560 absolute cap uses effective tokens;
 - reasoning output is not double-counted;
 - the previous 3×3 result remains failed;
+- `external_skill_read_calls` is plugin-agnostic transcript evidence;
+- both controlled variants require zero external skill reads across the complete transcript;
+- normal use remains compatible with Brainstorming, TDD, debugging, and review skills;
+- `--ignore-user-config` is not a skill-isolation guarantee;
+- the harness records plugin state but never mutates it;
 - pack `estimated_tokens` remains unrelated to end-to-end usage.
 
 Remove claims that the complete-session aggregate or recorded 145,700-token
@@ -1045,13 +1517,13 @@ Expected: PASS.
 - [ ] **Step 7: Commit documentation truth**
 
 ```bash
-git add scripts/sync-docs README.md docs/BENCHMARKING.md docs/RELEASE.md
-git commit -m "Document prospective release token metrics" -m "- Define effective, raw, cached, output, and reasoning token semantics
+git add scripts/sync-docs README.md docs/BENCHMARKING.md docs/RELEASE.md docs/OUTPUTS.md
+git commit -m "Document deterministic release benchmark policy" -m "- Define effective, raw, cached, output, and reasoning token semantics
 - Correct the retained three-by-three failure status without rescoring it
-- Synchronize release and benchmark documentation from shared metric headers"
+- Distinguish normal skill compatibility from controlled zero-skill qualification"
 ```
 
-### Task 7: Local verification, control calibration, and release-matrix handoff
+### Task 8: Local verification, control calibration, and release-matrix handoff
 
 **Files:**
 
@@ -1059,11 +1531,9 @@ git commit -m "Document prospective release token metrics" -m "- Define effectiv
 
 **Interfaces:**
 
-- Consumes: the clean stabilized candidate commit, installed binary, six
-  retained control transcripts, frozen prompt/configuration, and active
-  external-run authorization.
-- Produces: local green verification, an external calibration report, and a
-  stop point for the exact final six-run authorization.
+- Consumes: the implementation commits and the six retained control transcripts.
+- Produces: local green verification, an offline calibration report, an
+  installed candidate, and a hard stop before any new external run.
 
 - [ ] **Step 1: Run the complete repository verification**
 
@@ -1091,10 +1561,12 @@ scripts/calibrate-agent-context-tokens.sh "$RETAINED_G1_EVIDENCE"
 ```
 
 Store stdout outside the repository beside the retained evidence. For the
-known 2026-07-30 logs, independently verify the raw arithmetic:
+retained candidate evidence in
+`/private/tmp/goregraph-release-3x3-c8d0afc-20260731`, independently verify:
 
-- baseline effective tokens: 208,258; 182,198; 186,783; median 186,783;
-- assisted effective tokens: 41,367; 35,213; 39,505; median 39,505;
+- baseline effective-token median: 164,295;
+- assisted effective-token median: 39,180;
+- assisted share: 23.85%, with 76.15% savings;
 - reasoning counters remain included only in output;
 - this diagnostic does not alter the failed result.
 
@@ -1110,19 +1582,18 @@ goregraph version
 Expected: clean worktree and installed candidate identity matching the recorded
 commit.
 
-- [ ] **Step 4: Require the product smoke result before final benchmarking**
+- [ ] **Step 4: Audit retained skill evidence without executing Codex**
 
-Confirm the one-run private G1 smoke from the rendered-evidence plan:
+Run the updated analyzer against all six retained transcripts with the retained
+workspace path and write the audit beside that evidence. Confirm:
 
-- scored 12/12;
-- introduced no forbidden or unsupported claim;
-- performed no broad navigation or included-source reread;
-- stayed within 4,000 tokens, 12 files, and 12 sections;
-- did not increase source reads or tool calls beyond accepted assisted
-  behavior.
+- baseline external skill reads are `4`, `2`, and `0`;
+- assisted external skill reads are `2`, `5`, and `4`;
+- every assisted skill read precedes its first GoreGraph context call;
+- the audit does not alter or replace the failed matrix verdict.
 
-If any condition fails, stop. Do not start a release matrix and do not adjust
-token thresholds.
+If the new analyzer cannot reproduce this retained evidence, stop and fix the
+classifier before requesting another matrix.
 
 - [ ] **Step 5: Stop for exact final data-sharing authorization**
 
@@ -1149,6 +1620,8 @@ prompt, and output paths. Preserve the interleaved order and store:
 - `summary.tsv`;
 - binary, commit, index, prompt, model, reasoning, Codex version, and argument
   identities;
+- `codex-plugins.json` and `codex-plugins.stderr`;
+- six ordered `*.skill-reads.json` files;
 - the calibration report;
 - the unsigned 12-point review template.
 
@@ -1161,6 +1634,7 @@ The matrix passes only if:
 - assisted tool-call median is at most 70% of baseline;
 - assisted source-read median is at most 50% of baseline;
 - repeated full packs and included-source rereads are zero;
+- `external_skill_read_calls` is zero for every baseline and assisted run;
 - all three assisted answers score 12/12;
 - every baseline and assisted run is valid;
 - the independent reviewer signs and dates the rubric.
