@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/gorecodecom/goregraph/internal/agentmetrics"
 )
 
 const logicalRunCount = 3
@@ -29,16 +31,18 @@ type FacetResult struct {
 }
 
 type RunMetrics struct {
-	Tokens                  int64 `json:"tokens"`
-	ToolCalls               int64 `json:"tool_calls"`
-	SourceReads             int64 `json:"source_reads"`
-	BoundedOmissionReads    int64 `json:"bounded_omission_read_calls"`
-	UnauthorizedSourceReads int64 `json:"unauthorized_source_read_calls"`
-	IncludedSourceRereads   int64 `json:"included_source_rereads"`
-	RepeatedFullPacks       int64 `json:"repeated_full_packs"`
-	ContextCalls            int64 `json:"context_calls"`
-	ContextMillis           int64 `json:"context_millis"`
-	BroadNavigationCalls    int64 `json:"broad_navigation_calls"`
+	Tokens                  int64                   `json:"tokens"`
+	TokenUsage              agentmetrics.TokenUsage `json:"token_usage"`
+	ExternalSkillReadCalls  int64                   `json:"external_skill_read_calls"`
+	ToolCalls               int64                   `json:"tool_calls"`
+	SourceReads             int64                   `json:"source_reads"`
+	BoundedOmissionReads    int64                   `json:"bounded_omission_read_calls"`
+	UnauthorizedSourceReads int64                   `json:"unauthorized_source_read_calls"`
+	IncludedSourceRereads   int64                   `json:"included_source_rereads"`
+	RepeatedFullPacks       int64                   `json:"repeated_full_packs"`
+	ContextCalls            int64                   `json:"context_calls"`
+	ContextMillis           int64                   `json:"context_millis"`
+	BroadNavigationCalls    int64                   `json:"broad_navigation_calls"`
 }
 
 type InvalidRun struct {
@@ -297,11 +301,22 @@ func collectValidRuns(build, caseID string, runs []ReviewedRun, failures *[]stri
 }
 
 func validateMetrics(metrics RunMetrics) error {
+	if _, err := agentmetrics.ParseTokenUsageRow(metrics.TokenUsage.TSV()); err != nil {
+		return fmt.Errorf("token_usage: %w", err)
+	}
+	if metrics.Tokens != metrics.TokenUsage.TotalTokens {
+		return fmt.Errorf(
+			"tokens %d does not match token_usage.total_tokens %d",
+			metrics.Tokens,
+			metrics.TokenUsage.TotalTokens,
+		)
+	}
 	for _, field := range []struct {
 		name  string
 		value int64
 	}{
 		{name: "tokens", value: metrics.Tokens},
+		{name: "external_skill_read_calls", value: metrics.ExternalSkillReadCalls},
 		{name: "tool_calls", value: metrics.ToolCalls},
 		{name: "source_reads", value: metrics.SourceReads},
 		{name: "bounded_omission_read_calls", value: metrics.BoundedOmissionReads},
@@ -378,10 +393,10 @@ func comparativeEfficiencyFindings(
 			goldenUnauthorizedReads,
 		))
 	}
-	goldenTokens, _ := Median(goldenMetrics.tokens)
-	candidateTokens, _ := Median(candidateMetrics.tokens)
+	goldenTokens, _ := Median(goldenMetrics.effectiveTokens)
+	candidateTokens, _ := Median(candidateMetrics.effectiveTokens)
 	if !withinRatio(candidateTokens, goldenTokens, 100+int64(limits.MaxTokenIncreasePercent)) {
-		findings = append(findings, fmt.Sprintf("candidate median tokens %d exceeds %d percent of golden median %d", candidateTokens, 100+limits.MaxTokenIncreasePercent, goldenTokens))
+		findings = append(findings, fmt.Sprintf("candidate median effective tokens %d exceeds %d percent of golden median %d", candidateTokens, 100+limits.MaxTokenIncreasePercent, goldenTokens))
 	}
 	goldenLatency, _ := Median(goldenMetrics.contextMillis)
 	candidateLatency, _ := Median(candidateMetrics.contextMillis)
@@ -399,7 +414,7 @@ func comparativeEfficiencyFindings(
 }
 
 type metricsByRun struct {
-	tokens                  []int64
+	effectiveTokens         []int64
 	toolCalls               []int64
 	unauthorizedSourceReads []int64
 	contextMillis           []int64
@@ -408,7 +423,10 @@ type metricsByRun struct {
 func metricValues(runs map[int]ReviewedRun) metricsByRun {
 	metrics := metricsByRun{}
 	for _, run := range logicalRunNumbers() {
-		metrics.tokens = append(metrics.tokens, runs[run].Metrics.Tokens)
+		metrics.effectiveTokens = append(
+			metrics.effectiveTokens,
+			runs[run].Metrics.TokenUsage.EffectiveTokens,
+		)
 		metrics.toolCalls = append(metrics.toolCalls, runs[run].Metrics.ToolCalls)
 		metrics.unauthorizedSourceReads = append(
 			metrics.unauthorizedSourceReads,

@@ -3,6 +3,8 @@ package agentbench
 import (
 	"strings"
 	"testing"
+
+	"github.com/gorecodecom/goregraph/internal/agentmetrics"
 )
 
 func TestLoadReview(t *testing.T) {
@@ -186,13 +188,14 @@ func TestEvaluateCase(t *testing.T) {
 			failure: "unauthorized_source_read_calls must not be negative",
 		},
 		{
-			name: "rejects token median above five percent",
+			name: "rejects effective token median above five percent",
 			mutate: func(_ []ReviewedRun, candidate []ReviewedRun) {
 				for index := range candidate {
 					candidate[index].Metrics.Tokens = 106
+					candidate[index].Metrics.TokenUsage = tokenUsage(106)
 				}
 			},
-			failure: "candidate median tokens 106 exceeds 105 percent of golden median 100",
+			failure: "candidate median effective tokens 106 exceeds 105 percent of golden median 100",
 		},
 		{
 			name: "rejects latency median above ten percent",
@@ -226,7 +229,7 @@ func TestEvaluateCase(t *testing.T) {
 	t.Run("rejects an appended fourth logical run after a valid failure", func(t *testing.T) {
 		contract, golden, candidate, hypothesis, diff := passingCase()
 		candidate = append(candidate, reviewedRun(4, "candidate", "pass", RunMetrics{
-			Tokens: 105, ToolCalls: 10, SourceReads: 10, ContextMillis: 110,
+			Tokens: 105, TokenUsage: tokenUsage(105), ToolCalls: 10, SourceReads: 10, ContextMillis: 110,
 		}))
 
 		requireGateFailure(t, EvaluateCase(contract, golden, candidate, hypothesis, diff), "candidate has unexpected logical run 4")
@@ -260,6 +263,7 @@ func TestEvaluateCase(t *testing.T) {
 			candidate[index].Metrics.ToolCalls = 11
 			candidate[index].Metrics.UnauthorizedSourceReads = 1
 			candidate[index].Metrics.Tokens = 106
+			candidate[index].Metrics.TokenUsage = tokenUsage(106)
 			candidate[index].Metrics.ContextMillis = 201
 		}
 
@@ -271,11 +275,23 @@ func TestEvaluateCase(t *testing.T) {
 			"model variance",
 			"candidate median tool calls",
 			"candidate median unauthorized source reads",
-			"candidate median tokens",
+			"candidate median effective tokens",
 			"candidate median Context latency",
 			"candidate Context latency",
 		} {
 			requireObservation(t, report, fragment)
+		}
+	})
+
+	t.Run("retains external skill reads as ungated diagnosis", func(t *testing.T) {
+		contract, golden, candidate, hypothesis, diff := passingCase()
+		for index := range candidate {
+			candidate[index].Metrics.ExternalSkillReadCalls = 2
+		}
+
+		report := EvaluateCase(contract, golden, candidate, hypothesis, diff)
+		if !report.Passed || len(report.Failures) != 0 {
+			t.Fatalf("external skill read report = %#v, want pass", report)
 		}
 	})
 
@@ -321,6 +337,40 @@ func TestEvaluateCase(t *testing.T) {
 			t.Fatalf("zero-forbidden-outcome report = %#v", report)
 		}
 	})
+}
+
+func TestEvaluateCaseUsesEffectiveTokens(t *testing.T) {
+	contract, golden, candidate, hypothesis, diff := passingCase()
+	setUsage := func(
+		runs []ReviewedRun,
+		input, cached, output int64,
+	) {
+		for index := range runs {
+			usage := agentmetrics.TokenUsage{
+				InputTokens:           input,
+				CachedInputTokens:     cached,
+				UncachedInputTokens:   input - cached,
+				OutputTokens:          output,
+				ReasoningOutputTokens: 0,
+				TotalTokens:           input + output,
+				EffectiveTokens:       input - cached + output,
+			}
+			runs[index].Metrics.Tokens = usage.TotalTokens
+			runs[index].Metrics.TokenUsage = usage
+		}
+	}
+	setUsage(golden, 180, 100, 20)
+	setUsage(candidate, 190, 110, 20)
+	if report := EvaluateCase(contract, golden, candidate, hypothesis, diff); !report.Passed {
+		t.Fatalf("equal effective usage failed: %#v", report)
+	}
+
+	setUsage(candidate, 190, 110, 26)
+	requireGateFailure(
+		t,
+		EvaluateCase(contract, golden, candidate, hypothesis, diff),
+		"candidate median effective tokens 106 exceeds 105 percent of golden median 100",
+	)
 }
 
 func TestMedian(t *testing.T) {
@@ -382,18 +432,27 @@ func passingCase() (Contract, []ReviewedRun, []ReviewedRun, Hypothesis, PackDiff
 	candidate := make([]ReviewedRun, 3)
 	for index := range golden {
 		golden[index] = reviewedRun(index+1, "golden", "fail", RunMetrics{
-			Tokens: 100, ToolCalls: 10, SourceReads: 10, ContextMillis: 100,
+			Tokens: 100, TokenUsage: tokenUsage(100), ToolCalls: 10, SourceReads: 10, ContextMillis: 100,
 		})
 		status := "pass"
 		if index == 2 {
 			status = "fail"
 		}
 		candidate[index] = reviewedRun(index+1, "candidate", status, RunMetrics{
-			Tokens: 105, ToolCalls: 10, SourceReads: 10, ContextMillis: 110,
+			Tokens: 105, TokenUsage: tokenUsage(105), ToolCalls: 10, SourceReads: 10, ContextMillis: 110,
 		})
 	}
 	diff := PackDiff{AddedSources: []string{"services/catalog/NewEvidence.java"}}
 	return contract, golden, candidate, hypothesis, diff
+}
+
+func tokenUsage(total int64) agentmetrics.TokenUsage {
+	return agentmetrics.TokenUsage{
+		InputTokens:         total,
+		UncachedInputTokens: total,
+		TotalTokens:         total,
+		EffectiveTokens:     total,
+	}
 }
 
 func reviewedRun(run int, build, targetStatus string, metrics RunMetrics) ReviewedRun {

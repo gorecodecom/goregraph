@@ -11,6 +11,7 @@ import (
 const (
 	contractSchemaVersion = 1
 	fixedContextTokens    = 4000
+	fixedTokenMetric      = "uncached_input_plus_output"
 	maxSourceOmissions    = 3
 )
 
@@ -94,11 +95,12 @@ type FacetDefinition struct {
 }
 
 type EfficiencyLimits struct {
-	ContextTokens              int `json:"context_tokens"`
-	MaxSourceOmissions         int `json:"max_source_omissions"`
-	MaxTokenIncreasePercent    int `json:"max_token_increase_percent"`
-	MaxLatencyIncreasePercent  int `json:"max_latency_increase_percent"`
-	MaxPairedLatencyMultiplier int `json:"max_paired_latency_multiplier"`
+	ContextTokens              int    `json:"context_tokens"`
+	TokenMetric                string `json:"token_metric"`
+	MaxSourceOmissions         int    `json:"max_source_omissions"`
+	MaxTokenIncreasePercent    int    `json:"max_token_increase_percent"`
+	MaxLatencyIncreasePercent  int    `json:"max_latency_increase_percent"`
+	MaxPairedLatencyMultiplier int    `json:"max_paired_latency_multiplier"`
 }
 
 type Matrix struct {
@@ -429,6 +431,12 @@ func validateFacets(answer AnswerExpectation) error {
 func validateLimits(limits EfficiencyLimits) error {
 	if limits.ContextTokens != fixedContextTokens {
 		return fmt.Errorf("limits.context_tokens must be %d", fixedContextTokens)
+	}
+	if limits.TokenMetric != fixedTokenMetric {
+		return fmt.Errorf(
+			"limits.token_metric must be %q",
+			fixedTokenMetric,
+		)
 	}
 	if limits.MaxSourceOmissions < 0 || limits.MaxSourceOmissions > maxSourceOmissions {
 		return fmt.Errorf("limits.max_source_omissions must be between 0 and %d", maxSourceOmissions)

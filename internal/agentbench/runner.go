@@ -79,7 +79,8 @@ type runnerState struct {
 }
 
 type transcriptMetrics struct {
-	tokens                  int64
+	usage                   agentmetrics.TokenUsage
+	externalSkillReadCalls  int64
 	toolCalls               int64
 	contextCalls            int64
 	repeatedFullPacks       int64
@@ -1067,7 +1068,7 @@ func (state *runnerState) runEndToEnd(ctx context.Context, plan *regressionPlan)
 		return fmt.Errorf("Codex %s %s run %d: %w", plan.benchmarkCase.id, plan.build, plan.run, runErr)
 	}
 
-	metrics, analyzerStderr, err := state.analyzeTranscript(ctx, logPath)
+	metrics, analyzerStderr, err := state.analyzeTranscript(ctx, plan, logPath)
 	metrics.contextMillis = contextMillis
 	if err != nil {
 		if len(analyzerStderr) > 0 {
@@ -1180,40 +1181,41 @@ func (state *runnerState) writePackDiff(
 
 func (state *runnerState) analyzeTranscript(
 	ctx context.Context,
+	plan *regressionPlan,
 	logPath string,
 ) (transcriptMetrics, []byte, error) {
-	tokenOutput, tokenStderr, err := runProcess(
+	usageOutput, usageStderr, err := runProcess(
 		ctx, state.bashPath,
-		[]string{state.config.AnalyzerPath, "--tokens", logPath},
+		[]string{state.config.AnalyzerPath, "--usage", logPath},
 		nil, nil,
 	)
 	if err != nil {
-		return transcriptMetrics{}, tokenStderr, fmt.Errorf(
-			"extract transcript tokens: %w: %s",
+		return transcriptMetrics{}, usageStderr, fmt.Errorf(
+			"extract transcript usage: %w: %s",
 			err,
-			strings.TrimSpace(string(tokenStderr)),
+			strings.TrimSpace(string(usageStderr)),
 		)
 	}
-	tokens, err := parseNonnegativeInteger(strings.TrimSpace(string(tokenOutput)))
+	usage, err := agentmetrics.ParseTokenUsageRow(strings.TrimSpace(string(usageOutput)))
 	if err != nil {
-		return transcriptMetrics{}, nil, fmt.Errorf("parse transcript tokens: %w", err)
+		return transcriptMetrics{}, nil, fmt.Errorf("parse transcript usage: %w", err)
 	}
 	output, stderr, err := runProcess(
 		ctx, state.bashPath,
-		[]string{state.config.AnalyzerPath, logPath},
+		[]string{state.config.AnalyzerPath, "--workspace", plan.workspace, logPath},
 		nil, nil,
 	)
 	if err != nil {
-		return transcriptMetrics{tokens: tokens}, stderr, fmt.Errorf(
+		return transcriptMetrics{usage: usage}, stderr, fmt.Errorf(
 			"analyze transcript: %w: %s",
 			err,
 			strings.TrimSpace(string(stderr)),
 		)
 	}
 	fields := strings.Split(strings.TrimSpace(string(output)), "\t")
-	if len(fields) != 11 {
-		return transcriptMetrics{tokens: tokens}, nil, fmt.Errorf(
-			"analyzer returned %d fields, want 11",
+	if len(fields) != 12 {
+		return transcriptMetrics{usage: usage}, nil, fmt.Errorf(
+			"analyzer returned %d fields, want 12",
 			len(fields),
 		)
 	}
@@ -1221,7 +1223,7 @@ func (state *runnerState) analyzeTranscript(
 	for index, field := range fields {
 		value, err := parseNonnegativeInteger(field)
 		if err != nil {
-			return transcriptMetrics{tokens: tokens}, nil, fmt.Errorf(
+			return transcriptMetrics{usage: usage}, nil, fmt.Errorf(
 				"analyzer field %d: %w",
 				index+1,
 				err,
@@ -1230,7 +1232,8 @@ func (state *runnerState) analyzeTranscript(
 		values[index] = value
 	}
 	return transcriptMetrics{
-		tokens:                  tokens,
+		usage:                   usage,
+		externalSkillReadCalls:  values[11],
 		toolCalls:               values[0],
 		contextCalls:            values[1],
 		repeatedFullPacks:       values[4],
@@ -1334,8 +1337,15 @@ func parseNonnegativeInteger(value string) (int64, error) {
 
 func writeRunMetrics(path string, metrics transcriptMetrics) error {
 	body := fmt.Sprintf(
-		"tokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\n%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
-		metrics.tokens,
+		"effective_tokens\tinput_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\texternal_skill_read_calls\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\n%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",
+		metrics.usage.EffectiveTokens,
+		metrics.usage.InputTokens,
+		metrics.usage.CachedInputTokens,
+		metrics.usage.UncachedInputTokens,
+		metrics.usage.OutputTokens,
+		metrics.usage.ReasoningOutputTokens,
+		metrics.usage.TotalTokens,
+		metrics.externalSkillReadCalls,
 		metrics.toolCalls,
 		metrics.contextCalls,
 		metrics.repeatedFullPacks,
@@ -1380,7 +1390,9 @@ func (state *runnerState) reviewTemplate(
 			ForbiddenOutcomes: forbidden,
 		},
 		Metrics: RunMetrics{
-			Tokens:                  metrics.tokens,
+			Tokens:                  metrics.usage.TotalTokens,
+			TokenUsage:              metrics.usage,
+			ExternalSkillReadCalls:  metrics.externalSkillReadCalls,
 			ToolCalls:               metrics.toolCalls,
 			SourceReads:             metrics.sourceReadCalls,
 			BoundedOmissionReads:    metrics.boundedOmissionReads,
@@ -1402,13 +1414,20 @@ func (state *runnerState) appendSummary(
 	logPath string,
 ) error {
 	line := fmt.Sprintf(
-		"%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
+		"%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
 		plan.benchmarkCase.id,
 		query.ID,
 		plan.build,
 		plan.run,
 		plan.attempt,
-		metrics.tokens,
+		metrics.usage.EffectiveTokens,
+		metrics.usage.InputTokens,
+		metrics.usage.CachedInputTokens,
+		metrics.usage.UncachedInputTokens,
+		metrics.usage.OutputTokens,
+		metrics.usage.ReasoningOutputTokens,
+		metrics.usage.TotalTokens,
+		metrics.externalSkillReadCalls,
 		metrics.toolCalls,
 		metrics.contextCalls,
 		metrics.repeatedFullPacks,

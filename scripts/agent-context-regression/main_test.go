@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorecodecom/goregraph/internal/agent"
 	"github.com/gorecodecom/goregraph/internal/agentbench"
+	"github.com/gorecodecom/goregraph/internal/agentmetrics"
 )
 
 func TestRunRequiresCommand(t *testing.T) {
@@ -1032,6 +1033,7 @@ func validContract() agentbench.Contract {
 		},
 		Limits: agentbench.EfficiencyLimits{
 			ContextTokens:              4000,
+			TokenMetric:                "uncached_input_plus_output",
 			MaxSourceOmissions:         3,
 			MaxTokenIncreasePercent:    5,
 			MaxLatencyIncreasePercent:  10,
@@ -1109,7 +1111,14 @@ func reviewedRuns(build, targetStatus string) []agentbench.ReviewedRun {
 				},
 			},
 			Metrics: agentbench.RunMetrics{
-				Tokens: 100, ToolCalls: 10, SourceReads: 10, ContextMillis: 100,
+				Tokens: 100,
+				TokenUsage: agentmetrics.TokenUsage{
+					InputTokens:         100,
+					UncachedInputTokens: 100,
+					TotalTokens:         100,
+					EffectiveTokens:     100,
+				},
+				ToolCalls: 10, SourceReads: 10, ContextMillis: 100,
 			},
 		}
 	}

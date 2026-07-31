@@ -88,6 +88,7 @@
   },
   "limits": {
     "context_tokens": 4000,
+    "token_metric": "uncached_input_plus_output",
     "max_source_omissions": 3,
     "max_token_increase_percent": 5,
     "max_latency_increase_percent": 10,

@@ -94,7 +94,7 @@ if [ -f "$FAKE_CODEX_COUNTER" ]; then
 fi
 printf '%s\n' "$((count + 1))" >"$FAKE_CODEX_COUNTER"
 printf '{"type":"item.completed","item":{"id":"tool-1","type":"command_execution","command":"pwd"}}\n'
-printf '{"type":"turn.completed","usage":{"total_tokens":100}}\n'
+printf '{"type":"turn.completed","usage":{"input_tokens":90,"cached_input_tokens":20,"output_tokens":10,"reasoning_output_tokens":4}}\n'
 EOF
 chmod 700 "$fake_bin/codex"
 
@@ -146,7 +146,7 @@ for artifact in \
   }
 done
 
-expected_summary_header=$'case\tquery\tbuild\trun\tattempt\ttokens\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\tlog'
+expected_summary_header=$'case\tquery\tbuild\trun\tattempt\teffective_tokens\tinput_tokens\tcached_input_tokens\tuncached_input_tokens\toutput_tokens\treasoning_output_tokens\ttotal_tokens\texternal_skill_read_calls\ttool_calls\tcontext_calls\trepeated_full_packs\tbroad_navigation_calls\tsource_read_calls\tbounded_omission_read_calls\tunauthorized_source_read_calls\tincluded_source_rereads\tcontext_millis\tlog'
 [ "$(head -n 1 "$output/summary.tsv")" = "$expected_summary_header" ] || {
   printf 'FAIL: regression summary header is %s\n' "$(head -n 1 "$output/summary.tsv")" >&2
   exit 1

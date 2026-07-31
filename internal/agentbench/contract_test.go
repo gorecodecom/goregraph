@@ -44,11 +44,26 @@ func validContract() Contract {
 		},
 		Limits: EfficiencyLimits{
 			ContextTokens:              4000,
+			TokenMetric:                "uncached_input_plus_output",
 			MaxSourceOmissions:         3,
 			MaxTokenIncreasePercent:    5,
 			MaxLatencyIncreasePercent:  10,
 			MaxPairedLatencyMultiplier: 2,
 		},
+	}
+}
+
+func TestValidateContractRequiresProspectiveTokenMetric(t *testing.T) {
+	contract := validContract()
+	contract.Limits.TokenMetric = ""
+	if err := ValidateContract(contract); err == nil ||
+		!strings.Contains(err.Error(), "token_metric") {
+		t.Fatalf("missing token metric error = %v", err)
+	}
+	contract.Limits.TokenMetric = "total_tokens"
+	if err := ValidateContract(contract); err == nil ||
+		!strings.Contains(err.Error(), "uncached_input_plus_output") {
+		t.Fatalf("wrong token metric error = %v", err)
 	}
 }
 
