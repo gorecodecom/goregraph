@@ -260,6 +260,7 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 		record := fileRecord(rel, info.Size(), body)
 		index.Files = append(index.Files, record)
 		text := string(body)
+		index.AgentContextConfigurationFacts = append(index.AgentContextConfigurationFacts, extractAgentContextConfigurationFacts(record, text)...)
 		index.Symbols = append(index.Symbols, extractSymbols(record, text)...)
 		index.Relations = append(index.Relations, extractRelations(record, text)...)
 		if record.Language == "java" {
@@ -410,6 +411,11 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 			apiContracts,
 			evidence,
 			capabilities,
+		)
+		contextIndex = appendAgentContextConfigurationFacts(
+			contextIndex,
+			filepath.Base(root),
+			index.AgentContextConfigurationFacts,
 		)
 	}
 	layout := NewProjectOutputLayout(out)

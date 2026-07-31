@@ -5202,6 +5202,88 @@ func TestRenderSourceCandidatePrefersIndexedName(t *testing.T) {
 	}
 }
 
+func TestRenderSourceCandidateRedactsConfigurationValues(t *testing.T) {
+	const propertyPassword = "SENTINEL_PROPERTIES_PASSWORD"
+	properties := []string{
+		"# Client connection",
+		"client.url=https://SENTINEL_PROPERTIES_URL.invalid",
+		"client.username=service-user",
+		"client.password=" + propertyPassword,
+		"retry.max-attempts=3",
+	}
+	propertyCandidate := sourceCandidate{
+		Path: "src/main/resources/application.properties", StartLine: 1, EndLine: len(properties),
+		Kind: "symbol", Name: "client", Qualified: "client",
+	}
+	propertySection, err := renderSourceCandidate(
+		propertyCandidate,
+		sourceFile{Path: propertyCandidate.Path, Lines: properties},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"SENTINEL_PROPERTIES_URL", propertyPassword, "service-user", "max-attempts=3"} {
+		if strings.Contains(propertySection.Content, value) {
+			t.Fatalf("rendered properties retain %q:\n%s", value, propertySection.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\t# Client connection",
+		"2\tclient.url=<redacted>",
+		"3\tclient.username=<redacted>",
+		"4\tclient.password=<redacted>",
+		"5\tretry.max-attempts=<redacted>",
+	} {
+		if !strings.Contains(propertySection.Content, line) {
+			t.Fatalf("rendered properties missing %q:\n%s", line, propertySection.Content)
+		}
+	}
+
+	const yamlPassword = "SENTINEL_YAML_PASSWORD"
+	yaml := []string{
+		"client:",
+		"  url: https://SENTINEL_YAML_URL.invalid",
+		"  username: service-user",
+		"  password: " + yamlPassword,
+		"  trusted-hosts:",
+		"    - https://SENTINEL_YAML_HOST.invalid",
+		"retry:",
+		"  max-attempts: 3",
+	}
+	yamlCandidate := sourceCandidate{
+		Path: "src/test/resources/application-test.yaml", StartLine: 1, EndLine: len(yaml),
+		Kind: "configuration", Name: "client", Qualified: "client",
+	}
+	yamlSection, err := renderSourceCandidate(
+		yamlCandidate,
+		sourceFile{Path: yamlCandidate.Path, Lines: yaml},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"SENTINEL_YAML_URL", "SENTINEL_YAML_HOST", yamlPassword, "service-user", "max-attempts: 3"} {
+		if strings.Contains(yamlSection.Content, value) {
+			t.Fatalf("rendered YAML retains %q:\n%s", value, yamlSection.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\tclient:",
+		"2\t  url: <redacted>",
+		"3\t  username: <redacted>",
+		"4\t  password: <redacted>",
+		"5\t  trusted-hosts:",
+		"6\t    - <redacted>",
+		"7\tretry:",
+		"8\t  max-attempts: <redacted>",
+	} {
+		if !strings.Contains(yamlSection.Content, line) {
+			t.Fatalf("rendered YAML missing %q:\n%s", line, yamlSection.Content)
+		}
+	}
+}
+
 func TestRenderSourceCandidateDoesNotTreatSameLineCallAsDeclaration(t *testing.T) {
 	candidate := sourceCandidate{Path: "module.ts", StartLine: 1, EndLine: 1, Kind: "symbol", Name: "deleteUser"}
 	line := "export function deleteUser() { deleteUser(); }"

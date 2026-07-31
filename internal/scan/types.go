@@ -7,16 +7,17 @@ type Result struct {
 }
 
 type Index struct {
-	Files                    []FileRecord
-	Symbols                  []SymbolRecord
-	Relations                []RelationRecord
-	JavaSources              []JavaSourceRecord
-	Workspace                WorkspaceIndex
-	Code                     CodeIntelligenceRecord
-	ArchitectureCapabilities []ArchitectureCapabilityFact
-	SymbolFacts              ProjectSymbolFacts
-	ScriptConfigs            map[string]ScriptResolutionConfig `json:"script_configs,omitempty"`
-	scriptConfigLimitations  []string
+	Files                          []FileRecord
+	Symbols                        []SymbolRecord
+	Relations                      []RelationRecord
+	JavaSources                    []JavaSourceRecord
+	Workspace                      WorkspaceIndex
+	Code                           CodeIntelligenceRecord
+	ArchitectureCapabilities       []ArchitectureCapabilityFact
+	AgentContextConfigurationFacts []AgentContextFactRecord
+	SymbolFacts                    ProjectSymbolFacts
+	ScriptConfigs                  map[string]ScriptResolutionConfig `json:"script_configs,omitempty"`
+	scriptConfigLimitations        []string
 }
 
 type ArchitectureCapabilityFact struct {

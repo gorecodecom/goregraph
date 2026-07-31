@@ -783,6 +783,24 @@ func stableContextSourceOmissionReason(err error) string {
 }
 
 func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode string) (ContextSourceSection, error) {
+	if isContextConfigurationResource(file.Path) {
+		start, end := indexedSourceRange(candidate, len(file.Lines))
+		content := renderNumberedSource(file.Lines, start, end)
+		sourceState := candidate.SourceState
+		if sourceState == "" {
+			sourceState = "indexed_range_current"
+		}
+		return ContextSourceSection{
+			Project:     candidate.Project,
+			Path:        candidate.Path,
+			StartLine:   start,
+			EndLine:     end,
+			Role:        candidate.Role,
+			RenderMode:  mode,
+			SourceState: sourceState,
+			Content:     redactContextConfigurationValues(file.Path, content),
+		}, nil
+	}
 	identifier := contextIdentifier(candidate)
 	occurrences := identifierOccurrences(file.Lines, identifier)
 	codeLines := sourceCodeMask(file.Lines)
@@ -866,6 +884,75 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 		SourceState: state,
 		Content:     renderNumberedSource(file.Lines, renderStart, renderEnd),
 	}, nil
+}
+
+func redactContextConfigurationValues(path, content string) string {
+	if !isContextConfigurationResource(path) {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for index, line := range lines {
+		prefix, source := contextConfigurationLinePrefix(line)
+		trimmed := strings.TrimSpace(source)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+			continue
+		}
+		if isContextConfigurationYAML(path) {
+			if listPrefix, scalar := contextConfigurationYAMLListScalar(source); scalar {
+				lines[index] = prefix + listPrefix + "<redacted>"
+				continue
+			}
+			if delimiter := strings.Index(source, ":"); delimiter >= 0 && strings.TrimSpace(source[delimiter+1:]) != "" && !strings.HasPrefix(strings.TrimSpace(source[delimiter+1:]), "#") {
+				lines[index] = prefix + source[:delimiter+1] + " <redacted>"
+			}
+			continue
+		}
+		if delimiter := strings.IndexAny(source, "=:"); delimiter >= 0 {
+			lines[index] = prefix + source[:delimiter+1] + "<redacted>"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func contextConfigurationYAMLListScalar(line string) (string, bool) {
+	start := len(line) - len(strings.TrimLeft(line, " \t"))
+	if start >= len(line) || line[start] != '-' {
+		return "", false
+	}
+	valueStart := start + 1
+	for valueStart < len(line) && (line[valueStart] == ' ' || line[valueStart] == '\t') {
+		valueStart++
+	}
+	value := strings.TrimSpace(line[valueStart:])
+	if value == "" || strings.HasPrefix(value, "#") {
+		return "", false
+	}
+	return line[:valueStart], true
+}
+
+func contextConfigurationLinePrefix(line string) (string, string) {
+	if tab := strings.Index(line, "\t"); tab > 0 {
+		if _, err := strconv.Atoi(line[:tab]); err == nil {
+			return line[:tab+1], line[tab+1:]
+		}
+	}
+	return "", line
+}
+
+func isContextConfigurationResource(value string) bool {
+	base := filepath.Base(value)
+	extension := strings.ToLower(filepath.Ext(base))
+	if extension != ".properties" && extension != ".yml" && extension != ".yaml" {
+		return false
+	}
+	name := strings.TrimSuffix(base, extension)
+	return name == "application" || name == "bootstrap" ||
+		strings.HasPrefix(name, "application-") || strings.HasPrefix(name, "bootstrap-")
+}
+
+func isContextConfigurationYAML(path string) bool {
+	extension := strings.ToLower(filepath.Ext(path))
+	return extension == ".yml" || extension == ".yaml"
 }
 
 func javaGeneratedAccessorFieldDeclarations(
