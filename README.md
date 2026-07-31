@@ -292,6 +292,7 @@ If source_coverage is complete, run no source-reading commands on indexed projec
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
+For change plans, enumerate exact existing production and test paths supplied by the Context Pack or bounded omission reads, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
@@ -1136,6 +1137,7 @@ If source_coverage is complete, run no source-reading commands on indexed projec
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
+For change plans, enumerate exact existing production and test paths supplied by the Context Pack or bounded omission reads, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
@@ -1151,6 +1153,20 @@ Legacy `query task-context`, workspace-delta, diagnostics, service-context, and
 other specialist queries remain available for manual compatibility. They are not
 part of the normal AI workflow. Workspace-root Context Packs remain neutral and
 derive requested scope only from the actual invocation.
+
+## Agent workflow skills and plugins
+
+GoreGraph is compatible with task-scoped skills such as brainstorming,
+planning, testing, and review. The generated Agent Guide should remain the
+authority for source acquisition; complementary workflow skills should run
+after the guide and Context Pack have established the source boundary.
+
+Always-on bootstrap or broad debugging skills that require their own reads
+before project instructions can preempt that workflow. Their precedence is
+controlled by the agent host, not by GoreGraph. For controlled benchmarks,
+record plugin versions and per-skill states, verify the effective setup in a
+smoke transcript, and treat pre-guide external skill reads as environment
+contamination. Do not add skill-control instructions to the task prompt.
 
 ## Agent context benchmark and release gate
 
@@ -1182,7 +1198,7 @@ The benchmark consumes Codex JSONL logs and distinguishes compact
 are retained as diagnostic evidence, while a repeated full `context_id` fails
 the release gate.
 
-The exact one-line baseline instruction, eleven-line assisted instruction,
+The exact one-line baseline instruction, twelve-line assisted instruction,
 execution protocol, rubric, and dashboard-only decision when a gate fails are
 defined in [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md). A failed gate blocks
 the 1.3.0 release.

@@ -753,7 +753,11 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 		for _, factID := range concern.candidateFactIDs {
 			fact, exists := factByID[factID]
 			omissionMatch := exists && contextRetryFactMatchesOmission(pack, fact)
+			selectedProviderOmission := omissionMatch &&
+				contextQueryPlansMissingTransition(selectionQuery) &&
+				contextPackHasMissingContractProject(pack, public.Project)
 			if !exists || selected[factID] ||
+				selectedProviderOmission ||
 				normalizeContextProject(public.Project) != "" &&
 					normalizeContextProject(fact.Project) != normalizeContextProject(public.Project) ||
 				len(pack.SourceOmissions) > 0 && !omissionMatch ||

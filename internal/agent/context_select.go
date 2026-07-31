@@ -39,6 +39,20 @@ type contextSourceSelectionState struct {
 	selectedEvidenceFamilies map[string]int
 }
 
+func newContextSourceSelectionState(
+	candidateCount int,
+	concernCount int,
+) contextSourceSelectionState {
+	return contextSourceSelectionState{
+		selectedCandidates:       make(map[string]bool, candidateCount),
+		selectedFactIDs:          make(map[string]bool, candidateCount),
+		selectedProjects:         make(map[string]bool),
+		coveredConcerns:          make(map[string]bool, concernCount),
+		coveredRoles:             make(map[string]bool),
+		selectedEvidenceFamilies: make(map[string]int),
+	}
+}
+
 const contextPublicSourceConcernRank = 1_000_000
 
 func selectContextSourceOptions(
@@ -46,6 +60,12 @@ func selectContextSourceOptions(
 	loaded loadedContextIndex,
 	request ContextRequest,
 ) (ContextPack, error) {
+	if request.BudgetTokens <= 0 {
+		request.BudgetTokens = DefaultContextBudgetTokens
+	}
+	if request.MaxFiles <= 0 {
+		request.MaxFiles = DefaultContextMaxFiles
+	}
 	pack = contextPackWithSelectedClientPublicConcerns(pack)
 	concerns := contextSourceConcerns(pack, loaded.Index)
 	requestedModelIDs := contextRequestedDomainModelIDsFromConcerns(
@@ -71,19 +91,14 @@ func selectContextSourceOptions(
 	if err != nil {
 		return ContextPack{}, err
 	}
+	options = contextSourceProofFrontier(pack, options, concerns)
 
+	basePack := cloneContextPack(pack)
 	pack = cloneContextPack(pack)
 	pack.SourceSections = nil
 	pack.SourceOmissions = nil
 	pack.SourceUnrepresented = len(candidates)
-	state := contextSourceSelectionState{
-		selectedCandidates:       make(map[string]bool, len(candidates)),
-		selectedFactIDs:          make(map[string]bool, len(candidates)),
-		selectedProjects:         make(map[string]bool),
-		coveredConcerns:          make(map[string]bool, len(concerns)),
-		coveredRoles:             make(map[string]bool),
-		selectedEvidenceFamilies: make(map[string]int),
-	}
+	state := newContextSourceSelectionState(len(candidates), len(concerns))
 	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
 	pack, err = finalizeContextEstimate(pack)
 	if err != nil {
@@ -104,6 +119,26 @@ func selectContextSourceOptions(
 	)
 	if err != nil {
 		return ContextPack{}, err
+	}
+	if request.BudgetTokens >= DefaultContextBudgetTokens {
+		basePack, err = appendContextEvidenceInventory(
+			basePack,
+			sectionRequest,
+			options,
+			concerns,
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		pack, err = appendContextEvidenceInventory(
+			pack,
+			sectionRequest,
+			options,
+			concerns,
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
 	}
 
 	coreBoundaries := contextCoreSourceBoundaries(pack, loaded.Index, distances)
@@ -134,6 +169,7 @@ func selectContextSourceOptions(
 		pack,
 		sectionRequest,
 		options,
+		concerns,
 		state,
 		coreBoundaries,
 	)
@@ -163,7 +199,19 @@ func selectContextSourceOptions(
 			return ContextPack{}, err
 		}
 	}
-	applyContextSourceCoverage(&pack, concerns, state.coveredConcerns)
+	pack, err = improveContextSourceSelection(
+		basePack,
+		pack,
+		sectionRequest,
+		options,
+		concerns,
+		coreBoundaries,
+	)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	covered := contextSourceCoverageFromFinalSections(pack, concerns, options)
+	applyContextSourceCoverage(&pack, concerns, covered)
 	for _, omission := range contextSourceEvidenceOmissionsWithOptions(
 		pack,
 		loaded.Index,
@@ -171,7 +219,7 @@ func selectContextSourceOptions(
 		candidates,
 		options,
 		failures,
-		state.coveredConcerns,
+		covered,
 	) {
 		candidate := cloneContextPack(pack)
 		candidate.SourceOmissions = append(candidate.SourceOmissions, omission)
@@ -191,6 +239,17 @@ func selectContextSourceOptions(
 		pack.SourceUnrepresented = 0
 	}
 	pack.SourceSections = contextSourceSectionsProductionFirst(pack.SourceSections)
+	pack, err = appendContextEvidenceInventory(
+		pack,
+		request,
+		options,
+		concerns,
+	)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	covered = contextSourceCoverageFromFinalSections(pack, concerns, options)
+	applyContextSourceCoverage(&pack, concerns, covered)
 	return finalizeContextPackWithinBudget(pack, request)
 }
 
@@ -469,6 +528,17 @@ func expandContextEvidenceConcernsWithProfile(
 	result := make([]contextConcern, 0, len(concerns)+len(requestedModels))
 	for _, concern := range concerns {
 		switch concern.kind {
+		case contextConcernDomainModel:
+			modelConcerns := contextDomainModelEvidenceConcerns(
+				concern,
+				index,
+				requestedModels,
+			)
+			if len(modelConcerns) == 0 {
+				result = append(result, concern)
+			} else {
+				result = append(result, modelConcerns...)
+			}
 		case contextConcernAuth:
 			added := false
 			if contractProjects[concern.project] {
@@ -1508,6 +1578,119 @@ func contextSourceRenderOptionsWithModels(
 	return options, failures, nil
 }
 
+func contextSourceProofFrontier(
+	pack ContextPack,
+	options []contextSourceOption,
+	concerns []contextConcern,
+) []contextSourceOption {
+	options = slices.Clone(options)
+	sort.Slice(options, func(left, right int) bool {
+		return contextSourceOptionLess(options[left], options[right])
+	})
+	coreFacts := make(map[string]bool, len(pack.selectedSourceFactIDs))
+	for _, factID := range pack.selectedSourceFactIDs {
+		coreFacts[factID] = true
+	}
+	keepCandidates := make(map[string]bool)
+	for _, option := range options {
+		for _, factID := range contextSourceCandidateFactIDs(option.candidate) {
+			if coreFacts[factID] {
+				keepCandidates[contextSourceCandidateKey(option.candidate)] = true
+			}
+		}
+	}
+	for _, concern := range concerns {
+		if !concern.required {
+			continue
+		}
+		proving := 0
+		firstCandidate := ""
+		for _, option := range options {
+			key := contextSourceCandidateKey(option.candidate)
+			if firstCandidate == "" && contextSourceOptionMatchesConcernFacts(option, concern) {
+				firstCandidate = key
+			}
+			if proving >= maximumContextSourceProvingCandidates ||
+				!contextSourceOptionHasConcern(option, concern.key) ||
+				keepCandidates[key] {
+				continue
+			}
+			keepCandidates[key] = true
+			proving++
+		}
+		if proving == 0 && firstCandidate != "" {
+			keepCandidates[firstCandidate] = true
+		}
+	}
+	result := make([]contextSourceOption, 0, len(options))
+	for _, option := range options {
+		if keepCandidates[contextSourceCandidateKey(option.candidate)] {
+			result = append(result, option)
+		}
+	}
+	return contextSourceCapInheritedOwnerRendering(pack, result, concerns)
+}
+
+func contextSourceCapInheritedOwnerRendering(
+	pack ContextPack,
+	options []contextSourceOption,
+	concerns []contextConcern,
+) []contextSourceOption {
+	knownConcerns := make(map[string]contextConcern, len(concerns))
+	for _, concern := range concerns {
+		knownConcerns[concern.key] = concern
+	}
+	for index := range options {
+		if options[index].candidate.InventoryGroup == "" {
+			continue
+		}
+		proven := contextSourceOptionProvenConcernKeys(options[index], knownConcerns)
+		keys := make([]string, 0, len(options[index].concernKeys))
+		for _, key := range options[index].concernKeys {
+			if proven[key] {
+				keys = append(keys, key)
+			}
+		}
+		options[index].concernKeys = keys
+	}
+	representatives := make(map[string]contextSourceOption)
+	for _, option := range options {
+		group := option.candidate.InventoryGroup
+		if group == "" {
+			continue
+		}
+		current, found := representatives[group]
+		if !found || betterContextProjectBoundaryOption(pack, option, current) {
+			representatives[group] = option
+		}
+	}
+	representativeKeys := make(map[string]string, len(representatives))
+	for group, option := range representatives {
+		representativeKeys[group] = contextSourceCandidateKey(option.candidate)
+	}
+	for index := range options {
+		group := options[index].candidate.InventoryGroup
+		if group == "" {
+			continue
+		}
+		options[index].candidate.InventoryOnly =
+			contextSourceCandidateKey(options[index].candidate) != representativeKeys[group]
+	}
+	return options
+}
+
+func contextSourceOptionMatchesConcernFacts(
+	option contextSourceOption,
+	concern contextConcern,
+) bool {
+	for _, factID := range concern.candidateFactIDs {
+		if contextSourceCandidateHasFact(option.candidate, factID) {
+			return true
+		}
+	}
+	return false
+}
+
 func appendContextSourceCandidateOptions(
 	options *[]contextSourceOption,
 	failures map[string]string,
@@ -1534,6 +1717,10 @@ func appendContextSourceCandidateOptions(
 		candidate,
 		requestedModelIDs,
 	)
+	if requestedModel &&
+		contextSourceInferredPrimaryProjectModelDuplicate(pack, index, candidate) {
+		requestedModel = false
+	}
 	stableMatches := contextSourceStableDomainMatchesForFacts(facts, domainTokens)
 	requestedActions := contextEndpointRequestedActions(contextSelectionQuery(pack))
 	actionAligned := len(requestedActions) == 0 ||
@@ -1568,6 +1755,7 @@ func appendContextSourceCandidateOptions(
 			concerns,
 			index,
 			actionAligned,
+			contextQueryPlansMissingTransition(contextSelectionQuery(pack)),
 		)
 		projectKey := ""
 		if optionCandidate.Role != "test" {
@@ -1689,7 +1877,7 @@ func contextInheritedOwnerCandidate(
 			break
 		}
 	}
-	if inherited.ID == "" || !contextGenericPersistenceFact(inherited) {
+	if inherited.ID == "" || !contextInheritedPersistenceFact(inherited) {
 		return sourceCandidate{}, false
 	}
 	ownerQualified := contextQualifiedOwner(inherited.Qualified)
@@ -1741,6 +1929,11 @@ func contextInheritedOwnerCandidate(
 	result.StartLine = owner.Line
 	result.EndLine = owner.EndLine
 	result.SourceState = "inherited_owner_current"
+	if normalizedContextConcernKind(inherited.Kind) == contextConcernPersistence &&
+		strings.EqualFold(strings.TrimSpace(inherited.Name), "delete") {
+		result.InventoryGroup = normalizeContextProject(inherited.Project) +
+			"\x00" + contextConcernPersistence
+	}
 	return result, true
 }
 
@@ -1748,10 +1941,18 @@ func contextInheritedFactMatchesOwner(
 	fact scan.AgentContextFactRecord,
 	owner sourceCandidate,
 ) bool {
-	return contextGenericPersistenceFact(fact) &&
+	return contextInheritedPersistenceFact(fact) &&
 		normalizeContextProject(fact.Project) == normalizeContextProject(owner.Project) &&
 		filepath.ToSlash(fact.File) == filepath.ToSlash(owner.Path) &&
 		contextQualifiedOwner(fact.Qualified) == strings.TrimSpace(owner.Qualified)
+}
+
+func contextInheritedPersistenceFact(fact scan.AgentContextFactRecord) bool {
+	if contextGenericPersistenceFact(fact) {
+		return true
+	}
+	return normalizedContextConcernKind(fact.Kind) == contextConcernPersistence &&
+		strings.EqualFold(strings.TrimSpace(fact.Name), "delete")
 }
 
 func contextQualifiedOwner(qualified string) string {
@@ -1924,6 +2125,35 @@ func contextSourceCandidateHasRequestedModel(
 	return false
 }
 
+func contextSourceInferredPrimaryProjectModelDuplicate(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	candidate sourceCandidate,
+) bool {
+	if len(pack.Entrypoints) == 0 ||
+		normalizeContextProject(candidate.Project) !=
+			normalizeContextProject(pack.Entrypoints[0].Project) {
+		return false
+	}
+	identity := compactContextIdentifier(firstNonEmptyContext(
+		candidate.Name,
+		candidate.Qualified,
+	))
+	if identity == "" ||
+		strings.Contains(compactContextIdentifier(contextSelectionQuery(pack)), identity) {
+		return false
+	}
+	for _, fact := range index.Facts {
+		if normalizeContextProject(fact.Project) ==
+			normalizeContextProject(candidate.Project) ||
+			compactContextIdentifier(firstNonEmptyContext(fact.Name, fact.Qualified)) != identity {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 func contextPersistenceFactMatchesRequestedDomainModel(
 	pack ContextPack,
 	index scan.AgentContextIndexRecord,
@@ -2050,6 +2280,7 @@ func contextSourceOptionConcernsForQuery(
 		concerns,
 		index,
 		actionAligned,
+		contextQueryPlansMissingTransition(query),
 	)
 }
 
@@ -2059,6 +2290,7 @@ func contextSourceOptionConcernsWithAction(
 	concerns []contextConcern,
 	index scan.AgentContextIndexRecord,
 	actionAligned bool,
+	missingTransition bool,
 ) ([]string, bool) {
 	factIDs := make(map[string]bool)
 	for _, factID := range contextSourceCandidateFactIDs(candidate) {
@@ -2081,6 +2313,12 @@ func contextSourceOptionConcernsWithAction(
 			normalizeContextProject(candidate.Project) != concern.project {
 			covered = false
 		}
+		if concern.kind == contextConcernAuth &&
+			concern.facet != "client_transport" &&
+			missingTransition &&
+			!contextSourceSectionSupportsGlobalServerPolicy(section) {
+			continue
+		}
 		if concern.facet != "" {
 			if !covered ||
 				concern.kind == contextConcernSideEffects && !actionAligned ||
@@ -2091,7 +2329,9 @@ func contextSourceOptionConcernsWithAction(
 			required = true
 			continue
 		}
-		if covered && contextSourceRequiresRenderedConcernEvidence(concern.kind) {
+		if covered && concern.kind == contextConcernDomainModel {
+			covered = contextSourceSectionSupportsDomainModel(section)
+		} else if covered && contextSourceRequiresRenderedConcernEvidence(concern.kind) {
 			covered = contextSourceSectionSupportsConcern(section, concern)
 		}
 		if concern.kind == contextConcernProject {
@@ -2108,6 +2348,31 @@ func contextSourceOptionConcernsWithAction(
 	}
 	sort.Strings(keys)
 	return keys, required
+}
+
+func contextSourceSectionSupportsGlobalServerPolicy(
+	section ContextSourceSection,
+) bool {
+	content := strings.ToLower(contextSourceSemanticContent(section.Content))
+	if !strings.Contains(content, "securityfilterchain") ||
+		!contextSourceContainsAny(
+			content,
+			".httpbasic(",
+			".oauth2resourceserver(",
+		) {
+		return false
+	}
+	if contextSourceContainsAny(
+		content,
+		"securitymatcher(",
+		"security_matcher",
+		".antmatcher(",
+		".requestmatcher(",
+	) {
+		return false
+	}
+	return !strings.Contains(content, ".requestmatchers(") ||
+		strings.Contains(content, ".anyrequest(")
 }
 
 func contextSourceFactsActionAligned(
@@ -2259,6 +2524,8 @@ func contextSourceSectionSupportsConcern(
 	semanticContent := contextSourceSemanticContent(section.Content)
 	content := strings.ToLower(semanticContent)
 	switch concern.kind {
+	case contextConcernDomainModel:
+		return contextSourceSectionSupportsDomainModel(section)
 	case contextConcernAuth:
 		return contextSourceContainsAny(content,
 			"@securityrequirement",
@@ -2795,6 +3062,7 @@ func contextSourceRequiresRenderedConcernEvidence(kind string) bool {
 	case contextConcernAuth,
 		contextConcernConfiguration,
 		contextConcernResilience,
+		contextConcernDomainModel,
 		contextConcernPersistence,
 		contextConcernSideEffects,
 		contextConcernTests:
@@ -3121,12 +3389,25 @@ func enrichContextCoreSourceOptions(
 	pack ContextPack,
 	request ContextRequest,
 	options []contextSourceOption,
+	concerns []contextConcern,
 	state contextSourceSelectionState,
 	boundaries []contextSourceBoundary,
 ) (ContextPack, error) {
+	knownConcerns := make(map[string]contextConcern, len(concerns))
+	for _, concern := range concerns {
+		knownConcerns[concern.key] = concern
+	}
 	var err error
 	for _, mode := range []string{"declaration_body", "focused", "body"} {
-		pack, err = enrichContextCoreSourceMode(pack, request, options, state, boundaries, mode)
+		pack, err = enrichContextCoreSourceMode(
+			pack,
+			request,
+			options,
+			knownConcerns,
+			state,
+			boundaries,
+			mode,
+		)
 		if err != nil {
 			return ContextPack{}, err
 		}
@@ -3138,6 +3419,7 @@ func enrichContextCoreSourceMode(
 	pack ContextPack,
 	request ContextRequest,
 	options []contextSourceOption,
+	knownConcerns map[string]contextConcern,
 	state contextSourceSelectionState,
 	boundaries []contextSourceBoundary,
 	mode string,
@@ -3145,15 +3427,26 @@ func enrichContextCoreSourceMode(
 	enriched := make(map[string]bool, len(boundaries))
 	desiredMode := contextSourceRenderModeOrder(mode)
 	for _, boundary := range boundaries {
-		candidateKey, sectionIndex, currentMode, ok := selectedContextSourceOption(pack, options, state, boundary)
-		if !ok || enriched[candidateKey] || currentMode <= desiredMode {
+		selected, sectionIndex, ok := selectedContextSourceOption(pack, options, state, boundary)
+		if !ok {
+			continue
+		}
+		candidateKey := contextSourceCandidateKey(selected.candidate)
+		currentMode := contextSourceRenderModeOrder(selected.section.RenderMode)
+		if enriched[candidateKey] || currentMode <= desiredMode {
 			continue
 		}
 		enriched[candidateKey] = true
 		upgrade := contextSourceOption{}
 		found := false
 		for _, option := range options {
-			if contextSourceCandidateKey(option.candidate) != candidateKey || option.section.RenderMode != mode {
+			if contextSourceCandidateKey(option.candidate) != candidateKey ||
+				option.section.RenderMode != mode ||
+				!contextSourceOptionPreservesConcernEvidence(
+					selected,
+					option,
+					knownConcerns,
+				) {
 				continue
 			}
 			if !found || contextSourceOptionLess(option, upgrade) {
@@ -3186,7 +3479,7 @@ func selectedContextSourceOption(
 	options []contextSourceOption,
 	state contextSourceSelectionState,
 	boundary contextSourceBoundary,
-) (string, int, int, bool) {
+) (contextSourceOption, int, bool) {
 	for _, option := range options {
 		key := contextSourceCandidateKey(option.candidate)
 		if !state.selectedCandidates[key] ||
@@ -3195,11 +3488,26 @@ func selectedContextSourceOption(
 		}
 		for sectionIndex, section := range pack.SourceSections {
 			if section == option.section {
-				return key, sectionIndex, contextSourceRenderModeOrder(section.RenderMode), true
+				return option, sectionIndex, true
 			}
 		}
 	}
-	return "", 0, 0, false
+	return contextSourceOption{}, 0, false
+}
+
+func contextSourceOptionPreservesConcernEvidence(
+	selected contextSourceOption,
+	replacement contextSourceOption,
+	knownConcerns map[string]contextConcern,
+) bool {
+	selectedProof := contextSourceOptionProvenConcernKeys(selected, knownConcerns)
+	replacementProof := contextSourceOptionProvenConcernKeys(replacement, knownConcerns)
+	for concernKey := range selectedProof {
+		if !replacementProof[concernKey] {
+			return false
+		}
+	}
+	return true
 }
 
 func contextSourceBoundaryCovered(boundary contextSourceBoundary, state contextSourceSelectionState) bool {
@@ -3321,6 +3629,9 @@ func contextSourceOptionFits(
 	concerns []contextConcern,
 	state contextSourceSelectionState,
 ) (bool, error) {
+	if option.candidate.InventoryOnly {
+		return false, nil
+	}
 	reusesSection := contextSourceSectionAlreadyPresent(pack, option.section)
 	if len(pack.SourceSections) >= MaxContextSourceSections && !reusesSection {
 		return false, nil
@@ -3459,74 +3770,32 @@ func addContextSourceOption(
 }
 
 func contextProjectedSourceFile(
-	pack ContextPack,
+	_ ContextPack,
 	option contextSourceOption,
 	concerns []contextConcern,
 ) (ContextFile, string, bool) {
-	if file, publish := contextProjectedClientSupportFile(pack, option, concerns); publish {
-		return file, "selected client support source exceeds the response file budget", true
-	}
-	if file, publish := contextProjectedSideEffectFile(option, concerns); publish {
-		return file, "selected side-effect source exceeds the response file budget", true
+	if file, publish := contextProjectedRequiredEvidenceFile(option, concerns); publish {
+		return file, "selected required evidence exceeds the response file budget", true
 	}
 	return ContextFile{}, "", false
 }
 
-func contextProjectedClientSupportFile(
-	pack ContextPack,
+func contextProjectedRequiredEvidenceFile(
 	option contextSourceOption,
 	concerns []contextConcern,
 ) (ContextFile, bool) {
-	concernKeys := make(map[string]bool, len(option.concernKeys))
-	for _, key := range option.concernKeys {
-		concernKeys[key] = true
+	if !option.profiled {
+		return ContextFile{}, false
 	}
 	project := normalizeContextProject(option.candidate.Project)
-	selectedContractProject := false
-	for _, contract := range pack.Contracts {
-		if normalizeContextProject(contract.Project) == project {
-			selectedContractProject = true
-			break
-		}
-	}
-	if !selectedContractProject {
+	if project == "" ||
+		project != normalizeContextProject(option.section.Project) {
 		return ContextFile{}, false
 	}
 	for _, concern := range concerns {
 		if !concern.required ||
-			!concernKeys[concern.key] ||
-			concern.project != project ||
-			concern.kind != contextConcernAuth &&
-				concern.kind != contextConcernConfiguration &&
-				concern.kind != contextConcernResilience {
-			continue
-		}
-		return ContextFile{
-			Project:   option.section.Project,
-			Path:      option.section.Path,
-			StartLine: option.section.StartLine,
-			EndLine:   option.section.EndLine,
-			Role:      "related_project",
-			Reason:    "selected client support evidence",
-		}, true
-	}
-	return ContextFile{}, false
-}
-
-func contextProjectedSideEffectFile(
-	option contextSourceOption,
-	concerns []contextConcern,
-) (ContextFile, bool) {
-	project := normalizeContextProject(option.candidate.Project)
-	if project == "" {
-		return ContextFile{}, false
-	}
-	for _, concern := range concerns {
-		concernProject := normalizeContextProject(concern.project)
-		if !concern.required ||
-			concern.kind != contextConcernSideEffects ||
-			concernProject == "" ||
-			concernProject != project ||
+			concern.project != "" &&
+				normalizeContextProject(concern.project) != project ||
 			!contextSourceOptionHasConcern(option, concern.key) {
 			continue
 		}
@@ -3535,8 +3804,8 @@ func contextProjectedSideEffectFile(
 			Path:      option.section.Path,
 			StartLine: option.section.StartLine,
 			EndLine:   option.section.EndLine,
-			Role:      "related_project",
-			Reason:    "selected side-effect evidence",
+			Role:      contextSourceConcernRole(concern.kind),
+			Reason:    "selected required " + strings.ReplaceAll(concern.kind, "_", " ") + " evidence",
 		}, true
 	}
 	return ContextFile{}, false
@@ -3900,11 +4169,20 @@ func contextSourceOmissionPriority(
 		return 100
 	}
 	switch {
-	case concern.kind == contextConcernDomainModel &&
-		omission.Role == contextConcernDomainModel:
-		return 500
+	case concern.kind == contextConcernSideEffects &&
+		contextPackHasMissingContractProject(pack, concern.project) &&
+		omission.Role == contextSourceConcernRole(contextConcernSideEffects):
+		return 700
+	case concern.kind == contextConcernTests &&
+		contextPackHasMissingContractProject(pack, concern.project) &&
+		omission.Role == contextSourceConcernRole(contextConcernTests):
+		return 600
 	case concern.kind == contextConcernPersistence &&
-		omission.Role == "persistence":
+		contextPackHasMissingContractProject(pack, concern.project) &&
+		omission.Role == contextSourceConcernRole(contextConcernPersistence):
+		return 500
+	case concern.kind == contextConcernDomainModel &&
+		omission.Role == contextSourceConcernRole(contextConcernDomainModel):
 		return 400
 	case concern.kind == contextConcernHTTPContract ||
 		concern.kind == contextConcernConfiguration ||
@@ -3914,6 +4192,24 @@ func contextSourceOmissionPriority(
 	default:
 		return 100
 	}
+}
+
+func contextPackHasMissingContractProject(
+	pack ContextPack,
+	project string,
+) bool {
+	project = normalizeContextProject(project)
+	if project == "" {
+		return false
+	}
+	for _, concern := range pack.Concerns {
+		if strings.EqualFold(strings.TrimSpace(concern.Kind), contextConcernHTTPContract) &&
+			!concern.Covered &&
+			normalizeContextProject(concern.Project) == project {
+			return true
+		}
+	}
+	return false
 }
 
 func contextSourceOmissionEvidenceOption(
@@ -3937,6 +4233,13 @@ func contextSourceOmissionEvidenceOption(
 		return contextSourceOption{}, false
 	}
 	sort.Slice(matching, func(left, right int) bool {
+		if contextQueryPlansMissingTransition(contextSelectionQuery(pack)) {
+			leftCoverage := contextSourceOptionConcernFamilyCoverage(matching[left], concern)
+			rightCoverage := contextSourceOptionConcernFamilyCoverage(matching[right], concern)
+			if leftCoverage != rightCoverage {
+				return leftCoverage > rightCoverage
+			}
+		}
 		if matching[left].candidateQuality != matching[right].candidateQuality {
 			return matching[left].candidateQuality > matching[right].candidateQuality
 		}
@@ -3949,6 +4252,23 @@ func contextSourceOmissionEvidenceOption(
 		return contextSourceOptionLess(matching[left], matching[right])
 	})
 	return matching[0], true
+}
+
+func contextSourceOptionConcernFamilyCoverage(
+	option contextSourceOption,
+	concern contextConcern,
+) int {
+	if option.candidate.Role != contextSourceConcernRole(concern.kind) {
+		return 0
+	}
+	publicKey := firstNonEmptyContext(concern.publicKey, concern.key)
+	coverage := 0
+	for _, key := range option.concernKeys {
+		if key == publicKey || strings.HasPrefix(key, publicKey+"#") {
+			coverage++
+		}
+	}
+	return coverage
 }
 
 func contextSourceOptionMatchesCandidates(

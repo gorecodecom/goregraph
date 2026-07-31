@@ -15,6 +15,7 @@ import (
 const (
 	missingContractEnglishQuery = "When DELETE /catalog/items/{itemId} removes an item in services/catalog, plan cleanup of related jobs through libraries/job-client and services/jobs. Cover the current path, missing HTTP contract, task types and lookup attributes, authentication, configuration, retry behavior, persistence, side effects, and tests."
 	missingContractGermanQuery  = "Wenn DELETE /catalog/items/{itemId} einen Eintrag in services/catalog löscht, plane das Entfernen verbundener Aufgaben über libraries/job-client und services/jobs. Berücksichtige aktuellen Pfad, fehlenden HTTP-Vertrag, Aufgabenarten und Suchattribute, Authentifizierung, Konfiguration, Wiederholung, Persistenz, Nebenwirkungen und Tests."
+	releaseQualityQuery         = "When DELETE /catalog/items/{itemId} removes an item in services/catalog, plan a release-ready cleanup of related jobs through libraries/job-client and services/jobs. Cover the provider base job model in services/jobs and its catalogId/itemId lookup attributes, JobClientConfig Spring configuration properties for base URL, credentials, timeouts and retry limits, JobClientAuth setBasicAuth headers, JobSecurity technical-role policy, CatalogJobRepository and CatalogChangeJobRepository persistence, and JobManagementControllerTest and JobServiceTest coverage."
 )
 
 func TestBuildContextBudgetsFinalDecisionMetadata(t *testing.T) {
@@ -320,6 +321,76 @@ func TestBuildContextSupportsMissingContractChangeAnalysis(t *testing.T) {
 			pack.EstimatedTokens,
 			len(pack.SourceSections),
 			len(pack.Files),
+		)
+	}
+}
+
+func TestBuildContextProvesReleaseQualityWithoutPrivateRules(t *testing.T) {
+	root := writeReleaseQualityMissingContractFixture(t)
+	pack, err := BuildContext(ContextRequest{Root: root, Query: releaseQualityQuery})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hasProjectPath := func(project, path string) bool {
+		project = normalizeContextProject(project)
+		path = contextPackSourceFile(path)
+		for _, file := range pack.Files {
+			if normalizeContextProject(file.Project) == project &&
+				contextPackSourceFile(file.Path) == path {
+				return true
+			}
+		}
+		for _, section := range pack.SourceSections {
+			if normalizeContextProject(section.Project) == project &&
+				contextPackSourceFile(section.Path) == path {
+				return true
+			}
+		}
+		return false
+	}
+	for _, want := range []struct {
+		project string
+		path    string
+	}{
+		{project: "services/jobs", path: "src/main/java/example/BaseCatalogJobEntity.java"},
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientConfig.java"},
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientAuth.java"},
+		{project: "services/jobs", path: "src/main/java/example/JobSecurity.java"},
+		{project: "services/jobs", path: "src/main/java/example/CatalogJobRepository.java"},
+		{project: "services/jobs", path: "src/main/java/example/CatalogChangeJobRepository.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobManagementControllerTest.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobServiceTest.java"},
+	} {
+		if !hasProjectPath(want.project, want.path) {
+			t.Errorf(
+				"required production/test inventory %q missing",
+				want.project+":"+want.path,
+			)
+		}
+	}
+	for _, want := range []string{
+		"catalogId",
+		"itemId",
+		"setBasicAuth",
+		"TECHNICAL_USER",
+		"@ConfigurationProperties",
+	} {
+		if !contextSourceContainsStableIdentity(pack, want) {
+			t.Errorf("rendered evidence %q missing", want)
+		}
+	}
+	if contextPackContainsFileSuffix(pack, "services/catalog/src/main/java/example/CatalogJobEntity.java") {
+		t.Fatal("wrong-project duplicate model displaced provider evidence")
+	}
+	if pack.EstimatedTokens > DefaultContextBudgetTokens ||
+		len(pack.SourceSections) > MaxContextSourceSections ||
+		contextSourceFileCount(pack) > DefaultContextMaxFiles {
+		t.Fatalf(
+			"release-quality pack exceeds limits: tokens=%d sections=%d aggregate_files=%d",
+			pack.EstimatedTokens,
+			len(pack.SourceSections),
+			contextSourceFileCount(pack),
 		)
 	}
 }
@@ -1601,9 +1672,135 @@ func contextSourceContainsStableIdentity(pack ContextPack, value string) bool {
 	return false
 }
 
+func contextPackContainsFileSuffix(pack ContextPack, suffix string) bool {
+	suffix = filepath.ToSlash(suffix)
+	for _, file := range pack.Files {
+		if strings.HasSuffix(filepath.ToSlash(file.Path), suffix) ||
+			strings.HasSuffix(filepath.ToSlash(filepath.Join(file.Project, file.Path)), suffix) {
+			return true
+		}
+	}
+	for _, section := range pack.SourceSections {
+		if strings.HasSuffix(filepath.ToSlash(section.Path), suffix) ||
+			strings.HasSuffix(filepath.ToSlash(filepath.Join(section.Project, section.Path)), suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 func writeMissingContractContextFixture(t *testing.T) string {
 	t.Helper()
 	return writeMissingContractContextIndexFixture(t, missingContractContextIndex())
+}
+
+func writeReleaseQualityMissingContractFixture(t *testing.T) string {
+	t.Helper()
+	root := writeMissingContractContextIndexFixture(t, releaseQualityMissingContractIndex())
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("libraries/job-client", "src/main/java/example/JobClient.java"),
+		contextReleaseQualityJobClientFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("services/catalog", "src/main/java/example/CatalogJobEntity.java"),
+		contextReleaseQualityConsumerModelFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("services/jobs", "src/main/java/example/BaseCatalogJobEntity.java"),
+		contextReleaseQualityBaseModelFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("libraries/job-client", "src/main/java/example/JobClientConfig.java"),
+		contextReleaseQualityClientConfigFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("libraries/job-client", "src/main/java/example/JobClientAuth.java"),
+		contextReleaseQualityClientAuthFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("services/jobs", "src/main/java/example/JobSecurity.java"),
+		contextReleaseQualityServerPolicyFixtureSource(),
+	)
+	writeContextSourceFile(
+		t,
+		root,
+		filepath.Join("services/jobs", "src/test/java/example/JobServiceTest.java"),
+		contextReleaseQualityServiceTestFixtureSource(),
+	)
+	return root
+}
+
+func releaseQualityMissingContractIndex() scan.AgentContextIndexRecord {
+	index := missingContractContextIndex()
+	index.Facts = append(
+		index.Facts,
+		scan.AgentContextFactRecord{
+			ID: "consumer-duplicate-model", Project: "services/catalog", Kind: "symbol",
+			Name: "CatalogJobEntity", Qualified: "catalog.CatalogJobEntity",
+			File: "src/main/java/example/CatalogJobEntity.java",
+			Line: 8, EndLine: 9, Confidence: "EXACT",
+			Search: "catalog job task model catalogId itemId",
+		},
+		scan.AgentContextFactRecord{
+			ID: "base-job-model", Project: "services/jobs", Kind: "symbol",
+			Name: "BaseCatalogJobEntity", Qualified: "jobs.BaseCatalogJobEntity",
+			File: "src/main/java/example/BaseCatalogJobEntity.java",
+			Line: 8, EndLine: 13, Confidence: "EXACT",
+			Search: "job task base model catalogId itemId",
+		},
+		scan.AgentContextFactRecord{
+			ID: "job-client-config", Project: "libraries/job-client", Kind: "configuration",
+			Name: "JobClientConfig", Qualified: "client.JobClientConfig",
+			File: "src/main/java/example/JobClientConfig.java",
+			Line: 8, EndLine: 16, Confidence: "EXACT",
+			Search: "job client configuration base url credentials timeout retries",
+		},
+		scan.AgentContextFactRecord{
+			ID: "job-client-auth", Project: "libraries/job-client", Kind: "authentication",
+			Name: "setBasicAuth", Qualified: "client.JobClientAuth.setBasicAuth",
+			File: "src/main/java/example/JobClientAuth.java",
+			Line: 8, EndLine: 12, Confidence: "EXACT",
+			Search: "job client basic authentication credentials",
+		},
+		scan.AgentContextFactRecord{
+			ID: "job-server-policy", Project: "services/jobs", Kind: "authentication",
+			Name: "securityFilterChain", Qualified: "jobs.JobSecurity.securityFilterChain",
+			File: "src/main/java/example/JobSecurity.java",
+			Line: 8, EndLine: 16, Confidence: "EXACT",
+			Search: "job server basic authentication technical role security policy",
+		},
+		scan.AgentContextFactRecord{
+			ID: "jobs-service-test", Project: "services/jobs", Kind: "test",
+			Name: "deletesBothJobVariants", Qualified: "jobs.JobServiceTest.deletesBothJobVariants",
+			File: "src/test/java/example/JobServiceTest.java",
+			Line: 8, EndLine: 15, Confidence: "EXACT",
+			Search: "job deletion persistence side effects test",
+		},
+	)
+	index.Edges = append(
+		index.Edges,
+		scan.AgentContextEdgeRecord{
+			ID: "regular-job-base", FromFactID: "regular-job-model",
+			ToFactID: "base-job-model", Kind: "extends", Confidence: "EXACT",
+		},
+		scan.AgentContextEdgeRecord{
+			ID: "change-job-base", FromFactID: "change-job-model",
+			ToFactID: "base-job-model", Kind: "extends", Confidence: "EXACT",
+		},
+	)
+	return index
 }
 
 func missingContractContextIndex() scan.AgentContextIndexRecord {
@@ -1716,5 +1913,79 @@ func contextDomainModelFixtureSource(name, parent string, fields ...string) stri
 		lines[8+index] = "  long " + field + ";"
 	}
 	lines[8+len(fields)] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextReleaseQualityBaseModelFixtureSource() string {
+	lines := numberedSourceLines(20)
+	lines[7] = "class BaseCatalogJobEntity {"
+	lines[8] = "  long catalogId;"
+	lines[9] = "  long itemId;"
+	lines[10] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextReleaseQualityJobClientFixtureSource() string {
+	lines := numberedSourceLines(24)
+	lines[13] = "@Retryable(retryFor = JobClientException.class)"
+	lines[14] = "List<JobPayload> listJobs(String catalogId) {"
+	lines[15] = "  String path = configuration.getAllJobsPath();"
+	lines[16] = "  HttpHeaders headers = basicAuthentication(configuration.credentials());"
+	lines[17] = "  new JobClientAuth().setBasicAuth(headers, configuration);"
+	lines[18] = "  return restClient.get(path, headers, catalogId);"
+	lines[19] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextReleaseQualityConsumerModelFixtureSource() string {
+	lines := numberedSourceLines(20)
+	lines[7] = "class CatalogJobEntity {"
+	lines[8] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextReleaseQualityClientConfigFixtureSource() string {
+	lines := numberedSourceLines(20)
+	lines[7] = `@ConfigurationProperties(prefix = "jobs")`
+	lines[8] = "class JobClientConfig {"
+	lines[9] = "  String baseUrl;"
+	lines[10] = "  String username;"
+	lines[11] = "  String password;"
+	lines[12] = "  Duration connectTimeout;"
+	lines[13] = "  Duration readTimeout;"
+	lines[14] = "  int maxRetries;"
+	lines[15] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextReleaseQualityClientAuthFixtureSource() string {
+	lines := numberedSourceLines(20)
+	lines[7] = "class JobClientAuth {"
+	lines[8] = "  void setBasicAuth(HttpHeaders headers, JobClientConfig config) {"
+	lines[9] = "    headers.setBasicAuth(config.username, config.password);"
+	lines[10] = "  }"
+	lines[11] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextReleaseQualityServerPolicyFixtureSource() string {
+	lines := numberedSourceLines(20)
+	lines[7] = "class JobSecurity {"
+	lines[8] = "  SecurityFilterChain securityFilterChain(HttpSecurity http) {"
+	lines[9] = `    return http.securityMatcher("/job-management/**")`
+	lines[10] = `      .authorizeHttpRequests(auth -> auth.anyRequest().hasRole("TECHNICAL_USER"))`
+	lines[11] = "      .httpBasic(Customizer.withDefaults()).build();"
+	lines[12] = "  }"
+	lines[13] = "}"
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func contextReleaseQualityServiceTestFixtureSource() string {
+	lines := numberedSourceLines(20)
+	lines[7] = "@Test"
+	lines[8] = "void deletesBothJobVariants() {"
+	lines[9] = "  Object result = deleteItem();"
+	lines[10] = "  assertNotNull(result);"
+	lines[11] = "}"
 	return strings.Join(lines, "\n") + "\n"
 }

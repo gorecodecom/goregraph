@@ -94,9 +94,10 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
 The exact matched-prompt protocol and treatment instructions are defined in
 [`BENCHMARKING.md`](BENCHMARKING.md). The baseline may append only the specified
 one-line prohibition; the assisted variant may append only the specified
-eleven-line bounded Context instruction. All other prompt and execution inputs
-must be identical, including skill availability. Control skill isolation in the
-invocation, never by adding “do not use skills” to a treatment prompt. Retain
+twelve-line bounded Context instruction. All other prompt and execution inputs
+must be identical, including plugin and skill availability. Record identical
+plugin versions and per-skill states, verify the effective configuration in a
+smoke transcript, and never control skills through a treatment prompt. Retain
 every raw JSONL transcript, separate stderr log, analyzer result, `summary.tsv`,
 and the signed manual rubric outside the repository. The harness supplies
 `--json`; callers must not supply it through `CODEX_BENCHMARK_ARGS`.
@@ -111,6 +112,7 @@ If source_coverage is complete, run no source-reading commands on indexed projec
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
+For change plans, enumerate exact existing production and test paths supplied by the Context Pack or bounded omission reads, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.

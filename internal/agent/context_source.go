@@ -17,18 +17,20 @@ import (
 )
 
 type sourceCandidate struct {
-	FactID      string
-	FactIDs     []string
-	Project     string
-	Path        string
-	StartLine   int
-	EndLine     int
-	Role        string
-	Kind        string
-	Name        string
-	Qualified   string
-	SourceState string
-	Priority    int
+	FactID         string
+	FactIDs        []string
+	Project        string
+	Path           string
+	StartLine      int
+	EndLine        int
+	Role           string
+	Kind           string
+	Name           string
+	Qualified      string
+	SourceState    string
+	Priority       int
+	InventoryOnly  bool
+	InventoryGroup string
 }
 
 type sourceFile struct {
@@ -163,7 +165,10 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 	return merged
 }
 
-const maximumContextSourceConcernCandidates = 4
+const (
+	maximumContextSourcePlanningCandidates = 8
+	maximumContextSourceProvingCandidates  = 4
+)
 
 func contextSourceCandidatesForConcerns(
 	pack ContextPack,
@@ -269,8 +274,8 @@ func contextSourceCandidatesForConcernsWithModels(
 			return factLess(facts[left], facts[right])
 		})
 		limit := len(facts)
-		if limit > maximumContextSourceConcernCandidates {
-			limit = maximumContextSourceConcernCandidates
+		if limit > maximumContextSourcePlanningCandidates {
+			limit = maximumContextSourcePlanningCandidates
 		}
 		selectedForConcern := make(map[string]bool, limit+2)
 		for _, fact := range facts[:limit] {
@@ -278,8 +283,15 @@ func contextSourceCandidatesForConcernsWithModels(
 			selectedForConcern[fact.ID] = true
 		}
 		if concern.kind == contextConcernPersistence {
+			remaining := maximumContextSourcePlanningCandidates - len(selectedForConcern)
+			if remaining > 2 {
+				remaining = 2
+			}
 			paired := 0
 			for _, fact := range facts {
+				if paired == remaining {
+					break
+				}
 				if selectedForConcern[fact.ID] ||
 					!contextPersistenceFactMatchesRequestedDomainModel(
 						pack,
@@ -292,9 +304,6 @@ func contextSourceCandidatesForConcernsWithModels(
 				selected[fact.ID] = true
 				selectedForConcern[fact.ID] = true
 				paired++
-				if paired == 2 {
-					break
-				}
 			}
 		}
 	}
