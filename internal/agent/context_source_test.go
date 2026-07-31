@@ -475,6 +475,100 @@ func TestContextSourceCoverageFromFinalSectionsRejectsUnboundProof(t *testing.T)
 	}
 }
 
+func TestContextEvidenceInventoryBalancesPublicAreasBeforeRepeatedFacets(t *testing.T) {
+	const project = "services/jobs"
+	persistence := newContextConcern(
+		contextConcernPersistence,
+		project,
+		true,
+		[]string{"job-repository", "job-archive-repository"},
+		"required job persistence",
+	)
+	primaryRepository := newContextEvidenceConcern(
+		persistence,
+		"primary_repository",
+		[]string{"job-repository"},
+		"primary job repository",
+	)
+	archiveRepository := newContextEvidenceConcern(
+		persistence,
+		"archive_repository",
+		[]string{"job-archive-repository"},
+		"archive job repository",
+	)
+	authentication := newContextConcern(
+		contextConcernAuth,
+		project,
+		true,
+		[]string{"job-security"},
+		"required job authentication",
+	)
+
+	option := func(factID, path, role, concernKey string, quality int) contextSourceOption {
+		return contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: factID, FactIDs: []string{factID},
+				Project: project, Path: path, Role: role,
+			},
+			section: ContextSourceSection{
+				Project: project, Path: path, StartLine: 1, EndLine: 3,
+				Role: role, RenderMode: "declaration_body", Content: "final class Evidence {}",
+			},
+			concernKeys: []string{concernKey},
+			projectKey:  project,
+			profiled:    true,
+			quality:     quality,
+		}
+	}
+	options := []contextSourceOption{
+		option("job-repository", "src/PrimaryJobRepository.java", contextConcernPersistence, primaryRepository.key, 2),
+		option("job-archive-repository", "src/ArchiveJobRepository.java", contextConcernPersistence, archiveRepository.key, 2),
+		option("job-security", "src/JobSecurity.java", contextConcernAuth, authentication.key, 1),
+	}
+	concerns := []contextConcern{primaryRepository, archiveRepository, authentication}
+
+	build := func(maxFiles int) ContextPack {
+		t.Helper()
+		pack, err := finalizeContextEstimate(ContextPack{
+			Schema: 1, Query: "prepare job persistence and authentication evidence",
+			BudgetTokens: DefaultContextBudgetTokens,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := appendContextEvidenceInventory(
+			pack,
+			ContextRequest{BudgetTokens: DefaultContextBudgetTokens, MaxFiles: maxFiles},
+			options,
+			concerns,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	twoFilePack := build(2)
+	if !contextPackContainsFileSuffix(twoFilePack, "src/JobSecurity.java") {
+		t.Fatalf("two-file inventory omitted authentication evidence: %#v", twoFilePack.Files)
+	}
+	if !contextPackContainsFileSuffix(twoFilePack, "src/PrimaryJobRepository.java") &&
+		!contextPackContainsFileSuffix(twoFilePack, "src/ArchiveJobRepository.java") {
+		t.Fatalf("two-file inventory omitted persistence evidence: %#v", twoFilePack.Files)
+	}
+
+	threeFilePack := build(3)
+	for _, path := range []string{
+		"src/JobSecurity.java",
+		"src/PrimaryJobRepository.java",
+		"src/ArchiveJobRepository.java",
+	} {
+		if !contextPackContainsFileSuffix(threeFilePack, path) {
+			t.Errorf("three-file inventory omitted %q: %#v", path, threeFilePack.Files)
+		}
+	}
+}
+
 func TestAppendContextEvidenceInventoryIsBoundedAndDoesNotCreateCoverage(t *testing.T) {
 	const optionCount = 20
 	concerns := make([]contextConcern, 0, optionCount)

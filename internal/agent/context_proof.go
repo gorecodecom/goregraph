@@ -10,6 +10,7 @@ import (
 type contextEvidenceInventoryCandidate struct {
 	file                    ContextFile
 	facets                  map[string]bool
+	publicFacets            map[string]bool
 	production              bool
 	quality                 int
 	dominated               bool
@@ -18,6 +19,7 @@ type contextEvidenceInventoryCandidate struct {
 }
 
 type contextEvidenceInventoryScore struct {
+	publicAreas       int
 	productionFacets  int
 	productionPaths   int
 	productionWeak    int
@@ -149,6 +151,7 @@ func contextEvidenceInventoryCandidates(
 					EndLine:   option.section.EndLine,
 				},
 				facets:                  make(map[string]bool),
+				publicFacets:            make(map[string]bool),
 				production:              option.candidate.Role != "test",
 				quality:                 contextSourceEffectiveQuality(pack, option),
 				primaryProjectDuplicate: primaryProjectDuplicate,
@@ -179,6 +182,7 @@ func contextEvidenceInventoryCandidates(
 		}
 		for _, concern := range matched {
 			candidate.facets[concern.key] = true
+			candidate.publicFacets[firstNonEmptyContext(concern.publicKey, concern.key)] = true
 			candidate.file.Role = mergeContextList(
 				candidate.file.Role,
 				contextSourceConcernRole(concern.kind),
@@ -330,6 +334,7 @@ func contextEvidenceInventoryScoreFor(
 ) contextEvidenceInventoryScore {
 	productionFacets := make(map[string]bool)
 	testFacets := make(map[string]bool)
+	publicAreas := make(map[string]bool)
 	representedKeys := make([]string, 0, len(candidates))
 	score := contextEvidenceInventoryScore{}
 	for _, candidate := range candidates {
@@ -353,6 +358,9 @@ func contextEvidenceInventoryScoreFor(
 			for key := range candidate.facets {
 				productionFacets[key] = true
 			}
+			for publicKey := range candidate.publicFacets {
+				publicAreas[publicKey] = true
+			}
 			continue
 		}
 		score.testPaths++
@@ -363,7 +371,11 @@ func contextEvidenceInventoryScoreFor(
 		for key := range candidate.facets {
 			testFacets[key] = true
 		}
+		for publicKey := range candidate.publicFacets {
+			publicAreas[publicKey] = true
+		}
 	}
+	score.publicAreas = len(publicAreas)
 	score.productionFacets = len(productionFacets)
 	score.testFacets = len(testFacets)
 	sort.Strings(representedKeys)
@@ -409,6 +421,8 @@ func betterContextEvidenceInventoryScore(
 	right contextEvidenceInventoryScore,
 ) bool {
 	switch {
+	case left.publicAreas != right.publicAreas:
+		return left.publicAreas > right.publicAreas
 	case left.productionFacets != right.productionFacets:
 		return left.productionFacets > right.productionFacets
 	case left.productionWeak != right.productionWeak:
