@@ -206,9 +206,14 @@ func renderCurrentContract() string {
 }
 
 func renderCurrentReleaseEvidenceStatus() string {
-	return "No current controlled three-by-three result has passed the release gates. " +
-		"The retained one-pair runs are diagnostic only and cannot establish release proof. " +
-		"Publication remains blocked until a fresh matched three-by-three run passes the token and structural gates and receives the required signed 12-point quality review."
+	return "The latest controlled three-by-three release benchmark did not pass: " +
+		"its raw total-token medians were 2551495 baseline and 147212 assisted, so " +
+		"the assisted result exceeded the legacy 116560 absolute cap. The retained " +
+		"result remains failed and is not rescored. A prospective offline calculation " +
+		"produced effective-token medians of 164295 and 39180, but both variants also " +
+		"contained external skill reads. Publication remains blocked until a fresh " +
+		"prospectively calibrated matrix has zero external skill reads and receives " +
+		"the required signed 12-point quality review."
 }
 
 func renderAgentBenchmarkMetrics() string {
@@ -216,7 +221,12 @@ func renderAgentBenchmarkMetrics() string {
 		agentmetrics.ReleaseSummaryHeader +
 		"\n```\n\nThe monotonic Golden-versus-candidate summary schema is:\n\n```text\n" +
 		agentmetrics.RegressionSummaryHeader +
-		"\n```\n\n`source_read_calls` remains the total number of direct source-read terminal calls. " +
+		"\n```\n\n`effective_tokens` is `input_tokens - cached_input_tokens + output_tokens` and is the prospective comparison metric. " +
+		"It represents uncached input plus output. `total_tokens` is `input_tokens + output_tokens`. " +
+		"`reasoning_output_tokens` is recorded separately, and reasoning output is already part of output, so it is not added again.\n\n" +
+		"`external_skill_read_calls` counts transcript-observed read or search targets outside the benchmark workspace that resolve to a skill bundle. " +
+		"Controlled baseline and assisted release runs require zero; normal GoreGraph workflows may continue to use task-scoped skills.\n\n" +
+		"`source_read_calls` remains the total number of direct source-read terminal calls. " +
 		"`bounded_omission_read_calls` counts exact ranged reads wholly authorized by an earlier full Context Pack. " +
 		"`unauthorized_source_read_calls` counts every other source read, search, or inventory terminal call. " +
 		"A compound call is bounded only when every source target is bounded, and included-source overlap is never bounded. " +

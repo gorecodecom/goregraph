@@ -80,8 +80,8 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
   independent assisted runs in alternating order, identical neutral prompt,
   workspace snapshot, model, reasoning, sandbox, approval, and execution
   arguments, plus retained raw transcripts;
-- an assisted median no greater than 80% of the matched baseline median and no
-  greater than 116,560 tokens against the recorded 145,700-token baseline;
+- an assisted effective-token median no greater than 80% of the matched
+  baseline median and no greater than the 116,560 effective-token absolute cap;
 - an assisted tool-call median no greater than 70% of the matched baseline,
   an assisted source-read median no greater than 50%, no repeated full Context
   Pack, and no read of source already supplied by a complete Context Pack in an
@@ -95,12 +95,13 @@ The exact matched-prompt protocol and treatment instructions are defined in
 [`BENCHMARKING.md`](BENCHMARKING.md). The baseline may append only the specified
 one-line prohibition; the assisted variant may append only the specified
 twelve-line bounded Context instruction. All other prompt and execution inputs
-must be identical, including plugin and skill availability. Record identical
-plugin versions and per-skill states, verify the effective configuration in a
-smoke transcript, and never control skills through a treatment prompt. Retain
-every raw JSONL transcript, separate stderr log, analyzer result, `summary.tsv`,
-and the signed manual rubric outside the repository. The harness supplies
-`--json`; callers must not supply it through `CODEX_BENCHMARK_ARGS`.
+must be identical, including plugin and skill availability. Never control
+skills through a treatment prompt. `--ignore-user-config` is not a
+skill-isolation guarantee. The harness records plugin state but never mutates
+it. Retain every raw JSONL transcript, separate stderr log, analyzer result,
+`summary.tsv`, and the signed manual rubric outside the repository. The harness
+supplies `--json`; callers must not supply it through
+`CODEX_BENCHMARK_ARGS`.
 
 <!-- goregraph:generated agent-instruction start -->
 ```text
@@ -128,11 +129,20 @@ files, and report pathless or unbounded omissions as uncertainty.
 `source_unrepresented` counts visible required concerns without selected source,
 while `files` remain metadata rather than automatic fallback scope.
 
-The complete-session tokens are the target; the `turn.completed` usage total is
-authoritative for the release gate. Context Pack `estimated_tokens` values are
-approximate pack-size estimates and do not
-replace the three-run median totals. Assisted runs may use at most two Context
+Both raw and effective counters are retained. `effective_tokens` is
+`input_tokens - cached_input_tokens + output_tokens`, or uncached input plus
+output; `total_tokens` is `input_tokens + output_tokens`. Reasoning output is
+recorded separately but is already part of output, so reasoning output is not
+double-counted. The 80% matched threshold uses effective tokens, and the
+116,560 absolute cap uses effective tokens. Context Pack `estimated_tokens`
+remains unrelated to end-to-end usage. Assisted runs may use at most two Context
 Pack calls and may not fall back to specialist GoreGraph queries.
+
+`external_skill_read_calls` is plugin-agnostic transcript evidence: it counts
+read or search targets outside the benchmark workspace that resolve to a skill
+bundle. Both controlled variants require zero external skill reads across the
+complete transcript. Normal GoreGraph use remains compatible with
+Brainstorming, TDD, debugging, and review skills.
 
 The benchmark also requires structural navigation savings: assisted median tool
 calls at or below 70% of baseline, assisted median source reads at or below 50%
@@ -162,8 +172,12 @@ release documentation, and decide explicitly whether to ship dashboard-only or
 continue Context-ranking work in a later version.
 
 <!-- goregraph:generated release-evidence-status start -->
-No current controlled three-by-three result has passed the release gates. The retained one-pair runs are diagnostic only and cannot establish release proof. Publication remains blocked until a fresh matched three-by-three run passes the token and structural gates and receives the required signed 12-point quality review.
+The latest controlled three-by-three release benchmark did not pass: its raw total-token medians were 2551495 baseline and 147212 assisted, so the assisted result exceeded the legacy 116560 absolute cap. The retained result remains failed and is not rescored. A prospective offline calculation produced effective-token medians of 164295 and 39180, but both variants also contained external skill reads. Publication remains blocked until a fresh prospectively calibrated matrix has zero external skill reads and receives the required signed 12-point quality review.
 <!-- goregraph:generated release-evidence-status end -->
+
+The previous controlled three-by-three result remains failed and is not
+rescored. Its prospectively computed effective-token medians are diagnostic
+only; release qualification requires a fresh, prospectively calibrated matrix.
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.
 

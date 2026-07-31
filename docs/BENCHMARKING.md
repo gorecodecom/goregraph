@@ -24,10 +24,15 @@ Every baseline and assisted run must use:
 The only treatment difference is the instruction appended to the neutral base
 prompt. Do not add, remove, paraphrase, or reorder any other text.
 Configure identical plugin and skill states outside the treatment prompt. Do
-not assume that `--ignore-user-config` disables plugin-provided skills: verify
-the effective setup with a smoke transcript, and record plugin versions and
-per-skill states with the retained evidence. Never add “do not use skills” or
-equivalent control text to either treatment prompt.
+not add “do not use skills” or equivalent control text to either treatment
+prompt. `--ignore-user-config` is not a skill-isolation guarantee. The harness
+records plugin state but never mutates it.
+
+`external_skill_read_calls` is plugin-agnostic transcript evidence: it counts
+read or search targets outside the benchmark workspace that resolve to a skill
+bundle. Both controlled variants require zero external skill reads across the
+complete transcript. Normal GoreGraph use remains compatible with
+Brainstorming, TDD, debugging, and review skills.
 
 Set `CODEX_BENCHMARK_ARGS` as one literal argument per line. The harness rejects
 space-split or executable shell text and never evaluates this value:
@@ -112,20 +117,25 @@ workspace. Its `summary.tsv` has this schema:
 The standard release summary schema is:
 
 ```text
-variant	run	tokens	tool_calls	goregraph_calls	full_context_packs	compact_duplicate_packs	repeated_full_packs	raw_navigation_calls	source_read_calls	bounded_omission_read_calls	unauthorized_source_read_calls	included_source_rereads	unique_source_files	log
+variant	run	effective_tokens	input_tokens	cached_input_tokens	uncached_input_tokens	output_tokens	reasoning_output_tokens	total_tokens	external_skill_read_calls	tool_calls	goregraph_calls	full_context_packs	compact_duplicate_packs	repeated_full_packs	raw_navigation_calls	source_read_calls	bounded_omission_read_calls	unauthorized_source_read_calls	included_source_rereads	unique_source_files	log
 ```
 
 The monotonic Golden-versus-candidate summary schema is:
 
 ```text
-case	query	build	run	attempt	tokens	tool_calls	context_calls	repeated_full_packs	broad_navigation_calls	source_read_calls	bounded_omission_read_calls	unauthorized_source_read_calls	included_source_rereads	context_millis	log
+case	query	build	run	attempt	effective_tokens	input_tokens	cached_input_tokens	uncached_input_tokens	output_tokens	reasoning_output_tokens	total_tokens	external_skill_read_calls	tool_calls	context_calls	repeated_full_packs	broad_navigation_calls	source_read_calls	bounded_omission_read_calls	unauthorized_source_read_calls	included_source_rereads	context_millis	log
 ```
+
+`effective_tokens` is `input_tokens - cached_input_tokens + output_tokens` and is the prospective comparison metric. It represents uncached input plus output. `total_tokens` is `input_tokens + output_tokens`. `reasoning_output_tokens` is recorded separately, and reasoning output is already part of output, so it is not added again.
+
+`external_skill_read_calls` counts transcript-observed read or search targets outside the benchmark workspace that resolve to a skill bundle. Controlled baseline and assisted release runs require zero; normal GoreGraph workflows may continue to use task-scoped skills.
 
 `source_read_calls` remains the total number of direct source-read terminal calls. `bounded_omission_read_calls` counts exact ranged reads wholly authorized by an earlier full Context Pack. `unauthorized_source_read_calls` counts every other source read, search, or inventory terminal call. A compound call is bounded only when every source target is bounded, and included-source overlap is never bounded. Bounded reads remain part of tool and token totals and cannot exceed the case contract's `max_source_omissions`. The monotonic gate compares unauthorized reads; the matched release gate continues to compare total `source_read_calls`.
 <!-- goregraph:generated agent-benchmark-metrics end -->
 
-Release evaluation uses the integer median of the three end-to-end token,
-tool-call, raw-navigation, and source-read totals for each variant. The analyzer
+Release evaluation uses the integer median of the three end-to-end
+effective-token, tool-call, raw-navigation, and source-read totals for each
+variant. The analyzer
 deduplicates source paths and retains counts only; it does not retain source
 content. It counts only unique terminal tool items from the Codex JSONL event
 lifecycle, including unsuccessful tools. `included_source_rereads` counts a
@@ -136,17 +146,22 @@ count; reads of other ranges and reads before the pack do not count.
 
 ## Token gate
 
+Both raw and effective counters are retained. `effective_tokens` is
+`input_tokens - cached_input_tokens + output_tokens`, or uncached input plus
+output; `total_tokens` is `input_tokens + output_tokens`. Reasoning output is
+recorded separately but is already part of output, so reasoning output is not
+double-counted.
+
 Both token conditions must pass:
 
-1. The assisted median must be at most 80% of the matched baseline median.
-2. When compared directly with the recorded 145,700-token baseline, the
-   assisted median must be at most 116,560 tokens.
+1. The 80% matched threshold uses effective tokens: the assisted median must be
+   at most 80% of the matched baseline median.
+2. The 116,560 absolute cap uses effective tokens: the assisted median must be
+   at most 116,560 effective tokens.
 
-The complete-session `turn.completed` usage totals in the retained JSONL
-transcripts and `summary.tsv` are authoritative for this gate. A Context Pack's
-`estimated_tokens` value is an approximate local size estimate only; it is
-useful for enforcing the pack budget but must not replace end-to-end Codex token
-totals.
+The retained JSONL transcripts and `summary.tsv` are authoritative for this
+gate. Context Pack `estimated_tokens` remains unrelated to end-to-end usage; it
+is an approximate local size estimate used only to enforce the pack budget.
 
 Each assisted transcript must show the source-backed workflow above: one initial
 Context Pack call, at most one narrower retry, and no specialist GoreGraph query
@@ -181,13 +196,13 @@ earlier ambiguous single duplicate-pack column.
 ## Latest diagnostic evidence
 
 <!-- goregraph:generated release-evidence-status start -->
-No current controlled three-by-three result has passed the release gates. The retained one-pair runs are diagnostic only and cannot establish release proof. Publication remains blocked until a fresh matched three-by-three run passes the token and structural gates and receives the required signed 12-point quality review.
+The latest controlled three-by-three release benchmark did not pass: its raw total-token medians were 2551495 baseline and 147212 assisted, so the assisted result exceeded the legacy 116560 absolute cap. The retained result remains failed and is not rescored. A prospective offline calculation produced effective-token medians of 164295 and 39180, but both variants also contained external skill reads. Publication remains blocked until a fresh prospectively calibrated matrix has zero external skill reads and receives the required signed 12-point quality review.
 <!-- goregraph:generated release-evidence-status end -->
 
-A release run must use the same recorded plugin and skill configuration for
-both treatments. External skill reads before the generated Agent Guide in an
-assisted transcript are environment contamination and require a clean rerun;
-prompt text must not be used to disable skills for either variant.
+The previous controlled three-by-three result remains failed and is not
+rescored. Its offline effective-token calculation is diagnostic only. A fresh,
+prospectively calibrated matrix must satisfy the complete-transcript zero-skill
+rule; prompt text must not be used to disable skills for either variant.
 
 ## Twelve-point quality rubric
 

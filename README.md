@@ -1156,17 +1156,20 @@ derive requested scope only from the actual invocation.
 
 ## Agent workflow skills and plugins
 
-GoreGraph is compatible with task-scoped skills such as brainstorming,
-planning, testing, and review. The generated Agent Guide should remain the
-authority for source acquisition; complementary workflow skills should run
-after the guide and Context Pack have established the source boundary.
+Normal GoreGraph use remains compatible with Brainstorming, TDD, debugging,
+and review skills. The generated Agent Guide should remain the authority for
+source acquisition; complementary workflow skills should run after the guide
+and Context Pack have established the source boundary.
 
 Always-on bootstrap or broad debugging skills that require their own reads
 before project instructions can preempt that workflow. Their precedence is
 controlled by the agent host, not by GoreGraph. For controlled benchmarks,
-record plugin versions and per-skill states, verify the effective setup in a
-smoke transcript, and treat pre-guide external skill reads as environment
-contamination. Do not add skill-control instructions to the task prompt.
+`external_skill_read_calls` is plugin-agnostic transcript evidence: it counts
+read or search targets outside the benchmark workspace that resolve to a skill
+bundle. Both controlled variants require zero external skill reads across the
+complete transcript. `--ignore-user-config` is not a skill-isolation guarantee.
+The harness records plugin state but never mutates it. Do not add skill-control
+instructions to the task prompt.
 
 ## Agent context benchmark and release gate
 
@@ -1176,22 +1179,24 @@ immutable workspace, neutral base prompt, model, reasoning setting, sandbox,
 approval mode, and other execution arguments. Every raw transcript is retained
 outside the repository.
 
-Release requires the assisted median to be at most 80% of the matched baseline
-median and at most 116,560 tokens when compared directly with the recorded
-145,700-token baseline, tool calls at most 70% of baseline, source reads at
-most 50% of a nonzero baseline, and no repeated full assisted Context Pack. A
-manually completed, externally retained and signed 12-point evidence rubric
-must also score assisted quality at least as high as baseline quality. Context
-Pack `estimated_tokens` values are approximate pack-size estimates;
-`turn.completed` usage totals from raw JSONL transcripts are the authoritative
-benchmark values.
+Both raw and effective counters are retained. `effective_tokens` is
+`input_tokens - cached_input_tokens + output_tokens`, or uncached input plus
+output; `total_tokens` is `input_tokens + output_tokens`. Reasoning output is
+recorded separately but is already part of output, so reasoning output is not
+double-counted. The 80% matched threshold uses effective tokens, and the
+116,560 absolute cap uses effective tokens. Release also requires tool calls at
+most 70% of baseline, source reads at most 50% of a nonzero baseline, and no
+repeated full assisted Context Pack. A manually completed, externally retained
+and signed 12-point evidence rubric must score assisted quality at least as high
+as baseline quality. Context Pack `estimated_tokens` remains unrelated to
+end-to-end usage.
 
 <!-- goregraph:generated release-evidence-status start -->
-No current controlled three-by-three result has passed the release gates. The retained one-pair runs are diagnostic only and cannot establish release proof. Publication remains blocked until a fresh matched three-by-three run passes the token and structural gates and receives the required signed 12-point quality review.
+The latest controlled three-by-three release benchmark did not pass: its raw total-token medians were 2551495 baseline and 147212 assisted, so the assisted result exceeded the legacy 116560 absolute cap. The retained result remains failed and is not rescored. A prospective offline calculation produced effective-token medians of 164295 and 39180, but both variants also contained external skill reads. Publication remains blocked until a fresh prospectively calibrated matrix has zero external skill reads and receives the required signed 12-point quality review.
 <!-- goregraph:generated release-evidence-status end -->
 
-Skill isolation is set in the invocation for both variants, never by adding “do
-not use skills” to a prompt.
+The previous controlled three-by-three result remains failed and is not
+rescored. A new prospectively calibrated matrix is required for release.
 
 The benchmark consumes Codex JSONL logs and distinguishes compact
 `duplicate_of` Context Packs from a repeated full payload: compact duplicates

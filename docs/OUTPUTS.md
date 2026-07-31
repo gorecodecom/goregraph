@@ -238,7 +238,7 @@ files, and report pathless or unbounded omissions as uncertainty.
 `files` remain metadata rather than automatic fallback scope. A second Context
 call is allowed only when `retry_allowed` is true and must carry one returned
 anchor plus the first `context_id`. Context token estimates are approximate;
-complete-session tokens are the target for the benchmark gate.
+the release benchmark's prospective comparison metric is `effective_tokens`.
 
 The `domain_model` concern and source role identify current source for
 explicitly requested types, entities, payloads, identifiers, or lookup
@@ -271,6 +271,28 @@ remains 4000 tokens. `agent/context-index.json` contains compact searchable
 facts; Context output never includes the full `index/api-catalog.json`, the
 dashboard payload, or `.goregraph-dashboard.json` merely because an agent uses
 GoreGraph.
+
+## Benchmark metric meaning
+
+Both raw and effective counters are retained. `effective_tokens` is
+`input_tokens - cached_input_tokens + output_tokens`, or uncached input plus
+output; `total_tokens` is `input_tokens + output_tokens`. Reasoning output is
+recorded separately but is already part of output, so reasoning output is not
+double-counted. The 80% matched threshold uses effective tokens, and the
+116,560 absolute cap uses effective tokens. Context Pack `estimated_tokens`
+remains unrelated to end-to-end usage.
+
+`external_skill_read_calls` is plugin-agnostic transcript evidence: it counts
+read or search targets outside the benchmark workspace that resolve to a skill
+bundle. Both controlled variants require zero external skill reads across the
+complete transcript. `--ignore-user-config` is not a skill-isolation guarantee.
+The harness records plugin state but never mutates it. Normal GoreGraph use
+remains compatible with Brainstorming, TDD, debugging, and review skills.
+
+The previous controlled three-by-three result remains failed and is not
+rescored. Its offline effective-token medians are diagnostic only; release
+qualification requires a fresh, prospectively calibrated matrix with zero
+external skill reads.
 
 ## Human Dashboard
 

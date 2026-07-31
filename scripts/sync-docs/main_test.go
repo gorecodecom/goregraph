@@ -137,8 +137,10 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 
 	releaseEvidence := renderCurrentReleaseEvidenceStatus()
 	for _, want := range []string{
-		"No current controlled three-by-three result has passed",
-		"one-pair runs are diagnostic only",
+		"latest controlled three-by-three release benchmark did not pass",
+		"remains failed",
+		"prospectively calibrated",
+		"zero external skill reads",
 		"Publication remains blocked",
 	} {
 		if !strings.Contains(releaseEvidence, want) {
@@ -153,6 +155,12 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 
 	metrics := renderAgentBenchmarkMetrics()
 	for _, want := range []string{
+		"effective_tokens",
+		"cached_input_tokens",
+		"reasoning_output_tokens",
+		"external_skill_read_calls",
+		"uncached input plus output",
+		"reasoning output is already part of output",
 		"source_read_calls",
 		"bounded_omission_read_calls",
 		"unauthorized_source_read_calls",
