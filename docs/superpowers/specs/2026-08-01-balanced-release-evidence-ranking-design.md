@@ -6,7 +6,7 @@
 
 Correct the release-benchmark quality regression in which a 4,000-token Context Pack proves the core flow, models, persistence, and side effects but leaves requested provider authentication, provider configuration, and exact production/test file inventory unrepresented.
 
-The change must improve general evidence balance. It must not encode the private benchmark workspace, increase limits, alter the benchmark prompt, or weaken any release gate.
+The change must improve general evidence balance and make exact conventional configuration-resource paths available without exposing their values. It must not encode the private benchmark workspace, increase limits, alter the benchmark prompt, or weaken any release gate.
 
 ## Evidence and root cause
 
@@ -19,6 +19,8 @@ All assisted runs missed the same two report areas:
 
 The Context Pack used 3,939 of 4,000 tokens. It published multiple internal domain-model and persistence facets while provider authentication and configuration remained uncovered. Its three bounded omissions were assigned to side effects, a mail test, and a second repository. The current selectors count internal facets before the public evidence areas requested by the user, so multi-model concerns can outweigh completion of authentication, configuration, contract, or test evidence.
 
+The project agent index also contains no facts for Spring `application` or `bootstrap` property/YAML resources. Ranking cannot publish an exact configuration-file target that is absent from the index. Raw values in these files may contain credentials, so adding ordinary source facts without value redaction would be unsafe.
+
 ## Fixed boundaries
 
 - Keep the 4,000-token Context Pack limit.
@@ -27,6 +29,7 @@ The Context Pack used 3,939 of 4,000 tokens. It published multiple internal doma
 - Preserve mandatory entrypoint and current-path evidence.
 - Preserve deterministic output and bounded candidate discovery/substitution.
 - Do not add retries, fallbacks, dependencies, prompt instructions, or private identifiers.
+- Do not place configuration values in the agent index or rendered Context Pack.
 - Do not relax token, source-read, tool-call, workspace, skill-read, or manual quality gates.
 
 ## Considered approaches
@@ -46,6 +49,14 @@ Score a selection first by the number of fully proven public evidence areas, the
 This is the selected approach because it repairs the causal ranking defect within every existing limit.
 
 ## Design
+
+### Safe configuration-resource inventory
+
+Project scanning emits bounded internal configuration facts for conventional Spring `application` and `bootstrap` `.properties`, `.yml`, and `.yaml` resources. Facts contain only the portable relative path, profile name, property-key group, and line range. Search text is built from keys and profile metadata; values are never copied into index fields.
+
+The source renderer masks every property or YAML value before a configuration resource can enter a Context Pack. This applies regardless of whether the value appears secret. Exact paths and line numbers remain useful, while credentials and environment-specific values remain local. A file-level fact keeps an existing configuration file discoverable even when the requested future keys are not present yet.
+
+Configuration-resource discovery is capped per file and sorted deterministically. It changes only the internal agent projection; no public schema, CLI, or general language-depth claim changes.
 
 ### Public-area completion score
 
@@ -81,10 +92,13 @@ The existing final-section proof audit remains authoritative. A public area is c
 
 Test-driven implementation starts with a broad, release-shaped Java/Spring query that requests evidence categories and exact production/test files without naming the desired implementation classes. The existing generic fixture supplies competing model, repository, client auth/config, server policy, controller, and executable test evidence.
 
+A scanner regression first proves that production and test-profile Spring resources appear as bounded configuration facts containing keys but no values. A renderer regression proves that `.properties` and YAML values are masked before serialization.
+
 The regression must fail before production changes and then prove that:
 
 - authentication and configuration are no longer displaced by repeated model/persistence evidence;
 - the internal controller/security/configuration and relevant test paths are represented by source, inventory, or bounded omissions;
+- production and test-profile configuration resources are represented without leaking any value;
 - model identity and both repository variants remain honestly represented;
 - output stays within 4,000 tokens, 12 files, 12 source sections, and three omissions;
 - output is byte-stable across repeated builds;
