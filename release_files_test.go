@@ -140,7 +140,8 @@ func TestReleaseDocumentationDefinesSourceBackedContextContract(t *testing.T) {
 		"source sections replace reads of included ranges",
 		"`source_coverage` is authoritative",
 		"source_unrepresented",
-		"complete-session tokens are the target",
+		"Both raw and effective counters are retained.",
+		"`effective_tokens` is\n`input_tokens - cached_input_tokens + output_tokens`, or uncached input plus\noutput",
 		"offline, explicit, dependency-free, and watcher-free",
 	} {
 		if !strings.Contains(string(body), want) {
