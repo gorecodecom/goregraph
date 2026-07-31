@@ -1764,12 +1764,17 @@ func TestMissingTransitionOmissionCandidateEligibility(t *testing.T) {
 	}
 }
 
-func TestMissingTransitionOmissionsPreferRequestedDomainAndPersistence(t *testing.T) {
+func TestMissingTransitionOmissionsPreserveActionEvidenceUnderBoundedReads(t *testing.T) {
 	const query = "DELETE /catalog/items/{id}; the required future HTTP contract is missing. " +
-		"Cover catalog job types, lookup attributes, and persistence in services/jobs."
+		"Cover catalog job types, lookup attributes, persistence, delete side effects, " +
+		"and provider tests in services/jobs."
 	pack := ContextPack{
 		Query: query, selectionQuery: query,
 		selectedSourceFactIDs: []string{"regular-model", "change-model"},
+		Concerns: []ContextConcern{{
+			Kind: contextConcernHTTPContract, Project: "services/jobs",
+			Covered: false, Reason: "required future HTTP contract is missing",
+		}},
 	}
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 		{
@@ -1802,6 +1807,46 @@ func TestMissingTransitionOmissionsPreferRequestedDomainAndPersistence(t *testin
 			Name: "CatalogChangeJobRepository", Qualified: "example.CatalogChangeJobRepository",
 			File: "WCatalogChangeJobRepository.java", Search: "catalog change job persistence repository",
 		},
+		{
+			ID: "delete-side-effects", Project: "services/jobs", Kind: "symbol",
+			Name: "deleteCatalogJobs", Qualified: "JobService.deleteCatalogJobs",
+			File: "VJobService.java", Search: "delete catalog jobs mail audit user information",
+		},
+		{
+			ID: "delete-mail", Project: "services/jobs", Kind: "symbol",
+			Name: "sendDeleteMail", Qualified: "JobMailService.sendDeleteMail",
+			File: "TJobMailService.java", Search: "delete catalog jobs mail",
+		},
+		{
+			ID: "delete-audit", Project: "services/jobs", Kind: "symbol",
+			Name: "auditDelete", Qualified: "JobAuditService.auditDelete",
+			File: "SJobAuditService.java", Search: "delete catalog jobs audit",
+		},
+		{
+			ID: "delete-user", Project: "services/jobs", Kind: "symbol",
+			Name: "lookupDeleteUser", Qualified: "JobUserService.lookupDeleteUser",
+			File: "RJobUserService.java", Search: "delete catalog jobs user information",
+		},
+		{
+			ID: "misleading-domain", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogMailAuditUser", Qualified: "example.CatalogMailAuditUser",
+			File: "QCatalogMailAuditUser.java", Search: "mail audit user information",
+		},
+		{
+			ID: "delete-provider-test", Project: "services/jobs", Kind: "test",
+			Name: "deleteCatalogJobs", Qualified: "JobControllerTest.deleteCatalogJobs",
+			File: "UJobControllerTest.java", Search: "delete catalog jobs provider test",
+		},
+		{
+			ID: "delete-consumer-test", Project: "services/catalog", Kind: "test",
+			Name: "deleteCatalogItem", Qualified: "CatalogControllerTest.deleteCatalogItem",
+			File: "PCatalogControllerTest.java", Search: "delete catalog item consumer test",
+		},
+		{
+			ID: "consumer-repository", Project: "services/catalog", Kind: "persistence",
+			Name: "CatalogRepository", Qualified: "example.CatalogRepository",
+			File: "ACatalogRepository.java", Search: "catalog persistence repository",
+		},
 	}}
 	baseDomain := newContextConcern(
 		contextConcernDomainModel,
@@ -1825,8 +1870,58 @@ func TestMissingTransitionOmissionsPreferRequestedDomainAndPersistence(t *testin
 		"explicit project",
 	)
 	ordinary.rank = 10_000
+	sideEffects := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{"delete-side-effects", "delete-mail", "delete-audit", "delete-user"},
+		"requested delete side effects",
+	)
+	tests := newContextConcern(
+		contextConcernTests,
+		"services/jobs",
+		true,
+		[]string{"delete-provider-test"},
+		"requested provider tests",
+	)
+	consumerTests := newContextConcern(
+		contextConcernTests,
+		"services/catalog",
+		true,
+		[]string{"delete-consumer-test"},
+		"requested consumer tests",
+	)
+	consumerPersistence := newContextConcern(
+		contextConcernPersistence,
+		"services/catalog",
+		true,
+		[]string{"consumer-repository"},
+		"consumer persistence",
+	)
+	consumerPersistence.rank = 20_000
 	concerns := []contextConcern{
 		ordinary,
+		newContextEvidenceConcern(
+			sideEffects,
+			"mail",
+			[]string{"delete-side-effects", "delete-mail", "misleading-domain"},
+			"requested mail side effects",
+		),
+		newContextEvidenceConcern(
+			sideEffects,
+			"audit",
+			[]string{"delete-side-effects", "delete-audit", "misleading-domain"},
+			"requested audit side effects",
+		),
+		newContextEvidenceConcern(
+			sideEffects,
+			"user_information",
+			[]string{"delete-side-effects", "delete-user", "misleading-domain"},
+			"requested user information side effects",
+		),
+		tests,
+		consumerTests,
+		consumerPersistence,
 		newContextEvidenceConcern(
 			baseDomain,
 			"model:regular-model",
@@ -1853,16 +1948,19 @@ func TestMissingTransitionOmissionsPreferRequestedDomainAndPersistence(t *testin
 		),
 	}
 	candidates := make([]sourceCandidate, 0, len(index.Facts)-1)
+	candidateByFactID := make(map[string]sourceCandidate, len(index.Facts)-1)
 	for _, fact := range index.Facts {
 		if fact.ID == "catalog-route" {
 			continue
 		}
 		role := "call_chain"
 		switch fact.ID {
-		case "regular-model", "change-model":
+		case "regular-model", "change-model", "misleading-domain":
 			role = contextConcernDomainModel
-		case "regular-repository", "change-repository":
+		case "regular-repository", "change-repository", "consumer-repository":
 			role = "persistence"
+		case "delete-provider-test", "delete-consumer-test":
+			role = "test"
 		}
 		candidates = append(candidates, sourceCandidate{
 			FactID: fact.ID, FactIDs: []string{fact.ID},
@@ -1870,6 +1968,44 @@ func TestMissingTransitionOmissionsPreferRequestedDomainAndPersistence(t *testin
 			StartLine: 4, EndLine: 12, Role: role,
 			Kind: fact.Kind, Name: fact.Name, Qualified: fact.Qualified,
 		})
+		candidateByFactID[fact.ID] = candidates[len(candidates)-1]
+	}
+	sideEffectKeys := []string{
+		contextConcernSideEffects + ":services/jobs#audit",
+		contextConcernSideEffects + ":services/jobs#mail",
+		contextConcernSideEffects + ":services/jobs#user_information",
+	}
+	options := []contextSourceOption{
+		{
+			candidate:   candidateByFactID["delete-side-effects"],
+			section:     ContextSourceSection{Project: "services/jobs", Path: "VJobService.java"},
+			concernKeys: sideEffectKeys,
+			estimated:   40,
+		},
+		{
+			candidate:   candidateByFactID["delete-mail"],
+			section:     ContextSourceSection{Project: "services/jobs", Path: "TJobMailService.java"},
+			concernKeys: sideEffectKeys[1:2],
+			estimated:   10,
+		},
+		{
+			candidate:   candidateByFactID["delete-audit"],
+			section:     ContextSourceSection{Project: "services/jobs", Path: "SJobAuditService.java"},
+			concernKeys: sideEffectKeys[0:1],
+			estimated:   10,
+		},
+		{
+			candidate:   candidateByFactID["delete-user"],
+			section:     ContextSourceSection{Project: "services/jobs", Path: "RJobUserService.java"},
+			concernKeys: sideEffectKeys[2:3],
+			estimated:   10,
+		},
+		{
+			candidate:   candidateByFactID["misleading-domain"],
+			section:     ContextSourceSection{Project: "services/jobs", Path: "QCatalogMailAuditUser.java"},
+			concernKeys: sideEffectKeys,
+			estimated:   1,
+		},
 	}
 
 	got := contextSourceEvidenceOmissionsWithOptions(
@@ -1877,17 +2013,30 @@ func TestMissingTransitionOmissionsPreferRequestedDomainAndPersistence(t *testin
 		index,
 		concerns,
 		candidates,
-		nil,
+		options,
 		nil,
 		map[string]bool{},
 	)
 	if len(got) != MaxContextSourceOmissions {
 		t.Fatalf("omissions = %#v, want %d", got, MaxContextSourceOmissions)
 	}
-	if got[0].Role != contextConcernDomainModel ||
-		got[1].Role != contextConcernDomainModel ||
-		got[2].Role != "persistence" {
-		t.Fatalf("omission priority = %#v, want requested models then persistence", got)
+	roles := make(map[string]bool, len(got))
+	for _, omission := range got {
+		roles[omission.Role] = true
+	}
+	if !roles["call_chain"] || !roles["test"] || !roles["persistence"] {
+		t.Fatalf("omission priority = %#v, want side effects, provider test, and persistence preserved", got)
+	}
+	for _, omission := range got {
+		if omission.Role == "call_chain" && omission.Path != "VJobService.java" {
+			t.Fatalf("fragmented side-effect omission = %#v, want shared delete service", got)
+		}
+		if omission.Role == "test" && omission.Path != "UJobControllerTest.java" {
+			t.Fatalf("global consumer test displaced provider evidence: %#v", got)
+		}
+		if omission.Role == "persistence" && omission.Project != "services/jobs" {
+			t.Fatalf("consumer persistence displaced provider evidence: %#v", got)
+		}
 	}
 	for _, omission := range got {
 		if omission.Path == "AJobService.java" {
@@ -1947,6 +2096,63 @@ func TestExistingFlowOmissionsPreserveConcernRank(t *testing.T) {
 	)
 	if len(got) != 2 || got[0].Path != "service.go" {
 		t.Fatalf("existing-flow omission order = %#v, want concern rank preserved", got)
+	}
+}
+
+func TestExistingFlowOmissionsPreserveQualityBeforeFacetCoverage(t *testing.T) {
+	const query = "Explain the existing DELETE /jobs/{jobId} side effects."
+	base := newContextConcern(
+		contextConcernSideEffects,
+		"services/jobs",
+		true,
+		[]string{"mail-specialist", "combined-service"},
+		"existing side effects",
+	)
+	mail := newContextEvidenceConcern(
+		base,
+		"mail",
+		base.candidateFactIDs,
+		"existing mail side effect",
+	)
+	specialist := sourceCandidate{
+		FactID: "mail-specialist", FactIDs: []string{"mail-specialist"},
+		Project: "services/jobs", Path: "MailService.java", Role: "call_chain",
+	}
+	combined := sourceCandidate{
+		FactID: "combined-service", FactIDs: []string{"combined-service"},
+		Project: "services/jobs", Path: "JobService.java", Role: "call_chain",
+	}
+	got := contextSourceEvidenceOmissionsWithOptions(
+		ContextPack{Query: query, selectionQuery: query},
+		scan.AgentContextIndexRecord{},
+		[]contextConcern{mail},
+		[]sourceCandidate{specialist, combined},
+		[]contextSourceOption{
+			{
+				candidate: specialist,
+				section: ContextSourceSection{
+					Project: "services/jobs", Path: "MailService.java",
+				},
+				concernKeys:      []string{mail.key},
+				candidateQuality: 10,
+			},
+			{
+				candidate: combined,
+				section: ContextSourceSection{
+					Project: "services/jobs", Path: "JobService.java",
+				},
+				concernKeys: []string{
+					mail.key,
+					contextConcernSideEffects + ":services/jobs#audit",
+				},
+				candidateQuality: 1,
+			},
+		},
+		nil,
+		map[string]bool{},
+	)
+	if len(got) != 1 || got[0].Path != "MailService.java" {
+		t.Fatalf("existing-flow omission = %#v, want higher-quality specialist", got)
 	}
 }
 
@@ -3594,6 +3800,129 @@ func TestContextSourceOptionConcernsRejectsUnrelatedSideEffectAction(t *testing.
 	)
 	if len(keys) != 0 {
 		t.Fatalf("unrelated due-mail action covered delete-mail concern: %#v", keys)
+	}
+}
+
+func TestMissingTransitionServerPolicyRequiresGlobalPolicyEvidence(t *testing.T) {
+	concern := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernAuth,
+			"services/jobs",
+			true,
+			[]string{"housekeeping-delete", "job-security"},
+			"requested authentication",
+		),
+		"server_policy",
+		[]string{"housekeeping-delete", "job-security"},
+		"server authentication policy",
+	)
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "housekeeping-delete", Project: "services/jobs", Kind: "api_endpoint",
+			Name:       "DELETE /internal/housekeeping/jobs",
+			Qualified:  "JobHousekeepingController.deleteMarkedJobs",
+			HTTPMethod: "DELETE", Path: "/internal/housekeeping/jobs",
+		},
+		{
+			ID: "job-security", Project: "services/jobs", Kind: "authentication",
+			Name: "JobSecurity", Qualified: "example.JobSecurity",
+		},
+	}}
+	const missingQuery = "Add the missing DELETE /catalog/items/{id} provider contract."
+	endpointSection := ContextSourceSection{
+		Project:    "services/jobs",
+		Role:       "entrypoint",
+		RenderMode: "declaration_body",
+		Content:    "@SecurityRequirement(name = \"basicAuth\")\nvoid deleteMarkedJobs() {}",
+	}
+	endpointKeys, _ := contextSourceOptionConcernsForQuery(
+		sourceCandidate{
+			FactID: "housekeeping-delete", FactIDs: []string{"housekeeping-delete"},
+			Project: "services/jobs", Role: "entrypoint",
+			Name:      "DELETE /internal/housekeeping/jobs",
+			Qualified: "JobHousekeepingController.deleteMarkedJobs",
+		},
+		endpointSection,
+		[]contextConcern{concern},
+		index,
+		missingQuery,
+	)
+	if len(endpointKeys) != 0 {
+		t.Fatalf("existing endpoint annotation proved missing contract policy: %v", endpointKeys)
+	}
+	genericAuth := newContextConcern(
+		contextConcernAuth,
+		"services/jobs",
+		true,
+		[]string{"housekeeping-delete"},
+		"generic server authentication",
+	)
+	genericKeys, _ := contextSourceOptionConcernsForQuery(
+		sourceCandidate{
+			FactID: "housekeeping-delete", FactIDs: []string{"housekeeping-delete"},
+			Project: "services/jobs", Role: "entrypoint",
+			Name:      "DELETE /internal/housekeeping/jobs",
+			Qualified: "JobHousekeepingController.deleteMarkedJobs",
+		},
+		endpointSection,
+		[]contextConcern{genericAuth},
+		index,
+		missingQuery,
+	)
+	if len(genericKeys) != 0 {
+		t.Fatalf("generic authentication accepted endpoint-local policy: %v", genericKeys)
+	}
+
+	for _, content := range []string{
+		`SecurityFilterChain internalSecurity(HttpSecurity http) {
+  return http.securityMatcher("/internal/**").httpBasic().build();
+}`,
+		`SecurityFilterChain internalSecurity(HttpSecurity http) {
+  return http.authorizeHttpRequests(auth -> auth
+    .requestMatchers("/internal/**").authenticated()).httpBasic().build();
+}`,
+	} {
+		scopedSection := ContextSourceSection{
+			Project:    "services/jobs",
+			Role:       "call_chain",
+			RenderMode: "declaration_body",
+			Content:    content,
+		}
+		scopedKeys, _ := contextSourceOptionConcernsForQuery(
+			sourceCandidate{
+				FactID: "job-security", FactIDs: []string{"job-security"},
+				Project: "services/jobs", Role: "call_chain",
+				Name: "JobSecurity", Qualified: "example.JobSecurity",
+			},
+			scopedSection,
+			[]contextConcern{concern},
+			index,
+			missingQuery,
+		)
+		if len(scopedKeys) != 0 {
+			t.Errorf("scoped security chain proved future policy: %v\n%s", scopedKeys, content)
+		}
+	}
+
+	policySection := ContextSourceSection{
+		Project:    "services/jobs",
+		Role:       "call_chain",
+		RenderMode: "declaration_body",
+		Content:    "SecurityFilterChain jobSecurity(HttpSecurity http) { return http.httpBasic().build(); }",
+	}
+	policyKeys, required := contextSourceOptionConcernsForQuery(
+		sourceCandidate{
+			FactID: "job-security", FactIDs: []string{"job-security"},
+			Project: "services/jobs", Role: "call_chain",
+			Name: "JobSecurity", Qualified: "example.JobSecurity",
+		},
+		policySection,
+		[]contextConcern{concern},
+		index,
+		missingQuery,
+	)
+	if !required || !reflect.DeepEqual(policyKeys, []string{concern.key}) {
+		t.Fatalf("global security policy concerns = %v, required %v", policyKeys, required)
 	}
 }
 

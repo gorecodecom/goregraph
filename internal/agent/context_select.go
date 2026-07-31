@@ -1755,6 +1755,7 @@ func appendContextSourceCandidateOptions(
 			concerns,
 			index,
 			actionAligned,
+			contextQueryPlansMissingTransition(contextSelectionQuery(pack)),
 		)
 		projectKey := ""
 		if optionCandidate.Role != "test" {
@@ -2279,6 +2280,7 @@ func contextSourceOptionConcernsForQuery(
 		concerns,
 		index,
 		actionAligned,
+		contextQueryPlansMissingTransition(query),
 	)
 }
 
@@ -2288,6 +2290,7 @@ func contextSourceOptionConcernsWithAction(
 	concerns []contextConcern,
 	index scan.AgentContextIndexRecord,
 	actionAligned bool,
+	missingTransition bool,
 ) ([]string, bool) {
 	factIDs := make(map[string]bool)
 	for _, factID := range contextSourceCandidateFactIDs(candidate) {
@@ -2309,6 +2312,12 @@ func contextSourceOptionConcernsWithAction(
 		if covered && concern.project != "" &&
 			normalizeContextProject(candidate.Project) != concern.project {
 			covered = false
+		}
+		if concern.kind == contextConcernAuth &&
+			concern.facet != "client_transport" &&
+			missingTransition &&
+			!contextSourceSectionSupportsGlobalServerPolicy(section) {
+			continue
 		}
 		if concern.facet != "" {
 			if !covered ||
@@ -2339,6 +2348,31 @@ func contextSourceOptionConcernsWithAction(
 	}
 	sort.Strings(keys)
 	return keys, required
+}
+
+func contextSourceSectionSupportsGlobalServerPolicy(
+	section ContextSourceSection,
+) bool {
+	content := strings.ToLower(contextSourceSemanticContent(section.Content))
+	if !strings.Contains(content, "securityfilterchain") ||
+		!contextSourceContainsAny(
+			content,
+			".httpbasic(",
+			".oauth2resourceserver(",
+		) {
+		return false
+	}
+	if contextSourceContainsAny(
+		content,
+		"securitymatcher(",
+		"security_matcher",
+		".antmatcher(",
+		".requestmatcher(",
+	) {
+		return false
+	}
+	return !strings.Contains(content, ".requestmatchers(") ||
+		strings.Contains(content, ".anyrequest(")
 }
 
 func contextSourceFactsActionAligned(
@@ -4135,11 +4169,20 @@ func contextSourceOmissionPriority(
 		return 100
 	}
 	switch {
-	case concern.kind == contextConcernDomainModel &&
-		omission.Role == contextConcernDomainModel:
-		return 500
+	case concern.kind == contextConcernSideEffects &&
+		contextPackHasMissingContractProject(pack, concern.project) &&
+		omission.Role == contextSourceConcernRole(contextConcernSideEffects):
+		return 700
+	case concern.kind == contextConcernTests &&
+		contextPackHasMissingContractProject(pack, concern.project) &&
+		omission.Role == contextSourceConcernRole(contextConcernTests):
+		return 600
 	case concern.kind == contextConcernPersistence &&
-		omission.Role == "persistence":
+		contextPackHasMissingContractProject(pack, concern.project) &&
+		omission.Role == contextSourceConcernRole(contextConcernPersistence):
+		return 500
+	case concern.kind == contextConcernDomainModel &&
+		omission.Role == contextSourceConcernRole(contextConcernDomainModel):
 		return 400
 	case concern.kind == contextConcernHTTPContract ||
 		concern.kind == contextConcernConfiguration ||
@@ -4149,6 +4192,24 @@ func contextSourceOmissionPriority(
 	default:
 		return 100
 	}
+}
+
+func contextPackHasMissingContractProject(
+	pack ContextPack,
+	project string,
+) bool {
+	project = normalizeContextProject(project)
+	if project == "" {
+		return false
+	}
+	for _, concern := range pack.Concerns {
+		if strings.EqualFold(strings.TrimSpace(concern.Kind), contextConcernHTTPContract) &&
+			!concern.Covered &&
+			normalizeContextProject(concern.Project) == project {
+			return true
+		}
+	}
+	return false
 }
 
 func contextSourceOmissionEvidenceOption(
@@ -4172,6 +4233,13 @@ func contextSourceOmissionEvidenceOption(
 		return contextSourceOption{}, false
 	}
 	sort.Slice(matching, func(left, right int) bool {
+		if contextQueryPlansMissingTransition(contextSelectionQuery(pack)) {
+			leftCoverage := contextSourceOptionConcernFamilyCoverage(matching[left], concern)
+			rightCoverage := contextSourceOptionConcernFamilyCoverage(matching[right], concern)
+			if leftCoverage != rightCoverage {
+				return leftCoverage > rightCoverage
+			}
+		}
 		if matching[left].candidateQuality != matching[right].candidateQuality {
 			return matching[left].candidateQuality > matching[right].candidateQuality
 		}
@@ -4184,6 +4252,23 @@ func contextSourceOmissionEvidenceOption(
 		return contextSourceOptionLess(matching[left], matching[right])
 	})
 	return matching[0], true
+}
+
+func contextSourceOptionConcernFamilyCoverage(
+	option contextSourceOption,
+	concern contextConcern,
+) int {
+	if option.candidate.Role != contextSourceConcernRole(concern.kind) {
+		return 0
+	}
+	publicKey := firstNonEmptyContext(concern.publicKey, concern.key)
+	coverage := 0
+	for _, key := range option.concernKeys {
+		if key == publicKey || strings.HasPrefix(key, publicKey+"#") {
+			coverage++
+		}
+	}
+	return coverage
 }
 
 func contextSourceOptionMatchesCandidates(

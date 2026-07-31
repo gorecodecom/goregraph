@@ -5504,6 +5504,51 @@ func TestContextRetryAllowsOnlyConcreteUnselectedExactAnchors(t *testing.T) {
 	}
 }
 
+func TestContextRetryRejectsSelectedMissingContractProviderOmission(t *testing.T) {
+	const query = "Add the missing DELETE /catalog/items/{id} provider contract and tests in services/jobs."
+	index := scan.AgentContextIndexRecord{
+		Facts: []scan.AgentContextFactRecord{
+			{
+				ID: "catalog-route", Project: "services/catalog", Kind: "route",
+				Name: "DELETE /catalog/items/{id}", HTTPMethod: "DELETE",
+				Path: "/catalog/items/{id}", File: "CatalogController.java",
+				Confidence: "EXACT",
+			},
+			{
+				ID: "provider-test", Project: "services/jobs", Kind: "test",
+				Name: "deleteCatalogJobs", Qualified: "JobControllerTest.deleteCatalogJobs",
+				File: "JobControllerTest.java", Confidence: "EXACT",
+			},
+		},
+		Edges: []scan.AgentContextEdgeRecord{{
+			ID: "provider-test-target", FromFactID: "provider-test",
+			ToFactID: "catalog-route", Kind: "test_target", Confidence: "EXACT",
+		}},
+	}
+	pack := ContextPack{
+		Query: query, selectionQuery: query,
+		Concerns: []ContextConcern{
+			{
+				Kind: contextConcernHTTPContract, Project: "services/jobs",
+				Covered: false, Reason: "future provider contract is missing",
+			},
+			{
+				Kind: contextConcernTests, Project: "services/jobs",
+				Covered: false, Reason: "provider tests are missing",
+			},
+		},
+		SourceOmissions: []ContextSourceOmission{{
+			Project: "services/jobs", Path: "JobControllerTest.java",
+			Role: "test", Reason: "source section does not fit the response budget",
+		}},
+		selectedFactIDs: []string{"catalog-route"},
+	}
+
+	if allowed, anchors := contextRetryPermission(pack, index); allowed || len(anchors) != 0 {
+		t.Fatalf("selected provider omission enabled redundant retry: %v / %#v", allowed, anchors)
+	}
+}
+
 func TestContextRetryAnchorRejectsDescriptiveQualifiedEvidence(t *testing.T) {
 	fact := scan.AgentContextFactRecord{
 		Kind:      "endpoint_security",
