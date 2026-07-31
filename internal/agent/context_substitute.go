@@ -8,10 +8,11 @@ import (
 )
 
 type contextSourceSelectionScore struct {
-	requiredProofs  int
-	identityQuality int
-	estimatedTokens int
-	key             string
+	requiredPublicProofs int
+	requiredProofs       int
+	identityQuality      int
+	estimatedTokens      int
+	key                  string
 }
 
 type resolvedContextSourceOption struct {
@@ -210,6 +211,9 @@ func betterContextSourceSelection(
 	left contextSourceSelectionScore,
 	right contextSourceSelectionScore,
 ) bool {
+	if left.requiredPublicProofs != right.requiredPublicProofs {
+		return left.requiredPublicProofs > right.requiredPublicProofs
+	}
 	if left.requiredProofs != right.requiredProofs {
 		return left.requiredProofs > right.requiredProofs
 	}
@@ -392,6 +396,7 @@ func contextSourceSelectionScoreFor(
 			score.requiredProofs++
 		}
 	}
+	score.requiredPublicProofs = contextSourceRequiredPublicProofs(concerns, covered)
 	for _, section := range pack.SourceSections {
 		best := 0
 		for _, option := range options {
@@ -406,6 +411,32 @@ func contextSourceSelectionScoreFor(
 		score.identityQuality += best
 	}
 	return score
+}
+
+func contextSourceRequiredPublicProofs(
+	concerns []contextConcern,
+	covered map[string]bool,
+) int {
+	publicCovered := map[string]bool{}
+	for _, concern := range concerns {
+		if !concern.required {
+			continue
+		}
+		publicKey := firstNonEmptyContext(concern.publicKey, concern.key)
+		if _, seen := publicCovered[publicKey]; !seen {
+			publicCovered[publicKey] = true
+		}
+		if !covered[concern.key] {
+			publicCovered[publicKey] = false
+		}
+	}
+	proofs := 0
+	for _, complete := range publicCovered {
+		if complete {
+			proofs++
+		}
+	}
+	return proofs
 }
 
 func contextSourceRequestedIdentityQuality(

@@ -8982,6 +8982,64 @@ func TestReadSourceFileNormalizesCRLFAndPreservesPhysicalLines(t *testing.T) {
 	}
 }
 
+func TestContextSourceRequiredPublicProofs(t *testing.T) {
+	concerns := []contextConcern{
+		{key: "authentication:client#headers", publicKey: "authentication:client", required: true},
+		{key: "authentication:client#credentials", publicKey: "authentication:client", required: true},
+		{key: "configuration:client#timeout", publicKey: "configuration:client", required: true},
+		{key: "tests:client", publicKey: "tests:client", required: false},
+	}
+
+	tests := []struct {
+		name    string
+		covered map[string]bool
+		want    int
+	}{
+		{
+			name: "partial public area",
+			covered: map[string]bool{
+				"authentication:client#headers": true,
+			},
+			want: 0,
+		},
+		{
+			name: "complete public area",
+			covered: map[string]bool{
+				"authentication:client#headers":     true,
+				"authentication:client#credentials": true,
+			},
+			want: 1,
+		},
+		{
+			name: "both complete required public areas",
+			covered: map[string]bool{
+				"authentication:client#headers":     true,
+				"authentication:client#credentials": true,
+				"configuration:client#timeout":      true,
+				"tests:client":                      true,
+			},
+			want: 2,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := contextSourceRequiredPublicProofs(concerns, test.covered); got != test.want {
+				t.Fatalf("required public proofs = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
+
+func TestBetterContextSourceSelectionPrefersCompletePublicEvidence(t *testing.T) {
+	if !betterContextSourceSelection(
+		contextSourceSelectionScore{requiredPublicProofs: 1, requiredProofs: 2},
+		contextSourceSelectionScore{requiredPublicProofs: 0, requiredProofs: 2},
+	) {
+		t.Fatal("complete requested public evidence area did not win")
+	}
+}
+
 func writeSourceFile(t *testing.T, root, relativePath, body string) string {
 	t.Helper()
 	path := filepath.Join(root, relativePath)
