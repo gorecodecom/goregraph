@@ -1206,7 +1206,7 @@ func contextQueryRequestsExactEvidenceInventory(query string) bool {
 	}
 	explicitExactInventory := hasAny("exact", "exakt", "exakte", "exaktes", "exaktem") &&
 		hasIdentityNoun && (hasProductionScope || hasTestScope)
-	naturalFilePlan := hasIdentityNoun && hasProductionScope && hasTestScope && hasRawAny(
+	naturalPlanAction := hasRawAny(
 		"change", "changed", "changing", "create", "created", "creating",
 		"modify", "modified", "modifying", "update", "updated", "updating",
 		"add", "added", "adding",
@@ -1214,6 +1214,17 @@ func contextQueryRequestsExactEvidenceInventory(query string) bool {
 		"anlegen", "angelegt", "anzulegen", "anzulegende",
 		"erstellen", "erstellt",
 	)
+	if !naturalPlanAction {
+		for token := range rawTokens {
+			if strings.HasPrefix(token, "ändernd") ||
+				strings.HasPrefix(token, "anzulegend") ||
+				strings.HasPrefix(token, "erstellend") {
+				naturalPlanAction = true
+				break
+			}
+		}
+	}
+	naturalFilePlan := hasIdentityNoun && hasProductionScope && hasTestScope && naturalPlanAction
 	return explicitExactInventory || naturalFilePlan
 }
 

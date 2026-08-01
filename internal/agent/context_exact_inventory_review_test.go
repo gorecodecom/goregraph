@@ -21,6 +21,7 @@ func TestContextQueryRequestsExactEvidenceInventoryRequiresInventoryOrFileNoun(t
 		{query: "Stelle ein Verzeichnis mit exaktem Produktionsdatei-Inventar für Authentifizierung bereit.", want: true},
 		{query: "Identify production and test files to change/create.", want: true},
 		{query: "Welche Produktions- und Testdateien müssen geändert oder angelegt werden?", want: true},
+		{query: "Nenne alle zu ändernden oder anzulegenden Produktions- und Testdateien.", want: true},
 		{query: "Analyze production behavior and tests.", want: false},
 		{query: "Open the production file and run tests.", want: false},
 		{query: "Provide an exact file inventory mentioning TestimonialClient.", want: false},
