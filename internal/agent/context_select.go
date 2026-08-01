@@ -2215,23 +2215,28 @@ func contextQueryExplicitlyNamesModel(
 	pack ContextPack,
 	model scan.AgentContextFactRecord,
 ) bool {
-	queryTokens := contextTokenSet(contextSelectionQuery(pack))
+	queryTokens := contextOrderedTokens(contextSelectionQuery(pack))
 	for _, identity := range []string{
 		model.Name,
 		contextIdentifierLeaf(model.Qualified),
 	} {
-		identityTokens := contextTokenSet(identity)
+		identityTokens := contextOrderedTokens(identity)
 		if len(identityTokens) == 0 {
 			continue
 		}
-		matches := true
-		for token := range identityTokens {
-			if !queryTokens[token] {
-				matches = false
-				break
-			}
+		if contextTokenSequenceContained(queryTokens, identityTokens) {
+			return true
 		}
-		if matches {
+	}
+	return false
+}
+
+func contextTokenSequenceContained(tokens, sequence []string) bool {
+	if len(sequence) == 0 || len(sequence) > len(tokens) {
+		return false
+	}
+	for start := 0; start <= len(tokens)-len(sequence); start++ {
+		if slices.Equal(tokens[start:start+len(sequence)], sequence) {
 			return true
 		}
 	}

@@ -6500,6 +6500,24 @@ func TestContextRequestedDomainModelIDsExcludeInferredPrimaryDuplicateUnlessExpl
 			}
 		})
 	}
+	callerModel := index.Facts[0]
+	for _, test := range []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{name: "exact identifier", query: "Compare OrderResponse models.", want: true},
+		{name: "natural identifier tokens", query: "Compare order response models.", want: true},
+		{name: "reversed identifier tokens", query: "Compare response order models.", want: false},
+		{name: "separated identifier tokens", query: "Compare order generic response models.", want: false},
+		{name: "substring identifier", query: "Compare preorder models.", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := contextQueryExplicitlyNamesModel(ContextPack{Query: test.query}, callerModel); got != test.want {
+				t.Fatalf("explicit identity match = %t, want %t", got, test.want)
+			}
+		})
+	}
 
 	preorder := ContextPack{
 		Query:       "Compare preorder models across services.",
