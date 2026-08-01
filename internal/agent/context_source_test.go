@@ -6777,7 +6777,7 @@ func TestRenderSourceCandidateRedactsMultilineConfigurationValues(t *testing.T) 
 		"12\t  entries:",
 		"13\t    - password: <redacted>",
 		"14\t        <redacted>",
-		"15\t    - <redacted>",
+		"15\t    - name: <redacted>",
 		"16\t  literal-items:",
 		"17\t    - <redacted>",
 		"18\t      <redacted>",
@@ -6791,6 +6791,290 @@ func TestRenderSourceCandidateRedactsMultilineConfigurationValues(t *testing.T) 
 	} {
 		if !strings.Contains(yamlSection.Content, line) {
 			t.Fatalf("rendered YAML missing %q:\n%s", line, yamlSection.Content)
+		}
+	}
+}
+
+func TestRenderSourceCandidateRedactsWhitespaceDelimitedPropertyValues(t *testing.T) {
+	properties := []string{
+		"client.password SENTINEL_SPACE_VALUE",
+		"client.token\tSENTINEL_TAB_VALUE",
+		"client\\ key SENTINEL_ESCAPED_KEY_VALUE",
+		"continued.key\\",
+		"  fragment SENTINEL_CONTINUED_VALUE",
+		"key.without.value",
+		"# external comment",
+	}
+	candidate := sourceCandidate{
+		Path: "src/main/resources/application.properties", StartLine: 1, EndLine: len(properties),
+	}
+	section, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: properties},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sentinel := range []string{
+		"SENTINEL_SPACE_VALUE",
+		"SENTINEL_TAB_VALUE",
+		"SENTINEL_ESCAPED_KEY_VALUE",
+		"SENTINEL_CONTINUED_VALUE",
+	} {
+		if strings.Contains(section.Content, sentinel) {
+			t.Fatalf("rendered properties retain %q:\n%s", sentinel, section.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\tclient.password <redacted>",
+		"2\tclient.token\t<redacted>",
+		"3\tclient\\ key <redacted>",
+		"4\tcontinued.key\\",
+		"5\t  <redacted>",
+		"6\tkey.without.value",
+		"7\t# external comment",
+	} {
+		if !strings.Contains(section.Content, line) {
+			t.Fatalf("rendered properties missing %q:\n%s", line, section.Content)
+		}
+	}
+}
+
+func TestRenderSourceCandidateRedactsInlineYAMLScalarContinuations(t *testing.T) {
+	yaml := []string{
+		"credentials:",
+		"  password: \"SENTINEL_QUOTED_FIRST",
+		"    SENTINEL_QUOTED_SECOND\"",
+		"  token: SENTINEL_PLAIN_FIRST",
+		"    SENTINEL_PLAIN_SECOND",
+		"  entries:",
+		"    - password: \"SENTINEL_LIST_FIRST",
+		"        SENTINEL_LIST_SECOND\"",
+		"      enabled: true",
+		"    - SENTINEL_RAW_LIST_FIRST",
+		"      SENTINEL_RAW_LIST_SECOND",
+		"  next: SENTINEL_SIBLING_VALUE",
+		"# external comment",
+	}
+	candidate := sourceCandidate{
+		Path: "src/main/resources/application.yml", StartLine: 1, EndLine: len(yaml),
+	}
+	section, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: yaml},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sentinel := range []string{
+		"SENTINEL_QUOTED_FIRST",
+		"SENTINEL_QUOTED_SECOND",
+		"SENTINEL_PLAIN_FIRST",
+		"SENTINEL_PLAIN_SECOND",
+		"SENTINEL_LIST_FIRST",
+		"SENTINEL_LIST_SECOND",
+		"SENTINEL_RAW_LIST_FIRST",
+		"SENTINEL_RAW_LIST_SECOND",
+		"SENTINEL_SIBLING_VALUE",
+	} {
+		if strings.Contains(section.Content, sentinel) {
+			t.Fatalf("rendered YAML retains %q:\n%s", sentinel, section.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\tcredentials:",
+		"2\t  password: <redacted>",
+		"3\t    <redacted>",
+		"4\t  token: <redacted>",
+		"5\t    <redacted>",
+		"6\t  entries:",
+		"7\t    - password: <redacted>",
+		"8\t        <redacted>",
+		"9\t      enabled: <redacted>",
+		"10\t    - <redacted>",
+		"11\t      <redacted>",
+		"12\t  next: <redacted>",
+		"13\t# external comment",
+	} {
+		if !strings.Contains(section.Content, line) {
+			t.Fatalf("rendered YAML missing %q:\n%s", line, section.Content)
+		}
+	}
+}
+
+func TestRenderSourceCandidateRedactsEqualIndentYAMLQuotedContinuations(t *testing.T) {
+	yaml := []string{
+		"# external comment",
+		"---",
+		"root: \"SENTINEL_ROOT_QUOTED_FIRST",
+		"SENTINEL_ROOT_QUOTED_SECOND\"",
+		"outer:",
+		"  password: 'SENTINEL_NESTED_QUOTED_FIRST",
+		"  #SENTINEL_NESTED_QUOTED_HASH",
+		"  SENTINEL_NESTED_QUOTED_SECOND'",
+		"  entries:",
+		"    - token: \"SENTINEL_LIST_QUOTED_FIRST",
+		"      SENTINEL_LIST_QUOTED_SECOND\"",
+		"    - name: SENTINEL_LIST_SIBLING",
+		"...",
+	}
+	candidate := sourceCandidate{
+		Path: "src/main/resources/application.yml", StartLine: 1, EndLine: len(yaml),
+	}
+	section, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: yaml},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sentinel := range []string{
+		"SENTINEL_ROOT_QUOTED_FIRST",
+		"SENTINEL_ROOT_QUOTED_SECOND",
+		"SENTINEL_NESTED_QUOTED_FIRST",
+		"SENTINEL_NESTED_QUOTED_HASH",
+		"SENTINEL_NESTED_QUOTED_SECOND",
+		"SENTINEL_LIST_QUOTED_FIRST",
+		"SENTINEL_LIST_QUOTED_SECOND",
+		"SENTINEL_LIST_SIBLING",
+	} {
+		if strings.Contains(section.Content, sentinel) {
+			t.Fatalf("rendered YAML retains %q:\n%s", sentinel, section.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\t# external comment",
+		"2\t---",
+		"3\troot: <redacted>",
+		"4\t<redacted>",
+		"5\touter:",
+		"6\t  password: <redacted>",
+		"7\t  <redacted>",
+		"8\t  <redacted>",
+		"9\t  entries:",
+		"10\t    - token: <redacted>",
+		"11\t      <redacted>",
+		"12\t    - name: <redacted>",
+		"13\t...",
+	} {
+		if !strings.Contains(section.Content, line) {
+			t.Fatalf("rendered YAML missing %q:\n%s", line, section.Content)
+		}
+	}
+}
+
+func TestRenderSourceCandidateRedactsFlowAndDecoratedYAMLQuotedContinuations(t *testing.T) {
+	yaml := []string{
+		"# external comment before",
+		"{\"password\":\"SENTINEL_ROOT_FLOW_FIRST",
+		"#SENTINEL_ROOT_FLOW_SECOND\"}",
+		"nested-flow:",
+		"  {\"password\":\"SENTINEL_NESTED_FLOW_FIRST",
+		"  #SENTINEL_NESTED_FLOW_SECOND\"}",
+		"decorated:",
+		"  tagged: !!str \"SENTINEL_TAGGED_FIRST \\\"escaped",
+		"  #SENTINEL_TAGGED_SECOND\"",
+		"  anchored: &secret 'SENTINEL_ANCHORED_FIRST ''kept''",
+		"  #SENTINEL_ANCHORED_SECOND'",
+		"# external comment after \" unmatched quote",
+	}
+	candidate := sourceCandidate{
+		Path: "src/main/resources/application.yml", StartLine: 1, EndLine: len(yaml),
+	}
+	section, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: yaml},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sentinel := range []string{
+		"SENTINEL_ROOT_FLOW_FIRST",
+		"SENTINEL_ROOT_FLOW_SECOND",
+		"SENTINEL_NESTED_FLOW_FIRST",
+		"SENTINEL_NESTED_FLOW_SECOND",
+		"SENTINEL_TAGGED_FIRST",
+		"SENTINEL_TAGGED_SECOND",
+		"SENTINEL_ANCHORED_FIRST",
+		"SENTINEL_ANCHORED_SECOND",
+	} {
+		if strings.Contains(section.Content, sentinel) {
+			t.Fatalf("rendered YAML retains %q:\n%s", sentinel, section.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\t# external comment before",
+		"2\t<redacted>",
+		"3\t<redacted>",
+		"4\tnested-flow:",
+		"5\t  <redacted>",
+		"6\t  <redacted>",
+		"7\tdecorated:",
+		"8\t  tagged: <redacted>",
+		"9\t  <redacted>",
+		"10\t  anchored: <redacted>",
+		"11\t  <redacted>",
+		"12\t# external comment after \" unmatched quote",
+	} {
+		if !strings.Contains(section.Content, line) {
+			t.Fatalf("rendered YAML missing %q:\n%s", line, section.Content)
+		}
+	}
+}
+
+func TestRenderSourceCandidateRedactsStandaloneAndFlowYAMLValues(t *testing.T) {
+	yaml := []string{
+		"# external comment",
+		"---",
+		"credentials:",
+		"  SENTINEL_PENDING_SCALAR",
+		"nested-flow:",
+		"  {\"password\":\"SENTINEL_NESTED_FLOW\"}",
+		"{\"password\":\"SENTINEL_ROOT_FLOW\"}",
+		"empty:",
+		"sequence:",
+		"  -",
+		"...",
+	}
+	candidate := sourceCandidate{
+		Path: "src/main/resources/bootstrap.yaml", StartLine: 1, EndLine: len(yaml),
+	}
+	section, err := renderSourceCandidate(
+		candidate,
+		sourceFile{Path: candidate.Path, Lines: yaml},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sentinel := range []string{
+		"SENTINEL_PENDING_SCALAR",
+		"SENTINEL_NESTED_FLOW",
+		"SENTINEL_ROOT_FLOW",
+	} {
+		if strings.Contains(section.Content, sentinel) {
+			t.Fatalf("rendered YAML retains %q:\n%s", sentinel, section.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\t# external comment",
+		"2\t---",
+		"3\tcredentials:",
+		"4\t  <redacted>",
+		"5\tnested-flow:",
+		"6\t  <redacted>",
+		"7\t<redacted>",
+		"8\tempty:",
+		"9\tsequence:",
+		"10\t  -",
+		"11\t...",
+	} {
+		if !strings.Contains(section.Content, line) {
+			t.Fatalf("rendered YAML missing %q:\n%s", line, section.Content)
 		}
 	}
 }
@@ -10515,6 +10799,78 @@ func TestReadSourceFileNormalizesCRLFAndPreservesPhysicalLines(t *testing.T) {
 	}
 	if got, want := strings.Join(file.Lines, "|"), "one|two|"; got != want {
 		t.Fatalf("source lines = %q, want %q", got, want)
+	}
+}
+
+func TestReadSourceFileNormalizesLineEndingsBeforeConfigurationRedaction(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		lineEnding string
+		lines      []string
+		want       []string
+	}{
+		{
+			name: "properties lone CR", path: "application.properties", lineEnding: "\r",
+			lines: []string{"# external comment", "client.password=SENTINEL_PROPERTIES_LONE_CR", "retry.max=3"},
+			want:  []string{"1\t# external comment", "2\tclient.password=<redacted>", "3\tretry.max=<redacted>", "4\t"},
+		},
+		{
+			name: "YAML lone CR", path: "application.yml", lineEnding: "\r",
+			lines: []string{"# external comment", "client:", "  password: SENTINEL_YAML_LONE_CR"},
+			want:  []string{"1\t# external comment", "2\tclient:", "3\t  password: <redacted>", "4\t"},
+		},
+		{
+			name: "properties LF", path: "application.properties", lineEnding: "\n",
+			lines: []string{"# external comment", "client.password=SENTINEL_PROPERTIES_LF", "retry.max=3"},
+			want:  []string{"1\t# external comment", "2\tclient.password=<redacted>", "3\tretry.max=<redacted>", "4\t"},
+		},
+		{
+			name: "YAML LF", path: "application.yml", lineEnding: "\n",
+			lines: []string{"# external comment", "client:", "  password: SENTINEL_YAML_LF"},
+			want:  []string{"1\t# external comment", "2\tclient:", "3\t  password: <redacted>", "4\t"},
+		},
+		{
+			name: "properties CRLF", path: "application.properties", lineEnding: "\r\n",
+			lines: []string{"# external comment", "client.password=SENTINEL_PROPERTIES_CRLF", "retry.max=3"},
+			want:  []string{"1\t# external comment", "2\tclient.password=<redacted>", "3\tretry.max=<redacted>", "4\t"},
+		},
+		{
+			name: "YAML CRLF", path: "application.yml", lineEnding: "\r\n",
+			lines: []string{"# external comment", "client:", "  password: SENTINEL_YAML_CRLF"},
+			want:  []string{"1\t# external comment", "2\tclient:", "3\t  password: <redacted>", "4\t"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := writeSourceFile(
+				t,
+				t.TempDir(),
+				test.path,
+				strings.Join(test.lines, test.lineEnding)+test.lineEnding,
+			)
+			file, err := readSourceFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := len(file.Lines), len(test.lines)+1; got != want {
+				t.Fatalf("source line count = %d, want %d: %#v", got, want, file.Lines)
+			}
+			candidate := sourceCandidate{Path: path, StartLine: 1, EndLine: len(file.Lines)}
+			section, err := renderSourceCandidate(candidate, file, "focused")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(section.Content, "SENTINEL_") {
+				t.Fatalf("rendered configuration retains sentinel:\n%s", section.Content)
+			}
+			for _, line := range test.want {
+				if !strings.Contains(section.Content, line) {
+					t.Fatalf("rendered configuration missing %q:\n%s", line, section.Content)
+				}
+			}
+		})
 	}
 }
 

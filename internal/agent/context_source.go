@@ -867,21 +867,32 @@ func redactContextConfigurationValues(path, content string) string {
 		return content
 	}
 	lines := strings.Split(content, "\n")
-	yamlBlockIndent := -1
+	yamlValueIndent := -1
+	var yamlQuotedScalar byte
 	propertiesContinuation := false
 	for index, line := range lines {
 		prefix, source := contextConfigurationLinePrefix(line)
 		trimmed := strings.TrimSpace(source)
-		if isContextConfigurationYAML(path) && yamlBlockIndent >= 0 {
+		if isContextConfigurationYAML(path) && yamlQuotedScalar != 0 {
+			if trimmed == "" {
+				continue
+			}
+			lines[index] = prefix + source[:contextConfigurationIndent(source)] + "<redacted>"
+			if contextConfigurationYAMLQuotedScalarCloses(source, yamlQuotedScalar) {
+				yamlQuotedScalar = 0
+			}
+			continue
+		}
+		if isContextConfigurationYAML(path) && yamlValueIndent >= 0 {
 			if trimmed == "" {
 				continue
 			}
 			indent := contextConfigurationIndent(source)
-			if indent > yamlBlockIndent {
+			if indent > yamlValueIndent {
 				lines[index] = prefix + source[:indent] + "<redacted>"
 				continue
 			}
-			yamlBlockIndent = -1
+			yamlValueIndent = -1
 		}
 		if !isContextConfigurationYAML(path) && propertiesContinuation {
 			if trimmed == "" {
@@ -892,36 +903,57 @@ func redactContextConfigurationValues(path, content string) string {
 			propertiesContinuation = contextConfigurationPropertyContinues(source)
 			continue
 		}
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") ||
+			(!isContextConfigurationYAML(path) && strings.HasPrefix(trimmed, "!")) {
 			continue
 		}
 		if isContextConfigurationYAML(path) {
+			if contextConfigurationYAMLStructureMarker(trimmed) {
+				continue
+			}
 			if header, blockIndent, block := contextConfigurationYAMLBlockScalar(source); block {
 				lines[index] = prefix + header + "<redacted>"
-				yamlBlockIndent = blockIndent
+				yamlValueIndent = blockIndent
+				continue
+			}
+			if delimiter := contextConfigurationYAMLMappingDelimiter(source); delimiter >= 0 {
+				value := strings.TrimSpace(source[delimiter+1:])
+				if value != "" && !strings.HasPrefix(value, "#") {
+					lines[index] = prefix + source[:delimiter+1] + " <redacted>"
+					yamlQuotedScalar = contextConfigurationYAMLOpenQuotedScalar(value)
+					if yamlQuotedScalar == 0 {
+						yamlValueIndent = contextConfigurationYAMLMappingIndent(source, delimiter)
+					}
+				}
 				continue
 			}
 			if listPrefix, scalar := contextConfigurationYAMLListScalar(source); scalar {
 				lines[index] = prefix + listPrefix + "<redacted>"
+				yamlQuotedScalar = contextConfigurationYAMLOpenQuotedScalar(source[len(listPrefix):])
+				if yamlQuotedScalar == 0 {
+					yamlValueIndent = contextConfigurationIndent(source)
+				}
 				continue
 			}
-			if delimiter := strings.Index(source, ":"); delimiter >= 0 && strings.TrimSpace(source[delimiter+1:]) != "" && !strings.HasPrefix(strings.TrimSpace(source[delimiter+1:]), "#") {
-				lines[index] = prefix + source[:delimiter+1] + " <redacted>"
+			lines[index] = prefix + source[:contextConfigurationIndent(source)] + "<redacted>"
+			yamlQuotedScalar = contextConfigurationYAMLOpenQuotedScalar(trimmed)
+			if yamlQuotedScalar == 0 {
+				yamlValueIndent = contextConfigurationIndent(source)
 			}
 			continue
 		}
-		if delimiter := strings.IndexAny(source, "=:"); delimiter >= 0 {
-			lines[index] = prefix + source[:delimiter+1] + "<redacted>"
-			propertiesContinuation = contextConfigurationPropertyContinues(source)
+		if keyPrefix, hasValue := contextConfigurationPropertyKeyPrefix(source); hasValue {
+			lines[index] = prefix + keyPrefix + "<redacted>"
 		}
+		propertiesContinuation = contextConfigurationPropertyContinues(source)
 	}
 	return strings.Join(lines, "\n")
 }
 
 func contextConfigurationYAMLBlockScalar(line string) (string, int, bool) {
-	delimiter := strings.Index(line, ":")
+	delimiter := contextConfigurationYAMLMappingDelimiter(line)
 	if delimiter >= 0 && contextConfigurationYAMLBlockIndicator(line[delimiter+1:]) {
-		return line[:delimiter+1] + " ", contextConfigurationIndent(line), true
+		return line[:delimiter+1] + " ", contextConfigurationYAMLMappingIndent(line, delimiter), true
 	}
 	start := contextConfigurationIndent(line)
 	if start >= len(line) || line[start] != '-' {
@@ -937,6 +969,130 @@ func contextConfigurationYAMLBlockScalar(line string) (string, int, bool) {
 	return line[:valueStart], start, true
 }
 
+func contextConfigurationYAMLMappingDelimiter(line string) int {
+	singleQuoted := false
+	doubleQuoted := false
+	escaped := false
+	for index := 0; index < len(line); index++ {
+		character := line[index]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if doubleQuoted && character == '\\' {
+			escaped = true
+			continue
+		}
+		if !doubleQuoted && character == '\'' {
+			singleQuoted = !singleQuoted
+			continue
+		}
+		if !singleQuoted && character == '"' {
+			doubleQuoted = !doubleQuoted
+			continue
+		}
+		if character == ':' && !singleQuoted && !doubleQuoted &&
+			(index+1 == len(line) || strings.ContainsRune(" \t", rune(line[index+1]))) {
+			return index
+		}
+	}
+	return -1
+}
+
+func contextConfigurationYAMLMappingIndent(line string, delimiter int) int {
+	indent := contextConfigurationIndent(line)
+	if indent >= len(line) || line[indent] != '-' {
+		return indent
+	}
+	keyStart := indent + 1
+	for keyStart < delimiter && (line[keyStart] == ' ' || line[keyStart] == '\t') {
+		keyStart++
+	}
+	if keyStart < delimiter {
+		return keyStart
+	}
+	return indent
+}
+
+func contextConfigurationYAMLOpenQuotedScalar(value string) byte {
+	var quote byte
+	escaped := false
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		switch quote {
+		case '"':
+			if escaped {
+				escaped = false
+				continue
+			}
+			if character == '\\' {
+				escaped = true
+				continue
+			}
+			if character == quote {
+				quote = 0
+			}
+		case '\'':
+			if character != quote {
+				continue
+			}
+			if index+1 < len(value) && value[index+1] == quote {
+				index++
+				continue
+			}
+			quote = 0
+		default:
+			if character == '\'' || character == '"' {
+				quote = character
+			}
+		}
+	}
+	return quote
+}
+
+func contextConfigurationYAMLQuotedScalarCloses(value string, quote byte) bool {
+	if quote == '\'' {
+		for index := 0; index < len(value); index++ {
+			if value[index] != quote {
+				continue
+			}
+			if index+1 < len(value) && value[index+1] == quote {
+				index++
+				continue
+			}
+			return true
+		}
+		return false
+	}
+	escaped := false
+	for index := 0; index < len(value); index++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if value[index] == '\\' {
+			escaped = true
+			continue
+		}
+		if value[index] == quote {
+			return true
+		}
+	}
+	return false
+}
+
+func contextConfigurationYAMLStructureMarker(value string) bool {
+	if strings.HasPrefix(value, "%") {
+		return true
+	}
+	switch value {
+	case "---", "...", "-", "?", "{", "}", "[", "]":
+		return true
+	default:
+		return false
+	}
+}
+
 func contextConfigurationYAMLBlockIndicator(value string) bool {
 	value = strings.TrimSpace(value)
 	return value != "" && (value[0] == '|' || value[0] == '>')
@@ -948,6 +1104,29 @@ func contextConfigurationPropertyContinues(line string) bool {
 		backslashes++
 	}
 	return backslashes%2 == 1
+}
+
+func contextConfigurationPropertyKeyPrefix(line string) (string, bool) {
+	start := 0
+	for start < len(line) && (line[start] == ' ' || line[start] == '\t' || line[start] == '\f') {
+		start++
+	}
+	escaped := false
+	for index := start; index < len(line); index++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch line[index] {
+		case '\\':
+			escaped = true
+		case '=', ':':
+			return line[:index+1], true
+		case ' ', '\t', '\f':
+			return line[:index+1], true
+		}
+	}
+	return "", false
 }
 
 func contextConfigurationIndent(line string) int {
@@ -2016,8 +2195,10 @@ func readSourceFile(path string) (sourceFile, error) {
 	if !utf8.Valid(body) {
 		return sourceFile{}, fmt.Errorf("source file is not valid UTF-8")
 	}
+	normalized := strings.ReplaceAll(string(body), "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 	return sourceFile{
 		Path:  path,
-		Lines: strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n"),
+		Lines: strings.Split(normalized, "\n"),
 	}, nil
 }
