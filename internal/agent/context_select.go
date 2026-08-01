@@ -707,9 +707,12 @@ func contextAuthenticationConcernHasRoleEvidence(
 	contractProjects map[string]bool,
 	modelProjects map[string]bool,
 ) bool {
-	if endpointProjects[concern.project] ||
-		contractProjects[concern.project] ||
-		modelProjects[concern.project] {
+	if contextAuthenticationConcernHasProjectRole(
+		concern.project,
+		endpointProjects,
+		contractProjects,
+		modelProjects,
+	) {
 		return true
 	}
 	candidates := make(map[string]bool, len(concern.candidateFactIDs))
@@ -722,6 +725,28 @@ func contextAuthenticationConcernHasRoleEvidence(
 				normalizeContextProject(fact.Project) == concern.project) &&
 			normalizedContextConcernKind(fact.Kind) == contextConcernAuth {
 			return true
+		}
+	}
+	return false
+}
+
+func contextAuthenticationConcernHasProjectRole(
+	project string,
+	roles ...map[string]bool,
+) bool {
+	if project != "" {
+		for _, projects := range roles {
+			if projects[project] {
+				return true
+			}
+		}
+		return false
+	}
+	for _, projects := range roles {
+		for candidate, selected := range projects {
+			if selected && candidate != "" {
+				return true
+			}
 		}
 	}
 	return false
