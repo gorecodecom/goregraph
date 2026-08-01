@@ -210,7 +210,46 @@ func selectContextSourceOptions(
 	if err != nil {
 		return ContextPack{}, err
 	}
+	pack.SourceSections = contextSourceSectionsProductionFirst(pack.SourceSections)
+	pack, err = appendContextEvidenceInventory(
+		pack,
+		sectionRequest,
+		options,
+		concerns,
+	)
+	if err != nil {
+		return ContextPack{}, err
+	}
 	covered := contextSourceCoverageFromFinalSections(pack, concerns, options)
+	applyContextSourceCoverage(&pack, concerns, covered)
+	reconcileRequest, err := contextSourceRequestWithOmissionReserve(
+		pack,
+		request,
+		contextSourceEvidenceOmissionsWithOptions(
+			pack,
+			loaded.Index,
+			concerns,
+			candidates,
+			options,
+			failures,
+			covered,
+		),
+	)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	pack, err = reconcileContextSourceInventory(
+		pack,
+		reconcileRequest,
+		options,
+		concerns,
+		coreBoundaries,
+	)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	pack.SourceSections = contextSourceSectionsProductionFirst(pack.SourceSections)
+	covered = contextSourceCoverageFromFinalSections(pack, concerns, options)
 	applyContextSourceCoverage(&pack, concerns, covered)
 	for _, omission := range contextSourceEvidenceOmissionsWithOptions(
 		pack,
@@ -238,19 +277,193 @@ func selectContextSourceOptions(
 	if pack.SourceCoverage == "complete" {
 		pack.SourceUnrepresented = 0
 	}
-	pack.SourceSections = contextSourceSectionsProductionFirst(pack.SourceSections)
-	pack, err = appendContextEvidenceInventory(
-		pack,
-		request,
-		options,
-		concerns,
-	)
-	if err != nil {
-		return ContextPack{}, err
-	}
-	covered = contextSourceCoverageFromFinalSections(pack, concerns, options)
-	applyContextSourceCoverage(&pack, concerns, covered)
 	return finalizeContextPackWithinBudget(pack, request)
+}
+
+type contextSourceInventoryReconciliationOption struct {
+	option             contextSourceOption
+	exactInventoryGain int
+	requiredProofGain  int
+}
+
+func reconcileContextSourceInventory(
+	pack ContextPack,
+	request ContextRequest,
+	options []contextSourceOption,
+	concerns []contextConcern,
+	_ []contextSourceBoundary,
+) (ContextPack, error) {
+	if len(pack.SourceSections) >= MaxContextSourceSections {
+		return pack, nil
+	}
+	state := contextSourceSelectionStateFromFinalSections(pack, options, concerns)
+	knownConcerns := make(map[string]contextConcern, len(concerns))
+	for _, concern := range concerns {
+		knownConcerns[concern.key] = concern
+	}
+	inventoryPaths := make(map[string]bool, len(pack.Files))
+	for _, file := range pack.Files {
+		inventoryPaths[contextEvidenceInventoryPathKey(file.Project, file.Path)] = true
+	}
+	reconcilable := make([]contextSourceInventoryReconciliationOption, 0)
+	for _, option := range options {
+		if !option.profiled || option.candidate.InventoryOnly ||
+			state.selectedCandidates[contextSourceCandidateKey(option.candidate)] ||
+			!inventoryPaths[contextEvidenceInventoryPathKey(
+				option.candidate.Project,
+				option.candidate.Path,
+			)] {
+			continue
+		}
+		exactGain, requiredGain := contextSourceInventoryReconciliationGain(
+			option,
+			knownConcerns,
+			state.coveredConcerns,
+		)
+		if requiredGain == 0 {
+			continue
+		}
+		reconcilable = append(reconcilable, contextSourceInventoryReconciliationOption{
+			option:             option,
+			exactInventoryGain: exactGain,
+			requiredProofGain:  requiredGain,
+		})
+	}
+	sort.Slice(reconcilable, func(left, right int) bool {
+		leftOption, rightOption := reconcilable[left], reconcilable[right]
+		switch {
+		case leftOption.exactInventoryGain != rightOption.exactInventoryGain:
+			return leftOption.exactInventoryGain > rightOption.exactInventoryGain
+		case leftOption.requiredProofGain != rightOption.requiredProofGain:
+			return leftOption.requiredProofGain > rightOption.requiredProofGain
+		case leftOption.option.candidateQuality != rightOption.option.candidateQuality:
+			return leftOption.option.candidateQuality > rightOption.option.candidateQuality
+		case leftOption.option.estimated != rightOption.option.estimated:
+			return leftOption.option.estimated < rightOption.option.estimated
+		case contextSourceOptionLess(leftOption.option, rightOption.option):
+			return true
+		case contextSourceOptionLess(rightOption.option, leftOption.option):
+			return false
+		default:
+			return contextSourceSelectionOptionKey(leftOption.option) <
+				contextSourceSelectionOptionKey(rightOption.option)
+		}
+	})
+	for _, candidate := range reconcilable {
+		if len(pack.SourceSections) >= MaxContextSourceSections {
+			break
+		}
+		option := candidate.option
+		if state.selectedCandidates[contextSourceCandidateKey(option.candidate)] {
+			continue
+		}
+		_, requiredGain := contextSourceInventoryReconciliationGain(
+			option,
+			knownConcerns,
+			state.coveredConcerns,
+		)
+		if requiredGain == 0 {
+			continue
+		}
+		boundedOption := option
+		boundedOption.profiled = false
+		fits, err := contextSourceOptionFits(
+			pack,
+			request,
+			boundedOption,
+			concerns,
+			state,
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		if !fits {
+			continue
+		}
+		pack, state, err = addContextSourceOption(
+			pack,
+			request,
+			boundedOption,
+			concerns,
+			state,
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		state.coveredConcerns = contextSourceCoverageFromFinalSections(
+			pack,
+			concerns,
+			options,
+		)
+	}
+	covered := contextSourceCoverageFromFinalSections(pack, concerns, options)
+	applyContextSourceCoverage(&pack, concerns, covered)
+	return finalizeContextEstimate(pack)
+}
+
+func contextSourceSelectionStateFromFinalSections(
+	pack ContextPack,
+	options []contextSourceOption,
+	concerns []contextConcern,
+) contextSourceSelectionState {
+	state := newContextSourceSelectionState(len(options), len(concerns))
+	knownConcerns := make(map[string]contextConcern, len(concerns))
+	for _, concern := range concerns {
+		knownConcerns[concern.key] = concern
+	}
+	countedCandidates := make(map[string]bool, len(pack.SourceSections))
+	for _, section := range pack.SourceSections {
+		for _, option := range options {
+			if option.section != section {
+				continue
+			}
+			candidateKey := contextSourceCandidateKey(option.candidate)
+			state.selectedCandidates[candidateKey] = true
+			for key := range contextSourceOptionProvenConcernKeys(option, knownConcerns) {
+				state.coveredConcerns[key] = true
+			}
+			if countedCandidates[candidateKey] {
+				continue
+			}
+			countedCandidates[candidateKey] = true
+			for _, factID := range contextSourceCandidateFactIDs(option.candidate) {
+				state.selectedFactIDs[factID] = true
+			}
+			state.coveredRoles[option.candidate.Role] = true
+			if option.projectKey != "" {
+				state.selectedProjects[option.projectKey] = true
+			}
+			family := contextSourceEffectiveEvidenceFamily(pack, option)
+			countFamily := true
+			if family == contextConcernDomainModel || family == contextConcernPersistence {
+				countFamily = option.candidate.Role == family
+			}
+			if countFamily {
+				state.selectedEvidenceFamilies[option.projectKey+"\x00"+family]++
+			}
+		}
+	}
+	return state
+}
+
+func contextSourceInventoryReconciliationGain(
+	option contextSourceOption,
+	concerns map[string]contextConcern,
+	covered map[string]bool,
+) (int, int) {
+	exactInventoryGain := 0
+	requiredProofGain := 0
+	for key := range contextSourceOptionProvenConcernKeys(option, concerns) {
+		concern := concerns[key]
+		if !concern.required || covered[key] {
+			continue
+		}
+		requiredProofGain++
+		if concern.exactInventory {
+			exactInventoryGain++
+		}
+	}
+	return exactInventoryGain, requiredProofGain
 }
 
 func contextSourceConcernsWithoutRenderedOptions(

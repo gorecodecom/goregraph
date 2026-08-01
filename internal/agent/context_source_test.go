@@ -698,6 +698,131 @@ func TestContextSourceEvidenceOmissionsCollapseEquivalentExactInventoryPaths(t *
 	}
 }
 
+func TestReconcileContextSourceInventoryAddsRepresentedEvidenceOnly(t *testing.T) {
+	const project = "services/jobs"
+	request := ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	}
+	files := make([]ContextFile, 0, DefaultContextMaxFiles)
+	mandatory := make([]ContextSourceSection, 0, 10)
+	options := make([]contextSourceOption, 0, DefaultContextMaxFiles+1)
+	concerns := make([]contextConcern, 0, DefaultContextMaxFiles+1)
+	boundaries := make([]contextSourceBoundary, 0, 10)
+	for index := 0; index <= DefaultContextMaxFiles; index++ {
+		factID := fmt.Sprintf("evidence-%02d", index)
+		path := fmt.Sprintf("src/Evidence%02d.java", index)
+		concernKey := fmt.Sprintf("tests:%s#exact-file:%s", project, path)
+		concerns = append(concerns, contextConcern{
+			key: concernKey, kind: contextConcernTests, project: project,
+			required: true, exactInventory: true, candidateFactIDs: []string{factID},
+		})
+		section := ContextSourceSection{
+			Project: project, Path: path, StartLine: 1, EndLine: 3,
+			Role: "test", RenderMode: "declaration_body",
+			Content: fmt.Sprintf("final class Evidence%02d { void provesRelease() {} }", index),
+		}
+		options = append(options, contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: factID, FactIDs: []string{factID}, Project: project,
+				Path: path, StartLine: 1, EndLine: 3, Role: "test",
+			},
+			section: section, estimated: 30, concernKeys: []string{concernKey},
+			projectKey: project, required: true, candidateQuality: 100 - index,
+			profiled: true,
+		})
+		if index < DefaultContextMaxFiles {
+			files = append(files, ContextFile{
+				Project: project, Path: path, StartLine: 1, EndLine: 3,
+				Role: "test", Reason: "selected required test evidence",
+			})
+		}
+		if index < 10 {
+			mandatory = append(mandatory, section)
+			boundaries = append(boundaries, contextSourceBoundary{factID: factID})
+		}
+	}
+	pack, err := finalizeContextEstimate(ContextPack{
+		Schema: 1, Query: "prepare represented release evidence", Confidence: "EXACT",
+		BudgetTokens: request.BudgetTokens, Files: files, SourceSections: slices.Clone(mandatory),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalFiles := slices.Clone(pack.Files)
+	reconcile := func(sourceOptions []contextSourceOption) ContextPack {
+		t.Helper()
+		got, reconcileErr := reconcileContextSourceInventory(
+			pack,
+			request,
+			sourceOptions,
+			concerns,
+			boundaries,
+		)
+		if reconcileErr != nil {
+			t.Fatal(reconcileErr)
+		}
+		return got
+	}
+
+	forward := reconcile(options)
+	reversedOptions := slices.Clone(options)
+	slices.Reverse(reversedOptions)
+	reversed := reconcile(reversedOptions)
+	forwardJSON, err := json.Marshal(forward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversedJSON, err := json.Marshal(reversed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(forwardJSON) != string(reversedJSON) {
+		t.Fatalf("reversed options changed reconciliation:\nforward: %s\nreverse: %s", forwardJSON, reversedJSON)
+	}
+	if !reflect.DeepEqual(forward.Files, originalFiles) {
+		t.Fatalf("reconciliation changed final inventory:\nwant: %#v\ngot:  %#v", originalFiles, forward.Files)
+	}
+	if len(forward.SourceSections) != MaxContextSourceSections {
+		t.Fatalf("reconciled sections = %d, want %d", len(forward.SourceSections), MaxContextSourceSections)
+	}
+	if !reflect.DeepEqual(forward.SourceSections[:len(mandatory)], mandatory) {
+		t.Fatalf(
+			"mandatory sections changed or moved:\nwant: %#v\ngot:  %#v",
+			mandatory,
+			forward.SourceSections[:len(mandatory)],
+		)
+	}
+	pathCounts := make(map[string]int, len(forward.SourceSections))
+	for _, section := range forward.SourceSections {
+		pathCounts[contextEvidenceInventoryPathKey(section.Project, section.Path)]++
+	}
+	for _, index := range []int{0, 10, 11} {
+		path := fmt.Sprintf("src/Evidence%02d.java", index)
+		if pathCounts[contextEvidenceInventoryPathKey(project, path)] != 1 {
+			t.Errorf("represented path %q count = %d, want one", path, pathCounts[contextEvidenceInventoryPathKey(project, path)])
+		}
+	}
+	unrepresentedPath := "src/Evidence12.java"
+	if pathCounts[contextEvidenceInventoryPathKey(project, unrepresentedPath)] != 0 {
+		t.Errorf("unrepresented path %q was rendered", unrepresentedPath)
+	}
+	if forward.BudgetTokens != request.BudgetTokens ||
+		forward.EstimatedTokens > request.BudgetTokens ||
+		contextSourceFileCount(forward) > request.MaxFiles ||
+		len(forward.SourceSections) > MaxContextSourceSections {
+		t.Fatalf(
+			"reconciled bounds = tokens %d/%d aggregate_files %d/%d sections %d/%d",
+			forward.EstimatedTokens,
+			request.BudgetTokens,
+			contextSourceFileCount(forward),
+			request.MaxFiles,
+			len(forward.SourceSections),
+			MaxContextSourceSections,
+		)
+	}
+}
+
 func TestContextSourceCandidatesTreatTestProfileConfigurationAsConfiguration(t *testing.T) {
 	pack := ContextPack{
 		Query:                 "Provide configuration evidence.",
