@@ -3597,6 +3597,81 @@ func TestContextSourceEvidenceOmissionsCoalesceFacetsByPath(t *testing.T) {
 	}
 }
 
+func TestContextSourceEvidenceOmissionsPreserveClientConfigurationBindingForExactPlan(t *testing.T) {
+	const query = "Describe the required new call chain and exact production and test files to change or create, including client configuration."
+	pack := ContextPack{Query: query, selectionQuery: query}
+	configuration := newContextConcern(
+		contextConcernConfiguration,
+		"libraries/job-client",
+		true,
+		[]string{"client-config"},
+		"requested client configuration",
+	)
+	binding := newExpandedContextEvidenceConcern(
+		configuration,
+		"binding",
+		[]string{"client-config"},
+		"client configuration binding",
+	)
+	exactConcern := func(kind, project, factID, path string) contextConcern {
+		concern := newContextEvidenceConcern(
+			newContextConcern(kind, project, true, []string{factID}, "exact inventory"),
+			"exact-file:"+path,
+			[]string{factID},
+			"exact file inventory evidence",
+		)
+		concern.exactInventory = true
+		return concern
+	}
+	concerns := []contextConcern{
+		binding,
+		exactConcern(contextConcernAuth, "services/jobs", "server-auth", "src/JobSecurity.java"),
+		exactConcern(contextConcernConfiguration, "services/catalog", "production-config", "src/main/resources/application.properties"),
+		exactConcern(contextConcernTests, "services/jobs", "service-test", "src/test/JobServiceTest.java"),
+	}
+	candidate := func(id, project, path, role string) sourceCandidate {
+		return sourceCandidate{
+			FactID: id, FactIDs: []string{id}, Project: project, Path: path,
+			StartLine: 10, EndLine: 20, Role: role,
+		}
+	}
+	candidates := []sourceCandidate{
+		candidate("client-config", "libraries/job-client", "src/JobClientConfig.java", "call_chain"),
+		candidate("server-auth", "services/jobs", "src/JobSecurity.java", "call_chain"),
+		candidate("production-config", "services/catalog", "src/main/resources/application.properties", "call_chain"),
+		candidate("service-test", "services/jobs", "src/test/JobServiceTest.java", "test"),
+	}
+	options := make([]contextSourceOption, 0, len(candidates))
+	for index, optionCandidate := range candidates {
+		options = append(options, contextSourceOption{
+			candidate: optionCandidate,
+			section: ContextSourceSection{
+				Project:   optionCandidate.Project,
+				Path:      optionCandidate.Path,
+				StartLine: optionCandidate.StartLine,
+				EndLine:   optionCandidate.EndLine,
+			},
+			concernKeys: []string{concerns[index].key},
+		})
+	}
+
+	got := contextSourceEvidenceOmissionsWithOptions(
+		pack,
+		scan.AgentContextIndexRecord{},
+		concerns,
+		candidates,
+		options,
+		nil,
+		map[string]bool{},
+	)
+	if len(got) != MaxContextSourceOmissions {
+		t.Fatalf("omissions = %#v, want %d", got, MaxContextSourceOmissions)
+	}
+	if got[0].Path != "src/JobClientConfig.java" {
+		t.Fatalf("client configuration binding was displaced by exact inventory: %#v", got)
+	}
+}
+
 func TestContextSourceEvidenceOmissionsPrioritizeIndexedPaths(t *testing.T) {
 	pathlessBase := newContextConcern(
 		contextConcernPersistence,

@@ -1138,6 +1138,7 @@ func contextExactInventoryEvidenceConcerns(
 		}
 		if concern.kind == contextConcernConfiguration {
 			preferredProjects := make(map[string]bool)
+			resourceProjects := make(map[string]bool)
 			for _, fact := range facts {
 				if contextExactInventoryConfigurationOwnerFact(fact) &&
 					contextExactInventoryConfigurationOwnerSupportsSelectedContract(
@@ -1147,22 +1148,53 @@ func contextExactInventoryEvidenceConcerns(
 					) {
 					preferredProjects[normalizeContextProject(fact.Project)] = true
 				}
+				if isContextConfigurationResource(fact.File) {
+					resourceProjects[normalizeContextProject(fact.Project)] = true
+				}
 			}
-			if len(preferredProjects) > 0 {
+			if len(preferredProjects) > 0 || len(resourceProjects) > 0 {
 				preferredFacts := facts[:0]
 				for _, fact := range facts {
-					if contextExactInventoryConfigurationOwnerFact(fact) &&
-						preferredProjects[normalizeContextProject(fact.Project)] &&
-						!contextExactInventoryConfigurationOwnerSupportsSelectedContract(
+					if contextExactInventoryConfigurationOwnerFact(fact) {
+						project := normalizeContextProject(fact.Project)
+						supportsContract :=
+							contextExactInventoryConfigurationOwnerSupportsSelectedContract(
+								pack,
+								index,
+								fact,
+							)
+						unboundPreferred := preferredProjects[project] && !supportsContract
+						unboundResource := resourceProjects[project] && !supportsContract &&
+							!contextExactInventoryConfigurationOwnerSupportsResource(fact, facts)
+						if unboundPreferred || unboundResource {
+							continue
+						}
+					}
+					preferredFacts = append(preferredFacts, fact)
+				}
+				facts = preferredFacts
+			}
+		}
+		if concern.kind == contextConcernAuth {
+			contractProjects := make(map[string]bool)
+			for _, contract := range pack.Contracts {
+				contractProjects[normalizeContextProject(contract.Project)] = true
+			}
+			if len(contractProjects) > 0 {
+				boundFacts := facts[:0]
+				for _, fact := range facts {
+					if contextExactInventoryAuthenticationOwnerFact(fact) &&
+						contractProjects[normalizeContextProject(fact.Project)] &&
+						!contextExactInventoryAuthenticationOwnerSupportsSelectedContract(
 							pack,
 							index,
 							fact,
 						) {
 						continue
 					}
-					preferredFacts = append(preferredFacts, fact)
+					boundFacts = append(boundFacts, fact)
 				}
-				facts = preferredFacts
+				facts = boundFacts
 			}
 		}
 		for _, fact := range facts {
@@ -1545,6 +1577,40 @@ func contextExactInventoryConfigurationOwnerFact(fact scan.AgentContextFactRecor
 	return false
 }
 
+func contextExactInventoryConfigurationOwnerSupportsResource(
+	fact scan.AgentContextFactRecord,
+	facts []scan.AgentContextFactRecord,
+) bool {
+	if !contextExactInventoryConfigurationOwnerFact(fact) {
+		return false
+	}
+	identity := compactContextIdentifier(
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	)
+	for _, suffix := range []string{"configuration", "properties", "settings", "config"} {
+		identity = strings.TrimSuffix(identity, suffix)
+	}
+	if identity == "" || identity == "application" || identity == "global" {
+		return false
+	}
+	for _, resource := range facts {
+		if normalizeContextProject(resource.Project) != normalizeContextProject(fact.Project) ||
+			!isContextConfigurationResource(resource.File) {
+			continue
+		}
+		resourceIdentity := compactContextIdentifier(strings.Join([]string{
+			resource.Name,
+			resource.Qualified,
+			resource.Search,
+			resource.Summary,
+		}, " "))
+		if strings.Contains(resourceIdentity, identity) {
+			return true
+		}
+	}
+	return false
+}
+
 func contextExactInventoryConfigurationOwnerSupportsSelectedContract(
 	pack ContextPack,
 	index scan.AgentContextIndexRecord,
@@ -1632,6 +1698,45 @@ func contextExactInventoryAuthenticationOwnerFact(fact scan.AgentContextFactReco
 	} {
 		if compactContextIdentifier(identity) == fileIdentity {
 			return true
+		}
+	}
+	return false
+}
+
+func contextExactInventoryAuthenticationOwnerSupportsSelectedContract(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	fact scan.AgentContextFactRecord,
+) bool {
+	if !contextExactInventoryAuthenticationOwnerFact(fact) {
+		return false
+	}
+	authIdentity := compactContextIdentifier(
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	)
+	for _, suffix := range []string{
+		"authentication", "authorization", "credentials", "credential", "security", "auth",
+	} {
+		authIdentity = strings.TrimSuffix(authIdentity, suffix)
+	}
+	if authIdentity == "" {
+		return false
+	}
+	contractIDs := contextLocationIDs(pack.Contracts)
+	for _, contract := range index.Facts {
+		if !contractIDs[contract.ID] ||
+			normalizeContextProject(contract.Project) != normalizeContextProject(fact.Project) {
+			continue
+		}
+		for _, owner := range []string{
+			contextIdentifierLeaf(contextQualifiedOwner(contract.Qualified)),
+			strings.TrimSuffix(filepath.Base(contract.File), filepath.Ext(contract.File)),
+		} {
+			ownerIdentity := compactContextIdentifier(owner)
+			ownerIdentity = strings.TrimSuffix(ownerIdentity, "service")
+			if ownerIdentity == authIdentity {
+				return true
+			}
 		}
 	}
 	return false
@@ -5340,6 +5445,10 @@ func contextSourceOmissionPriority(
 ) int {
 	if contextPackSourceFile(omission.Path) == "" {
 		return 0
+	}
+	if contextQueryRequestsExactEvidenceInventory(contextSelectionQuery(pack)) &&
+		concern.kind == contextConcernConfiguration && concern.facet == "binding" {
+		return 3_000
 	}
 	if concern.exactInventory {
 		return 2_000

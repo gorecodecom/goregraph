@@ -260,6 +260,24 @@ func TestExpandContextExactInventoryConcernsAcceptsRuntimeOwnerShapes(t *testing
 			Search: "job client test configuration base url credentials timeouts retries",
 		},
 		{
+			ID: "generic-application-config", Project: "services/catalog", Kind: "symbol",
+			Name: "ApplicationConfig", Qualified: "example.ApplicationConfig",
+			File: "src/main/java/example/ApplicationConfig.java", Line: 17, Confidence: "EXACT",
+			Search: "job client application configuration",
+		},
+		{
+			ID: "caller-client-config", Project: "services/catalog", Kind: "symbol",
+			Name: "JobClientConfig", Qualified: "example.JobClientConfig",
+			File: "src/main/java/example/JobClientConfig.java", Line: 17, Confidence: "EXACT",
+			Search: "job client configuration",
+		},
+		{
+			ID: "unrelated-swagger-config", Project: "services/catalog", Kind: "symbol",
+			Name: "SwaggerConfig", Qualified: "example.SwaggerConfig",
+			File: "src/main/java/example/SwaggerConfig.java", Line: 17, Confidence: "EXACT",
+			Search: "swagger configuration",
+		},
+		{
 			ID: "regular-repository", Project: "services/jobs", Kind: "persistence",
 			Name: "delete", Qualified: "CatalogJobRepository.delete",
 			File: "src/main/java/example/CatalogJobRepository.java", Line: 17, Confidence: "EXACT",
@@ -301,6 +319,7 @@ func TestExpandContextExactInventoryConcernsAcceptsRuntimeOwnerShapes(t *testing
 	}
 	for _, want := range []string{
 		"configuration:libraries/job-client#exact-file:src/main/java/example/JobClientConfig.java",
+		"configuration:services/catalog#exact-file:src/main/java/example/JobClientConfig.java",
 		"configuration:services/catalog#exact-file:src/main/resources/application.properties",
 		"configuration:services/catalog#exact-file:src/test/resources/application-UNITTEST.properties",
 		"persistence:services/jobs#exact-file:src/main/java/example/CatalogJobRepository.java",
@@ -313,6 +332,8 @@ func TestExpandContextExactInventoryConcernsAcceptsRuntimeOwnerShapes(t *testing
 	}
 	for _, rejected := range []string{
 		"configuration:libraries/job-client#exact-file:src/main/java/example/TaskMgmtConfig.java",
+		"configuration:services/catalog#exact-file:src/main/java/example/ApplicationConfig.java",
+		"configuration:services/catalog#exact-file:src/main/java/example/SwaggerConfig.java",
 		"configuration:services/jobs#exact-file:src/main/java/example/JobSecurityConfig.java",
 	} {
 		if seen[rejected] {
@@ -859,6 +880,58 @@ func TestExpandContextExactInventoryConcernsIncludesAuthenticationOwnerSymbol(t 
 		return
 	}
 	t.Fatal("exact authentication concern missing")
+}
+
+func TestExpandContextExactInventoryConcernsBindsAuthenticationOwnerToSelectedContract(t *testing.T) {
+	query := "Identify the exact production files for task client authentication."
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "client-contract", Project: "libraries/job-client", Kind: "api_contract",
+			Name: "GET /jobs", Qualified: "example.JobClientService.listJobs",
+			File: "src/main/java/example/JobClientService.java", Confidence: "EXACT",
+			Search: "task job client contract",
+		},
+		{
+			ID: "client-auth-owner", Project: "libraries/job-client", Kind: "symbol",
+			Name: "JobClientAuth", Qualified: "example.JobClientAuth",
+			File: "src/main/java/example/JobClientAuth.java", Confidence: "EXACT",
+			Search: "task job client basic authentication",
+		},
+		{
+			ID: "security-context-owner", Project: "libraries/job-client", Kind: "symbol",
+			Name: "SecurityContextUtil", Qualified: "example.SecurityContextUtil",
+			File: "src/main/java/example/SecurityContextUtil.java", Confidence: "EXACT",
+			Search: "task authentication oidc security context",
+		},
+	}}
+	concerns := expandContextEvidenceConcerns(
+		ContextPack{
+			Query: query, selectionQuery: query,
+			Contracts: []ContextLocation{{ID: "client-contract", Project: "libraries/job-client"}},
+		},
+		index,
+		[]contextConcern{newContextConcern(
+			contextConcernAuth,
+			"libraries/job-client",
+			true,
+			[]string{"client-auth-owner", "security-context-owner"},
+			"requested client authentication",
+		)},
+	)
+	seen := make(map[string]bool)
+	for _, concern := range concerns {
+		if concern.exactInventory {
+			seen[concern.key] = true
+		}
+	}
+	want := "authentication:libraries/job-client#exact-file:src/main/java/example/JobClientAuth.java"
+	if !seen[want] {
+		t.Fatalf("selected client authentication owner %q missing from %v", want, seen)
+	}
+	rejected := "authentication:libraries/job-client#exact-file:src/main/java/example/SecurityContextUtil.java"
+	if seen[rejected] {
+		t.Fatalf("unrelated authentication owner %q retained in %v", rejected, seen)
+	}
 }
 
 func TestExpandContextExactInventoryConcernsPrefersInternalEndpointSecurity(t *testing.T) {
