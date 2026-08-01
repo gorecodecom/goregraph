@@ -482,6 +482,54 @@ func TestBuildContextBalancesBroadReleaseEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildContextBalancesNaturalProductionAndTestFilePlan(t *testing.T) {
+	root := writeReleaseQualityMissingContractFixture(t)
+	query := "When DELETE /catalog/items/{itemId} removes an item in services/catalog, " +
+		"analyze the required cross-service cleanup through libraries/job-client and services/jobs. " +
+		"Cover authentication, configuration, retries, persistence, side effects, and identify " +
+		"the production and test files to change or create."
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: query, BudgetTokens: 4000, MaxFiles: 12,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []struct {
+		project string
+		path    string
+	}{
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientConfig.java"},
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientAuth.java"},
+		{project: "services/catalog", path: "src/main/resources/application.yml"},
+		{project: "services/catalog", path: "src/test/resources/application-test.yml"},
+		{project: "services/jobs", path: "src/main/java/example/JobManagementController.java"},
+		{project: "services/jobs", path: "src/main/java/example/JobSecurity.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobManagementControllerTest.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobServiceTest.java"},
+	} {
+		if !contextPackRepresentsSourcePath(pack, want.project, want.path) {
+			t.Errorf("natural file-plan evidence %q missing", want.project+":"+want.path)
+		}
+	}
+	encoded, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sentinel := range []string{
+		"https://jobs.invalid",
+		"fixture-client-user",
+		"fixture-client-password",
+		"https://jobs-test.invalid",
+		"fixture-test-user",
+		"fixture-test-password",
+	} {
+		if strings.Contains(string(encoded), sentinel) {
+			t.Errorf("sentinel configuration value %q leaked into natural file plan", sentinel)
+		}
+	}
+}
+
 func contextPackRepresentsSourcePath(pack ContextPack, project, path string) bool {
 	project = normalizeContextProject(project)
 	path = contextPackSourceFile(path)

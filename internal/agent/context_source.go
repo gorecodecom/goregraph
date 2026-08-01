@@ -203,7 +203,7 @@ func contextSourceCandidatesForConcernsWithModels(
 				domainFacts = append(domainFacts, fact)
 			}
 		}
-		if len(domainFacts) > 0 {
+		if len(domainFacts) > 0 && !concern.exactInventory {
 			facts = domainFacts
 		}
 		scoreByFactID := make(map[string]int, len(facts))
@@ -438,6 +438,13 @@ func contextSourceConcernFactScoreWithTokensAndIndex(
 	if contextValueRequestsConcern(value, concern.kind) {
 		score += 60
 	}
+	if concern.kind == contextConcernConfiguration {
+		score += contextRequestedConfigurationFactScore(query, fact)
+	}
+	if concern.exactInventory && concern.kind == contextConcernAuth &&
+		contextExactInventoryAuthenticationOwnerFact(fact) {
+		score += 700
+	}
 	if concern.kind != contextConcernEntrypoint &&
 		concern.kind != contextConcernHTTPContract &&
 		(strings.TrimSpace(fact.HTTPMethod) != "" || strings.TrimSpace(fact.Path) != "") {
@@ -474,6 +481,43 @@ func contextSourceConcernFactScoreWithTokensAndIndex(
 		}
 	}
 	return score
+}
+
+func contextRequestedConfigurationFactScore(
+	query string,
+	fact scan.AgentContextFactRecord,
+) int {
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.Search,
+		fact.Summary,
+	}, " "))
+	score := 0
+	if contextValueRequestsConcern(query, contextConcernAuth) &&
+		(contextTokenSetContainsAny(factTokens,
+			"auth", "authenticate", "authentication", "authorization",
+			"basic", "bearer", "credential", "credentials", "password",
+			"secret", "security", "token", "username",
+		) || factTokens["technical"] && factTokens["user"]) {
+		score += 600
+	}
+	if contextValueRequestsConcern(query, contextConcernResilience) &&
+		contextTokenSetContainsAny(factTokens,
+			"attempt", "attempts", "backoff", "delay", "retries", "retry", "timeout",
+		) {
+		score += 600
+	}
+	return score
+}
+
+func contextTokenSetContainsAny(tokens map[string]bool, values ...string) bool {
+	for _, value := range values {
+		if tokens[value] {
+			return true
+		}
+	}
+	return false
 }
 
 func contextSourceConcernSemanticQueryTokens(query string) map[string]bool {
@@ -780,8 +824,40 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 	identifier := contextIdentifier(candidate)
 	occurrences := identifierOccurrences(file.Lines, identifier)
 	codeLines := sourceCodeMask(file.Lines)
-	declarations := declarationOccurrences(file.Path, codeLines, occurrences)
 	indexedStart, indexedEnd := indexedSourceRange(candidate, len(file.Lines))
+	if strings.EqualFold(strings.TrimSpace(candidate.Kind), "endpoint_security") {
+		identifier := compactContextIdentifier(candidate.Name)
+		indexedStart = clampSourceLine(candidate.StartLine, len(file.Lines))
+		indexedEnd = candidate.EndLine
+		if indexedEnd <= 0 {
+			indexedEnd = indexedStart
+		}
+		indexedEnd = clampSourceLine(indexedEnd, len(file.Lines))
+		if indexedEnd < indexedStart {
+			indexedEnd = indexedStart
+		}
+		matched := false
+		for line := indexedStart; identifier != "" && line <= indexedEnd; line++ {
+			if strings.Contains(compactContextIdentifier(codeLines[line-1]), identifier) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return ContextSourceSection{}, fmt.Errorf("indexed symbol is absent from current source")
+		}
+		sourceState := candidate.SourceState
+		if sourceState == "" {
+			sourceState = "indexed_range_current"
+		}
+		return ContextSourceSection{
+			Project: candidate.Project, Path: candidate.Path,
+			StartLine: indexedStart, EndLine: indexedEnd,
+			Role: candidate.Role, RenderMode: mode, SourceState: sourceState,
+			Content: renderNumberedSource(file.Lines, indexedStart, indexedEnd),
+		}, nil
+	}
+	declarations := declarationOccurrences(file.Path, codeLines, occurrences)
 
 	declaration := sourceOccurrence{}
 	state := ""

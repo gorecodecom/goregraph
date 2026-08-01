@@ -634,7 +634,7 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 		)
 	}
 	sort.Slice(concerns, func(i, j int) bool { return concerns[i].key < concerns[j].key })
-	return expandContextEvidenceConcernsWithProfile(
+	expanded := expandContextEvidenceConcernsWithProfile(
 		pack,
 		index,
 		concerns,
@@ -643,6 +643,18 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 		contractProjects,
 		modelProjects,
 	)
+	if !contextQueryRequestsExactEvidenceInventory(contextSelectionQuery(pack)) {
+		return expanded
+	}
+	result := make([]contextConcern, 0, len(expanded))
+	for _, concern := range expanded {
+		if !concern.exactInventory {
+			result = append(result, concern)
+		}
+	}
+	result = append(result, contextExactInventoryEvidenceConcerns(pack, index, planned)...)
+	sort.Slice(result, func(i, j int) bool { return result[i].key < result[j].key })
+	return result
 }
 
 func contextEvidenceProjectRoles(
@@ -1054,6 +1066,7 @@ func contextExactInventoryEvidenceConcerns(
 		project string
 		path    string
 		facts   []scan.AgentContextFactRecord
+		score   int
 	}
 	groupsByKey := make(map[string]*exactInventoryGroup)
 	for _, concern := range concerns {
@@ -1061,13 +1074,20 @@ func contextExactInventoryEvidenceConcerns(
 			continue
 		}
 		candidateFactIDs := orderedContextConcernIDs(concern.candidateFactIDs)
-		if concern.kind == contextConcernConfiguration && concern.project != "" {
+		if concern.project != "" {
 			for _, fact := range index.Facts {
-				if normalizeContextProject(fact.Project) != concern.project ||
-					!isContextConfigurationResource(fact.File) {
+				if normalizeContextProject(fact.Project) != concern.project {
 					continue
 				}
-				candidateFactIDs = append(candidateFactIDs, fact.ID)
+				supplement := concern.kind == contextConcernConfiguration &&
+					isContextConfigurationResource(fact.File) ||
+					concern.kind == contextConcernAuth &&
+						contextExactInventoryAuthenticationOwnerFact(fact) ||
+					concern.kind == contextConcernTests &&
+						contextExactInventoryExecutableTestFact(fact)
+				if supplement {
+					candidateFactIDs = append(candidateFactIDs, fact.ID)
+				}
 			}
 			candidateFactIDs = orderedContextConcernIDs(candidateFactIDs)
 		}
@@ -1081,6 +1101,7 @@ func contextExactInventoryEvidenceConcerns(
 			facts = append(facts, fact)
 		}
 		if anchors := contextExactInventoryDomainAnchors(contextSelectionQuery(pack)); len(anchors) > 0 {
+			allFacts := facts
 			anchoredFacts := make([]scan.AgentContextFactRecord, 0, len(facts))
 			for _, fact := range facts {
 				if contextSourceFactMatchesDomain(fact, anchors) {
@@ -1089,6 +1110,28 @@ func contextExactInventoryEvidenceConcerns(
 			}
 			if len(anchoredFacts) > 0 {
 				facts = anchoredFacts
+				if concern.kind == contextConcernAuth {
+					anchoredPaths := make(map[string]bool, len(anchoredFacts))
+					for _, fact := range anchoredFacts {
+						anchoredPaths[contextEvidenceInventoryPathKey(fact.Project, fact.File)] = true
+					}
+					for _, fact := range allFacts {
+						if contextExactInventoryAuthenticationOwnerFact(fact) &&
+							anchoredPaths[contextEvidenceInventoryPathKey(fact.Project, fact.File)] {
+							facts = append(facts, fact)
+						}
+					}
+				}
+				if concern.kind == contextConcernConfiguration {
+					for _, fact := range allFacts {
+						if contextRequestedConfigurationFactScore(
+							contextSelectionQuery(pack),
+							fact,
+						) > 0 {
+							facts = append(facts, fact)
+						}
+					}
+				}
 			}
 		}
 		for _, fact := range facts {
@@ -1110,16 +1153,119 @@ func contextExactInventoryEvidenceConcerns(
 	}
 
 	groups := make([]*exactInventoryGroup, 0, len(groupsByKey))
+	query := contextSelectionQuery(pack)
+	semanticQueryTokens := contextSourceConcernSemanticQueryTokens(query)
+	anchorTokens := contextSourceAnchorTokens(pack, factByID)
+	requestsProduction := contextTokenSetContainsAny(
+		contextExpandedTokenSet(query),
+		"prod", "production", "produktion", "produktions", "produktionsdatei", "produktionsdateien",
+	)
+	explicitProjects := make(map[string]bool)
+	for project := range contextProjectAliases(index.Facts, index.Coverage) {
+		if contextQueryContainsProjectPath(query, project) {
+			explicitProjects[project] = true
+		}
+	}
 	for _, group := range groupsByKey {
+		factsByID := make(map[string]scan.AgentContextFactRecord, len(group.facts))
+		for _, fact := range group.facts {
+			factsByID[fact.ID] = fact
+		}
+		group.facts = group.facts[:0]
+		for _, fact := range factsByID {
+			group.facts = append(group.facts, fact)
+		}
+		if group.kind == contextConcernConfiguration {
+			bestRequestedScore := 0
+			for _, fact := range group.facts {
+				bestRequestedScore = max(
+					bestRequestedScore,
+					contextRequestedConfigurationFactScore(query, fact),
+				)
+			}
+			if bestRequestedScore > 0 {
+				requestedFacts := group.facts[:0]
+				for _, fact := range group.facts {
+					if contextRequestedConfigurationFactScore(query, fact) == bestRequestedScore {
+						requestedFacts = append(requestedFacts, fact)
+					}
+				}
+				group.facts = requestedFacts
+			}
+		}
+		if group.kind == contextConcernAuth {
+			internalFacts := make([]scan.AgentContextFactRecord, 0, len(group.facts))
+			if contextQueryRequestsInternalInterface(query) {
+				for _, fact := range group.facts {
+					if strings.EqualFold(strings.TrimSpace(fact.Kind), "endpoint_security") &&
+						contextExactInventoryInternalInterfaceFact(fact) {
+						internalFacts = append(internalFacts, fact)
+					}
+				}
+			}
+			if len(internalFacts) > 0 {
+				group.facts = internalFacts
+			} else {
+				ownerFacts := make([]scan.AgentContextFactRecord, 0, len(group.facts))
+				for _, fact := range group.facts {
+					if contextExactInventoryAuthenticationOwnerFact(fact) {
+						ownerFacts = append(ownerFacts, fact)
+					}
+				}
+				if len(ownerFacts) > 0 {
+					group.facts = ownerFacts
+				}
+			}
+		}
 		sort.Slice(group.facts, func(left, right int) bool {
 			if group.facts[left].Line != group.facts[right].Line {
 				return group.facts[left].Line < group.facts[right].Line
 			}
 			return group.facts[left].ID < group.facts[right].ID
 		})
+		base := newContextConcern(
+			group.kind,
+			group.project,
+			true,
+			nil,
+			"exact file inventory evidence",
+		)
+		for _, fact := range group.facts {
+			factScore := contextSourceConcernFactScoreWithTokensAndIndex(
+				fact,
+				base,
+				query,
+				semanticQueryTokens,
+				anchorTokens,
+				index,
+			)
+			if contextQueryRequestsInternalInterface(query) &&
+				contextExactInventoryInternalInterfaceFact(fact) {
+				factScore += 400
+			}
+			group.score = max(group.score, factScore)
+		}
+		if explicitProjects[group.project] {
+			group.score += 400
+		}
+		if requestsProduction {
+			production := false
+			for _, fact := range group.facts {
+				if !contextExactInventoryFactUsesTestScope(fact) {
+					production = true
+					break
+				}
+			}
+			if production {
+				group.score += 1000
+			}
+		}
 		groups = append(groups, group)
 	}
 	sort.Slice(groups, func(left, right int) bool {
+		if groups[left].score != groups[right].score {
+			return groups[left].score > groups[right].score
+		}
 		if groups[left].project != groups[right].project {
 			return groups[left].project < groups[right].project
 		}
@@ -1132,7 +1278,81 @@ func contextExactInventoryEvidenceConcerns(
 		return groups[left].facts[0].ID < groups[right].facts[0].ID
 	})
 	if len(groups) > maximumContextSourcePlanningCandidates {
-		groups = groups[:maximumContextSourcePlanningCandidates]
+		selected := make([]*exactInventoryGroup, 0, maximumContextSourcePlanningCandidates)
+		selectedGroups := make(map[*exactInventoryGroup]bool, maximumContextSourcePlanningCandidates)
+		selectedProjects := make(map[string]map[string]bool)
+		selectedTestScopes := make(map[string]map[bool]bool)
+		groupUsesTestSource := func(group *exactInventoryGroup) bool {
+			for _, fact := range group.facts {
+				if contextExactInventoryFactUsesTestScope(fact) {
+					return true
+				}
+			}
+			return false
+		}
+		appendGroup := func(group *exactInventoryGroup) {
+			if group == nil || selectedGroups[group] || len(selected) == maximumContextSourcePlanningCandidates {
+				return
+			}
+			selected = append(selected, group)
+			selectedGroups[group] = true
+			if selectedProjects[group.kind] == nil {
+				selectedProjects[group.kind] = make(map[string]bool)
+			}
+			selectedProjects[group.kind][group.project] = true
+			if selectedTestScopes[group.kind] == nil {
+				selectedTestScopes[group.kind] = make(map[bool]bool)
+			}
+			selectedTestScopes[group.kind][groupUsesTestSource(group)] = true
+		}
+		for _, kind := range []string{
+			contextConcernAuth,
+			contextConcernConfiguration,
+			contextConcernHTTPContract,
+			contextConcernTests,
+		} {
+			for _, group := range groups {
+				if group.kind == kind {
+					appendGroup(group)
+					break
+				}
+			}
+		}
+		if len(explicitProjects) > 0 {
+			for _, kind := range []string{
+				contextConcernAuth,
+				contextConcernConfiguration,
+				contextConcernHTTPContract,
+				contextConcernTests,
+			} {
+				for _, group := range groups {
+					if group.kind == kind && explicitProjects[group.project] &&
+						!selectedProjects[kind][group.project] {
+						appendGroup(group)
+						break
+					}
+				}
+			}
+		} else {
+			for _, kind := range []string{
+				contextConcernAuth,
+				contextConcernConfiguration,
+				contextConcernHTTPContract,
+				contextConcernTests,
+			} {
+				for _, group := range groups {
+					if group.kind == kind &&
+						!selectedTestScopes[kind][groupUsesTestSource(group)] {
+						appendGroup(group)
+						break
+					}
+				}
+			}
+		}
+		for _, group := range groups {
+			appendGroup(group)
+		}
+		groups = selected
 	}
 
 	result := make([]contextConcern, 0, len(groups))
@@ -1161,9 +1381,34 @@ func contextExactInventoryEvidenceConcerns(
 	return result
 }
 
+func contextQueryRequestsInternalInterface(query string) bool {
+	tokens := contextTokenSet(query)
+	return contextTokenSetContainsAny(
+		tokens,
+		"internal", "intern", "interne", "interner", "internes", "internen", "internem",
+	)
+}
+
+func contextExactInventoryInternalInterfaceFact(fact scan.AgentContextFactRecord) bool {
+	value := strings.ToLower(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.File,
+		fact.Path,
+		fact.Search,
+		fact.Summary,
+	}, " "))
+	tokens := contextExpandedTokenSet(value)
+	return contextTokenSetContainsAny(tokens, "internal", "management", "mgmt") ||
+		strings.Contains(value, "/internal/") ||
+		strings.Contains(value, "management") ||
+		strings.Contains(compactContextIdentifier(value), "mgmt")
+}
+
 func contextExactInventoryConcernKind(kind string) bool {
 	return kind == contextConcernAuth ||
 		kind == contextConcernConfiguration ||
+		kind == contextConcernHTTPContract ||
 		kind == contextConcernTests
 }
 
@@ -1174,12 +1419,87 @@ func contextExactInventoryFactMatches(kind string, fact scan.AgentContextFactRec
 	}
 	switch kind {
 	case contextConcernAuth:
-		return normalizedContextConcernKind(fact.Kind) == contextConcernAuth
+		return normalizedContextConcernKind(fact.Kind) == contextConcernAuth ||
+			strings.EqualFold(strings.TrimSpace(fact.Kind), "endpoint_security") ||
+			contextExactInventoryAuthenticationOwnerFact(fact)
 	case contextConcernConfiguration:
 		return normalizedContextConcernKind(fact.Kind) == contextConcernConfiguration
+	case contextConcernHTTPContract:
+		switch strings.ToLower(strings.TrimSpace(fact.Kind)) {
+		case "api_contract", "api_endpoint", "http_contract":
+			return true
+		default:
+			return false
+		}
 	case contextConcernTests:
-		return strings.EqualFold(strings.TrimSpace(fact.Kind), "test") &&
-			contextFactUsesTestSource(fact) && !isContextConfigurationResource(fact.File)
+		return contextExactInventoryExecutableTestFact(fact)
+	default:
+		return false
+	}
+}
+
+func contextExactInventoryAuthenticationOwnerFact(fact scan.AgentContextFactRecord) bool {
+	if !strings.EqualFold(strings.TrimSpace(fact.Kind), "symbol") ||
+		contextFactUsesTestSource(fact) {
+		return false
+	}
+	fileIdentity := compactContextIdentifier(
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	)
+	if fileIdentity == "" ||
+		!strings.Contains(fileIdentity, "auth") &&
+			!strings.Contains(fileIdentity, "security") {
+		return false
+	}
+	for _, identity := range []string{
+		fact.Name,
+		contextIdentifierLeaf(fact.Qualified),
+	} {
+		if compactContextIdentifier(identity) == fileIdentity {
+			return true
+		}
+	}
+	return false
+}
+
+func contextExactInventoryExecutableTestFact(fact scan.AgentContextFactRecord) bool {
+	if !contextFactUsesTestSource(fact) || isContextConfigurationResource(fact.File) {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(fact.Kind), "test") {
+		return true
+	}
+	if !strings.EqualFold(strings.TrimSpace(fact.Kind), "symbol") {
+		return false
+	}
+	for _, value := range []string{
+		fact.Name,
+		fact.Qualified,
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	} {
+		identifier := compactContextIdentifier(value)
+		if strings.HasSuffix(identifier, "test") ||
+			strings.HasSuffix(identifier, "tests") ||
+			strings.HasSuffix(identifier, "spec") {
+			return true
+		}
+	}
+	return false
+}
+
+func contextExactInventoryFactUsesTestScope(fact scan.AgentContextFactRecord) bool {
+	if contextFactUsesTestSource(fact) {
+		return true
+	}
+	if !isContextConfigurationResource(fact.File) {
+		return false
+	}
+	base := strings.ToLower(strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)))
+	profile := strings.TrimPrefix(strings.TrimPrefix(base, "application-"), "bootstrap-")
+	profile = compactContextIdentifier(profile)
+	switch profile {
+	case "test", "tests", "unittest", "integrationtest", "componenttest", "contracttest", "e2etest", "smoketest", "systemtest":
+		return true
 	default:
 		return false
 	}
@@ -1220,7 +1540,9 @@ func contextExactInventoryScaffoldingTokens() map[string]bool {
 		"production produktions produktion produktionsdatei produktionsdateien prod",
 		"test tests testing executable ausführbar ausführbarer ausfuhrbar ausfuhrbarer",
 		"provide provided show include current required release ready change for and",
+		"change changed changing create created creating modify modified modifying update updated updating add added adding",
 		"stelle stellen stellt stellst sie ihnen bitte bereit liefere liefern zeige einschließen aktuell erforderlich freigabe bereitstellung änderung aenderung für und",
+		"ändere ändern ändernde geändert anlegen angelegt anzulegen anzulegende erstellen erstellt",
 		"ein eine einer eines einen einem die der das den dem des",
 		"client clients provider providers server servers consumer consumers",
 		"klient klienten anbieter anbieterin anbieterinnen dienstanbieter server servern konsument konsumenten verbraucher verbrauchern",
@@ -2884,6 +3206,7 @@ func contextSourceOptionConcernsWithAction(
 		}
 		if concern.kind == contextConcernAuth &&
 			concern.facet != "client_transport" &&
+			!concern.exactInventory &&
 			missingTransition &&
 			!contextSourceSectionSupportsGlobalServerPolicy(section) {
 			continue
@@ -2996,6 +3319,21 @@ func contextSourceSectionSupportsEvidence(
 		concern.kind != contextConcernTests &&
 		concern.kind != contextConcernSideEffects {
 		return false
+	}
+	if concern.exactInventory {
+		path := strings.TrimPrefix(concern.facet, "exact-file:")
+		if path == concern.facet ||
+			contextEvidenceInventoryPathKey(section.Project, section.Path) !=
+				contextEvidenceInventoryPathKey(concern.project, path) {
+			return false
+		}
+		if concern.kind == contextConcernTests {
+			return contextSourceSectionHasExecutableTest(
+				section,
+				contextSourceSemanticContent(section.Content),
+			)
+		}
+		return strings.TrimSpace(contextSourceSemanticContent(section.Content)) != ""
 	}
 	if concern.facet == "" {
 		return contextSourceSectionSupportsConcern(section, concern)
@@ -3476,6 +3814,14 @@ func contextSourceCandidateQualityForFacts(
 	stableMatches = min(stableMatches, 3)
 	quality := 60*stableMatches + confidence
 	switch family {
+	case contextConcernConfiguration:
+		for _, fact := range facts {
+			quality = max(
+				quality,
+				60*stableMatches+confidence+
+					contextRequestedConfigurationFactScore(contextSelectionQuery(pack), fact),
+			)
+		}
 	case contextConcernDomainModel:
 		quality += 260
 		if dependentDomainModel {
@@ -4426,7 +4772,14 @@ func contextSourceUtilityOption(
 		newConcerns := 0
 		newProjects := 0
 		for _, key := range option.concernKeys {
-			if state.coveredConcerns[key] || concernsByKey[key].exactInventory {
+			concern := concernsByKey[key]
+			if state.coveredConcerns[key] {
+				continue
+			}
+			if concern.exactInventory {
+				if concern.kind == contextConcernAuth {
+					newConcerns++
+				}
 				continue
 			}
 			newConcerns++

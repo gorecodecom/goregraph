@@ -1204,8 +1204,17 @@ func contextQueryRequestsExactEvidenceInventory(query string) bool {
 			hasTestScope = true
 		}
 	}
-	return hasAny("exact", "exakt", "exakte", "exaktes", "exaktem") &&
+	explicitExactInventory := hasAny("exact", "exakt", "exakte", "exaktes", "exaktem") &&
 		hasIdentityNoun && (hasProductionScope || hasTestScope)
+	naturalFilePlan := hasIdentityNoun && hasProductionScope && hasTestScope && hasRawAny(
+		"change", "changed", "changing", "create", "created", "creating",
+		"modify", "modified", "modifying", "update", "updated", "updating",
+		"add", "added", "adding",
+		"ändere", "ändern", "ändernde", "geändert",
+		"anlegen", "angelegt", "anzulegen", "anzulegende",
+		"erstellen", "erstellt",
+	)
+	return explicitExactInventory || naturalFilePlan
 }
 
 func contextValueRequestsConcern(value, kind string) bool {
