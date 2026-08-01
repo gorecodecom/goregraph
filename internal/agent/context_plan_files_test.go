@@ -82,6 +82,27 @@ func TestContextPlanFilesAcceptsInflectedGermanFilePlan(t *testing.T) {
 	}
 }
 
+func TestContextPlanFilesAcceptsAffectedGermanFilePlan(t *testing.T) {
+	const query = "Plane den fehlenden internen API-Vertrag. Nenne die betroffenen Produktions- und Testdateien sowie die erforderlichen Tests."
+	pack := ContextPack{
+		Query: query, selectionQuery: query,
+		Endpoints: []ContextEndpoint{{Provider: "services/catalog"}},
+		Concerns:  []ContextConcern{{Kind: contextConcernTests, Project: "services/jobs"}},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{{
+		ID: "provider-test", Project: "services/jobs", Kind: "symbol",
+		Name: "JobServiceTest", File: "src/test/java/example/JobServiceTest.java",
+		Confidence: "EXACT",
+	}}}
+
+	want := []ContextPlanFile{{
+		Project: "services/jobs", Path: "src/test/java/example/JobServiceTest.java", Use: "provider_test",
+	}}
+	if got := contextPlanFiles(pack, index); !reflect.DeepEqual(got, want) {
+		t.Fatalf("affected German plan files = %#v, want %#v", got, want)
+	}
+}
+
 func TestContextPlanFilesRequiresUnambiguousEntrypointProject(t *testing.T) {
 	const query = "Plan the missing internal HTTP contract, reuse the existing InventoryClient test patterns, and identify the exact production and test files to change or create."
 	pack := ContextPack{

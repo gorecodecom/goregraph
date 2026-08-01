@@ -1209,7 +1209,7 @@ func contextQueryRequestsExactEvidenceInventory(query string) bool {
 	naturalPlanAction := hasRawAny(
 		"change", "changed", "changing", "create", "created", "creating",
 		"modify", "modified", "modifying", "update", "updated", "updating",
-		"add", "added", "adding",
+		"add", "added", "adding", "affected", "impact", "impacted", "impacting",
 		"ändere", "ändern", "ändernde", "geändert",
 		"anlegen", "angelegt", "anzulegen", "anzulegende",
 		"erstellen", "erstellt",
@@ -1218,7 +1218,8 @@ func contextQueryRequestsExactEvidenceInventory(query string) bool {
 		for token := range rawTokens {
 			if strings.HasPrefix(token, "ändernd") ||
 				strings.HasPrefix(token, "anzulegend") ||
-				strings.HasPrefix(token, "erstellend") {
+				strings.HasPrefix(token, "erstellend") ||
+				strings.HasPrefix(token, "betroffen") {
 				naturalPlanAction = true
 				break
 			}
