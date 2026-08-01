@@ -99,10 +99,14 @@ EOF
 
 cat >"$temporary_directory/bounded-omissions.jsonl" <<'EOF'
 {"type":"item.completed","item":{"id":"before-pack","type":"command_execution","command":"sed -n '30,32p' /work/services/worker/src/Missing.go","exit_code":0}}
-{"type":"item.completed","item":{"id":"json-pack","type":"mcp_tool_call","tool":"task_context","result":{"content":[{"type":"text","text":"{\"context_id\":\"json-partial\",\"source_coverage\":\"partial\",\"source_sections\":[{\"project\":\"services/worker\",\"path\":\"src/Worker.go\",\"start_line\":10,\"end_line\":20}],\"source_omissions\":[{\"project\":\"services/worker\",\"path\":\"src/Missing.go\",\"start_line\":30,\"end_line\":40},{\"project\":\"services/worker\",\"path\":\"src/Other.go\",\"start_line\":50,\"end_line\":60},{\"project\":\"services/worker\",\"path\":\"src/Unbounded.go\"}]}"}]}}}
+{"type":"item.completed","item":{"id":"json-pack","type":"mcp_tool_call","tool":"task_context","result":{"content":[{"type":"text","text":"{\"context_id\":\"json-partial\",\"source_coverage\":\"partial\",\"source_sections\":[{\"project\":\"services/worker\",\"path\":\"src/Worker.go\",\"start_line\":10,\"end_line\":20}],\"source_omissions\":[{\"project\":\"services/worker\",\"path\":\"src/Missing.go\",\"start_line\":30,\"end_line\":40},{\"project\":\"services/worker\",\"path\":\"src/Other.go\",\"start_line\":50,\"end_line\":60},{\"project\":\"services/worker\",\"path\":\"src/Unbounded.go\"},{\"project\":\"services/worker\",\"path\":\"src/main/resources/application.properties\",\"start_line\":65,\"end_line\":66},{\"project\":\"services/worker\",\"path\":\"src/main/resources/application.yml\",\"start_line\":1,\"end_line\":2},{\"project\":\"services/worker\",\"path\":\"src/main/resources/bootstrap.yaml\",\"start_line\":3,\"end_line\":4}]}"}]}}}
 {"type":"item.completed","item":{"id":"exact","type":"command_execution","command":"sed -n '30,40p' /work/services/worker/src/Missing.go","exit_code":0}}
 {"type":"item.completed","item":{"id":"exact","type":"command_execution","command":"sed -n '30,40p' /work/services/worker/src/Missing.go","exit_code":0}}
 {"type":"item.completed","item":{"id":"subset","type":"command_execution","command":"sed -n '32,35p' /work/services/worker/src/Missing.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"brace-print","type":"command_execution","command":"sed -n '33,34{=;p;}' /work/services/worker/src/Missing.go","exit_code":0}}
+{"type":"item.completed","item":{"id":"configuration","type":"command_execution","command":"sed -n '65,66{=;p;}' /work/services/worker/src/main/resources/application.properties","exit_code":0}}
+{"type":"item.completed","item":{"id":"configuration-yml","type":"command_execution","command":"sed -n '1,2p' /work/services/worker/src/main/resources/application.yml","exit_code":0}}
+{"type":"item.completed","item":{"id":"configuration-yaml","type":"command_execution","command":"sed -n '3,4p' /work/services/worker/src/main/resources/bootstrap.yaml","exit_code":0}}
 {"type":"item.completed","item":{"id":"widened","type":"command_execution","command":"sed -n '29,40p' /work/services/worker/src/Missing.go","exit_code":0}}
 {"type":"item.completed","item":{"id":"wrong-path","type":"command_execution","command":"sed -n '30,40p' /work/services/worker/src/Wrong.go","exit_code":0}}
 {"type":"item.completed","item":{"id":"unbounded","type":"command_execution","command":"cat /work/services/worker/src/Unbounded.go","exit_code":0}}
@@ -116,7 +120,7 @@ cat >"$temporary_directory/bounded-omissions.jsonl" <<'EOF'
 EOF
 
 bounded_row=$(bash "$analyzer" "$temporary_directory/bounded-omissions.jsonl")
-[ "$bounded_row" = $'13\t2\t2\t0\t0\t11\t9\t3\t8\t1\t5\t0' ] ||
+[ "$bounded_row" = $'17\t2\t2\t0\t0\t15\t13\t7\t8\t1\t8\t0' ] ||
   fail "bounded omission row = $bounded_row"
 
 legacy_tokens=$(bash "$analyzer" --tokens "$temporary_directory/included-rereads.jsonl")

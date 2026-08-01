@@ -662,10 +662,15 @@ func recordCommandTarget(target string, metrics *metrics) {
 
 func sedSourceRange(script string) (int, int) {
 	script = strings.TrimSpace(script)
-	if len(script) == 0 || script[len(script)-1] != 'p' {
-		return 0, 0
+	address := ""
+	if strings.HasSuffix(script, "{=;p;}") {
+		address = strings.TrimSpace(strings.TrimSuffix(script, "{=;p;}"))
+	} else {
+		if len(script) == 0 || script[len(script)-1] != 'p' {
+			return 0, 0
+		}
+		address = strings.TrimSpace(strings.TrimSuffix(script, "p"))
 	}
-	address := strings.TrimSpace(strings.TrimSuffix(script, "p"))
 	parts := strings.Split(address, ",")
 	if len(parts) > 2 {
 		return 0, 0
@@ -771,7 +776,7 @@ func sameSourcePath(readPath, includedPath string) bool {
 
 func isSourcePath(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".asm", ".bash", ".c", ".cc", ".clj", ".cpp", ".cs", ".css", ".cxx", ".dart", ".elm", ".ex", ".exs", ".fs", ".fsi", ".go", ".groovy", ".gvy", ".h", ".hpp", ".hrl", ".hs", ".html", ".java", ".jl", ".js", ".jsx", ".kt", ".kts", ".lua", ".m", ".mjs", ".mm", ".php", ".pl", ".pm", ".py", ".r", ".rb", ".rs", ".scala", ".scss", ".sh", ".sol", ".sql", ".swift", ".ts", ".tsx", ".vue", ".zig", ".zsh":
+	case ".asm", ".bash", ".c", ".cc", ".clj", ".cpp", ".cs", ".css", ".cxx", ".dart", ".elm", ".ex", ".exs", ".fs", ".fsi", ".go", ".groovy", ".gvy", ".h", ".hpp", ".hrl", ".hs", ".html", ".java", ".jl", ".js", ".jsx", ".kt", ".kts", ".lua", ".m", ".mjs", ".mm", ".php", ".pl", ".pm", ".properties", ".py", ".r", ".rb", ".rs", ".scala", ".scss", ".sh", ".sol", ".sql", ".swift", ".ts", ".tsx", ".vue", ".yaml", ".yml", ".zig", ".zsh":
 		return true
 	default:
 		return false

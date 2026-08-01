@@ -225,7 +225,7 @@ func renderAgentBenchmarkMetrics() string {
 		"`reasoning_output_tokens` is recorded separately, and reasoning output is already part of output, so it is not added again.\n\n" +
 		"`external_skill_read_calls` counts transcript-observed read or search targets outside the benchmark workspace that resolve to a skill bundle. " +
 		"Controlled baseline and assisted release runs require zero; normal GoreGraph workflows may continue to use task-scoped skills.\n\n" +
-		"`source_read_calls` remains the total number of direct source-read terminal calls. " +
+		"`source_read_calls` remains the total number of direct source-read terminal calls; Spring `.properties`, `.yml`, and `.yaml` configuration resources are included as source targets. " +
 		"`bounded_omission_read_calls` counts exact ranged reads wholly authorized by an earlier full Context Pack. " +
 		"`unauthorized_source_read_calls` counts every other source read, search, or inventory terminal call. " +
 		"A compound call is bounded only when every source target is bounded, and included-source overlap is never bounded. " +
