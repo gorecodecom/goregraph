@@ -823,6 +823,168 @@ func TestReconcileContextSourceInventoryAddsRepresentedEvidenceOnly(t *testing.T
 	}
 }
 
+func TestReconciliationReservesFinalOmissionsAfterPriorityChurn(t *testing.T) {
+	const budgetTokens = 800
+	request := ContextRequest{BudgetTokens: budgetTokens, MaxFiles: DefaultContextMaxFiles}
+	concerns := make([]contextConcern, 0, 6)
+	options := make([]contextSourceOption, 0, 6)
+	candidates := make([]sourceCandidate, 0, 6)
+	files := make([]ContextFile, 0, 3)
+	for index := 0; index < 6; index++ {
+		project := fmt.Sprintf("services/omission-%d", index)
+		path := fmt.Sprintf("src/Evidence%d.java", index)
+		factID := fmt.Sprintf("evidence-%d", index)
+		reason := fmt.Sprintf("short omission %d", index)
+		rank := 100 - index
+		content := fmt.Sprintf("final class Evidence%d {}", index)
+		if index >= 2 && index <= 4 {
+			reason = fmt.Sprintf(
+				"long omission %d: %s",
+				index,
+				strings.Repeat("release evidence remains unavailable; ", 14),
+			)
+		}
+		if index == 5 {
+			rank = 1
+			content = "void oversizedEvidence() {\n" + strings.Repeat("  operation();\n", 50) + "}"
+		}
+		base := newContextConcern(
+			contextConcernConfiguration,
+			project,
+			true,
+			[]string{factID},
+			reason,
+		)
+		concern := newContextEvidenceConcern(
+			base,
+			fmt.Sprintf("inventory-%d", index),
+			[]string{factID},
+			reason,
+		)
+		concern.rank = rank
+		concerns = append(concerns, concern)
+		candidate := sourceCandidate{
+			FactID: factID, FactIDs: []string{factID}, Project: project,
+			Path: path, StartLine: 1, EndLine: 3, Role: "call_chain",
+			Kind: contextConcernConfiguration,
+		}
+		candidates = append(candidates, candidate)
+		section := ContextSourceSection{
+			Project: project, Path: path, StartLine: 1, EndLine: 3,
+			Role: "call_chain", RenderMode: "declaration_body", Content: content,
+		}
+		estimated, err := EstimateContextTokens(section)
+		if err != nil {
+			t.Fatal(err)
+		}
+		options = append(options, contextSourceOption{
+			candidate: candidate, section: section, estimated: estimated,
+			concernKeys: []string{concern.key}, projectKey: project,
+			required: true, candidateQuality: 100 - index, profiled: true,
+		})
+		if index < 2 || index == 5 {
+			files = append(files, ContextFile{
+				Project: project, Path: path, StartLine: 1, EndLine: 3,
+				Role: "call_chain", Reason: "selected required configuration evidence",
+			})
+		}
+	}
+	pack, err := finalizeContextEstimate(ContextPack{
+		Schema: 1, Query: "prepare omission reserve evidence", Confidence: "EXACT",
+		BudgetTokens: budgetTokens, Files: files,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialCovered := contextSourceCoverageFromFinalSections(pack, concerns, options)
+	initialOmissions := contextSourceEvidenceOmissionsWithOptions(
+		pack,
+		scan.AgentContextIndexRecord{},
+		concerns,
+		candidates,
+		options,
+		nil,
+		initialCovered,
+	)
+	if got := contextSourceOmissionPaths(initialOmissions); !reflect.DeepEqual(got, []string{
+		"src/Evidence0.java",
+		"src/Evidence1.java",
+		"src/Evidence2.java",
+	}) {
+		t.Fatalf("initial omission priority = %v, want first two short records then first long record", got)
+	}
+	reserveOmissions := contextSourceEvidenceOmissionsForReserve(
+		pack,
+		scan.AgentContextIndexRecord{},
+		concerns,
+		candidates,
+		options,
+		nil,
+		initialCovered,
+	)
+	reconcileRequest, err := contextSourceRequestWithOmissionReserve(pack, request, reserveOmissions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciled, err := reconcileContextSourceInventory(pack, reconcileRequest, options, concerns, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	covered := contextSourceCoverageFromFinalSections(reconciled, concerns, options)
+	for _, key := range []string{concerns[0].key, concerns[1].key} {
+		if !covered[key] {
+			t.Fatalf("reconciliation did not cover initial priority concern %q", key)
+		}
+	}
+	finalOmissions := contextSourceEvidenceOmissionsWithOptions(
+		reconciled,
+		scan.AgentContextIndexRecord{},
+		concerns,
+		candidates,
+		options,
+		nil,
+		covered,
+	)
+	wantFinalPaths := []string{
+		"src/Evidence2.java",
+		"src/Evidence3.java",
+		"src/Evidence4.java",
+	}
+	if got := contextSourceOmissionPaths(finalOmissions); !reflect.DeepEqual(got, wantFinalPaths) {
+		t.Fatalf("final omission priority = %v, want %v", got, wantFinalPaths)
+	}
+	final := reconciled
+	for _, omission := range finalOmissions {
+		candidatePack := cloneContextPack(final)
+		candidatePack.SourceOmissions = append(candidatePack.SourceOmissions, omission)
+		candidatePack, err = finalizeContextEstimate(candidatePack)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fits, fitErr := contextSourcePackFits(candidatePack, request)
+		if fitErr != nil {
+			t.Fatal(fitErr)
+		}
+		if fits {
+			final = candidatePack
+		}
+	}
+	if got := contextSourceOmissionPaths(final.SourceOmissions); !reflect.DeepEqual(got, wantFinalPaths) {
+		t.Fatalf("final omissions = %v, want all priority-ordered omissions %v", got, wantFinalPaths)
+	}
+	if final.EstimatedTokens > request.BudgetTokens {
+		t.Fatalf("final estimate = %d, want at most %d", final.EstimatedTokens, request.BudgetTokens)
+	}
+}
+
+func contextSourceOmissionPaths(omissions []ContextSourceOmission) []string {
+	paths := make([]string, 0, len(omissions))
+	for _, omission := range omissions {
+		paths = append(paths, omission.Path)
+	}
+	return paths
+}
+
 func TestContextSourceCandidatesTreatTestProfileConfigurationAsConfiguration(t *testing.T) {
 	pack := ContextPack{
 		Query:                 "Provide configuration evidence.",

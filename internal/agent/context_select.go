@@ -225,7 +225,7 @@ func selectContextSourceOptions(
 	reconcileRequest, err := contextSourceRequestWithOmissionReserve(
 		pack,
 		request,
-		contextSourceEvidenceOmissionsWithOptions(
+		contextSourceEvidenceOmissionsForReserve(
 			pack,
 			loaded.Index,
 			concerns,
@@ -4617,6 +4617,63 @@ func contextSourceEvidenceOmissionsWithOptions(
 	failures map[string]string,
 	covered map[string]bool,
 ) []ContextSourceOmission {
+	return contextSourceEvidenceOmissionsWithOptionsLimit(
+		pack,
+		index,
+		concerns,
+		candidates,
+		options,
+		failures,
+		covered,
+		MaxContextSourceOmissions,
+	)
+}
+
+func contextSourceEvidenceOmissionsForReserve(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	concerns []contextConcern,
+	candidates []sourceCandidate,
+	options []contextSourceOption,
+	failures map[string]string,
+	covered map[string]bool,
+) []ContextSourceOmission {
+	omissions := contextSourceEvidenceOmissionsWithOptionsLimit(
+		pack,
+		index,
+		concerns,
+		candidates,
+		options,
+		failures,
+		covered,
+		0,
+	)
+	result := slices.Clone(omissions)
+	sort.SliceStable(result, func(left, right int) bool {
+		return contextSourceOmissionBudgetCost(result[left]) >
+			contextSourceOmissionBudgetCost(result[right])
+	})
+	return result
+}
+
+func contextSourceOmissionBudgetCost(omission ContextSourceOmission) int {
+	body, err := json.Marshal(omission)
+	if err != nil {
+		return 0
+	}
+	return len(body)
+}
+
+func contextSourceEvidenceOmissionsWithOptionsLimit(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	concerns []contextConcern,
+	candidates []sourceCandidate,
+	options []contextSourceOption,
+	failures map[string]string,
+	covered map[string]bool,
+	limit int,
+) []ContextSourceOmission {
 	grouped := map[string]ContextSourceOmission{}
 	reasons := map[string][]string{}
 	ranks := map[string]int{}
@@ -4684,7 +4741,11 @@ func contextSourceEvidenceOmissionsWithOptions(
 		}
 		return keys[left] < keys[right]
 	})
-	result := make([]ContextSourceOmission, 0, min(len(keys), MaxContextSourceOmissions))
+	capacity := len(keys)
+	if limit > 0 {
+		capacity = min(capacity, limit)
+	}
+	result := make([]ContextSourceOmission, 0, capacity)
 	for _, key := range keys {
 		omission := grouped[key]
 		if len(reasons[key]) > 0 {
@@ -4692,7 +4753,7 @@ func contextSourceEvidenceOmissionsWithOptions(
 			omission.Reason = "missing evidence: " + strings.Join(values, "; ")
 		}
 		result = append(result, omission)
-		if len(result) == MaxContextSourceOmissions {
+		if limit > 0 && len(result) == limit {
 			break
 		}
 	}
