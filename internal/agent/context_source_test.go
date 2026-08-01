@@ -6444,34 +6444,93 @@ func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
 func TestContextRequestedDomainModelIDsExcludeInferredPrimaryDuplicateUnlessExplicit(t *testing.T) {
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
 		{
-			ID: "caller-order", Project: "services/caller", Kind: contextConcernDomainModel,
-			Name: "Order", Qualified: "caller.Order",
+			ID: "caller-order-response", Project: "services/caller", Kind: "class",
+			Name: "OrderResponse", Qualified: "caller.OrderResponse",
+			File: "src/main/java/caller/OrderResponse.java",
 		},
 		{
-			ID: "provider-order", Project: "services/provider", Kind: contextConcernDomainModel,
-			Name: "Order", Qualified: "provider.Order",
+			ID: "provider-order-response", Project: "services/provider", Kind: "symbol",
+			Name: "OrderResponse", Qualified: "provider.OrderResponse",
+			File: "src/main/java/provider/OrderResponse.java",
 		},
 	}}
 	concerns := []contextConcern{newContextConcern(
 		contextConcernDomainModel,
 		"",
 		true,
-		[]string{"caller-order", "provider-order"},
+		[]string{"caller-order-response", "provider-order-response"},
 		"requested domain models",
 	)}
 
 	generic := ContextPack{
-		Query:       "Compare domain models across services.",
+		Query:       "Compare response models across services.",
 		Entrypoints: []ContextLocation{{Project: "services/caller"}},
+		selectedSourceFactIDs: []string{
+			"caller-order-response", "provider-order-response",
+		},
 	}
-	if got := contextRequestedDomainModelIDsFromConcerns(generic, index, concerns); got["caller-order"] || !got["provider-order"] {
-		t.Fatalf("generic requested models = %#v, want only the cross-service model", got)
+	for name, planned := range map[string][]contextConcern{
+		"selected models":    nil,
+		"planned candidates": concerns,
+	} {
+		t.Run(name, func(t *testing.T) {
+			pack := generic
+			if planned != nil {
+				pack.selectedSourceFactIDs = nil
+			}
+			if got := contextRequestedDomainModelIDsFromConcerns(pack, index, planned); got["caller-order-response"] || !got["provider-order-response"] {
+				t.Fatalf("generic requested models = %#v, want only the cross-service model", got)
+			}
+		})
 	}
 
 	explicit := generic
-	explicit.Query = "Compare caller Order domain model with the provider model."
-	if got := contextRequestedDomainModelIDsFromConcerns(explicit, index, concerns); !got["caller-order"] || !got["provider-order"] {
-		t.Fatalf("explicit requested models = %#v, want both named models", got)
+	explicit.Query = "Compare caller.OrderResponse with the provider model."
+	for name, planned := range map[string][]contextConcern{
+		"selected models":    nil,
+		"planned candidates": concerns,
+	} {
+		t.Run("explicit "+name, func(t *testing.T) {
+			pack := explicit
+			if planned != nil {
+				pack.selectedSourceFactIDs = nil
+			}
+			if got := contextRequestedDomainModelIDsFromConcerns(pack, index, planned); !got["caller-order-response"] || !got["provider-order-response"] {
+				t.Fatalf("explicit requested models = %#v, want both named models", got)
+			}
+		})
+	}
+
+	preorder := ContextPack{
+		Query:       "Compare preorder models across services.",
+		Entrypoints: []ContextLocation{{Project: "services/caller"}},
+	}
+	order := scan.AgentContextFactRecord{
+		Project: "services/caller", Kind: "class", Name: "Order",
+		Qualified: "caller.Order", File: "src/main/java/caller/Order.java",
+	}
+	orderIndex := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		order,
+		{
+			Project: "services/provider", Kind: "class", Name: "Order",
+			Qualified: "provider.Order", File: "src/main/java/provider/Order.java",
+		},
+	}}
+	if !contextInferredPrimaryProjectModelDuplicate(preorder, orderIndex, order) {
+		t.Fatal("preorder query retained the unrelated caller Order model")
+	}
+
+}
+
+func TestContextInferredPrimaryProjectModelDuplicateRequiresProjectIdentity(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{Project: "services/provider", Name: "OrderResponse", Qualified: "provider.OrderResponse"},
+	}}
+	pack := ContextPack{Entrypoints: []ContextLocation{{Project: ""}}}
+	if contextInferredPrimaryProjectModelDuplicate(pack, index, scan.AgentContextFactRecord{
+		Project: "", Name: "OrderResponse", Qualified: "caller.OrderResponse",
+	}) {
+		t.Fatal("empty project model was treated as an inferred primary-project duplicate")
 	}
 }
 
@@ -6493,15 +6552,27 @@ func TestContextSourceConcernsRoleGateCredentialOnlyCallerAuthentication(t *test
 		t.Fatalf("credential-only caller authentication concern = %#v, want optional", concerns)
 	}
 
-	exactAuthentication := credentialOnly
-	exactAuthentication.Facts = append(exactAuthentication.Facts, scan.AgentContextFactRecord{
-		ID: "caller-security", Project: "services/caller", Kind: "security",
-		Name: "CallerSecurity", Qualified: "caller.CallerSecurity",
-	})
-	pack.selectedSourceFactIDs = append(pack.selectedSourceFactIDs, "caller-security")
-	concerns = contextSourceConcerns(pack, exactAuthentication)
-	if concern, ok := findContextConcern(concerns, contextConcernAuth+":services/caller"); !ok || !concern.required {
-		t.Fatalf("exact caller authentication concern = %#v, want required", concerns)
+	for _, test := range []struct {
+		name     string
+		project  string
+		required bool
+	}{
+		{name: "provider security", project: "services/provider", required: false},
+		{name: "caller security", project: "services/caller", required: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			exactAuthentication := credentialOnly
+			exactAuthentication.Facts = append(exactAuthentication.Facts, scan.AgentContextFactRecord{
+				ID: "security", Project: test.project, Kind: "security",
+				Name: "CallerSecurity", Qualified: "caller.CallerSecurity",
+			})
+			withSecurity := pack
+			withSecurity.selectedSourceFactIDs = append(withSecurity.selectedSourceFactIDs, "security")
+			concerns = contextSourceConcerns(withSecurity, exactAuthentication)
+			if concern, ok := findContextConcern(concerns, contextConcernAuth+":services/caller"); !ok || concern.required != test.required {
+				t.Fatalf("authentication concern = %#v, want required %t", concerns, test.required)
+			}
+		})
 	}
 }
 

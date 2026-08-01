@@ -505,6 +505,8 @@ func contextAuthenticationConcernHasRoleEvidence(
 	}
 	for _, fact := range index.Facts {
 		if candidates[fact.ID] &&
+			(concern.project == "" ||
+				normalizeContextProject(fact.Project) == concern.project) &&
 			normalizedContextConcernKind(fact.Kind) == contextConcernAuth {
 			return true
 		}
@@ -2187,17 +2189,16 @@ func contextInferredPrimaryProjectModelDuplicate(
 	index scan.AgentContextIndexRecord,
 	model scan.AgentContextFactRecord,
 ) bool {
-	if len(pack.Entrypoints) == 0 ||
-		normalizeContextProject(model.Project) !=
-			normalizeContextProject(pack.Entrypoints[0].Project) {
+	if len(pack.Entrypoints) == 0 {
 		return false
 	}
-	identity := compactContextIdentifier(firstNonEmptyContext(
-		model.Name,
-		model.Qualified,
-	))
-	if identity == "" ||
-		strings.Contains(compactContextIdentifier(contextSelectionQuery(pack)), identity) {
+	entrypointProject := normalizeContextProject(pack.Entrypoints[0].Project)
+	modelProject := normalizeContextProject(model.Project)
+	if entrypointProject == "" || modelProject == "" || modelProject != entrypointProject {
+		return false
+	}
+	identity := compactContextIdentifier(firstNonEmptyContext(model.Name, model.Qualified))
+	if identity == "" || contextQueryExplicitlyNamesModel(pack, model) {
 		return false
 	}
 	for _, fact := range index.Facts {
@@ -2206,6 +2207,33 @@ func contextInferredPrimaryProjectModelDuplicate(
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+func contextQueryExplicitlyNamesModel(
+	pack ContextPack,
+	model scan.AgentContextFactRecord,
+) bool {
+	queryTokens := contextTokenSet(contextSelectionQuery(pack))
+	for _, identity := range []string{
+		model.Name,
+		contextIdentifierLeaf(model.Qualified),
+	} {
+		identityTokens := contextTokenSet(identity)
+		if len(identityTokens) == 0 {
+			continue
+		}
+		matches := true
+		for token := range identityTokens {
+			if !queryTokens[token] {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return true
+		}
 	}
 	return false
 }
