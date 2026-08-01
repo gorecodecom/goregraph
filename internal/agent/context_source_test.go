@@ -1392,6 +1392,190 @@ func TestContextEvidenceInventoryBalancesPublicAreasBeforeRepeatedFacets(t *test
 	}
 }
 
+func TestContextEvidenceInventoryKeepsProfiledCrossProjectPrimaryRoute(t *testing.T) {
+	const (
+		entrypointProject = "services/catalog"
+		providerProject   = "services/jobs"
+		providerPath      = "src/main/java/example/JobManagementController.java"
+		servicePath       = "src/main/java/example/JobService.java"
+	)
+	request := ContextRequest{
+		BudgetTokens: DefaultContextBudgetTokens,
+		MaxFiles:     DefaultContextMaxFiles,
+	}
+	primaryPath := newContextConcern(
+		contextConcernPrimaryPath,
+		"",
+		true,
+		[]string{
+			"catalog-route", "job-controller", "job-service", "job-controller-test",
+			"unprofiled-route", "pathless-route", "projectless-route",
+		},
+		"reachable production path",
+	)
+
+	option := func(id, project, path, role, kind string, profiled bool, concernKeys ...string) contextSourceOption {
+		return contextSourceOption{
+			candidate: sourceCandidate{
+				FactID: id, FactIDs: []string{id}, Project: project, Path: path,
+				Role: role, Kind: kind,
+			},
+			section: ContextSourceSection{
+				Project: project, Path: path, StartLine: 1, EndLine: 3,
+				Role: role, RenderMode: "declaration_body", Content: "final class Evidence {}",
+			},
+			concernKeys: concernKeys,
+			projectKey:  project,
+			profiled:    profiled,
+		}
+	}
+
+	caller := option(
+		"catalog-route", entrypointProject,
+		"src/main/java/example/CatalogController.java", "entrypoint", "route", true,
+		primaryPath.key,
+	)
+	provider := option(
+		"job-controller", providerProject, providerPath, "call_chain", "route", true,
+		primaryPath.key,
+	)
+	providerService := option(
+		"job-service", providerProject, servicePath, "call_chain", "symbol", true,
+		primaryPath.key,
+	)
+	testRoute := option(
+		"job-controller-test", providerProject,
+		"src/test/java/example/JobManagementControllerTest.java", "test", "route", true,
+		primaryPath.key,
+	)
+	unprofiledRoute := option(
+		"unprofiled-route", providerProject,
+		"src/main/java/example/UnprofiledJobController.java", "call_chain", "api_endpoint", false,
+		primaryPath.key,
+	)
+	pathlessRoute := option(
+		"pathless-route", providerProject, "", "call_chain", "backend_handler", true,
+		primaryPath.key,
+	)
+	projectlessRoute := option(
+		"projectless-route", "",
+		"src/main/java/example/ProjectlessJobController.java", "call_chain", "route", true,
+		primaryPath.key,
+	)
+
+	concerns := []contextConcern{primaryPath}
+	options := []contextSourceOption{
+		caller,
+		provider,
+		providerService,
+		testRoute,
+		unprofiledRoute,
+		pathlessRoute,
+		projectlessRoute,
+	}
+	files := []ContextFile{
+		{
+			Project: entrypointProject, Path: caller.section.Path,
+			Role: "entrypoint", Reason: "selected entrypoint",
+		},
+		{
+			Project: entrypointProject, Path: "src/main/java/example/JobClient.java",
+			Role: "contract", Reason: "selected contract",
+		},
+		{
+			Project: providerProject, Path: servicePath,
+			Role: "related_project", Reason: "full task project match",
+		},
+	}
+	supportCount := DefaultContextMaxFiles - len(files)
+	for index := 0; index < supportCount; index++ {
+		project := fmt.Sprintf("libraries/evidence-%02d", index)
+		path := fmt.Sprintf("src/main/java/example/Evidence%02d.java", index)
+		concern := newContextConcern(
+			contextConcernConfiguration,
+			project,
+			true,
+			[]string{fmt.Sprintf("evidence-%02d", index)},
+			"required public evidence",
+		)
+		concerns = append(concerns, concern)
+		options = append(options, option(
+			fmt.Sprintf("evidence-%02d", index), project, path, "call_chain", "symbol", true, concern.key,
+		))
+		files = append(files, ContextFile{
+			Project: project, Path: path,
+			Role: "call_chain", Reason: "selected required configuration evidence",
+		})
+	}
+	pack, err := finalizeContextEstimate(ContextPack{
+		Schema:         1,
+		Query:          "prepare cross-project job release evidence",
+		selectionQuery: "provide exact production and test file inventory for cross-project job release evidence",
+		BudgetTokens:   request.BudgetTokens,
+		Entrypoints: []ContextLocation{{
+			Project: entrypointProject, File: caller.section.Path,
+		}},
+		Files: files,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	candidates := contextEvidenceInventoryCandidates(pack, options, concerns)
+	primaryCandidates := []ContextFile{}
+	for _, candidate := range candidates {
+		if candidate.facets[primaryPath.key] {
+			primaryCandidates = append(primaryCandidates, candidate.file)
+		}
+	}
+	if !reflect.DeepEqual(primaryCandidates, []ContextFile{{
+		Project: providerProject, Path: providerPath, StartLine: 1, EndLine: 3,
+		Role: "call_chain", Reason: "selected required primary path evidence",
+	}}) {
+		t.Fatalf("primary-path inventory candidates = %#v, want only profiled provider route", primaryCandidates)
+	}
+	ordinaryPack := cloneContextPack(pack)
+	ordinaryPack.selectionQuery = "prepare cross-project job release evidence"
+	for _, candidate := range contextEvidenceInventoryCandidates(ordinaryPack, options, concerns) {
+		if candidate.facets[primaryPath.key] {
+			t.Fatalf("ordinary-query primary-path inventory candidate = %#v, want none", candidate.file)
+		}
+	}
+	ordinary, err := appendContextEvidenceInventory(ordinaryPack, request, options, concerns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ordinary.Files, ordinaryPack.Files) {
+		t.Fatalf("ordinary-query inventory displaced existing evidence:\nwant: %#v\ngot:  %#v", ordinaryPack.Files, ordinary.Files)
+	}
+
+	got, err := appendContextEvidenceInventory(pack, request, options, concerns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contextEvidenceInventoryPathRepresented(got, ContextFile{
+		Project: providerProject, Path: providerPath,
+	}) {
+		t.Fatalf("profiled provider route missing from saturated inventory: %#v", got.Files)
+	}
+	if contextEvidenceInventoryPathRepresented(got, ContextFile{
+		Project: providerProject, Path: servicePath,
+	}) {
+		t.Fatalf("weaker related provider service was not replaced: %#v", got.Files)
+	}
+	for _, file := range files {
+		if file.Path == servicePath {
+			continue
+		}
+		if !contextEvidenceInventoryPathRepresented(got, file) {
+			t.Errorf("represented public area or mandatory file was displaced: %s:%s", file.Project, file.Path)
+		}
+	}
+	if len(got.Files) != DefaultContextMaxFiles || contextSourceFileCount(got) != DefaultContextMaxFiles {
+		t.Fatalf("saturated inventory files = %d/%d, want %d", len(got.Files), contextSourceFileCount(got), DefaultContextMaxFiles)
+	}
+}
+
 func TestAppendContextEvidenceInventoryIsBoundedAndDoesNotCreateCoverage(t *testing.T) {
 	const optionCount = 20
 	concerns := make([]contextConcern, 0, optionCount)

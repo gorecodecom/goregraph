@@ -122,7 +122,7 @@ func contextEvidenceInventoryCandidates(
 		matched := make([]contextConcern, 0, len(option.concernKeys))
 		for _, key := range option.concernKeys {
 			if concern, ok := concernByKey[key]; ok &&
-				contextEvidenceInventoryConcernIsExact(concern) &&
+				contextEvidenceInventoryConcernIsExact(pack, option, concern) &&
 				!(concern.kind == contextConcernDomainModel &&
 					contextEvidenceInventoryPrimaryProjectDuplicate(pack, option, options)) {
 				matched = append(matched, concern)
@@ -220,9 +220,49 @@ func contextEvidenceInventoryCandidates(
 	return result
 }
 
-func contextEvidenceInventoryConcernIsExact(concern contextConcern) bool {
-	return concern.kind != contextConcernProject &&
-		concern.kind != contextConcernPrimaryPath
+func contextEvidenceInventoryConcernIsExact(
+	pack ContextPack,
+	option contextSourceOption,
+	concern contextConcern,
+) bool {
+	switch concern.kind {
+	case contextConcernProject:
+		return false
+	case contextConcernPrimaryPath:
+		return contextEvidenceInventoryProfiledCrossProjectPrimaryRoute(pack, option)
+	default:
+		return true
+	}
+}
+
+func contextEvidenceInventoryProfiledCrossProjectPrimaryRoute(
+	pack ContextPack,
+	option contextSourceOption,
+) bool {
+	if !contextQueryRequestsExactEvidenceInventory(contextSelectionQuery(pack)) ||
+		!option.profiled ||
+		strings.TrimSpace(option.candidate.Role) == "" ||
+		strings.EqualFold(option.candidate.Role, "test") ||
+		strings.EqualFold(option.section.Role, "test") ||
+		contextFactUsesTestSource(scan.AgentContextFactRecord{File: option.section.Path}) ||
+		contextExactInventoryPath(option.section.Path) == "" {
+		return false
+	}
+	entrypointProject := ""
+	if len(pack.Entrypoints) > 0 {
+		entrypointProject = normalizeContextProject(pack.Entrypoints[0].Project)
+	}
+	project := normalizeContextProject(option.section.Project)
+	if entrypointProject == "" || project == "" || project == entrypointProject ||
+		normalizeContextProject(option.candidate.Project) != project {
+		return false
+	}
+	switch normalizedContextConcernKind(option.candidate.Kind) {
+	case "route", "api_endpoint", "backend_handler":
+		return true
+	default:
+		return false
+	}
 }
 
 func contextEvidenceInventoryPrimaryProjectDuplicate(
