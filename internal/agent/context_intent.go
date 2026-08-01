@@ -36,6 +36,7 @@ type contextConcern struct {
 	candidateFactIDs []string
 	reason           string
 	rank             int
+	exactInventory   bool
 }
 
 func planContextConcerns(
@@ -1152,6 +1153,27 @@ func contextTestConcernCandidates(index scan.AgentContextIndexRecord, reachable 
 
 func contextQueryRequestsConcern(query, kind string) bool {
 	return contextValueRequestsConcern(query, kind)
+}
+
+func contextQueryRequestsExactEvidenceInventory(query string) bool {
+	tokens := contextExpandedTokenSet(query)
+	hasAny := func(values ...string) bool {
+		for _, value := range values {
+			if tokens[value] {
+				return true
+			}
+		}
+		return false
+	}
+	return hasAny("exact", "exakt", "exakte", "exaktes") &&
+		hasAny(
+			"file", "files", "path", "paths", "datei", "dateien", "pfad", "pfade",
+			"inventory", "inventar", "liste", "auflistung",
+		) &&
+		hasAny(
+			"production", "produktions", "produktion", "prod",
+			"test", "tests", "testing", "executable", "ausfuhrbar", "ausführbar",
+		)
 }
 
 func contextValueRequestsConcern(value, kind string) bool {

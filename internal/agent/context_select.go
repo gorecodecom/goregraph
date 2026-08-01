@@ -793,8 +793,204 @@ func expandContextEvidenceConcernsWithProfile(
 			result = append(result, concern)
 		}
 	}
+	if contextQueryRequestsExactEvidenceInventory(query) {
+		result = append(result, contextExactInventoryEvidenceConcerns(pack, index, result)...)
+	}
 	sort.Slice(result, func(i, j int) bool { return result[i].key < result[j].key })
 	return result
+}
+
+func contextExactInventoryEvidenceConcerns(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	concerns []contextConcern,
+) []contextConcern {
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	type exactInventoryGroup struct {
+		kind    string
+		project string
+		path    string
+		facts   []scan.AgentContextFactRecord
+	}
+	groupsByKey := make(map[string]*exactInventoryGroup)
+	aliases := contextProjectAliases(index.Facts, index.Coverage)
+	explicitProjects := contextExplicitProjects(contextSelectionQuery(pack), aliases)
+	domainTokens := contextSourceConcernProjectDomainQueryTokens(
+		contextSourceConcernSemanticQueryTokens(contextSelectionQuery(pack)),
+		aliases,
+		explicitProjects,
+	)
+	semanticQueryTokens := contextSourceConcernSemanticQueryTokens(contextSelectionQuery(pack))
+	for _, concern := range concerns {
+		if !concern.required || !contextExactInventoryConcernKind(concern.kind) {
+			continue
+		}
+		candidateFactIDs := orderedContextConcernIDs(concern.candidateFactIDs)
+		if concern.kind == contextConcernConfiguration && concern.project != "" {
+			for _, fact := range index.Facts {
+				if normalizeContextProject(fact.Project) != concern.project ||
+					!isContextConfigurationResource(fact.File) {
+					continue
+				}
+				candidateFactIDs = append(candidateFactIDs, fact.ID)
+			}
+			candidateFactIDs = orderedContextConcernIDs(candidateFactIDs)
+		}
+		facts := make([]scan.AgentContextFactRecord, 0, len(candidateFactIDs))
+		for _, factID := range candidateFactIDs {
+			fact, ok := factByID[factID]
+			if !ok || !contextExactInventoryFactMatches(concern.kind, fact) ||
+				contextExactInventoryMandatoryFact(pack, fact) {
+				continue
+			}
+			facts = append(facts, fact)
+		}
+		domainFacts := make([]scan.AgentContextFactRecord, 0, len(facts))
+		for _, fact := range facts {
+			if contextSourceFactMatchesDomain(fact, domainTokens) {
+				domainFacts = append(domainFacts, fact)
+			}
+		}
+		if len(domainFacts) > 0 {
+			facts = domainFacts
+		} else if concern.kind == contextConcernConfiguration {
+			bestMatches := 0
+			for _, fact := range facts {
+				bestMatches = max(
+					bestMatches,
+					contextSourceConcernSemanticMatchCount(fact, semanticQueryTokens),
+				)
+			}
+			semanticFacts := make([]scan.AgentContextFactRecord, 0, len(facts))
+			for _, fact := range facts {
+				if bestMatches > 1 &&
+					contextSourceConcernSemanticMatchCount(fact, semanticQueryTokens) == bestMatches {
+					semanticFacts = append(semanticFacts, fact)
+				}
+			}
+			if len(semanticFacts) > 0 {
+				facts = semanticFacts
+			}
+		}
+		for _, fact := range facts {
+			project := normalizeContextProject(fact.Project)
+			path := contextExactInventoryPath(fact.File)
+			if project == "" || path == "" {
+				continue
+			}
+			key := concern.kind + "\x00" + project + "\x00" + path
+			group := groupsByKey[key]
+			if group == nil {
+				group = &exactInventoryGroup{
+					kind: concern.kind, project: project, path: path,
+				}
+				groupsByKey[key] = group
+			}
+			group.facts = append(group.facts, fact)
+		}
+	}
+
+	groups := make([]*exactInventoryGroup, 0, len(groupsByKey))
+	for _, group := range groupsByKey {
+		sort.Slice(group.facts, func(left, right int) bool {
+			if group.facts[left].Line != group.facts[right].Line {
+				return group.facts[left].Line < group.facts[right].Line
+			}
+			return group.facts[left].ID < group.facts[right].ID
+		})
+		groups = append(groups, group)
+	}
+	sort.Slice(groups, func(left, right int) bool {
+		if groups[left].project != groups[right].project {
+			return groups[left].project < groups[right].project
+		}
+		if groups[left].path != groups[right].path {
+			return groups[left].path < groups[right].path
+		}
+		if groups[left].facts[0].Line != groups[right].facts[0].Line {
+			return groups[left].facts[0].Line < groups[right].facts[0].Line
+		}
+		return groups[left].facts[0].ID < groups[right].facts[0].ID
+	})
+	if len(groups) > maximumContextSourcePlanningCandidates {
+		groups = groups[:maximumContextSourcePlanningCandidates]
+	}
+
+	result := make([]contextConcern, 0, len(groups))
+	for _, group := range groups {
+		factIDs := make([]string, 0, len(group.facts))
+		for _, fact := range group.facts {
+			factIDs = append(factIDs, fact.ID)
+		}
+		base := newContextConcern(
+			group.kind,
+			group.project,
+			true,
+			factIDs,
+			"exact file inventory evidence",
+		)
+		concern := newContextEvidenceConcern(
+			base,
+			"exact-file:"+group.path,
+			factIDs,
+			"exact file inventory evidence",
+		)
+		concern.exactInventory = true
+		result = append(result, concern)
+	}
+	return result
+}
+
+func contextExactInventoryConcernKind(kind string) bool {
+	return kind == contextConcernAuth ||
+		kind == contextConcernConfiguration ||
+		kind == contextConcernTests
+}
+
+func contextExactInventoryFactMatches(kind string, fact scan.AgentContextFactRecord) bool {
+	if !strings.EqualFold(strings.TrimSpace(fact.Confidence), "EXACT") ||
+		contextExactInventoryPath(fact.File) == "" {
+		return false
+	}
+	switch kind {
+	case contextConcernAuth:
+		return normalizedContextConcernKind(fact.Kind) == contextConcernAuth
+	case contextConcernConfiguration:
+		return normalizedContextConcernKind(fact.Kind) == contextConcernConfiguration
+	case contextConcernTests:
+		return strings.EqualFold(strings.TrimSpace(fact.Kind), "test") &&
+			contextFactUsesTestSource(fact)
+	default:
+		return false
+	}
+}
+
+func contextExactInventoryPath(file string) string {
+	file = strings.ReplaceAll(strings.TrimSpace(file), "\\", "/")
+	if file == "" || contextPackSourceFile(file) == "" {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(file)))
+}
+
+func contextExactInventoryMandatoryFact(pack ContextPack, fact scan.AgentContextFactRecord) bool {
+	path := contextExactInventoryPath(fact.File)
+	project := normalizeContextProject(fact.Project)
+	for _, location := range append(
+		append([]ContextLocation(nil), pack.Entrypoints...),
+		pack.Contracts...,
+	) {
+		if location.ID == fact.ID ||
+			location.File != "" &&
+				contextEvidenceInventoryPathKey(location.Project, location.File) ==
+					contextEvidenceInventoryPathKey(project, path) {
+			return true
+		}
+	}
+	return false
 }
 
 func newExpandedContextEvidenceConcern(
@@ -2013,6 +2209,10 @@ func contextSourceRole(
 	index scan.AgentContextIndexRecord,
 	fact scan.AgentContextFactRecord,
 ) string {
+	if normalizedContextConcernKind(fact.Kind) == contextConcernConfiguration &&
+		isContextConfigurationResource(fact.File) {
+		return "call_chain"
+	}
 	if contextLocationIDs(pack.Tests)[fact.ID] || normalizedContextConcernKind(fact.Kind) == contextConcernTests || contextFactUsesTestSource(fact) {
 		return "test"
 	}
@@ -2626,7 +2826,8 @@ func contextSourceSectionSupportsConcern(
 			"securityfilterchain",
 		)
 	case contextConcernConfiguration:
-		return section.RenderMode != "signature" && contextValueRequestsConcern(semanticContent, contextConcernConfiguration) ||
+		return section.RenderMode != "signature" && isContextConfigurationResource(section.Path) ||
+			section.RenderMode != "signature" && contextValueRequestsConcern(semanticContent, contextConcernConfiguration) ||
 			contextSourceContainsAny(content,
 				"@configurationproperties",
 				"@value(",
@@ -3906,7 +4107,8 @@ func coverableContextSourceProductionPending(
 	state contextSourceSelectionState,
 ) bool {
 	for _, concern := range concerns {
-		if !concern.required || concern.kind == contextConcernTests || state.coveredConcerns[concern.key] {
+		if !concern.required || concern.exactInventory ||
+			concern.kind == contextConcernTests || state.coveredConcerns[concern.key] {
 			continue
 		}
 		for _, option := range options {
@@ -3926,6 +4128,10 @@ func contextSourceUtilityOption(
 	state contextSourceSelectionState,
 	productionPending bool,
 ) (contextSourceOption, int, bool, error) {
+	concernsByKey := make(map[string]contextConcern, len(concerns))
+	for _, concern := range concerns {
+		concernsByKey[concern.key] = concern
+	}
 	best := contextSourceOption{}
 	bestUtility := 0
 	found := false
@@ -3940,7 +4146,7 @@ func contextSourceUtilityOption(
 		newConcerns := 0
 		newProjects := 0
 		for _, key := range option.concernKeys {
-			if state.coveredConcerns[key] {
+			if state.coveredConcerns[key] || concernsByKey[key].exactInventory {
 				continue
 			}
 			newConcerns++
@@ -4190,6 +4396,12 @@ func contextSourceEvidenceOmissionsWithOptions(
 			options,
 			failures,
 		)
+		if concern.exactInventory && contextEvidenceInventoryPathRepresented(pack, ContextFile{
+			Project: omission.Project,
+			Path:    omission.Path,
+		}) {
+			continue
+		}
 		pathRank := "1"
 		if contextPackSourceFile(omission.Path) != "" {
 			pathRank = "0"
@@ -4255,6 +4467,9 @@ func contextSourceOmissionPriority(
 ) int {
 	if contextPackSourceFile(omission.Path) == "" {
 		return 0
+	}
+	if concern.exactInventory {
+		return 2_000
 	}
 	if !contextQueryPlansMissingTransition(contextSelectionQuery(pack)) {
 		return 100

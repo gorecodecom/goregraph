@@ -356,6 +356,316 @@ func TestContextSourcePersistencePlanningReservesPairingWithinCeiling(t *testing
 	}
 }
 
+func TestExpandContextExactInventoryConcernsCreatesBoundedPathSubareas(t *testing.T) {
+	baseConcerns := []contextConcern{
+		newContextConcern(contextConcernAuth, "services/auth", true,
+			[]string{"auth", "auth-duplicate", "auth-entrypoint", "auth-resolved", "auth-no-path", "auth-wrong-kind"},
+			"requested authentication"),
+		newContextConcern(contextConcernConfiguration, "libraries/client", true,
+			[]string{"config", "config-contract"}, "requested configuration"),
+		newContextConcern(contextConcernTests, "services/provider", true,
+			[]string{"test", "test-target"}, "requested tests"),
+	}
+	facts := []scan.AgentContextFactRecord{
+		{ID: "auth", Project: "services/auth", Kind: "authentication", File: "src/main/AuthConfig.java", Line: 20, Confidence: "EXACT"},
+		{ID: "auth-duplicate", Project: "services/auth", Kind: "security", File: "src/main/AuthConfig.java", Line: 10, Confidence: "EXACT"},
+		{ID: "auth-entrypoint", Project: "services/auth", Kind: "authentication", File: "src/main/EntrypointAuth.java", Line: 1, Confidence: "EXACT"},
+		{ID: "auth-resolved", Project: "services/auth", Kind: "authentication", File: "src/main/ResolvedAuth.java", Line: 1, Confidence: "RESOLVED"},
+		{ID: "auth-no-path", Project: "services/auth", Kind: "authentication", Confidence: "EXACT"},
+		{ID: "auth-wrong-kind", Project: "services/auth", Kind: "symbol", File: "src/main/WrongAuth.java", Line: 1, Confidence: "EXACT"},
+		{ID: "config", Project: "libraries/client", Kind: "configuration", File: "src/main/ClientConfig.java", Line: 4, Confidence: "EXACT"},
+		{ID: "config-profile", Project: "libraries/client", Kind: "configuration", File: "src/test/resources/application-test.yml", Line: 1, Confidence: "EXACT"},
+		{ID: "config-contract", Project: "libraries/client", Kind: "configuration", File: "src/main/ClientContract.java", Line: 4, Confidence: "EXACT"},
+		{ID: "test", Project: "services/provider", Kind: "test", File: "src/test/ProviderControllerTest.java", Line: 12, Confidence: "EXACT"},
+		{ID: "test-target", Project: "services/provider", Kind: "test_target", File: "src/test/ProviderTarget.java", Line: 12, Confidence: "EXACT"},
+	}
+	for index := 1; index <= maximumContextSourcePlanningCandidates; index++ {
+		id := fmt.Sprintf("extra-%d", index)
+		facts = append(facts, scan.AgentContextFactRecord{
+			ID: id, Project: fmt.Sprintf("z/extra-%02d", index), Kind: "configuration",
+			File: fmt.Sprintf("src/main/Extra%02dConfig.java", index), Line: index, Confidence: "EXACT",
+		})
+		baseConcerns = append(baseConcerns, newContextConcern(
+			contextConcernConfiguration,
+			fmt.Sprintf("z/extra-%02d", index),
+			true,
+			[]string{id},
+			"requested configuration",
+		))
+	}
+	index := scan.AgentContextIndexRecord{Facts: facts}
+	packFor := func(query string) ContextPack {
+		return ContextPack{
+			Query: query, selectionQuery: query,
+			Entrypoints: []ContextLocation{{ID: "auth-entrypoint"}},
+			Contracts:   []ContextLocation{{ID: "config-contract", Project: "services/contracts"}},
+		}
+	}
+	exactKeys := func(concerns []contextConcern) []string {
+		keys := []string{}
+		for _, concern := range concerns {
+			if strings.HasPrefix(concern.facet, "exact-file:") {
+				keys = append(keys, concern.key)
+			}
+		}
+		return keys
+	}
+
+	normal := expandContextEvidenceConcerns(
+		packFor("Provide authentication, configuration, and tests by category."),
+		index,
+		baseConcerns,
+	)
+	if got := exactKeys(normal); len(got) != 0 {
+		t.Fatalf("ordinary category query exact subareas = %v, want none", got)
+	}
+
+	english := expandContextEvidenceConcerns(
+		packFor("Provide an exact production and executable test file inventory for authentication, configuration, and tests."),
+		index,
+		baseConcerns,
+	)
+	keys := exactKeys(english)
+	if len(keys) != maximumContextSourcePlanningCandidates {
+		t.Fatalf("exact inventory subareas = %d, want cap %d: %v", len(keys), maximumContextSourcePlanningCandidates, keys)
+	}
+	for _, key := range []string{
+		"authentication:services/auth#exact-file:src/main/AuthConfig.java",
+		"configuration:libraries/client#exact-file:src/main/ClientConfig.java",
+		"configuration:libraries/client#exact-file:src/test/resources/application-test.yml",
+		"tests:services/provider#exact-file:src/test/ProviderControllerTest.java",
+	} {
+		if !slices.Contains(keys, key) {
+			t.Errorf("exact inventory key %q missing from %v", key, keys)
+		}
+	}
+	for _, rejectedPath := range []string{"EntrypointAuth.java", "ResolvedAuth.java", "WrongAuth.java", "ProviderTarget.java", "ClientContract.java"} {
+		for _, key := range keys {
+			if strings.Contains(key, rejectedPath) {
+				t.Errorf("ineligible exact inventory path %q present in %v", rejectedPath, keys)
+			}
+		}
+	}
+
+	reversedFacts := slices.Clone(facts)
+	slices.Reverse(reversedFacts)
+	reversed := expandContextEvidenceConcerns(
+		packFor("Provide an exact production and executable test file inventory for authentication, configuration, and tests."),
+		scan.AgentContextIndexRecord{Facts: reversedFacts},
+		baseConcerns,
+	)
+	forwardJSON, err := json.Marshal(keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reversedJSON, err := json.Marshal(exactKeys(reversed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(forwardJSON) != string(reversedJSON) {
+		t.Fatalf("reversed facts changed exact inventory keys:\ngot  %s\nwant %s", reversedJSON, forwardJSON)
+	}
+
+	german := expandContextEvidenceConcerns(
+		packFor("Stelle ein exaktes Produktions- und ausführbares Test-Datei-Inventar für Authentifizierung, Konfiguration und Tests bereit."),
+		index,
+		baseConcerns,
+	)
+	if got := exactKeys(german); !slices.Equal(got, keys) {
+		t.Fatalf("German exact inventory keys = %v, want %v", got, keys)
+	}
+}
+
+func TestContextSourceUtilityIgnoresExactInventoryFacetGain(t *testing.T) {
+	coarse := newContextConcern(
+		contextConcernConfiguration,
+		"services/catalog",
+		true,
+		[]string{"configuration"},
+		"requested configuration",
+	)
+	exact := newContextEvidenceConcern(
+		coarse,
+		"exact-file:src/main/resources/application-test.yml",
+		[]string{"configuration"},
+		"exact file inventory evidence",
+	)
+	exact.exactInventory = true
+	option := contextSourceOption{
+		candidate: sourceCandidate{
+			FactID: "configuration", FactIDs: []string{"configuration"},
+			Project: "services/catalog", Path: "src/main/resources/application.yml", Role: "call_chain",
+		},
+		section: ContextSourceSection{
+			Project: "services/catalog", Path: "src/main/resources/application.yml",
+			StartLine: 1, EndLine: 2, Role: "call_chain", RenderMode: "body",
+			Content: "jobs:\n  connect-timeout: <redacted>",
+		},
+		estimated: 10, projectKey: "services/catalog", profiled: true,
+	}
+	pack := ContextPack{Schema: 1, Query: "exact production file inventory", BudgetTokens: DefaultContextBudgetTokens}
+	request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens, MaxFiles: DefaultContextMaxFiles}
+	coarseOption := option
+	coarseOption.concernKeys = []string{coarse.key}
+	_, coarseUtility, coarseFound, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{coarseOption},
+		[]contextConcern{coarse},
+		newContextSourceSelectionState(1, 1),
+		false,
+	)
+	if err != nil || !coarseFound {
+		t.Fatalf("coarse utility option = found %t, err %v", coarseFound, err)
+	}
+	exactOption := option
+	exactOption.concernKeys = []string{coarse.key, exact.key}
+	_, exactUtility, exactFound, err := contextSourceUtilityOption(
+		pack,
+		request,
+		[]contextSourceOption{exactOption},
+		[]contextConcern{coarse, exact},
+		newContextSourceSelectionState(1, 2),
+		false,
+	)
+	if err != nil || !exactFound {
+		t.Fatalf("exact utility option = found %t, err %v", exactFound, err)
+	}
+	if exactUtility != coarseUtility {
+		t.Fatalf("exact inventory facet changed utility: got %d, want %d", exactUtility, coarseUtility)
+	}
+}
+
+func TestExpandContextExactInventoryConcernsExcludesGenericConfigurationDistractor(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernConfiguration,
+		"libraries/client",
+		true,
+		[]string{"catalog-config", "mail-config"},
+		"requested configuration",
+	)
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "catalog-config", Project: "libraries/client", Kind: "configuration", Name: "CatalogClientConfig", File: "src/main/CatalogClientConfig.java", Confidence: "EXACT", Search: "catalog client configuration"},
+		{ID: "mail-config", Project: "libraries/client", Kind: "configuration", Name: "MailProperties", File: "src/main/MailProperties.java", Confidence: "EXACT", Search: "mail configuration"},
+	}}
+	query := "Provide an exact catalog production configuration file inventory."
+	got := expandContextEvidenceConcerns(
+		ContextPack{Query: query, selectionQuery: query},
+		index,
+		[]contextConcern{concern},
+	)
+	keys := []string{}
+	for _, expanded := range got {
+		if expanded.exactInventory {
+			keys = append(keys, expanded.key)
+		}
+	}
+	want := []string{"configuration:libraries/client#exact-file:src/main/CatalogClientConfig.java"}
+	if !slices.Equal(keys, want) {
+		t.Fatalf("exact inventory distractor filtering = %v, want %v", keys, want)
+	}
+}
+
+func TestTestProfileConfigurationResourceProvesExactConfigurationAndRedactsValues(t *testing.T) {
+	const sentinel = "SENTINEL_TEST_PROFILE_PASSWORD"
+	fact := scan.AgentContextFactRecord{
+		ID: "test-configuration", Project: "services/catalog", Kind: "configuration",
+		File: "src/test/resources/application-test.yml", Line: 1, EndLine: 3, Confidence: "EXACT",
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{fact}}
+	if role := contextSourceRole(ContextPack{}, index, fact); role == "test" {
+		t.Fatalf("test-profile configuration role = %q, want non-test configuration evidence", role)
+	}
+	candidate := sourceCandidate{
+		FactID: fact.ID, FactIDs: []string{fact.ID}, Project: fact.Project, Path: fact.File,
+		StartLine: fact.Line, EndLine: fact.EndLine, Role: contextSourceRole(ContextPack{}, index, fact),
+	}
+	section, err := renderSourceCandidate(candidate, sourceFile{Path: fact.File, Lines: []string{
+		"jobs:",
+		"  connect-timeout: 1s",
+		"  password: " + sentinel,
+	}}, "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(section.Content, sentinel) {
+		t.Fatalf("test-profile configuration leaked sentinel: %s", section.Content)
+	}
+	concern := newContextEvidenceConcern(
+		newContextConcern(contextConcernConfiguration, fact.Project, true, []string{fact.ID}, "requested configuration"),
+		"exact-file:"+fact.File,
+		[]string{fact.ID},
+		"exact file inventory evidence",
+	)
+	concern.exactInventory = true
+	keys, required := contextSourceOptionConcerns(candidate, section, []contextConcern{concern}, index)
+	if !required || !slices.Equal(keys, []string{concern.key}) {
+		t.Fatalf("test-profile exact configuration concerns = %v, required %t", keys, required)
+	}
+}
+
+func TestContextSourceEvidenceOmissionsPrioritizeExactInventoryPath(t *testing.T) {
+	coarse := newContextEvidenceConcern(
+		newContextConcern(
+			contextConcernConfiguration,
+			"services/catalog",
+			true,
+			[]string{"coarse"},
+			"coarse configuration",
+		),
+		"binding",
+		[]string{"coarse"},
+		"coarse configuration binding",
+	)
+	exact := newContextEvidenceConcern(
+		newContextConcern(contextConcernConfiguration, "services/catalog", true, []string{"exact"}, "requested configuration"),
+		"exact-file:src/test/resources/application-test.yml",
+		[]string{"exact"},
+		"exact configuration inventory",
+	)
+	exact.exactInventory = true
+	omissions := contextSourceEvidenceOmissionsWithOptions(
+		ContextPack{},
+		scan.AgentContextIndexRecord{},
+		[]contextConcern{coarse, exact},
+		[]sourceCandidate{
+			{FactID: "coarse", FactIDs: []string{"coarse"}, Project: "services/catalog", Path: "AConfig.yml", StartLine: 1, EndLine: 2, Role: "call_chain"},
+			{FactID: "exact", FactIDs: []string{"exact"}, Project: "services/catalog", Path: "ZConfig.yml", StartLine: 10, EndLine: 12, Role: "call_chain"},
+		},
+		nil,
+		map[string]string{},
+		map[string]bool{},
+	)
+	if len(omissions) != 2 || omissions[0].Path != "ZConfig.yml" {
+		t.Fatalf("exact inventory omissions = %#v, want leading exact path", omissions)
+	}
+}
+
+func TestContextSourceEvidenceOmissionsSkipRepresentedExactInventoryPath(t *testing.T) {
+	exact := newContextEvidenceConcern(
+		newContextConcern(contextConcernAuth, "libraries/client", true, []string{"auth"}, "requested authentication"),
+		"exact-file:src/main/ClientAuth.java",
+		[]string{"auth"},
+		"exact authentication inventory",
+	)
+	exact.exactInventory = true
+	omissions := contextSourceEvidenceOmissionsWithOptions(
+		ContextPack{Files: []ContextFile{{Project: "libraries/client", Path: "src/main/ClientAuth.java"}}},
+		scan.AgentContextIndexRecord{},
+		[]contextConcern{exact},
+		[]sourceCandidate{{
+			FactID: "auth", FactIDs: []string{"auth"}, Project: "libraries/client",
+			Path: "src/main/ClientAuth.java", StartLine: 1, EndLine: 3, Role: "call_chain",
+		}},
+		nil,
+		map[string]string{},
+		map[string]bool{},
+	)
+	if len(omissions) != 0 {
+		t.Fatalf("represented exact inventory omission = %#v, want none", omissions)
+	}
+}
+
 func TestApplyContextSourceCoverageRequiresEveryInternalFacet(t *testing.T) {
 	base := newContextConcern(
 		contextConcernPersistence,
