@@ -37,7 +37,9 @@ func TestAssistedInstructionKeepsFutureChangePlansSourceBacked(t *testing.T) {
 		"mock_pattern or retry_pattern entries are reference patterns, not change targets",
 		"source_omissions lists the same exact path with a bounded range",
 		"do not invent future filenames",
-		"future route, authentication, status, lookup implementation, and cross-service transaction ordering",
+		"future route, authentication, status, lookup implementation",
+		"dependent persistence and cascade behavior",
+		"cross-service transaction ordering",
 		"unknown design decisions unless rendered source proves them",
 	} {
 		if !strings.Contains(AssistedInstruction, want) {
@@ -64,7 +66,7 @@ func TestAssistedInstructionKeepsRequestedAuthenticationAndConfigurationCoherent
 		"When authentication or configuration is requested",
 		"server authorization policy",
 		"client authentication construction and configuration fields",
-		"production and test-profile resources",
+		"exact paths of supplied production and test-profile resources",
 		"one coherent answer section",
 	} {
 		if !strings.Contains(AssistedInstruction, want) {
