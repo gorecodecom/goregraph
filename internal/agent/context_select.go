@@ -979,7 +979,8 @@ func contextExactInventoryScaffoldingTokens(kind string) map[string]bool {
 		"production produktions produktion produktionsdatei produktionsdateien prod",
 		"test tests testing executable ausführbar ausführbarer ausfuhrbar ausfuhrbarer",
 		"provide provided show include current required release ready change for and",
-		"stelle bereit liefere liefern zeige einschließen aktuell erforderlich freigabe bereitstellung änderung aenderung für und",
+		"stelle stellen stellt stellst sie ihnen bitte bereit liefere liefern zeige einschließen aktuell erforderlich freigabe bereitstellung änderung aenderung für und",
+		"ein eine einer eines einen einem die der das den dem des",
 	}
 	terms = append(terms, contextConcernVocabulary[kind]...)
 	terms = append(terms, contextExactInventoryGermanConcernTerms(kind)...)

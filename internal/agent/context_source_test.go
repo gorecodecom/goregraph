@@ -818,6 +818,62 @@ func TestExpandContextExactInventoryConcernsUsesGermanDomainAnchor(t *testing.T)
 	}
 }
 
+func TestExpandContextExactInventoryConcernsIgnoresFormalGermanRequestScaffolding(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernConfiguration,
+		"services/orders",
+		true,
+		[]string{"marker", "order"},
+		"requested configuration",
+	)
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "marker", Project: "services/orders", Kind: "configuration", Name: "ProduktionsdateienConfig", File: "src/main/MarkerConfig.java", Confidence: "EXACT", Search: "stellen sie eine exakte produktionsdateien dateipfade liste bereit konfiguration"},
+		{ID: "order", Project: "services/orders", Kind: "configuration", Name: "OrderSettings", File: "src/main/OrderSettings.java", Confidence: "EXACT", Search: "order settings"},
+	}}
+	query := "Stellen Sie eine exakte Produktionsdateien und Dateipfade Liste bereit."
+	got := expandContextEvidenceConcerns(ContextPack{Query: query, selectionQuery: query}, index, []contextConcern{concern})
+	keys := []string{}
+	for _, expanded := range got {
+		if expanded.exactInventory {
+			keys = append(keys, expanded.key)
+		}
+	}
+	want := []string{
+		"configuration:services/orders#exact-file:src/main/MarkerConfig.java",
+		"configuration:services/orders#exact-file:src/main/OrderSettings.java",
+	}
+	if !slices.Equal(keys, want) {
+		t.Fatalf("formal German scaffolding domain filtering = %v, want %v", keys, want)
+	}
+}
+
+func TestExpandContextExactInventoryConcernsUsesFormalGermanDomainAnchor(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernConfiguration,
+		"services/orders",
+		true,
+		[]string{"marker", "order", "mail"},
+		"requested configuration",
+	)
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "marker", Project: "services/orders", Kind: "configuration", Name: "ProduktionsdateienConfig", File: "src/main/MarkerConfig.java", Confidence: "EXACT", Search: "stellen sie eine exakte produktionsdateien dateipfade liste bereit konfiguration"},
+		{ID: "order", Project: "services/orders", Kind: "configuration", Name: "OrderSettings", File: "src/main/OrderSettings.java", Confidence: "EXACT", Search: "auftrag settings"},
+		{ID: "mail", Project: "services/orders", Kind: "configuration", Name: "MailSettings", File: "src/main/MailSettings.java", Confidence: "EXACT", Search: "mail settings"},
+	}}
+	query := "Stellen Sie eine exakte Produktionsdateien und Dateipfade Liste für Auftrag Konfiguration bereit."
+	got := expandContextEvidenceConcerns(ContextPack{Query: query, selectionQuery: query}, index, []contextConcern{concern})
+	keys := []string{}
+	for _, expanded := range got {
+		if expanded.exactInventory {
+			keys = append(keys, expanded.key)
+		}
+	}
+	want := []string{"configuration:services/orders#exact-file:src/main/OrderSettings.java"}
+	if !slices.Equal(keys, want) {
+		t.Fatalf("formal German domain anchor filtering = %v, want %v", keys, want)
+	}
+}
+
 func TestContextExactInventoryPathRejectsUnsafePathsAndCanonicalizesSafePaths(t *testing.T) {
 	for _, test := range []struct {
 		path string
