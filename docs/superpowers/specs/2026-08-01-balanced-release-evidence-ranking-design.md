@@ -88,6 +88,18 @@ Existing-flow omission ordering remains unchanged.
 
 The existing final-section proof audit remains authoritative. A public area is complete only when all required internal facets are proved. If no proving source fits, coverage stays partial and the best exact bounded omission is emitted. No missing evidence is converted into an inferred claim.
 
+### Integration correction after task-level verification
+
+The broad regression exposed a second bottleneck before the new ranking comparisons. Distinct exact authentication, configuration, and test files can collapse into one semantic concern. Once one sibling path covers that concern, the remaining exact paths provide no additional public or internal proof and cannot become inventory entries or omissions. Inferred caller-side model duplicates and credential vocabulary in caller configuration can also create false required concerns before later option-quality demotion is applied. Finally, the exact file inventory is finalized after source selection without reconciling newly admitted inventory paths back into the still-underfilled source-section set.
+
+The integration correction has three bounded parts:
+
+1. Filter inferred primary-project model duplicates before required model concerns are expanded, unless the query explicitly names that caller model. Require real authentication-role evidence before a caller-project authentication concern remains required; configuration keys alone are not authentication policy.
+2. Detect explicit exact production/test file-inventory intent with generic lexical markers. Only for that intent, split exact, source-backed authentication, configuration, and executable-test candidates into deterministic path-specific evidence subareas. One path produces one subarea, duplicate facts collapse, ordinary category queries remain unchanged, and expansion stays capped by the existing planning-candidate bound.
+3. After the final exact inventory is selected, perform one non-recursive reconciliation pass that may add proving sections only for paths already present in the final inventory. It never removes mandatory/current-path sections, never adds files, and stops at the existing token and 12-section limits. Omissions are constructed after reconciliation so they describe the actual final representation.
+
+This correction keeps semantic concerns for ordinary queries while allowing an explicitly requested release inventory to distinguish exact files. Path-specific keys are internal only and are derived from normalized project/path identity, never private names or prompt-specific rules.
+
 ## Testing
 
 Test-driven implementation starts with a broad, release-shaped Java/Spring query that requests evidence categories and exact production/test files without naming the desired implementation classes. The existing generic fixture supplies competing model, repository, client auth/config, server policy, controller, and executable test evidence.
@@ -103,5 +115,7 @@ The regression must fail before production changes and then prove that:
 - output stays within 4,000 tokens, 12 files, 12 source sections, and three omissions;
 - output is byte-stable across repeated builds;
 - generic matrix, growth, shell, documentation, and release benchmark gates remain unchanged.
+
+Integration tests additionally prove that inferred caller duplicates are excluded unless explicitly requested, credential-only caller configuration does not become server authentication, exact-inventory subareas are bounded and deterministic, and final inventory reconciliation fills available source-section capacity without adding files or displacing mandatory proof.
 
 After local verification and independent review, the exact committed candidate is installed and the historical workspace is freshly scanned. Release matrix 2 uses the identical prompt, model, reasoning level, sandbox, workspace snapshot, and controlled skill configuration. A release candidate passes only if automatic gates pass and the assisted median manual quality score is at least the baseline median.

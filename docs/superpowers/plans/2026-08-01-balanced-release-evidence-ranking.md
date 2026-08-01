@@ -238,6 +238,126 @@ git commit -m "Balance requested release evidence" -m "- Complete requested publ
 - Direct bounded omissions to still-unrepresented evidence areas"
 ```
 
+### Task 4A: Correct required model and authentication roles
+
+**Files:**
+
+- Modify: `internal/agent/context_select.go`
+- Test: `internal/agent/context_source_test.go`
+
+**Interfaces:**
+
+- Produces: `contextInferredPrimaryProjectModelDuplicate(pack ContextPack, index scan.AgentContextIndexRecord, fact scan.AgentContextFactRecord) bool`.
+- Produces: `contextAuthenticationConcernHasRoleEvidence(concern contextConcern, index scan.AgentContextIndexRecord, endpointProjects, contractProjects, modelProjects map[string]bool) bool`.
+
+- [ ] **Step 1: Write failing role-modeling tests**
+
+Add `TestContextRequestedDomainModelIDsExcludeInferredPrimaryDuplicateUnlessExplicit`. A generic cross-service model request must exclude the inferred caller-project duplicate, while a query that explicitly names or compares that caller model must keep it. Add `TestContextSourceConcernsRoleGateCredentialOnlyCallerAuthentication`. Caller configuration containing username/password keys must not create required server authentication; an exact authentication/security fact must keep the concern required.
+
+- [ ] **Step 2: Verify the red state**
+
+```bash
+go test ./internal/agent -run 'TestContextRequestedDomainModelIDsExcludeInferredPrimaryDuplicateUnlessExplicit|TestContextSourceConcernsRoleGateCredentialOnlyCallerAuthentication' -count=1
+```
+
+Expected: FAIL because model duplicate filtering happens only at option quality and public authentication concerns are retained without role evidence.
+
+- [ ] **Step 3: Implement early bounded filtering**
+
+Reuse the existing compact identity and explicit-query-name checks at fact level. Filter inferred primary-project duplicates while building selected/planned requested-model IDs, then retain any explicitly named caller model. Before authentication expansion, require endpoint/contract/model project role or an exact source-backed authentication/security fact; configuration facts containing credential vocabulary do not qualify.
+
+- [ ] **Step 4: Format and verify**
+
+```bash
+gofmt -w internal/agent/context_select.go internal/agent/context_source_test.go
+go test ./internal/agent -run 'TestContextRequestedDomainModelIDsExcludeInferredPrimaryDuplicateUnlessExplicit|TestContextSourceConcernsRoleGateCredentialOnlyCallerAuthentication|TestContextDomainModelEvidenceConcernsScopeModelsAndLinkedBase|TestBuildContextBalancesBroadReleaseEvidence' -count=1
+git diff --check
+```
+
+Record the broad residuals without weakening its assertions.
+
+### Task 4B: Add bounded exact-inventory evidence subareas
+
+**Files:**
+
+- Modify: `internal/agent/context_intent.go`
+- Modify: `internal/agent/context_select.go`
+- Test: `internal/agent/context_source_test.go`
+
+**Interfaces:**
+
+- Extends: `contextConcern.exactInventory bool`.
+- Produces: `contextQueryRequestsExactEvidenceInventory(query string) bool`.
+- Produces bounded path-specific authentication, configuration, and executable-test concerns after semantic expansion.
+
+- [ ] **Step 1: Write failing exact-inventory tests**
+
+Add `TestExpandContextExactInventoryConcernsCreatesBoundedPathSubareas`. An explicit exact production/test file-inventory query must create one stable subarea per distinct exact source path for authentication, configuration, and executable tests; duplicate facts in a file collapse. A normal category query creates none. Reverse input facts and require byte-equivalent ordered keys. Generate more eligible paths than the existing planning-candidate bound and require the bound.
+
+- [ ] **Step 2: Verify the red state**
+
+```bash
+go test ./internal/agent -run TestExpandContextExactInventoryConcernsCreatesBoundedPathSubareas -count=1
+```
+
+Expected: FAIL because exact paths still collapse into coarse semantic concerns.
+
+- [ ] **Step 3: Implement the minimal trigger and subareas**
+
+Require exactness, file/path/inventory identity, and production/test scope markers in the normalized query. Use the existing intent token helpers and include equivalent supported German markers; do not key behavior to benchmark-specific class names or full phrases. Create subareas only from exact-confidence, non-empty source paths already belonging to a required authentication, configuration, or test concern. Authentication requires authentication/security kind, configuration requires configuration kind, and tests require executable test evidence. Group by normalized project/path, exclude mandatory entrypoint/contract paths, sort by project/path/line/fact ID, and cap globally at `maximumContextSourcePlanningCandidates`.
+
+Use internal stable keys of the form `<kind>:<project>#exact-file:<normalized-path>` for key/publicKey and `exact-file:<normalized-path>` for facet. Preserve every coarse semantic concern.
+
+- [ ] **Step 4: Format and verify**
+
+```bash
+gofmt -w internal/agent/context_intent.go internal/agent/context_select.go internal/agent/context_source_test.go
+go test ./internal/agent -run 'TestExpandContextExactInventoryConcernsCreatesBoundedPathSubareas|TestContextSourceRequiredPublicProofs|TestContextEvidenceInventoryBalancesPublicAreasBeforeRepeatedFacets|TestMissingTransitionOmissionsPreferUnrepresentedPublicAreas|TestExistingFlowOmissionsPreserveConcernRank|TestBuildContextBalancesBroadReleaseEvidence' -count=1
+git diff --check
+```
+
+The focused subarea test must pass. Record any remaining broad source-section deficit.
+
+### Task 4C: Reconcile final inventory with source sections once
+
+**Files:**
+
+- Modify: `internal/agent/context_select.go`
+- Test: `internal/agent/context_source_test.go`
+
+**Interfaces:**
+
+- Produces: `reconcileContextSourceInventory(pack ContextPack, request ContextRequest, options []contextSourceOption, concerns []contextConcern, coreBoundaries []contextSourceBoundary) (ContextPack, error)` or an equivalent internal helper using the existing selection state.
+
+- [ ] **Step 1: Write the failing reconciliation test**
+
+Add `TestReconcileContextSourceInventoryAddsRepresentedEvidenceOnly`. A pack containing 12 final inventory files and 10 source sections must add two proving sections from already represented paths. Mandatory sections remain byte-identical, reversed options produce identical output, no unrepresented path is added, and all fixed file/source/token bounds remain unchanged.
+
+- [ ] **Step 2: Verify the red state**
+
+```bash
+go test ./internal/agent -run TestReconcileContextSourceInventoryAddsRepresentedEvidenceOnly -count=1
+```
+
+Expected: FAIL because final inventory changes are not reconciled into source sections.
+
+- [ ] **Step 3: Implement one non-recursive pass**
+
+Call reconciliation exactly once after final `appendContextEvidenceInventory` and before final omission construction. Consider only profiled options proving required concerns whose normalized project/path already appears in `pack.Files`; skip rendered candidates. Reconstruct coverage/selection state from the final sections, sort deterministically by exact-inventory gain, required proof gain, candidate quality, lower token cost, and `contextSourceOptionLess`, then add through the existing bounded option helper. Never replace/remove mandatory or current-path sections, never add inventory files, and stop at the existing limits.
+
+Move final omission construction after this pass so coverage and omissions describe the reconciled output. Do not recurse into `selectContextSourceOptions` or add a fallback loop.
+
+- [ ] **Step 4: Format and run acceptance tests**
+
+```bash
+gofmt -w internal/agent/context_select.go internal/agent/context_source_test.go
+go test ./internal/agent -run 'TestReconcileContextSourceInventoryAddsRepresentedEvidenceOnly|TestBuildContextBalancesBroadReleaseEvidence|TestBuildContextProvesReleaseQualityWithoutPrivateRules' -count=1
+go test ./internal/agent -count=1
+git diff --check
+```
+
+The broad release regression and full agent package must now pass. If either remains red, stop and diagnose rather than changing limits or weakening the contract.
+
 ### Task 5: Candidate verification and release matrix 2
 
 **Files:**
