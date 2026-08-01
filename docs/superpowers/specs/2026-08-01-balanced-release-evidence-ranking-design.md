@@ -100,6 +100,8 @@ The integration correction has three bounded parts:
 
 This correction keeps semantic concerns for ordinary queries while allowing an explicitly requested release inventory to distinguish exact files. Path-specific keys are internal only and are derived from normalized project/path identity, never private names or prompt-specific rules.
 
+Final integration verification showed one narrow inventory exception is also required. The general inventory excludes the shared `primary_path` concern to avoid publishing every reachable service symbol. A profiled route or API-endpoint option in a non-entrypoint project is different: it is the concrete provider boundary for the selected cross-project path. Such an option may contribute the existing required `primary_path` facet to exact inventory. Caller-project routes, service symbols, tests, pathless or unprofiled options remain excluded. This lets the final inventory replace weaker related-service metadata with the concrete provider controller without broadening ordinary path discovery.
+
 ## Testing
 
 Test-driven implementation starts with a broad, release-shaped Java/Spring query that requests evidence categories and exact production/test files without naming the desired implementation classes. The existing generic fixture supplies competing model, repository, client auth/config, server policy, controller, and executable test evidence.
@@ -117,5 +119,7 @@ The regression must fail before production changes and then prove that:
 - generic matrix, growth, shell, documentation, and release benchmark gates remain unchanged.
 
 Integration tests additionally prove that inferred caller duplicates are excluded unless explicitly requested, credential-only caller configuration does not become server authentication, exact-inventory subareas are bounded and deterministic, and final inventory reconciliation fills available source-section capacity without adding files or displacing mandatory proof.
+
+The complete agent package must also retain unscoped cross-service authentication coverage and projected client authentication/configuration/resilience selection under normal, non-exact queries. These are branch-level compatibility gates, not benchmark exceptions.
 
 After local verification and independent review, the exact committed candidate is installed and the historical workspace is freshly scanned. Release matrix 2 uses the identical prompt, model, reasoning level, sandbox, workspace snapshot, and controlled skill configuration. A release candidate passes only if automatic gates pass and the assisted median manual quality score is at least the baseline median.

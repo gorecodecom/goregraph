@@ -358,6 +358,77 @@ git diff --check
 
 The broad release regression and full agent package must now pass. If either remains red, stop and diagnose rather than changing limits or weakening the contract.
 
+### Task 4D: Preserve profiled cross-project primary routes in inventory
+
+**Files:**
+
+- Modify: `internal/agent/context_proof.go`
+- Test: `internal/agent/context_source_test.go`
+
+**Interfaces:**
+
+- Extends exact inventory candidacy with a narrow profiled cross-project route/API-endpoint exception for the required `primary_path` concern.
+
+- [ ] **Step 1: Write the failing inventory-boundary test**
+
+Add `TestContextEvidenceInventoryKeepsProfiledCrossProjectPrimaryRoute`. Build a full inventory with a caller entrypoint route, a profiled provider route/controller, a provider service symbol proving the same shared primary path, and invalid caller/unprofiled/test alternatives. Require only the profiled non-caller route/API endpoint to become a primary-path inventory candidate. When the file cap is full, appending inventory must replace a weaker nonmandatory related-service file with the provider route while retaining all already represented public areas and mandatory files.
+
+- [ ] **Step 2: Verify the red state**
+
+```bash
+go test ./internal/agent -run TestContextEvidenceInventoryKeepsProfiledCrossProjectPrimaryRoute -count=1
+```
+
+Expected: FAIL because `contextEvidenceInventoryConcernIsExact` excludes every `primary_path` option.
+
+- [ ] **Step 3: Implement the narrow candidacy exception**
+
+Allow a required primary-path concern only when the option is profiled, production source-backed, has a safe canonical path, belongs to a non-empty project different from the selected entrypoint project, and contains an exact route, API-endpoint, or backend-handler fact. Do not admit caller-project routes, symbols/services, tests, pathless options, or unprofiled candidates. Retain the existing shared primary-path facet and deterministic option quality/path ordering; do not create a new public schema or concern.
+
+- [ ] **Step 4: Format and verify**
+
+```bash
+gofmt -w internal/agent/context_proof.go internal/agent/context_source_test.go
+go test ./internal/agent -run 'TestContextEvidenceInventoryKeepsProfiledCrossProjectPrimaryRoute|TestContextEvidenceInventoryBalancesPublicAreasBeforeRepeatedFacets|TestReconcileContextSourceInventoryAddsRepresentedEvidenceOnly|TestBuildContextBalancesBroadReleaseEvidence' -count=1
+git diff --check
+```
+
+The broad release regression must pass. If another path is displaced, stop and diagnose rather than widening the exception.
+
+### Task 4E: Restore non-exact agent selection compatibility
+
+**Files:**
+
+- Diagnose and minimally modify: `internal/agent/context_intent.go`, `internal/agent/context_select.go`, or `internal/agent/context_source.go` only as proven necessary.
+- Test: existing `internal/agent/context_cross_service_test.go` and `internal/agent/context_source_test.go` regressions; add focused counterexamples only when needed.
+
+- [ ] **Step 1: Capture the two existing red contracts**
+
+```bash
+go test ./internal/agent -run 'TestContextSourceProductionBeforeTests|TestContextSourceOptionsSelectProjectedClientEvidenceAndReportBudgetOmissions' -count=1 -v
+```
+
+Required failures to diagnose: an unscoped cross-service authentication concern remains uncovered, and projected client authentication is absent from both normal source/file selection and bounded budget omissions.
+
+- [ ] **Step 2: Trace the exact regression boundary**
+
+Compare public concern project binding, selected-client concern projection, authentication role gating, candidate fact IDs, option proof keys, source utility, and omission construction. Prove which Task 4A/4B rule changed each behavior. Do not assume the assertions are obsolete and do not enable exact-inventory intent for these ordinary queries.
+
+- [ ] **Step 3: Implement the smallest generic compatibility fix**
+
+Preserve the tightened credential-only caller-auth rejection and cross-project fact scoping. Restore real typed authentication evidence for unscoped and selected-client concerns, and ensure configuration/authentication/resilience siblings remain independently selectable or omittable under the existing file/token caps. Add negative counterexamples for foreign-project auth and same-project audit distractors if the existing tests do not already cover them.
+
+- [ ] **Step 4: Run full agent acceptance**
+
+```bash
+gofmt -w internal/agent/context_intent.go internal/agent/context_select.go internal/agent/context_source.go internal/agent/context_cross_service_test.go internal/agent/context_source_test.go
+go test ./internal/agent -run 'TestContextSourceProductionBeforeTests|TestContextSourceOptionsSelectProjectedClientEvidenceAndReportBudgetOmissions|TestBuildContextBalancesBroadReleaseEvidence|TestContextSourceConcernsRoleGateCredentialOnlyCallerAuthentication' -count=1
+go test ./internal/agent -count=1
+git diff --check
+```
+
+The focused set and complete agent package must pass before Task 5.
+
 ### Task 5: Candidate verification and release matrix 2
 
 **Files:**
