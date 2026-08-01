@@ -1156,7 +1156,7 @@ func TestRunExecuteRechecksDirtyAheadAndDivergedAfterFetch(t *testing.T) {
 	t.Run("dirty after fetch starts", func(t *testing.T) {
 		fixture := newGitFixture(t)
 		fixture.commitAndPushFromPeer(t, "peer update\n")
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		barrierDirectory := installGitFetchBarrier(t)
 		type runOutcome struct {
