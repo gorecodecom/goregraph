@@ -960,20 +960,8 @@ func contextExactInventoryPath(file string) string {
 
 func contextExactInventoryDomainAnchors(query, kind string) map[string]bool {
 	anchors := contextExpandedTokenSet(query)
-	for _, token := range []string{
-		"exact", "exakt", "exakte", "exaktes", "exakten", "exakter",
-		"file", "files", "path", "paths", "datei", "dateien", "pfad", "pfade",
-		"inventory", "inventar", "liste", "auflistung",
-		"production", "produktions", "produktion", "prod", "test", "tests", "testing",
-		"executable", "ausfuhrbar", "ausführbar", "provide", "provided", "show",
-		"include", "current", "required", "release", "ready", "change", "for", "and",
-	} {
+	for token := range contextExactInventoryScaffoldingTokens(kind) {
 		delete(anchors, token)
-	}
-	for _, token := range contextConcernVocabulary[kind] {
-		for expanded := range contextExpandedTokenSet(token) {
-			delete(anchors, expanded)
-		}
 	}
 	for token := range anchors {
 		if len([]rune(token)) < 3 {
@@ -981,6 +969,34 @@ func contextExactInventoryDomainAnchors(query, kind string) map[string]bool {
 		}
 	}
 	return anchors
+}
+
+func contextExactInventoryScaffoldingTokens(kind string) map[string]bool {
+	terms := []string{
+		"exact exactly exakte exakter exaktes exakten",
+		"file files path paths datei dateien dateipfad dateipfade pfad pfade",
+		"inventory inventar liste auflistung",
+		"production produktions produktion produktionsdatei produktionsdateien prod",
+		"test tests testing executable ausführbar ausführbarer ausfuhrbar ausfuhrbarer",
+		"provide provided show include current required release ready change for and",
+		"stelle bereit liefere liefern zeige einschließen aktuell erforderlich freigabe bereitstellung änderung aenderung für und",
+	}
+	terms = append(terms, contextConcernVocabulary[kind]...)
+	terms = append(terms, contextExactInventoryGermanConcernTerms(kind)...)
+	return contextExpandedTokenSet(strings.Join(terms, " "))
+}
+
+func contextExactInventoryGermanConcernTerms(kind string) []string {
+	switch kind {
+	case contextConcernAuth:
+		return []string{"authentifizierung", "autorisierung", "berechtigung", "sicherheit", "zugangsdaten"}
+	case contextConcernConfiguration:
+		return []string{"konfiguration", "konfigurationen", "einstellung", "einstellungen"}
+	case contextConcernTests:
+		return []string{"testfall", "testfälle", "tests"}
+	default:
+		return nil
+	}
 }
 
 func contextExactInventoryMandatoryFact(pack ContextPack, fact scan.AgentContextFactRecord) bool {
