@@ -82,6 +82,9 @@ func appendContextEvidenceInventory(
 			if !fits {
 				continue
 			}
+			if !contextEvidenceInventoryPreservesRequiredPublicAreas(pack, trial, candidates) {
+				continue
+			}
 			score := contextEvidenceInventoryScoreFor(trial, candidates)
 			if !betterContextEvidenceInventoryScore(score, currentScore) ||
 				found && !betterContextEvidenceInventoryScore(score, bestScore) {
@@ -421,6 +424,37 @@ func contextEvidenceInventoryScoreFor(
 	sort.Strings(representedKeys)
 	score.key = strings.Join(representedKeys, "\x00")
 	return score
+}
+
+func contextEvidenceInventoryPreservesRequiredPublicAreas(
+	current ContextPack,
+	trial ContextPack,
+	candidates []contextEvidenceInventoryCandidate,
+) bool {
+	currentAreas := contextEvidenceInventoryRequiredPublicAreas(current, candidates)
+	trialAreas := contextEvidenceInventoryRequiredPublicAreas(trial, candidates)
+	for area := range currentAreas {
+		if !trialAreas[area] {
+			return false
+		}
+	}
+	return true
+}
+
+func contextEvidenceInventoryRequiredPublicAreas(
+	pack ContextPack,
+	candidates []contextEvidenceInventoryCandidate,
+) map[string]bool {
+	areas := make(map[string]bool)
+	for _, candidate := range candidates {
+		if !contextEvidenceInventoryPathRepresented(pack, candidate.file) {
+			continue
+		}
+		for area := range candidate.publicFacets {
+			areas[area] = true
+		}
+	}
+	return areas
 }
 
 func contextEvidenceInventoryRepresentedDominator(

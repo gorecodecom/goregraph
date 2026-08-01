@@ -1576,6 +1576,208 @@ func TestContextEvidenceInventoryKeepsProfiledCrossProjectPrimaryRoute(t *testin
 	}
 }
 
+func TestAppendContextEvidenceInventoryPreservesRequiredPublicAreas(t *testing.T) {
+	const (
+		entrypointProject = "services/catalog"
+		providerProject   = "services/jobs"
+		providerPath      = "src/main/java/example/JobManagementController.java"
+	)
+	type exactArea struct {
+		name string
+		kind string
+		path string
+		role string
+	}
+	areas := []exactArea{
+		{
+			name: "test", kind: contextConcernTests,
+			path: "src/test/java/example/JobManagementControllerTest.java", role: "test",
+		},
+		{
+			name: "configuration", kind: contextConcernConfiguration,
+			path: "src/main/java/example/JobClientConfig.java", role: "call_chain",
+		},
+	}
+
+	for _, area := range areas {
+		t.Run("keeps sole exact "+area.name+" public area", func(t *testing.T) {
+			primary := newContextConcern(
+				contextConcernPrimaryPath,
+				"",
+				true,
+				[]string{"provider-route"},
+				"reachable production path",
+			)
+			exact := newContextEvidenceConcern(
+				newContextConcern(
+					area.kind,
+					"libraries/job-client",
+					true,
+					[]string{"exact-" + area.name},
+					"required exact "+area.name,
+				),
+				"exact-file:"+area.path,
+				[]string{"exact-" + area.name},
+				"required exact "+area.name,
+			)
+			exact.exactInventory = true
+			provider := contextSourceOption{
+				candidate: sourceCandidate{
+					FactID: "provider-route", Project: providerProject, Path: providerPath,
+					Role: "call_chain", Kind: "route",
+				},
+				section: ContextSourceSection{
+					Project: providerProject, Path: providerPath, StartLine: 1, EndLine: 3,
+					Role: "call_chain", RenderMode: "declaration_body", Content: "final class JobManagementController {}",
+				},
+				concernKeys: []string{primary.key}, projectKey: providerProject,
+				profiled: true, quality: 1,
+			}
+			exactOption := contextSourceOption{
+				candidate: sourceCandidate{
+					FactID: "exact-" + area.name, Project: "libraries/job-client", Path: area.path,
+					Role: area.role, Kind: area.kind,
+				},
+				section: ContextSourceSection{
+					Project: "libraries/job-client", Path: area.path, StartLine: 1, EndLine: 3,
+					Role: area.role, RenderMode: "declaration_body", Content: "final class ExactEvidence {}",
+				},
+				concernKeys: []string{exact.key}, projectKey: "libraries/job-client",
+				profiled: true,
+			}
+			request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens, MaxFiles: 1}
+			pack, err := finalizeContextEstimate(ContextPack{
+				Schema:         1,
+				Query:          "prepare exact inventory",
+				selectionQuery: "provide exact production and test file inventory",
+				BudgetTokens:   request.BudgetTokens,
+				Entrypoints:    []ContextLocation{{Project: entrypointProject}},
+				Files: []ContextFile{{
+					Project: "libraries/job-client", Path: area.path, Role: area.role,
+					Reason: "selected required " + area.kind + " evidence",
+				}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := appendContextEvidenceInventory(
+				pack,
+				request,
+				[]contextSourceOption{provider, exactOption},
+				[]contextConcern{primary, exact},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if contextEvidenceInventoryPathRepresented(got, ContextFile{
+				Project: providerProject, Path: providerPath,
+			}) {
+				t.Fatalf("provider route displaced sole exact %s public area: %#v", area.name, got.Files)
+			}
+			if !contextEvidenceInventoryPathRepresented(got, ContextFile{
+				Project: "libraries/job-client", Path: area.path,
+			}) {
+				t.Fatalf("sole exact %s public area was displaced: %#v", area.name, got.Files)
+			}
+		})
+
+		t.Run("replaces redundant file beside exact "+area.name+" public area", func(t *testing.T) {
+			primary := newContextConcern(
+				contextConcernPrimaryPath,
+				"",
+				true,
+				[]string{"provider-route"},
+				"reachable production path",
+			)
+			exact := newContextEvidenceConcern(
+				newContextConcern(
+					area.kind,
+					"libraries/job-client",
+					true,
+					[]string{"exact-" + area.name},
+					"required exact "+area.name,
+				),
+				"exact-file:"+area.path,
+				[]string{"exact-" + area.name},
+				"required exact "+area.name,
+			)
+			exact.exactInventory = true
+			provider := contextSourceOption{
+				candidate: sourceCandidate{
+					FactID: "provider-route", Project: providerProject, Path: providerPath,
+					Role: "call_chain", Kind: "route",
+				},
+				section: ContextSourceSection{
+					Project: providerProject, Path: providerPath, StartLine: 1, EndLine: 3,
+					Role: "call_chain", RenderMode: "declaration_body", Content: "final class JobManagementController {}",
+				},
+				concernKeys: []string{primary.key}, projectKey: providerProject,
+				profiled: true, quality: 1,
+			}
+			exactOption := contextSourceOption{
+				candidate: sourceCandidate{
+					FactID: "exact-" + area.name, Project: "libraries/job-client", Path: area.path,
+					Role: area.role, Kind: area.kind,
+				},
+				section: ContextSourceSection{
+					Project: "libraries/job-client", Path: area.path, StartLine: 1, EndLine: 3,
+					Role: area.role, RenderMode: "declaration_body", Content: "final class ExactEvidence {}",
+				},
+				concernKeys: []string{exact.key}, projectKey: "libraries/job-client",
+				profiled: true,
+			}
+			const redundantPath = "src/main/java/example/RedundantJobHelper.java"
+			request := ContextRequest{BudgetTokens: DefaultContextBudgetTokens, MaxFiles: 2}
+			pack, err := finalizeContextEstimate(ContextPack{
+				Schema:         1,
+				Query:          "prepare exact inventory",
+				selectionQuery: "provide exact production and test file inventory",
+				BudgetTokens:   request.BudgetTokens,
+				Entrypoints:    []ContextLocation{{Project: entrypointProject}},
+				Files: []ContextFile{
+					{
+						Project: "libraries/job-client", Path: area.path, Role: area.role,
+						Reason: "selected required " + area.kind + " evidence",
+					},
+					{
+						Project: providerProject, Path: redundantPath, Role: "related_project",
+						Reason: "full task project match",
+					},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := appendContextEvidenceInventory(
+				pack,
+				request,
+				[]contextSourceOption{provider, exactOption},
+				[]contextConcern{primary, exact},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !contextEvidenceInventoryPathRepresented(got, ContextFile{
+				Project: providerProject, Path: providerPath,
+			}) {
+				t.Fatalf("provider route did not replace redundant file: %#v", got.Files)
+			}
+			if !contextEvidenceInventoryPathRepresented(got, ContextFile{
+				Project: "libraries/job-client", Path: area.path,
+			}) {
+				t.Fatalf("exact %s public area was displaced despite redundant file: %#v", area.name, got.Files)
+			}
+			if contextEvidenceInventoryPathRepresented(got, ContextFile{
+				Project: providerProject, Path: redundantPath,
+			}) {
+				t.Fatalf("redundant file was retained: %#v", got.Files)
+			}
+		})
+	}
+}
+
 func TestAppendContextEvidenceInventoryIsBoundedAndDoesNotCreateCoverage(t *testing.T) {
 	const optionCount = 20
 	concerns := make([]contextConcern, 0, optionCount)
