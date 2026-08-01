@@ -1,13 +1,69 @@
 package goregraph_test
 
 import (
+	"bytes"
 	"os"
+	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
+
+func TestOptionalPublisherTemplatesHandleMissingSecrets(t *testing.T) {
+	body, err := os.ReadFile(".goreleaser.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	skipTemplatePattern := regexp.MustCompile(`(?m)^    skip_upload: ['"](.*)['"]$`)
+	matches := skipTemplatePattern.FindAllStringSubmatch(string(body), -1)
+	if len(matches) != 2 {
+		t.Fatalf("found %d optional publisher templates, want 2", len(matches))
+	}
+
+	tests := []struct {
+		name string
+		env  map[string]string
+		want []string
+	}{
+		{name: "no publisher secrets", env: map[string]string{}, want: []string{"true", "true"}},
+		{name: "winget only", env: map[string]string{"WINGET_TOKEN": "token"}, want: []string{"false", "true"}},
+		{name: "scoop only", env: map[string]string{"SCOOP_BUCKET_TOKEN": "token"}, want: []string{"false", "true"}},
+		{
+			name: "both publisher secrets",
+			env: map[string]string{
+				"WINGET_TOKEN":       "token",
+				"SCOOP_BUCKET_TOKEN": "token",
+			},
+			want: []string{"false", "false"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var got []string
+			for index, match := range matches {
+				skipTemplate, err := template.New("skip_upload").Option("missingkey=error").Parse(match[1])
+				if err != nil {
+					t.Fatalf("parse skip template %d: %v", index, err)
+				}
+				var output bytes.Buffer
+				if err := skipTemplate.Execute(&output, map[string]any{"Env": test.env}); err != nil {
+					t.Fatalf("execute skip template %d: %v", index, err)
+				}
+				got = append(got, output.String())
+			}
+			sort.Strings(got)
+			if !slices.Equal(got, test.want) {
+				t.Fatalf("skip decisions = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
 
 func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 	files := map[string][]string{

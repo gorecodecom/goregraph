@@ -112,7 +112,7 @@ winget:
           owner: microsoft
           name: winget-pkgs
           branch: master
-    skip_upload: "{{ if .Env.WINGET_TOKEN }}false{{ else }}true{{ end }}"
+    skip_upload: '{{ if index .Env "WINGET_TOKEN" }}false{{ else }}true{{ end }}'
 
 scoops:
   - name: goregraph
@@ -127,4 +127,4 @@ scoops:
     homepage: https://github.com/gorecodecom/goregraph
     description: Local deterministic code intelligence for safer AI-assisted development
     license: Apache-2.0
-    skip_upload: "{{ if .Env.SCOOP_BUCKET_TOKEN }}false{{ else }}true{{ end }}"
+    skip_upload: '{{ if index .Env "SCOOP_BUCKET_TOKEN" }}false{{ else }}true{{ end }}'
