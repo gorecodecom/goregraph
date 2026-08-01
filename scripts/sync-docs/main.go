@@ -207,11 +207,11 @@ func renderCurrentContract() string {
 
 func renderCurrentReleaseEvidenceStatus() string {
 	return "The latest controlled three-by-three release benchmark did not pass: " +
-		"candidate efc21f3 passed the prospective token and structural gates with " +
-		"effective-token medians of 160317 baseline and 20715 assisted, an 87.08% reduction, " +
+		"candidate b102756 passed the prospective token and structural gates with " +
+		"effective-token medians of 148625 baseline and 18628 assisted, an 87.47% reduction, " +
 		"and zero external skill reads. Its signed 12-point review failed because the quality " +
-		"medians were 12 baseline and 9 assisted; authentication/configuration and exact " +
-		"production/test-file inventory remained incomplete. Publication remains blocked " +
+		"medians were 11 baseline and 10 assisted; dependent persistence/cascade disclosure " +
+		"and one natural affected-file inventory phrasing remained incomplete. Publication remains blocked " +
 		"until the correction passes a fresh controlled matrix and signed quality review."
 }
 

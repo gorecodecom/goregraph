@@ -138,12 +138,12 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	releaseEvidence := renderCurrentReleaseEvidenceStatus()
 	for _, want := range []string{
 		"latest controlled three-by-three release benchmark did not pass",
-		"candidate efc21f3",
-		"effective-token medians of 160317 baseline and 20715 assisted",
-		"87.08% reduction",
+		"candidate b102756",
+		"effective-token medians of 148625 baseline and 18628 assisted",
+		"87.47% reduction",
 		"zero external skill reads",
-		"quality medians were 12 baseline and 9 assisted",
-		"authentication/configuration and exact production/test-file inventory",
+		"quality medians were 11 baseline and 10 assisted",
+		"dependent persistence/cascade disclosure and one natural affected-file inventory phrasing",
 		"Publication remains blocked",
 	} {
 		if !strings.Contains(releaseEvidence, want) {
