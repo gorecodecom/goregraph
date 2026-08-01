@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func main() {
@@ -48,6 +49,9 @@ func hashWorkspace(root string) (string, error) {
 			return nil
 		}
 		path = filepath.ToSlash(path)
+		if entry.IsDir() && isGeneratedOrVCSDirectory(path) {
+			return fs.SkipDir
+		}
 		switch {
 		case entry.IsDir():
 			writeTreeRecord(treeHash, 'D', path, nil)
@@ -67,6 +71,16 @@ func hashWorkspace(root string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(treeHash.Sum(nil)), nil
+}
+
+func isGeneratedOrVCSDirectory(path string) bool {
+	for _, part := range strings.Split(path, "/") {
+		switch part {
+		case ".git", ".goregraph-workspace", "goregraph-out":
+			return true
+		}
+	}
+	return false
 }
 
 func hashWorkspaceFile(path string) ([]byte, error) {

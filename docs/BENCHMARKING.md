@@ -106,6 +106,12 @@ repository together with the exact prompts, workspace snapshot identifier,
 model, reasoning setting, sandbox, approval mode, `CODEX_BENCHMARK_ARGS`, and
 run order.
 
+The workspace snapshot identifier hashes benchmark source inputs while
+excluding `.git`, `.goregraph-workspace`, and project `goregraph-out`
+directories. Those directories contain VCS state or generated treatment
+artifacts and must not make an otherwise identical source snapshot appear
+different after a fresh scan.
+
 Run the harness with absolute paths:
 
 ```bash

@@ -459,7 +459,7 @@ Push the branch, install with exact `Commit`/UTC `Built` ldflags, and verify `go
 
 - [ ] **Step 4: Clean and freshly scan the historical workspace**
 
-Preview and execute workspace clean, then scan-all and status. Require all three projects indexed and the approved workspace digest unchanged.
+Preview and execute workspace clean, then scan-all and status. Require all three projects indexed and the approved source digest unchanged; exclude VCS metadata and generated GoreGraph outputs from that identity.
 
 - [ ] **Step 5: Run and review matrix 2**
 
