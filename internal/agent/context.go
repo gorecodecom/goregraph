@@ -393,10 +393,17 @@ func finalizeContextSourceDecision(
 			pack.FallbackRequired = true
 		}
 	}
-	if gap := contextRequestedContractGap(pack, index); gap != nil &&
-		len(pack.Uncertainties) < maximumContextUncertainty &&
-		!contextUncertaintyExists(pack.Uncertainties, gap.Scope, gap.Reason) {
+	for _, gap := range []*ContextUncertainty{
+		contextRequestedContractGap(pack, index),
+		contextMissingTransitionOrderingGap(pack),
+	} {
+		if gap == nil || len(pack.Uncertainties) >= maximumContextUncertainty ||
+			contextUncertaintyExists(pack.Uncertainties, gap.Scope, gap.Reason) {
+			continue
+		}
 		pack.Uncertainties = append(pack.Uncertainties, *gap)
+	}
+	if len(pack.Uncertainties) > 1 {
 		sort.Slice(pack.Uncertainties, func(left, right int) bool {
 			if pack.Uncertainties[left].Scope != pack.Uncertainties[right].Scope {
 				return pack.Uncertainties[left].Scope < pack.Uncertainties[right].Scope
@@ -405,6 +412,41 @@ func finalizeContextSourceDecision(
 		})
 	}
 	return pack
+}
+
+func contextMissingTransitionOrderingGap(pack ContextPack) *ContextUncertainty {
+	if len(pack.SourceSections) == 0 ||
+		!contextQueryPlansMissingTransition(contextSelectionQuery(pack)) {
+		return nil
+	}
+	projects := make(map[string]bool)
+	addProject := func(project string) {
+		if project = normalizeContextProject(project); project != "" {
+			projects[project] = true
+		}
+	}
+	for _, entrypoint := range pack.Entrypoints {
+		addProject(entrypoint.Project)
+	}
+	for _, endpoint := range pack.Endpoints {
+		addProject(endpoint.Provider)
+		for _, consumer := range endpoint.Consumers {
+			addProject(consumer.Project)
+		}
+	}
+	for _, contract := range pack.Contracts {
+		addProject(contract.Project)
+	}
+	for _, concern := range pack.Concerns {
+		addProject(concern.Project)
+	}
+	if len(projects) < 2 {
+		return nil
+	}
+	return &ContextUncertainty{
+		Scope:  "cross_service_ordering",
+		Reason: "no indexed evidence establishes ordering or compensation between current and proposed cross-service mutations",
+	}
 }
 
 func contextRequestedContractGap(

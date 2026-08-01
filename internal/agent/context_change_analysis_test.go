@@ -19,6 +19,40 @@ const (
 	broadReleaseQualityQuery    = "When DELETE /catalog/items/{itemId} removes an item in services/catalog, analyze the current and required cross-service cleanup through libraries/job-client and services/jobs. Cover the public and internal HTTP contracts, both job types and lookup attributes, client and provider authentication and configuration, retry and failure behavior, persistence, side effects, and the exact production and executable test files required for a release-ready change."
 )
 
+func TestContextMissingTransitionOrderingGapRequiresCrossProjectPlan(t *testing.T) {
+	const query = "Analyze the current and required new call chain and internal HTTP contract for cross-service job cleanup."
+	pack := ContextPack{
+		Query: query, selectionQuery: query,
+		Endpoints:      []ContextEndpoint{{Provider: "services/catalog"}},
+		Contracts:      []ContextLocation{{Project: "libraries/job-client"}},
+		SourceSections: []ContextSourceSection{{Path: "src/CatalogController.java"}},
+	}
+	gap := contextMissingTransitionOrderingGap(pack)
+	if gap == nil || gap.Scope != "cross_service_ordering" {
+		t.Fatalf("cross-service ordering gap = %#v", gap)
+	}
+
+	existing := pack
+	existing.Query = "Explain the current cross-service job cleanup call chain."
+	existing.selectionQuery = existing.Query
+	if gap := contextMissingTransitionOrderingGap(existing); gap != nil {
+		t.Fatalf("existing-flow ordering gap = %#v, want none", gap)
+	}
+
+	local := pack
+	local.Contracts = append([]ContextLocation(nil), pack.Contracts...)
+	local.Contracts[0].Project = "services/catalog"
+	if gap := contextMissingTransitionOrderingGap(local); gap != nil {
+		t.Fatalf("single-project ordering gap = %#v, want none", gap)
+	}
+
+	metadata := pack
+	metadata.SourceSections = nil
+	if gap := contextMissingTransitionOrderingGap(metadata); gap != nil {
+		t.Fatalf("metadata-only ordering gap = %#v, want none", gap)
+	}
+}
+
 func TestBuildContextBudgetsFinalDecisionMetadata(t *testing.T) {
 	root := writeMissingContractContextFixture(t)
 	const budget = 1750
