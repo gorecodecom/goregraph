@@ -46,6 +46,19 @@ func TestAssistedInstructionKeepsFutureChangePlansSourceBacked(t *testing.T) {
 	}
 }
 
+func TestAssistedInstructionRequiresReaderBoundedOmissionCommands(t *testing.T) {
+	for _, want := range []string{
+		"make the file reader itself range-bounded",
+		"sed -n",
+		"never pipe a whole-file reader such as nl",
+		"downstream range filter",
+	} {
+		if !strings.Contains(AssistedInstruction, want) {
+			t.Errorf("AssistedInstruction does not contain %q", want)
+		}
+	}
+}
+
 func TestAssistedInstructionKeepsRequestedAuthenticationAndConfigurationCoherent(t *testing.T) {
 	for _, want := range []string{
 		"When authentication or configuration is requested",
