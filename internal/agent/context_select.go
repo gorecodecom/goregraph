@@ -1154,6 +1154,7 @@ func contextExactInventoryEvidenceConcerns(
 			factIDs,
 			"exact file inventory evidence",
 		)
+		concern.publicKey = concern.key
 		concern.exactInventory = true
 		result = append(result, concern)
 	}

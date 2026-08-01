@@ -1157,6 +1157,7 @@ func contextQueryRequestsConcern(query, kind string) bool {
 
 func contextQueryRequestsExactEvidenceInventory(query string) bool {
 	tokens := contextExpandedTokenSet(query)
+	rawTokens := contextTokenSet(query)
 	hasAny := func(values ...string) bool {
 		for _, value := range values {
 			if tokens[value] {
@@ -1165,13 +1166,33 @@ func contextQueryRequestsExactEvidenceInventory(query string) bool {
 		}
 		return false
 	}
-	return hasAny("exact", "exakt", "exakte", "exaktes") &&
-		hasAny(
-			"file", "files", "path", "paths", "datei", "dateien", "pfad", "pfade",
-			"inventory", "inventar", "liste", "auflistung",
-		) &&
-		(hasAny("production", "produktions", "produktion", "prod") ||
-			hasAny("test", "tests", "testing"))
+	hasRawAny := func(values ...string) bool {
+		for _, value := range values {
+			if rawTokens[value] {
+				return true
+			}
+		}
+		return false
+	}
+	hasIdentityNoun := hasRawAny(
+		"file", "files", "datei", "dateien",
+		"inventory", "inventar", "inventare", "liste", "listen", "auflistung", "auflistungen",
+	)
+	hasProductionScope := hasAny("production", "produktions", "produktion", "prod")
+	hasTestScope := hasAny("test", "tests", "testing")
+	for token := range rawTokens {
+		if strings.HasSuffix(token, "datei") || strings.HasSuffix(token, "dateien") {
+			hasIdentityNoun = true
+		}
+		switch token {
+		case "produktionsdatei", "produktionsdateien", "produktionspfad", "produktionspfade":
+			hasProductionScope = true
+		case "testdatei", "testdateien", "testpfad", "testpfade":
+			hasTestScope = true
+		}
+	}
+	return hasAny("exact", "exakt", "exakte", "exaktes", "exaktem") &&
+		hasIdentityNoun && (hasProductionScope || hasTestScope)
 }
 
 func contextValueRequestsConcern(value, kind string) bool {
