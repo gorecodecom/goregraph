@@ -445,7 +445,7 @@ func contextMissingTransitionOrderingGap(pack ContextPack) *ContextUncertainty {
 	}
 	return &ContextUncertainty{
 		Scope:  "cross_service_ordering",
-		Reason: "no indexed evidence establishes ordering or compensation between current and proposed cross-service mutations",
+		Reason: "source evidence does not decide whether the remote or local mutation runs first; either order risks inconsistent state without an explicit compensation policy",
 	}
 }
 

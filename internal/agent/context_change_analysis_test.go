@@ -21,6 +21,7 @@ const (
 
 func TestContextMissingTransitionOrderingGapRequiresCrossProjectPlan(t *testing.T) {
 	const query = "Analyze the current and required new call chain and internal HTTP contract for cross-service job cleanup."
+	const wantReason = "source evidence does not decide whether the remote or local mutation runs first; either order risks inconsistent state without an explicit compensation policy"
 	pack := ContextPack{
 		Query: query, selectionQuery: query,
 		Endpoints:      []ContextEndpoint{{Provider: "services/catalog"}},
@@ -28,7 +29,7 @@ func TestContextMissingTransitionOrderingGapRequiresCrossProjectPlan(t *testing.
 		SourceSections: []ContextSourceSection{{Path: "src/CatalogController.java"}},
 	}
 	gap := contextMissingTransitionOrderingGap(pack)
-	if gap == nil || gap.Scope != "cross_service_ordering" {
+	if gap == nil || gap.Scope != "cross_service_ordering" || gap.Reason != wantReason {
 		t.Fatalf("cross-service ordering gap = %#v", gap)
 	}
 
