@@ -1170,10 +1170,8 @@ func contextQueryRequestsExactEvidenceInventory(query string) bool {
 			"file", "files", "path", "paths", "datei", "dateien", "pfad", "pfade",
 			"inventory", "inventar", "liste", "auflistung",
 		) &&
-		hasAny(
-			"production", "produktions", "produktion", "prod",
-			"test", "tests", "testing", "executable", "ausfuhrbar", "ausführbar",
-		)
+		(hasAny("production", "produktions", "produktion", "prod") ||
+			hasAny("test", "tests", "testing"))
 }
 
 func contextValueRequestsConcern(value, kind string) bool {

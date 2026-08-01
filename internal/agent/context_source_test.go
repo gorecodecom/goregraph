@@ -650,7 +650,7 @@ func TestContextSourceEvidenceOmissionsSkipRepresentedExactInventoryPath(t *test
 	)
 	exact.exactInventory = true
 	omissions := contextSourceEvidenceOmissionsWithOptions(
-		ContextPack{Files: []ContextFile{{Project: "libraries/client", Path: "src/main/ClientAuth.java"}}},
+		ContextPack{Files: []ContextFile{{Project: "libraries/client", Path: `src\\main\\.\\ClientAuth.java`}}},
 		scan.AgentContextIndexRecord{},
 		[]contextConcern{exact},
 		[]sourceCandidate{{
@@ -663,6 +663,120 @@ func TestContextSourceEvidenceOmissionsSkipRepresentedExactInventoryPath(t *test
 	)
 	if len(omissions) != 0 {
 		t.Fatalf("represented exact inventory omission = %#v, want none", omissions)
+	}
+}
+
+func TestContextSourceEvidenceOmissionsCollapseEquivalentExactInventoryPaths(t *testing.T) {
+	first := newContextEvidenceConcern(
+		newContextConcern(contextConcernConfiguration, "services/catalog", true, []string{"first"}, "requested configuration"),
+		"exact-file:src/test/resources/application-test.yml",
+		[]string{"first"},
+		"exact configuration inventory",
+	)
+	first.exactInventory = true
+	second := newContextEvidenceConcern(
+		newContextConcern(contextConcernConfiguration, "services/catalog", true, []string{"second"}, "requested configuration"),
+		"exact-file:src/test/./resources/application-test.yml",
+		[]string{"second"},
+		"exact configuration inventory",
+	)
+	second.exactInventory = true
+	omissions := contextSourceEvidenceOmissionsWithOptions(
+		ContextPack{},
+		scan.AgentContextIndexRecord{},
+		[]contextConcern{first, second},
+		[]sourceCandidate{
+			{FactID: "first", FactIDs: []string{"first"}, Project: "services/catalog", Path: `src\\test\\resources\\application-test.yml`, StartLine: 1, EndLine: 3, Role: "call_chain"},
+			{FactID: "second", FactIDs: []string{"second"}, Project: "services/catalog", Path: "src/test/./resources/application-test.yml", StartLine: 1, EndLine: 3, Role: "call_chain"},
+		},
+		nil,
+		map[string]string{},
+		map[string]bool{},
+	)
+	if len(omissions) != 1 {
+		t.Fatalf("equivalent exact inventory omissions = %#v, want one canonical path", omissions)
+	}
+}
+
+func TestContextSourceCandidatesTreatTestProfileConfigurationAsConfiguration(t *testing.T) {
+	pack := ContextPack{
+		Query:                 "Provide configuration evidence.",
+		selectedSourceFactIDs: []string{"test-profile-config"},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{{
+		ID: "test-profile-config", Project: "services/catalog", Kind: "configuration",
+		File: "src/test/resources/application-test.yml", Line: 1, EndLine: 3, Confidence: "EXACT",
+	}}}
+	candidates := contextSourceCandidates(pack, index)
+	if len(candidates) != 1 || candidates[0].Role == "test" {
+		t.Fatalf("test-profile configuration candidates = %#v, want one non-test candidate", candidates)
+	}
+}
+
+func TestContextQueryRequestsExactEvidenceInventoryRequiresRealScopeMarkers(t *testing.T) {
+	for _, test := range []struct {
+		query string
+		want  bool
+	}{
+		{query: "Provide exact production file inventory.", want: true},
+		{query: "Provide exact test path inventory.", want: true},
+		{query: "Stelle exakten Produktionsdateien und Dateipfade Inventar bereit.", want: true},
+		{query: "Stelle exakter Produktionsdateien und Dateipfade Inventar bereit.", want: true},
+		{query: "Provide exact executable file inventory.", want: false},
+		{query: "Stelle exakter ausführbarer Dateipfade Inventar bereit.", want: false},
+		{query: "Provide exactly production file inventory.", want: false},
+		{query: "Stelle exaktest Produktionsdateien Inventar bereit.", want: false},
+	} {
+		if got := contextQueryRequestsExactEvidenceInventory(test.query); got != test.want {
+			t.Errorf("exact inventory trigger for %q = %t, want %t", test.query, got, test.want)
+		}
+	}
+}
+
+func TestExpandContextExactInventoryConcernsIgnoresIntentScaffoldingAsDomainEvidence(t *testing.T) {
+	concern := newContextConcern(
+		contextConcernConfiguration,
+		"services/orders",
+		true,
+		[]string{"marker", "order"},
+		"requested configuration",
+	)
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "marker", Project: "services/orders", Kind: "configuration", Name: "ProductionFileInventoryConfig", File: "src/main/MarkerConfig.java", Confidence: "EXACT", Search: "exact production file inventory configuration"},
+		{ID: "order", Project: "services/orders", Kind: "configuration", Name: "OrderConfig", File: "src/main/OrderConfig.java", Confidence: "EXACT", Search: "order configuration"},
+	}}
+	query := "Provide exact production file inventory for configuration."
+	got := expandContextEvidenceConcerns(ContextPack{Query: query, selectionQuery: query}, index, []contextConcern{concern})
+	keys := []string{}
+	for _, expanded := range got {
+		if expanded.exactInventory {
+			keys = append(keys, expanded.key)
+		}
+	}
+	want := []string{
+		"configuration:services/orders#exact-file:src/main/MarkerConfig.java",
+		"configuration:services/orders#exact-file:src/main/OrderConfig.java",
+	}
+	if !slices.Equal(keys, want) {
+		t.Fatalf("scaffolding domain filtering = %v, want %v", keys, want)
+	}
+}
+
+func TestContextExactInventoryPathRejectsUnsafePathsAndCanonicalizesSafePaths(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		want string
+	}{
+		{path: "/etc/application.yml", want: ""},
+		{path: `C:\\repo\\application.yml`, want: ""},
+		{path: "src/../../application.yml", want: ""},
+		{path: ".", want: ""},
+		{path: `src\\test\\resources\\..\\resources\\application-test.yml`, want: "src/test/resources/application-test.yml"},
+		{path: "src/test/./resources/application-test.yml", want: "src/test/resources/application-test.yml"},
+	} {
+		if got := contextExactInventoryPath(test.path); got != test.want {
+			t.Errorf("canonical exact inventory path for %q = %q, want %q", test.path, got, test.want)
+		}
 	}
 }
 

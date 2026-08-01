@@ -816,14 +816,6 @@ func contextExactInventoryEvidenceConcerns(
 		facts   []scan.AgentContextFactRecord
 	}
 	groupsByKey := make(map[string]*exactInventoryGroup)
-	aliases := contextProjectAliases(index.Facts, index.Coverage)
-	explicitProjects := contextExplicitProjects(contextSelectionQuery(pack), aliases)
-	domainTokens := contextSourceConcernProjectDomainQueryTokens(
-		contextSourceConcernSemanticQueryTokens(contextSelectionQuery(pack)),
-		aliases,
-		explicitProjects,
-	)
-	semanticQueryTokens := contextSourceConcernSemanticQueryTokens(contextSelectionQuery(pack))
 	for _, concern := range concerns {
 		if !concern.required || !contextExactInventoryConcernKind(concern.kind) {
 			continue
@@ -848,31 +840,15 @@ func contextExactInventoryEvidenceConcerns(
 			}
 			facts = append(facts, fact)
 		}
-		domainFacts := make([]scan.AgentContextFactRecord, 0, len(facts))
-		for _, fact := range facts {
-			if contextSourceFactMatchesDomain(fact, domainTokens) {
-				domainFacts = append(domainFacts, fact)
-			}
-		}
-		if len(domainFacts) > 0 {
-			facts = domainFacts
-		} else if concern.kind == contextConcernConfiguration {
-			bestMatches := 0
+		if anchors := contextExactInventoryDomainAnchors(contextSelectionQuery(pack), concern.kind); len(anchors) > 0 {
+			anchoredFacts := make([]scan.AgentContextFactRecord, 0, len(facts))
 			for _, fact := range facts {
-				bestMatches = max(
-					bestMatches,
-					contextSourceConcernSemanticMatchCount(fact, semanticQueryTokens),
-				)
-			}
-			semanticFacts := make([]scan.AgentContextFactRecord, 0, len(facts))
-			for _, fact := range facts {
-				if bestMatches > 1 &&
-					contextSourceConcernSemanticMatchCount(fact, semanticQueryTokens) == bestMatches {
-					semanticFacts = append(semanticFacts, fact)
+				if contextSourceFactMatchesDomain(fact, anchors) {
+					anchoredFacts = append(anchoredFacts, fact)
 				}
 			}
-			if len(semanticFacts) > 0 {
-				facts = semanticFacts
+			if len(anchoredFacts) > 0 {
+				facts = anchoredFacts
 			}
 		}
 		for _, fact := range facts {
@@ -962,7 +938,7 @@ func contextExactInventoryFactMatches(kind string, fact scan.AgentContextFactRec
 		return normalizedContextConcernKind(fact.Kind) == contextConcernConfiguration
 	case contextConcernTests:
 		return strings.EqualFold(strings.TrimSpace(fact.Kind), "test") &&
-			contextFactUsesTestSource(fact)
+			contextFactUsesTestSource(fact) && !isContextConfigurationResource(fact.File)
 	default:
 		return false
 	}
@@ -970,10 +946,41 @@ func contextExactInventoryFactMatches(kind string, fact scan.AgentContextFactRec
 
 func contextExactInventoryPath(file string) string {
 	file = strings.ReplaceAll(strings.TrimSpace(file), "\\", "/")
-	if file == "" || contextPackSourceFile(file) == "" {
+	if file == "" || strings.HasPrefix(file, "/") ||
+		len(file) > 1 && file[1] == ':' || contextPackSourceFile(file) == "" {
 		return ""
 	}
-	return filepath.ToSlash(filepath.Clean(filepath.FromSlash(file)))
+	file = filepath.ToSlash(filepath.Clean(filepath.FromSlash(file)))
+	if file == "." || file == ".." || strings.HasPrefix(file, "../") ||
+		strings.HasPrefix(file, "/") {
+		return ""
+	}
+	return file
+}
+
+func contextExactInventoryDomainAnchors(query, kind string) map[string]bool {
+	anchors := contextExpandedTokenSet(query)
+	for _, token := range []string{
+		"exact", "exakt", "exakte", "exaktes", "exakten", "exakter",
+		"file", "files", "path", "paths", "datei", "dateien", "pfad", "pfade",
+		"inventory", "inventar", "liste", "auflistung",
+		"production", "produktions", "produktion", "prod", "test", "tests", "testing",
+		"executable", "ausfuhrbar", "ausführbar", "provide", "provided", "show",
+		"include", "current", "required", "release", "ready", "change", "for", "and",
+	} {
+		delete(anchors, token)
+	}
+	for _, token := range contextConcernVocabulary[kind] {
+		for expanded := range contextExpandedTokenSet(token) {
+			delete(anchors, expanded)
+		}
+	}
+	for token := range anchors {
+		if len([]rune(token)) < 3 {
+			delete(anchors, token)
+		}
+	}
+	return anchors
 }
 
 func contextExactInventoryMandatoryFact(pack ContextPack, fact scan.AgentContextFactRecord) bool {
@@ -4402,15 +4409,19 @@ func contextSourceEvidenceOmissionsWithOptions(
 		}) {
 			continue
 		}
+		omissionPath := contextPackSourceFile(omission.Path)
+		if concern.exactInventory {
+			omissionPath = contextExactInventoryPath(omission.Path)
+		}
 		pathRank := "1"
-		if contextPackSourceFile(omission.Path) != "" {
+		if omissionPath != "" {
 			pathRank = "0"
 		}
 		key := pathRank + "\x000facet\x00" + normalizeContextProject(omission.Project) + "\x00" +
-			contextPackSourceFile(omission.Path) + "\x00" + omission.Role
+			omissionPath + "\x00" + omission.Role
 		if concern.facet == "" {
 			key = pathRank + "\x001concern\x00" + normalizeContextProject(omission.Project) + "\x00" +
-				contextPackSourceFile(omission.Path) + "\x00" + omission.Role + "\x00" +
+				omissionPath + "\x00" + omission.Role + "\x00" +
 				omission.Reason
 		}
 		if _, exists := grouped[key]; !exists {

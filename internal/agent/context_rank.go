@@ -2775,6 +2775,8 @@ func contextFirstParagraph(value string) string {
 }
 
 var contextIntentTokenAliases = map[string][]string{
+	"ausführbarer":        {"ausführbar", "executable"},
+	"ausfuhrbarer":        {"ausfuhrbar", "executable"},
 	"aufgabe":             {"job", "jobs", "task", "tasks"},
 	"aufgaben":            {"job", "jobs", "task", "tasks"},
 	"aufgabenart":         {"task_type", "task_types", "type", "types"},
@@ -2785,7 +2787,10 @@ var contextIntentTokenAliases = map[string][]string{
 	"benutzerinformation": {"side_effects", "user_information"},
 	"contract":            {"contracts"},
 	"contracts":           {"contract"},
+	"dateipfade":          {"datei", "dateien", "path", "paths", "pfad", "pfade"},
 	"effect":              {"side_effect", "side_effects"},
+	"exakter":             {"exakt", "exact"},
+	"exakten":             {"exakt", "exact"},
 	"effects":             {"side_effect", "side_effects"},
 	"fehlerbehandlung":    {"exception", "resilience"},
 	"job":                 {"jobs", "task", "tasks"},
@@ -2800,6 +2805,7 @@ var contextIntentTokenAliases = map[string][]string{
 	"nebenwirkungen":      {"side_effect", "side_effects"},
 	"persistenz":          {"persistence", "repository"},
 	"protokollierung":     {"logging", "side_effects"},
+	"produktionsdateien":  {"produktion", "production", "datei", "dateien", "file", "files"},
 	"retries":             {"resilience", "retry"},
 	"retry":               {"resilience", "retries"},
 	"suchattribut":        {"attribute", "attributes", "field", "fields", "identifier", "identifiers"},

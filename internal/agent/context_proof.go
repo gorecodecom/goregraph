@@ -460,7 +460,7 @@ func contextEvidenceInventoryPathRepresented(pack ContextPack, file ContextFile)
 }
 
 func contextEvidenceInventoryPathKey(project, path string) string {
-	return normalizeContextProject(project) + "\x00" + contextPackSourceFile(path)
+	return normalizeContextProject(project) + "\x00" + contextExactInventoryPath(path)
 }
 
 func contextEvidenceInventoryMandatoryFile(pack ContextPack, file ContextFile) bool {

@@ -71,12 +71,7 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
-	entrypointIDs := contextLocationIDs(pack.Entrypoints)
-	contractIDs := contextLocationIDs(pack.Contracts)
-	persistenceIDs := contextLocationIDs(pack.Persistence)
-	testIDs := contextLocationIDs(pack.Tests)
 	includeTests := contextQueryRequestsTests(contextSelectionQuery(pack))
-	domainModelTokens := contextSourceDomainModelTokens(pack, index)
 
 	candidates := make([]sourceCandidate, 0, len(pack.selectedSourceFactIDs))
 	for _, id := range pack.selectedSourceFactIDs {
@@ -84,29 +79,10 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 		if !ok || strings.TrimSpace(fact.File) == "" || contextPackSourceFile(fact.File) == "" {
 			continue
 		}
-		role := "call_chain"
-		isTestCandidate := testIDs[id] || strings.EqualFold(fact.Kind, "test") || contextFactUsesTestSource(fact)
-		if isTestCandidate {
+		role := contextSourceRole(pack, index, fact)
+		if role == "test" {
 			if !includeTests {
 				continue
-			}
-			role = "test"
-		} else {
-			switch {
-			case strings.EqualFold(fact.Kind, "api_endpoint"):
-				if contextFactMatchesSelectedEndpoint(fact, pack.Endpoints) {
-					role = "entrypoint"
-				}
-			case entrypointIDs[id]:
-				role = "entrypoint"
-			case contextDomainModelFact(fact, domainModelTokens):
-				role = contextConcernDomainModel
-			case contractIDs[id] || strings.EqualFold(fact.Kind, "api_contract"):
-				role = "contract"
-			case persistenceIDs[id] ||
-				normalizedContextConcernKind(fact.Kind) == contextConcernPersistence ||
-				contextPersistenceOwnerFact(fact):
-				role = "persistence"
 			}
 		}
 		candidates = append(candidates, sourceCandidate{
