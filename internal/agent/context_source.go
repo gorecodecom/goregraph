@@ -2196,7 +2196,9 @@ func readSourceFile(path string) (sourceFile, error) {
 		return sourceFile{}, fmt.Errorf("source file is not valid UTF-8")
 	}
 	normalized := strings.ReplaceAll(string(body), "\r\n", "\n")
-	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	if isContextConfigurationResource(path) {
+		normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	}
 	return sourceFile{
 		Path:  path,
 		Lines: strings.Split(normalized, "\n"),

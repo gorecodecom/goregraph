@@ -10802,6 +10802,22 @@ func TestReadSourceFileNormalizesCRLFAndPreservesPhysicalLines(t *testing.T) {
 	}
 }
 
+func TestReadSourceFilePreservesLoneCRInNonConfigurationSource(t *testing.T) {
+	const body = "one\rtwo\r"
+	path := writeSourceFile(t, t.TempDir(), "src/UserService.java", body)
+
+	file, err := readSourceFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(file.Lines), 1; got != want {
+		t.Fatalf("source line count = %d, want %d: %#v", got, want, file.Lines)
+	}
+	if got := file.Lines[0]; got != body {
+		t.Fatalf("source line = %q, want %q", got, body)
+	}
+}
+
 func TestReadSourceFileNormalizesLineEndingsBeforeConfigurationRedaction(t *testing.T) {
 	tests := []struct {
 		name       string
