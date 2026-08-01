@@ -222,6 +222,105 @@ func TestExpandContextExactInventoryConcernsAcceptsIndexedRuntimeShapes(t *testi
 	}
 }
 
+func TestExpandContextExactInventoryConcernsAcceptsRuntimeOwnerShapes(t *testing.T) {
+	query := "Identify the production and test files to change or create for client configuration, persistence, and executable tests."
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "client-contract", Project: "libraries/job-client", Kind: "api_contract",
+			Name: "GET /jobs", Qualified: "example.JobClient.listJobs",
+			File: "src/main/java/example/JobClient.java", Line: 30, Confidence: "EXACT",
+			Search: "job client contract",
+		},
+		{
+			ID: "client-config-owner", Project: "libraries/job-client", Kind: "symbol",
+			Name: "JobClientConfig", Qualified: "example.JobClientConfig",
+			File: "src/main/java/example/JobClientConfig.java", Line: 17, Confidence: "EXACT",
+			Search: "job client configuration base url credentials timeouts retries",
+		},
+		{
+			ID: "generic-config-owner", Project: "libraries/job-client", Kind: "symbol",
+			Name: "TaskMgmtConfig", Qualified: "example.TaskMgmtConfig",
+			File: "src/main/java/example/TaskMgmtConfig.java", Line: 17, Confidence: "EXACT",
+			Search: "task management configuration",
+		},
+		{
+			ID: "security-config-owner", Project: "services/jobs", Kind: "symbol",
+			Name: "JobSecurityConfig", Qualified: "example.JobSecurityConfig",
+			File: "src/main/java/example/JobSecurityConfig.java", Line: 17, Confidence: "EXACT",
+			Search: "job security authentication configuration",
+		},
+		{
+			ID: "production-config", Project: "services/catalog", Kind: "configuration",
+			Name: "jobs", File: "src/main/resources/application.properties", Line: 40, EndLine: 46, Confidence: "EXACT",
+			Search: "job client configuration base url credentials timeouts retries",
+		},
+		{
+			ID: "test-config", Project: "services/catalog", Kind: "configuration",
+			Name: "jobs", File: "src/test/resources/application-UNITTEST.properties", Line: 20, EndLine: 26, Confidence: "EXACT",
+			Search: "job client test configuration base url credentials timeouts retries",
+		},
+		{
+			ID: "regular-repository", Project: "services/jobs", Kind: "persistence",
+			Name: "delete", Qualified: "CatalogJobRepository.delete",
+			File: "src/main/java/example/CatalogJobRepository.java", Line: 17, Confidence: "EXACT",
+			Search: "regular job persistence catalog item",
+		},
+		{
+			ID: "change-repository-owner", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJobRepository", Qualified: "example.CatalogChangeJobRepository",
+			File: "src/main/java/example/CatalogChangeJobRepository.java", Line: 14, Confidence: "EXACT",
+			Search: "change job persistence catalog item repository",
+		},
+		{
+			ID: "management-test-owner", Project: "services/jobs", Kind: "symbol",
+			Name: "JobManagementControllerTest", Qualified: "example.JobManagementControllerTest",
+			File: "src/test/java/example/JobManagementControllerTest.java", Line: 25, Confidence: "EXACT",
+			Search: "job management controller executable test",
+		},
+	}}
+	concerns := []contextConcern{
+		newContextConcern(contextConcernConfiguration, "libraries/job-client", true, []string{"client-config-owner"}, "requested client configuration"),
+		newContextConcern(contextConcernConfiguration, "services/catalog", true, []string{"production-config", "test-config"}, "requested configuration resources"),
+		newContextConcern(contextConcernPersistence, "services/jobs", true, []string{"regular-repository", "change-repository-owner"}, "requested persistence"),
+		newContextConcern(contextConcernTests, "services/jobs", true, []string{"management-test-owner"}, "requested tests"),
+	}
+
+	expanded := expandContextEvidenceConcerns(
+		ContextPack{
+			Query: query, selectionQuery: query,
+			Contracts: []ContextLocation{{ID: "client-contract", Project: "libraries/job-client"}},
+		},
+		index,
+		concerns,
+	)
+	seen := make(map[string]bool)
+	for _, concern := range expanded {
+		if concern.exactInventory {
+			seen[concern.key] = true
+		}
+	}
+	for _, want := range []string{
+		"configuration:libraries/job-client#exact-file:src/main/java/example/JobClientConfig.java",
+		"configuration:services/catalog#exact-file:src/main/resources/application.properties",
+		"configuration:services/catalog#exact-file:src/test/resources/application-UNITTEST.properties",
+		"persistence:services/jobs#exact-file:src/main/java/example/CatalogJobRepository.java",
+		"persistence:services/jobs#exact-file:src/main/java/example/CatalogChangeJobRepository.java",
+		"tests:services/jobs#exact-file:src/test/java/example/JobManagementControllerTest.java",
+	} {
+		if !seen[want] {
+			t.Errorf("runtime-shaped exact inventory %q missing from %v", want, seen)
+		}
+	}
+	for _, rejected := range []string{
+		"configuration:libraries/job-client#exact-file:src/main/java/example/TaskMgmtConfig.java",
+		"configuration:services/jobs#exact-file:src/main/java/example/JobSecurityConfig.java",
+	} {
+		if seen[rejected] {
+			t.Errorf("unrelated runtime-shaped configuration owner %q retained in %v", rejected, seen)
+		}
+	}
+}
+
 func TestExpandContextExactInventoryConcernsDiscoversProjectTestClass(t *testing.T) {
 	query := "Identify the exact production and executable test files to change or create."
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
@@ -285,7 +384,7 @@ func TestExpandContextExactInventoryConcernsBalancesKindsAndProjectsAtLimit(t *t
 			}
 		}
 	}
-	for index := 0; index < maximumContextSourcePlanningCandidates; index++ {
+	for index := 0; index < maximumContextExactInventoryCandidates; index++ {
 		id := fmt.Sprintf("catalog-extra-auth-%02d", index)
 		facts = append(facts, scan.AgentContextFactRecord{
 			ID: id, Project: "services/catalog", Kind: contextConcernAuth,
@@ -313,8 +412,8 @@ func TestExpandContextExactInventoryConcernsBalancesKindsAndProjectsAtLimit(t *t
 		keys[concern.key] = true
 		count++
 	}
-	if count != maximumContextSourcePlanningCandidates {
-		t.Fatalf("exact inventory groups = %d, want %d", count, maximumContextSourcePlanningCandidates)
+	if count != maximumContextExactInventoryCandidates {
+		t.Fatalf("exact inventory groups = %d, want %d", count, maximumContextExactInventoryCandidates)
 	}
 	for _, project := range projects {
 		for _, kind := range []string{
@@ -383,6 +482,76 @@ func TestExpandContextExactInventoryConcernsPrioritizesInternalInterfaceFiles(t 
 	}
 }
 
+func TestExpandContextExactInventoryConcernsDropsCallerInternalInterfaceForMissingTransition(t *testing.T) {
+	query := "When DELETE /catalog/items/{itemId} removes an item, add the missing cross-service cleanup through services/jobs and identify the exact production and test files for the internal contract and authentication."
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "caller-management", Project: "services/catalog", Kind: "api_endpoint",
+			Name: "GET /catalog-management/items", Qualified: "CatalogManagementController.list",
+			File: "src/main/java/example/CatalogManagementController.java", Confidence: "EXACT",
+			Search: "catalog internal management endpoint",
+		},
+		{
+			ID: "provider-management", Project: "services/jobs", Kind: "api_endpoint",
+			Name: "GET /job-management/jobs", Qualified: "JobManagementController.list",
+			File: "src/main/java/example/JobManagementController.java", Confidence: "EXACT",
+			Search: "job internal management endpoint",
+		},
+		{
+			ID: "caller-security", Project: "services/catalog", Kind: "endpoint_security",
+			Name: "role", Qualified: "GET /catalog-management/items role",
+			File: "src/main/java/example/CatalogSecurity.java", Line: 80, Confidence: "EXACT",
+			Search: "catalog internal management technical role",
+		},
+		{
+			ID: "provider-security", Project: "services/jobs", Kind: "endpoint_security",
+			Name: "role", Qualified: "GET /job-management/jobs role",
+			File: "src/main/java/example/JobSecurity.java", Line: 90, Confidence: "EXACT",
+			Search: "job internal management technical role",
+		},
+	}
+	concerns := []contextConcern{
+		newContextConcern(contextConcernHTTPContract, "services/catalog", true, []string{"caller-management"}, "requested internal contract"),
+		newContextConcern(contextConcernHTTPContract, "services/jobs", true, []string{"provider-management"}, "requested internal contract"),
+		newContextConcern(contextConcernAuth, "services/catalog", true, []string{"caller-security"}, "requested internal authentication"),
+		newContextConcern(contextConcernAuth, "services/jobs", true, []string{"provider-security"}, "requested internal authentication"),
+	}
+	pack := ContextPack{
+		Query: query, selectionQuery: query,
+		Endpoints: []ContextEndpoint{{
+			Provider: "services/catalog", HTTPMethod: "DELETE",
+			Path: "/catalog/items/{itemId}",
+		}},
+	}
+	expanded := expandContextEvidenceConcerns(
+		pack,
+		scan.AgentContextIndexRecord{Facts: facts},
+		concerns,
+	)
+	seen := make(map[string]bool)
+	for _, concern := range expanded {
+		if concern.exactInventory {
+			seen[concern.key] = true
+		}
+	}
+	for _, want := range []string{
+		"http_contract:services/jobs#exact-file:src/main/java/example/JobManagementController.java",
+		"authentication:services/jobs#exact-file:src/main/java/example/JobSecurity.java",
+	} {
+		if !seen[want] {
+			t.Errorf("provider internal-interface evidence %q missing from %v", want, seen)
+		}
+	}
+	for _, rejected := range []string{
+		"http_contract:services/catalog#exact-file:src/main/java/example/CatalogManagementController.java",
+		"authentication:services/catalog#exact-file:src/main/java/example/CatalogSecurity.java",
+	} {
+		if seen[rejected] {
+			t.Errorf("caller internal-interface evidence %q retained in %v", rejected, seen)
+		}
+	}
+}
+
 func TestContextSourcePlanningPrefersAuthenticationPropertyWhenRequested(t *testing.T) {
 	query := "Analyze task cleanup authentication and configuration and identify production and test files to change or create."
 	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
@@ -405,7 +574,6 @@ func TestContextSourcePlanningPrefersAuthenticationPropertyWhenRequested(t *test
 	for _, candidate := range expanded {
 		if candidate.exactInventory {
 			concern = candidate
-			break
 		}
 	}
 	if concern.key == "" {

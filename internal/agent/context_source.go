@@ -71,14 +71,44 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
+	query := contextSelectionQuery(pack)
+	preferredConfigurationByPath := make(map[string]scan.AgentContextFactRecord)
+	for _, fact := range index.Facts {
+		if normalizedContextConcernKind(fact.Kind) != contextConcernConfiguration ||
+			strings.TrimSpace(fact.File) == "" {
+			continue
+		}
+		key := normalizeContextProject(fact.Project) + "\x00" + contextPackSourceFile(fact.File)
+		current := preferredConfigurationByPath[key]
+		factScore := contextRequestedConfigurationFactScore(query, fact)
+		currentScore := contextRequestedConfigurationFactScore(query, current)
+		if factScore > currentScore ||
+			factScore == currentScore && factScore > 0 &&
+				(fact.Line < current.Line || fact.Line == current.Line && fact.ID < current.ID) {
+			preferredConfigurationByPath[key] = fact
+		}
+	}
 	includeTests := contextQueryRequestsTests(contextSelectionQuery(pack))
 
 	candidates := make([]sourceCandidate, 0, len(pack.selectedSourceFactIDs))
+	added := make(map[string]bool, len(pack.selectedSourceFactIDs))
 	for _, id := range pack.selectedSourceFactIDs {
 		fact, ok := factByID[id]
 		if !ok || strings.TrimSpace(fact.File) == "" || contextPackSourceFile(fact.File) == "" {
 			continue
 		}
+		if normalizedContextConcernKind(fact.Kind) == contextConcernConfiguration {
+			key := normalizeContextProject(fact.Project) + "\x00" + contextPackSourceFile(fact.File)
+			if preferred, found := preferredConfigurationByPath[key]; found &&
+				contextRequestedConfigurationFactScore(query, preferred) >
+					contextRequestedConfigurationFactScore(query, fact) {
+				fact = preferred
+			}
+		}
+		if added[fact.ID] {
+			continue
+		}
+		added[fact.ID] = true
 		role := contextSourceRole(pack, index, fact)
 		if role == "test" {
 			if !includeTests {
@@ -144,6 +174,7 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 const (
 	maximumContextSourcePlanningCandidates = 8
 	maximumContextSourceProvingCandidates  = 4
+	maximumContextExactInventoryCandidates = DefaultContextMaxFiles
 )
 
 func contextSourceCandidatesForConcerns(

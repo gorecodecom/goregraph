@@ -1074,23 +1074,25 @@ func contextExactInventoryEvidenceConcerns(
 			continue
 		}
 		candidateFactIDs := orderedContextConcernIDs(concern.candidateFactIDs)
-		if concern.project != "" {
-			for _, fact := range index.Facts {
-				if normalizeContextProject(fact.Project) != concern.project {
-					continue
-				}
-				supplement := concern.kind == contextConcernConfiguration &&
-					isContextConfigurationResource(fact.File) ||
-					concern.kind == contextConcernAuth &&
-						contextExactInventoryAuthenticationOwnerFact(fact) ||
-					concern.kind == contextConcernTests &&
-						contextExactInventoryExecutableTestFact(fact)
-				if supplement {
-					candidateFactIDs = append(candidateFactIDs, fact.ID)
-				}
+		for _, fact := range index.Facts {
+			if concern.project != "" &&
+				normalizeContextProject(fact.Project) != concern.project {
+				continue
 			}
-			candidateFactIDs = orderedContextConcernIDs(candidateFactIDs)
+			supplement := concern.kind == contextConcernConfiguration &&
+				(isContextConfigurationResource(fact.File) ||
+					contextExactInventoryConfigurationOwnerFact(fact)) ||
+				concern.kind == contextConcernAuth &&
+					contextExactInventoryAuthenticationOwnerFact(fact) ||
+				concern.kind == contextConcernPersistence &&
+					contextExactInventoryPersistenceOwnerFact(fact) ||
+				concern.kind == contextConcernTests &&
+					contextExactInventoryExecutableTestFact(fact)
+			if supplement {
+				candidateFactIDs = append(candidateFactIDs, fact.ID)
+			}
 		}
+		candidateFactIDs = orderedContextConcernIDs(candidateFactIDs)
 		facts := make([]scan.AgentContextFactRecord, 0, len(candidateFactIDs))
 		for _, factID := range candidateFactIDs {
 			fact, ok := factByID[factID]
@@ -1134,6 +1136,35 @@ func contextExactInventoryEvidenceConcerns(
 				}
 			}
 		}
+		if concern.kind == contextConcernConfiguration {
+			preferredProjects := make(map[string]bool)
+			for _, fact := range facts {
+				if contextExactInventoryConfigurationOwnerFact(fact) &&
+					contextExactInventoryConfigurationOwnerSupportsSelectedContract(
+						pack,
+						index,
+						fact,
+					) {
+					preferredProjects[normalizeContextProject(fact.Project)] = true
+				}
+			}
+			if len(preferredProjects) > 0 {
+				preferredFacts := facts[:0]
+				for _, fact := range facts {
+					if contextExactInventoryConfigurationOwnerFact(fact) &&
+						preferredProjects[normalizeContextProject(fact.Project)] &&
+						!contextExactInventoryConfigurationOwnerSupportsSelectedContract(
+							pack,
+							index,
+							fact,
+						) {
+						continue
+					}
+					preferredFacts = append(preferredFacts, fact)
+				}
+				facts = preferredFacts
+			}
+		}
 		for _, fact := range facts {
 			project := normalizeContextProject(fact.Project)
 			path := contextExactInventoryPath(fact.File)
@@ -1156,6 +1187,7 @@ func contextExactInventoryEvidenceConcerns(
 	query := contextSelectionQuery(pack)
 	semanticQueryTokens := contextSourceConcernSemanticQueryTokens(query)
 	anchorTokens := contextSourceAnchorTokens(pack, factByID)
+	requestedModelIDs := contextRequestedDomainModelIDs(pack, index)
 	requestsProduction := contextTokenSetContainsAny(
 		contextExpandedTokenSet(query),
 		"prod", "production", "produktion", "produktions", "produktionsdatei", "produktionsdateien",
@@ -1166,7 +1198,46 @@ func contextExactInventoryEvidenceConcerns(
 			explicitProjects[project] = true
 		}
 	}
+	entrypointProject := ""
+	if len(pack.Entrypoints) == 1 {
+		entrypointProject = normalizeContextProject(pack.Entrypoints[0].Project)
+	} else if len(pack.Endpoints) == 1 {
+		entrypointProject = normalizeContextProject(pack.Endpoints[0].Provider)
+	}
 	for _, group := range groupsByKey {
+		if contextQueryPlansMissingTransition(query) && entrypointProject != "" &&
+			group.project == entrypointProject &&
+			(group.kind == contextConcernAuth || group.kind == contextConcernHTTPContract) {
+			internalInterface := false
+			for _, fact := range group.facts {
+				if contextExactInventoryInternalInterfaceFact(fact) {
+					internalInterface = true
+					break
+				}
+			}
+			if internalInterface {
+				continue
+			}
+		}
+		persistenceMatchesRequestedModel := false
+		if group.kind == contextConcernPersistence && len(requestedModelIDs) > 0 {
+			persistenceMatchesRequestedModel = contextPersistenceFactsMatchRequestedDomainModel(
+				index,
+				group.facts,
+				contextSourceDomainModelTokens(pack, index),
+				requestedModelIDs,
+			)
+			explicitlyNamed := false
+			for _, fact := range group.facts {
+				if contextQueryExplicitlyNamesModel(pack, fact) {
+					explicitlyNamed = true
+					break
+				}
+			}
+			if !persistenceMatchesRequestedModel && !explicitlyNamed {
+				continue
+			}
+		}
 		factsByID := make(map[string]scan.AgentContextFactRecord, len(group.facts))
 		for _, fact := range group.facts {
 			factsByID[fact.ID] = fact
@@ -1248,6 +1319,9 @@ func contextExactInventoryEvidenceConcerns(
 		if explicitProjects[group.project] {
 			group.score += 400
 		}
+		if persistenceMatchesRequestedModel {
+			group.score += 2000
+		}
 		if requestsProduction {
 			production := false
 			for _, fact := range group.facts {
@@ -1277,9 +1351,9 @@ func contextExactInventoryEvidenceConcerns(
 		}
 		return groups[left].facts[0].ID < groups[right].facts[0].ID
 	})
-	if len(groups) > maximumContextSourcePlanningCandidates {
-		selected := make([]*exactInventoryGroup, 0, maximumContextSourcePlanningCandidates)
-		selectedGroups := make(map[*exactInventoryGroup]bool, maximumContextSourcePlanningCandidates)
+	if len(groups) > maximumContextExactInventoryCandidates {
+		selected := make([]*exactInventoryGroup, 0, maximumContextExactInventoryCandidates)
+		selectedGroups := make(map[*exactInventoryGroup]bool, maximumContextExactInventoryCandidates)
 		selectedProjects := make(map[string]map[string]bool)
 		selectedTestScopes := make(map[string]map[bool]bool)
 		groupUsesTestSource := func(group *exactInventoryGroup) bool {
@@ -1291,7 +1365,7 @@ func contextExactInventoryEvidenceConcerns(
 			return false
 		}
 		appendGroup := func(group *exactInventoryGroup) {
-			if group == nil || selectedGroups[group] || len(selected) == maximumContextSourcePlanningCandidates {
+			if group == nil || selectedGroups[group] || len(selected) == maximumContextExactInventoryCandidates {
 				return
 			}
 			selected = append(selected, group)
@@ -1309,6 +1383,7 @@ func contextExactInventoryEvidenceConcerns(
 			contextConcernAuth,
 			contextConcernConfiguration,
 			contextConcernHTTPContract,
+			contextConcernPersistence,
 			contextConcernTests,
 		} {
 			for _, group := range groups {
@@ -1323,6 +1398,7 @@ func contextExactInventoryEvidenceConcerns(
 				contextConcernAuth,
 				contextConcernConfiguration,
 				contextConcernHTTPContract,
+				contextConcernPersistence,
 				contextConcernTests,
 			} {
 				for _, group := range groups {
@@ -1338,6 +1414,7 @@ func contextExactInventoryEvidenceConcerns(
 				contextConcernAuth,
 				contextConcernConfiguration,
 				contextConcernHTTPContract,
+				contextConcernPersistence,
 				contextConcernTests,
 			} {
 				for _, group := range groups {
@@ -1409,6 +1486,7 @@ func contextExactInventoryConcernKind(kind string) bool {
 	return kind == contextConcernAuth ||
 		kind == contextConcernConfiguration ||
 		kind == contextConcernHTTPContract ||
+		kind == contextConcernPersistence ||
 		kind == contextConcernTests
 }
 
@@ -1423,7 +1501,8 @@ func contextExactInventoryFactMatches(kind string, fact scan.AgentContextFactRec
 			strings.EqualFold(strings.TrimSpace(fact.Kind), "endpoint_security") ||
 			contextExactInventoryAuthenticationOwnerFact(fact)
 	case contextConcernConfiguration:
-		return normalizedContextConcernKind(fact.Kind) == contextConcernConfiguration
+		return normalizedContextConcernKind(fact.Kind) == contextConcernConfiguration ||
+			contextExactInventoryConfigurationOwnerFact(fact)
 	case contextConcernHTTPContract:
 		switch strings.ToLower(strings.TrimSpace(fact.Kind)) {
 		case "api_contract", "api_endpoint", "http_contract":
@@ -1431,11 +1510,107 @@ func contextExactInventoryFactMatches(kind string, fact scan.AgentContextFactRec
 		default:
 			return false
 		}
+	case contextConcernPersistence:
+		return normalizedContextConcernKind(fact.Kind) == contextConcernPersistence ||
+			contextExactInventoryPersistenceOwnerFact(fact)
 	case contextConcernTests:
 		return contextExactInventoryExecutableTestFact(fact)
 	default:
 		return false
 	}
+}
+
+func contextExactInventoryConfigurationOwnerFact(fact scan.AgentContextFactRecord) bool {
+	if !strings.EqualFold(strings.TrimSpace(fact.Kind), "symbol") ||
+		contextFactUsesTestSource(fact) {
+		return false
+	}
+	fileIdentity := compactContextIdentifier(
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	)
+	if fileIdentity == "" ||
+		strings.Contains(fileIdentity, "auth") ||
+		strings.Contains(fileIdentity, "security") ||
+		!contextIdentifierHasAnySuffix(
+			fileIdentity,
+			"config", "configuration", "properties", "settings",
+		) {
+		return false
+	}
+	for _, identity := range []string{fact.Name, contextIdentifierLeaf(fact.Qualified)} {
+		if compactContextIdentifier(identity) == fileIdentity {
+			return true
+		}
+	}
+	return false
+}
+
+func contextExactInventoryConfigurationOwnerSupportsSelectedContract(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	fact scan.AgentContextFactRecord,
+) bool {
+	if !contextExactInventoryConfigurationOwnerFact(fact) {
+		return false
+	}
+	configIdentity := compactContextIdentifier(
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	)
+	for _, suffix := range []string{"configuration", "properties", "settings", "config"} {
+		configIdentity = strings.TrimSuffix(configIdentity, suffix)
+	}
+	if configIdentity == "" {
+		return false
+	}
+	contractIDs := contextLocationIDs(pack.Contracts)
+	for _, contract := range index.Facts {
+		if !contractIDs[contract.ID] ||
+			normalizeContextProject(contract.Project) != normalizeContextProject(fact.Project) {
+			continue
+		}
+		for _, owner := range []string{
+			contextIdentifierLeaf(contextQualifiedOwner(contract.Qualified)),
+			strings.TrimSuffix(filepath.Base(contract.File), filepath.Ext(contract.File)),
+		} {
+			ownerIdentity := compactContextIdentifier(owner)
+			ownerIdentity = strings.TrimSuffix(ownerIdentity, "service")
+			if ownerIdentity == configIdentity {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func contextExactInventoryPersistenceOwnerFact(fact scan.AgentContextFactRecord) bool {
+	if !strings.EqualFold(strings.TrimSpace(fact.Kind), "symbol") ||
+		contextFactUsesTestSource(fact) {
+		return false
+	}
+	fileIdentity := compactContextIdentifier(
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	)
+	if fileIdentity == "" || !contextIdentifierHasAnySuffix(
+		fileIdentity,
+		"repository", "repositories", "dao", "store",
+	) {
+		return false
+	}
+	for _, identity := range []string{fact.Name, contextIdentifierLeaf(fact.Qualified)} {
+		if compactContextIdentifier(identity) == fileIdentity {
+			return true
+		}
+	}
+	return false
+}
+
+func contextIdentifierHasAnySuffix(identity string, suffixes ...string) bool {
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(identity, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func contextExactInventoryAuthenticationOwnerFact(fact scan.AgentContextFactRecord) bool {

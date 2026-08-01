@@ -530,6 +530,75 @@ func TestBuildContextBalancesNaturalProductionAndTestFilePlan(t *testing.T) {
 	}
 }
 
+func TestBuildContextKeepsCoherentReleasePlanEvidence(t *testing.T) {
+	root := writeReleaseQualityMissingContractFixtureWithIndex(
+		t,
+		runtimeShapeReleaseQualityMissingContractIndex(),
+	)
+	query := "When DELETE /catalog/items/{itemId} removes an item in services/catalog, " +
+		"analyze the required cross-service cleanup through libraries/job-client and services/jobs. " +
+		"Cover authentication, configuration, retries, persistence, side effects, and identify " +
+		"the production and test files to change or create."
+	pack, err := BuildContext(ContextRequest{
+		Root: root, Query: query, BudgetTokens: 4000, MaxFiles: 12,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []struct {
+		project string
+		path    string
+	}{
+		{project: "libraries/job-client", path: "src/main/java/example/JobClient.java"},
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientConfig.java"},
+		{project: "libraries/job-client", path: "src/main/java/example/JobClientAuth.java"},
+		{project: "services/catalog", path: "src/main/resources/application.yml"},
+		{project: "services/catalog", path: "src/test/resources/application-test.yml"},
+		{project: "services/jobs", path: "src/main/java/example/JobManagementController.java"},
+		{project: "services/jobs", path: "src/main/java/example/JobSecurity.java"},
+		{project: "services/jobs", path: "src/main/java/example/CatalogJobRepository.java"},
+		{project: "services/jobs", path: "src/main/java/example/CatalogChangeJobRepository.java"},
+		{project: "services/jobs", path: "src/main/resources/application.properties"},
+		{project: "services/jobs", path: "src/test/java/example/JobManagementControllerTest.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobServiceTest.java"},
+	} {
+		if !contextPackRepresentsSourcePath(pack, want.project, want.path) {
+			t.Errorf("runtime-shaped release evidence %q missing", want.project+":"+want.path)
+		}
+	}
+	foundAuthenticationConfiguration := false
+	for _, section := range pack.SourceSections {
+		if normalizeContextProject(section.Project) != "services/jobs" ||
+			contextPackSourceFile(section.Path) != "src/main/resources/application.properties" {
+			continue
+		}
+		if section.StartLine != 2 || !strings.Contains(section.Content, "technical-user") {
+			t.Fatalf("jobs authentication configuration section = lines %d-%d %q, want technical-user on line 2", section.StartLine, section.EndLine, section.Content)
+		}
+		if strings.Contains(section.Content, "task-isbns") {
+			t.Fatalf("jobs authentication configuration includes unrelated task-isbns property: %q", section.Content)
+		}
+		foundAuthenticationConfiguration = true
+		break
+	}
+	if !foundAuthenticationConfiguration {
+		t.Fatal("jobs authentication configuration was not rendered as a source section")
+	}
+	if pack.EstimatedTokens > 4000 ||
+		contextSourceFileCount(pack) > 12 ||
+		len(pack.SourceSections) > 12 ||
+		len(pack.SourceOmissions) > MaxContextSourceOmissions {
+		t.Fatalf(
+			"runtime-shaped release pack exceeds bounds: tokens=%d aggregate_files=%d sections=%d omissions=%d",
+			pack.EstimatedTokens,
+			contextSourceFileCount(pack),
+			len(pack.SourceSections),
+			len(pack.SourceOmissions),
+		)
+	}
+}
+
 func contextPackRepresentsSourcePath(pack ContextPack, project, path string) bool {
 	project = normalizeContextProject(project)
 	path = contextPackSourceFile(path)
@@ -1856,8 +1925,15 @@ func writeMissingContractContextFixture(t *testing.T) string {
 }
 
 func writeReleaseQualityMissingContractFixture(t *testing.T) string {
+	return writeReleaseQualityMissingContractFixtureWithIndex(t, releaseQualityMissingContractIndex())
+}
+
+func writeReleaseQualityMissingContractFixtureWithIndex(
+	t *testing.T,
+	index scan.AgentContextIndexRecord,
+) string {
 	t.Helper()
-	root := writeMissingContractContextIndexFixture(t, releaseQualityMissingContractIndex())
+	root := writeMissingContractContextIndexFixture(t, index)
 	writeContextSourceFile(
 		t,
 		root,
@@ -1903,6 +1979,12 @@ func writeReleaseQualityMissingContractFixture(t *testing.T) string {
 	writeContextSourceFile(
 		t,
 		root,
+		filepath.Join("services/jobs", "src/main/resources/application.properties"),
+		"task-isbns=fixture-generic\ntechnical-user=fixture-technical-user\n",
+	)
+	writeContextSourceFile(
+		t,
+		root,
 		filepath.Join("services/jobs", "src/test/java/example/JobServiceTest.java"),
 		contextReleaseQualityServiceTestFixtureSource(),
 	)
@@ -1919,6 +2001,50 @@ func writeReleaseQualityMissingContractFixture(t *testing.T) string {
 		contextReleaseQualityApplicationConfigurationFixtureSource(true),
 	)
 	return root
+}
+
+func runtimeShapeReleaseQualityMissingContractIndex() scan.AgentContextIndexRecord {
+	index := releaseQualityMissingContractIndex()
+	facts := make([]scan.AgentContextFactRecord, 0, len(index.Facts))
+	for factIndex := range index.Facts {
+		fact := &index.Facts[factIndex]
+		if fact.ID == "regular-comment-repository" {
+			continue
+		}
+		switch fact.ID {
+		case "job-client-config":
+			fact.Kind = "symbol"
+		case "job-server-policy":
+			fact.Kind = "endpoint_security"
+			fact.Name = "role"
+			fact.Qualified = "GET /job-management/jobs role"
+			fact.Line = 11
+			fact.EndLine = 11
+		case "jobs-test":
+			fact.Kind = "symbol"
+			fact.Name = "JobManagementControllerTest"
+			fact.Qualified = "jobs.JobManagementControllerTest"
+		case "jobs-service-test":
+			fact.Kind = "symbol"
+			fact.Name = "JobServiceTest"
+			fact.Qualified = "jobs.JobServiceTest"
+		}
+		facts = append(facts, *fact)
+	}
+	index.Facts = facts
+	index.Facts = append(index.Facts,
+		scan.AgentContextFactRecord{
+			ID: "jobs-generic-configuration", Project: "services/jobs", Kind: "configuration",
+			Name: "task-isbns", File: "src/main/resources/application.properties",
+			Line: 1, EndLine: 1, Confidence: "EXACT", Search: "task isbn configuration",
+		},
+		scan.AgentContextFactRecord{
+			ID: "jobs-authentication-configuration", Project: "services/jobs", Kind: "configuration",
+			Name: "technical-user", File: "src/main/resources/application.properties",
+			Line: 2, EndLine: 2, Confidence: "EXACT", Search: "technical user authentication configuration",
+		},
+	)
+	return index
 }
 
 func releaseQualityMissingContractIndex() scan.AgentContextIndexRecord {

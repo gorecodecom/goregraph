@@ -379,7 +379,7 @@ func TestExpandContextExactInventoryConcernsCreatesBoundedPathSubareas(t *testin
 		{ID: "test", Project: "services/provider", Kind: "test", File: "src/test/ProviderControllerTest.java", Line: 12, Confidence: "EXACT"},
 		{ID: "test-target", Project: "services/provider", Kind: "test_target", File: "src/test/ProviderTarget.java", Line: 12, Confidence: "EXACT"},
 	}
-	for index := 1; index <= maximumContextSourcePlanningCandidates; index++ {
+	for index := 1; index <= maximumContextExactInventoryCandidates; index++ {
 		id := fmt.Sprintf("extra-%d", index)
 		facts = append(facts, scan.AgentContextFactRecord{
 			ID: id, Project: fmt.Sprintf("z/extra-%02d", index), Kind: "configuration",
@@ -426,8 +426,8 @@ func TestExpandContextExactInventoryConcernsCreatesBoundedPathSubareas(t *testin
 		baseConcerns,
 	)
 	keys := exactKeys(english)
-	if len(keys) != maximumContextSourcePlanningCandidates {
-		t.Fatalf("exact inventory subareas = %d, want cap %d: %v", len(keys), maximumContextSourcePlanningCandidates, keys)
+	if len(keys) != maximumContextExactInventoryCandidates {
+		t.Fatalf("exact inventory subareas = %d, want cap %d: %v", len(keys), maximumContextExactInventoryCandidates, keys)
 	}
 	for _, key := range []string{
 		"authentication:services/auth#exact-file:src/main/AuthConfig.java",
@@ -997,6 +997,35 @@ func TestContextSourceCandidatesTreatTestProfileConfigurationAsConfiguration(t *
 	candidates := contextSourceCandidates(pack, index)
 	if len(candidates) != 1 || candidates[0].Role == "test" {
 		t.Fatalf("test-profile configuration candidates = %#v, want one non-test candidate", candidates)
+	}
+}
+
+func TestContextSourceCandidatesReplaceGenericConfigurationWithRequestedFact(t *testing.T) {
+	query := "Analysiere Authentifizierung und Konfiguration."
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "task-isbns", Project: "services/jobs", Kind: "configuration",
+			Name: "task-isbns", File: "src/main/resources/application.properties",
+			Line: 51, EndLine: 51, Confidence: "EXACT", Search: "task isbn configuration",
+		},
+		{
+			ID: "technical-user", Project: "services/jobs", Kind: "configuration",
+			Name: "technical-user", File: "src/main/resources/application.properties",
+			Line: 65, EndLine: 65, Confidence: "EXACT", Search: "technical user authentication configuration",
+		},
+	}}
+	pack := ContextPack{
+		Query: query, selectionQuery: query,
+		selectedSourceFactIDs: []string{"task-isbns"},
+	}
+
+	candidates := contextSourceCandidates(pack, index)
+	if len(candidates) != 1 {
+		t.Fatalf("configuration candidates = %#v, want one requested fact", candidates)
+	}
+	if candidates[0].FactID != "technical-user" ||
+		candidates[0].StartLine != 65 || candidates[0].EndLine != 65 {
+		t.Fatalf("configuration candidate = %#v, want technical-user at line 65", candidates[0])
 	}
 }
 
