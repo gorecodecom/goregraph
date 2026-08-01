@@ -293,7 +293,7 @@ If source_coverage is partial or none, inspect only exact project/path and start
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
 For change plans, include separate exact existing production-file and test-file inventories from files, source_sections, plan_files, or bounded omission reads; name every supplied plan_files identity in the test-file inventory with its use because naming metadata is not reading source, provider_test entries may be test targets, and mock_pattern or retry_pattern entries are reference patterns, not change targets. Never read plan_files unless source_omissions lists the same exact path with a bounded range; do not invent future filenames, and keep future route, authentication, status, lookup implementation, dependent persistence and cascade behavior, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
-When authentication or configuration is requested, report supplied server authorization policy, client authentication construction and configuration fields, and exact paths of supplied production and test-profile resources together in one coherent answer section; distinguish current evidence, required additions, and unknown deployment values.
+When authentication or configuration is requested, report supplied server authorization policy, client authentication construction and configuration fields, and exact paths of supplied production and test-profile resources together in one coherent answer section; name every supplied configuration_resources identity with its project, profile, and key groups, and distinguish current evidence, required additions, and unknown deployment values.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
@@ -320,6 +320,14 @@ pattern entries as files to change.
 To keep the hard token boundary stable, packs with `plan_files` omit repetitive
 `files.reason` text while retaining every file path, range, role, confidence,
 and source section.
+
+For exact change inventories that request configuration,
+`configuration_resources` groups the relevant exact indexed Spring
+`application`/`bootstrap` resource identities by project, profile, and
+value-free key group, capped at six identities. It makes caller and provider
+resources explicit without exposing property values or authorizing a read;
+only a matching bounded
+`source_omissions` entry permits inspection.
 
 When a task explicitly asks about types, entities, payloads, identifiers, or
 lookup attributes, the Context Pack exposes that intent as `domain_model`.
@@ -1150,7 +1158,7 @@ If source_coverage is partial or none, inspect only exact project/path and start
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
 For change plans, include separate exact existing production-file and test-file inventories from files, source_sections, plan_files, or bounded omission reads; name every supplied plan_files identity in the test-file inventory with its use because naming metadata is not reading source, provider_test entries may be test targets, and mock_pattern or retry_pattern entries are reference patterns, not change targets. Never read plan_files unless source_omissions lists the same exact path with a bounded range; do not invent future filenames, and keep future route, authentication, status, lookup implementation, dependent persistence and cascade behavior, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
-When authentication or configuration is requested, report supplied server authorization policy, client authentication construction and configuration fields, and exact paths of supplied production and test-profile resources together in one coherent answer section; distinguish current evidence, required additions, and unknown deployment values.
+When authentication or configuration is requested, report supplied server authorization policy, client authentication construction and configuration fields, and exact paths of supplied production and test-profile resources together in one coherent answer section; name every supplied configuration_resources identity with its project, profile, and key groups, and distinguish current evidence, required additions, and unknown deployment values.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.

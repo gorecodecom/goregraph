@@ -87,6 +87,42 @@ func TestRenderContextMarkdownIncludesSortedMetadataOnlyPlanFiles(t *testing.T) 
 	}
 }
 
+func TestRenderContextMarkdownIncludesConfigurationResourceIdentities(t *testing.T) {
+	pack := completeContextPackFixture()
+	pack.ConfigurationResources = []agent.ContextConfigurationResource{
+		{
+			Project: "services/jobs", Path: "src/test/resources/application-test.yml",
+			Profile: "test", KeyGroups: []string{"jobs"},
+		},
+		{
+			Project: "services/catalog", Path: "src/main/resources/application.properties",
+			Profile: "production", KeyGroups: []string{"technical-user", "jobs"},
+		},
+		{Project: "services/catalog", Profile: "production", KeyGroups: []string{"ignored"}},
+	}
+
+	body := RenderContextMarkdown(pack)
+	heading := "## Configuration resource identities (metadata only; values omitted; do not read)"
+	if strings.Count(body, heading) != 1 {
+		t.Fatalf("configuration-resource heading count = %d:\n%s", strings.Count(body, heading), body)
+	}
+	wants := []string{
+		"- `services/catalog/src/main/resources/application.properties` — profile: production — key groups: jobs, technical-user",
+		"- `services/jobs/src/test/resources/application-test.yml` — profile: test — key groups: jobs",
+	}
+	last := strings.Index(body, heading)
+	for _, want := range wants {
+		index := strings.Index(body, want)
+		if index <= last {
+			t.Fatalf("configuration-resource entry %q is absent or out of order:\n%s", want, body)
+		}
+		last = index
+	}
+	if strings.Contains(body, "ignored") {
+		t.Fatalf("configuration-resource section retained an empty path:\n%s", body)
+	}
+}
+
 func TestRunContextPassesPreviousContextID(t *testing.T) {
 	root := writeQueryContextIndex(t, simpleContextIndex())
 	firstBody, err := RunContext(ContextOptions{Root: root, Query: "delete user", Format: "json"})

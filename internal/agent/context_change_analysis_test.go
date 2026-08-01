@@ -432,7 +432,15 @@ func TestBuildContextProvesReleaseQualityWithoutPrivateRules(t *testing.T) {
 }
 
 func TestBuildContextBalancesBroadReleaseEvidence(t *testing.T) {
-	root := writeReleaseQualityMissingContractFixture(t)
+	index := releaseQualityMissingContractIndex()
+	index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+		ID: "change-comment-repository", Project: "services/jobs", Kind: "symbol",
+		Name: "CatalogChangeJobCommentRepository", Qualified: "jobs.CatalogChangeJobCommentRepository",
+		File: "src/main/java/example/CatalogChangeJobCommentRepository.java",
+		Line: 7, EndLine: 8, Confidence: "EXACT",
+		Search: "change job comment dependency repository persistence",
+	})
+	root := writeReleaseQualityMissingContractFixtureWithIndex(t, index)
 	const budgetTokens = 4000
 	const maxFiles = 12
 
@@ -500,6 +508,24 @@ func TestBuildContextBalancesBroadReleaseEvidence(t *testing.T) {
 			t.Errorf("sentinel configuration value %q leaked into final context", sentinel)
 		}
 	}
+	dependentPersistenceGap := false
+	for _, uncertainty := range pack.Uncertainties {
+		if uncertainty.Scope != "services/jobs/dependent_persistence" {
+			continue
+		}
+		if !strings.Contains(uncertainty.Reason, "CatalogJobCommentRepository.findByJobIdOrderByCreated") ||
+			!strings.Contains(uncertainty.Reason, "CatalogChangeJobCommentRepository") ||
+			!strings.Contains(uncertainty.Reason, "cascade behavior remains unknown") {
+			t.Fatalf("dependent persistence uncertainty = %#v", uncertainty)
+		}
+		dependentPersistenceGap = true
+	}
+	if !dependentPersistenceGap {
+		t.Fatalf("dependent persistence uncertainty missing from %#v", pack.Uncertainties)
+	}
+	if len(pack.ConfigurationResources) != 0 {
+		t.Fatalf("represented configuration resources were duplicated as metadata: %#v", pack.ConfigurationResources)
+	}
 	if pack.BudgetTokens != budgetTokens ||
 		contextSourceFileCount(pack) != maxFiles ||
 		len(pack.SourceSections) != maxFiles ||
@@ -514,6 +540,39 @@ func TestBuildContextBalancesBroadReleaseEvidence(t *testing.T) {
 			maxFiles,
 			len(pack.SourceOmissions),
 		)
+	}
+}
+
+func TestContextConfigurationResourcesAddsOnlyUnrepresentedProfiles(t *testing.T) {
+	query := "Identify the exact production and test files to change for authentication and configuration in services/catalog."
+	pack := ContextPack{
+		Query: query, selectionQuery: query,
+		Files: []ContextFile{{
+			Project: "services/catalog", Path: "src/main/resources/application.properties",
+			StartLine: 20, EndLine: 21,
+		}},
+	}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "production", Project: "services/catalog", Kind: "configuration",
+			Name: "technical-user", File: "src/main/resources/application.properties",
+			Line: 20, EndLine: 21, Confidence: "EXACT",
+			Summary: "Spring configuration key group", Search: "technical user authentication configuration",
+		},
+		{
+			ID: "test", Project: "services/catalog", Kind: "configuration",
+			Name: "technical-user", File: "src/test/resources/application-test.properties",
+			Line: 10, EndLine: 11, Confidence: "EXACT",
+			Summary: "Spring configuration key group", Search: "technical user authentication configuration test profile",
+		},
+	}}
+
+	want := []ContextConfigurationResource{{
+		Project: "services/catalog", Path: "src/test/resources/application-test.properties",
+		Profile: "test", KeyGroups: []string{"technical-user"},
+	}}
+	if got := contextConfigurationResources(pack, index); !reflect.DeepEqual(got, want) {
+		t.Fatalf("configuration resource supplement = %#v, want %#v", got, want)
 	}
 }
 

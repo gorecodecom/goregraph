@@ -29,13 +29,14 @@ func compactContextPlanFileInventory(pack ContextPack) ContextPack {
 }
 
 func contextPlanFileReserveView(before, after ContextPack) ContextPack {
-	if len(after.PlanFiles) == 0 {
+	if len(after.PlanFiles) == 0 && len(after.ConfigurationResources) == 0 {
 		return after
 	}
 	// Plan files pay for their final bytes by dropping repeated file reasons.
 	// Keep them out of the proactive reserve so source selection stays monotonic;
 	// the final hard-budget loop still reduces any pack that does not fit.
 	after.PlanFiles = nil
+	after.ConfigurationResources = nil
 	reasons := make(map[string]string, len(before.Files))
 	for _, file := range before.Files {
 		reasons[contextEvidenceInventoryPathKey(file.Project, file.Path)] = file.Reason

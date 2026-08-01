@@ -66,6 +66,8 @@ func TestAssistedInstructionKeepsRequestedAuthenticationAndConfigurationCoherent
 		"When authentication or configuration is requested",
 		"server authorization policy",
 		"client authentication construction and configuration fields",
+		"name every supplied configuration_resources identity",
+		"project, profile, and key groups",
 		"exact paths of supplied production and test-profile resources",
 		"one coherent answer section",
 	} {

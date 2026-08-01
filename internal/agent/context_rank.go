@@ -3543,6 +3543,16 @@ func cloneContextPack(pack ContextPack) ContextPack {
 	pack.Tests = cloneLocations(pack.Tests)
 	pack.Files = append([]ContextFile(nil), pack.Files...)
 	pack.PlanFiles = append([]ContextPlanFile(nil), pack.PlanFiles...)
+	pack.ConfigurationResources = append(
+		[]ContextConfigurationResource(nil),
+		pack.ConfigurationResources...,
+	)
+	for index := range pack.ConfigurationResources {
+		pack.ConfigurationResources[index].KeyGroups = append(
+			[]string(nil),
+			pack.ConfigurationResources[index].KeyGroups...,
+		)
+	}
 	pack.Uncertainties = append([]ContextUncertainty(nil), pack.Uncertainties...)
 	pack.SourceSections = append([]ContextSourceSection(nil), pack.SourceSections...)
 	pack.SourceOmissions = append([]ContextSourceOmission(nil), pack.SourceOmissions...)

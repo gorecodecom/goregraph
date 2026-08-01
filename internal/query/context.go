@@ -121,6 +121,7 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 			lines = append(lines, entries...)
 		}
 	}
+	lines = appendContextConfigurationResources(lines, pack.ConfigurationResources)
 	lines = appendContextPlanFiles(lines, pack.PlanFiles)
 	lines = appendContextSourceSections(lines, pack.SourceSections)
 	lines = appendContextSourceOmissions(lines, pack.SourceOmissions)
@@ -150,6 +151,45 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		lines = append(lines, "", "## Fallback", "- "+reason)
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func appendContextConfigurationResources(
+	lines []string,
+	resources []agent.ContextConfigurationResource,
+) []string {
+	entries := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		path := contextInline(resource.Path)
+		if path == "" {
+			continue
+		}
+		entry := "- " + contextCodeReference(
+			contextInline(resource.Project),
+			path,
+			0,
+			0,
+		)
+		if profile := contextInline(resource.Profile); profile != "" {
+			entry += " — profile: " + profile
+		}
+		keyGroups := make([]string, 0, len(resource.KeyGroups))
+		for _, keyGroup := range resource.KeyGroups {
+			if keyGroup = contextInline(keyGroup); keyGroup != "" {
+				keyGroups = append(keyGroups, keyGroup)
+			}
+		}
+		if len(keyGroups) > 0 {
+			sort.Strings(keyGroups)
+			entry += " — key groups: " + strings.Join(keyGroups, ", ")
+		}
+		entries = append(entries, entry)
+	}
+	if len(entries) == 0 {
+		return lines
+	}
+	sort.Strings(entries)
+	lines = append(lines, "", "## Configuration resource identities (metadata only; values omitted; do not read)")
+	return append(lines, entries...)
 }
 
 func appendContextPlanFiles(

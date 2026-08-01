@@ -252,7 +252,14 @@ func TestBuildContextKeepsCompactPlanFileEvidence(t *testing.T) {
 		{Project: "services/catalog", Path: "src/test/java/example/InventoryClientMock.java", Use: "mock_pattern"},
 	}
 	if !reflect.DeepEqual(pack.PlanFiles, want) {
-		t.Fatalf("plan files = %#v, want %#v", pack.PlanFiles, want)
+		t.Fatalf(
+			"plan files = %#v, want %#v; configuration resources = %#v; tokens = %d; source sections = %d",
+			pack.PlanFiles,
+			want,
+			pack.ConfigurationResources,
+			pack.EstimatedTokens,
+			len(pack.SourceSections),
+		)
 	}
 	for _, evidence := range []struct {
 		project string
