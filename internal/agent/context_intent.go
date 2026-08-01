@@ -745,22 +745,35 @@ func contextConcernFactShapeScore(
 }
 
 func contextConcernDomainQueryTokens(queryTokens map[string]bool) map[string]bool {
+	result := contextConcernDomainQueryTokensWithoutFallback(queryTokens)
+	if len(result) == 0 {
+		return queryTokens
+	}
+	return result
+}
+
+func contextConcernDomainQueryTokensWithoutFallback(queryTokens map[string]bool) map[string]bool {
 	result := make(map[string]bool, len(queryTokens))
 	for token := range queryTokens {
 		result[token] = true
 	}
+	for token := range contextConcernVocabularyTokens() {
+		delete(result, token)
+	}
+	return result
+}
+
+func contextConcernVocabularyTokens() map[string]bool {
+	result := make(map[string]bool)
 	for _, tokens := range contextConcernVocabulary {
 		for _, vocabularyToken := range tokens {
 			if strings.HasPrefix(vocabularyToken, "task_") {
 				continue
 			}
 			for token := range contextExpandedTokenSet(vocabularyToken) {
-				delete(result, token)
+				result[token] = true
 			}
 		}
-	}
-	if len(result) == 0 {
-		return queryTokens
 	}
 	return result
 }

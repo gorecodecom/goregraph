@@ -1080,7 +1080,7 @@ func contextExactInventoryEvidenceConcerns(
 			}
 			facts = append(facts, fact)
 		}
-		if anchors := contextExactInventoryDomainAnchors(contextSelectionQuery(pack), concern.kind); len(anchors) > 0 {
+		if anchors := contextExactInventoryDomainAnchors(contextSelectionQuery(pack)); len(anchors) > 0 {
 			anchoredFacts := make([]scan.AgentContextFactRecord, 0, len(facts))
 			for _, fact := range facts {
 				if contextSourceFactMatchesDomain(fact, anchors) {
@@ -1199,9 +1199,9 @@ func contextExactInventoryPath(file string) string {
 	return file
 }
 
-func contextExactInventoryDomainAnchors(query, kind string) map[string]bool {
-	anchors := contextExpandedTokenSet(query)
-	for token := range contextExactInventoryScaffoldingTokens(kind) {
+func contextExactInventoryDomainAnchors(query string) map[string]bool {
+	anchors := contextConcernDomainQueryTokensWithoutFallback(contextExpandedTokenSet(query))
+	for token := range contextExactInventoryScaffoldingTokens() {
 		delete(anchors, token)
 	}
 	for token := range anchors {
@@ -1212,7 +1212,7 @@ func contextExactInventoryDomainAnchors(query, kind string) map[string]bool {
 	return anchors
 }
 
-func contextExactInventoryScaffoldingTokens(kind string) map[string]bool {
+func contextExactInventoryScaffoldingTokens() map[string]bool {
 	terms := []string{
 		"exact exactly exakte exakter exaktes exakten",
 		"file files path paths datei dateien dateipfad dateipfade pfad pfade",
@@ -1222,9 +1222,24 @@ func contextExactInventoryScaffoldingTokens(kind string) map[string]bool {
 		"provide provided show include current required release ready change for and",
 		"stelle stellen stellt stellst sie ihnen bitte bereit liefere liefern zeige einschließen aktuell erforderlich freigabe bereitstellung änderung aenderung für und",
 		"ein eine einer eines einen einem die der das den dem des",
+		"client clients provider providers server servers consumer consumers",
+		"klient klienten anbieter anbieterin anbieterinnen dienstanbieter server servern konsument konsumenten verbraucher verbrauchern",
 	}
-	terms = append(terms, contextConcernVocabulary[kind]...)
-	terms = append(terms, contextExactInventoryGermanConcernTerms(kind)...)
+	for _, kind := range []string{contextConcernAuth, contextConcernConfiguration, contextConcernTests} {
+		terms = append(terms, contextExactInventoryGermanConcernTerms(kind)...)
+	}
+	removedVocabulary := contextConcernVocabularyTokens()
+	aliasSources := make([]string, 0)
+	for source, aliases := range contextIntentTokenAliases {
+		for _, alias := range aliases {
+			if removedVocabulary[alias] {
+				aliasSources = append(aliasSources, source)
+				break
+			}
+		}
+	}
+	sort.Strings(aliasSources)
+	terms = append(terms, strings.Join(aliasSources, " "))
 	return contextExpandedTokenSet(strings.Join(terms, " "))
 }
 
