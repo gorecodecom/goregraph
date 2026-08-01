@@ -3,6 +3,7 @@ package query
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -120,6 +121,7 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 			lines = append(lines, entries...)
 		}
 	}
+	lines = appendContextPlanFiles(lines, pack.PlanFiles)
 	lines = appendContextSourceSections(lines, pack.SourceSections)
 	lines = appendContextSourceOmissions(lines, pack.SourceOmissions)
 	if len(pack.Uncertainties) > 0 {
@@ -148,6 +150,32 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		lines = append(lines, "", "## Fallback", "- "+reason)
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+func appendContextPlanFiles(
+	lines []string,
+	files []agent.ContextPlanFile,
+) []string {
+	entries := make([]string, 0, len(files))
+	for _, file := range files {
+		path := contextInline(file.Path)
+		use := contextInline(file.Use)
+		if path == "" || use == "" {
+			continue
+		}
+		entries = append(entries, "- "+contextCodeReference(
+			contextInline(file.Project),
+			path,
+			0,
+			0,
+		)+" — "+use)
+	}
+	if len(entries) == 0 {
+		return lines
+	}
+	sort.Strings(entries)
+	lines = append(lines, "", "## Plan file identities (metadata only; do not read)")
+	return append(lines, entries...)
 }
 
 func appendContextConcernSection(

@@ -154,6 +154,17 @@ endpoint task, Context emits at most one selected endpoint and eight consumers
 with an explicit omitted count under the unchanged 1800-token default. It does
 not expose the complete API catalog or dashboard configuration as prompt input.
 
+Schema 3 Context Packs may add the optional `plan_files` array for exact
+missing-transition change plans. Each entry contains `project`, normalized
+relative `path`, and `use`; supported uses are `provider_test`, `mock_pattern`,
+and `retry_pattern`. At most four exact indexed test-source
+identities are emitted. The field is additive metadata: it does not contribute
+to source coverage or authorize source reads, and it does not change the 4,000-
+token, 12-source-file, 12-source-section, or three-source-omission limits. When
+`plan_files` is present, `files.reason` is serialized as an empty string to
+avoid displacing file identities; file paths, ranges, roles, confidence, and
+source sections retain their normal meanings.
+
 Workspace-root `.goregraph-dashboard.json` is user-owned configuration, not a
 generated Schema 3 artifact. Its configuration schema version is 1. The
 `architecture` object stores `groupOrder`, stable group IDs with editable

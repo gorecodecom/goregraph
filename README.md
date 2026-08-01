@@ -292,7 +292,7 @@ If source_coverage is complete, run no source-reading commands on indexed projec
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
-For change plans, enumerate exact existing production and test paths supplied by the Context Pack or bounded omission reads, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
+For change plans, enumerate exact existing production and test paths supplied by files, source_sections, plan_files, or bounded omission reads; treat plan_files as metadata-only existing identities or patterns, never read them unless source_omissions lists the same exact path with a bounded range, do not treat mock_pattern or retry_pattern entries as change targets, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
@@ -308,6 +308,17 @@ those ranges or other files, and report pathless or unbounded omissions as
 uncertainty.
 `source_unrepresented` counts visible required concerns without selected source;
 `files` remain metadata rather than automatic fallback scope.
+
+For an exact missing-transition change plan, the optional `plan_files` array
+adds at most four exact indexed test-source identities without consuming source
+file, section, or omission slots. `provider_test` entries name existing
+provider tests; paired `mock_pattern` and `retry_pattern` entries identify
+caller-side patterns. They are metadata only: do not read them unless
+`source_omissions` lists the same path with a bounded range, and do not treat
+pattern entries as files to change.
+To keep the hard token boundary stable, packs with `plan_files` omit repetitive
+`files.reason` text while retaining every file path, range, role, confidence,
+and source section.
 
 When a task explicitly asks about types, entities, payloads, identifiers, or
 lookup attributes, the Context Pack exposes that intent as `domain_model`.
@@ -1137,7 +1148,7 @@ If source_coverage is complete, run no source-reading commands on indexed projec
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
-For change plans, enumerate exact existing production and test paths supplied by the Context Pack or bounded omission reads, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
+For change plans, enumerate exact existing production and test paths supplied by files, source_sections, plan_files, or bounded omission reads; treat plan_files as metadata-only existing identities or patterns, never read them unless source_omissions lists the same exact path with a bounded range, do not treat mock_pattern or retry_pattern entries as change targets, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.

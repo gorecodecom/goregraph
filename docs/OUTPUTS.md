@@ -221,7 +221,7 @@ If source_coverage is complete, run no source-reading commands on indexed projec
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
-For change plans, enumerate exact existing production and test paths supplied by the Context Pack or bounded omission reads, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
+For change plans, enumerate exact existing production and test paths supplied by files, source_sections, plan_files, or bounded omission reads; treat plan_files as metadata-only existing identities or patterns, never read them unless source_omissions lists the same exact path with a bounded range, do not treat mock_pattern or retry_pattern entries as change targets, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
@@ -239,6 +239,20 @@ files, and report pathless or unbounded omissions as uncertainty.
 call is allowed only when `retry_allowed` is true and must carry one returned
 anchor plus the first `context_id`. Context token estimates are approximate;
 the release benchmark's prospective comparison metric is `effective_tokens`.
+
+The optional `plan_files` array is emitted only for exact missing-transition
+production/test inventories. It contains at most four exact indexed paths below
+a test source root, with `project`, `path`, and `use`. Uses are `provider_test`,
+`mock_pattern`, and `retry_pattern`; mock and retry patterns are
+emitted only from a validated existing pair. These identities are metadata
+only, do not count toward the 12 source files, 12 source sections, or three
+source omissions, and do not authorize reading. A path may be read only when
+the same path has a bounded range in `source_omissions`; pattern entries are not
+change targets. These packs clear repetitive `files.reason` text to pay for the
+new metadata while preserving file paths, ranges, roles, confidence, source
+sections, and every hard limit. `plan_files` are excluded from the proactive
+final-decision reserve; the ordinary final token/byte check still reduces any
+pack that does not fit.
 
 The `domain_model` concern and source role identify current source for
 explicitly requested types, entities, payloads, identifiers, or lookup

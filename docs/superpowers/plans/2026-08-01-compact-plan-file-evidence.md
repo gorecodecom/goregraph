@@ -4,7 +4,7 @@
 
 **Goal:** Add bounded metadata-only test and test-pattern paths to exact missing-transition change plans without weakening causal source evidence.
 
-**Architecture:** Select up to four exact indexed test identities after metadata compilation, reserve their serialized size before source selection, and render them separately from source permissions. Keep all existing source budgets and read rules unchanged.
+**Architecture:** Select up to four exact indexed test identities after metadata compilation, pay for their final bytes by dropping only repetitive file-selection reasons, and render them separately from source permissions. Keep all existing source budgets and read rules unchanged.
 
 **Tech Stack:** Go 1.26, Go standard library, Schema 3 Context Packs, existing `internal/agent` selectors and `internal/query` renderer
 
@@ -66,15 +66,15 @@ Accept exact-confidence symbol/test facts below `src/test`, reject configuration
 
 - [ ] **Step 2: Implement provider test selection**
 
-Select at most one internal controller test and one service test/support from requested provider projects. Score with existing query/domain helpers, then sort by score, project, path, line, and fact ID.
+Select at most one internal controller test and one service test from requested provider projects. Score with existing query/domain helpers, then sort by score, project, path, line, and fact ID.
 
 - [ ] **Step 3: Implement paired caller pattern selection**
 
 Normalize a caller test stem by removing only `Mock` and `RetryableTest`. Emit `mock_pattern` and `retry_pattern` only when both exact test-source facts share a non-empty stem and project. Choose one deterministic best pair.
 
-- [ ] **Step 4: Integrate finalization and cloning**
+- [ ] **Step 4: Integrate finalization, cloning, and monotonic budgeting**
 
-Add `PlanFiles` to `ContextPack`, clone it in `cloneContextPack`, clear and recompute it in `finalizeContextSourceDecision`, and let `contextFinalDecisionBudgetReserve` reserve its serialized delta on the metadata probe. Do not add plan files to `contextSourceFileCount`, retry anchors, source coverage, or source omissions.
+Add `PlanFiles` to `ContextPack`, clone it in `cloneContextPack`, and clear and recompute it in `finalizeContextSourceDecision`. When entries exist, clear repetitive `files.reason` text while retaining paths, ranges, roles, confidence, and source evidence. Exclude only the plan-file delta and matching reason compaction from `contextFinalDecisionBudgetReserve`; keep existing uncertainty reserves and the final hard-budget reduction loop. Do not add plan files to `contextSourceFileCount`, retry anchors, source coverage, or source omissions.
 
 - [ ] **Step 5: Verify GREEN**
 

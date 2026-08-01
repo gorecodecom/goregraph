@@ -29,7 +29,6 @@ An optional `plan_files` array is emitted only when a query:
 Each entry contains only `project`, normalized relative `path`, and `use`. Allowed uses are:
 
 - `provider_test`: an existing provider controller or service test relevant to the requested internal change;
-- `test_support`: an existing provider test-support class relevant to the requested service;
 - `retry_pattern`: an existing caller-side retry test belonging to an outbound-client test pair;
 - `mock_pattern`: the matching caller-side mock from that same pair.
 
@@ -39,7 +38,7 @@ The projection contains at most four entries. Every path must come from an exact
 
 ## Budgeting and determinism
 
-The existing final-decision reserve measures `plan_files` on the metadata probe before source selection. This reserves their compact serialized cost inside the unchanged 4,000-token and 16,000-byte defaults. Final source selection may therefore render slightly less optional source, but mandatory entrypoint and current-path evidence remain protected.
+`plan_files` do not reduce the source-selection budget on the early metadata probe. That precharge was rejected during historical acceptance because the smaller intermediate budget selected more optional source bodies and displaced seven exact production identities. Instead, a final pack containing `plan_files` clears only the repetitive selection text in `files.reason`; file paths, ranges, roles, confidence, source sections, omissions, and limits remain unchanged. The ordinary final token/byte check and reduction loop still reject or reduce any pack that does not fit the unchanged 4,000-token and 16,000-byte defaults.
 
 Selection is sorted by use priority, relevance score, project, path, line, and fact ID. If fewer than four entries fit or qualify, only the qualified prefix is emitted. Repeated builds over the same index and query remain byte-identical.
 
@@ -53,6 +52,6 @@ Selection is sorted by use priority, relevance score, project, path, line, and f
 
 ## Verification
 
-TDD uses generic Java/Spring-shaped facts for a caller, shared client, and provider. The failing tests require a provider management test, provider service test/support, and a paired caller mock/retry pattern while the normal 12-file source selection remains unchanged. Negative cases cover unmatched mocks, non-test paths, unrelated projects, non-exact facts, existing-flow requests, and already represented paths.
+TDD uses generic Java/Spring-shaped facts for a caller, shared client, and provider. The failing tests require a provider management test, provider service test, and a paired caller mock/retry pattern while the normal 12-file source selection remains unchanged. Negative cases cover unmatched mocks, non-test paths, unrelated projects, non-exact facts, existing-flow requests, and already represented paths.
 
-Renderer tests prove compact deterministic Markdown and explicitly label the section as non-readable metadata. Integration tests enforce the unchanged token, source-file, section, and omission bounds. Full Go, vet, benchmark harness, documentation-sync, installation, historical-workspace scan, and release-matrix gates remain mandatory.
+Renderer tests prove compact deterministic Markdown and explicitly label the section as non-readable metadata. Integration tests enforce the unchanged token, source-file, section, and omission bounds and prove that plan-file metadata cannot precharge source selection. Full Go, vet, benchmark harness, documentation-sync, installation, historical-workspace scan, and release-matrix gates remain mandatory.

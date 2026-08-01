@@ -46,6 +46,47 @@ func TestRenderContextMarkdownIsCompactAndActionable(t *testing.T) {
 	}
 }
 
+func TestRenderContextMarkdownIncludesSortedMetadataOnlyPlanFiles(t *testing.T) {
+	pack := completeContextPackFixture()
+	pack.SourceSections = []agent.ContextSourceSection{{
+		Project: "api", Path: "UserController.java", StartLine: 20, EndLine: 20,
+		Role: "entrypoint", Content: "20\tvoid deleteUser() {}",
+	}}
+	pack.PlanFiles = []agent.ContextPlanFile{
+		{Project: "services/jobs", Path: "src/test/JobServiceTest.java", Use: "provider_test"},
+		{Project: "services/catalog", Path: "src/test/InventoryClientRetryableTest.java", Use: "retry_pattern"},
+		{Project: "services/catalog", Path: "src/test/InventoryClientMock.java", Use: "mock_pattern"},
+		{Project: "services/catalog", Use: "blank_path"},
+		{Project: "services/\x1b[2Jcatalog", Path: "src/test/Unsafe\x00Test.java", Use: "mock\npattern"},
+	}
+
+	body := RenderContextMarkdown(pack)
+	heading := "## Plan file identities (metadata only; do not read)"
+	if strings.Count(body, heading) != 1 {
+		t.Fatalf("metadata-only plan-file heading count = %d:\n%s", strings.Count(body, heading), body)
+	}
+	wants := []string{
+		"- `services/ [2Jcatalog/src/test/Unsafe Test.java` — mock pattern",
+		"- `services/catalog/src/test/InventoryClientMock.java` — mock_pattern",
+		"- `services/catalog/src/test/InventoryClientRetryableTest.java` — retry_pattern",
+		"- `services/jobs/src/test/JobServiceTest.java` — provider_test",
+	}
+	last := strings.Index(body, heading)
+	for _, want := range wants {
+		index := strings.Index(body, want)
+		if index <= last {
+			t.Fatalf("plan-file entry %q is absent or out of order:\n%s", want, body)
+		}
+		last = index
+	}
+	if strings.Contains(body, "blank_path") || strings.Contains(body, "\x1b") || strings.Contains(body, "\x00") {
+		t.Fatalf("plan-file section retained an empty or unsafe record:\n%q", body)
+	}
+	if filesIndex, sourceIndex := strings.Index(body, "## Files to inspect"), strings.Index(body, "## Source sections"); filesIndex < 0 || sourceIndex < 0 || filesIndex > strings.Index(body, heading) || strings.Index(body, heading) > sourceIndex {
+		t.Fatalf("plan-file section is outside the file/source boundary:\n%s", body)
+	}
+}
+
 func TestRunContextPassesPreviousContextID(t *testing.T) {
 	root := writeQueryContextIndex(t, simpleContextIndex())
 	firstBody, err := RunContext(ContextOptions{Root: root, Query: "delete user", Format: "json"})

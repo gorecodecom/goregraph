@@ -3542,6 +3542,7 @@ func cloneContextPack(pack ContextPack) ContextPack {
 	pack.Persistence = cloneLocations(pack.Persistence)
 	pack.Tests = cloneLocations(pack.Tests)
 	pack.Files = append([]ContextFile(nil), pack.Files...)
+	pack.PlanFiles = append([]ContextPlanFile(nil), pack.PlanFiles...)
 	pack.Uncertainties = append([]ContextUncertainty(nil), pack.Uncertainties...)
 	pack.SourceSections = append([]ContextSourceSection(nil), pack.SourceSections...)
 	pack.SourceOmissions = append([]ContextSourceOmission(nil), pack.SourceOmissions...)

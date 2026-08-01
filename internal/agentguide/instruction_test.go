@@ -30,7 +30,10 @@ func TestAssistedInstructionKeepsFutureChangePlansSourceBacked(t *testing.T) {
 	for _, want := range []string{
 		"For change plans",
 		"exact existing production and test paths",
-		"Context Pack or bounded omission reads",
+		"files, source_sections, plan_files, or bounded omission reads",
+		"plan_files as metadata-only existing identities or patterns",
+		"source_omissions lists the same exact path with a bounded range",
+		"mock_pattern or retry_pattern entries as change targets",
 		"do not invent future filenames",
 		"future route, authentication, status, lookup implementation, and cross-service transaction ordering",
 		"unknown design decisions unless rendered source proves them",

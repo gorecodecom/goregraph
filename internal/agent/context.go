@@ -90,6 +90,14 @@ type ContextSourceOmission struct {
 	Reason    string `json:"reason"`
 }
 
+// ContextPlanFile identifies existing test evidence for a change plan without
+// authorizing a source read.
+type ContextPlanFile struct {
+	Project string `json:"project,omitempty"`
+	Path    string `json:"path"`
+	Use     string `json:"use"`
+}
+
 type ContextEndpointConsumer struct {
 	Project        string `json:"project"`
 	File           string `json:"file,omitempty"`
@@ -131,6 +139,7 @@ type ContextPack struct {
 	Persistence         []ContextLocation       `json:"persistence,omitempty"`
 	Tests               []ContextLocation       `json:"tests,omitempty"`
 	Files               []ContextFile           `json:"files,omitempty"`
+	PlanFiles           []ContextPlanFile       `json:"plan_files,omitempty"`
 	Uncertainties       []ContextUncertainty    `json:"uncertainties,omitempty"`
 	SourceSections      []ContextSourceSection  `json:"source_sections,omitempty"`
 	SourceOmissions     []ContextSourceOmission `json:"source_omissions,omitempty"`
@@ -291,6 +300,7 @@ func contextFinalDecisionBudgetReserve(
 		probe.Concerns[concernIndex].Covered = true
 	}
 	probe = finalizeContextSourceDecision(probe, index)
+	probe = contextPlanFileReserveView(pack, probe)
 	after, err := contextBudgetView(probe)
 	if err != nil {
 		return 0, err
@@ -384,6 +394,8 @@ func finalizeContextSourceDecision(
 	pack ContextPack,
 	index scan.AgentContextIndexRecord,
 ) ContextPack {
+	pack.PlanFiles = contextPlanFiles(pack, index)
+	pack = compactContextPlanFileInventory(pack)
 	for _, concern := range pack.Concerns {
 		if concern.Covered {
 			continue
