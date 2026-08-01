@@ -94,7 +94,7 @@ Context Pack workflow, and the exact cross-project Code Explorer from Issue
 The exact matched-prompt protocol and treatment instructions are defined in
 [`BENCHMARKING.md`](BENCHMARKING.md). The baseline may append only the specified
 one-line prohibition; the assisted variant may append only the specified
-twelve-line bounded Context instruction. All other prompt and execution inputs
+thirteen-line bounded Context instruction. All other prompt and execution inputs
 must be identical, including plugin and skill availability. Never control
 skills through a treatment prompt. `--ignore-user-config` is not a
 skill-isolation guarantee. The harness records plugin state but never mutates
@@ -117,7 +117,8 @@ If source_coverage is complete, run no source-reading commands on indexed projec
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
-For change plans, enumerate exact existing production and test paths supplied by files, source_sections, plan_files, or bounded omission reads; treat plan_files as metadata-only existing identities or patterns, never read them unless source_omissions lists the same exact path with a bounded range, do not treat mock_pattern or retry_pattern entries as change targets, do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
+For change plans, include separate exact existing production-file and test-file inventories from files, source_sections, plan_files, or bounded omission reads; name every supplied plan_files identity in the test-file inventory with its use because naming metadata is not reading source, provider_test entries may be test targets, and mock_pattern or retry_pattern entries are reference patterns, not change targets. Never read plan_files unless source_omissions lists the same exact path with a bounded range; do not invent future filenames, and keep future route, authentication, status, lookup implementation, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
+When authentication or configuration is requested, report supplied server authorization policy, client authentication construction and configuration fields, and production and test-profile resources together in one coherent answer section; distinguish current evidence, required additions, and unknown deployment values.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
 Do not use specialist GoreGraph queries or expert MCP tools.
@@ -176,7 +177,7 @@ release documentation, and decide explicitly whether to ship dashboard-only or
 continue Context-ranking work in a later version.
 
 <!-- goregraph:generated release-evidence-status start -->
-The latest controlled three-by-three release benchmark did not pass: its raw total-token medians were 2551495 baseline and 147212 assisted, so the assisted result exceeded the legacy 116560 absolute cap. The retained result remains failed and is not rescored. A prospective offline calculation produced effective-token medians of 164295 and 39180, but both variants also contained external skill reads. Publication remains blocked until a fresh prospectively calibrated matrix has zero external skill reads and receives the required signed 12-point quality review.
+The latest controlled three-by-three release benchmark did not pass: candidate efc21f3 passed the prospective token and structural gates with effective-token medians of 160317 baseline and 20715 assisted, an 87.08% reduction, and zero external skill reads. Its signed 12-point review failed because the quality medians were 12 baseline and 9 assisted; authentication/configuration and exact production/test-file inventory remained incomplete. Publication remains blocked until the correction passes a fresh controlled matrix and signed quality review.
 <!-- goregraph:generated release-evidence-status end -->
 
 The previous controlled three-by-three result remains failed and is not

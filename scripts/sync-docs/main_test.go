@@ -138,16 +138,19 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	releaseEvidence := renderCurrentReleaseEvidenceStatus()
 	for _, want := range []string{
 		"latest controlled three-by-three release benchmark did not pass",
-		"remains failed",
-		"prospectively calibrated",
+		"candidate efc21f3",
+		"effective-token medians of 160317 baseline and 20715 assisted",
+		"87.08% reduction",
 		"zero external skill reads",
+		"quality medians were 12 baseline and 9 assisted",
+		"authentication/configuration and exact production/test-file inventory",
 		"Publication remains blocked",
 	} {
 		if !strings.Contains(releaseEvidence, want) {
 			t.Fatalf("release evidence is missing %q: %s", want, releaseEvidence)
 		}
 	}
-	for _, staleValue := range []string{"159,739", "141,259", "169,913", "166,833"} {
+	for _, staleValue := range []string{"2551495", "147212", "164295", "39180"} {
 		if strings.Contains(releaseEvidence, staleValue) {
 			t.Fatalf("release evidence contains stale diagnostic value %q: %s", staleValue, releaseEvidence)
 		}

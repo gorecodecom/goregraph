@@ -207,13 +207,12 @@ func renderCurrentContract() string {
 
 func renderCurrentReleaseEvidenceStatus() string {
 	return "The latest controlled three-by-three release benchmark did not pass: " +
-		"its raw total-token medians were 2551495 baseline and 147212 assisted, so " +
-		"the assisted result exceeded the legacy 116560 absolute cap. The retained " +
-		"result remains failed and is not rescored. A prospective offline calculation " +
-		"produced effective-token medians of 164295 and 39180, but both variants also " +
-		"contained external skill reads. Publication remains blocked until a fresh " +
-		"prospectively calibrated matrix has zero external skill reads and receives " +
-		"the required signed 12-point quality review."
+		"candidate efc21f3 passed the prospective token and structural gates with " +
+		"effective-token medians of 160317 baseline and 20715 assisted, an 87.08% reduction, " +
+		"and zero external skill reads. Its signed 12-point review failed because the quality " +
+		"medians were 12 baseline and 9 assisted; authentication/configuration and exact " +
+		"production/test-file inventory remained incomplete. Publication remains blocked " +
+		"until the correction passes a fresh controlled matrix and signed quality review."
 }
 
 func renderAgentBenchmarkMetrics() string {

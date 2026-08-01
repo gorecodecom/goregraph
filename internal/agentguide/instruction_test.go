@@ -7,8 +7,8 @@ import (
 
 func TestAssistedInstructionDefinesExecutableBoundedWorkflow(t *testing.T) {
 	lines := strings.Split(AssistedInstruction, "\n")
-	if AssistedInstructionLineCount != 12 {
-		t.Fatalf("instruction line-count contract = %d, want 12", AssistedInstructionLineCount)
+	if AssistedInstructionLineCount != 13 {
+		t.Fatalf("instruction line-count contract = %d, want 13", AssistedInstructionLineCount)
 	}
 	if len(lines) != AssistedInstructionLineCount {
 		t.Fatalf("instruction line count = %d, want %d", len(lines), AssistedInstructionLineCount)
@@ -29,14 +29,30 @@ func TestAssistedInstructionDefinesExecutableBoundedWorkflow(t *testing.T) {
 func TestAssistedInstructionKeepsFutureChangePlansSourceBacked(t *testing.T) {
 	for _, want := range []string{
 		"For change plans",
-		"exact existing production and test paths",
+		"separate exact existing production-file and test-file inventories",
 		"files, source_sections, plan_files, or bounded omission reads",
-		"plan_files as metadata-only existing identities or patterns",
+		"name every supplied plan_files identity in the test-file inventory with its use",
+		"naming metadata is not reading source",
+		"provider_test entries may be test targets",
+		"mock_pattern or retry_pattern entries are reference patterns, not change targets",
 		"source_omissions lists the same exact path with a bounded range",
-		"mock_pattern or retry_pattern entries as change targets",
 		"do not invent future filenames",
 		"future route, authentication, status, lookup implementation, and cross-service transaction ordering",
 		"unknown design decisions unless rendered source proves them",
+	} {
+		if !strings.Contains(AssistedInstruction, want) {
+			t.Errorf("AssistedInstruction does not contain %q", want)
+		}
+	}
+}
+
+func TestAssistedInstructionKeepsRequestedAuthenticationAndConfigurationCoherent(t *testing.T) {
+	for _, want := range []string{
+		"When authentication or configuration is requested",
+		"server authorization policy",
+		"client authentication construction and configuration fields",
+		"production and test-profile resources",
+		"one coherent answer section",
 	} {
 		if !strings.Contains(AssistedInstruction, want) {
 			t.Errorf("AssistedInstruction does not contain %q", want)
