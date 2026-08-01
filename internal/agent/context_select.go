@@ -222,35 +222,37 @@ func selectContextSourceOptions(
 	}
 	covered := contextSourceCoverageFromFinalSections(pack, concerns, options)
 	applyContextSourceCoverage(&pack, concerns, covered)
-	reconcileRequest, err := contextSourceRequestWithOmissionReserve(
-		pack,
-		request,
-		contextSourceEvidenceOmissionsForReserve(
+	if contextQueryRequestsExactEvidenceInventory(contextSelectionQuery(pack)) {
+		reconcileRequest, err := contextSourceRequestWithOmissionReserve(
 			pack,
-			loaded.Index,
-			concerns,
-			candidates,
+			request,
+			contextSourceEvidenceOmissionsForReserve(
+				pack,
+				loaded.Index,
+				concerns,
+				candidates,
+				options,
+				failures,
+				covered,
+			),
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		pack, err = reconcileContextSourceInventory(
+			pack,
+			reconcileRequest,
 			options,
-			failures,
-			covered,
-		),
-	)
-	if err != nil {
-		return ContextPack{}, err
+			concerns,
+			coreBoundaries,
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		pack.SourceSections = contextSourceSectionsProductionFirst(pack.SourceSections)
+		covered = contextSourceCoverageFromFinalSections(pack, concerns, options)
+		applyContextSourceCoverage(&pack, concerns, covered)
 	}
-	pack, err = reconcileContextSourceInventory(
-		pack,
-		reconcileRequest,
-		options,
-		concerns,
-		coreBoundaries,
-	)
-	if err != nil {
-		return ContextPack{}, err
-	}
-	pack.SourceSections = contextSourceSectionsProductionFirst(pack.SourceSections)
-	covered = contextSourceCoverageFromFinalSections(pack, concerns, options)
-	applyContextSourceCoverage(&pack, concerns, covered)
 	for _, omission := range contextSourceEvidenceOmissionsWithOptions(
 		pack,
 		loaded.Index,
