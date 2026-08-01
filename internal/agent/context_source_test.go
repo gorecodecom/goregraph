@@ -6441,6 +6441,70 @@ func TestContextSourceConcernsMergeSelectedSupportFacts(t *testing.T) {
 	}
 }
 
+func TestContextRequestedDomainModelIDsExcludeInferredPrimaryDuplicateUnlessExplicit(t *testing.T) {
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{
+			ID: "caller-order", Project: "services/caller", Kind: contextConcernDomainModel,
+			Name: "Order", Qualified: "caller.Order",
+		},
+		{
+			ID: "provider-order", Project: "services/provider", Kind: contextConcernDomainModel,
+			Name: "Order", Qualified: "provider.Order",
+		},
+	}}
+	concerns := []contextConcern{newContextConcern(
+		contextConcernDomainModel,
+		"",
+		true,
+		[]string{"caller-order", "provider-order"},
+		"requested domain models",
+	)}
+
+	generic := ContextPack{
+		Query:       "Compare domain models across services.",
+		Entrypoints: []ContextLocation{{Project: "services/caller"}},
+	}
+	if got := contextRequestedDomainModelIDsFromConcerns(generic, index, concerns); got["caller-order"] || !got["provider-order"] {
+		t.Fatalf("generic requested models = %#v, want only the cross-service model", got)
+	}
+
+	explicit := generic
+	explicit.Query = "Compare caller Order domain model with the provider model."
+	if got := contextRequestedDomainModelIDsFromConcerns(explicit, index, concerns); !got["caller-order"] || !got["provider-order"] {
+		t.Fatalf("explicit requested models = %#v, want both named models", got)
+	}
+}
+
+func TestContextSourceConcernsRoleGateCredentialOnlyCallerAuthentication(t *testing.T) {
+	pack := ContextPack{
+		Query: "Inspect caller authentication configuration.",
+		Concerns: []ContextConcern{{
+			Kind: contextConcernAuth, Project: "services/caller",
+		}},
+		selectedSourceFactIDs: []string{"caller-config"},
+	}
+	credentialOnly := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{{
+		ID: "caller-config", Project: "services/caller", Kind: contextConcernConfiguration,
+		Name: "caller.credentials", Qualified: "caller.credentials",
+		Search: "caller username password credentials configuration",
+	}}}
+	concerns := contextSourceConcerns(pack, credentialOnly)
+	if concern, ok := findContextConcern(concerns, contextConcernAuth+":services/caller"); !ok || concern.required {
+		t.Fatalf("credential-only caller authentication concern = %#v, want optional", concerns)
+	}
+
+	exactAuthentication := credentialOnly
+	exactAuthentication.Facts = append(exactAuthentication.Facts, scan.AgentContextFactRecord{
+		ID: "caller-security", Project: "services/caller", Kind: "security",
+		Name: "CallerSecurity", Qualified: "caller.CallerSecurity",
+	})
+	pack.selectedSourceFactIDs = append(pack.selectedSourceFactIDs, "caller-security")
+	concerns = contextSourceConcerns(pack, exactAuthentication)
+	if concern, ok := findContextConcern(concerns, contextConcernAuth+":services/caller"); !ok || !concern.required {
+		t.Fatalf("exact caller authentication concern = %#v, want required", concerns)
+	}
+}
+
 func TestContextSourceOptionConcernsUseRenderedResilienceEvidence(t *testing.T) {
 	candidate := sourceCandidate{
 		FactID: "contract", FactIDs: []string{"contract"},

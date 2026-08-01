@@ -406,6 +406,18 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 		concerns = append(concerns, concern)
 		added[concern.key] = true
 	}
+	for concernIndex := range concerns {
+		if concerns[concernIndex].kind != contextConcernAuth {
+			continue
+		}
+		concerns[concernIndex].required = contextAuthenticationConcernHasRoleEvidence(
+			concerns[concernIndex],
+			index,
+			endpointProjects,
+			contractProjects,
+			modelProjects,
+		)
+	}
 	sort.Slice(concerns, func(i, j int) bool { return concerns[i].key < concerns[j].key })
 	return expandContextEvidenceConcernsWithProfile(
 		pack,
@@ -473,6 +485,31 @@ func contextRequiredEvidenceConcernForRoles(
 	default:
 		return concern.required
 	}
+}
+
+func contextAuthenticationConcernHasRoleEvidence(
+	concern contextConcern,
+	index scan.AgentContextIndexRecord,
+	endpointProjects map[string]bool,
+	contractProjects map[string]bool,
+	modelProjects map[string]bool,
+) bool {
+	if endpointProjects[concern.project] ||
+		contractProjects[concern.project] ||
+		modelProjects[concern.project] {
+		return true
+	}
+	candidates := make(map[string]bool, len(concern.candidateFactIDs))
+	for _, factID := range concern.candidateFactIDs {
+		candidates[factID] = true
+	}
+	for _, fact := range index.Facts {
+		if candidates[fact.ID] &&
+			normalizedContextConcernKind(fact.Kind) == contextConcernAuth {
+			return true
+		}
+	}
+	return false
 }
 
 func expandContextEvidenceConcerns(
@@ -2077,9 +2114,13 @@ func contextRequestedDomainModelIDsFromConcerns(
 	for _, factID := range pack.selectedSourceFactIDs {
 		selected[factID] = true
 	}
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
 	selectedModels := make(map[string]bool)
 	for _, model := range index.Facts {
-		if selected[model.ID] && contextDomainModelFact(model, domainTokens) {
+		factByID[model.ID] = model
+		if selected[model.ID] &&
+			contextDomainModelFact(model, domainTokens) &&
+			!contextInferredPrimaryProjectModelDuplicate(pack, index, model) {
 			selectedModels[model.ID] = true
 		}
 	}
@@ -2088,6 +2129,10 @@ func contextRequestedDomainModelIDsFromConcerns(
 			continue
 		}
 		for _, factID := range concern.candidateFactIDs {
+			if fact, ok := factByID[factID]; ok &&
+				contextInferredPrimaryProjectModelDuplicate(pack, index, fact) {
+				continue
+			}
 			selectedModels[factID] = true
 		}
 	}
@@ -2130,22 +2175,33 @@ func contextSourceInferredPrimaryProjectModelDuplicate(
 	index scan.AgentContextIndexRecord,
 	candidate sourceCandidate,
 ) bool {
+	return contextInferredPrimaryProjectModelDuplicate(pack, index, scan.AgentContextFactRecord{
+		Project:   candidate.Project,
+		Name:      candidate.Name,
+		Qualified: candidate.Qualified,
+	})
+}
+
+func contextInferredPrimaryProjectModelDuplicate(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	model scan.AgentContextFactRecord,
+) bool {
 	if len(pack.Entrypoints) == 0 ||
-		normalizeContextProject(candidate.Project) !=
+		normalizeContextProject(model.Project) !=
 			normalizeContextProject(pack.Entrypoints[0].Project) {
 		return false
 	}
 	identity := compactContextIdentifier(firstNonEmptyContext(
-		candidate.Name,
-		candidate.Qualified,
+		model.Name,
+		model.Qualified,
 	))
 	if identity == "" ||
 		strings.Contains(compactContextIdentifier(contextSelectionQuery(pack)), identity) {
 		return false
 	}
 	for _, fact := range index.Facts {
-		if normalizeContextProject(fact.Project) ==
-			normalizeContextProject(candidate.Project) ||
+		if normalizeContextProject(fact.Project) == normalizeContextProject(model.Project) ||
 			compactContextIdentifier(firstNonEmptyContext(fact.Name, fact.Qualified)) != identity {
 			continue
 		}
