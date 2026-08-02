@@ -101,10 +101,24 @@ type ContextPlanFile struct {
 // ContextConfigurationResource identifies relevant, value-free Spring
 // configuration metadata without authorizing a source read.
 type ContextConfigurationResource struct {
-	Project   string   `json:"project,omitempty"`
-	Path      string   `json:"path"`
-	Profile   string   `json:"profile"`
-	KeyGroups []string `json:"key_groups,omitempty"`
+	Path    string `json:"path"`
+	Profile string `json:"profile"`
+}
+
+// ContextConfigurationResourceGroup groups value-free resources that share
+// the same project and configuration key identities.
+type ContextConfigurationResourceGroup struct {
+	Project   string                         `json:"project,omitempty"`
+	KeyGroups []string                       `json:"key_groups,omitempty"`
+	Resources []ContextConfigurationResource `json:"resources"`
+}
+
+// ContextProductionPlanFiles identifies exact existing production files for a
+// change plan without authorizing a source read.
+type ContextProductionPlanFiles struct {
+	Project            string   `json:"project,omitempty"`
+	ProviderContract   string   `json:"provider_contract,omitempty"`
+	PrimaryPersistence []string `json:"primary_persistence,omitempty"`
 }
 
 type ContextEndpointConsumer struct {
@@ -136,31 +150,32 @@ type ContextPack struct {
 	Query                  string `json:"query"`
 	selectionQuery         string
 	budgetQuery            string
-	Freshness              string                         `json:"freshness,omitempty"`
-	Confidence             string                         `json:"confidence"`
-	FallbackRequired       bool                           `json:"fallback_required"`
-	FallbackReason         string                         `json:"fallback_reason,omitempty"`
-	Concerns               []ContextConcern               `json:"concerns,omitempty"`
-	Entrypoints            []ContextLocation              `json:"entrypoints,omitempty"`
-	Endpoints              []ContextEndpoint              `json:"endpoints,omitempty"`
-	CallChain              []ContextRelationship          `json:"call_chain,omitempty"`
-	Contracts              []ContextLocation              `json:"contracts,omitempty"`
-	Persistence            []ContextLocation              `json:"persistence,omitempty"`
-	Tests                  []ContextLocation              `json:"tests,omitempty"`
-	Files                  []ContextFile                  `json:"files,omitempty"`
-	PlanFiles              []ContextPlanFile              `json:"plan_files,omitempty"`
-	ConfigurationResources []ContextConfigurationResource `json:"configuration_resources,omitempty"`
-	Uncertainties          []ContextUncertainty           `json:"uncertainties,omitempty"`
-	SourceSections         []ContextSourceSection         `json:"source_sections,omitempty"`
-	SourceOmissions        []ContextSourceOmission        `json:"source_omissions,omitempty"`
-	SourceCoverage         string                         `json:"source_coverage,omitempty"`
-	SourceUnrepresented    int                            `json:"source_unrepresented,omitempty"`
-	EstimatedTokens        int                            `json:"estimated_tokens"`
-	BudgetTokens           int                            `json:"budget_tokens"`
-	ContextID              string                         `json:"context_id,omitempty"`
-	DuplicateOf            string                         `json:"duplicate_of,omitempty"`
-	RetryAllowed           bool                           `json:"retry_allowed"`
-	RetryAnchors           []string                       `json:"retry_anchors,omitempty"`
+	Freshness              string                              `json:"freshness,omitempty"`
+	Confidence             string                              `json:"confidence"`
+	FallbackRequired       bool                                `json:"fallback_required"`
+	FallbackReason         string                              `json:"fallback_reason,omitempty"`
+	Concerns               []ContextConcern                    `json:"concerns,omitempty"`
+	Entrypoints            []ContextLocation                   `json:"entrypoints,omitempty"`
+	Endpoints              []ContextEndpoint                   `json:"endpoints,omitempty"`
+	CallChain              []ContextRelationship               `json:"call_chain,omitempty"`
+	Contracts              []ContextLocation                   `json:"contracts,omitempty"`
+	Persistence            []ContextLocation                   `json:"persistence,omitempty"`
+	Tests                  []ContextLocation                   `json:"tests,omitempty"`
+	Files                  []ContextFile                       `json:"files,omitempty"`
+	PlanFiles              []ContextPlanFile                   `json:"plan_files,omitempty"`
+	ConfigurationResources []ContextConfigurationResourceGroup `json:"configuration_resources,omitempty"`
+	ProductionPlanFiles    []ContextProductionPlanFiles        `json:"production_plan_files,omitempty"`
+	Uncertainties          []ContextUncertainty                `json:"uncertainties,omitempty"`
+	SourceSections         []ContextSourceSection              `json:"source_sections,omitempty"`
+	SourceOmissions        []ContextSourceOmission             `json:"source_omissions,omitempty"`
+	SourceCoverage         string                              `json:"source_coverage,omitempty"`
+	SourceUnrepresented    int                                 `json:"source_unrepresented,omitempty"`
+	EstimatedTokens        int                                 `json:"estimated_tokens"`
+	BudgetTokens           int                                 `json:"budget_tokens"`
+	ContextID              string                              `json:"context_id,omitempty"`
+	DuplicateOf            string                              `json:"duplicate_of,omitempty"`
+	RetryAllowed           bool                                `json:"retry_allowed"`
+	RetryAnchors           []string                            `json:"retry_anchors,omitempty"`
 
 	selectedSourceFactIDs []string
 	selectedFactIDs       []string
@@ -406,6 +421,7 @@ func finalizeContextSourceDecision(
 ) ContextPack {
 	pack.ConfigurationResources = contextConfigurationResources(pack, index)
 	pack.PlanFiles = contextPlanFiles(pack, index)
+	pack.ProductionPlanFiles = contextProductionPlanFiles(pack, index)
 	pack = compactContextPlanFileInventory(pack)
 	for _, concern := range pack.Concerns {
 		if concern.Covered {

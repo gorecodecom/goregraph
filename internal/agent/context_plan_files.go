@@ -19,7 +19,7 @@ type contextPlanFileFact struct {
 }
 
 func compactContextPlanFileInventory(pack ContextPack) ContextPack {
-	if len(pack.PlanFiles) == 0 {
+	if len(pack.PlanFiles) == 0 && len(pack.ProductionPlanFiles) == 0 {
 		return pack
 	}
 	for fileIndex := range pack.Files {
@@ -29,7 +29,8 @@ func compactContextPlanFileInventory(pack ContextPack) ContextPack {
 }
 
 func contextPlanFileReserveView(before, after ContextPack) ContextPack {
-	if len(after.PlanFiles) == 0 && len(after.ConfigurationResources) == 0 {
+	if len(after.PlanFiles) == 0 && len(after.ConfigurationResources) == 0 &&
+		len(after.ProductionPlanFiles) == 0 {
 		return after
 	}
 	// Plan files pay for their final bytes by dropping repeated file reasons.
@@ -37,6 +38,7 @@ func contextPlanFileReserveView(before, after ContextPack) ContextPack {
 	// the final hard-budget loop still reduces any pack that does not fit.
 	after.PlanFiles = nil
 	after.ConfigurationResources = nil
+	after.ProductionPlanFiles = nil
 	reasons := make(map[string]string, len(before.Files))
 	for _, file := range before.Files {
 		reasons[contextEvidenceInventoryPathKey(file.Project, file.Path)] = file.Reason
@@ -162,6 +164,22 @@ func contextPlanFileRepresentedPaths(pack ContextPack) map[string]bool {
 	}
 	for _, omission := range pack.SourceOmissions {
 		result[contextEvidenceInventoryPathKey(omission.Project, omission.Path)] = true
+	}
+	for _, file := range pack.PlanFiles {
+		result[contextEvidenceInventoryPathKey(file.Project, file.Path)] = true
+	}
+	for _, group := range pack.ConfigurationResources {
+		for _, resource := range group.Resources {
+			result[contextEvidenceInventoryPathKey(group.Project, resource.Path)] = true
+		}
+	}
+	for _, group := range pack.ProductionPlanFiles {
+		if group.ProviderContract != "" {
+			result[contextEvidenceInventoryPathKey(group.Project, group.ProviderContract)] = true
+		}
+		for _, path := range group.PrimaryPersistence {
+			result[contextEvidenceInventoryPathKey(group.Project, path)] = true
+		}
 	}
 	return result
 }

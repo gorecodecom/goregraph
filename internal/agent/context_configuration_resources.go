@@ -11,14 +11,16 @@ import (
 const maximumContextConfigurationResources = 6
 
 type rankedContextConfigurationResource struct {
-	resource ContextConfigurationResource
-	score    int
+	project   string
+	resource  ContextConfigurationResource
+	keyGroups []string
+	score     int
 }
 
 func contextConfigurationResources(
 	pack ContextPack,
 	index scan.AgentContextIndexRecord,
-) []ContextConfigurationResource {
+) []ContextConfigurationResourceGroup {
 	query := contextSelectionQuery(pack)
 	if !contextQueryRequestsConcern(query, contextConcernConfiguration) ||
 		!contextQueryRequestsExactEvidenceInventory(query) {
@@ -54,15 +56,15 @@ func contextConfigurationResources(
 		candidate, exists := rankedByPath[key]
 		if !exists {
 			candidate = rankedContextConfigurationResource{
+				project: project,
 				resource: ContextConfigurationResource{
-					Project: project, Path: path,
-					Profile: contextConfigurationProfile(path),
+					Path: path, Profile: contextConfigurationProfile(path),
 				},
 			}
 		}
 		name := strings.TrimSpace(fact.Name)
-		if name != "" && !slicesContainsString(candidate.resource.KeyGroups, name) {
-			candidate.resource.KeyGroups = append(candidate.resource.KeyGroups, name)
+		if name != "" && !slicesContainsString(candidate.keyGroups, name) {
+			candidate.keyGroups = append(candidate.keyGroups, name)
 		}
 		candidate.score = max(candidate.score, score)
 		rankedByPath[key] = candidate
@@ -70,7 +72,7 @@ func contextConfigurationResources(
 
 	ranked := make([]rankedContextConfigurationResource, 0, len(rankedByPath))
 	for _, candidate := range rankedByPath {
-		sort.Strings(candidate.resource.KeyGroups)
+		sort.Strings(candidate.keyGroups)
 		ranked = append(ranked, candidate)
 	}
 	sort.Slice(ranked, func(left, right int) bool {
@@ -78,11 +80,11 @@ func contextConfigurationResources(
 			return ranked[left].score > ranked[right].score
 		}
 		leftKey := contextEvidenceInventoryPathKey(
-			ranked[left].resource.Project,
+			ranked[left].project,
 			ranked[left].resource.Path,
 		)
 		rightKey := contextEvidenceInventoryPathKey(
-			ranked[right].resource.Project,
+			ranked[right].project,
 			ranked[right].resource.Path,
 		)
 		return leftKey < rightKey
@@ -90,13 +92,34 @@ func contextConfigurationResources(
 	if len(ranked) > maximumContextConfigurationResources {
 		ranked = ranked[:maximumContextConfigurationResources]
 	}
-	result := make([]ContextConfigurationResource, 0, len(ranked))
+	grouped := make(map[string]*ContextConfigurationResourceGroup)
 	for _, candidate := range ranked {
-		result = append(result, candidate.resource)
+		key := candidate.project + "\x00" + strings.Join(candidate.keyGroups, "\x00")
+		group := grouped[key]
+		if group == nil {
+			group = &ContextConfigurationResourceGroup{
+				Project: candidate.project, KeyGroups: append([]string(nil), candidate.keyGroups...),
+			}
+			grouped[key] = group
+		}
+		group.Resources = append(group.Resources, candidate.resource)
+	}
+	result := make([]ContextConfigurationResourceGroup, 0, len(grouped))
+	for _, group := range grouped {
+		sort.Slice(group.Resources, func(left, right int) bool {
+			if group.Resources[left].Profile != group.Resources[right].Profile {
+				return group.Resources[left].Profile < group.Resources[right].Profile
+			}
+			return group.Resources[left].Path < group.Resources[right].Path
+		})
+		result = append(result, *group)
 	}
 	sort.Slice(result, func(left, right int) bool {
-		return contextEvidenceInventoryPathKey(result[left].Project, result[left].Path) <
-			contextEvidenceInventoryPathKey(result[right].Project, result[right].Path)
+		if result[left].Project != result[right].Project {
+			return result[left].Project < result[right].Project
+		}
+		return strings.Join(result[left].KeyGroups, "\x00") <
+			strings.Join(result[right].KeyGroups, "\x00")
 	})
 	return result
 }

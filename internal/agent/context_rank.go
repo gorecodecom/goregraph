@@ -3544,13 +3544,27 @@ func cloneContextPack(pack ContextPack) ContextPack {
 	pack.Files = append([]ContextFile(nil), pack.Files...)
 	pack.PlanFiles = append([]ContextPlanFile(nil), pack.PlanFiles...)
 	pack.ConfigurationResources = append(
-		[]ContextConfigurationResource(nil),
+		[]ContextConfigurationResourceGroup(nil),
 		pack.ConfigurationResources...,
 	)
 	for index := range pack.ConfigurationResources {
 		pack.ConfigurationResources[index].KeyGroups = append(
 			[]string(nil),
 			pack.ConfigurationResources[index].KeyGroups...,
+		)
+		pack.ConfigurationResources[index].Resources = append(
+			[]ContextConfigurationResource(nil),
+			pack.ConfigurationResources[index].Resources...,
+		)
+	}
+	pack.ProductionPlanFiles = append(
+		[]ContextProductionPlanFiles(nil),
+		pack.ProductionPlanFiles...,
+	)
+	for index := range pack.ProductionPlanFiles {
+		pack.ProductionPlanFiles[index].PrimaryPersistence = append(
+			[]string(nil),
+			pack.ProductionPlanFiles[index].PrimaryPersistence...,
 		)
 	}
 	pack.Uncertainties = append([]ContextUncertainty(nil), pack.Uncertainties...)

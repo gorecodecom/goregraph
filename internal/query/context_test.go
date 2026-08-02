@@ -89,16 +89,21 @@ func TestRenderContextMarkdownIncludesSortedMetadataOnlyPlanFiles(t *testing.T) 
 
 func TestRenderContextMarkdownIncludesConfigurationResourceIdentities(t *testing.T) {
 	pack := completeContextPackFixture()
-	pack.ConfigurationResources = []agent.ContextConfigurationResource{
+	pack.ConfigurationResources = []agent.ContextConfigurationResourceGroup{
 		{
-			Project: "services/jobs", Path: "src/test/resources/application-test.yml",
-			Profile: "test", KeyGroups: []string{"jobs"},
+			Project: "services/jobs", KeyGroups: []string{"jobs"},
+			Resources: []agent.ContextConfigurationResource{{
+				Path: "src/test/resources/application-test.yml", Profile: "test",
+			}},
 		},
 		{
-			Project: "services/catalog", Path: "src/main/resources/application.properties",
-			Profile: "production", KeyGroups: []string{"technical-user", "jobs"},
+			Project: "services/catalog", KeyGroups: []string{"technical-user", "jobs"},
+			Resources: []agent.ContextConfigurationResource{
+				{Path: "src/main/resources/application.properties", Profile: "production"},
+				{Profile: "production"},
+			},
 		},
-		{Project: "services/catalog", Profile: "production", KeyGroups: []string{"ignored"}},
+		{Project: "services/catalog", KeyGroups: []string{"ignored"}},
 	}
 
 	body := RenderContextMarkdown(pack)
@@ -120,6 +125,59 @@ func TestRenderContextMarkdownIncludesConfigurationResourceIdentities(t *testing
 	}
 	if strings.Contains(body, "ignored") {
 		t.Fatalf("configuration-resource section retained an empty path:\n%s", body)
+	}
+}
+
+func TestRenderContextMarkdownIncludesSortedProductionPlanFileIdentities(t *testing.T) {
+	pack := completeContextPackFixture()
+	pack.SourceSections = []agent.ContextSourceSection{{
+		Project: "api", Path: "UserController.java", StartLine: 20, EndLine: 20,
+		Role: "entrypoint", Content: "20\tvoid deleteUser() {}",
+	}}
+	pack.ProductionPlanFiles = []agent.ContextProductionPlanFiles{
+		{
+			Project: "services/jobs", ProviderContract: "src/main/JobManagementController.java",
+			PrimaryPersistence: []string{
+				"src/main/CatalogJobRepository.java",
+				"src/main/CatalogChangeJobRepository.java",
+			},
+		},
+		{
+			Project: "services/catalog", ProviderContract: "../UnsafeController.java",
+			PrimaryPersistence: []string{
+				"/private/AbsoluteRepository.java",
+				"src/main/CatalogRepository.java",
+				"",
+			},
+		},
+	}
+
+	body := RenderContextMarkdown(pack)
+	heading := "## Production plan file identities (metadata only; do not read)"
+	if strings.Count(body, heading) != 1 {
+		t.Fatalf("production-plan heading count = %d:\n%s", strings.Count(body, heading), body)
+	}
+	wants := []string{
+		"- `services/catalog/src/main/CatalogRepository.java` — primary_persistence",
+		"- `services/jobs/src/main/JobManagementController.java` — provider_contract",
+		"- `services/jobs/src/main/CatalogChangeJobRepository.java` — primary_persistence",
+		"- `services/jobs/src/main/CatalogJobRepository.java` — primary_persistence",
+	}
+	last := strings.Index(body, heading)
+	for _, want := range wants {
+		index := strings.Index(body, want)
+		if index <= last {
+			t.Fatalf("production-plan entry %q is absent or out of order:\n%s", want, body)
+		}
+		last = index
+	}
+	for _, forbidden := range []string{"UnsafeController", "AbsoluteRepository", "../", "/private/"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("production-plan section retained unsafe path %q:\n%s", forbidden, body)
+		}
+	}
+	if filesIndex, sourceIndex := strings.Index(body, "## Files to inspect"), strings.Index(body, "## Source sections"); filesIndex < 0 || sourceIndex < 0 || filesIndex > strings.Index(body, heading) || strings.Index(body, heading) > sourceIndex {
+		t.Fatalf("production-plan section is outside the file/source boundary:\n%s", body)
 	}
 }
 

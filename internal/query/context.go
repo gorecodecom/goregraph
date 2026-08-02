@@ -3,6 +3,7 @@ package query
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 	"unicode"
@@ -122,6 +123,7 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		}
 	}
 	lines = appendContextConfigurationResources(lines, pack.ConfigurationResources)
+	lines = appendContextProductionPlanFiles(lines, pack.ProductionPlanFiles)
 	lines = appendContextPlanFiles(lines, pack.PlanFiles)
 	lines = appendContextSourceSections(lines, pack.SourceSections)
 	lines = appendContextSourceOmissions(lines, pack.SourceOmissions)
@@ -155,34 +157,36 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 
 func appendContextConfigurationResources(
 	lines []string,
-	resources []agent.ContextConfigurationResource,
+	groups []agent.ContextConfigurationResourceGroup,
 ) []string {
-	entries := make([]string, 0, len(resources))
-	for _, resource := range resources {
-		path := contextInline(resource.Path)
-		if path == "" {
-			continue
-		}
-		entry := "- " + contextCodeReference(
-			contextInline(resource.Project),
-			path,
-			0,
-			0,
-		)
-		if profile := contextInline(resource.Profile); profile != "" {
-			entry += " — profile: " + profile
-		}
-		keyGroups := make([]string, 0, len(resource.KeyGroups))
-		for _, keyGroup := range resource.KeyGroups {
+	entries := make([]string, 0)
+	for _, group := range groups {
+		keyGroups := make([]string, 0, len(group.KeyGroups))
+		for _, keyGroup := range group.KeyGroups {
 			if keyGroup = contextInline(keyGroup); keyGroup != "" {
 				keyGroups = append(keyGroups, keyGroup)
 			}
 		}
-		if len(keyGroups) > 0 {
-			sort.Strings(keyGroups)
-			entry += " — key groups: " + strings.Join(keyGroups, ", ")
+		sort.Strings(keyGroups)
+		for _, resource := range group.Resources {
+			resourcePath := contextMetadataPath(resource.Path)
+			if resourcePath == "" {
+				continue
+			}
+			entry := "- " + contextCodeReference(
+				contextInline(group.Project),
+				resourcePath,
+				0,
+				0,
+			)
+			if profile := contextInline(resource.Profile); profile != "" {
+				entry += " — profile: " + profile
+			}
+			if len(keyGroups) > 0 {
+				entry += " — key groups: " + strings.Join(keyGroups, ", ")
+			}
+			entries = append(entries, entry)
 		}
-		entries = append(entries, entry)
 	}
 	if len(entries) == 0 {
 		return lines
@@ -190,6 +194,56 @@ func appendContextConfigurationResources(
 	sort.Strings(entries)
 	lines = append(lines, "", "## Configuration resource identities (metadata only; values omitted; do not read)")
 	return append(lines, entries...)
+}
+
+func appendContextProductionPlanFiles(
+	lines []string,
+	groups []agent.ContextProductionPlanFiles,
+) []string {
+	groups = append([]agent.ContextProductionPlanFiles(nil), groups...)
+	sort.Slice(groups, func(left, right int) bool {
+		return contextInline(groups[left].Project) < contextInline(groups[right].Project)
+	})
+	entries := make([]string, 0)
+	for _, group := range groups {
+		project := contextInline(group.Project)
+		if providerContract := contextMetadataPath(group.ProviderContract); providerContract != "" {
+			entries = append(entries, "- "+contextCodeReference(project, providerContract, 0, 0)+" — provider_contract")
+		}
+		persistence := make([]string, 0, len(group.PrimaryPersistence))
+		for _, value := range group.PrimaryPersistence {
+			if value = contextMetadataPath(value); value != "" {
+				persistence = append(persistence, value)
+			}
+		}
+		sort.Strings(persistence)
+		for _, value := range persistence {
+			entries = append(entries, "- "+contextCodeReference(project, value, 0, 0)+" — primary_persistence")
+		}
+	}
+	if len(entries) == 0 {
+		return lines
+	}
+	lines = append(lines, "", "## Production plan file identities (metadata only; do not read)")
+	return append(lines, entries...)
+}
+
+func contextMetadataPath(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	if value == "" || strings.HasPrefix(value, "/") ||
+		len(value) > 1 && value[1] == ':' {
+		return ""
+	}
+	for _, current := range value {
+		if unicode.IsControl(current) {
+			return ""
+		}
+	}
+	value = path.Clean(value)
+	if value == "." || value == ".." || strings.HasPrefix(value, "../") {
+		return ""
+	}
+	return contextInline(value)
 }
 
 func appendContextPlanFiles(

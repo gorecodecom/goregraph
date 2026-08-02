@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -567,12 +568,74 @@ func TestContextConfigurationResourcesAddsOnlyUnrepresentedProfiles(t *testing.T
 		},
 	}}
 
-	want := []ContextConfigurationResource{{
-		Project: "services/catalog", Path: "src/test/resources/application-test.properties",
-		Profile: "test", KeyGroups: []string{"technical-user"},
+	want := []ContextConfigurationResourceGroup{{
+		Project:   "services/catalog",
+		KeyGroups: []string{"technical-user"},
+		Resources: []ContextConfigurationResource{{
+			Path: "src/test/resources/application-test.properties", Profile: "test",
+		}},
 	}}
 	if got := contextConfigurationResources(pack, index); !reflect.DeepEqual(got, want) {
 		t.Fatalf("configuration resource supplement = %#v, want %#v", got, want)
+	}
+}
+
+func TestContextConfigurationResourcesGroupsOnlyEquivalentKeySets(t *testing.T) {
+	query := "Identify the exact production and test files to change for authentication, configuration, and retries in services/catalog and services/jobs."
+	pack := ContextPack{Query: query, selectionQuery: query}
+	index := scan.AgentContextIndexRecord{Facts: []scan.AgentContextFactRecord{
+		{ID: "catalog-prod-user", Project: "services/catalog", Kind: "configuration", Name: "technical-user", File: "src/main/resources/application-prod.properties", Confidence: "EXACT", Search: "technical user authentication configuration production"},
+		{ID: "catalog-prod-retry", Project: "services/catalog", Kind: "configuration", Name: "retry-policy", File: "src/main/resources/application-prod.properties", Confidence: "EXACT", Search: "retry policy configuration production"},
+		{ID: "catalog-test-user", Project: "services/catalog", Kind: "configuration", Name: "technical-user", File: "src/test/resources/application-test.properties", Confidence: "EXACT", Search: "technical user authentication configuration test"},
+		{ID: "catalog-test-retry", Project: "services/catalog", Kind: "configuration", Name: "retry-policy", File: "src/test/resources/application-test.properties", Confidence: "EXACT", Search: "retry policy configuration test"},
+		{ID: "catalog-local-user", Project: "services/catalog", Kind: "configuration", Name: "technical-user", File: "src/main/resources/application-local.properties", Confidence: "EXACT", Search: "technical user authentication configuration local"},
+		{ID: "jobs-prod-user", Project: "services/jobs", Kind: "configuration", Name: "technical-user", File: "src/main/resources/application-prod.properties", Confidence: "EXACT", Search: "technical user authentication configuration production"},
+	}}
+
+	want := []ContextConfigurationResourceGroup{
+		{
+			Project:   "services/catalog",
+			KeyGroups: []string{"retry-policy", "technical-user"},
+			Resources: []ContextConfigurationResource{
+				{Path: "src/main/resources/application-prod.properties", Profile: "prod"},
+				{Path: "src/test/resources/application-test.properties", Profile: "test"},
+			},
+		},
+		{
+			Project:   "services/catalog",
+			KeyGroups: []string{"technical-user"},
+			Resources: []ContextConfigurationResource{{Path: "src/main/resources/application-local.properties", Profile: "local"}},
+		},
+		{
+			Project:   "services/jobs",
+			KeyGroups: []string{"technical-user"},
+			Resources: []ContextConfigurationResource{{Path: "src/main/resources/application-prod.properties", Profile: "prod"}},
+		},
+	}
+	if got := contextConfigurationResources(pack, index); !reflect.DeepEqual(got, want) {
+		t.Fatalf("grouped configuration resources = %#v, want %#v", got, want)
+	}
+}
+
+func TestContextConfigurationResourcesCapsSelectedResources(t *testing.T) {
+	query := "Identify the exact production and test files to change for technical user authentication configuration in services/catalog."
+	pack := ContextPack{Query: query, selectionQuery: query}
+	index := scan.AgentContextIndexRecord{}
+	for _, profile := range []string{"alpha", "beta", "gamma", "local", "prod", "test", "zeta"} {
+		index.Facts = append(index.Facts, scan.AgentContextFactRecord{
+			ID: "config-" + profile, Project: "services/catalog", Kind: "configuration",
+			Name: "technical-user", File: "src/main/resources/application-" + profile + ".properties",
+			Confidence: "EXACT", Search: "technical user configuration " + profile,
+		})
+	}
+
+	groups := contextConfigurationResources(pack, index)
+	resourceCount := 0
+	for _, group := range groups {
+		resourceCount += len(group.Resources)
+	}
+	if resourceCount != maximumContextConfigurationResources {
+		t.Fatalf("selected configuration resources = %d, want %d: %#v", resourceCount, maximumContextConfigurationResources, groups)
 	}
 }
 
@@ -690,6 +753,199 @@ func TestBuildContextKeepsCoherentReleasePlanEvidence(t *testing.T) {
 			len(pack.SourceSections),
 			len(pack.SourceOmissions),
 		)
+	}
+}
+
+func TestBuildContextKeepsCompactProductionPlanEvidence(t *testing.T) {
+	index := runtimeShapeReleaseQualityMissingContractIndex()
+	index.Facts = append(index.Facts,
+		scan.AgentContextFactRecord{
+			ID: "catalog-technical-user-production", Project: "services/catalog", Kind: "configuration",
+			Name: "technical-user", File: "src/main/resources/application-prod.properties",
+			Line: 8, EndLine: 8, Confidence: "EXACT", Search: "technical user authentication configuration production",
+		},
+		scan.AgentContextFactRecord{
+			ID: "catalog-technical-user-test", Project: "services/catalog", Kind: "configuration",
+			Name: "technical-user", File: "src/test/resources/application-test.properties",
+			Line: 8, EndLine: 8, Confidence: "EXACT", Search: "technical user authentication configuration test profile",
+		},
+		scan.AgentContextFactRecord{
+			ID: "jobs-technical-user-production", Project: "services/jobs", Kind: "configuration",
+			Name: "technical-user", File: "src/main/resources/application-prod.properties",
+			Line: 8, EndLine: 8, Confidence: "EXACT", Search: "technical user authentication configuration production",
+		},
+		scan.AgentContextFactRecord{
+			ID: "jobs-technical-user-test", Project: "services/jobs", Kind: "configuration",
+			Name: "technical-user", File: "src/test/resources/application-test.properties",
+			Line: 8, EndLine: 8, Confidence: "EXACT", Search: "technical user authentication configuration test profile",
+		},
+		scan.AgentContextFactRecord{
+			ID: "jobs-regular-repository-owner", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobRepository", Qualified: "jobs.CatalogJobRepository",
+			File: "src/main/java/example/CatalogJobRepository.java", Line: 6, EndLine: 6, Confidence: "EXACT",
+			Search: "regular job task catalog item primary persistence repository",
+		},
+		scan.AgentContextFactRecord{
+			ID: "jobs-change-repository-owner", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJobRepository", Qualified: "jobs.CatalogChangeJobRepository",
+			File: "src/main/java/example/CatalogChangeJobRepository.java", Line: 6, EndLine: 6, Confidence: "EXACT",
+			Search: "change job task catalog item primary persistence repository",
+		},
+		scan.AgentContextFactRecord{
+			ID: "jobs-regular-comment-repository", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogJobCommentRepository", Qualified: "jobs.CatalogJobCommentRepository",
+			File: "src/main/java/example/CatalogJobCommentRepository.java", Line: 7, EndLine: 8, Confidence: "EXACT",
+			Search: "regular job dependent comment persistence repository",
+		},
+		scan.AgentContextFactRecord{
+			ID: "jobs-change-comment-repository", Project: "services/jobs", Kind: "symbol",
+			Name: "CatalogChangeJobCommentRepository", Qualified: "jobs.CatalogChangeJobCommentRepository",
+			File: "src/main/java/example/CatalogChangeJobCommentRepository.java", Line: 7, EndLine: 8, Confidence: "EXACT",
+			Search: "change job dependent comment persistence repository",
+		},
+		scan.AgentContextFactRecord{
+			ID: "catalog-inventory-client-mock", Project: "services/catalog", Kind: "symbol",
+			Name: "InventoryClientMock", Qualified: "catalog.InventoryClientMock",
+			File: "src/test/java/example/InventoryClientMock.java", Line: 8, EndLine: 8, Confidence: "EXACT",
+			Search: "existing outbound client mock pattern",
+		},
+		scan.AgentContextFactRecord{
+			ID: "catalog-inventory-client-retry-test", Project: "services/catalog", Kind: "symbol",
+			Name: "InventoryClientRetryableTest", Qualified: "catalog.InventoryClientRetryableTest",
+			File: "src/test/java/example/InventoryClientRetryableTest.java", Line: 8, EndLine: 8, Confidence: "EXACT",
+			Search: "existing outbound client retry test pattern",
+		},
+	)
+	root := writeReleaseQualityMissingContractFixtureWithIndex(t, index)
+	for _, path := range []string{
+		"services/catalog/src/main/resources/application-prod.properties",
+		"services/catalog/src/test/resources/application-test.properties",
+		"services/jobs/src/main/resources/application-prod.properties",
+		"services/jobs/src/test/resources/application-test.properties",
+	} {
+		if err := os.Remove(filepath.Join(root, filepath.FromSlash(path))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	query := "When DELETE /catalog/items/{itemId} removes an item in services/catalog, " +
+		"plan the missing internal HTTP contract through libraries/job-client and services/jobs. " +
+		"Cover both job types and their catalog and item lookup attributes, authentication, production " +
+		"and test configuration, retries, primary and dependent persistence, side effects, reuse the " +
+		"existing InventoryClient mock and retry test patterns, " +
+		"and identify the exact production and executable test files to change or create."
+	request := ContextRequest{Root: root, Query: query, BudgetTokens: 4000, MaxFiles: 12}
+
+	pack, err := BuildContext(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := BuildContext(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstJSON, err := json.Marshal(pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondJSON, err := json.Marshal(again)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(firstJSON) != string(secondJSON) {
+		t.Fatalf("compact production plan is not deterministic:\nfirst=%s\nsecond=%s", firstJSON, secondJSON)
+	}
+
+	if len(pack.ConfigurationResources) == 0 {
+		t.Fatal("compact configuration resource groups are missing")
+	}
+	for _, group := range pack.ConfigurationResources {
+		if group.Project != "services/catalog" && group.Project != "services/jobs" ||
+			!reflect.DeepEqual(group.KeyGroups, []string{"technical-user"}) ||
+			len(group.Resources) == 0 {
+			t.Fatalf("invalid compact configuration group: %#v", group)
+		}
+		for _, resource := range group.Resources {
+			if contextPackRepresentsSourcePath(pack, group.Project, resource.Path) {
+				t.Errorf("configuration metadata duplicates represented source %q", group.Project+":"+resource.Path)
+			}
+		}
+	}
+	for _, want := range []struct {
+		project string
+		path    string
+	}{
+		{project: "services/catalog", path: "src/main/resources/application-prod.properties"},
+		{project: "services/catalog", path: "src/test/resources/application-test.properties"},
+		{project: "services/jobs", path: "src/main/resources/application-prod.properties"},
+		{project: "services/jobs", path: "src/test/resources/application-test.properties"},
+	} {
+		represented := contextPackRepresentsSourcePath(pack, want.project, want.path)
+		for _, group := range pack.ConfigurationResources {
+			for _, resource := range group.Resources {
+				represented = represented || normalizeContextProject(group.Project) == want.project &&
+					contextPackSourceFile(resource.Path) == want.path
+			}
+		}
+		if !represented {
+			t.Errorf("configuration identity %q missing", want.project+":"+want.path)
+		}
+	}
+	for _, want := range []string{
+		"src/main/java/example/JobManagementController.java",
+		"src/main/java/example/CatalogChangeJobRepository.java",
+		"src/main/java/example/CatalogJobRepository.java",
+	} {
+		represented := contextPackRepresentsSourcePath(pack, "services/jobs", want)
+		for _, group := range pack.ProductionPlanFiles {
+			if normalizeContextProject(group.Project) != "services/jobs" {
+				continue
+			}
+			represented = represented || contextPackSourceFile(group.ProviderContract) == want
+			for _, path := range group.PrimaryPersistence {
+				represented = represented || contextPackSourceFile(path) == want
+			}
+		}
+		if !represented {
+			t.Errorf("production plan identity %q missing", want)
+		}
+	}
+	for _, want := range []struct {
+		project string
+		path    string
+	}{
+		{project: "services/jobs", path: "src/test/java/example/JobManagementControllerTest.java"},
+		{project: "services/jobs", path: "src/test/java/example/JobServiceTest.java"},
+		{project: "services/catalog", path: "src/test/java/example/InventoryClientMock.java"},
+		{project: "services/catalog", path: "src/test/java/example/InventoryClientRetryableTest.java"},
+	} {
+		represented := contextPackRepresentsSourcePath(pack, want.project, want.path)
+		for _, file := range pack.PlanFiles {
+			represented = represented || normalizeContextProject(file.Project) == want.project &&
+				contextPackSourceFile(file.Path) == want.path
+		}
+		if !represented {
+			t.Errorf("test plan identity %q missing", want.project+":"+want.path)
+		}
+	}
+	if !contextHasUncertainty(pack, "services/jobs/dependent_persistence") {
+		t.Fatalf("dependent persistence uncertainty missing from %#v", pack.Uncertainties)
+	}
+	if pack.EstimatedTokens > 4000 || pack.BudgetTokens != 4000 ||
+		contextSourceFileCount(pack) > 12 || len(pack.SourceSections) > 12 ||
+		len(pack.SourceOmissions) > MaxContextSourceOmissions {
+		t.Fatalf(
+			"compact production plan exceeds bounds: tokens=%d/%d aggregate_files=%d sections=%d omissions=%d",
+			pack.EstimatedTokens,
+			pack.BudgetTokens,
+			contextSourceFileCount(pack),
+			len(pack.SourceSections),
+			len(pack.SourceOmissions),
+		)
+	}
+	for _, sentinel := range []string{"fixture-client-user", "fixture-client-password", "fixture-technical-user"} {
+		if strings.Contains(string(firstJSON), sentinel) {
+			t.Errorf("sentinel configuration value %q leaked into final context", sentinel)
+		}
 	}
 }
 
