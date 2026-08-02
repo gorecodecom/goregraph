@@ -28,7 +28,7 @@ func contextProductionPlanFiles(
 	if entrypointProject == "" {
 		return nil
 	}
-	providerProjects := contextPlanFileProviderProjects(pack, entrypointProject)
+	providerProjects := contextProductionPlanProviderProjects(pack, entrypointProject)
 	if len(providerProjects) == 0 {
 		return nil
 	}
@@ -51,10 +51,29 @@ func contextProductionPlanFiles(
 				project,
 				represented,
 				domainTokens,
+				requestedActions,
 			),
 		}
 		if group.ProviderContract != "" || len(group.PrimaryPersistence) > 0 {
 			result = append(result, group)
+		}
+	}
+	return result
+}
+
+func contextProductionPlanProviderProjects(
+	pack ContextPack,
+	entrypointProject string,
+) map[string]bool {
+	result := make(map[string]bool)
+	for _, concern := range pack.Concerns {
+		project := normalizeContextProject(concern.Project)
+		if project == "" || project == entrypointProject {
+			continue
+		}
+		switch normalizedContextConcernKind(concern.Kind) {
+		case contextConcernHTTPContract, contextConcernPersistence, contextConcernDomainModel:
+			result[project] = true
 		}
 	}
 	return result
@@ -126,6 +145,7 @@ func contextProductionPrimaryPersistence(
 	project string,
 	represented map[string]bool,
 	domainTokens map[string]bool,
+	requestedActions map[string]bool,
 ) []string {
 	if len(domainTokens) == 0 {
 		return nil
@@ -138,7 +158,9 @@ func contextProductionPrimaryPersistence(
 			path == "" || contextFactUsesTestSource(fact) ||
 			represented[contextEvidenceInventoryPathKey(project, path)] ||
 			!contextExactInventoryPersistenceOwnerFact(fact) ||
-			contextDomainModelDependencyFact(fact) {
+			contextDomainModelDependencyFact(fact) ||
+			(contextActionFamiliesHaveMutation(requestedActions) &&
+				contextProductionReadModelPersistenceOwner(fact)) {
 			continue
 		}
 		matches := contextStableFactIdentityMatchCount(fact, domainTokens)
@@ -170,6 +192,19 @@ func contextProductionPrimaryPersistence(
 	}
 	sort.Strings(result)
 	return result
+}
+
+func contextProductionReadModelPersistenceOwner(fact scan.AgentContextFactRecord) bool {
+	identity := compactContextIdentifier(
+		strings.TrimSuffix(filepath.Base(fact.File), filepath.Ext(fact.File)),
+	)
+	for _, suffix := range []string{"repositories", "repository", "store", "dao"} {
+		identity = strings.TrimSuffix(identity, suffix)
+	}
+	return strings.HasSuffix(identity, "v") ||
+		strings.HasSuffix(identity, "view") ||
+		strings.HasSuffix(identity, "projection") ||
+		strings.HasSuffix(identity, "readmodel")
 }
 
 func contextBestProductionFile(candidates map[string]rankedContextProductionFile) string {

@@ -68,6 +68,43 @@ func TestContextProductionPlanFilesIgnoresFactOrder(t *testing.T) {
 	}
 }
 
+func TestContextProductionPlanFilesExcludesAncillaryAndReadModelPersistence(t *testing.T) {
+	pack, index := productionPlanFilesFixture()
+	pack.Concerns = append(pack.Concerns,
+		ContextConcern{Project: "libraries/common", Kind: contextConcernAuth, Covered: true},
+	)
+	pack.SourceOmissions = []ContextSourceOmission{{
+		Project: "services/jobs",
+		Path:    "src/main/java/example/CatalogChangeJobRepository.java",
+		Role:    contextConcernPersistence,
+	}}
+	index.Facts = append(index.Facts,
+		scan.AgentContextFactRecord{
+			ID: "read-model-repository", Project: "services/jobs", Kind: "symbol",
+			Name: "UserCatalogJobVRepository", Qualified: "jobs.UserCatalogJobVRepository",
+			File: "src/main/java/example/UserCatalogJobVRepository.java", Confidence: "EXACT",
+			Search: "user catalog job read model persistence repository",
+		},
+		scan.AgentContextFactRecord{
+			ID: "ancillary-repository", Project: "libraries/common", Kind: "symbol",
+			Name: "CatalogJobProtocolRepository", Qualified: "common.CatalogJobProtocolRepository",
+			File: "src/main/java/example/CatalogJobProtocolRepository.java", Confidence: "EXACT",
+			Search: "catalog job protocol persistence repository",
+		},
+	)
+	want := []ContextProductionPlanFiles{{
+		Project:          "services/jobs",
+		ProviderContract: "src/main/java/example/JobManagementController.java",
+		PrimaryPersistence: []string{
+			"src/main/java/example/CatalogJobRepository.java",
+		},
+	}}
+
+	if got := contextProductionPlanFiles(pack, index); !reflect.DeepEqual(got, want) {
+		t.Fatalf("production plan files = %#v, want %#v", got, want)
+	}
+}
+
 func productionPlanFilesFixture() (ContextPack, scan.AgentContextIndexRecord) {
 	query := "Plan the missing internal HTTP contract for deleting catalog jobs, cover both job types and their catalog and item lookup attributes, and identify the exact production and test files to change."
 	pack := ContextPack{
