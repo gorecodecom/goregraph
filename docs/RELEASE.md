@@ -3,7 +3,7 @@
 ## Current Source Target
 
 <!-- goregraph:generated current-contract start -->
-Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until the release gates pass.
+Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until 1.3.0 is explicitly published.
 <!-- goregraph:generated current-contract end -->
 
 The unreleased 1.3.0 source target moves generated output to Schema 3 and adds
@@ -186,20 +186,20 @@ release documentation, and decide explicitly whether to ship dashboard-only or
 continue Context-ranking work in a later version.
 
 <!-- goregraph:generated release-evidence-status start -->
-The latest controlled three-by-three release benchmark did not pass: candidate b102756 passed the prospective token and structural gates with effective-token medians of 148625 baseline and 18628 assisted, an 87.47% reduction, and zero external skill reads. Its signed 12-point review failed because the quality medians were 11 baseline and 10 assisted; dependent persistence/cascade disclosure and one natural affected-file inventory phrasing remained incomplete. Publication remains blocked until the correction passes a fresh controlled matrix and signed quality review.
+The latest controlled three-by-three release benchmark passed for candidate d452b16. Effective-token medians were 160072 baseline and 20228 assisted, an 87.36% reduction; mean effective tokens were 164199 baseline and 21146 assisted, an 87.12% reduction. Tool-call medians were 26 and 3, and source-read medians were 19 and 2. All six runs had zero external skill reads. The signed 12-point review scored baseline quality at a median of 11 and assisted quality at 12, with every assisted run scoring 12/12. Candidate d452b16 therefore satisfies the 1.3.0 release benchmark gates. This evidence covers one frozen historical three-repository Java case and is not a general token-savings guarantee.
 <!-- goregraph:generated release-evidence-status end -->
 
-The previous controlled three-by-three result remains failed and is not
-rescored. Its prospectively computed effective-token medians are diagnostic
-only; release qualification requires a fresh, prospectively calibrated matrix.
+The previous failed controlled result remains retained and is not rescored.
+The fresh prospectively calibrated matrix above supersedes it and qualifies
+candidate `d452b16` for the 1.3.0 release flow.
 
 No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.
 
-## Completed 1.2.0 Milestone
+## Completed v1.2.0 Milestone
 
-`1.2.0` was the completed local minor milestone for workspace understanding. It preserved Schema 2 while adding canonical feature flows, prioritized workspace coverage, evidence-backed test and verification guidance, bounded impact summaries, and a six-view offline dashboard.
+`v1.2.0` was the completed local minor milestone for workspace understanding. It preserved Schema 2 while adding canonical feature flows, prioritized workspace coverage, evidence-backed test and verification guidance, bounded impact summaries, and a six-view offline dashboard.
 
-`1.2.0` acceptance included:
+`v1.2.0` acceptance included:
 
 - canonical route-to-component-to-API-to-backend-to-persistence feature flows;
 - Architecture, Endpoints, Feature Flow, Data Flow, Diagnostics, and Coverage views;
@@ -484,7 +484,8 @@ schema: 3
 
 ## Release Flow
 
-`v1.3.0` is not ready for this flow; the commands below retain the completed `v1.2.0` release example.
+`v1.3.0` has passed its documented release gates. Execute this flow only
+after explicit release approval; no tag or release has been created yet.
 
 1. Confirm `main` is clean and pushed.
 2. Confirm README installation instructions are current.
@@ -492,8 +493,8 @@ schema: 3
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v1.2.0 -m "Release v1.2.0"
-   git push origin v1.2.0
+   git tag -a v1.3.0 -m "Release v1.3.0"
+   git push origin v1.3.0
    ```
 
 5. GitHub Actions runs GoReleaser.

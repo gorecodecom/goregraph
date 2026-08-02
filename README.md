@@ -47,7 +47,7 @@ handling.
 ## Installation
 
 <!-- goregraph:generated current-contract start -->
-Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until the release gates pass.
+Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until 1.3.0 is explicitly published.
 <!-- goregraph:generated current-contract end -->
 
 The unreleased 1.3.0 source can be built locally, but it has not been published
@@ -1220,11 +1220,12 @@ as baseline quality. Context Pack `estimated_tokens` remains unrelated to
 end-to-end usage.
 
 <!-- goregraph:generated release-evidence-status start -->
-The latest controlled three-by-three release benchmark did not pass: candidate b102756 passed the prospective token and structural gates with effective-token medians of 148625 baseline and 18628 assisted, an 87.47% reduction, and zero external skill reads. Its signed 12-point review failed because the quality medians were 11 baseline and 10 assisted; dependent persistence/cascade disclosure and one natural affected-file inventory phrasing remained incomplete. Publication remains blocked until the correction passes a fresh controlled matrix and signed quality review.
+The latest controlled three-by-three release benchmark passed for candidate d452b16. Effective-token medians were 160072 baseline and 20228 assisted, an 87.36% reduction; mean effective tokens were 164199 baseline and 21146 assisted, an 87.12% reduction. Tool-call medians were 26 and 3, and source-read medians were 19 and 2. All six runs had zero external skill reads. The signed 12-point review scored baseline quality at a median of 11 and assisted quality at 12, with every assisted run scoring 12/12. Candidate d452b16 therefore satisfies the 1.3.0 release benchmark gates. This evidence covers one frozen historical three-repository Java case and is not a general token-savings guarantee.
 <!-- goregraph:generated release-evidence-status end -->
 
-The previous controlled three-by-three result remains failed and is not
-rescored. A new prospectively calibrated matrix is required for release.
+The previous failed controlled result remains retained and is not rescored.
+The fresh prospectively calibrated matrix above supersedes it for 1.3.0
+qualification. Publication is still a separate explicit release action.
 
 The benchmark consumes Codex JSONL logs and distinguishes compact
 `duplicate_of` Context Packs from a repeated full payload: compact duplicates

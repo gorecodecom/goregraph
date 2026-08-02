@@ -199,20 +199,21 @@ func renderAgentInstruction() string {
 
 func renderCurrentContract() string {
 	return fmt.Sprintf(
-		"Current source contract: GoreGraph %s with output Schema %d (unreleased). Published artifacts remain tied to the latest released tag until the release gates pass.",
+		"Current source contract: GoreGraph %s with output Schema %d (unreleased). Published artifacts remain tied to the latest released tag until 1.3.0 is explicitly published.",
 		version.Version,
 		scan.SchemaVersion,
 	)
 }
 
 func renderCurrentReleaseEvidenceStatus() string {
-	return "The latest controlled three-by-three release benchmark did not pass: " +
-		"candidate b102756 passed the prospective token and structural gates with " +
-		"effective-token medians of 148625 baseline and 18628 assisted, an 87.47% reduction, " +
-		"and zero external skill reads. Its signed 12-point review failed because the quality " +
-		"medians were 11 baseline and 10 assisted; dependent persistence/cascade disclosure " +
-		"and one natural affected-file inventory phrasing remained incomplete. Publication remains blocked " +
-		"until the correction passes a fresh controlled matrix and signed quality review."
+	return "The latest controlled three-by-three release benchmark passed for candidate d452b16. " +
+		"Effective-token medians were 160072 baseline and 20228 assisted, an 87.36% reduction; " +
+		"mean effective tokens were 164199 baseline and 21146 assisted, an 87.12% reduction. " +
+		"Tool-call medians were 26 and 3, and source-read medians were 19 and 2. All six runs had " +
+		"zero external skill reads. The signed 12-point review scored baseline quality at a median " +
+		"of 11 and assisted quality at 12, with every assisted run scoring 12/12. Candidate d452b16 " +
+		"therefore satisfies the 1.3.0 release benchmark gates. This evidence covers one frozen " +
+		"historical three-repository Java case and is not a general token-savings guarantee."
 }
 
 func renderAgentBenchmarkMetrics() string {

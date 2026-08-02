@@ -1,7 +1,7 @@
 # GoreGraph Output Contract
 
 <!-- goregraph:generated current-contract start -->
-Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until the release gates pass.
+Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until 1.3.0 is explicitly published.
 <!-- goregraph:generated current-contract end -->
 
 ## Build Targets and Extraction
@@ -323,10 +323,11 @@ complete transcript. `--ignore-user-config` is not a skill-isolation guarantee.
 The harness records plugin state but never mutates it. Normal GoreGraph use
 remains compatible with Brainstorming, TDD, debugging, and review skills.
 
-The previous controlled three-by-three result remains failed and is not
-rescored. Its offline effective-token medians are diagnostic only; release
-qualification requires a fresh, prospectively calibrated matrix with zero
-external skill reads.
+The latest prospectively calibrated three-by-three release matrix passed for
+candidate `d452b16`: effective-token medians were 160,072 baseline and 20,228
+assisted (87.36% lower), with zero external skill reads and quality medians of
+11 baseline and 12 assisted. This is evidence for one frozen historical
+three-repository Java case, not a general savings guarantee.
 
 ## Human Dashboard
 

@@ -129,7 +129,7 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	}
 
 	currentContract := renderCurrentContract()
-	for _, want := range []string{"1.3.0", "Schema 3", "unreleased"} {
+	for _, want := range []string{"1.3.0", "Schema 3", "unreleased", "until 1.3.0 is explicitly published"} {
 		if !strings.Contains(currentContract, want) {
 			t.Fatalf("current contract is missing %q: %s", want, currentContract)
 		}
@@ -137,20 +137,25 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 
 	releaseEvidence := renderCurrentReleaseEvidenceStatus()
 	for _, want := range []string{
-		"latest controlled three-by-three release benchmark did not pass",
-		"candidate b102756",
-		"effective-token medians of 148625 baseline and 18628 assisted",
-		"87.47% reduction",
+		"latest controlled three-by-three release benchmark passed",
+		"candidate d452b16",
+		"Effective-token medians were 160072 baseline and 20228 assisted",
+		"87.36% reduction",
+		"mean effective tokens were 164199 baseline and 21146 assisted",
+		"87.12% reduction",
+		"Tool-call medians were 26 and 3",
+		"source-read medians were 19 and 2",
 		"zero external skill reads",
-		"quality medians were 11 baseline and 10 assisted",
-		"dependent persistence/cascade disclosure and one natural affected-file inventory phrasing",
-		"Publication remains blocked",
+		"baseline quality at a median of 11 and assisted quality at 12",
+		"every assisted run scoring 12/12",
+		"satisfies the 1.3.0 release benchmark gates",
+		"not a general token-savings guarantee",
 	} {
 		if !strings.Contains(releaseEvidence, want) {
 			t.Fatalf("release evidence is missing %q: %s", want, releaseEvidence)
 		}
 	}
-	for _, staleValue := range []string{"2551495", "147212", "164295", "39180"} {
+	for _, staleValue := range []string{"candidate b102756", "148625", "18628", "87.47%", "quality medians were 11 baseline and 10 assisted"} {
 		if strings.Contains(releaseEvidence, staleValue) {
 			t.Fatalf("release evidence contains stale diagnostic value %q: %s", staleValue, releaseEvidence)
 		}
