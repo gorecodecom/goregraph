@@ -240,7 +240,7 @@ Render full `project/path` references without line ranges. List `provider_contra
 - [ ] **Step 4: Synchronize generated documentation**
 
 ```bash
-go run ./scripts/sync-docs
+go run ./scripts/sync-docs --write
 go run ./scripts/sync-docs --check
 ```
 

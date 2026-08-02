@@ -158,10 +158,24 @@ Schema 3 Context Packs may add the optional `plan_files` array for exact
 missing-transition change plans. Each entry contains `project`, normalized
 relative `path`, and `use`; supported uses are `provider_test`, `mock_pattern`,
 and `retry_pattern`. At most four exact indexed test-source
-identities are emitted. The field is additive metadata: it does not contribute
-to source coverage or authorize source reads, and it does not change the 4,000-
-token, 12-source-file, 12-source-section, or three-source-omission limits. When
-`plan_files` is present, `files.reason` is serialized as an empty string to
+identities are emitted.
+
+The optional `production_plan_files` array uses project groups with an optional
+normalized relative `provider_contract` path and up to two normalized relative
+`primary_persistence` paths. It is emitted only for exact missing-transition
+file inventories from exact production-scoped provider and domain-matched
+repository-owner facts that are not represented elsewhere. Dependent
+persistence and inferred future behavior are intentionally excluded.
+
+The optional `configuration_resources` array groups an exact `project` and
+sorted value-free `key_groups` with nested `resources`; each resource contains
+only normalized relative `path` and `profile`. Selection remains capped at six
+resources before grouping.
+
+All three fields are additive metadata: they do not contribute to source
+coverage or authorize source reads, and they do not change the 4,000-token,
+12-source-file, 12-source-section, or three-source-omission limits. When compact
+plan metadata is present, `files.reason` is serialized as an empty string to
 avoid displacing file identities; file paths, ranges, roles, confidence, and
 source sections retain their normal meanings.
 

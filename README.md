@@ -292,7 +292,7 @@ If source_coverage is complete, run no source-reading commands on indexed projec
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; make the file reader itself range-bounded, for example with sed -n, and never pipe a whole-file reader such as nl through a downstream range filter. Do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
-For change plans, include separate exact existing production-file and test-file inventories from files, source_sections, plan_files, or bounded omission reads; name every supplied plan_files identity in the test-file inventory with its use because naming metadata is not reading source, provider_test entries may be test targets, and mock_pattern or retry_pattern entries are reference patterns, not change targets. Never read plan_files unless source_omissions lists the same exact path with a bounded range; do not invent future filenames, and keep future route, authentication, status, lookup implementation, dependent persistence and cascade behavior, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
+For change plans, include separate exact existing production-file and test-file inventories from files, source_sections, production_plan_files, plan_files, or bounded omission reads; name every supplied production_plan_files identity in the production-file inventory with its role because naming metadata is not reading source; name every supplied plan_files identity in the test-file inventory with its use because naming metadata is not reading source, provider_test entries may be test targets, and mock_pattern or retry_pattern entries are reference patterns, not change targets. Never read production_plan_files or plan_files unless source_omissions lists the same exact path with a bounded range; do not invent future filenames, and keep future route, authentication, status, lookup implementation, dependent persistence and cascade behavior, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
 When authentication or configuration is requested, report supplied server authorization policy, client authentication construction and configuration fields, and exact paths of supplied production and test-profile resources together in one coherent answer section; name every supplied configuration_resources identity with its project, profile, and key groups, and distinguish current evidence, required additions, and unknown deployment values.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.
@@ -317,17 +317,24 @@ provider tests; paired `mock_pattern` and `retry_pattern` entries identify
 caller-side patterns. They are metadata only: do not read them unless
 `source_omissions` lists the same path with a bounded range, and do not treat
 pattern entries as files to change.
-To keep the hard token boundary stable, packs with `plan_files` omit repetitive
-`files.reason` text while retaining every file path, range, role, confidence,
-and source section.
+
+The optional `production_plan_files` array complements that test inventory for
+the same exact missing-transition requests. Each project group may contain one
+existing `provider_contract` path and up to two exact primary-persistence paths.
+Dependent or comment repositories, test sources, foreign projects, unsafe
+paths, and identities already represented elsewhere are excluded. These paths
+are metadata only and never imply that the future route or persistence behavior
+already exists. To keep the hard token boundary stable, packs with compact plan
+metadata omit repetitive `files.reason` text while retaining every file path,
+range, role, confidence, and source section.
 
 For exact change inventories that request configuration,
 `configuration_resources` groups the relevant exact indexed Spring
-`application`/`bootstrap` resource identities by project, profile, and
-value-free key group, capped at six identities. It makes caller and provider
-resources explicit without exposing property values or authorizing a read;
-only a matching bounded
-`source_omissions` entry permits inspection.
+`application`/`bootstrap` resource identities by shared `project` and
+`key_groups`; each nested resource contains only `path` and `profile`. Selection
+is capped at six resources before grouping. It makes caller and provider
+resources explicit without exposing property values or authorizing a read; only
+a matching bounded `source_omissions` entry permits inspection.
 
 When a task explicitly asks about types, entities, payloads, identifiers, or
 lookup attributes, the Context Pack exposes that intent as `domain_model`.
@@ -1157,7 +1164,7 @@ If source_coverage is complete, run no source-reading commands on indexed projec
 If source_coverage is partial or none, inspect only exact project/path and start_line/end_line ranges listed in source_omissions; make the file reader itself range-bounded, for example with sed -n, and never pipe a whole-file reader such as nl through a downstream range filter. Do not inspect outside those ranges or other files. Report pathless or unbounded omissions as uncertainty.
 Never inventory repositories or read or grep outside included source_section ranges to reconstruct their files.
 A missing future call, route, or symbol required by the requested fix is evidence of the current gap, not a source-fallback trigger; assess entrypoint reliability from the existing production path.
-For change plans, include separate exact existing production-file and test-file inventories from files, source_sections, plan_files, or bounded omission reads; name every supplied plan_files identity in the test-file inventory with its use because naming metadata is not reading source, provider_test entries may be test targets, and mock_pattern or retry_pattern entries are reference patterns, not change targets. Never read plan_files unless source_omissions lists the same exact path with a bounded range; do not invent future filenames, and keep future route, authentication, status, lookup implementation, dependent persistence and cascade behavior, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
+For change plans, include separate exact existing production-file and test-file inventories from files, source_sections, production_plan_files, plan_files, or bounded omission reads; name every supplied production_plan_files identity in the production-file inventory with its role because naming metadata is not reading source; name every supplied plan_files identity in the test-file inventory with its use because naming metadata is not reading source, provider_test entries may be test targets, and mock_pattern or retry_pattern entries are reference patterns, not change targets. Never read production_plan_files or plan_files unless source_omissions lists the same exact path with a bounded range; do not invent future filenames, and keep future route, authentication, status, lookup implementation, dependent persistence and cascade behavior, and cross-service transaction ordering as unknown design decisions unless rendered source proves them.
 When authentication or configuration is requested, report supplied server authorization policy, client authentication construction and configuration fields, and exact paths of supplied production and test-profile resources together in one coherent answer section; name every supplied configuration_resources identity with its project, profile, and key groups, and distinguish current evidence, required additions, and unknown deployment values.
 If fallback_required is true, confidence is low, or there is not exactly one reliable production entrypoint, stop using GoreGraph.
 Retry only when retry_allowed is true: call once with exactly one retry_anchor and --previous-context-id <context_id>; never repeat or expand the original task.

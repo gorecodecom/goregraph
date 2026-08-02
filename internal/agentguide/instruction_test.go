@@ -30,7 +30,8 @@ func TestAssistedInstructionKeepsFutureChangePlansSourceBacked(t *testing.T) {
 	for _, want := range []string{
 		"For change plans",
 		"separate exact existing production-file and test-file inventories",
-		"files, source_sections, plan_files, or bounded omission reads",
+		"files, source_sections, production_plan_files, plan_files, or bounded omission reads",
+		"name every supplied production_plan_files identity in the production-file inventory with its role",
 		"name every supplied plan_files identity in the test-file inventory with its use",
 		"naming metadata is not reading source",
 		"provider_test entries may be test targets",
