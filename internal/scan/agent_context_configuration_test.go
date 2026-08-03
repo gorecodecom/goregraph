@@ -84,6 +84,22 @@ func TestExtractAgentContextConfigurationFactsAcceptsPropertiesWhitespaceSeparat
 	}
 }
 
+func TestExtractAgentContextConfigurationFactsAcceptsTrailingWhitespaceSeparators(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	body := "space.empty \n" +
+		"tab.empty\t\n" +
+		"form.empty\f\n"
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body)
+	for line, name := range []string{"space", "tab", "form"} {
+		fact := findAgentContextConfigurationFact(t, facts, name)
+		lineNumber := line + 1
+		if fact.Line != lineNumber || fact.EndLine != lineNumber {
+			t.Fatalf("%s key group range = %d-%d, want %d-%d", name, fact.Line, fact.EndLine, lineNumber, lineNumber)
+		}
+	}
+}
+
 func TestExtractAgentContextConfigurationFactsKeepsEscapedPropertiesSeparatorsInKeyGroups(t *testing.T) {
 	const path = "src/main/resources/application.properties"
 	body := "client\\:admin.url SENTINEL\n" +
@@ -98,6 +114,122 @@ func TestExtractAgentContextConfigurationFactsKeepsEscapedPropertiesSeparatorsIn
 	retryFact := findAgentContextConfigurationFact(t, facts, "retry=policy")
 	if retryFact.Line != 3 || retryFact.EndLine != 3 {
 		t.Fatalf("retry=policy key group range = %d-%d, want 3-3", retryFact.Line, retryFact.EndLine)
+	}
+}
+
+func TestExtractAgentContextConfigurationFactsDecodesPropertiesKeyEscapes(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	body := "tab\\tkey.value=SENTINEL\n" +
+		"line\\nkey.value=SENTINEL\n" +
+		"carriage\\rkey.value=SENTINEL\n" +
+		"form\\fkey.value=SENTINEL\n" +
+		"caf\\u00E9.value=SENTINEL\n" +
+		"rocket\\uD83D\\uDE80.value=SENTINEL\n" +
+		"client\\.name.value=SENTINEL\n" +
+		"path\\\\:SENTINEL\n"
+	wantGroups := []string{
+		"tab\tkey",
+		"line\nkey",
+		"carriage\rkey",
+		"form\fkey",
+		"caf\u00E9",
+		"rocket🚀",
+		"client.name",
+		"path\\",
+	}
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body)
+	for index, name := range wantGroups {
+		fact := findAgentContextConfigurationFact(t, facts, name)
+		lineNumber := index + 1
+		if fact.Line != lineNumber || fact.EndLine != lineNumber {
+			t.Fatalf("%q key group range = %d-%d, want %d-%d", name, fact.Line, fact.EndLine, lineNumber, lineNumber)
+		}
+	}
+}
+
+func TestExtractAgentContextConfigurationFactsRejectsMalformedPropertiesUnicodeKeys(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	body := "invalid\\u12G4.value=SENTINEL\n" +
+		"short\\u123.value=SENTINEL\n" +
+		"high\\uD83D.value=SENTINEL\n" +
+		"low\\uDE80.value=SENTINEL\n"
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body)
+	if len(facts) != 1 || facts[0].Name != "application.properties" {
+		t.Fatalf("facts for malformed Unicode keys = %#v, want only the file fact", facts)
+	}
+}
+
+func TestExtractAgentContextConfigurationFactsAcceptsSeparatorlessPropertiesKeys(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	body := "# comment\n" +
+		"! comment\n" +
+		" \t\f\n" +
+		"client.enabled\n" +
+		"retry.max-attempts\n"
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body)
+	clientFact := findAgentContextConfigurationFact(t, facts, "client")
+	if clientFact.Line != 4 || clientFact.EndLine != 4 {
+		t.Fatalf("client key group range = %d-%d, want 4-4", clientFact.Line, clientFact.EndLine)
+	}
+	retryFact := findAgentContextConfigurationFact(t, facts, "retry")
+	if retryFact.Line != 5 || retryFact.EndLine != 5 {
+		t.Fatalf("retry key group range = %d-%d, want 5-5", retryFact.Line, retryFact.EndLine)
+	}
+}
+
+func TestExtractAgentContextConfigurationFactsJoinsPropertiesContinuationsWithPhysicalRanges(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	const sentinel = "SENTINEL_CLIENT_URL"
+	body := "client.\\\n" +
+		"  url=" + sentinel + "\n" +
+		"retry.max-attempts=3\\\n" +
+		" \t0\n" +
+		"path\\\\\n" +
+		"next.enabled\n"
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body)
+	if len(facts) != 5 {
+		t.Fatalf("fact count = %d, want file fact plus four key groups: %#v", len(facts), facts)
+	}
+	wantRanges := map[string]agentContextConfigurationRange{
+		"client": {start: 1, end: 2},
+		"retry":  {start: 3, end: 4},
+		"path\\": {start: 5, end: 5},
+		"next":   {start: 6, end: 6},
+	}
+	for name, wantRange := range wantRanges {
+		fact := findAgentContextConfigurationFact(t, facts, name)
+		if fact.Line != wantRange.start || fact.EndLine != wantRange.end {
+			t.Fatalf("%q key group range = %d-%d, want %d-%d", name, fact.Line, fact.EndLine, wantRange.start, wantRange.end)
+		}
+		if strings.Contains(fact.Name, sentinel) || strings.Contains(fact.Summary, sentinel) || strings.Contains(fact.Search, sentinel) {
+			t.Fatalf("continued configuration fact retains value %q: %#v", sentinel, fact)
+		}
+	}
+}
+
+func TestExtractAgentContextConfigurationFactsKeepsCommentsOutOfPropertiesContinuations(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	body := "# ignored\\\n" +
+		"client.enabled\n" +
+		"! ignored\\\n" +
+		"retry.enabled\n" +
+		"terminal\\"
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body)
+	wantLines := map[string]int{
+		"client":   2,
+		"retry":    4,
+		"terminal": 5,
+	}
+	for name, wantLine := range wantLines {
+		fact := findAgentContextConfigurationFact(t, facts, name)
+		if fact.Line != wantLine || fact.EndLine != wantLine {
+			t.Fatalf("%q key group range = %d-%d, want %d-%d", name, fact.Line, fact.EndLine, wantLine, wantLine)
+		}
 	}
 }
 

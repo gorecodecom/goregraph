@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 const maxAgentContextConfigurationKeyGroups = 32
@@ -66,11 +68,17 @@ type agentContextConfigurationRange struct {
 	end   int
 }
 
+type agentContextConfigurationLine struct {
+	content string
+	start   int
+	end     int
+}
+
 func agentContextConfigurationKeyGroups(path string, lines []string) map[string]agentContextConfigurationRange {
 	groups := map[string]agentContextConfigurationRange{}
 	yamlParents := map[int]string{}
-	for index, line := range lines {
-		lineNumber := index + 1
+	for _, logicalLine := range agentContextConfigurationLogicalLines(path, lines) {
+		line := logicalLine.content
 		key, indent, ok := agentContextConfigurationKey(path, line)
 		if !ok {
 			continue
@@ -91,21 +99,75 @@ func agentContextConfigurationKeyGroups(path string, lines []string) map[string]
 			}
 		}
 		if group, exists := groups[key]; exists {
-			group.end = lineNumber
+			group.end = logicalLine.end
 			groups[key] = group
 		} else {
-			groups[key] = agentContextConfigurationRange{start: lineNumber, end: lineNumber}
+			groups[key] = agentContextConfigurationRange{start: logicalLine.start, end: logicalLine.end}
 		}
 	}
 	return groups
 }
 
-func agentContextConfigurationKey(path, line string) (string, int, bool) {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
-		return "", 0, false
-	}
+func agentContextConfigurationLogicalLines(path string, lines []string) []agentContextConfigurationLine {
+	logicalLines := make([]agentContextConfigurationLine, 0, len(lines))
 	if isAgentContextConfigurationYAML(path) {
+		for index, line := range lines {
+			lineNumber := index + 1
+			logicalLines = append(logicalLines, agentContextConfigurationLine{
+				content: line,
+				start:   lineNumber,
+				end:     lineNumber,
+			})
+		}
+		return logicalLines
+	}
+
+	for index := 0; index < len(lines); index++ {
+		logicalLine := agentContextConfigurationLine{
+			content: lines[index],
+			start:   index + 1,
+			end:     index + 1,
+		}
+		if !agentContextPropertiesComment(logicalLine.content) {
+			for agentContextPropertiesContinues(logicalLine.content) {
+				logicalLine.content = logicalLine.content[:len(logicalLine.content)-1]
+				if !agentContextPropertiesHasNextPhysicalLine(lines, index) {
+					break
+				}
+				index++
+				logicalLine.content += strings.TrimLeft(lines[index], " \t\f")
+				logicalLine.end = index + 1
+			}
+		}
+		logicalLines = append(logicalLines, logicalLine)
+	}
+	return logicalLines
+}
+
+func agentContextPropertiesContinues(line string) bool {
+	backslashes := 0
+	for index := len(line) - 1; index >= 0 && line[index] == '\\'; index-- {
+		backslashes++
+	}
+	return backslashes%2 == 1
+}
+
+func agentContextPropertiesHasNextPhysicalLine(lines []string, index int) bool {
+	next := index + 1
+	return next < len(lines) && !(next == len(lines)-1 && lines[next] == "")
+}
+
+func agentContextPropertiesComment(line string) bool {
+	trimmed := strings.TrimLeft(line, " \t\f")
+	return strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!")
+}
+
+func agentContextConfigurationKey(path, line string) (string, int, bool) {
+	if isAgentContextConfigurationYAML(path) {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+			return "", 0, false
+		}
 		colon := strings.Index(trimmed, ":")
 		if colon <= 0 {
 			return "", 0, false
@@ -116,12 +178,20 @@ func agentContextConfigurationKey(path, line string) (string, int, bool) {
 		}
 		return strings.Split(key, ".")[0], len(line) - len(strings.TrimLeft(line, " \t")), true
 	}
-	delimiter := agentContextPropertiesDelimiter(trimmed)
-	if delimiter <= 0 {
+	trimmed := strings.TrimLeft(line, " \t\f")
+	if trimmed == "" || agentContextPropertiesComment(line) {
 		return "", 0, false
 	}
-	key := agentContextPropertiesKeyGroup(trimmed[:delimiter])
-	if key == "" {
+	delimiter := agentContextPropertiesDelimiter(trimmed)
+	if delimiter == 0 {
+		return "", 0, false
+	}
+	rawKey := trimmed
+	if delimiter > 0 {
+		rawKey = trimmed[:delimiter]
+	}
+	key, valid := agentContextPropertiesKeyGroup(rawKey)
+	if !valid || key == "" {
 		return "", 0, false
 	}
 	return key, 0, true
@@ -145,28 +215,97 @@ func agentContextPropertiesDelimiter(line string) int {
 	return -1
 }
 
-func agentContextPropertiesKeyGroup(rawKey string) string {
+func agentContextPropertiesKeyGroup(rawKey string) (string, bool) {
 	var group strings.Builder
-	escaped := false
-	for _, character := range rawKey {
-		if escaped {
-			group.WriteRune(character)
-			escaped = false
+	inGroup := true
+	for index := 0; index < len(rawKey); {
+		character, size := utf8.DecodeRuneInString(rawKey[index:])
+		if character == utf8.RuneError && size == 1 {
+			return "", false
+		}
+		index += size
+		if character != '\\' {
+			if inGroup {
+				if character == '.' {
+					inGroup = false
+				} else {
+					group.WriteRune(character)
+				}
+			}
 			continue
 		}
-		if character == '\\' {
-			escaped = true
-			continue
+
+		if index == len(rawKey) {
+			return "", false
 		}
-		if character == '.' {
-			break
+		escapedCharacter, escapedSize := utf8.DecodeRuneInString(rawKey[index:])
+		if escapedCharacter == utf8.RuneError && escapedSize == 1 {
+			return "", false
 		}
-		group.WriteRune(character)
+		index += escapedSize
+		switch escapedCharacter {
+		case 't':
+			escapedCharacter = '\t'
+		case 'n':
+			escapedCharacter = '\n'
+		case 'r':
+			escapedCharacter = '\r'
+		case 'f':
+			escapedCharacter = '\f'
+		case 'u':
+			var valid bool
+			escapedCharacter, index, valid = agentContextPropertiesUnicodeEscape(rawKey, index)
+			if !valid {
+				return "", false
+			}
+		}
+		if inGroup {
+			group.WriteRune(escapedCharacter)
+		}
 	}
-	if escaped {
-		group.WriteByte('\\')
+	return group.String(), true
+}
+
+func agentContextPropertiesUnicodeEscape(value string, index int) (rune, int, bool) {
+	first, next, valid := agentContextPropertiesHexCodeUnit(value, index)
+	if !valid {
+		return 0, index, false
 	}
-	return group.String()
+	if first >= 0xd800 && first <= 0xdbff {
+		if next+2 > len(value) || value[next] != '\\' || value[next+1] != 'u' {
+			return 0, index, false
+		}
+		second, end, secondValid := agentContextPropertiesHexCodeUnit(value, next+2)
+		if !secondValid || second < 0xdc00 || second > 0xdfff {
+			return 0, index, false
+		}
+		return utf16.DecodeRune(rune(first), rune(second)), end, true
+	}
+	if first >= 0xdc00 && first <= 0xdfff {
+		return 0, index, false
+	}
+	return rune(first), next, true
+}
+
+func agentContextPropertiesHexCodeUnit(value string, index int) (uint16, int, bool) {
+	if index+4 > len(value) {
+		return 0, index, false
+	}
+	var codeUnit uint16
+	for _, digit := range []byte(value[index : index+4]) {
+		codeUnit <<= 4
+		switch {
+		case digit >= '0' && digit <= '9':
+			codeUnit += uint16(digit - '0')
+		case digit >= 'a' && digit <= 'f':
+			codeUnit += uint16(digit-'a') + 10
+		case digit >= 'A' && digit <= 'F':
+			codeUnit += uint16(digit-'A') + 10
+		default:
+			return 0, index, false
+		}
+	}
+	return codeUnit, index + 4, true
 }
 
 func largestConfigurationParentIndent(parents map[int]string, indent int) int {
