@@ -1445,8 +1445,8 @@ Use this to compare generated workspace evidence from two builds or releases.
 Important behavior:
 
 - requires both `--before` and `--after` workspace output directories
-- reports new, removed, and changed contracts, routes, flows, services, and evidence
-- reports coverage regressions and test-gap changes from the two snapshots
+- reports new, removed, and changed contracts and routes
+- reports new and closed test gaps plus coverage regressions
 - reads generated output only and does not scan or modify source files
 
 ## `goregraph workspace explain <target>`
