@@ -397,10 +397,10 @@ JSON machine data lives under `index/`, Markdown reports live under
 - `symbols-full.json`: normalized symbols for all supported languages with stable IDs and source locations.
 - `relations-full.json`: normalized relations for all supported languages with confidence and source-location metadata.
 - `graph-full.json`: Graphify-like rich directed graph with stable IDs, file nodes, symbol nodes, `type`/`relation` edge metadata, confidence, and source locations.
-- `callgraph.json`: method/function-level call graph with extracted Java/Spring edges and inferred Go, PHP, JS/TS/React, Python, and Shell call edges.
+- `callgraph.json`: method/function-level call graph with extracted Java/Spring edges and inferred Go, PHP, JS/TS/React, Python, Rust, and Shell call edges.
 - `endpoint-flows.json`: Spring endpoint flow records from endpoint to controller/service/repository methods.
 - `test-map.json`: method-level, endpoint-level, and best-effort cross-language test mappings with confidence metadata.
-- `routes.json`: normalized route records for Spring, Go, PHP/Laravel-style routes, JS/TS Express/Fastify-style routes, React Router routes, and Python FastAPI/Flask-style routes.
+- `routes.json`: normalized route records for Spring, Go, PHP/Laravel-style routes, JS/TS Express/Fastify-style routes, React Router routes, Python FastAPI/Flask-style routes, and Rust Axum/Actix/Rocket routes.
 - `flows.json`: normalized route-to-handler-to-call flow records across supported languages.
 - `api-contracts.json`: JavaScript/TypeScript HTTP client calls detected from supported helpers and `fetch`, including realistic helper argument shapes, method, raw path, normalized path, query metadata, service candidate, enclosing caller function or method when available, file, app, confidence, and reason.
 - `architecture-capabilities.json`: deterministic full-adapter facts for routes, HTTP clients, tests, persistence, messaging/RPC, validation, and request/response boundaries, with language, framework, file, line, and stable evidence ID.
@@ -1429,6 +1429,26 @@ not prove provider enforcement. Missing evidence is `unknown`, displayed as
 `No auth evidence detected`, never inferred as `public`; runtime authorization
 and enforcement remain out of scope.
 
+## `goregraph workspace diff --before <workspace-output> --after <workspace-output>`
+
+Compares two `.goregraph-workspace` output directories without scanning source files.
+This is a manual compatibility operation, not a normal agent-context step.
+
+Example:
+
+```bash
+goregraph workspace diff --before /tmp/before/.goregraph-workspace --after /tmp/after/.goregraph-workspace
+```
+
+Use this to compare generated workspace evidence from two builds or releases.
+
+Important behavior:
+
+- requires both `--before` and `--after` workspace output directories
+- reports new, removed, and changed contracts, routes, flows, services, and evidence
+- reports coverage regressions and test-gap changes from the two snapshots
+- reads generated output only and does not scan or modify source files
+
 ## `goregraph workspace explain <target>`
 
 Explains a workspace route, file, symbol, contract, or feature using generated workspace evidence.
@@ -1587,7 +1607,7 @@ Expected output:
 goregraph 1.3.0
 commit: dev
 built: unknown
-go: go1.26.x
+go: go1.23.x
 platform: darwin/arm64
 schema: 3
 ```

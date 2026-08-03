@@ -38,7 +38,7 @@ linked tests, safe verification commands, and bounded impact summaries remain
 evidence-backed and local.
 
 For command reference, see [`COMMANDS.md`](COMMANDS.md). The output contract is
-documented in [`OUTPUTS.md`](OUTPUTS.md) and [`SCHEMA.md`](SCHEMA.md); future
+documented in [`docs/OUTPUTS.md`](docs/OUTPUTS.md) and [`SCHEMA.md`](SCHEMA.md); future
 work is in [`ROADMAP.md`](ROADMAP.md). The
 [monotonic regression workflow](docs/BENCHMARKING.md#monotonic-regression-benchmark)
 defines the frozen Golden comparison, full-run gates, and external G1 evidence
@@ -724,6 +724,30 @@ goregraph workspace clean <path>
 Show generated GoreGraph output paths for the detected workspace without deleting anything. Add `--execute` to remove project `goregraph-out/` directories and the workspace `.goregraph-workspace/` directory.
 
 ```bash
+goregraph workspace diff --before <workspace-output> --after <workspace-output>
+```
+
+Compare two generated `.goregraph-workspace` output directories without scanning source files.
+
+```bash
+goregraph workspace explain <target>
+```
+
+Explain generated workspace evidence for a route, file, symbol, contract, or feature.
+
+```bash
+goregraph workspace path --from <target> --to <target>
+```
+
+Find a directed path between two generated workspace targets.
+
+```bash
+goregraph workspace impact --changed-file <path>
+```
+
+Show features and relationships that may be affected by one or more changed files.
+
+```bash
 goregraph mcp
 ```
 
@@ -893,7 +917,7 @@ updates these projections once after all selected project indexes are available.
 
 The workspace dashboard at
 `.goregraph-workspace/dashboard/workspace-map.html` is a
-standalone offline UI with seven top-level views, including a directly accessible
+standalone offline UI with eight top-level views, including a directly accessible
 Code Explorer. Its generated
 `.goregraph-workspace/dashboard/workspace-map-assets/` directory
 keeps project-specific symbol-usage evidence out of the startup document and
@@ -901,6 +925,7 @@ loads it only when Code Explorer is opened; keep that directory next to the HTML
 file when moving the offline dashboard:
 
 - **Architecture:** understand how projects and services communicate without losing the full workspace layout. Dynamic domain lanes come from service-map metadata. Selecting a service keeps every card at its stable position, highlights all direct incoming and outgoing relationships, and dims unrelated context. Background relationships share bundled trunks; selected relationships fan out to explicit card ports. The persistent summary shows relationship, neighboring-service, resolved, unresolved, and mismatch counts and filters by direction or risk. `N calls` means statically detected relationships, not runtime request frequency.
+- **API Catalog:** inspect the complete provider inventory, including endpoints without known consumers, static parameters, media types, request and response identities, provider security, and per-consumer evidence.
 - **Endpoints:** search for and select a service, inspect its caller -> endpoint -> provider rows in a normal-scale scrollable workbench, then open an endpoint to follow its implementation trace. Long routes wrap instead of shrinking the whole inventory. Long implementation traces start with readable cards at 100%; pan explores the path and **Fit** explicitly shows the complete overview.
 - **Feature Flow:** inspect the evidence-backed route-to-component-to-API-to-backend-to-persistence-to-test implementation chain, linked tests, and safe verification commands.
 - **Data Flow:** select one endpoint from the sidebar, then inspect its evidence-backed request fields, transformations, persistence, and response fields as a readable chain. Unknown mappings are displayed at their position as explicit gaps instead of invented connections.
