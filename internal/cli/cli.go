@@ -258,7 +258,7 @@ func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
 			}
 			i++
 			cfg.WorkspaceRoot = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			fmt.Fprint(stdout, "Usage: goregraph workspace refresh [path] [--target agent|dashboard|all] [--workspace <path>]\n\nRefreshes workspace overlays from existing project GoreGraph outputs without scanning source files.\n")
 			return 0
 		default:
@@ -310,7 +310,7 @@ func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
 			}
 			i++
 			cfg.WorkspaceRoot = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			printWorkspaceDashboardHelp(stdout)
 			return 0
 		default:
@@ -517,7 +517,7 @@ func runWorkspaceExplain(args []string, stdout, stderr io.Writer) int {
 			}
 			i++
 			cfg.WorkspaceRoot = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			fmt.Fprint(stdout, "Usage: goregraph workspace explain <target> [--workspace <path>]\n\nExplains a route, file, symbol, contract, or feature from generated workspace outputs.\n")
 			return 0
 		default:
@@ -579,7 +579,7 @@ func runWorkspacePath(args []string, stdout, stderr io.Writer) int {
 			}
 			i++
 			cfg.WorkspaceRoot = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			fmt.Fprint(stdout, "Usage: goregraph workspace path --from <target> --to <target> [--workspace <path>]\n\nShows the shortest generated workspace graph path between two targets.\n")
 			return 0
 		default:
@@ -629,7 +629,7 @@ func runWorkspaceImpact(args []string, stdout, stderr io.Writer) int {
 			}
 			i++
 			cfg.WorkspaceRoot = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			fmt.Fprint(stdout, "Usage: goregraph workspace impact --changed-file <path> [--changed-file <path>] [--workspace <path>]\n\nShows affected feature dossiers for changed files using generated workspace outputs.\n")
 			return 0
 		default:
@@ -678,7 +678,7 @@ func runWorkspaceDiff(args []string, stdout, stderr io.Writer) int {
 			}
 			i++
 			after = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			fmt.Fprint(stdout, "Usage: goregraph workspace diff --before <workspace-output> --after <workspace-output>\n\nCompares two .goregraph-workspace output directories without scanning.\n")
 			return 0
 		default:
@@ -712,7 +712,7 @@ func runWorkspaceStatus(args []string, stdout, stderr io.Writer) int {
 			}
 			i++
 			cfg.WorkspaceRoot = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			fmt.Fprint(stdout, "Usage: goregraph workspace status [path] [--workspace <path>]\n\nShows discovered workspace projects and loaded GoreGraph indexes without scanning.\n")
 			return 0
 		default:
@@ -764,7 +764,7 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
 			}
 			i++
 			overrides.WorkspaceRoot = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			fmt.Fprint(stdout, "Usage: goregraph workspace scan-missing [path] [--top N] [--execute] [--workspace <path>] [--no-update-gitignore]\n\nShows a prioritized missing-service scan plan. Add --execute to run the scans.\n")
 			return 0
 		default:
@@ -859,7 +859,7 @@ func runWorkspaceScanAllTarget(args []string, stdout, stderr io.Writer, target s
 			}
 			i++
 			overrides.WorkspaceRoot = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			fmt.Fprint(stdout, `Usage: goregraph workspace scan-all [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]
 
 Compatibility alias for goregraph workspace build all.
@@ -983,7 +983,7 @@ func runWorkspaceClean(args []string, stdout, stderr io.Writer) int {
 			}
 			i++
 			overrides.WorkspaceRoot = args[i]
-		case "--help", "help":
+		case "--help", "-h", "help":
 			fmt.Fprint(stdout, "Usage: goregraph workspace clean [path] [--execute] [--workspace <path>]\n\nShows generated GoreGraph workspace output paths by default. Add --execute to remove project output directories and .goregraph-workspace.\n")
 			return 0
 		default:

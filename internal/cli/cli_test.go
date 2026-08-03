@@ -31,6 +31,38 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSubcommandsSupportShortHelp(t *testing.T) {
+	for _, command := range []string{
+		"refresh",
+		"dashboard",
+		"explain",
+		"path",
+		"impact",
+		"diff",
+		"status",
+		"scan-missing",
+		"scan-all",
+		"clean",
+	} {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+
+			code := Run([]string{"workspace", command, "-h"}, &stdout, &stderr)
+
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("stderr = %q, want empty", stderr.String())
+			}
+			want := "Usage: goregraph workspace " + command
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("help output missing %q:\n%s", want, stdout.String())
+			}
+		})
+	}
+}
+
 func TestRunHelpUsesProgressiveDisclosure(t *testing.T) {
 	for _, args := range [][]string{
 		nil,
