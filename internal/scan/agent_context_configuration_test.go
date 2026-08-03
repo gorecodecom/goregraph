@@ -237,6 +237,43 @@ func TestExtractAgentContextConfigurationFactsBuildsLongPropertiesContinuationsW
 	}
 }
 
+func TestExtractAgentContextConfigurationFactsHandlesManyThreeBackslashContinuations(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	const continuationLines = 4096
+	continuation := strings.Repeat("\\", 3) + "\n"
+	var body strings.Builder
+	body.WriteString("client")
+	for range continuationLines {
+		body.WriteString(continuation)
+	}
+	body.WriteString(".value=SENTINEL\n")
+	wantGroup := "client" + strings.Repeat("\\", continuationLines)
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body.String())
+	fact := findAgentContextConfigurationFact(t, facts, wantGroup)
+	if fact.Line != 1 || fact.EndLine != continuationLines+1 {
+		t.Fatalf("continued key group range = %d-%d, want 1-%d", fact.Line, fact.EndLine, continuationLines+1)
+	}
+}
+
+func TestExtractAgentContextConfigurationFactsSkipsContinuationAllocationsForEvenBackslashes(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	const physicalLines = 2048
+	configurationBody := strings.Repeat("=\\\\\n", physicalLines)
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, configurationBody)
+	if len(facts) != 1 || facts[0].Name != "application.properties" {
+		t.Fatalf("facts for empty keys = %#v, want only the file fact", facts)
+	}
+
+	allocations := testing.AllocsPerRun(3, func() {
+		_ = extractAgentContextConfigurationFacts(FileRecord{Path: path}, configurationBody)
+	})
+	if allocations > 128 {
+		t.Fatalf("allocations per extraction = %.0f, want <= 128", allocations)
+	}
+}
+
 func TestExtractAgentContextConfigurationFactsKeepsCommentsOutOfPropertiesContinuations(t *testing.T) {
 	const path = "src/main/resources/application.properties"
 	body := "# ignored\\\n" +
