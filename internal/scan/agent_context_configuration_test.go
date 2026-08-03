@@ -211,6 +211,32 @@ func TestExtractAgentContextConfigurationFactsJoinsPropertiesContinuationsWithPh
 	}
 }
 
+func TestExtractAgentContextConfigurationFactsBuildsLongPropertiesContinuationsWithBoundedAllocations(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	const continuationLines = 2048
+	const segment = "segment"
+	var body strings.Builder
+	for range continuationLines - 1 {
+		body.WriteString(segment + "\\\n")
+	}
+	body.WriteString(segment + ".value=SENTINEL\n")
+	configurationBody := body.String()
+	wantGroup := strings.Repeat(segment, continuationLines)
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, configurationBody)
+	fact := findAgentContextConfigurationFact(t, facts, wantGroup)
+	if fact.Line != 1 || fact.EndLine != continuationLines {
+		t.Fatalf("continued key group range = %d-%d, want 1-%d", fact.Line, fact.EndLine, continuationLines)
+	}
+
+	allocations := testing.AllocsPerRun(3, func() {
+		_ = extractAgentContextConfigurationFacts(FileRecord{Path: path}, configurationBody)
+	})
+	if allocations > 128 {
+		t.Fatalf("allocations per extraction = %.0f, want <= 128", allocations)
+	}
+}
+
 func TestExtractAgentContextConfigurationFactsKeepsCommentsOutOfPropertiesContinuations(t *testing.T) {
 	const path = "src/main/resources/application.properties"
 	body := "# ignored\\\n" +

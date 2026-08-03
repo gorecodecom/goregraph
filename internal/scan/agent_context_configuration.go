@@ -129,14 +129,18 @@ func agentContextConfigurationLogicalLines(path string, lines []string) []agentC
 			end:     index + 1,
 		}
 		if !agentContextPropertiesComment(logicalLine.content) {
-			for agentContextPropertiesContinues(logicalLine.content) {
-				logicalLine.content = logicalLine.content[:len(logicalLine.content)-1]
-				if !agentContextPropertiesHasNextPhysicalLine(lines, index) {
-					break
+			if strings.HasSuffix(logicalLine.content, "\\") {
+				content := append([]byte(nil), logicalLine.content...)
+				for agentContextPropertiesContinues(content) {
+					content = content[:len(content)-1]
+					if !agentContextPropertiesHasNextPhysicalLine(lines, index) {
+						break
+					}
+					index++
+					content = append(content, strings.TrimLeft(lines[index], " \t\f")...)
+					logicalLine.end = index + 1
 				}
-				index++
-				logicalLine.content += strings.TrimLeft(lines[index], " \t\f")
-				logicalLine.end = index + 1
+				logicalLine.content = string(content)
 			}
 		}
 		logicalLines = append(logicalLines, logicalLine)
@@ -144,7 +148,7 @@ func agentContextConfigurationLogicalLines(path string, lines []string) []agentC
 	return logicalLines
 }
 
-func agentContextPropertiesContinues(line string) bool {
+func agentContextPropertiesContinues(line []byte) bool {
 	backslashes := 0
 	for index := len(line) - 1; index >= 0 && line[index] == '\\'; index-- {
 		backslashes++
