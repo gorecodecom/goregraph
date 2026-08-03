@@ -14,9 +14,11 @@ func extractAgentContextConfigurationFacts(file FileRecord, body string) []Agent
 	}
 
 	path := contextPathKey(file.Path)
-	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+	normalizedBody := strings.ReplaceAll(body, "\r\n", "\n")
+	normalizedBody = strings.ReplaceAll(normalizedBody, "\r", "\n")
+	lines := strings.Split(normalizedBody, "\n")
 	lineCount := len(lines)
-	if strings.HasSuffix(body, "\n") {
+	if strings.HasSuffix(normalizedBody, "\n") {
 		lineCount--
 	}
 	facts := []AgentContextFactRecord{{
@@ -114,15 +116,57 @@ func agentContextConfigurationKey(path, line string) (string, int, bool) {
 		}
 		return strings.Split(key, ".")[0], len(line) - len(strings.TrimLeft(line, " \t")), true
 	}
-	delimiter := strings.IndexAny(trimmed, "=:")
+	delimiter := agentContextPropertiesDelimiter(trimmed)
 	if delimiter <= 0 {
 		return "", 0, false
 	}
-	key := strings.TrimSpace(trimmed[:delimiter])
+	key := agentContextPropertiesKeyGroup(trimmed[:delimiter])
 	if key == "" {
 		return "", 0, false
 	}
-	return strings.Split(key, ".")[0], 0, true
+	return key, 0, true
+}
+
+func agentContextPropertiesDelimiter(line string) int {
+	escaped := false
+	for index, character := range line {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if character == '\\' {
+			escaped = true
+			continue
+		}
+		if character == '=' || character == ':' || character == ' ' || character == '\t' || character == '\f' {
+			return index
+		}
+	}
+	return -1
+}
+
+func agentContextPropertiesKeyGroup(rawKey string) string {
+	var group strings.Builder
+	escaped := false
+	for _, character := range rawKey {
+		if escaped {
+			group.WriteRune(character)
+			escaped = false
+			continue
+		}
+		if character == '\\' {
+			escaped = true
+			continue
+		}
+		if character == '.' {
+			break
+		}
+		group.WriteRune(character)
+	}
+	if escaped {
+		group.WriteByte('\\')
+	}
+	return group.String()
 }
 
 func largestConfigurationParentIndent(parents map[int]string, indent int) int {

@@ -45,6 +45,62 @@ func TestExtractAgentContextConfigurationFactsKeepsOnlyConfigurationStructure(t 
 	}
 }
 
+func TestExtractAgentContextConfigurationFactsNormalizesLoneCarriageReturns(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	body := "# transport\r" +
+		"client.url=SENTINEL\r" +
+		"client.timeout-ms=2500\r" +
+		"retry.max-attempts=3\r"
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body)
+	fileFact := findAgentContextConfigurationFact(t, facts, "application.properties")
+	if fileFact.Line != 1 || fileFact.EndLine != 4 {
+		t.Fatalf("file range = %d-%d, want 1-4", fileFact.Line, fileFact.EndLine)
+	}
+	clientFact := findAgentContextConfigurationFact(t, facts, "client")
+	if clientFact.Line != 2 || clientFact.EndLine != 3 {
+		t.Fatalf("client key group range = %d-%d, want 2-3", clientFact.Line, clientFact.EndLine)
+	}
+	retryFact := findAgentContextConfigurationFact(t, facts, "retry")
+	if retryFact.Line != 4 || retryFact.EndLine != 4 {
+		t.Fatalf("retry key group range = %d-%d, want 4-4", retryFact.Line, retryFact.EndLine)
+	}
+}
+
+func TestExtractAgentContextConfigurationFactsAcceptsPropertiesWhitespaceSeparators(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	body := "client.url SENTINEL\n" +
+		"client.timeout-ms\t2500\n" +
+		"retry.max-attempts\f3\n"
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body)
+	clientFact := findAgentContextConfigurationFact(t, facts, "client")
+	if clientFact.Line != 1 || clientFact.EndLine != 2 {
+		t.Fatalf("client key group range = %d-%d, want 1-2", clientFact.Line, clientFact.EndLine)
+	}
+	retryFact := findAgentContextConfigurationFact(t, facts, "retry")
+	if retryFact.Line != 3 || retryFact.EndLine != 3 {
+		t.Fatalf("retry key group range = %d-%d, want 3-3", retryFact.Line, retryFact.EndLine)
+	}
+}
+
+func TestExtractAgentContextConfigurationFactsKeepsEscapedPropertiesSeparatorsInKeyGroups(t *testing.T) {
+	const path = "src/main/resources/application.properties"
+	body := "client\\:admin.url SENTINEL\n" +
+		"client\\:admin.timeout-ms=2500\n" +
+		"retry\\=policy.max-attempts:3\n"
+
+	facts := extractAgentContextConfigurationFacts(FileRecord{Path: path}, body)
+	clientFact := findAgentContextConfigurationFact(t, facts, "client:admin")
+	if clientFact.Line != 1 || clientFact.EndLine != 2 {
+		t.Fatalf("client:admin key group range = %d-%d, want 1-2", clientFact.Line, clientFact.EndLine)
+	}
+	retryFact := findAgentContextConfigurationFact(t, facts, "retry=policy")
+	if retryFact.Line != 3 || retryFact.EndLine != 3 {
+		t.Fatalf("retry=policy key group range = %d-%d, want 3-3", retryFact.Line, retryFact.EndLine)
+	}
+}
+
 func TestExtractAgentContextConfigurationFactsLimitsAndSortsKeyGroups(t *testing.T) {
 	var body strings.Builder
 	for index := 39; index >= 0; index-- {
