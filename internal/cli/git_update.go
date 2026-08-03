@@ -27,6 +27,10 @@ type gitUpdateArguments struct {
 }
 
 func runGit(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph git update [path] [--execute] [--format text|json]\n")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprint(stderr, "error: usage: goregraph git update [path] [--execute] [--format text|json]\n")
 		return 2
@@ -39,6 +43,10 @@ func runGit(args []string, stdout, stderr io.Writer) int {
 }
 
 func runWorkspaceGit(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isHelp(args[0]) {
+		fmt.Fprint(stdout, "Usage: goregraph workspace git update [path] [--execute] [--format text|json]\n")
+		return 0
+	}
 	if len(args) == 0 {
 		fmt.Fprint(stderr, "error: usage: goregraph workspace git update [path] [--execute] [--format text|json]\n")
 		return 2

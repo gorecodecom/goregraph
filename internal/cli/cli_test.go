@@ -43,6 +43,7 @@ func TestWorkspaceSubcommandsSupportShortHelp(t *testing.T) {
 		"scan-missing",
 		"scan-all",
 		"clean",
+		"git",
 	} {
 		t.Run(command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
@@ -60,6 +61,22 @@ func TestWorkspaceSubcommandsSupportShortHelp(t *testing.T) {
 				t.Fatalf("help output missing %q:\n%s", want, stdout.String())
 			}
 		})
+	}
+}
+
+func TestGitNamespaceSupportsShortHelp(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := Run([]string{"git", "-h"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Usage: goregraph git") {
+		t.Fatalf("help output missing %q:\n%s", "Usage: goregraph git", stdout.String())
 	}
 }
 
