@@ -2405,6 +2405,11 @@ func selectContextEndpoint(
 	candidates := make([]rankedContextFact, 0)
 	requestedActions := contextEndpointRequestedActions(query)
 	requestsEndpoint := contextQueryRequestsEndpoint(query, ranked)
+	lingeringSourceScores := contextEndpointLingeringMutationSourceScores(
+		ranked,
+		query,
+		requestedActions,
+	)
 	actionMismatch := false
 	for _, candidate := range ranked {
 		if !eligibleContextEndpoint(candidate.fact) {
@@ -2417,17 +2422,20 @@ func selectContextEndpoint(
 		actionAligned := contextEndpointActionAligned(candidate, requestedActions)
 		naturalLanguageRelevant := actionAligned &&
 			contextEndpointNaturalLanguageRelevant(candidate.fact, query, requestedActions)
+		lingeringSourceRelevant := actionAligned && lingeringSourceScores[candidate.fact.ID] > 0
 		if !contextEndpointRouteMatchesQuery(candidate.fact, query) && !naturalLanguageRelevant {
 			continue
 		}
-		if candidate.score < minimumContextSeedScore && !naturalLanguageRelevant {
+		if candidate.score < minimumContextSeedScore &&
+			!naturalLanguageRelevant && !lingeringSourceRelevant {
 			continue
 		}
 		if !actionAligned {
 			actionMismatch = true
 			continue
 		}
-		if naturalLanguageRelevant && candidate.score < minimumContextMediumScore {
+		if (naturalLanguageRelevant || lingeringSourceRelevant) &&
+			candidate.score < minimumContextMediumScore {
 			candidate.score = minimumContextMediumScore
 		}
 		candidates = append(candidates, candidate)
@@ -2451,6 +2459,11 @@ func selectContextEndpoint(
 		rightSource := contextEndpointTransitionSourceScore(right.fact, transitionSource)
 		if leftSource != rightSource {
 			return leftSource > rightSource
+		}
+		leftLingeringSource := lingeringSourceScores[left.fact.ID]
+		rightLingeringSource := lingeringSourceScores[right.fact.ID]
+		if leftLingeringSource != rightLingeringSource {
+			return leftLingeringSource > rightLingeringSource
 		}
 		if primaryAction, ok := contextEndpointPrimaryActionClause(query); ok {
 			leftPrimary := contextEndpointPrimaryActionScore(left.fact, primaryAction)
@@ -2505,16 +2518,145 @@ func selectContextEndpoint(
 
 func contextEndpointPrimaryActionClause(query string) (string, bool) {
 	primary := contextPrimaryQuery(query)
-	index := strings.IndexAny(primary, ",;")
-	if index < 0 {
+	if !strings.ContainsAny(primary, ",;") {
 		return "", false
 	}
-	clause := contextEndpointQueryWithoutMetaPhrases(strings.TrimSpace(primary[:index]))
-	if clause == "" ||
-		!contextActionFamiliesHaveMutation(contextActionFamilies(clause, "")) {
-		return "", false
+	clauses := strings.FieldsFunc(primary, func(current rune) bool {
+		return current == ',' || current == ';'
+	})
+	for _, value := range clauses {
+		clause := contextEndpointQueryWithoutMetaPhrases(strings.TrimSpace(value))
+		if clause == "" ||
+			!contextActionFamiliesHaveMutation(contextActionFamilies(clause, "")) {
+			continue
+		}
+		return contextEndpointMutationSourceClause(clause), true
 	}
-	return clause, true
+	return "", false
+}
+
+func contextEndpointMutationSourceClause(clause string) string {
+	tokens := contextOrderedTokens(clause)
+	actionIndex := -1
+	for index, token := range tokens {
+		if contextActionFamiliesHaveMutation(contextActionFamilies(token, "")) {
+			actionIndex = index
+			break
+		}
+	}
+	if actionIndex < 0 {
+		return clause
+	}
+	if boundary := contextEndpointLingeringDependentBoundary(tokens, actionIndex); boundary >= 0 {
+		return strings.Join(tokens[:boundary], " ")
+	}
+	return clause
+}
+
+func contextEndpointLingeringDependentBoundary(tokens []string, actionIndex int) int {
+	for relatedIndex := actionIndex + 3; relatedIndex < len(tokens); relatedIndex++ {
+		if !contextEndpointRelatedToken(tokens[relatedIndex]) {
+			continue
+		}
+		for _, token := range tokens[relatedIndex+1:] {
+			if contextEndpointLingeringToken(token) {
+				return relatedIndex
+			}
+		}
+	}
+	return -1
+}
+
+func contextEndpointRelatedToken(token string) bool {
+	switch token {
+	case "abhängig", "abhängige", "abhängigen", "abhangig", "abhangige", "abhangigen",
+		"dependent", "linked", "related", "verbunden", "verbundene", "verbundenen",
+		"verknüpft", "verknuepft":
+		return true
+	default:
+		return false
+	}
+}
+
+func contextEndpointLingeringToken(token string) bool {
+	switch token {
+	case "bleiben", "bleibt", "leftover", "leftovers", "linger", "lingering",
+		"persist", "persisted", "persisting", "persists", "remain", "remained",
+		"remaining", "remains", "verbleiben", "verbleibt", "zurückbleiben", "zurueckbleiben":
+		return true
+	default:
+		return false
+	}
+}
+
+func contextEndpointLingeringMutationSourceScores(
+	ranked []rankedContextFact,
+	query string,
+	requestedActions map[string]bool,
+) map[string]int {
+	scores := map[string]int{}
+	if !contextEndpointHasLingeringDependentMutation(query) {
+		return scores
+	}
+	endpoints := make([]rankedContextFact, 0)
+	for _, candidate := range ranked {
+		if !eligibleContextEndpoint(candidate.fact) ||
+			!contextEndpointActionAligned(candidate, requestedActions) ||
+			!contextEndpointRouteMatchesQuery(candidate.fact, query) {
+			continue
+		}
+		endpoints = append(endpoints, candidate)
+	}
+	for _, source := range endpoints {
+		if contextEndpointNaturalLanguageRelevant(source.fact, query, requestedActions) {
+			continue
+		}
+		for _, dependent := range endpoints {
+			if dependent.fact.ID == source.fact.ID ||
+				!contextEndpointNaturalLanguageRelevant(dependent.fact, query, requestedActions) ||
+				!contextEndpointPathStrictSubset(source.fact.Path, dependent.fact.Path) {
+				continue
+			}
+			if score := len(contextTokenSet(source.fact.Path)); score > scores[source.fact.ID] {
+				scores[source.fact.ID] = score
+			}
+		}
+	}
+	return scores
+}
+
+func contextEndpointHasLingeringDependentMutation(query string) bool {
+	tokens := contextOrderedTokens(contextPrimaryQuery(query))
+	actionIndex := -1
+	for index, token := range tokens {
+		if contextActionFamiliesHaveMutation(contextActionFamilies(token, "")) {
+			actionIndex = index
+			break
+		}
+	}
+	if actionIndex < 0 {
+		return false
+	}
+	return contextEndpointLingeringDependentBoundary(tokens, actionIndex) >= 0
+}
+
+func contextEndpointPathStrictSubset(sourcePath, targetPath string) bool {
+	sourceTokens := contextOrderedTokens(sourcePath)
+	targetTokens := contextOrderedTokens(targetPath)
+	if len(sourceTokens) == 0 || len(sourceTokens) >= len(targetTokens) {
+		return false
+	}
+	targetIndex := 0
+	for _, sourceToken := range sourceTokens {
+		for targetIndex < len(targetTokens) && targetTokens[targetIndex] != sourceToken {
+			targetIndex++
+		}
+		if targetIndex == len(targetTokens) {
+			return false
+		}
+		targetIndex++
+	}
+	return true
 }
 
 func contextEndpointPrimaryActionScore(
