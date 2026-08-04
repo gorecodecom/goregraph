@@ -1395,6 +1395,12 @@ func contextEndpointTransitionSource(query string) string {
 			continue
 		}
 		if token == "to" && fromIndex >= 0 && index > fromIndex+1 {
+			for _, sourceToken := range tokens[fromIndex+1 : index] {
+				if contextEndpointRelatedToken(sourceToken) ||
+					contextEndpointLingeringToken(sourceToken) {
+					return ""
+				}
+			}
 			return strings.Join(tokens[:index], " ")
 		}
 	}
@@ -2411,6 +2417,7 @@ func selectContextEndpoint(
 		requestedActions,
 	)
 	actionMismatch := false
+	actionCandidates := make([]rankedContextFact, 0)
 	for _, candidate := range ranked {
 		if !eligibleContextEndpoint(candidate.fact) {
 			continue
@@ -2423,6 +2430,10 @@ func selectContextEndpoint(
 		naturalLanguageRelevant := actionAligned &&
 			contextEndpointNaturalLanguageRelevant(candidate.fact, query, requestedActions)
 		lingeringSourceRelevant := actionAligned && lingeringSourceScores[candidate.fact.ID] > 0
+		if actionAligned && (contextEndpointRouteMatchesQuery(candidate.fact, query) ||
+			naturalLanguageRelevant || lingeringSourceRelevant) {
+			actionCandidates = append(actionCandidates, candidate)
+		}
 		if !contextEndpointRouteMatchesQuery(candidate.fact, query) && !naturalLanguageRelevant {
 			continue
 		}
@@ -2448,6 +2459,14 @@ func selectContextEndpoint(
 	}
 	utility := newContextForwardUtility(index)
 	transitionSource := contextEndpointTransitionSource(contextPrimaryQuery(query))
+	if contextEndpointLingeringMutationAmbiguous(
+		actionCandidates,
+		query,
+		transitionSource,
+		lingeringSourceScores,
+	) {
+		return rankedContextFact{}, false, contextEndpointProviderAmbiguityReason
+	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		left, right := candidates[i], candidates[j]
 		leftAnchor := contextEndpointExplicitAnchor(left)
@@ -2516,55 +2535,153 @@ func selectContextEndpoint(
 	return providers[bestProvider][0], true, ""
 }
 
+func contextEndpointLingeringMutationAmbiguous(
+	candidates []rankedContextFact,
+	query string,
+	transitionSource string,
+	lingeringSourceScores map[string]int,
+) bool {
+	if len(candidates) < 2 || !contextEndpointHasLingeringDependentMutation(query) {
+		return false
+	}
+	for _, candidate := range candidates {
+		if contextEndpointExplicitAnchor(candidate) {
+			return false
+		}
+	}
+	transitionScores := make(map[string]int, len(candidates))
+	for _, candidate := range candidates {
+		transitionScores[candidate.fact.ID] = contextEndpointTransitionSourceScore(
+			candidate.fact,
+			transitionSource,
+		)
+	}
+	if contextEndpointHasUniquePositiveScore(candidates, transitionScores) ||
+		contextEndpointHasUniquePositiveScore(candidates, lingeringSourceScores) {
+		return false
+	}
+	primaryAction, ok := contextEndpointPrimaryActionClause(query)
+	if !ok {
+		return true
+	}
+	domainScores := make(map[string]int, len(candidates))
+	for _, candidate := range candidates {
+		domainScores[candidate.fact.ID] = contextEndpointPrimaryActionDomainScore(
+			candidate.fact,
+			primaryAction,
+		)
+	}
+	return !contextEndpointHasUniquePositiveScore(candidates, domainScores)
+}
+
+func contextEndpointHasUniquePositiveScore(
+	candidates []rankedContextFact,
+	scores map[string]int,
+) bool {
+	bestScore := 0
+	bestCount := 0
+	for _, candidate := range candidates {
+		score := scores[candidate.fact.ID]
+		switch {
+		case score > bestScore:
+			bestScore = score
+			bestCount = 1
+		case score == bestScore && score > 0:
+			bestCount++
+		}
+	}
+	return bestScore > 0 && bestCount == 1
+}
+
 func contextEndpointPrimaryActionClause(query string) (string, bool) {
 	primary := contextPrimaryQuery(query)
 	if !strings.ContainsAny(primary, ",;") {
 		return "", false
 	}
+	match, ok := contextEndpointMutationSymptomMatch(primary)
+	if !ok {
+		return "", false
+	}
+	return strings.Join(match.sourceTokens, " "), true
+}
+
+type contextEndpointTokenSpan struct {
+	start int
+	end   int
+}
+
+type contextEndpointMutationSymptom struct {
+	sourceTokens []string
+	symptom      contextEndpointTokenSpan
+}
+
+func contextEndpointMutationSymptomMatch(query string) (contextEndpointMutationSymptom, bool) {
+	primary := contextPrimaryQuery(query)
 	clauses := strings.FieldsFunc(primary, func(current rune) bool {
 		return current == ',' || current == ';'
 	})
-	for _, value := range clauses {
+	for clauseIndex, value := range clauses {
 		clause := contextEndpointQueryWithoutMetaPhrases(strings.TrimSpace(value))
-		if clause == "" ||
-			!contextActionFamiliesHaveMutation(contextActionFamilies(clause, "")) {
+		tokens := contextOrderedTokens(clause)
+		actionIndex := contextEndpointFirstMutationIndex(tokens)
+		if actionIndex < 0 {
 			continue
 		}
-		return contextEndpointMutationSourceClause(clause), true
+		match := contextEndpointMutationSymptom{sourceTokens: tokens}
+		if symptom, ok := contextEndpointLingeringDependentSpan(tokens, actionIndex+1); ok &&
+			contextEndpointHasRelatedToken(tokens, actionIndex+3) {
+			match.sourceTokens = tokens[:symptom.start]
+			match.symptom = symptom
+			return match, true
+		}
+		if clauseIndex+1 < len(clauses) {
+			nextClause := contextEndpointQueryWithoutMetaPhrases(strings.TrimSpace(clauses[clauseIndex+1]))
+			if symptom, ok := contextEndpointLingeringDependentSpan(contextOrderedTokens(nextClause), 0); ok {
+				match.symptom = symptom
+				return match, true
+			}
+		}
+		return match, true
 	}
-	return "", false
+	return contextEndpointMutationSymptom{}, false
 }
 
-func contextEndpointMutationSourceClause(clause string) string {
-	tokens := contextOrderedTokens(clause)
-	actionIndex := -1
+func contextEndpointFirstMutationIndex(tokens []string) int {
 	for index, token := range tokens {
 		if contextActionFamiliesHaveMutation(contextActionFamilies(token, "")) {
-			actionIndex = index
-			break
-		}
-	}
-	if actionIndex < 0 {
-		return clause
-	}
-	if boundary := contextEndpointLingeringDependentBoundary(tokens, actionIndex); boundary >= 0 {
-		return strings.Join(tokens[:boundary], " ")
-	}
-	return clause
-}
-
-func contextEndpointLingeringDependentBoundary(tokens []string, actionIndex int) int {
-	for relatedIndex := actionIndex + 3; relatedIndex < len(tokens); relatedIndex++ {
-		if !contextEndpointRelatedToken(tokens[relatedIndex]) {
-			continue
-		}
-		for _, token := range tokens[relatedIndex+1:] {
-			if contextEndpointLingeringToken(token) {
-				return relatedIndex
-			}
+			return index
 		}
 	}
 	return -1
+}
+
+func contextEndpointLingeringDependentSpan(tokens []string, start int) (contextEndpointTokenSpan, bool) {
+	relatedIndex := -1
+	lingeringIndex := -1
+	for index := start; index < len(tokens); index++ {
+		if relatedIndex < 0 && contextEndpointRelatedToken(tokens[index]) {
+			relatedIndex = index
+		}
+		if lingeringIndex < 0 && contextEndpointLingeringToken(tokens[index]) {
+			lingeringIndex = index
+		}
+	}
+	if relatedIndex < 0 || lingeringIndex < 0 {
+		return contextEndpointTokenSpan{}, false
+	}
+	return contextEndpointTokenSpan{
+		start: min(relatedIndex, lingeringIndex),
+		end:   max(relatedIndex, lingeringIndex) + 1,
+	}, true
+}
+
+func contextEndpointHasRelatedToken(tokens []string, start int) bool {
+	for index := max(start, 0); index < len(tokens); index++ {
+		if contextEndpointRelatedToken(tokens[index]) {
+			return true
+		}
+	}
+	return false
 }
 
 func contextEndpointRelatedToken(token string) bool {
@@ -2608,9 +2725,6 @@ func contextEndpointLingeringMutationSourceScores(
 		endpoints = append(endpoints, candidate)
 	}
 	for _, source := range endpoints {
-		if contextEndpointNaturalLanguageRelevant(source.fact, query, requestedActions) {
-			continue
-		}
 		for _, dependent := range endpoints {
 			if dependent.fact.ID == source.fact.ID ||
 				!contextEndpointNaturalLanguageRelevant(dependent.fact, query, requestedActions) ||
@@ -2626,37 +2740,56 @@ func contextEndpointLingeringMutationSourceScores(
 }
 
 func contextEndpointHasLingeringDependentMutation(query string) bool {
-	tokens := contextOrderedTokens(contextPrimaryQuery(query))
-	actionIndex := -1
-	for index, token := range tokens {
-		if contextActionFamiliesHaveMutation(contextActionFamilies(token, "")) {
-			actionIndex = index
-			break
-		}
-	}
-	if actionIndex < 0 {
-		return false
-	}
-	return contextEndpointLingeringDependentBoundary(tokens, actionIndex) >= 0
+	match, ok := contextEndpointMutationSymptomMatch(query)
+	return ok && match.symptom.end > match.symptom.start
 }
 
 func contextEndpointPathStrictSubset(sourcePath, targetPath string) bool {
-	sourceTokens := contextOrderedTokens(sourcePath)
-	targetTokens := contextOrderedTokens(targetPath)
-	if len(sourceTokens) == 0 || len(sourceTokens) >= len(targetTokens) {
+	sourceSegments := contextEndpointPathSegments(sourcePath)
+	targetSegments := contextEndpointPathSegments(targetPath)
+	if len(sourceSegments) == 0 || len(sourceSegments) >= len(targetSegments) {
 		return false
 	}
-	targetIndex := 0
-	for _, sourceToken := range sourceTokens {
-		for targetIndex < len(targetTokens) && targetTokens[targetIndex] != sourceToken {
-			targetIndex++
+	for start := 0; start+len(sourceSegments) <= len(targetSegments); start++ {
+		matches := true
+		for offset, sourceSegment := range sourceSegments {
+			if targetSegments[start+offset] != sourceSegment {
+				matches = false
+				break
+			}
 		}
-		if targetIndex == len(targetTokens) {
-			return false
+		if matches {
+			return true
 		}
-		targetIndex++
 	}
-	return true
+	return false
+}
+
+func contextEndpointPathSegments(value string) []string {
+	rawSegments := strings.Split(strings.Trim(value, "/"), "/")
+	segments := make([]string, 0, len(rawSegments))
+	for _, rawSegment := range rawSegments {
+		segment := strings.TrimSpace(rawSegment)
+		if segment == "" {
+			continue
+		}
+		if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
+			parameter := strings.TrimSuffix(strings.TrimPrefix(segment, "{"), "}")
+			if name, _, hasPattern := strings.Cut(parameter, ":"); hasPattern {
+				parameter = name
+			}
+			parameter = strings.Join(contextOrderedTokens(parameter), "-")
+			if parameter != "" {
+				segments = append(segments, "{"+parameter+"}")
+			}
+			continue
+		}
+		normalized := strings.Join(contextOrderedTokens(segment), "-")
+		if normalized != "" {
+			segments = append(segments, normalized)
+		}
+	}
+	return segments
 }
 
 func contextEndpointPrimaryActionScore(
@@ -2673,6 +2806,29 @@ func contextEndpointPrimaryActionScore(
 	}
 	extras := len(routeTokens) - matched
 	return matched*100 - extras*10
+}
+
+func contextEndpointPrimaryActionDomainScore(
+	fact scan.AgentContextFactRecord,
+	primaryAction string,
+) int {
+	factTokens := contextExpandedTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.Path,
+	}, " "))
+	seen := map[string]bool{}
+	matched := 0
+	for _, token := range contextQueryTokens(primaryAction) {
+		if seen[token] || !factTokens[token] ||
+			contextEndpointGenericDomainToken(token) ||
+			len(contextActionFamilies(token, "")) > 0 {
+			continue
+		}
+		seen[token] = true
+		matched++
+	}
+	return matched
 }
 
 func contextEndpointRequestedActions(query string) map[string]bool {

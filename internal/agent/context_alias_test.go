@@ -105,9 +105,6 @@ func TestSelectContextEndpointPrefersTransitionSourceOverTargetUtility(t *testin
 }
 
 func TestSelectContextEndpointUsesMutationSourceBeforeLingeringDependent(t *testing.T) {
-	query := "Analysiere repositoryübergreifend, warum beim Entfernen eines Eintrags aus einer Sammlung " +
-		"verbundene Aufgaben bestehen bleiben. Ermittle den öffentlichen REST-Endpunkt und die " +
-		"bestehende Aufrufkette über services/catalog, services/jobs und libraries/shared."
 	facts := []scan.AgentContextFactRecord{
 		{
 			ID: "catalog-endpoint", Project: "services/catalog", Kind: "api_endpoint",
@@ -122,46 +119,86 @@ func TestSelectContextEndpointUsesMutationSourceBeforeLingeringDependent(t *test
 			Path: "/job-management/collections/{collectionId}/entries/{entryId}/changes/{changeId}/jobs/{jobId}",
 			File: "JobController.java", Summary: "provider jobs; security role", Confidence: "EXACT",
 		},
+		{
+			ID: "jobs-direct-endpoint", Project: "services/jobs", Kind: "api_endpoint",
+			Name:      "DELETE /job-management/collections/{collectionId}/entries/{entryId}/jobs/{jobId}",
+			Qualified: "JobController.deleteJob", HTTPMethod: "DELETE",
+			Path: "/job-management/collections/{collectionId}/entries/{entryId}/jobs/{jobId}",
+			File: "JobController.java", Summary: "provider jobs; security role", Confidence: "EXACT",
+		},
+		{
+			ID: "jobs-maintenance-endpoint", Project: "services/jobs", Kind: "api_endpoint",
+			Name: "DELETE /job-management/maintenance", Qualified: "JobMaintenanceController.cleanup",
+			HTTPMethod: "DELETE", Path: "/job-management/maintenance", File: "JobMaintenanceController.java",
+			Summary: "provider jobs; security role", Confidence: "EXACT",
+		},
 		{ID: "jobs-service", Project: "services/jobs", Kind: "symbol", Name: "deleteChangeJob", Confidence: "EXTRACTED"},
 		{ID: "jobs-store", Project: "services/jobs", Kind: "persistence", Name: "JobStore.delete", Confidence: "EXTRACTED"},
 		{ID: "jobs-audit", Project: "services/jobs", Kind: "side_effect", Name: "JobAudit.record", Confidence: "EXTRACTED"},
 	}
-	index := scan.AgentContextIndexRecord{
-		Facts: facts,
-		Edges: []scan.AgentContextEdgeRecord{
-			{FromFactID: "jobs-endpoint", ToFactID: "jobs-service", Kind: "call"},
-			{FromFactID: "jobs-service", ToFactID: "jobs-store", Kind: "persistence"},
-			{FromFactID: "jobs-service", ToFactID: "jobs-audit", Kind: "call"},
-		},
+	edges := []scan.AgentContextEdgeRecord{
+		{FromFactID: "jobs-endpoint", ToFactID: "jobs-service", Kind: "call"},
+		{FromFactID: "jobs-service", ToFactID: "jobs-store", Kind: "persistence"},
+		{FromFactID: "jobs-service", ToFactID: "jobs-audit", Kind: "call"},
 	}
-	primaryAction, ok := contextEndpointPrimaryActionClause(query)
-	if !ok || strings.Contains(primaryAction, "aufgaben") {
-		t.Fatalf("primary mutation clause = %q, ok=%v", primaryAction, ok)
+	reversedFacts := append([]scan.AgentContextFactRecord(nil), facts...)
+	for left, right := 0, len(reversedFacts)-1; left < right; left, right = left+1, right-1 {
+		reversedFacts[left], reversedFacts[right] = reversedFacts[right], reversedFacts[left]
 	}
-	sourceScore := contextEndpointPrimaryActionScore(facts[0], primaryAction)
-	dependentScore := contextEndpointPrimaryActionScore(facts[1], primaryAction)
-	if sourceScore <= dependentScore {
-		t.Fatalf("mutation source score = %d, dependent score = %d", sourceScore, dependentScore)
+	queries := []string{
+		"Analysiere repositoryübergreifend, warum beim Entfernen eines Eintrags aus einer Sammlung " +
+			"verbundene Aufgaben bestehen bleiben. Ermittle den öffentlichen REST-Endpunkt und die " +
+			"bestehende Aufrufkette über services/catalog, services/jobs und libraries/shared.",
+		"In der Anwendung besteht ein Fehler: Wenn ein Eintrag aus einer Sammlung entfernt wird, " +
+			"bleiben die damit verbundenen Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt.",
+		"A defect occurs when an entry is removed from a collection, and related jobs remain. " +
+			"Find the public REST endpoint.",
+		"A defect occurs when an entry is removed from a collection, while remaining jobs linked " +
+			"to that entry are left behind. Find the public REST endpoint.",
 	}
-
-	ranked := rankContextFacts(facts, query)
-	selected, ok, reason := selectContextEndpoint(index, ranked, query)
-	if !ok || selected.fact.ID != "catalog-endpoint" {
-		t.Fatalf(
-			"mutation source endpoint = %#v, ok=%v, reason=%q, ranked=%#v, sourceEligible=%v, sourceRouteMatch=%v",
-			selected, ok, reason, ranked, eligibleContextEndpoint(facts[0]),
-			contextEndpointRouteMatchesQuery(facts[0], query),
+	for queryIndex, query := range queries {
+		primaryAction, ok := contextEndpointPrimaryActionClause(query)
+		if !ok || strings.Contains(primaryAction, "aufgaben") {
+			t.Fatalf("query %d primary mutation clause = %q, ok=%v", queryIndex, primaryAction, ok)
+		}
+		sourceScore := contextEndpointPrimaryActionScore(facts[0], primaryAction)
+		dependentScore := contextEndpointPrimaryActionScore(facts[1], primaryAction)
+		if sourceScore <= dependentScore {
+			t.Fatalf("query %d mutation source score = %d, dependent score = %d", queryIndex, sourceScore, dependentScore)
+		}
+		if !contextEndpointHasLingeringDependentMutation(query) {
+			t.Fatalf("query %d did not detect a lingering dependent mutation", queryIndex)
+		}
+		lingeringScores := contextEndpointLingeringMutationSourceScores(
+			rankContextFacts(facts, query),
+			query,
+			contextEndpointRequestedActions(query),
 		)
+		if lingeringScores["catalog-endpoint"] <= lingeringScores["jobs-endpoint"] {
+			t.Fatalf("query %d structural source scores = %#v", queryIndex, lingeringScores)
+		}
+		for orderIndex, orderedFacts := range [][]scan.AgentContextFactRecord{facts, reversedFacts} {
+			index := scan.AgentContextIndexRecord{Facts: orderedFacts, Edges: edges}
+			ranked := rankContextFacts(orderedFacts, query)
+			selected, ok, reason := selectContextEndpoint(index, ranked, query)
+			if !ok || selected.fact.ID != "catalog-endpoint" {
+				t.Fatalf(
+					"query %d order %d mutation source endpoint = %#v, ok=%v, reason=%q, ranked=%#v",
+					queryIndex, orderIndex, selected, ok, reason, ranked,
+				)
+			}
+		}
 	}
 
 	directTargetQuery := "Analysiere services/jobs: Entferne verbundene Aufgaben, die bestehen bleiben. " +
 		"Ermittle den öffentlichen REST-Endpunkt."
-	selected, ok, reason = selectContextEndpoint(
+	index := scan.AgentContextIndexRecord{Facts: facts, Edges: edges}
+	selected, ok, reason := selectContextEndpoint(
 		index,
 		rankContextFacts(facts, directTargetQuery),
 		directTargetQuery,
 	)
-	if !ok || selected.fact.ID != "jobs-endpoint" {
+	if !ok || selected.fact.ID != "jobs-direct-endpoint" {
 		t.Fatalf("direct dependent target endpoint = %#v, ok=%v, reason=%q", selected, ok, reason)
 	}
 	if contextEndpointPathStrictSubset(
@@ -169,6 +206,43 @@ func TestSelectContextEndpointUsesMutationSourceBeforeLingeringDependent(t *test
 		"/jobs/entries/{entryId}/collections/{collectionId}",
 	) {
 		t.Fatal("reordered route tokens were treated as a parent path")
+	}
+	if contextEndpointPathStrictSubset(
+		"/job-management/collections/{collectionId}/entries/{entryId}/jobs/{jobId}",
+		"/job-management/collections/{collectionId}/entries/{entryId}/changes/{changeId}/jobs/{jobId}",
+	) {
+		t.Fatal("a route with inserted middle segments was treated as a parent path")
+	}
+}
+
+func TestSelectContextEndpointRejectsLingeringMutationWithoutSourceEvidence(t *testing.T) {
+	query := "In der Anwendung besteht ein Fehler: Wenn ein Objekt entfernt wird, " +
+		"bleiben die damit verbundenen Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt."
+	facts := []scan.AgentContextFactRecord{
+		{
+			ID: "alpha-maintenance", Project: "services/alpha", Kind: "api_endpoint",
+			Name: "DELETE /alpha/maintenance", Qualified: "AlphaMaintenanceController.cleanup",
+			HTTPMethod: "DELETE", Path: "/alpha/maintenance", File: "AlphaMaintenanceController.java",
+			Summary: "provider alpha; security role", Confidence: "EXACT",
+		},
+		{
+			ID: "beta-maintenance", Project: "services/beta", Kind: "api_endpoint",
+			Name: "DELETE /beta/maintenance", Qualified: "BetaMaintenanceController.cleanup",
+			HTTPMethod: "DELETE", Path: "/beta/maintenance", File: "BetaMaintenanceController.java",
+			Summary: "provider beta; security role", Confidence: "EXACT",
+		},
+		{
+			ID: "jobs-endpoint", Project: "services/jobs", Kind: "api_endpoint",
+			Name: "DELETE /job-management/jobs/{jobId}", Qualified: "JobController.delete",
+			HTTPMethod: "DELETE", Path: "/job-management/jobs/{jobId}", File: "JobController.java",
+			Summary: "provider jobs; security role", Confidence: "EXACT",
+		},
+	}
+	index := scan.AgentContextIndexRecord{Facts: facts}
+
+	selected, ok, reason := selectContextEndpoint(index, rankContextFacts(facts, query), query)
+	if ok || selected.fact.ID != "" || reason != contextEndpointProviderAmbiguityReason {
+		t.Fatalf("disconnected mutation endpoint = %#v, ok=%v, reason=%q", selected, ok, reason)
 	}
 }
 
