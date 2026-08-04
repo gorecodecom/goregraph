@@ -369,6 +369,7 @@ type APIContractRecord struct {
 	Auth                      []AuthRecord       `json:"auth,omitempty"`
 	ResponseFields            []string           `json:"response_fields,omitempty"`
 	ServiceCandidate          string             `json:"service_candidate,omitempty"`
+	ServiceResolutionKey      string             `json:"service_resolution_key,omitempty"`
 	UnsafeDynamic             bool               `json:"unsafe_dynamic,omitempty"`
 	DynamicEndpointCandidates []string           `json:"dynamic_endpoint_candidates,omitempty"`
 	Caller                    string             `json:"caller,omitempty"`
