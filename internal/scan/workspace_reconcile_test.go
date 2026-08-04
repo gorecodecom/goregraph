@@ -2236,7 +2236,7 @@ func TestWorkspaceContractMatchesClassifyNeighborMissingRoute(t *testing.T) {
 	if matches[0].MissingRouteKind != "neighbor_resource" {
 		t.Fatalf("missing route kind = %q, want neighbor_resource: %#v", matches[0].MissingRouteKind, matches[0])
 	}
-	if !containsString(matches[0].EquivalentRouteCandidates, "POST /modules/{isbn}/documents/{objectId}/export") {
+	if !containsString(matches[0].EquivalentRouteCandidates, "POST /documentexport/modules/{isbn}/documents/{objectId}/export") {
 		t.Fatalf("missing equivalent route candidate: %#v", matches[0])
 	}
 }

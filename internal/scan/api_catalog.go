@@ -618,12 +618,6 @@ func workspaceCatalogAddPathKeys(keys map[string]bool, parts []string, partIndex
 	if isPlaceholder(part) {
 		parts[partIndex] = "{}"
 		workspaceCatalogAddPathKeys(keys, parts, partIndex+1)
-		if strings.EqualFold(strings.Trim(part, "{}"), "type") {
-			for _, value := range []string{"new", "changed", "guidance"} {
-				parts[partIndex] = value
-				workspaceCatalogAddPathKeys(keys, parts, partIndex+1)
-			}
-		}
 		parts[partIndex] = part
 		return
 	}

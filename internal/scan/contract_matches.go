@@ -154,9 +154,6 @@ func pathsCompatible(left, right string) bool {
 		if leftPlaceholder && rightPlaceholder {
 			continue
 		}
-		if placeholderCompatibleWithStatic(leftParts[i], rightParts[i]) || placeholderCompatibleWithStatic(rightParts[i], leftParts[i]) {
-			continue
-		}
 		if leftPlaceholder != rightPlaceholder {
 			return false
 		}
@@ -182,7 +179,6 @@ func pathsCompatibleWithKnownBasePrefixes(left, right string) bool {
 }
 
 func routeParts(path string) []string {
-	path = expandKnownPathConstants(path)
 	path = strings.Trim(path, "/")
 	if path == "" {
 		return nil
@@ -194,45 +190,9 @@ func isPlaceholder(segment string) bool {
 	return strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}")
 }
 
-func placeholderCompatibleWithStatic(placeholder, static string) bool {
-	if !isPlaceholder(placeholder) || isPlaceholder(static) {
-		return false
-	}
-	switch strings.ToLower(strings.Trim(placeholder, "{}")) {
-	case "type":
-		switch strings.ToLower(static) {
-		case "new", "changed", "guidance":
-			return true
-		}
-	}
-	return false
-}
-
-func expandKnownPathConstants(path string) string {
-	replacements := map[string]string{
-		"RegulationChangeBaseController.PATH_BASE":                      "/cadasters",
-		"RegulationChangeBaseController.PATH_FRAGMENT_CHANGES_NEW":      "/{cadasterId}/regulations/changes/new",
-		"RegulationChangeBaseController.PATH_FRAGMENT_CHANGES_CHANGED":  "/{cadasterId}/regulations/changes/changed",
-		"RegulationChangeBaseController.PATH_FRAGMENT_CHANGES_GUIDANCE": "/{cadasterId}/regulations/changes/guidance",
-	}
-	for token, value := range replacements {
-		path = strings.ReplaceAll(path, token, value)
-	}
-	path = strings.ReplaceAll(path, ` + "`, "")
-	path = strings.ReplaceAll(path, `"`, "")
-	for strings.Contains(path, "//") {
-		path = strings.ReplaceAll(path, "//", "/")
-	}
-	return path
-}
-
 func knownBasePrefixPathVariants(path string) []string {
 	variants := []string{path}
-	expanded := expandKnownPathConstants(path)
-	if expanded != path {
-		variants = append(variants, expanded)
-	}
-	parts := routeParts(expanded)
+	parts := routeParts(path)
 	if len(parts) < 2 {
 		return variants
 	}
@@ -248,7 +208,7 @@ func displayRoutePath(path string) string {
 	if len(variants) > 1 {
 		return variants[1]
 	}
-	return normalizeCodeRoutePath(expandKnownPathConstants(path))
+	return normalizeCodeRoutePath(path)
 }
 
 func isConfigBasePathSegment(segment string) bool {
@@ -258,21 +218,12 @@ func isConfigBasePathSegment(segment string) bool {
 
 func isServiceBasePathSegment(segment string) bool {
 	lower := strings.ToLower(segment)
-	switch lower {
-	case "cadastertask",
-		"containertree",
-		"documentdownload",
-		"documentexport",
-		"documentinfo",
-		"documenttopic",
-		"invoiceservice",
-		"productservice",
-		"task",
-		"userservice":
-		return true
-	default:
-		return strings.HasSuffix(lower, "service")
+	for _, suffix := range []string{"service", "svc", "api", "mgmt", "management", "gateway", "connector"} {
+		if len(lower) > len(suffix) && strings.HasSuffix(lower, suffix) {
+			return true
+		}
 	}
+	return false
 }
 
 func pathsCompatibleWithoutGatewayPrefix(left, right string) bool {

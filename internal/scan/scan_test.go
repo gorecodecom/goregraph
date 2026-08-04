@@ -1341,7 +1341,7 @@ func TestContractMatchesNormalizeServiceAndConfigBasePrefixes(t *testing.T) {
 	assertHasContractMatch(t, matches, "GET", "/productservice/users/{userId}/products/{baseCode}", "GET", "/users/{userId}/products/{baseCode}", "RESOLVED")
 }
 
-func TestContractMatchesNormalizeNonServiceSuffixBasePrefixes(t *testing.T) {
+func TestContractMatchesDoNotStripArbitraryBasePrefixes(t *testing.T) {
 	matches := buildContractMatches(
 		[]APIContractRecord{
 			{
@@ -1357,7 +1357,7 @@ func TestContractMatchesNormalizeNonServiceSuffixBasePrefixes(t *testing.T) {
 		},
 	)
 
-	assertHasContractMatch(t, matches, "GET", "/documentdownload/modules/{isbn}/documents/{objectId}/search", "GET", "/modules/{isbn}/documents/{objectId}/search", "RESOLVED")
+	assertHasContractIssue(t, matches, "GET", "/documentdownload/modules/{isbn}/documents/{objectId}/search", contractIssueUnscanned)
 }
 
 func TestContractMatchesRouteUnsafeDynamicPlaceholdersWhenBackendPathMatches(t *testing.T) {
@@ -1365,7 +1365,7 @@ func TestContractMatchesRouteUnsafeDynamicPlaceholdersWhenBackendPathMatches(t *
 		[]APIContractRecord{
 			{
 				HTTPMethod:       "GET",
-				Path:             "/documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic}",
+				Path:             "/documentservice/modules/{isbn}/documents/{objectId}/fragments/{dynamic}",
 				File:             "apps/portal/src/api/documentdownload.js",
 				Line:             16,
 				ServiceCandidate: "ms-documentdownload",
@@ -1377,10 +1377,10 @@ func TestContractMatchesRouteUnsafeDynamicPlaceholdersWhenBackendPathMatches(t *
 		},
 	)
 
-	assertHasContractMatch(t, matches, "GET", "/documentdownload/modules/{isbn}/documents/{objectId}/fragments/{dynamic}", "GET", "/modules/{isbn}/documents/{objectId}/fragments/{fragmentId}", "RESOLVED")
+	assertHasContractMatch(t, matches, "GET", "/documentservice/modules/{isbn}/documents/{objectId}/fragments/{dynamic}", "GET", "/modules/{isbn}/documents/{objectId}/fragments/{fragmentId}", "RESOLVED")
 }
 
-func TestContractMatchesExpandKnownControllerPathConstants(t *testing.T) {
+func TestContractMatchesDoNotExpandAbsentControllerPathConstants(t *testing.T) {
 	matches := buildContractMatches(
 		[]APIContractRecord{
 			{
@@ -1396,7 +1396,7 @@ func TestContractMatchesExpandKnownControllerPathConstants(t *testing.T) {
 		},
 	)
 
-	assertHasContractMatch(t, matches, "PUT", "/cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster", "PUT", `/cadasters/{cadasterId}/regulations/changes/new/addtocadaster`, "RESOLVED")
+	assertHasContractIssue(t, matches, "PUT", "/cadasters/{cadasterId}/regulations/changes/{type}/addtocadaster", contractIssueUnscanned)
 }
 
 func TestRunClassifiesContractsForUnscannedServices(t *testing.T) {

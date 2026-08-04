@@ -7,6 +7,14 @@ import (
 	"testing"
 )
 
+func TestWorkspaceDashboardDiagnosticsUseGenericGrouping(t *testing.T) {
+	for _, forbidden := range []string{"RDBV", "tree-prefix|", "/tree/*"} {
+		if strings.Contains(workspaceDashboardScript, forbidden) {
+			t.Errorf("dashboard script contains private diagnostic grouping %q", forbidden)
+		}
+	}
+}
+
 func TestWorkspaceDashboardEmbedsCompleteAPICatalogAndKeepsEndpoints(t *testing.T) {
 	catalogFixture := APICatalogRecord{SchemaVersion: SchemaVersion, Endpoints: []APIEndpointRecord{{
 		ID: "endpoint:orders", ProviderProject: "services/orders", Transport: "http", HTTPMethod: "POST", Path: "/orders",
@@ -2077,7 +2085,7 @@ func TestRenderWorkspaceDashboardHTMLExplainsDiagnosticGroupsAndAddsFileLinks(t 
 	}
 }
 
-func TestRenderWorkspaceDashboardHTMLSeparatesTreeDiagnosticsByCode(t *testing.T) {
+func TestRenderWorkspaceDashboardHTMLGroupsDiagnosticsByGenericEvidence(t *testing.T) {
 	traces := WorkspaceEndpointTraceIndexRecord{
 		SchemaVersion: SchemaVersion,
 		Traces: []WorkspaceEndpointTraceRecord{
@@ -2102,11 +2110,11 @@ func TestRenderWorkspaceDashboardHTMLSeparatesTreeDiagnosticsByCode(t *testing.T
 
 	for _, want := range []string{
 		"function diagnosticCode(trace)",
-		`return "tree-prefix|"+diagnosticCode(t)+"|"+(t.to_project||"unresolved")`,
+		`return [diagnosticCode(t),t.to_project||"unresolved",t.method||"",t.path||t.route||""].join("|")`,
 		"presentation:diagnosticPresentation(t)",
 	} {
 		if !strings.Contains(html, want) {
-			t.Fatalf("dashboard html does not separate /tree diagnostics by code: missing %q", want)
+			t.Fatalf("dashboard html does not group diagnostics by generic evidence: missing %q", want)
 		}
 	}
 }

@@ -174,7 +174,7 @@ func TestContextExpandedTokenSet(t *testing.T) {
 	}
 }
 
-func TestContextExpandedTokenSetExpandsGermanCatalogItemInflections(t *testing.T) {
+func TestContextExpandedTokenSetPreservesGermanBusinessNouns(t *testing.T) {
 	for _, value := range []string{
 		"Katalogeintrag",
 		"Katalogeintrags",
@@ -184,8 +184,8 @@ func TestContextExpandedTokenSetExpandsGermanCatalogItemInflections(t *testing.T
 	} {
 		t.Run(value, func(t *testing.T) {
 			tokens := contextExpandedTokenSet(value)
-			if !tokens["catalog"] || !tokens["item"] {
-				t.Fatalf("expanded tokens for %q = %#v, want catalog and item", value, tokens)
+			if tokens["catalog"] || tokens["item"] {
+				t.Fatalf("business noun %q received built-in domain aliases: %#v", value, tokens)
 			}
 		})
 	}
@@ -629,7 +629,7 @@ func TestContextExplicitProjectsMatchesExpandedUniqueBasenames(t *testing.T) {
 	aliases := contextProjectAliases(index.Facts, index.Coverage)
 	const (
 		englishQuery = "Plan the smallest production change that removes jobs when a catalog item is deleted. Show the current public deletion path and adjacent client configuration."
-		germanQuery  = "Plane die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden. Zeige den aktuellen öffentlichen Löschpfad und angrenzende Client-Konfiguration."
+		germanQuery  = "Plane in services/catalog und services/jobs die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden. Zeige den aktuellen öffentlichen Löschpfad und angrenzende Client-Konfiguration."
 	)
 	want := map[string]bool{
 		"services/catalog": true,
@@ -671,7 +671,7 @@ func TestPlanContextConcernsMatchesEnglishGermanCatalogProjectScope(t *testing.T
 	index, seed := catalogProjectScopeIndex()
 	const (
 		englishQuery = "Plan the smallest production change that removes jobs when a catalog item is deleted. Show the current public deletion path, prove that the future job deletion contract is absent, and provide adjacent client configuration, authentication, retry, provider persistence, side-effect, and test evidence. Do not invent the missing call or route."
-		germanQuery  = "Plane die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden. Zeige den aktuellen öffentlichen Löschpfad, belege das Fehlen des zukünftigen Aufgaben-Löschvertrags und liefere angrenzende Belege zu Client-Konfiguration, Authentifizierung, Retry, Provider-Persistenz, Nebenwirkungen und Tests. Erfinde weder den fehlenden Aufruf noch die fehlende Route."
+		germanQuery  = "Plane in services/catalog und services/jobs die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden. Zeige den aktuellen öffentlichen Löschpfad, belege das Fehlen des zukünftigen Aufgaben-Löschvertrags und liefere angrenzende Belege zu Client-Konfiguration, Authentifizierung, Retry, Provider-Persistenz, Nebenwirkungen und Tests. Erfinde weder den fehlenden Aufruf noch die fehlende Route."
 	)
 	english := contextConcernKeys(planContextConcerns(englishQuery, index, seed))
 	german := contextConcernKeys(planContextConcerns(germanQuery, index, seed))
@@ -2506,15 +2506,15 @@ func TestBuildContextEndpointSecurityConfidenceRequiresExactRoute(t *testing.T) 
 func TestSelectContextEndpointKeepsPrimaryDeleteActionAcrossEquivalentQueries(t *testing.T) {
 	index := contextEndpointActionAlignmentFixture()
 	queries := map[string]string{
-		"German":            "Historische, ausschließlich lesende Ursachenanalyse über ms-cadasterregulation, ms-cadastertask und ms-common: Beim Entfernen einer Vorschrift aus einem Kataster bleiben verbundene Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt und die bestehende Aufrufkette. Implementiere nichts.",
-		"English read-only": "Read-only cross-repository root-cause analysis, no implementation: In ms-cadasterregulation, when a regulation is removed from a cadaster, tasks linked to that regulation remain. Determine the public REST endpoint that removes a regulation and the current call chain.",
-		"English find":      "Find the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
-		"English read":      "Read the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
-		"English determine": "Determine the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
-		"English removals":  "Find the public REST endpoint for removals of regulations from cadasters when linked tasks remain.",
-		"English deletions": "Find the public REST endpoint for deletions of regulations from cadasters when linked tasks remain.",
-		"German deletion":   "Bei der Löschung einer Vorschrift aus einem Kataster bleiben verbundene Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt.",
-		"German deleted":    "Bei gelöschten Vorschriften bleiben verbundene Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt der Operation.",
+		"German":                            "Historische, ausschließlich lesende Ursachenanalyse über ms-cadasterregulation, ms-cadastertask und ms-common: Beim Entfernen einer Vorschrift aus einem Kataster bleiben verbundene Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt und die bestehende Aufrufkette. Implementiere nichts.",
+		"English read-only":                 "Read-only cross-repository root-cause analysis, no implementation: In ms-cadasterregulation, when a regulation is removed from a cadaster, tasks linked to that regulation remain. Determine the public REST endpoint that removes a regulation and the current call chain.",
+		"English find":                      "Find the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
+		"English read":                      "Read the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
+		"English determine":                 "Determine the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
+		"English removals":                  "Find the public REST endpoint for removals of regulations from cadasters when linked tasks remain.",
+		"English deletions":                 "Find the public REST endpoint for deletions of regulations from cadasters when linked tasks remain.",
+		"German deletion with source terms": "Bei der Löschung einer regulation aus einem cadaster bleiben verbundene Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt.",
+		"German deleted with source terms":  "Bei gelöschten regulations bleiben verbundene Aufgaben bestehen. Ermittle den öffentlichen REST-Endpunkt der Operation.",
 	}
 
 	for name, query := range queries {
@@ -2544,7 +2544,7 @@ func TestSelectContextEndpointRejectsActionMismatchedRoute(t *testing.T) {
 	index.Edges = nil
 	for name, query := range map[string]string{
 		"English REST endpoint": "Find the public REST endpoint used when a regulation is removed from a cadaster and linked tasks remain.",
-		"German endpoint":       "Ermittle den öffentlichen Endpunkt für die Löschung einer Vorschrift aus einem Kataster.",
+		"German endpoint":       "Ermittle den öffentlichen Endpunkt für die Löschung einer regulation aus einem cadaster.",
 	} {
 		t.Run(name, func(t *testing.T) {
 			endpoint, ok, reason := selectContextEndpoint(
@@ -2639,11 +2639,11 @@ func TestSelectContextEndpointDoesNotTreatProductionChangeAsUpdateIntent(t *test
 	}
 }
 
-func TestSelectContextEndpointPromotesGermanCatalogItemInflections(t *testing.T) {
+func TestSelectContextEndpointUsesExplicitProjectsWithGermanIntent(t *testing.T) {
 	index := naturalLanguageCatalogDeleteIndex()
 	const (
 		englishQuery = "Plan the smallest production change that removes jobs when a catalog item is deleted."
-		germanQuery  = "Plane die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden."
+		germanQuery  = "Plane in services/catalog und services/jobs die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden. Ermittle den REST-Endpunkt."
 	)
 
 	var selectedID string
@@ -2653,7 +2653,7 @@ func TestSelectContextEndpointPromotesGermanCatalogItemInflections(t *testing.T)
 		rawScore int
 	}{
 		{name: "English", query: englishQuery, rawScore: 230},
-		{name: "German", query: germanQuery, rawScore: 170},
+		{name: "German", query: germanQuery, rawScore: 310},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ranked := rankContextFacts(index.Facts, test.query)
@@ -2687,11 +2687,11 @@ func TestSelectContextEndpointPromotesGermanCatalogItemInflections(t *testing.T)
 	}
 }
 
-func TestBuildContextSelectsGermanCatalogItemDeleteEndpoint(t *testing.T) {
+func TestBuildContextSelectsExplicitCatalogProjectWithGermanIntent(t *testing.T) {
 	root := writeContextIndexFixture(t, naturalLanguageCatalogDeleteIndex())
 	writeContextSourceFile(t, root, "CatalogController.java", "public class CatalogController {\n    void deleteItem() {\n        service.deleteItem();\n    }\n    void changeItem() {\n        service.changeItem();\n    }\n}\n")
 	writeContextSourceFile(t, root, "CatalogService.java", "public class CatalogService {\n    void deleteItem() {\n        repository.deleteItem();\n    }\n}\n")
-	query := "Plane die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden."
+	query := "Plane in services/catalog und services/jobs die kleinste produktionsreife Änderung, durch die beim Löschen eines Katalogeintrags auch die zugehörigen Aufgaben entfernt werden. Ermittle den REST-Endpunkt."
 
 	pack, err := BuildContext(ContextRequest{Root: root, Query: query})
 	if err != nil {
@@ -2856,11 +2856,11 @@ func TestBuildContextSelectsNaturalLanguageAccountDeleteEndpoint(t *testing.T) {
 	}
 }
 
-func TestBuildContextSelectsGermanAccountDeleteEndpoint(t *testing.T) {
+func TestBuildContextSelectsSourceAccountTermWithGermanDeleteIntent(t *testing.T) {
 	for name, query := range map[string]string{
-		"Konto":  "Analysiere das Löschen vom Konto.",
-		"Kontos": "Analysiere das Löschen eines Kontos.",
-		"Konten": "Analysiere das Löschen von Konten.",
+		"Konto":  "Analysiere das Löschen vom account (Konto).",
+		"Kontos": "Analysiere das Löschen eines account (Kontos).",
+		"Konten": "Analysiere das Löschen von accounts (Konten).",
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := writeNaturalLanguageAccountDeleteFixture(t, "EXACT")
@@ -2978,7 +2978,7 @@ func TestBuildContextBareNaturalLanguageDomainDoesNotForceEndpoint(t *testing.T)
 	}
 }
 
-func TestSelectContextEndpointKeepsGermanAccountProvidersAmbiguous(t *testing.T) {
+func TestSelectContextEndpointKeepsSourceAccountProvidersAmbiguousWithGermanIntent(t *testing.T) {
 	index := scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Facts: []scan.AgentContextFactRecord{
@@ -2996,7 +2996,7 @@ func TestSelectContextEndpointKeepsGermanAccountProvidersAmbiguous(t *testing.T)
 			},
 		},
 	}
-	query := "Analysiere das Löschen eines Kontos."
+	query := "Analysiere das Löschen eines account."
 
 	endpoint, ok, reason := selectContextEndpoint(index, rankContextFacts(index.Facts, query), query)
 	if ok || !strings.Contains(reason, "ambiguous") {
@@ -3114,7 +3114,7 @@ func contextEndpointActionAlignmentFixture() scan.AgentContextIndexRecord {
 }
 
 func TestBuildContextExpandsGermanTaskTermsForTechnicalFacts(t *testing.T) {
-	query := "Wenn eine Vorschrift aus einem Kataster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
+	query := "Wenn eine regulation aus einem cadaster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Generated:     "2026-07-16T00:00:00Z",
@@ -3215,7 +3215,7 @@ func TestContextProblemStatementNormalizesHeadingsAndWrappedContinuation(t *test
 }
 
 func TestBuildContextPrioritizesPrimaryGermanActionOverAffectedEntity(t *testing.T) {
-	query := "Wenn eine Vorschrift aus einem Kataster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
+	query := "Wenn eine regulation aus einem cadaster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Generated:     "2026-07-16T00:00:00Z",
@@ -3249,7 +3249,7 @@ func TestBuildContextPrioritizesPrimaryGermanActionOverAffectedEntity(t *testing
 }
 
 func TestBuildContextKeepsPrimaryGermanActionWhenAffectedEndpointHasHigherUtility(t *testing.T) {
-	query := "Wenn eine Vorschrift aus einem Kataster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
+	query := "Wenn eine regulation aus einem cadaster entfernt wird, bleiben die verbundenen Aufgaben bestehen."
 	root := writeContextIndexFixture(t, scan.AgentContextIndexRecord{
 		SchemaVersion: scan.SchemaVersion,
 		Generated:     "2026-07-24T00:00:00Z",

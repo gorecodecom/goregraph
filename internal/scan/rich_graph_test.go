@@ -209,7 +209,7 @@ func TestParseJavaMethodSignatureWithAnnotatedMultipartParameters(t *testing.T) 
 }
 
 func TestSpringEndpointPathMatchesKnownBasePrefixes(t *testing.T) {
-	if !springEndpointPathMatches("/ApplicationConfig.BASE_PATH/cadasters/{cadasterId}/regulations/{objectId}/tasks", "/cadastertask/cadasters/101/regulations/10/tasks") {
+	if !springEndpointPathMatches("/ApplicationConfig.BASE_PATH/orders/{orderId}/jobs", "/orderservice/orders/101/jobs") {
 		t.Fatal("spring endpoint path matcher should treat config base and service prefixes as compatible")
 	}
 }
@@ -987,7 +987,7 @@ func TestExtractJavaSourceReadsStringFormatHTTPPath(t *testing.T) {
 	}
 }
 
-func TestBuildJavaTestMapMatchesRegulationChangeBaseControllerConstants(t *testing.T) {
+func TestBuildJavaTestMapMatchesConcreteEndpointPathFromHelper(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/test/java/RegulationChangesSaveRelevantForControllerTest.java", Language: "java"}, `class RegulationChangesSaveRelevantForControllerTest {
   @Test
   public void savesRelevantFor() throws Exception {
@@ -1001,7 +1001,7 @@ func TestBuildJavaTestMapMatchesRegulationChangeBaseControllerConstants(t *testi
 }`)
 	endpoints := []SpringEndpointRecord{{
 		HTTPMethod: "PUT",
-		Path:       "/RegulationChangeBaseController.PATH_BASE/{cadasterId}/regulations/{objectId}/changes/{lraTimestamp}",
+		Path:       "/cadasters/{cadasterId}/regulations/{objectId}/changes/{lraTimestamp}",
 		Controller: "RegulationChangesController",
 		Method:     "editRegulationChangeDetails",
 		File:       "src/main/java/RegulationChangesController.java",

@@ -17,3 +17,23 @@ func TestContractMatchesRejectsUnsafeContractWithoutStaticPath(t *testing.T) {
 		t.Fatalf("empty unsafe path matched a provider: %#v", matches)
 	}
 }
+
+func TestPathsCompatibleDoesNotReplacePlaceholderWithFixedStaticValue(t *testing.T) {
+	if pathsCompatible("/records/{type}", "/records/new") {
+		t.Fatal("placeholder {type} should not exactly match an arbitrary static segment")
+	}
+}
+
+func TestKnownBasePrefixVariantsUseTechnicalSuffixes(t *testing.T) {
+	for _, prefix := range []string{"billingservice", "billingapi", "billingmgmt", "billingsvc"} {
+		if !pathsCompatibleWithKnownBasePrefixes("/"+prefix+"/items/{id}", "/items/{itemId}") {
+			t.Errorf("technical service prefix %q was not handled structurally", prefix)
+		}
+	}
+}
+
+func TestAbsentRouteConstantRemainsUnresolved(t *testing.T) {
+	if pathsCompatibleWithKnownBasePrefixes("/MissingRoutes.BASE_PATH/items/{id}", "/inventory/items/{itemId}") {
+		t.Fatal("constant absent from indexed source was replaced or ignored")
+	}
+}

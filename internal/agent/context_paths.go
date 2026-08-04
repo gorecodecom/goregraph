@@ -95,6 +95,7 @@ func selectContextPaths(
 			if !contextPathAddsFact(candidate, selectedFacts) {
 				continue
 			}
+			boundedCallContinuation := contextPathIsUniqueBoundedProductionCallPath(candidate, adjacency, factByID)
 			score, meaningful := scoreContextPath(
 				candidate,
 				concerns,
@@ -105,6 +106,7 @@ func selectContextPaths(
 				boundedRoleEvidence,
 				lexicalScores,
 				factByID,
+				boundedCallContinuation,
 			)
 			if !meaningful || score <= 0 {
 				continue
@@ -318,6 +320,7 @@ func scoreContextPath(
 	boundedRoleEvidence contextBoundedRoleEvidence,
 	lexicalScores map[string]int,
 	factByID map[string]scan.AgentContextFactRecord,
+	boundedCallContinuation bool,
 ) (int, bool) {
 	pathCovered := contextPathCoveredConcerns(path.factIDs[1:], path.edges, concerns)
 	newConcerns := 0
@@ -345,7 +348,7 @@ func scoreContextPath(
 		concerns,
 	)
 	meaningful := newConcerns > 0 || newProjects > 0 || newBoundary || additionalRoleEvidence ||
-		allowLexicalExpansion && terminalScore >= minimumContextSeedScore
+		boundedCallContinuation || allowLexicalExpansion && terminalScore >= minimumContextSeedScore
 	score := 1000*newConcerns + 300*newProjects + terminalScore - 40*len(path.edges) - path.cost
 	if newBoundary {
 		score += 200
@@ -353,7 +356,51 @@ func scoreContextPath(
 	if additionalRoleEvidence {
 		score += 500
 	}
+	if boundedCallContinuation {
+		score += 100
+	}
 	return score, meaningful
+}
+
+func contextPathIsUniqueBoundedProductionCallPath(
+	path contextTraversalState,
+	adjacency map[string][]contextTraversalStep,
+	factByID map[string]scan.AgentContextFactRecord,
+) bool {
+	if len(path.edges) == 0 || len(path.edges) > 2 || len(path.factIDs) != len(path.edges)+1 {
+		return false
+	}
+	project := normalizeContextProject(factByID[path.factIDs[0]].Project)
+	if project == "" || contextFactUsesTestSource(factByID[path.factIDs[0]]) ||
+		contextFactUsesGeneratedMetadata(factByID[path.factIDs[0]]) {
+		return false
+	}
+	for index, edge := range path.edges {
+		if !strings.EqualFold(strings.TrimSpace(edge.Kind), "call") {
+			return false
+		}
+		currentID := path.factIDs[index]
+		nextID := path.factIDs[index+1]
+		if normalizeContextProject(factByID[nextID].Project) != project ||
+			contextFactUsesTestSource(factByID[nextID]) || contextFactUsesGeneratedMetadata(factByID[nextID]) {
+			return false
+		}
+		callTargets := 0
+		matchingTarget := false
+		for _, step := range adjacency[currentID] {
+			if !strings.EqualFold(strings.TrimSpace(step.edge.Kind), "call") {
+				continue
+			}
+			callTargets++
+			if step.nextID == nextID {
+				matchingTarget = true
+			}
+		}
+		if callTargets != 1 || !matchingTarget {
+			return false
+		}
+	}
+	return true
 }
 
 func contextPathMaximumSelectedDistance(distances map[string]int) int {

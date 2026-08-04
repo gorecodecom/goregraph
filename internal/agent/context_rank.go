@@ -1187,6 +1187,7 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 	queryTokens := contextQueryTokens(primaryQuery)
 	queryTerm := normalizeContextTerm(query)
 	queryAnchors := contextQueryAnchors(query)
+	uniqueExplicitRouteKey := contextUniqueExplicitProjectRouteKey(facts, query)
 	ranked := make([]rankedContextFact, 0, len(facts))
 	for _, fact := range facts {
 		factTokens := contextTokenSet(strings.Join([]string{
@@ -1277,6 +1278,11 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		case "RESOLVED":
 			score += scoreResolvedConfidence
 		}
+		if uniqueExplicitRouteKey != "" && contextEndpointRouteKey(fact) == uniqueExplicitRouteKey &&
+			(strings.EqualFold(fact.Kind, "route") || strings.EqualFold(fact.Kind, "api_endpoint")) {
+			score += scoreRouteKind
+			reason = "unique route in explicit projects"
+		}
 		ranked = append(ranked, rankedContextFact{
 			fact:          fact,
 			query:         query,
@@ -1329,6 +1335,50 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		return left.fact.ID < right.fact.ID
 	})
 	return ranked
+}
+
+func contextUniqueExplicitProjectRouteKey(facts []scan.AgentContextFactRecord, query string) string {
+	queryTokens := contextExpandedTokenSet(query)
+	requestsEndpoint := false
+	for _, token := range []string{"endpoint", "endpunkt", "http", "rest", "route"} {
+		if queryTokens[token] {
+			requestsEndpoint = true
+			break
+		}
+	}
+	requestedActions := contextEndpointRequestedActions(query)
+	if !requestsEndpoint || !contextActionFamiliesHaveMutation(requestedActions) {
+		return ""
+	}
+	explicitProjects := contextExplicitProjects(query, contextProjectAliases(facts, nil))
+	if len(explicitProjects) == 0 {
+		return ""
+	}
+
+	routeKeys := map[string]bool{}
+	for _, fact := range facts {
+		if !explicitProjects[normalizeContextProject(fact.Project)] ||
+			!strings.EqualFold(fact.Kind, "route") && !strings.EqualFold(fact.Kind, "api_endpoint") ||
+			strings.TrimSpace(fact.HTTPMethod) == "" || strings.TrimSpace(fact.Path) == "" ||
+			contextFactUsesTestSource(fact) || contextFactUsesGeneratedMetadata(fact) {
+			continue
+		}
+		factActions := contextActionFamilies(
+			strings.Join([]string{fact.Name, fact.Qualified, fact.HTTPMethod, fact.Path}, " "),
+			fact.HTTPMethod,
+		)
+		if !contextActionFamiliesOverlap(requestedActions, factActions) {
+			continue
+		}
+		routeKeys[contextEndpointRouteKey(fact)] = true
+	}
+	if len(routeKeys) != 1 {
+		return ""
+	}
+	for routeKey := range routeKeys {
+		return routeKey
+	}
+	return ""
 }
 
 func contextProjectAliases(
@@ -2795,11 +2845,6 @@ var contextIntentTokenAliases = map[string][]string{
 	"fehlerbehandlung":    {"exception", "resilience"},
 	"job":                 {"jobs", "task", "tasks"},
 	"jobs":                {"job", "task", "tasks"},
-	"katalogeintrag":      {"catalog", "item"},
-	"katalogeintrages":    {"catalog", "item"},
-	"katalogeintrags":     {"catalog", "item"},
-	"katalogeinträge":     {"catalog", "item"},
-	"katalogeinträgen":    {"catalog", "item"},
 	"konfiguration":       {"config", "configuration"},
 	"nebenwirkung":        {"side_effect", "side_effects"},
 	"nebenwirkungen":      {"side_effect", "side_effects"},
@@ -2821,30 +2866,22 @@ var contextIntentTokenAliases = map[string][]string{
 }
 
 var contextQueryTokenAliases = map[string][]string{
-	"konto":              {"account"},
-	"kontos":             {"account"},
-	"konten":             {"account"},
-	"vorschrift":         {"regulation", "regulations"},
-	"vorschriften":       {"regulation", "regulations"},
-	"vorschriftendienst": {"regulation", "regulations"},
-	"kataster":           {"cadaster", "cadasters"},
-	"katasters":          {"cadaster", "cadasters"},
-	"entferne":           {"delete", "remove"},
-	"entfernen":          {"delete", "remove"},
-	"entfernt":           {"delete", "remove"},
-	"entfernung":         {"delete", "remove"},
-	"gelöschte":          {"delete", "remove"},
-	"gelöschten":         {"delete", "remove"},
-	"gelöscht":           {"delete", "remove"},
-	"loeschen":           {"delete", "remove"},
-	"löschung":           {"delete", "remove"},
-	"löschungen":         {"delete", "remove"},
-	"löschen":            {"delete", "remove"},
-	"löscht":             {"delete", "remove"},
-	"verbunden":          {"related"},
-	"verbundene":         {"related"},
-	"verbundenen":        {"related"},
-	"verknüpft":          {"related"},
+	"entferne":    {"delete", "remove"},
+	"entfernen":   {"delete", "remove"},
+	"entfernt":    {"delete", "remove"},
+	"entfernung":  {"delete", "remove"},
+	"gelöschte":   {"delete", "remove"},
+	"gelöschten":  {"delete", "remove"},
+	"gelöscht":    {"delete", "remove"},
+	"loeschen":    {"delete", "remove"},
+	"löschung":    {"delete", "remove"},
+	"löschungen":  {"delete", "remove"},
+	"löschen":     {"delete", "remove"},
+	"löscht":      {"delete", "remove"},
+	"verbunden":   {"related"},
+	"verbundene":  {"related"},
+	"verbundenen": {"related"},
+	"verknüpft":   {"related"},
 }
 
 func selectContextSeeds(ranked []rankedContextFact) []rankedContextFact {
