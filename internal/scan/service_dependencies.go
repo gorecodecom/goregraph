@@ -6,113 +6,131 @@ import (
 	"strings"
 )
 
+var javaDependencyBoundarySuffixes = []string{"Client", "Service", "Gateway", "Connector", "Api"}
+
+var javaDependencyIgnoredImportPrefixes = []string{
+	"java.",
+	"javax.",
+	"jakarta.",
+	"org.junit.",
+	"org.springframework.",
+}
+
 func buildServiceDependencies(project WorkspaceProjectRecord, sources []JavaSourceRecord) []WorkspaceServiceDependencyRecord {
 	if len(sources) == 0 {
 		return nil
 	}
+	localTypes := javaDependencyLocalTypes(sources)
 	seen := map[string]bool{}
 	var records []WorkspaceServiceDependencyRecord
 	for _, source := range sources {
 		for _, imp := range source.Imports {
-			key, service := serviceDependencyFromJavaImport(imp.Name)
-			if service == "" {
+			typeName, ok := javaDependencyImportedBoundary(imp, localTypes)
+			if !ok {
 				continue
 			}
-			recordKey := project.Path + "\x00" + service + "\x00" + source.File
+			evidence, used := javaDependencyUsageEvidence(source, typeName)
+			if !used {
+				continue
+			}
+			variants := canonicalServiceIdentityVariants(typeName)
+			if len(variants) == 0 {
+				continue
+			}
+			resolutionKey := variants[0]
+			recordKey := project.Path + "\x00" + resolutionKey + "\x00" + source.File
 			if seen[recordKey] {
 				continue
 			}
 			seen[recordKey] = true
 			records = append(records, WorkspaceServiceDependencyRecord{
 				FromProject:   project.Path,
-				ToService:     service,
-				Kind:          "java_service_client",
-				Evidence:      fmt.Sprintf("%s imports %s", source.File, imp.Name),
+				Kind:          "java_client_import",
+				Evidence:      fmt.Sprintf("%s imports %s; %s", source.File, imp.Name, evidence),
 				Confidence:    "EXTRACTED",
-				ResolutionKey: key,
-			})
-		}
-		for _, field := range source.Fields {
-			key, service := serviceDependencyFromJavaType(field.Type)
-			if service == "" {
-				continue
-			}
-			recordKey := project.Path + "\x00" + service + "\x00" + field.File + "\x00" + field.Name
-			if seen[recordKey] {
-				continue
-			}
-			seen[recordKey] = true
-			records = append(records, WorkspaceServiceDependencyRecord{
-				FromProject:   project.Path,
-				ToService:     service,
-				Kind:          "java_service_client",
-				Evidence:      fmt.Sprintf("%s:%d field %s %s", field.File, field.Line, field.Type, field.Name),
-				Confidence:    "EXTRACTED",
-				ResolutionKey: key,
+				ResolutionKey: resolutionKey,
 			})
 		}
 	}
 	sort.Slice(records, func(i, j int) bool {
-		if records[i].ToService != records[j].ToService {
-			return records[i].ToService < records[j].ToService
+		if records[i].ResolutionKey != records[j].ResolutionKey {
+			return records[i].ResolutionKey < records[j].ResolutionKey
 		}
 		return records[i].Evidence < records[j].Evidence
 	})
 	return records
 }
 
-func serviceDependencyFromJavaImport(importName string) (string, string) {
-	normalized := strings.ToLower(strings.TrimSpace(importName))
-	if !strings.Contains(normalized, ".common.") {
-		return "", ""
-	}
-	parts := strings.Split(normalized, ".")
-	for _, part := range parts {
-		if service := serviceDependencyServiceForKey(part); service != "" {
-			return part, service
+func javaDependencyLocalTypes(sources []JavaSourceRecord) map[string]struct{} {
+	localTypes := make(map[string]struct{})
+	for _, source := range sources {
+		for _, javaType := range source.Types {
+			if javaType.QualifiedName != "" {
+				localTypes[javaType.QualifiedName] = struct{}{}
+			} else if source.Package != "" {
+				localTypes[source.Package+"."+javaType.Name] = struct{}{}
+			} else {
+				localTypes[javaType.Name] = struct{}{}
+			}
 		}
 	}
-	return "", ""
+	return localTypes
 }
 
-func serviceDependencyFromJavaType(typeName string) (string, string) {
-	key := strings.ToLower(strings.TrimSpace(typeName))
-	key = strings.TrimSuffix(key, "[]")
-	return key, serviceDependencyServiceForKey(key)
+func javaDependencyImportedBoundary(imp JavaImportRecord, localTypes map[string]struct{}) (string, bool) {
+	importName := strings.TrimSpace(imp.Name)
+	if imp.Static || importName == "" || strings.HasSuffix(importName, ".*") {
+		return "", false
+	}
+	for _, prefix := range javaDependencyIgnoredImportPrefixes {
+		if strings.HasPrefix(importName, prefix) {
+			return "", false
+		}
+	}
+	typeName := shortJavaName(importName)
+	if !javaDependencyBoundaryType(typeName) {
+		return "", false
+	}
+	if _, local := localTypes[importName]; local {
+		return "", false
+	}
+	return typeName, true
 }
 
-func serviceDependencyServiceForKey(key string) string {
-	key = strings.TrimSpace(strings.ToLower(key))
-	if key == "" {
-		return ""
+func javaDependencyBoundaryType(typeName string) bool {
+	for _, suffix := range javaDependencyBoundarySuffixes {
+		if len(typeName) > len(suffix) && strings.HasSuffix(typeName, suffix) {
+			return true
+		}
 	}
-	switch key {
-	case "userservice", "usermgmtservice":
-		return "ms-userservice"
-	case "licenseservice", "license",
-		"licensemgmtservice", "licenseserviceresponse", "licensesresponse":
-		return "ms-licenseservice"
-	case "productservice", "productservicemgmt":
-		return "ms-productservice"
-	case "cadasteruser", "cadasterusermgmt", "cadasterusermgmtservice":
-		return "ms-cadasteruser"
-	case "cadasterregulation", "cadasterregulationmgmt", "cadasterregulationmgmtservice":
-		return "ms-cadasterregulation"
-	case "cadastertask", "cadastertaskmgmt", "cadastertaskmgmtservice":
-		return "ms-cadastertask"
-	case "documenttopic", "documenttopicmgmt", "documenttopicmgmtservice":
-		return "ms-documenttopic"
-	case "documentinfo", "documentinfoservice":
-		return "ms-documentinfo"
-	case "documentdownload", "documentdownloadservice":
-		return "ms-documentdownload"
-	case "documentexport", "documentexportservice":
-		return "ms-documentexport"
-	case "regulationtree", "regulationtreeservice":
-		return "ms-regulationtree"
-	case "regulationchange", "regulationchangeservice":
-		return "ms-regulationchange"
-	default:
-		return ""
+	return false
+}
+
+func javaDependencyUsageEvidence(source JavaSourceRecord, typeName string) (string, bool) {
+	for _, field := range source.Fields {
+		if javaDependencySimpleType(field.Type) == typeName {
+			return fmt.Sprintf("field %s:%d %s %s", field.File, field.Line, field.Type, field.Name), true
+		}
 	}
+	for _, method := range source.Methods {
+		if method.Name != method.Owner || method.ReturnType != "" {
+			continue
+		}
+		for _, parameter := range method.Parameters {
+			if javaDependencySimpleType(parameter.Type) == typeName {
+				return fmt.Sprintf("constructor %s:%d parameter %s %s", method.File, method.Line, parameter.Type, parameter.Name), true
+			}
+		}
+	}
+	return "", false
+}
+
+func javaDependencySimpleType(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimSuffix(value, "...")
+	value = strings.TrimSuffix(value, "[]")
+	if generic := strings.Index(value, "<"); generic >= 0 {
+		value = value[:generic]
+	}
+	return shortJavaName(strings.TrimSpace(value))
 }

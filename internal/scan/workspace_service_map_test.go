@@ -296,6 +296,72 @@ func TestBuildWorkspaceServiceMapIncludesBackendServiceDependencies(t *testing.T
 	}
 }
 
+func TestBuildWorkspaceServiceMapResolvesDependencyKeyUniquely(t *testing.T) {
+	registry := WorkspaceRegistryRecord{
+		Root: "/workspace",
+		Projects: []WorkspaceProjectRecord{
+			{Name: "order-service", Path: "services/order-service", Service: "orders-api", Indexed: true},
+			{Name: "inventory-service", Path: "services/inventory-service", Service: "inventory-service", Indexed: true},
+		},
+	}
+	dependencies := []WorkspaceServiceDependencyRecord{{
+		FromProject:   "services/order-service",
+		Kind:          "java_client_import",
+		Evidence:      "OrderCancellationService.java imports InventoryMgmtService",
+		Confidence:    "EXTRACTED",
+		ResolutionKey: "inventory",
+	}}
+
+	serviceMap := BuildWorkspaceServiceMap(registry, nil, nil, dependencies)
+	edge := requireServiceMapEdge(t, serviceMap, "services/order-service", "services/inventory-service")
+	if edge.Total != 1 || edge.Resolved != 1 || edge.Risk != "resolved" {
+		t.Fatalf("unexpected source-derived dependency edge: %#v", edge)
+	}
+}
+
+func TestBuildWorkspaceServiceMapDoesNotResolveAmbiguousDependencyKey(t *testing.T) {
+	registry := WorkspaceRegistryRecord{
+		Root: "/workspace",
+		Projects: []WorkspaceProjectRecord{
+			{Name: "order-service", Path: "services/order-service", Indexed: true},
+			{Name: "inventory-api", Path: "services/inventory-api", Indexed: true},
+			{Name: "inventory-service", Path: "modules/inventory-service", Indexed: true},
+		},
+	}
+	dependencies := []WorkspaceServiceDependencyRecord{{
+		FromProject:   "services/order-service",
+		Kind:          "java_client_import",
+		Confidence:    "EXTRACTED",
+		ResolutionKey: "inventory",
+	}}
+
+	serviceMap := BuildWorkspaceServiceMap(registry, nil, nil, dependencies)
+	if len(serviceMap.Edges) != 0 {
+		t.Fatalf("ambiguous resolution produced dependency edges: %#v", serviceMap.Edges)
+	}
+}
+
+func TestBuildWorkspaceServiceMapDoesNotUseDependencySubstringMatches(t *testing.T) {
+	registry := WorkspaceRegistryRecord{
+		Root: "/workspace",
+		Projects: []WorkspaceProjectRecord{
+			{Name: "order-service", Path: "services/order-service", Indexed: true},
+			{Name: "user-service", Path: "services/user-service", Indexed: true},
+		},
+	}
+	dependencies := []WorkspaceServiceDependencyRecord{{
+		FromProject:   "services/order-service",
+		Kind:          "java_client_import",
+		Confidence:    "EXTRACTED",
+		ResolutionKey: "userdetails",
+	}}
+
+	serviceMap := BuildWorkspaceServiceMap(registry, nil, nil, dependencies)
+	if len(serviceMap.Edges) != 0 {
+		t.Fatalf("substring resolution produced dependency edges: %#v", serviceMap.Edges)
+	}
+}
+
 func requireServiceMapNode(t *testing.T, serviceMap WorkspaceServiceMapRecord, project string) WorkspaceServiceNodeRecord {
 	t.Helper()
 	for _, node := range serviceMap.Nodes {

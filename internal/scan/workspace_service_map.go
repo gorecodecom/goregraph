@@ -67,6 +67,13 @@ func BuildWorkspaceServiceMapWithLayout(registry WorkspaceRegistryRecord, matche
 		if toProject == "" && dependency.ToService != "" {
 			toProject = firstNonEmpty(serviceProjects[normalizeServiceName(dependency.ToService)], dependency.ToService)
 		}
+		if toProject == "" && dependency.ToService == "" && dependency.ResolutionKey != "" {
+			if project, _, ok := resolveWorkspaceProjectByServiceKey(registry.Projects, dependency.ResolutionKey); ok {
+				toProject = project.Path
+				dependency.ToProject = project.Path
+				dependency.ToService = firstNonEmpty(project.Service, project.Name)
+			}
+		}
 		if dependency.FromProject == "" || toProject == "" || dependency.FromProject == toProject {
 			continue
 		}
