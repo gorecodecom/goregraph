@@ -280,6 +280,79 @@ func TestBuildWorkspaceContractMatchesPreservesAmbiguousProvidersDeterministical
 	}
 }
 
+func TestBuildWorkspaceContractMatchesPrefersExactRouteOverServiceIdentity(t *testing.T) {
+	consumer := workspaceIndexProject{
+		record: WorkspaceProjectRecord{Path: "apps/checkout"},
+		contracts: []APIContractRecord{{
+			HTTPMethod: "DELETE", Path: "/inventory/items/{id}", ServiceResolutionKey: "inventory", File: "src/client.ts", Line: 7,
+		}},
+	}
+	provider := workspaceIndexProject{
+		record: WorkspaceProjectRecord{Path: "services/warehouse-core", Name: "warehouse-core", Service: "warehouse-core", Indexed: true},
+		routes: []CodeRouteRecord{{
+			Kind: "backend", HTTPMethod: "DELETE", Path: "/inventory/items/{itemId}", Handler: "removeItem", File: "src/server.ts", Line: 12,
+		}},
+	}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{consumer, provider})
+	if len(matches) != 1 || matches[0].Issue != contractIssueMatched || matches[0].BackendProject != "services/warehouse-core" {
+		t.Fatalf("exact route did not win over identity fallback: %#v", matches)
+	}
+}
+
+func TestBuildWorkspaceContractMatchesResolvesUniqueServiceIdentityWithoutRoute(t *testing.T) {
+	consumer := workspaceIndexProject{
+		record: WorkspaceProjectRecord{Path: "apps/checkout"},
+		contracts: []APIContractRecord{{
+			HTTPMethod: "DELETE", Path: "/inventory/items/{id}", ServiceResolutionKey: "inventory", File: "src/client.ts", Line: 7,
+		}},
+	}
+	provider := workspaceIndexProject{
+		record: WorkspaceProjectRecord{Path: "services/inventory-service", Name: "inventory-service", Service: "inventory-service", Indexed: true},
+	}
+
+	matches := buildWorkspaceContractMatches([]workspaceIndexProject{consumer, provider})
+	if len(matches) != 1 {
+		t.Fatalf("matches = %#v, want one", matches)
+	}
+	match := matches[0]
+	if match.ServiceCandidate != "inventory-service" || match.Issue != contractIssueIndexedBackendRouteMissing || match.Confidence != "UNRESOLVED" {
+		t.Fatalf("unique registry identity was not retained conservatively: %#v", match)
+	}
+}
+
+func TestBuildWorkspaceContractMatchesPreservesAmbiguousServiceIdentities(t *testing.T) {
+	consumer := workspaceIndexProject{
+		record: WorkspaceProjectRecord{Path: "apps/checkout"},
+		contracts: []APIContractRecord{{
+			HTTPMethod: "DELETE", Path: "/inventory/items/{id}", ServiceResolutionKey: "inventory", File: "src/client.ts", Line: 7,
+		}},
+	}
+	first := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "modules/inventory-service", Name: "inventory-service", Indexed: true}}
+	second := workspaceIndexProject{record: WorkspaceProjectRecord{Path: "services/inventory-api", Name: "inventory-api", Indexed: true}}
+
+	forward := buildWorkspaceContractMatches([]workspaceIndexProject{consumer, first, second})
+	reverse := buildWorkspaceContractMatches([]workspaceIndexProject{second, first, consumer})
+	if len(forward) != 1 || forward[0].Issue != "ambiguous_service_identity" || forward[0].Confidence != "AMBIGUOUS" || forward[0].ServiceCandidate != "" {
+		t.Fatalf("ambiguous service identities selected an owner: %#v", forward)
+	}
+	wantEvidence := []string{"candidate_project=modules/inventory-service", "candidate_project=services/inventory-api"}
+	if !reflect.DeepEqual(forward[0].ResolutionEvidence, wantEvidence) {
+		t.Fatalf("resolution evidence = %#v, want %#v", forward[0].ResolutionEvidence, wantEvidence)
+	}
+	forwardJSON, err := json.Marshal(forward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverseJSON, err := json.Marshal(reverse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(forwardJSON) != string(reverseJSON) {
+		t.Fatalf("discovery order changed identity ambiguity:\nforward: %s\nreverse: %s", forwardJSON, reverseJSON)
+	}
+}
+
 func assertCatalogManifestAndFreshness(t *testing.T, layout OutputLayout, generated string) {
 	t.Helper()
 	var manifest OutputManifest

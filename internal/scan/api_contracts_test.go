@@ -780,6 +780,41 @@ export const load = () => client.get('/orders');`
 	}
 }
 
+func TestAPIContractsExtractReceiverNeutralRequestCalls(t *testing.T) {
+	source := `export const remove = () => transport.request("DELETE", "inventory/items/{id}");
+export const health = () => gateway.request("GET", "health");
+export const dynamic = (method) => transport.request(method, "inventory/items/{id}");
+export const remote = () => transport.request("GET", "https://example.invalid/items");`
+
+	contracts := extractTestAPIContractsAll(source)
+	if len(contracts) != 2 {
+		t.Fatalf("contracts = %#v, want two structurally valid literal request calls", contracts)
+	}
+
+	remove := contractByPath(t, contracts, "/inventory/items/{id}")
+	if remove.HTTPMethod != "DELETE" || remove.Reason != "request-method-path-call" {
+		t.Fatalf("generic DELETE request = %#v", remove)
+	}
+	if remove.ServiceCandidate != "" || remove.ServiceResolutionKey != "inventory" {
+		t.Fatalf("project scan invented ownership or missed key: %#v", remove)
+	}
+
+	health := contractByPath(t, contracts, "/health")
+	if health.HTTPMethod != "GET" || health.ServiceCandidate != "" || health.ServiceResolutionKey != "health" {
+		t.Fatalf("single-segment request = %#v", health)
+	}
+}
+
+func TestAPIContractsDoNotTreatUnrecognizedLiteralsAsRequestPaths(t *testing.T) {
+	source := `const label = "health";
+export const dynamic = (method) => transport.request(method, "inventory/items/{id}");
+export const remote = () => transport.request("GET", "https://example.invalid/items");`
+
+	if contracts := extractTestAPIContractsAll(source); len(contracts) != 0 {
+		t.Fatalf("unrecognized or unsafe literals became contracts: %#v", contracts)
+	}
+}
+
 func extractTestAPIContracts(t *testing.T, source string) []APIContractRecord {
 	t.Helper()
 	contracts := extractTestAPIContractsAll(source)

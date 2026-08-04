@@ -1153,8 +1153,8 @@ export async function addFavorite(userId: string, folderId: string) {
 	var api []APIContractRecord
 	readJSON(t, filepath.Join(root, "goregraph-out", "api-contracts.json"), &api)
 	treeContract := assertHasAPIContract(t, api, "GET", "/tree/regulations", "apps/rdbv/src/actions/regulations.ts")
-	if treeContract.ServiceCandidate != "ms-regulationtree" {
-		t.Fatalf("tree service candidate = %q, want ms-regulationtree", treeContract.ServiceCandidate)
+	if treeContract.ServiceCandidate != "" || treeContract.ServiceResolutionKey != "tree" {
+		t.Fatalf("project contract should retain only a neutral tree key: %#v", treeContract)
 	}
 	assertHasAPIContract(t, api, "PUT", "/search", "apps/rdbv/src/actions/regulations.ts")
 	assertHasAPIContract(t, api, "POST", "/useritem/users/{userId}/folders/{folderId}/favorites", "apps/rdbv/src/actions/regulations.ts")
@@ -1436,13 +1436,13 @@ class CadasterController {
 
 	var matches []ContractMatchRecord
 	readJSON(t, filepath.Join(root, "goregraph-out", "contract-matches.json"), &matches)
-	assertHasContractIssue(t, matches, "GET", "/tasks/{id}", "unscanned_service")
-	assertHasContractIssue(t, matches, "GET", "/cadasters/missing/detail", "indexed_backend_route_missing")
+	assertHasContractIssue(t, matches, "GET", "/tasks/{id}", "missing_backend_route")
+	assertHasContractIssue(t, matches, "GET", "/cadasters/missing/detail", "missing_backend_route")
 	assertHasContractConfidence(t, matches, "GET", "/cadasters/missing/detail", "UNRESOLVED")
 
 	report := readText(t, filepath.Join(root, "goregraph-out", "contract-matches.md"))
-	if !strings.Contains(report, "unscanned_service") || !strings.Contains(report, "ms-task was not scanned") {
-		t.Fatalf("contract match report missing unscanned service context:\n%s", report)
+	if !strings.Contains(report, "missing_backend_route") || strings.Contains(report, "ms-task was not scanned") {
+		t.Fatalf("project contract report invented workspace ownership:\n%s", report)
 	}
 }
 
@@ -1566,8 +1566,8 @@ class CadasterController {
 			t.Fatalf("diagnostics report missing %q:\n%s", want, report)
 		}
 	}
-	if !strings.Contains(report, "ms-task") || !strings.Contains(report, "GET `/cadasters/{cadasterId}`") {
-		t.Fatalf("diagnostics report missing service and endpoint context:\n%s", report)
+	if !strings.Contains(report, "missing_backend_route") || !strings.Contains(report, "GET `/cadasters/{cadasterId}`") || strings.Contains(report, "`ms-task` -") {
+		t.Fatalf("diagnostics report missing conservative route context:\n%s", report)
 	}
 }
 

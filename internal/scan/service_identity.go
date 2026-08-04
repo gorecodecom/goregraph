@@ -152,6 +152,14 @@ func serviceIdentityVariantsIntersect(keySet map[string]struct{}, projectVariant
 	return false
 }
 
+func serviceIdentityValuesMatch(left, right string) bool {
+	leftSet := make(map[string]struct{})
+	for _, variant := range canonicalServiceIdentityVariants(left) {
+		leftSet[variant] = struct{}{}
+	}
+	return serviceIdentityVariantsIntersect(leftSet, canonicalServiceIdentityVariants(right))
+}
+
 func workspaceProjectIdentity(project WorkspaceProjectRecord) string {
 	if project.Path != "" {
 		return project.Path

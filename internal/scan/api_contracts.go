@@ -11,9 +11,10 @@ import (
 var (
 	codeHelperStartRE = regexp.MustCompile(`\b(Get|Post|Put|Patch|Delete)Helper(?:WithStatus)?\s*\(`)
 	codeFetchAPIRE    = regexp.MustCompile(`\bfetch\s*\(`)
-	codeWekaRequestRE = regexp.MustCompile(`\bweka\.request\s*\(`)
+	codeRequestRE     = regexp.MustCompile(`\b(?:[A-Za-z_$][A-Za-z0-9_$]*\s*\.\s*)+request\s*\(`)
 	codeHTTPClientRE  = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*(get|post|put|patch|delete)\s*\(`)
-	codeHTTPMethodRE  = regexp.MustCompile(`^\s*["'](GET|POST|PUT|PATCH|DELETE)["']\s*,\s*(.*)$`)
+	codeHTTPMethodRE  = regexp.MustCompile(`^\s*["'](GET|POST|PUT|PATCH|DELETE)["']\s*$`)
+	codePathArgRE     = regexp.MustCompile(`^\s*(?:"([^"]+)"|'([^']+)'|` + "`" + `([^` + "`" + `]+)` + "`" + `)\s*$`)
 	codeAnyLiteralRE  = regexp.MustCompile(`["']([^"']+)["']|` + "`" + `([^` + "`" + `]+)` + "`")
 	codeMethodRE      = regexp.MustCompile(`\bmethod\s*:\s*["']([A-Za-z]+)["']`)
 	codePathLiteralRE = regexp.MustCompile(`["'](/[^"']+)["']|` + "`" + `(/[^` + "`" + `]+)` + "`")
@@ -52,15 +53,23 @@ func extractAPIContracts(file FileRecord, lines []string, functions []CodeFuncti
 			}
 			continue
 		}
-		if codeWekaRequestRE.MatchString(line) {
-			callText := collectCallText(maskedLines, i, 8)
-			if method, path, ok := wekaRequestMethodPath(callText); ok {
-				record := apiContract(file, method, path, apiContractCaller(functions, i+1), dynamicEndpointCandidatesForLine(maskedLines, functions, i+1, path), responseFieldsForLine(maskedLines, functions, i+1), i+1, "weka-request-call")
-				start := lineOffsets[i] + codeWekaRequestRE.FindStringIndex(line)[0]
-				record.Auth = analysis.authForCall(start, matchingCallEndCode(code, start), file.Path)
-				records = append(records, record)
-			}
+	}
+	for _, match := range codeRequestRE.FindAllStringIndex(code, -1) {
+		if !isCompleteJSReceiverCode(code, match[0]) {
+			continue
 		}
+		end := matchingCallEndCode(code, match[0])
+		if end <= match[0] || end > len(masked) {
+			continue
+		}
+		method, requestPath, ok := requestMethodPath(masked[match[0]:end])
+		if !ok {
+			continue
+		}
+		line := analysis.lineForOffset(match[0])
+		record := apiContract(file, method, requestPath, apiContractCaller(functions, line), dynamicEndpointCandidatesForLine(maskedLines, functions, line, requestPath), responseFieldsForLine(maskedLines, functions, line), line, "request-method-path-call")
+		record.Auth = analysis.authForCall(match[0], end, file.Path)
+		records = append(records, record)
 	}
 	for _, match := range codeFetchAPIRE.FindAllStringIndex(code, -1) {
 		end := matchingCallEndCode(code, match[0])
@@ -1735,21 +1744,30 @@ func appendUniqueAuth(records []AuthRecord, additions ...AuthRecord) []AuthRecor
 	return records
 }
 
-func wekaRequestMethodPath(callText string) (string, string, bool) {
+func requestMethodPath(callText string) (string, string, bool) {
 	open := strings.Index(callText, "(")
 	close := strings.LastIndex(callText, ")")
 	if open < 0 || close <= open {
 		return "", "", false
 	}
-	args := strings.TrimSpace(callText[open+1 : close])
-	match := codeHTTPMethodRE.FindStringSubmatch(args)
-	if len(match) != 3 {
+	args := splitTopLevelSourceSpans(callText, open+1, close)
+	if len(args) < 2 {
 		return "", "", false
 	}
-	method := strings.ToUpper(match[1])
-	remainder := strings.TrimSpace(match[2])
-	path, ok := firstPathLikeLiteral(remainder)
-	return method, path, ok
+	methodMatch := codeHTTPMethodRE.FindStringSubmatch(callText[args[0].start:args[0].end])
+	if len(methodMatch) != 2 {
+		return "", "", false
+	}
+	pathMatch := codePathArgRE.FindStringSubmatch(callText[args[1].start:args[1].end])
+	if len(pathMatch) != 4 {
+		return "", "", false
+	}
+	for _, candidate := range pathMatch[1:] {
+		if candidate != "" && isLikelyAPIPathLiteral(candidate) {
+			return strings.ToUpper(methodMatch[1]), candidate, true
+		}
+	}
+	return "", "", false
 }
 
 func apiContractCaller(functions []CodeFunctionRecord, line int) string {
@@ -1867,9 +1885,9 @@ func firstNonEmpty(values ...string) string {
 
 func apiContract(file FileRecord, method, path, caller string, dynamicEndpointCandidates, responseFields []string, line int, reason string) APIContractRecord {
 	normalizedPath, query, params, unsafeDynamic := normalizeAPIPathDetails(path)
-	serviceCandidate := serviceCandidateForPath(normalizedPath)
+	serviceResolutionKey := serviceResolutionKeyForPath(normalizedPath)
 	if isFrontendInternalAPIPath(file.Path, normalizedPath) {
-		serviceCandidate = ""
+		serviceResolutionKey = ""
 		reason += "; frontend-internal-api-route"
 	}
 	return APIContractRecord{
@@ -1882,7 +1900,7 @@ func apiContract(file FileRecord, method, path, caller string, dynamicEndpointCa
 		Query:                     query,
 		QueryParams:               params,
 		ResponseFields:            responseFields,
-		ServiceCandidate:          serviceCandidate,
+		ServiceResolutionKey:      serviceResolutionKey,
 		UnsafeDynamic:             unsafeDynamic,
 		DynamicEndpointCandidates: dynamicEndpointCandidates,
 		Caller:                    strings.TrimSpace(caller),
@@ -1971,25 +1989,33 @@ func firstPathLikeLiteral(callText string) (string, bool) {
 }
 
 func isLikelyAPIPathLiteral(value string) bool {
-	if strings.Contains(value, "://") {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.Contains(value, "://") || strings.ContainsAny(value, " \t\r\n") || strings.HasPrefix(value, "//") {
 		return false
 	}
-	if strings.HasPrefix(value, "/") {
-		return true
-	}
-	first := strings.Split(strings.TrimPrefix(value, "./"), "/")[0]
-	if first == "" || strings.ContainsAny(first, "{}$?&=:") {
+	pathPart, _, _ := strings.Cut(value, "?")
+	pathPart = strings.TrimPrefix(pathPart, "./")
+	pathPart = strings.Trim(pathPart, "/")
+	if pathPart == "" {
 		return false
 	}
-	if strings.Contains(value, "/") {
-		return true
+	for _, segment := range strings.Split(pathPart, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+		for _, character := range segment {
+			if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' {
+				continue
+			}
+			switch character {
+			case '-', '_', '.', '~', '{', '}', '$', ':', '%':
+				continue
+			default:
+				return false
+			}
+		}
 	}
-	switch first {
-	case "search", "tree", "userservice", "useritem", "documenttopic", "documentdownload", "documentinfo", "documentexport", "containertree", "cadastertask", "cadasters", "productservice", "licenseservice", "swlicenseservice", "task", "portal":
-		return true
-	default:
-		return false
-	}
+	return true
 }
 
 func normalizeAPIPath(path string) string {
@@ -2151,36 +2177,18 @@ func sanitizePlaceholder(value string) string {
 	return b.String()
 }
 
-func serviceCandidateForPath(path string) string {
-	path = strings.Trim(path, "/")
-	if path == "" {
-		return ""
+func serviceResolutionKeyForPath(value string) string {
+	pathValue, _, _ := strings.Cut(strings.TrimSpace(value), "?")
+	for _, segment := range strings.Split(strings.Trim(pathValue, "/"), "/") {
+		segment = strings.Trim(segment, "{}")
+		if segment == "" || strings.EqualFold(segment, "dynamic") {
+			continue
+		}
+		if variants := canonicalServiceIdentityVariants(segment); len(variants) > 0 {
+			return variants[0]
+		}
 	}
-	segment := strings.ToLower(strings.Split(path, "/")[0])
-	segment = strings.Trim(segment, "{}")
-	switch segment {
-	case "cadasters", "cadastermgmt", "cadastertask":
-		return "ms-cadaster"
-	case "tree":
-		return "ms-regulationtree"
-	case "downloads":
-		return "ms-regulationdownload"
-	case "regulations":
-		return "ms-regulationinfo"
-	case "users":
-		return "ms-userservice"
-	case "products":
-		return "ms-productservice"
-	case "tasks":
-		return "ms-task"
-	case "licenses":
-		return "ms-licenseservice"
-	}
-	segment = strings.TrimSuffix(segment, "s")
-	if segment == "" || segment == "dynamic" {
-		return ""
-	}
-	return "ms-" + segment
+	return ""
 }
 
 func renderAPIContractsReport(records []APIContractRecord) string {

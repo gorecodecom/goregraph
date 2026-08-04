@@ -102,7 +102,7 @@ func ReconcileWorkspaceTarget(currentRoot string, cfg config.Config, target Buil
 		}
 	}
 	context := buildWorkspaceContext(registry, indexed)
-	matches := buildWorkspaceContractMatches(indexed)
+	matches := buildWorkspaceContractMatchesWithRegistry(indexed, registry.Projects)
 	featureFlows := buildWorkspaceFeatureFlows(indexed, matches)
 	apiCatalog, err := BuildWorkspaceAPICatalog(registry, indexed, matches, featureFlows, registry.Generated)
 	if err != nil {
@@ -2145,8 +2145,20 @@ func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspace
 	referenced := map[string]int{}
 	for _, project := range indexed {
 		for _, contract := range project.contracts {
-			if contract.ServiceCandidate != "" {
-				referenced[contract.ServiceCandidate]++
+			service := contract.ServiceCandidate
+			if service == "" && contract.ServiceResolutionKey != "" {
+				providerProjects := make([]WorkspaceProjectRecord, 0, len(registry.Projects))
+				for _, candidate := range registry.Projects {
+					if candidate.Path != project.record.Path {
+						providerProjects = append(providerProjects, candidate)
+					}
+				}
+				if resolvedProject, _, ok := resolveWorkspaceProjectByServiceKey(providerProjects, contract.ServiceResolutionKey); ok {
+					service = firstNonEmpty(resolvedProject.Service, resolvedProject.Name, resolvedProject.Path)
+				}
+			}
+			if service != "" {
+				referenced[service]++
 			}
 		}
 	}
@@ -2195,6 +2207,14 @@ func buildWorkspaceContext(registry WorkspaceRegistryRecord, indexed []workspace
 }
 
 func buildWorkspaceContractMatches(projects []workspaceIndexProject) []WorkspaceContractMatchRecord {
+	projectRecords := make([]WorkspaceProjectRecord, 0, len(projects))
+	for _, project := range projects {
+		projectRecords = append(projectRecords, project.record)
+	}
+	return buildWorkspaceContractMatchesWithRegistry(projects, projectRecords)
+}
+
+func buildWorkspaceContractMatchesWithRegistry(projects []workspaceIndexProject, projectRecords []WorkspaceProjectRecord) []WorkspaceContractMatchRecord {
 	var backendRoutes []workspaceBackendRoute
 	knownServices := map[string]bool{}
 	seenBackendRoutes := map[string]bool{}
@@ -2217,7 +2237,7 @@ func buildWorkspaceContractMatches(projects []workspaceIndexProject) []Workspace
 	var records []WorkspaceContractMatchRecord
 	for _, project := range projects {
 		for _, contract := range project.contracts {
-			records = append(records, workspaceContractMatch(project.record, contract, backendRoutes, knownServices))
+			records = append(records, workspaceContractMatch(project.record, contract, backendRoutes, knownServices, projectRecords))
 		}
 	}
 	sort.Slice(records, func(i, j int) bool {
@@ -2242,16 +2262,13 @@ func appendWorkspaceBackendRoute(routes *[]workspaceBackendRoute, seen, knownSer
 		seen[key] = true
 		*routes = append(*routes, candidate)
 	}
-	service := candidate.project.Service
-	if service == "" {
-		service = serviceCandidateForPath(candidate.route.Path)
-	}
+	service := firstNonEmpty(candidate.project.Service, candidate.project.Name)
 	if service != "" {
 		knownServices[service] = true
 	}
 }
 
-func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContractRecord, routes []workspaceBackendRoute, knownServices map[string]bool) WorkspaceContractMatchRecord {
+func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContractRecord, routes []workspaceBackendRoute, knownServices map[string]bool, projects []WorkspaceProjectRecord) WorkspaceContractMatchRecord {
 	base := WorkspaceContractMatchRecord{
 		ID:                     stableID("workspace-contract", project.Path, contract.File, fmt.Sprint(contract.Line), contract.HTTPMethod, contract.Path),
 		APIProject:             project.Path,
@@ -2319,6 +2336,47 @@ func workspaceContractMatch(project WorkspaceProjectRecord, contract APIContract
 		base.ResolutionHint = "path contains a complex dynamic expression; inspect the frontend path builder and constrain possible values"
 		return base
 	}
+	if contract.ServiceCandidate == "" && contract.ServiceResolutionKey != "" {
+		providerProjects := make([]WorkspaceProjectRecord, 0, len(projects))
+		for _, candidate := range projects {
+			if candidate.Path != project.Path {
+				providerProjects = append(providerProjects, candidate)
+			}
+		}
+		resolvedProject, candidates, ok := resolveWorkspaceProjectByServiceKey(providerProjects, contract.ServiceResolutionKey)
+		switch {
+		case ok:
+			base.ServiceCandidate = firstNonEmpty(resolvedProject.Service, resolvedProject.Name, resolvedProject.Path)
+			base.ResolutionEvidence = []string{"source=canonical_service_identity", "project=" + resolvedProject.Path}
+			if !resolvedProject.Indexed {
+				base.Issue = contractIssueUnscanned
+				base.Confidence = "OUT_OF_SCOPE"
+				base.ConfidenceScore = 0.75
+				base.Reason = base.ServiceCandidate + " has no current project index in this workspace"
+				return base
+			}
+			issue, reason := indexedBackendRouteGapIssue(contract, base.ServiceCandidate)
+			base.Issue = issue
+			base.Confidence = "UNRESOLVED"
+			base.ConfidenceScore = 0.35
+			base.Reason = reason
+			base.LikelyOwner = workspaceRouteGapOwner(issue)
+			base.ResolutionHint = workspaceRouteGapHint(issue)
+			return base
+		case len(candidates) > 1:
+			base.Issue = contractIssueAmbiguousServiceIdentity
+			base.Confidence = "AMBIGUOUS"
+			base.ConfidenceScore = 0.5
+			base.Reason = "multiple workspace projects have the same canonical service identity"
+			base.LikelyOwner = "multiple_backends"
+			base.ResolutionHint = "use an exact provider route or explicit workspace ownership evidence"
+			base.ResolutionClass = contractIssueAmbiguousServiceIdentity
+			for _, candidate := range candidates {
+				base.ResolutionEvidence = append(base.ResolutionEvidence, "candidate_project="+candidate)
+			}
+			return base
+		}
+	}
 	if contract.ServiceCandidate != "" && !knownServices[contract.ServiceCandidate] {
 		base.Issue = contractIssueUnscanned
 		base.Confidence = "OUT_OF_SCOPE"
@@ -2368,7 +2426,7 @@ func workspaceContractIssue(base WorkspaceContractMatchRecord, route workspaceBa
 	base.BackendProject = route.project.Path
 	base.BackendService = route.project.Service
 	if base.BackendService == "" {
-		base.BackendService = serviceCandidateForPath(route.route.Path)
+		base.BackendService = firstNonEmpty(route.project.Name, route.project.Path)
 	}
 	base.BackendHTTPMethod = route.route.HTTPMethod
 	base.BackendPath = displayRoutePath(route.route.Path)
@@ -2424,11 +2482,8 @@ func gatewayPrefixCompatibleWorkspaceRoute(contract APIContractRecord, routes []
 func similarWorkspaceRouteHints(contract APIContractRecord, routes []workspaceBackendRoute, limit int) []string {
 	codeRoutes := make([]CodeRouteRecord, 0, len(routes))
 	for _, route := range routes {
-		routeService := route.project.Service
-		if routeService == "" {
-			routeService = serviceCandidateForPath(route.route.Path)
-		}
-		if contract.ServiceCandidate != "" && routeService != "" && routeService != contract.ServiceCandidate {
+		routeService := firstNonEmpty(route.project.Service, route.project.Name)
+		if contract.ServiceCandidate != "" && routeService != "" && !serviceIdentityValuesMatch(routeService, contract.ServiceCandidate) {
 			continue
 		}
 		codeRoutes = append(codeRoutes, route.route)
@@ -2494,11 +2549,8 @@ func dynamicEndpointCandidates(contract APIContractRecord, routes []workspaceBac
 	seen := map[string]bool{}
 	var candidates []string
 	for _, route := range routes {
-		routeService := route.project.Service
-		if routeService == "" {
-			routeService = serviceCandidateForPath(route.route.Path)
-		}
-		if contract.ServiceCandidate != "" && routeService != "" && routeService != contract.ServiceCandidate {
+		routeService := firstNonEmpty(route.project.Service, route.project.Name)
+		if contract.ServiceCandidate != "" && routeService != "" && !serviceIdentityValuesMatch(routeService, contract.ServiceCandidate) {
 			continue
 		}
 		if !strings.EqualFold(contract.HTTPMethod, route.route.HTTPMethod) {

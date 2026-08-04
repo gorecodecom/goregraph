@@ -17,6 +17,7 @@ const (
 	contractIssueFrontendInternalAPI        = "frontend_internal_api"
 	contractIssueUnscanned                  = "unscanned_service"
 	contractIssueUnsafeDynamic              = "unsafe_dynamic"
+	contractIssueAmbiguousServiceIdentity   = "ambiguous_service_identity"
 )
 
 func buildContractMatches(contracts []APIContractRecord, routes []CodeRouteRecord) []ContractMatchRecord {
@@ -54,11 +55,12 @@ func buildContractMatches(contracts []APIContractRecord, routes []CodeRouteRecor
 			records = append(records, contractIssue(contract, CodeRouteRecord{}, contractIssueUnsafeDynamic, "UNRESOLVED", 0.35, "api path contains complex dynamic expression"))
 			continue
 		}
-		if contract.ServiceCandidate != "" && !scannedServices[contract.ServiceCandidate] {
+		serviceScanned := backendRoutesContainServiceIdentity(scannedServices, contract.ServiceCandidate)
+		if contract.ServiceCandidate != "" && !serviceScanned {
 			records = append(records, contractIssue(contract, CodeRouteRecord{}, contractIssueUnscanned, "OUT_OF_SCOPE", 0.75, contract.ServiceCandidate+" was not scanned; contract cannot be matched in this run"))
 			continue
 		}
-		if contract.ServiceCandidate != "" && scannedServices[contract.ServiceCandidate] {
+		if contract.ServiceCandidate != "" && serviceScanned {
 			issue, reason := indexedBackendRouteGapIssue(contract, contract.ServiceCandidate)
 			if similar := similarCodeRouteHints(contract, backendRoutes, 3); len(similar) > 0 {
 				reason += "; similar backend routes: " + strings.Join(similar, ", ")
@@ -96,12 +98,21 @@ func backendCodeRoutes(routes []CodeRouteRecord) []CodeRouteRecord {
 func backendRouteServices(routes []CodeRouteRecord) map[string]bool {
 	services := map[string]bool{}
 	for _, route := range routes {
-		service := serviceCandidateForPath(route.Path)
+		service := serviceResolutionKeyForPath(route.Path)
 		if service != "" {
 			services[service] = true
 		}
 	}
 	return services
+}
+
+func backendRoutesContainServiceIdentity(services map[string]bool, candidate string) bool {
+	for _, variant := range canonicalServiceIdentityVariants(candidate) {
+		if services[variant] {
+			return true
+		}
+	}
+	return false
 }
 
 func exactContractRoute(contract APIContractRecord, routes []CodeRouteRecord) (CodeRouteRecord, bool) {
