@@ -8656,6 +8656,9 @@ func TestContextSourceConcernCandidatesDoNotLetOneFileConsumeTheCap(t *testing.T
 }
 
 func TestContextSourceConcernCandidateGrowthIsSubquadratic(t *testing.T) {
+	if raceDetectorEnabled {
+		t.Skip("timing threshold is not valid under race instrumentation")
+	}
 	small := benchmarkContextSourceConcernCandidates(240)
 	large := benchmarkContextSourceConcernCandidates(480)
 	growth := float64(large.NsPerOp()) / float64(small.NsPerOp())
@@ -8744,6 +8747,9 @@ func benchmarkContextSourceConcernCandidates(size int) testing.BenchmarkResult {
 }
 
 func TestContextSourceConcernPlanningGrowthIsSubquadratic(t *testing.T) {
+	if raceDetectorEnabled {
+		t.Skip("timing threshold is not valid under race instrumentation")
+	}
 	small := benchmarkContextSourceConcernPlanning(2)
 	large := benchmarkContextSourceConcernPlanning(4)
 	growth := float64(large.NsPerOp()) / float64(small.NsPerOp())
@@ -8824,6 +8830,9 @@ func benchmarkContextSourceConcernPlanning(projectCount int) testing.BenchmarkRe
 }
 
 func TestContextSourceRenderOptionIndexGrowthStaysBounded(t *testing.T) {
+	if raceDetectorEnabled {
+		t.Skip("timing threshold is not valid under race instrumentation")
+	}
 	small := benchmarkContextSourceRenderOptions(t, 128, 300)
 	large := benchmarkContextSourceRenderOptions(t, 128, 1200)
 	growth := float64(large.NsPerOp()) / float64(small.NsPerOp())
