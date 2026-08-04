@@ -1,0 +1,4 @@
+inventory-client:
+  base-url: ${INVENTORY_BASE_URL}
+  username: ${INVENTORY_USERNAME}
+  password: ${INVENTORY_PASSWORD}

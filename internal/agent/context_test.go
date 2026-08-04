@@ -3719,6 +3719,28 @@ func TestAlignedReachablePersistenceRequiresDistinctiveDomainIdentity(t *testing
 	}
 }
 
+func TestAlignedReachablePersistenceUsesStructuralFallbackForUntranslatedDomain(t *testing.T) {
+	const project = "services/profile"
+	facts := []scan.AgentContextFactRecord{
+		{ID: "profile-delete", Project: project, Kind: "persistence", Name: "deleteProfile", Qualified: "ProfileRepository.deleteProfile", Search: "delete profile persistence repository"},
+		{ID: "profile-finder", Project: project, Kind: "persistence", Name: "findByProfileId", Qualified: "ProfileRepository.findByProfileId", Search: "find profile persistence repository"},
+		{ID: "profile-generic", Project: project, Kind: "persistence", Name: "findAll", Qualified: "ProfileRepository.findAll", Search: "find profile persistence repository"},
+		{ID: "profile-update", Project: project, Kind: "persistence", Name: "updateProfile", Qualified: "ProfileRepository.updateProfile", Search: "update profile persistence repository"},
+	}
+
+	got := contextAlignedReachablePersistenceCandidates(
+		contextExpandedTokenSet("Löschen eines Benutzerprofils mit konkretem Repository-Finder"),
+		map[string]bool{"delete": true},
+		project,
+		[]string{"profile-delete", "profile-finder", "profile-generic", "profile-update"},
+		facts,
+	)
+	want := []string{"profile-delete", "profile-finder"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("structural persistence fallback = %v, want %v", got, want)
+	}
+}
+
 func TestBuildContextRejectsIneligibleIncomingClientContracts(t *testing.T) {
 	tests := []struct {
 		name   string

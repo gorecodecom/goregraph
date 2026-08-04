@@ -417,6 +417,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 			filepath.Base(root),
 			index.AgentContextConfigurationFacts,
 		)
+		contextIndex = linkAgentContextContractConfiguration(contextIndex, apiContracts)
 	}
 	layout := NewProjectOutputLayout(out)
 	previous := readCurrentOutputManifest(layout.Manifest)

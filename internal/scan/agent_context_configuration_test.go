@@ -2,6 +2,7 @@ package scan
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -348,6 +349,36 @@ func TestAppendAgentContextConfigurationFactsSortsIndexWithoutValues(t *testing.
 	}
 	if index.Facts[0].Kind != "configuration" || index.Facts[0].Name != "client" || index.Facts[1].Name != "application.properties" || index.Facts[2].Kind != "route" {
 		t.Fatalf("sorted index facts = %#v", index.Facts)
+	}
+}
+
+func TestLinkAgentContextContractConfigurationRequiresExactKeyGroup(t *testing.T) {
+	contracts := []APIContractRecord{{
+		Language: "java", HTTPMethod: "DELETE", Path: "/invoices/{id}",
+		Caller: "BillingClient.cancelInvoice", File: "src/main/java/example/BillingClient.java", Line: 12,
+		Confidence: "RESOLVED", ConfigurationKeyGroups: []string{"billing-client"},
+	}}
+	index := BuildProjectAgentContextIndex("billing-sdk", "generated", nil, nil, nil, nil, nil, contracts, nil, nil)
+	configurationFacts := extractAgentContextConfigurationFacts(
+		FileRecord{Path: "src/main/resources/application.yml"},
+		"billing-client:\n  base-url: ${BILLING_BASE_URL}\n",
+	)
+	index = appendAgentContextConfigurationFacts(index, "billing-sdk", configurationFacts)
+	index = linkAgentContextContractConfiguration(index, contracts)
+
+	configurationTargets := []string{}
+	for _, edge := range index.Edges {
+		if edge.Kind != "configuration" {
+			continue
+		}
+		for _, fact := range index.Facts {
+			if fact.ID == edge.ToFactID {
+				configurationTargets = append(configurationTargets, fact.Name)
+			}
+		}
+	}
+	if !reflect.DeepEqual(configurationTargets, []string{"billing-client"}) {
+		t.Fatalf("configuration targets = %#v, want exact key group", configurationTargets)
 	}
 }
 

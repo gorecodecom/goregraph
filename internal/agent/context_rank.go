@@ -180,6 +180,50 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	if err != nil {
 		return ContextPack{}, err
 	}
+	secondaryTop, secondarySelection, hasSecondaryPath := selectSecondaryContextContractPath(
+		index,
+		request.Query,
+		pathTop.fact,
+		pathSelection,
+	)
+	if hasSecondaryPath {
+		var contractAdded bool
+		pack, contractAdded, err = tryAddContextLocation(
+			pack,
+			request,
+			secondaryTop.fact,
+			secondaryTop.reason,
+			"contract",
+			func(candidate *ContextPack, location ContextLocation) {
+				candidate.Contracts = append(candidate.Contracts, location)
+			},
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
+		if contractAdded {
+			includedFactIDs[secondaryTop.fact.ID] = true
+			pack, err = addSelectedContextPaths(
+				pack,
+				request,
+				secondaryTop,
+				secondarySelection,
+				index.Edges,
+				factByID,
+				includedFactIDs,
+				acceptedEdgeIDs,
+			)
+			if err != nil {
+				return ContextPack{}, err
+			}
+			for _, factID := range secondarySelection.factIDs {
+				if !contextPathContainsFact(pathSelection.factIDs, factID) {
+					pathSelection.factIDs = append(pathSelection.factIDs, factID)
+				}
+			}
+			sort.Strings(pathSelection.factIDs)
+		}
+	}
 
 	pack.Confidence = contextPackConfidence(top, len(pack.CallChain) > 0)
 	pack, err = finalizeContextEstimate(pack)
@@ -1003,6 +1047,7 @@ func contextActionFamilies(value, httpMethod string) map[string]bool {
 	families := map[string][]string{
 		"create": {"add", "create", "insert", "new", "post"},
 		"delete": {
+			"cancel", "canceled", "cancellation", "cancellations", "cancelled", "cancelling",
 			"delete", "deleted", "deletes", "deleting", "deletion", "deletions",
 			"remove", "removed", "removes", "removing", "removal", "removals",
 		},
@@ -1187,7 +1232,8 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 	queryTokens := contextQueryTokens(primaryQuery)
 	queryTerm := normalizeContextTerm(query)
 	queryAnchors := contextQueryAnchors(query)
-	uniqueExplicitRouteKey := contextUniqueExplicitProjectRouteKey(facts, query)
+	uniqueRequestedRouteKey := contextUniqueRequestedRouteKey(facts, query)
+	transitionSource := contextEndpointTransitionSource(primaryQuery)
 	ranked := make([]rankedContextFact, 0, len(facts))
 	for _, fact := range facts {
 		factTokens := contextTokenSet(strings.Join([]string{
@@ -1267,6 +1313,7 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		switch strings.ToLower(fact.Kind) {
 		case "route", "api_endpoint":
 			score += scoreRouteKind
+			score += contextEndpointTransitionSourceScore(fact, transitionSource)
 		case "symbol", "backend_handler":
 			score += scoreSymbolKind
 		case "test":
@@ -1278,10 +1325,12 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 		case "RESOLVED":
 			score += scoreResolvedConfidence
 		}
-		if uniqueExplicitRouteKey != "" && contextEndpointRouteKey(fact) == uniqueExplicitRouteKey &&
+		promoteUniqueRoute := score < minimumContextSeedScore || contextQueryExplicitlyRequestsEndpoint(query)
+		if exactClass == 0 && promoteUniqueRoute && uniqueRequestedRouteKey != "" &&
+			contextEndpointRouteKey(fact) == uniqueRequestedRouteKey &&
 			(strings.EqualFold(fact.Kind, "route") || strings.EqualFold(fact.Kind, "api_endpoint")) {
 			score += scoreRouteKind
-			reason = "unique route in explicit projects"
+			reason = "unique route for requested mutation"
 		}
 		ranked = append(ranked, rankedContextFact{
 			fact:          fact,
@@ -1337,40 +1386,73 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 	return ranked
 }
 
-func contextUniqueExplicitProjectRouteKey(facts []scan.AgentContextFactRecord, query string) string {
-	queryTokens := contextExpandedTokenSet(query)
-	requestsEndpoint := false
-	for _, token := range []string{"endpoint", "endpunkt", "http", "rest", "route"} {
-		if queryTokens[token] {
-			requestsEndpoint = true
-			break
+func contextEndpointTransitionSource(query string) string {
+	tokens := contextOrderedTokens(query)
+	fromIndex := -1
+	for index, token := range tokens {
+		if token == "from" {
+			fromIndex = index
+			continue
+		}
+		if token == "to" && fromIndex >= 0 && index > fromIndex+1 {
+			return strings.Join(tokens[:index], " ")
 		}
 	}
+	return ""
+}
+
+func contextEndpointTransitionSourceScore(fact scan.AgentContextFactRecord, source string) int {
+	if source == "" {
+		return 0
+	}
+	factTokens := contextTokenSet(strings.Join([]string{
+		fact.Name,
+		fact.Qualified,
+		fact.HTTPMethod,
+		fact.Path,
+	}, " "))
+	matched := 0
+	for _, token := range contextQueryTokens(source) {
+		if factTokens[token] && !contextEndpointGenericDomainToken(token) {
+			matched++
+		}
+	}
+	return matched * scorePerMatchedTerm
+}
+
+func contextUniqueRequestedRouteKey(facts []scan.AgentContextFactRecord, query string) string {
+	queryTokens := contextExpandedTokenSet(query)
 	requestedActions := contextEndpointRequestedActions(query)
-	if !requestsEndpoint || !contextActionFamiliesHaveMutation(requestedActions) {
+	if !contextActionFamiliesHaveMutation(requestedActions) {
 		return ""
 	}
 	explicitProjects := contextExplicitProjects(query, contextProjectAliases(facts, nil))
-	if len(explicitProjects) == 0 {
-		return ""
-	}
+	publicRequested := queryTokens["public"]
 
-	routeKeys := map[string]bool{}
-	for _, fact := range facts {
-		if !explicitProjects[normalizeContextProject(fact.Project)] ||
-			!strings.EqualFold(fact.Kind, "route") && !strings.EqualFold(fact.Kind, "api_endpoint") ||
-			strings.TrimSpace(fact.HTTPMethod) == "" || strings.TrimSpace(fact.Path) == "" ||
-			contextFactUsesTestSource(fact) || contextFactUsesGeneratedMetadata(fact) {
-			continue
+	collectRouteKeys := func(limitToExplicitProjects bool) map[string]bool {
+		routeKeys := map[string]bool{}
+		for _, fact := range facts {
+			if (limitToExplicitProjects && !explicitProjects[normalizeContextProject(fact.Project)]) ||
+				(publicRequested && contextEndpointInternal(fact)) ||
+				contextEndpointTaskFramingCollision(fact, query) ||
+				(!strings.EqualFold(fact.Kind, "route") && !strings.EqualFold(fact.Kind, "api_endpoint")) ||
+				strings.TrimSpace(fact.HTTPMethod) == "" || strings.TrimSpace(fact.Path) == "" ||
+				contextFactUsesTestSource(fact) || contextFactUsesGeneratedMetadata(fact) {
+				continue
+			}
+			factActions := contextActionFamilies(
+				strings.Join([]string{fact.Name, fact.Qualified, fact.HTTPMethod, fact.Path}, " "),
+				fact.HTTPMethod,
+			)
+			if contextActionFamiliesOverlap(requestedActions, factActions) {
+				routeKeys[contextEndpointRouteKey(fact)] = true
+			}
 		}
-		factActions := contextActionFamilies(
-			strings.Join([]string{fact.Name, fact.Qualified, fact.HTTPMethod, fact.Path}, " "),
-			fact.HTTPMethod,
-		)
-		if !contextActionFamiliesOverlap(requestedActions, factActions) {
-			continue
-		}
-		routeKeys[contextEndpointRouteKey(fact)] = true
+		return routeKeys
+	}
+	routeKeys := collectRouteKeys(len(explicitProjects) > 0)
+	if len(routeKeys) == 0 && len(explicitProjects) > 0 && publicRequested {
+		routeKeys = collectRouteKeys(false)
 	}
 	if len(routeKeys) != 1 {
 		return ""
@@ -1379,6 +1461,34 @@ func contextUniqueExplicitProjectRouteKey(facts []scan.AgentContextFactRecord, q
 		return routeKey
 	}
 	return ""
+}
+
+func contextEndpointInternal(fact scan.AgentContextFactRecord) bool {
+	tokens := contextTokenSet(strings.Join([]string{fact.Name, fact.Qualified, fact.Path}, " "))
+	return tokens["internal"]
+}
+
+func contextQueryExplicitlyRequestsEndpoint(query string) bool {
+	tokens := contextExpandedTokenSet(query)
+	for _, token := range []string{"endpoint", "endpunkt", "http", "rest", "route"} {
+		if tokens[token] {
+			return true
+		}
+	}
+	return false
+}
+
+func contextEndpointTaskFramingCollision(fact scan.AgentContextFactRecord, query string) bool {
+	primary := contextPrimaryQuery(query)
+	rawTokens := contextExpandedTokenSet(primary)
+	cleanTokens := contextExpandedTokenSet(contextEndpointQueryWithoutMetaPhrases(primary))
+	factTokens := contextExpandedTokenSet(strings.Join([]string{fact.Name, fact.Qualified, fact.Path}, " "))
+	for token := range rawTokens {
+		if !cleanTokens[token] && factTokens[token] {
+			return true
+		}
+	}
+	return false
 }
 
 func contextProjectAliases(
@@ -1530,6 +1640,7 @@ func rankContextSupportFacts(
 	}
 	queryTokens := contextExpandedTokens(supportQuery)
 	requestedTokens := contextSupportRequestedTokens(query)
+	publicEndpointRequested := contextExpandedTokenSet(query)["public"]
 	var domainModelTokens map[string]bool
 	if contextQueryRequestsConcern(query, contextConcernDomainModel) {
 		domainModelTokens = contextDomainModelQueryTokens(query, aliases, explicitProjects)
@@ -1539,6 +1650,10 @@ func rankContextSupportFacts(
 	for _, fact := range index.Facts {
 		project := normalizeContextProject(fact.Project)
 		if project == "" || !eligibleContextSupportFact(fact) {
+			continue
+		}
+		if publicEndpointRequested && !explicitProjects[project] && contextEndpointInternal(fact) &&
+			(strings.EqualFold(fact.Kind, "route") || strings.EqualFold(fact.Kind, "api_endpoint")) {
 			continue
 		}
 		projectTokens := contextTokenSet(strings.Join(aliases[project], " "))
@@ -2324,12 +2439,18 @@ func selectContextEndpoint(
 		return rankedContextFact{}, false, ""
 	}
 	utility := newContextForwardUtility(index)
+	transitionSource := contextEndpointTransitionSource(contextPrimaryQuery(query))
 	sort.SliceStable(candidates, func(i, j int) bool {
 		left, right := candidates[i], candidates[j]
 		leftAnchor := contextEndpointExplicitAnchor(left)
 		rightAnchor := contextEndpointExplicitAnchor(right)
 		if leftAnchor != rightAnchor {
 			return leftAnchor
+		}
+		leftSource := contextEndpointTransitionSourceScore(left.fact, transitionSource)
+		rightSource := contextEndpointTransitionSourceScore(right.fact, transitionSource)
+		if leftSource != rightSource {
+			return leftSource > rightSource
 		}
 		if primaryAction, ok := contextEndpointPrimaryActionClause(query); ok {
 			leftPrimary := contextEndpointPrimaryActionScore(left.fact, primaryAction)
@@ -2866,22 +2987,30 @@ var contextIntentTokenAliases = map[string][]string{
 }
 
 var contextQueryTokenAliases = map[string][]string{
-	"entferne":    {"delete", "remove"},
-	"entfernen":   {"delete", "remove"},
-	"entfernt":    {"delete", "remove"},
-	"entfernung":  {"delete", "remove"},
-	"gelöschte":   {"delete", "remove"},
-	"gelöschten":  {"delete", "remove"},
-	"gelöscht":    {"delete", "remove"},
-	"loeschen":    {"delete", "remove"},
-	"löschung":    {"delete", "remove"},
-	"löschungen":  {"delete", "remove"},
-	"löschen":     {"delete", "remove"},
-	"löscht":      {"delete", "remove"},
-	"verbunden":   {"related"},
-	"verbundene":  {"related"},
-	"verbundenen": {"related"},
-	"verknüpft":   {"related"},
+	"cancellation":  {"cancel"},
+	"cancellations": {"cancel"},
+	"entferne":      {"delete", "remove"},
+	"entfernen":     {"delete", "remove"},
+	"entfernt":      {"delete", "remove"},
+	"entfernung":    {"delete", "remove"},
+	"gelöschte":     {"delete", "remove"},
+	"gelöschten":    {"delete", "remove"},
+	"gelöscht":      {"delete", "remove"},
+	"loeschen":      {"delete", "remove"},
+	"löschung":      {"delete", "remove"},
+	"löschungen":    {"delete", "remove"},
+	"löschen":       {"delete", "remove"},
+	"löscht":        {"delete", "remove"},
+	"öffentlich":    {"public"},
+	"öffentliche":   {"public"},
+	"öffentlichem":  {"public"},
+	"öffentlichen":  {"public"},
+	"öffentlicher":  {"public"},
+	"öffentliches":  {"public"},
+	"verbunden":     {"related"},
+	"verbundene":    {"related"},
+	"verbundenen":   {"related"},
+	"verknüpft":     {"related"},
 }
 
 func selectContextSeeds(ranked []rankedContextFact) []rankedContextFact {

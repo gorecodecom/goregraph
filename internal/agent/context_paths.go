@@ -16,6 +16,7 @@ const (
 
 var contextTraversalCost = map[string]int{
 	"call":              1,
+	"configuration":     2,
 	"http_contract":     1,
 	"persistence":       1,
 	"use":               2,
@@ -62,6 +63,15 @@ func selectContextPaths(
 	seed rankedContextFact,
 	concerns []contextConcern,
 ) contextPathSelection {
+	return selectContextPathsFromSeed(index, seed, concerns, false)
+}
+
+func selectContextPathsFromSeed(
+	index scan.AgentContextIndexRecord,
+	seed rankedContextFact,
+	concerns []contextConcern,
+	allowResolvedContract bool,
+) contextPathSelection {
 	selection := contextPathSelection{
 		distances:       map[string]int{seed.fact.ID: 0},
 		concernCoverage: make(map[string]bool, len(concerns)),
@@ -70,7 +80,9 @@ func selectContextPaths(
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
-	if _, ok := factByID[seed.fact.ID]; !ok || !reliableProductionContextSeed(seed.fact) {
+	_, seedExists := factByID[seed.fact.ID]
+	contractSeed := allowResolvedContract && reliableIncomingContextContractFact(seed.fact, true)
+	if !seedExists || !reliableProductionContextSeed(seed.fact) && !contractSeed {
 		return selection
 	}
 
@@ -164,6 +176,91 @@ func selectContextPaths(
 	}
 	selection.edgeIDs = contextPathSelectedEdgeIDs(index.Edges, selectedEdges)
 	return selection
+}
+
+func selectSecondaryContextContractPath(
+	index scan.AgentContextIndexRecord,
+	query string,
+	primarySeed scan.AgentContextFactRecord,
+	primary contextPathSelection,
+) (rankedContextFact, contextPathSelection, bool) {
+	if !contextQueryRequestsConcern(query, contextConcernHTTPContract) {
+		return rankedContextFact{}, contextPathSelection{}, false
+	}
+	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
+	for _, fact := range index.Facts {
+		factByID[fact.ID] = fact
+	}
+	type candidate struct {
+		contract scan.AgentContextFactRecord
+		provider string
+		edgeID   string
+	}
+	candidates := []candidate{}
+	for _, contract := range primary.relatedProductionFacts {
+		if !reliableIncomingContextContractFact(contract, true) ||
+			!contextSecondaryContractActionCompatible(primarySeed, contract) ||
+			!contextIncomingContractDomainRelevant(contract, query) {
+			continue
+		}
+		providers := map[string]string{}
+		for _, edge := range index.Edges {
+			if edge.FromFactID != contract.ID ||
+				normalizedContextConcernKind(edge.Kind) != contextConcernHTTPContract ||
+				!reliableIncomingContextContractEdge(edge) {
+				continue
+			}
+			provider, exists := factByID[edge.ToFactID]
+			if !exists || !reliableIncomingContextContractFact(provider, false) ||
+				normalizeContextProject(provider.Project) == normalizeContextProject(contract.Project) ||
+				!contextIncomingContractRouteCompatible(contract, provider) {
+				continue
+			}
+			providers[provider.ID] = contextPathEdgeIdentity(edge)
+		}
+		if len(providers) != 1 {
+			continue
+		}
+		for provider, edgeID := range providers {
+			candidates = append(candidates, candidate{contract: contract, provider: provider, edgeID: edgeID})
+		}
+	}
+	if len(candidates) != 1 {
+		return rankedContextFact{}, contextPathSelection{}, false
+	}
+	selected := candidates[0]
+	top := rankedContextFact{
+		fact: selected.contract, query: query,
+		score: minimumContextMediumScore, reason: "unique resolved secondary contract",
+	}
+	secondaryConcerns := contextSecondaryProductionConcerns(
+		planContextConcerns(query, index, selected.contract),
+	)
+	selection := selectContextPathsFromSeed(index, top, secondaryConcerns, true)
+	if !contextPathContainsFact(selection.factIDs, selected.provider) ||
+		!contextPathContainsFact(selection.edgeIDs, selected.edgeID) {
+		return rankedContextFact{}, contextPathSelection{}, false
+	}
+	return top, selection, true
+}
+
+func contextSecondaryContractActionCompatible(
+	primary scan.AgentContextFactRecord,
+	contract scan.AgentContextFactRecord,
+) bool {
+	primaryMethod := strings.TrimSpace(primary.HTTPMethod)
+	contractMethod := strings.TrimSpace(contract.HTTPMethod)
+	return primaryMethod != "" && contractMethod != "" && strings.EqualFold(primaryMethod, contractMethod)
+}
+
+func contextSecondaryProductionConcerns(concerns []contextConcern) []contextConcern {
+	production := make([]contextConcern, 0, len(concerns))
+	for _, concern := range concerns {
+		if concern.kind != contextConcernTests {
+			production = append(production, concern)
+		}
+	}
+	return production
 }
 
 func contextPathTestsRequired(concerns []contextConcern) bool {

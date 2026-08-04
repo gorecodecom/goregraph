@@ -186,6 +186,44 @@ class JobClient {
 	}
 }
 
+func TestBuildJavaAPIContractsCarriesExactSpringConfigurationKeyGroups(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		valueImport string
+		annotation  string
+		want        []string
+	}{
+		{
+			name: "Spring Value", valueImport: "org.springframework.beans.factory.annotation.Value",
+			annotation: `@Value("${billing-client.base-url}")`, want: []string{"billing-client"},
+		},
+		{
+			name: "Spring ConfigurationProperties", valueImport: "org.springframework.boot.context.properties.ConfigurationProperties",
+			annotation: `@ConfigurationProperties(prefix = "billing-client")`, want: []string{"billing-client"},
+		},
+		{name: "unrelated Value", valueImport: "example.Value", annotation: `@Value("${billing-client.base-url}")`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := extractJavaSource(FileRecord{Path: "src/main/java/example/BillingClient.java", Language: "java"}, `
+import `+test.valueImport+`;
+import org.springframework.web.client.RestClient;
+final class BillingClient {
+  private final RestClient client;
+  BillingClient(`+test.annotation+` String baseUrl) {
+    this.client = RestClient.builder().baseUrl(baseUrl).build();
+  }
+  void cancelInvoice(String id) {
+    client.delete().uri("/invoices/{id}", id).retrieve();
+  }
+}`)
+			records := buildJavaAPIContracts([]JavaSourceRecord{source})
+			if len(records) != 1 || !reflect.DeepEqual(records[0].ConfigurationKeyGroups, test.want) {
+				t.Fatalf("configuration key groups = %#v, want %#v in %#v", records, test.want, records)
+			}
+		})
+	}
+}
+
 func TestBuildJavaAPIContractsInlineFluentClient(t *testing.T) {
 	source := extractJavaSource(FileRecord{Path: "src/main/java/example/JobClient.java", Language: "java"}, `import org.springframework.web.client.RestClient;
 class JobClient {

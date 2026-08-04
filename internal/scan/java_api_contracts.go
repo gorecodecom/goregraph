@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 type javaPathIndex struct {
@@ -60,15 +61,16 @@ func javaDeclarativeAPIContracts(source JavaSourceRecord) []APIContractRecord {
 				}
 			}
 			record := APIContractRecord{
-				Language:         "java",
-				Package:          source.Package,
-				HTTPMethod:       httpMethod,
-				Auth:             javaClientAuthentication(source, method),
-				ServiceCandidate: serviceCandidate,
-				Caller:           method.Owner + "." + method.Name,
-				File:             source.File,
-				Line:             mapping.Line,
-				Reason:           reason,
+				Language:               "java",
+				Package:                source.Package,
+				HTTPMethod:             httpMethod,
+				Auth:                   javaClientAuthentication(source, method),
+				ServiceCandidate:       serviceCandidate,
+				ConfigurationKeyGroups: javaContractConfigurationKeyGroups(source, method.Owner),
+				Caller:                 method.Owner + "." + method.Name,
+				File:                   source.File,
+				Line:                   mapping.Line,
+				Reason:                 reason,
 			}
 			if baseResolved && methodResolved {
 				record.Path = javaJoinAPIPaths(basePath, methodPath)
@@ -106,17 +108,18 @@ func javaImperativeAPIContracts(source JavaSourceRecord, paths javaPathIndex) []
 					path, query, queryParams, unsafeDynamic = normalizeAPIPathDetails(alternative)
 				}
 				record := APIContractRecord{
-					Language:    "java",
-					Package:     source.Package,
-					HTTPMethod:  request.HTTPMethod,
-					Path:        path,
-					RawPath:     strings.TrimSpace(request.PathExpression),
-					Query:       query,
-					QueryParams: queryParams,
-					Auth:        javaClientAuthentication(source, method),
-					Caller:      method.Owner + "." + method.Name,
-					File:        source.File,
-					Line:        request.Line,
+					Language:               "java",
+					Package:                source.Package,
+					HTTPMethod:             request.HTTPMethod,
+					Path:                   path,
+					RawPath:                strings.TrimSpace(request.PathExpression),
+					Query:                  query,
+					QueryParams:            queryParams,
+					Auth:                   javaClientAuthentication(source, method),
+					ConfigurationKeyGroups: javaContractConfigurationKeyGroups(source, method.Owner),
+					Caller:                 method.Owner + "." + method.Name,
+					File:                   source.File,
+					Line:                   request.Line,
 				}
 				switch resolution {
 				case "getter":
@@ -191,6 +194,95 @@ func javaClientAuthentication(source JavaSourceRecord, method JavaMethodRecord) 
 		}
 	}
 	return nil
+}
+
+func javaContractConfigurationKeyGroups(source JavaSourceRecord, owner string) []string {
+	valueImported := javaHasImport(source.Imports, "org.springframework.beans.factory.annotation.Value")
+	propertiesImported := javaHasImport(source.Imports, "org.springframework.boot.context.properties.ConfigurationProperties")
+	groups := map[string]bool{}
+	appendAnnotations := func(annotations []JavaAnnotationRecord) {
+		for _, annotation := range annotations {
+			var raw string
+			var ok bool
+			switch annotation.Name {
+			case "Value":
+				if !valueImported {
+					continue
+				}
+				raw, ok = javaRawAnnotationAttribute(annotation, "value")
+			case "ConfigurationProperties":
+				if !propertiesImported {
+					continue
+				}
+				raw, ok = javaRawAnnotationAttribute(annotation, "prefix")
+				if !ok {
+					raw, ok = javaRawAnnotationAttribute(annotation, "value")
+				}
+			default:
+				continue
+			}
+			if group, valid := javaConfigurationKeyGroup(raw, annotation.Name == "Value"); ok && valid {
+				groups[group] = true
+			}
+		}
+	}
+	for _, javaType := range source.Types {
+		if javaType.Name == owner {
+			appendAnnotations(javaType.Annotations)
+		}
+	}
+	for _, field := range source.Fields {
+		if field.Owner == owner {
+			appendAnnotations(field.Annotations)
+		}
+	}
+	for _, method := range source.Methods {
+		if method.Owner != owner {
+			continue
+		}
+		appendAnnotations(method.Annotations)
+		for _, parameter := range method.Parameters {
+			appendAnnotations(parameter.Annotations)
+		}
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(groups))
+	for group := range groups {
+		result = append(result, group)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func javaConfigurationKeyGroup(raw string, placeholder bool) (string, bool) {
+	value, ok := javaQuotedStringValue(strings.TrimSpace(raw))
+	if !ok {
+		return "", false
+	}
+	if placeholder {
+		if !strings.HasPrefix(value, "${") || !strings.HasSuffix(value, "}") {
+			return "", false
+		}
+		value = strings.TrimSuffix(strings.TrimPrefix(value, "${"), "}")
+		if defaultIndex := strings.Index(value, ":"); defaultIndex >= 0 {
+			value = value[:defaultIndex]
+		}
+	}
+	value = strings.TrimSpace(value)
+	if separator := strings.IndexAny(value, ".[\t\r\n "); separator >= 0 {
+		value = value[:separator]
+	}
+	if value == "" {
+		return "", false
+	}
+	for _, current := range value {
+		if !unicode.IsLetter(current) && !unicode.IsDigit(current) && current != '-' && current != '_' {
+			return "", false
+		}
+	}
+	return strings.ToLower(value), true
 }
 
 func javaCallSetsAuthorizationHeader(call JavaCallRecord) bool {

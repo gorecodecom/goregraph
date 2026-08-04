@@ -54,6 +54,8 @@ func planContextConcerns(
 
 	aliases := contextProjectAliases(index.Facts, index.Coverage)
 	explicitProjects := contextExplicitProjects(query, aliases)
+	seedProject := normalizeContextProject(seed.Project)
+	seedProjectImplicit := seedProject != "" && !explicitProjects[seedProject]
 	semanticQueryTokens := contextProjectSemanticQueryTokens(query, aliases, explicitProjects)
 	projects := make([]string, 0, len(explicitProjects))
 	for project := range explicitProjects {
@@ -84,6 +86,15 @@ func planContextConcerns(
 			true,
 			candidates,
 			reason,
+		))
+	}
+	if seedProjectImplicit {
+		concerns = append(concerns, newContextConcern(
+			contextConcernProject,
+			seedProject,
+			true,
+			[]string{seed.ID},
+			"selected entrypoint project",
 		))
 	}
 	if contextQueryRequestsConcern(query, contextConcernDomainModel) {
@@ -249,6 +260,25 @@ func planContextConcerns(
 			))
 		}
 	}
+	if seedProjectImplicit && contextQueryRequestsConcern(query, contextConcernPersistence) {
+		primaryPersistence := contextAlignedReachablePersistenceCandidates(
+			queryTokens,
+			requestedActions,
+			seedProject,
+			persistenceCandidates,
+			index.Facts,
+		)
+		if len(primaryPersistence) > 0 {
+			primaryConcern := newContextConcern(
+				contextConcernPersistence,
+				seedProject,
+				true,
+				primaryPersistence,
+				"reachable primary persistence evidence",
+			)
+			concerns = append(concerns, contextPrimaryEvidenceConcern(primaryConcern, concerns))
+		}
+	}
 
 	if !scopedConcernKinds[contextConcernTests] && contextQueryRequestsConcern(query, contextConcernTests) {
 		concerns = append(concerns, newContextConcern(
@@ -259,11 +289,61 @@ func planContextConcerns(
 			"tests requested by task",
 		))
 	}
+	if seedProjectImplicit && contextQueryRequestsConcern(query, contextConcernTests) {
+		primaryTests := contextFactIDsForProject(
+			contextTestConcernCandidates(index, reachableFactIDs),
+			index.Facts,
+			seedProject,
+		)
+		if len(primaryTests) > 0 {
+			primaryConcern := newContextConcern(
+				contextConcernTests,
+				seedProject,
+				true,
+				primaryTests,
+				"reachable primary test evidence",
+			)
+			concerns = append(concerns, contextPrimaryEvidenceConcern(primaryConcern, concerns))
+		}
+	}
 
 	sort.Slice(concerns, func(i, j int) bool {
 		return contextConcernLess(concerns[i], concerns[j])
 	})
 	return concerns
+}
+
+func contextPrimaryEvidenceConcern(
+	primary contextConcern,
+	concerns []contextConcern,
+) contextConcern {
+	for _, existing := range concerns {
+		if existing.kind != primary.kind {
+			continue
+		}
+		primary.publicKey = firstNonEmptyContext(existing.publicKey, existing.key)
+		primary.key = primary.publicKey + "#primary_path"
+		break
+	}
+	return primary
+}
+
+func contextFactIDsForProject(
+	factIDs []string,
+	facts []scan.AgentContextFactRecord,
+	project string,
+) []string {
+	candidates := make(map[string]bool, len(factIDs))
+	for _, factID := range factIDs {
+		candidates[factID] = true
+	}
+	result := []string{}
+	for _, fact := range facts {
+		if candidates[fact.ID] && normalizeContextProject(fact.Project) == project {
+			result = append(result, fact.ID)
+		}
+	}
+	return orderedContextConcernIDs(result)
 }
 
 func contextAlignedReachablePersistenceCandidates(
@@ -290,6 +370,7 @@ func contextAlignedReachablePersistenceCandidates(
 		return nil
 	}
 	result := []string{}
+	structuralFallback := []string{}
 	for _, fact := range facts {
 		if !candidates[fact.ID] ||
 			project != "" && normalizeContextProject(fact.Project) != project ||
@@ -302,6 +383,7 @@ func contextAlignedReachablePersistenceCandidates(
 			contextActionFamiliesHaveMutation(factActions) {
 			continue
 		}
+		structuralFallback = append(structuralFallback, fact.ID)
 		factTokens := contextExpandedTokenSet(strings.Join([]string{
 			fact.Search,
 			fact.Name,
@@ -314,6 +396,9 @@ func contextAlignedReachablePersistenceCandidates(
 				break
 			}
 		}
+	}
+	if len(result) == 0 {
+		return orderedContextConcernIDs(structuralFallback)
 	}
 	return orderedContextConcernIDs(result)
 }

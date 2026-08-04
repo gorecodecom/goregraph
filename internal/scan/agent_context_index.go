@@ -749,6 +749,9 @@ func (builder *agentContextBuilder) addAPIContractFacts(contracts []APIContractR
 		if reason != "" {
 			summaryParts = append(summaryParts, reason)
 		}
+		if len(contract.ConfigurationKeyGroups) > 0 {
+			summaryParts = append(summaryParts, "configuration "+strings.Join(contract.ConfigurationKeyGroups, ", "))
+		}
 		fact := AgentContextFactRecord{
 			Kind:        "api_contract",
 			Name:        name,
@@ -766,6 +769,7 @@ func (builder *agentContextBuilder) addAPIContractFacts(contracts []APIContractR
 				contract.Caller,
 				contract.ServiceCandidate,
 				strings.Join(authKinds, " "),
+				strings.Join(contract.ConfigurationKeyGroups, " "),
 				reason,
 				contextFileBase(file),
 				contextFileStem(file),

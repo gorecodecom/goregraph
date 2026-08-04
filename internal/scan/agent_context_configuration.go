@@ -3,6 +3,7 @@ package scan
 import (
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -332,6 +333,59 @@ func appendAgentContextConfigurationFacts(index AgentContextIndexRecord, project
 	}
 	sortAgentContextFacts(index.Facts)
 	return index
+}
+
+func linkAgentContextContractConfiguration(index AgentContextIndexRecord, contracts []APIContractRecord) AgentContextIndexRecord {
+	configurationByGroup := map[string][]AgentContextFactRecord{}
+	for _, fact := range index.Facts {
+		name := strings.TrimSpace(fact.Name)
+		if fact.Kind != "configuration" || name == "" || name == filepath.Base(contextPathKey(fact.File)) {
+			continue
+		}
+		group := strings.ToLower(name)
+		configurationByGroup[group] = append(configurationByGroup[group], fact)
+	}
+	edgesByID := make(map[string]AgentContextEdgeRecord, len(index.Edges))
+	for _, edge := range index.Edges {
+		edgesByID[edge.ID] = edge
+	}
+	for _, contract := range contracts {
+		contractFact, found := agentContextContractFact(index.Facts, contract)
+		if !found {
+			continue
+		}
+		for _, group := range contract.ConfigurationKeyGroups {
+			for _, configuration := range configurationByGroup[strings.ToLower(strings.TrimSpace(group))] {
+				edge := AgentContextEdgeRecord{
+					Project: contractFact.Project, FromFactID: contractFact.ID, ToFactID: configuration.ID,
+					FromLabel: contextFactLabel(contractFact), ToLabel: contextFactLabel(configuration),
+					Kind: "configuration", File: contextPathKey(contract.File), Line: contract.Line,
+					Reason: "exact Spring configuration key group " + group, Confidence: "RESOLVED",
+				}
+				edge.ID = stableID("agent-context-edge", edge.Project, edge.FromFactID, edge.ToFactID, edge.Kind, edge.File, strconv.Itoa(edge.Line))
+				edgesByID[edge.ID] = edge
+			}
+		}
+	}
+	index.Edges = index.Edges[:0]
+	for _, edge := range edgesByID {
+		index.Edges = append(index.Edges, edge)
+	}
+	sortAgentContextEdges(index.Edges)
+	return index
+}
+
+func agentContextContractFact(facts []AgentContextFactRecord, contract APIContractRecord) (AgentContextFactRecord, bool) {
+	method := strings.ToUpper(strings.TrimSpace(contract.HTTPMethod))
+	contractPath := normalizeAPIPath(contract.Path)
+	for _, fact := range facts {
+		if fact.Kind == "api_contract" && fact.File == contextPathKey(contract.File) &&
+			fact.Line == contract.Line && fact.HTTPMethod == method && fact.Path == contractPath &&
+			fact.Qualified == strings.TrimSpace(contract.Caller) {
+			return fact, true
+		}
+	}
+	return AgentContextFactRecord{}, false
 }
 
 func isAgentContextConfigurationResource(value string) bool {

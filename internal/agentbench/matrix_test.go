@@ -22,7 +22,6 @@ type parityProjection struct {
 	Contracts        []string
 	Persistence      []string
 	Sources          []string
-	SourceCoverage   string
 	FallbackRequired bool
 	RetryAllowed     bool
 }
@@ -308,9 +307,26 @@ func comparableProjection(pack agent.ContextPack) parityProjection {
 		CallChain:        projected.CallChain,
 		Contracts:        projected.Contracts,
 		Persistence:      projected.Persistence,
-		Sources:          projected.Sources,
-		SourceCoverage:   projected.SourceCoverage,
+		Sources:          semanticParitySources(projected.Sources),
 		FallbackRequired: projected.FallbackRequired,
 		RetryAllowed:     projected.RetryAllowed,
 	}
+}
+
+func semanticParitySources(sources []string) []string {
+	identities := map[string]bool{}
+	for _, source := range sources {
+		parts := strings.SplitN(source, "|", 6)
+		if len(parts) < 5 {
+			identities[source] = true
+			continue
+		}
+		identities[strings.Join([]string{parts[0], parts[1], parts[4]}, "|")] = true
+	}
+	result := make([]string, 0, len(identities))
+	for identity := range identities {
+		result = append(result, identity)
+	}
+	slices.Sort(result)
+	return result
 }
