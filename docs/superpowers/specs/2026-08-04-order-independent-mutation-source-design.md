@@ -46,7 +46,7 @@ Existing ranking precedence remains:
 4. primary mutation-domain match;
 5. forward graph utility.
 
-A route is a structural source only when its ordered path tokens form a strict subsequence of a dependent endpoint’s ordered path tokens and the dependent endpoint matches the dependent entity language. Reordered token sets do not count as ancestry.
+A route is a structural source only when its normalized URL segments form a contiguous strict subpath of a dependent endpoint and the dependent endpoint matches the dependent entity language. A leading provider namespace is allowed. Path-parameter regexes are ignored while parameter names remain significant. Reordered paths and paths with segments inserted into the proposed parent route do not count as ancestry.
 
 Mutation verbs and transport vocabulary do not count as domain evidence. A short endpoint cannot win merely because all candidates match `DELETE`.
 
@@ -71,6 +71,7 @@ Neutral `catalog`, `jobs`, and `shared` fixtures cover:
 - a direct mutation of the dependent entity;
 - a short unrelated housekeeping `DELETE` endpoint;
 - reordered path tokens;
+- path segments inserted into a proposed parent route;
 - ambiguous disconnected mutation endpoints;
 - reversed index order.
 

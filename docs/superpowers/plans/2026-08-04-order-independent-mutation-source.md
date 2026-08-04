@@ -4,7 +4,7 @@
 
 **Goal:** Select the triggering mutation endpoint independently of dependent-symptom word order and fail closed when source evidence is ambiguous.
 
-**Architecture:** Replace the one-direction relation-then-lingering check with clause-aware, order-independent symptom spans. Continue using source-derived ordered route ancestry for clear source selection, and add an ambiguity gate before utility ranking when no source evidence exists.
+**Architecture:** Replace the one-direction relation-then-lingering check with clause-aware, order-independent symptom spans. Use source-derived contiguous route ancestry for clear source selection, and add an ambiguity gate before utility ranking when no source evidence exists.
 
 **Tech Stack:** Go 1.23+ standard library, existing deterministic agent Context ranking, schema 3 test fixtures.
 
@@ -51,6 +51,10 @@ Add an exact production `api_endpoint` fixture for `DELETE /job-management/maint
 - [ ] **Step 4: Add index-order stability coverage**
 
 Run selection with forward and reversed facts. Assert `catalog-endpoint` for both literal orders.
+
+- [ ] **Step 5: Reject inserted route segments as ancestry**
+
+Add direct and change-scoped dependent routes. Assert that the direct route is not a parent of the route with an inserted `changes/{changeId}` segment.
 
 ### Task 2: Implement order-independent symptom spans
 
