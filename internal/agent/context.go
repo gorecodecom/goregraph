@@ -579,6 +579,12 @@ func contextContractDomainScore(fact scan.AgentContextFactRecord, query string) 
 	} {
 		delete(queryTokens, generic)
 	}
+	for token := range queryTokens {
+		if contextEndpointGenericDomainToken(token) ||
+			len(contextActionFamilies(token, "")) > 0 {
+			delete(queryTokens, token)
+		}
+	}
 	factTokens := contextExpandedTokenSet(strings.Join([]string{
 		fact.Name,
 		fact.Qualified,
