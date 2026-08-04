@@ -402,7 +402,7 @@ JSON machine data lives under `index/`, Markdown reports live under
 - `test-map.json`: method-level, endpoint-level, and best-effort cross-language test mappings with confidence metadata.
 - `routes.json`: normalized route records for Spring, Go, PHP/Laravel-style routes, JS/TS Express/Fastify-style routes, React Router routes, Python FastAPI/Flask-style routes, and Rust Axum/Actix/Rocket routes.
 - `flows.json`: normalized route-to-handler-to-call flow records across supported languages.
-- `api-contracts.json`: JavaScript/TypeScript HTTP client calls detected from supported helpers and `fetch`, including realistic helper argument shapes, method, raw path, normalized path, query metadata, service candidate, enclosing caller function or method when available, file, app, confidence, and reason.
+- `api-contracts.json`: Java/Spring and JavaScript/TypeScript HTTP client contracts. Java covers imported declarative clients and bound Spring `RestClient`, `WebClient`, and `RestTemplate` receivers; JS/TS covers recognized helpers, request wrappers, and `fetch`. Records include method, raw and normalized path, query metadata, service candidate, caller, source location, confidence, unresolved dynamic evidence, and optional value-free Java `configuration_key_groups`.
 - `architecture-capabilities.json`: deterministic full-adapter facts for routes, HTTP clients, tests, persistence, messaging/RPC, validation, and request/response boundaries, with language, framework, file, line, and stable evidence ID.
 - `frontend-usage.json`: frontend API usage chains from API contract back to the best matching frontend route flow, including route, component, API caller, confidence, and static evidence steps.
 - `contract-matches.json`: static frontend API call to backend route matches, including resolved method/path matches, method mismatches, missing backend routes, unscanned services, and unsafe dynamic URL patterns.
@@ -589,6 +589,13 @@ existing provider-contract path and up to two exact primary-persistence paths.
 It may also include grouped `configuration_resources`, capped at six nested
 resources, whose project/key-group metadata is shared across path/profile
 entries. Both fields are value-free metadata and authorize no source read.
+
+For a cross-service task, Context may follow one additional production path
+only when the selected primary operation exposes exactly one reliable related
+HTTP contract and that contract resolves to exactly one compatible provider.
+The primary and secondary HTTP methods must match. This source-derived
+continuation reports an absent caller-to-client edge as uncertainty; it never
+invents the missing call or widens to an ambiguous provider.
 
 Endpoint tasks select at most one endpoint and eight consumer call sites, with
 an explicit omitted count when more consumers exist. The 4000-token default is

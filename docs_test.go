@@ -56,6 +56,19 @@ func TestDocumentationDefinesSemanticEvidenceCoverage(t *testing.T) {
 	}
 }
 
+func TestDocumentationDistinguishesLanguageAndAPIIntegrationDepth(t *testing.T) {
+	readme := normalizedFileContents(t, "README.md")
+	for _, want := range []string{
+		"| Go | Full | Full | Full | Full | Full | Full | Pattern-backed",
+		"| Go, PHP, Python, Rust | Pattern-backed route facts | Pattern-backed client facts; no reconciled consumer/provider chain",
+		"Architecture evidence; no canonical API reachability",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("README.md is missing language-depth boundary %q", want)
+		}
+	}
+}
+
 func TestSourceBackedDocumentationUsesThe4000TokenDefault(t *testing.T) {
 	for _, file := range []string{"docs/OUTPUTS.md", "docs/RELEASE.md"} {
 		content, err := os.ReadFile(file)

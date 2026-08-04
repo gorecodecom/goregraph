@@ -206,14 +206,15 @@ func renderCurrentContract() string {
 }
 
 func renderCurrentReleaseEvidenceStatus() string {
-	return "The latest controlled three-by-three release benchmark passed for candidate d452b16. " +
+	return "The last controlled three-by-three release benchmark passed for candidate d452b16. " +
 		"Effective-token medians were 160072 baseline and 20228 assisted, an 87.36% reduction; " +
 		"mean effective tokens were 164199 baseline and 21146 assisted, an 87.12% reduction. " +
 		"Tool-call medians were 26 and 3, and source-read medians were 19 and 2. All six runs had " +
 		"zero external skill reads. The signed 12-point review scored baseline quality at a median " +
-		"of 11 and assisted quality at 12, with every assisted run scoring 12/12. Candidate d452b16 " +
-		"therefore satisfies the 1.3.0 release benchmark gates. This evidence covers one frozen " +
-		"historical three-repository Java case and is not a general token-savings guarantee."
+		"of 11 and assisted quality at 12, with every assisted run scoring 12/12. That result qualifies " +
+		"only candidate d452b16; later source-derived generality changes are not covered and require a " +
+		"fresh matched matrix before 1.3.0 publication. This evidence covers one frozen historical " +
+		"three-repository Java case and is not a general token-savings guarantee."
 }
 
 func renderAgentBenchmarkMetrics() string {

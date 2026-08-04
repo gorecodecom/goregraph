@@ -211,7 +211,15 @@ Doctor warnings.
 
 `flows.json` contains normalized route-to-handler-to-call flow records. Flow steps are best-effort static orientation data and include confidence markers.
 
-`api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helper calls and `fetch`. Records include HTTP method, raw path, normalized path, query string, sorted query params, service candidate, enclosing caller function or method when detected, caller line, app/package context, confidence, and reason. Supported helper calls include direct and multiline argument forms where a literal path argument is visible, for example `GetHelper(dispatch, "/service/path")`. Template placeholders such as `${id}` normalize to `{id}`. Complex dynamic expressions such as ternaries are marked with `unsafe_dynamic` and normalized to `{dynamic}`.
+`api-contracts.json` contains statically detected Java/Spring and JavaScript/TypeScript HTTP client contracts. Java records cover imported Spring declarative clients and bound `RestClient`, `WebClient`, and `RestTemplate` receivers. JavaScript/TypeScript records cover recognized helper calls, request wrappers, and `fetch`. Records include language, HTTP method, raw and normalized path, query string, sorted query params, service candidate, caller and source location, app/package context, authentication evidence, confidence, and reason. Complex or unresolved expressions remain explicit through `unsafe_dynamic`, `dynamic_endpoint_candidates`, partial confidence, and the raw expression instead of being promoted to exact paths.
+
+Java contract records may add `configuration_key_groups`, a sorted array of
+top-level Spring configuration groups derived only from imported Spring
+`@Value` placeholders or `@ConfigurationProperties` prefixes on the owning
+client type, fields, methods, or parameters. The array contains group names but
+never configuration values. Matching groups create exact, value-free
+`configuration` edges in `agent/context-index.json`; absent or ambiguous static
+evidence creates no edge.
 
 `architecture-capabilities.json` contains deterministic full-adapter facts with `id`, `language`, `capability`, `kind`, `framework`, root-relative `file`, and one-based `line`. The IDs may be referenced by `capabilities.json` and are resolved by the Query/MCP evidence operation. Java/Spring, JavaScript/TypeScript/Node/React, Go, PHP, Rust, and Python use the same record shape. These facts describe detected static syntax; they do not assert that runtime-generated behavior is absent.
 

@@ -807,8 +807,9 @@ it does not turn missing static evidence into a runtime claim.
 | --- | --- | --- | --- | --- | --- | --- |
 | Java / Spring | Provider endpoints | Reconciled callers | Endpoint security | Statically extracted DTO identities | Full API Catalog and Endpoints | Relevant endpoint facts |
 | JavaScript / TypeScript / Node.js / React | Supported Node provider routes | HTTP client call sites | Consumer call authentication; provider security unknown | Handler identity; request/response types unknown | Full API Catalog and Endpoints | Relevant endpoint and consumer facts |
+| Go, PHP, Python, Rust | Pattern-backed route facts | Pattern-backed client facts; no reconciled consumer/provider chain | Not projected into canonical endpoint security | Pattern-backed request/response boundaries | Architecture evidence; no canonical API reachability | Relevant route, client, persistence, messaging, data-flow, and test facts |
 
-For both rows, `unknown` means evidence was not detected. It does not mean an
+For all rows, `unknown` means evidence was not detected. It does not mean an
 endpoint is public or that authentication is absent at runtime.
 
 ## Output Files
@@ -898,7 +899,16 @@ files live under `dashboard/` unless stated otherwise.
 
 `flows.json` contains route-to-handler-to-call flow records.
 
-`api-contracts.json` contains JavaScript/TypeScript HTTP client usage detected from supported helpers, `weka.request(...)`, and `fetch` calls. Helper extraction handles common argument shapes such as `GetHelper(dispatch, "/path")`, `weka.request("GET", "tree/regulations")`, and multiline calls. Records preserve the raw path, normalized path, query metadata, service candidate, enclosing caller function or method when available, and unsafe dynamic URL marker when a template expression is too complex to trust. `api-contracts.md` shows the caller next to the API contract when detected.
+`api-contracts.json` contains statically detected Java/Spring and
+JavaScript/TypeScript HTTP client contracts. Java supports imported Spring
+declarative clients plus bound `RestClient`, `WebClient`, and `RestTemplate`
+receivers; JavaScript/TypeScript supports recognized helpers, request wrappers,
+and `fetch`. Records preserve method, raw and normalized path, query metadata,
+service candidate, caller, source location, confidence, and unresolved dynamic
+path evidence. Java records may also expose sorted, value-free
+`configuration_key_groups` derived from real Spring `@Value` or
+`@ConfigurationProperties` imports. `api-contracts.md` renders the same static
+contract evidence for humans.
 
 `service-dependencies.json` contains backend service-client relationships extracted from Java source, for example imports or fields referencing shared clients such as `UserMgmtService`, `ProductServiceMgmt`, or `LicenseMgmtService`. Workspace service maps merge these backend-to-backend dependencies with frontend API contract relationships.
 
@@ -1245,12 +1255,23 @@ as baseline quality. Context Pack `estimated_tokens` remains unrelated to
 end-to-end usage.
 
 <!-- goregraph:generated release-evidence-status start -->
-The latest controlled three-by-three release benchmark passed for candidate d452b16. Effective-token medians were 160072 baseline and 20228 assisted, an 87.36% reduction; mean effective tokens were 164199 baseline and 21146 assisted, an 87.12% reduction. Tool-call medians were 26 and 3, and source-read medians were 19 and 2. All six runs had zero external skill reads. The signed 12-point review scored baseline quality at a median of 11 and assisted quality at 12, with every assisted run scoring 12/12. Candidate d452b16 therefore satisfies the 1.3.0 release benchmark gates. This evidence covers one frozen historical three-repository Java case and is not a general token-savings guarantee.
+The last controlled three-by-three release benchmark passed for candidate d452b16. Effective-token medians were 160072 baseline and 20228 assisted, an 87.36% reduction; mean effective tokens were 164199 baseline and 21146 assisted, an 87.12% reduction. Tool-call medians were 26 and 3, and source-read medians were 19 and 2. All six runs had zero external skill reads. The signed 12-point review scored baseline quality at a median of 11 and assisted quality at 12, with every assisted run scoring 12/12. That result qualifies only candidate d452b16; later source-derived generality changes are not covered and require a fresh matched matrix before 1.3.0 publication. This evidence covers one frozen historical three-repository Java case and is not a general token-savings guarantee.
 <!-- goregraph:generated release-evidence-status end -->
 
 The previous failed controlled result remains retained and is not rescored.
-The fresh prospectively calibrated matrix above supersedes it for 1.3.0
-qualification. Publication is still a separate explicit release action.
+The passing matrix above remains historical evidence for `d452b16`; it does not
+qualify later commits. The current source candidate must pass a fresh matched
+matrix before publication, which remains a separate explicit release action.
+
+Independently of that external efficiency gate, repository tests now exercise
+source-derived transfer on a synthetic three-service Java workspace with
+unrelated order, client-library, and inventory names. The test requires one
+public entrypoint, a unique resolved secondary contract/provider path, exact
+value-free Spring configuration evidence, persistence, side effects, tests,
+retained uncertainty for the intentionally missing call, deterministic output,
+and no private benchmark vocabulary. The committed G2–G6 matrix remains a
+separate regression gate. These checks guard transfer beyond the historical
+benchmark case; they are not token-savings measurements.
 
 The benchmark consumes Codex JSONL logs and distinguishes compact
 `duplicate_of` Context Packs from a repeated full payload: compact duplicates

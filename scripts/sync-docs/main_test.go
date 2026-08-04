@@ -137,7 +137,7 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 
 	releaseEvidence := renderCurrentReleaseEvidenceStatus()
 	for _, want := range []string{
-		"latest controlled three-by-three release benchmark passed",
+		"last controlled three-by-three release benchmark passed",
 		"candidate d452b16",
 		"Effective-token medians were 160072 baseline and 20228 assisted",
 		"87.36% reduction",
@@ -148,7 +148,9 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 		"zero external skill reads",
 		"baseline quality at a median of 11 and assisted quality at 12",
 		"every assisted run scoring 12/12",
-		"satisfies the 1.3.0 release benchmark gates",
+		"qualifies only candidate d452b16",
+		"later source-derived generality changes are not covered",
+		"fresh matched matrix before 1.3.0 publication",
 		"not a general token-savings guarantee",
 	} {
 		if !strings.Contains(releaseEvidence, want) {
@@ -159,6 +161,9 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 		if strings.Contains(releaseEvidence, staleValue) {
 			t.Fatalf("release evidence contains stale diagnostic value %q: %s", staleValue, releaseEvidence)
 		}
+	}
+	if strings.Contains(releaseEvidence, "therefore satisfies the 1.3.0 release benchmark gates") {
+		t.Fatalf("release evidence overstates the historical candidate: %s", releaseEvidence)
 	}
 
 	metrics := renderAgentBenchmarkMetrics()

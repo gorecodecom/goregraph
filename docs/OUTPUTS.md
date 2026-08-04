@@ -323,10 +323,12 @@ complete transcript. `--ignore-user-config` is not a skill-isolation guarantee.
 The harness records plugin state but never mutates it. Normal GoreGraph use
 remains compatible with Brainstorming, TDD, debugging, and review skills.
 
-The latest prospectively calibrated three-by-three release matrix passed for
+The last prospectively calibrated three-by-three release matrix passed for
 candidate `d452b16`: effective-token medians were 160,072 baseline and 20,228
 assisted (87.36% lower), with zero external skill reads and quality medians of
-11 baseline and 12 assisted. This is evidence for one frozen historical
+11 baseline and 12 assisted. This qualifies only that candidate. Later
+source-derived generality changes require a fresh matched matrix before 1.3.0
+publication. The retained result is evidence for one frozen historical
 three-repository Java case, not a general savings guarantee.
 
 ## Human Dashboard
