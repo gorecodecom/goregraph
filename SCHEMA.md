@@ -221,11 +221,22 @@ never configuration values. Matching groups create exact, value-free
 `configuration` edges in `agent/context-index.json`; absent or ambiguous static
 evidence creates no edge.
 
+`service_resolution_key` is an optional, value-free key derived from the first
+usable normalized API-path segment. It is a workspace-only provider-resolution
+hint for contracts without an explicit `service_candidate`; it does not claim a
+provider identity in a standalone project scan and is omitted for
+frontend-internal API paths.
+
 `architecture-capabilities.json` contains deterministic full-adapter facts with `id`, `language`, `capability`, `kind`, `framework`, root-relative `file`, and one-based `line`. The IDs may be referenced by `capabilities.json` and are resolved by the Query/MCP evidence operation. Java/Spring, JavaScript/TypeScript/Node/React, Go, PHP, Rust, and Python use the same record shape. These facts describe detected static syntax; they do not assert that runtime-generated behavior is absent.
 
 `frontend-usage.json` contains frontend API usage records derived from `api-contracts.json` and `flows.json`. Records include the API method/path/location, service candidate, detected API caller, best matching frontend route ID/path/component, route confidence, reason, and static chain steps when a frontend route flow reaches the API contract file or caller. `frontend-usage.md` is the readable view of the same data.
 
 `contract-matches.json` compares frontend API contracts with backend route records from the same scan. Match records include API method/path/location, backend method/path/handler/location when available, service candidate, issue, confidence, confidence score, and reason. API contracts also include `caller` when the helper or fetch call is inside a detected JavaScript/TypeScript function or method. Issue values currently include `matched`, `method_mismatch`, `missing_backend_route`, `unscanned_service`, and `unsafe_dynamic`. `unscanned_service` means the frontend call references a recognized service candidate whose backend routes were not present in this scan, so it should not be treated as a broken route inside the scanned backend scope.
+
+Workspace contract matches may use `ambiguous_service_identity` when a
+`service_resolution_key` resolves to more than one workspace provider project.
+Consumers must treat the owner as unresolved: no service candidate is selected,
+and `resolution_evidence` lists the candidate projects for user review.
 
 `diagnostics.json` contains a compact diagnosis index with `entrypoints`, `risky_contracts`, `workspace_resolved_contracts`, `unscanned_services`, `endpoints_without_tests`, `weak_flows`, and `likely_tests`. It is derived from existing route, contract, endpoint-flow, flow, test-map, and workspace overlay facts.
 
