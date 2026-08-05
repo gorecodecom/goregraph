@@ -1322,12 +1322,12 @@ class CadasterController {
 	}
 }
 
-func TestContractMatchesNormalizeServiceAndConfigBasePrefixes(t *testing.T) {
+func TestContractMatchesNormalizeOneSidedConfigBasePrefix(t *testing.T) {
 	matches := buildContractMatches(
 		[]APIContractRecord{
 			{
 				HTTPMethod:       "GET",
-				Path:             "/productservice/users/{userId}/products/{baseCode}",
+				Path:             "/users/{userId}/products/{baseCode}",
 				File:             "apps/portal/src/api/products.js",
 				Line:             12,
 				ServiceCandidate: "ms-productservice",
@@ -1338,7 +1338,7 @@ func TestContractMatchesNormalizeServiceAndConfigBasePrefixes(t *testing.T) {
 		},
 	)
 
-	assertHasContractMatch(t, matches, "GET", "/productservice/users/{userId}/products/{baseCode}", "GET", "/users/{userId}/products/{baseCode}", "RESOLVED")
+	assertHasContractMatch(t, matches, "GET", "/users/{userId}/products/{baseCode}", "GET", "/users/{userId}/products/{baseCode}", "RESOLVED")
 }
 
 func TestContractMatchesDoNotStripArbitraryBasePrefixes(t *testing.T) {
@@ -1365,7 +1365,7 @@ func TestContractMatchesRouteUnsafeDynamicPlaceholdersWhenBackendPathMatches(t *
 		[]APIContractRecord{
 			{
 				HTTPMethod:       "GET",
-				Path:             "/documentservice/modules/{isbn}/documents/{objectId}/fragments/{dynamic}",
+				Path:             "/modules/{isbn}/documents/{objectId}/fragments/{dynamic}",
 				File:             "apps/portal/src/api/documentdownload.js",
 				Line:             16,
 				ServiceCandidate: "ms-documentdownload",
@@ -1377,7 +1377,7 @@ func TestContractMatchesRouteUnsafeDynamicPlaceholdersWhenBackendPathMatches(t *
 		},
 	)
 
-	assertHasContractMatch(t, matches, "GET", "/documentservice/modules/{isbn}/documents/{objectId}/fragments/{dynamic}", "GET", "/modules/{isbn}/documents/{objectId}/fragments/{fragmentId}", "RESOLVED")
+	assertHasContractMatch(t, matches, "GET", "/modules/{isbn}/documents/{objectId}/fragments/{dynamic}", "GET", "/modules/{isbn}/documents/{objectId}/fragments/{fragmentId}", "RESOLVED")
 }
 
 func TestContractMatchesDoNotExpandAbsentControllerPathConstants(t *testing.T) {

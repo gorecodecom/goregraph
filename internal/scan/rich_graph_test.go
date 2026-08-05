@@ -209,8 +209,19 @@ func TestParseJavaMethodSignatureWithAnnotatedMultipartParameters(t *testing.T) 
 }
 
 func TestSpringEndpointPathMatchesKnownBasePrefixes(t *testing.T) {
-	if !springEndpointPathMatches("/ApplicationConfig.BASE_PATH/orders/{orderId}/jobs", "/orderservice/orders/101/jobs") {
-		t.Fatal("spring endpoint path matcher should treat config base and service prefixes as compatible")
+	for pattern, path := range map[string]string{
+		"/ApplicationConfig.BASE_PATH/orders/{orderId}/jobs": "/orders/101/jobs",
+		"/orders/{orderId}/jobs":                             "/orderservice/orders/101/jobs",
+	} {
+		if !springEndpointPathMatches(pattern, path) {
+			t.Fatalf("spring endpoint path matcher should allow one-sided base prefixes: %q -> %q", pattern, path)
+		}
+	}
+}
+
+func TestSpringEndpointPathDoesNotMatchDistinctServicePrefixes(t *testing.T) {
+	if springEndpointPathMatches("/orders-api/items/{id}", "/payments-api/items/42") {
+		t.Fatal("distinct service prefixes matched only after both were stripped")
 	}
 }
 

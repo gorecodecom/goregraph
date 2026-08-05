@@ -1969,7 +1969,7 @@ func TestWorkspaceContractMatchesClassifyGatewayPrefixMatches(t *testing.T) {
 	}
 }
 
-func TestWorkspaceContractMatchesNormalizeServiceAndConfigBasePrefixes(t *testing.T) {
+func TestWorkspaceContractMatchesNormalizeOneSidedConfigBasePrefix(t *testing.T) {
 	frontend := WorkspaceProjectRecord{Path: "frontend/frontend-monorepo", Kind: "frontend", Indexed: true}
 	backend := WorkspaceProjectRecord{Path: "microservices/ms-productservice", Kind: "backend", Service: "ms-productservice", Indexed: true}
 
@@ -1979,7 +1979,7 @@ func TestWorkspaceContractMatchesNormalizeServiceAndConfigBasePrefixes(t *testin
 			contracts: []APIContractRecord{
 				{
 					HTTPMethod:       "GET",
-					Path:             "/productservice/users/{userId}/products/{baseCode}",
+					Path:             "/users/{userId}/products/{baseCode}",
 					File:             "src/api/products.js",
 					Line:             12,
 					ServiceCandidate: "ms-productservice",

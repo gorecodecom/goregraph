@@ -32,6 +32,12 @@ func TestKnownBasePrefixVariantsUseTechnicalSuffixes(t *testing.T) {
 	}
 }
 
+func TestKnownBasePrefixesDoNotMatchAfterBothSidesStrip(t *testing.T) {
+	if pathsCompatibleWithKnownBasePrefixes("/orders-api/items/{id}", "/payments-api/items/{itemId}") {
+		t.Fatal("distinct service prefixes matched only after both were stripped")
+	}
+}
+
 func TestAbsentRouteConstantRemainsUnresolved(t *testing.T) {
 	if pathsCompatibleWithKnownBasePrefixes("/MissingRoutes.BASE_PATH/items/{id}", "/inventory/items/{itemId}") {
 		t.Fatal("constant absent from indexed source was replaced or ignored")

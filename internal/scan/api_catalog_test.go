@@ -448,13 +448,54 @@ func TestWorkspaceCatalogCompatiblePathKeysMirrorRouteMatcher(t *testing.T) {
 		for _, right := range paths {
 			want := pathsCompatibleWithKnownBasePrefixes(left, right)
 			got := workspaceCatalogPathKeysIntersect(
-				workspaceCatalogCompatiblePathKeys(left),
-				workspaceCatalogCompatiblePathKeys(right),
+				workspaceCatalogPathKeysForLeft(left),
+				workspaceCatalogPathKeysForRight(right),
 			)
 			if got != want {
 				t.Fatalf("indexed compatibility for %q and %q = %t, want %t", left, right, got, want)
 			}
 		}
+	}
+}
+
+func TestWorkspaceCatalogFlowIndexDoesNotIntersectDistinctStrippedPrefixes(t *testing.T) {
+	index := newWorkspaceCatalogFlowIndex([]WorkspaceFeatureFlowRecord{{
+		BackendProject:    "services/catalog",
+		HTTPMethod:        "GET",
+		Path:              "/orders-api/items/{itemId}",
+		BackendController: "ItemController",
+		BackendMethod:     "getItem",
+	}})
+	endpoint := APIEndpointRecord{
+		ProviderProject: "services/catalog",
+		HTTPMethod:      "GET",
+		Path:            "/payments-api/items/{id}",
+		Handler:         "ItemController.getItem",
+	}
+
+	if candidates := index.candidates(endpoint); len(candidates) != 0 {
+		t.Fatalf("candidate flows = %#v, want none for distinct service prefixes", candidates)
+	}
+}
+
+func TestWorkspaceCatalogFlowIndexKeepsOneSidedBasePrefixMatch(t *testing.T) {
+	flow := WorkspaceFeatureFlowRecord{
+		BackendProject:    "services/catalog",
+		HTTPMethod:        "GET",
+		Path:              "/items/{itemId}",
+		BackendController: "ItemController",
+		BackendMethod:     "getItem",
+	}
+	index := newWorkspaceCatalogFlowIndex([]WorkspaceFeatureFlowRecord{flow})
+	endpoint := APIEndpointRecord{
+		ProviderProject: "services/catalog",
+		HTTPMethod:      "GET",
+		Path:            "/orders-api/items/{id}",
+		Handler:         "ItemController.getItem",
+	}
+
+	if candidates := index.candidates(endpoint); len(candidates) != 1 || candidates[0].Path != flow.Path {
+		t.Fatalf("candidate flows = %#v, want one flow with path %q", candidates, flow.Path)
 	}
 }
 

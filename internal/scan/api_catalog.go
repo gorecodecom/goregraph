@@ -445,7 +445,7 @@ func newWorkspaceCatalogEndpointIndex(endpoints []APIEndpointRecord) workspaceCa
 		index.all = append(index.all, endpointIndex)
 		index.byProject[endpoint.ProviderProject] = append(index.byProject[endpoint.ProviderProject], endpointIndex)
 		index.byMethod[strings.ToUpper(endpoint.HTTPMethod)] = append(index.byMethod[strings.ToUpper(endpoint.HTTPMethod)], endpointIndex)
-		for _, pathKey := range workspaceCatalogCompatiblePathKeys(endpoint.Path) {
+		for _, pathKey := range workspaceCatalogPathKeysForRight(endpoint.Path) {
 			index.byPath[pathKey] = append(index.byPath[pathKey], endpointIndex)
 		}
 		index.byHandler[endpoint.Handler] = append(index.byHandler[endpoint.Handler], endpointIndex)
@@ -465,7 +465,7 @@ func (index workspaceCatalogEndpointIndex) candidates(match WorkspaceContractMat
 	}
 	if match.BackendPath != "" {
 		pathCandidates := make(map[int]bool)
-		for _, pathKey := range workspaceCatalogCompatiblePathKeys(canonicalProviderPath(match.BackendPath)) {
+		for _, pathKey := range workspaceCatalogPathKeysForLeft(canonicalProviderPath(match.BackendPath)) {
 			for _, endpointIndex := range index.byPath[pathKey] {
 				pathCandidates[endpointIndex] = true
 			}
@@ -568,7 +568,7 @@ func newWorkspaceCatalogFlowIndex(flows []WorkspaceFeatureFlowRecord) workspaceC
 		if handler == "" {
 			continue
 		}
-		for _, pathKey := range workspaceCatalogCompatiblePathKeys(flow.Path) {
+		for _, pathKey := range workspaceCatalogPathKeysForLeft(flow.Path) {
 			key := workspaceCatalogFlowKey(flow.BackendProject, flow.HTTPMethod, pathKey, handler)
 			index.byKey[key] = append(index.byKey[key], flowIndex)
 		}
@@ -579,7 +579,7 @@ func newWorkspaceCatalogFlowIndex(flows []WorkspaceFeatureFlowRecord) workspaceC
 func (index workspaceCatalogFlowIndex) candidates(endpoint APIEndpointRecord) []WorkspaceFeatureFlowRecord {
 	seen := make(map[int]bool)
 	result := make([]WorkspaceFeatureFlowRecord, 0)
-	for _, pathKey := range workspaceCatalogCompatiblePathKeys(endpoint.Path) {
+	for _, pathKey := range workspaceCatalogPathKeysForRight(endpoint.Path) {
 		key := workspaceCatalogFlowKey(endpoint.ProviderProject, endpoint.HTTPMethod, pathKey, endpoint.Handler)
 		for _, flowIndex := range index.byKey[key] {
 			if seen[flowIndex] {
@@ -596,11 +596,29 @@ func workspaceCatalogFlowKey(project, method, pathKey, handler string) string {
 	return joinAPISortKey(filepath.ToSlash(project), strings.ToUpper(method), pathKey, handler)
 }
 
-func workspaceCatalogCompatiblePathKeys(routePath string) []string {
+func workspaceCatalogPathKeysForLeft(routePath string) []string {
+	variants := knownBasePrefixPathVariants(routePath)
 	keys := make(map[string]bool)
-	for _, variant := range knownBasePrefixPathVariants(routePath) {
-		workspaceCatalogAddPathKeys(keys, routeParts(variant), 0)
+	workspaceCatalogAddPathKeys(keys, "original\x00", routeParts(variants[0]), 0)
+	workspaceCatalogAddPathKeys(keys, "left-original-right-stripped\x00", routeParts(variants[0]), 0)
+	if len(variants) > 1 {
+		workspaceCatalogAddPathKeys(keys, "left-stripped-right-original\x00", routeParts(variants[1]), 0)
 	}
+	return workspaceCatalogSortedPathKeys(keys)
+}
+
+func workspaceCatalogPathKeysForRight(routePath string) []string {
+	variants := knownBasePrefixPathVariants(routePath)
+	keys := make(map[string]bool)
+	workspaceCatalogAddPathKeys(keys, "original\x00", routeParts(variants[0]), 0)
+	workspaceCatalogAddPathKeys(keys, "left-stripped-right-original\x00", routeParts(variants[0]), 0)
+	if len(variants) > 1 {
+		workspaceCatalogAddPathKeys(keys, "left-original-right-stripped\x00", routeParts(variants[1]), 0)
+	}
+	return workspaceCatalogSortedPathKeys(keys)
+}
+
+func workspaceCatalogSortedPathKeys(keys map[string]bool) []string {
 	result := make([]string, 0, len(keys))
 	for key := range keys {
 		result = append(result, key)
@@ -609,20 +627,20 @@ func workspaceCatalogCompatiblePathKeys(routePath string) []string {
 	return result
 }
 
-func workspaceCatalogAddPathKeys(keys map[string]bool, parts []string, partIndex int) {
+func workspaceCatalogAddPathKeys(keys map[string]bool, prefix string, parts []string, partIndex int) {
 	if partIndex == len(parts) {
-		keys[strings.Join(parts, "/")] = true
+		keys[prefix+strings.Join(parts, "/")] = true
 		return
 	}
 	part := parts[partIndex]
 	if isPlaceholder(part) {
 		parts[partIndex] = "{}"
-		workspaceCatalogAddPathKeys(keys, parts, partIndex+1)
+		workspaceCatalogAddPathKeys(keys, prefix, parts, partIndex+1)
 		parts[partIndex] = part
 		return
 	}
 	parts[partIndex] = strings.ToLower(part)
-	workspaceCatalogAddPathKeys(keys, parts, partIndex+1)
+	workspaceCatalogAddPathKeys(keys, prefix, parts, partIndex+1)
 	parts[partIndex] = part
 }
 

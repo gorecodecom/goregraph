@@ -546,11 +546,17 @@ func (set endpointMatcherSet) match(method, path string) (SpringEndpointRecord, 
 }
 
 func springEndpointPathMatches(pattern, path string) bool {
-	for _, patternVariant := range knownBasePrefixPathVariants(pattern) {
-		for _, pathVariant := range knownBasePrefixPathVariants(path) {
-			if springEndpointPathPatternMatches(patternVariant, pathVariant) {
-				return true
-			}
+	if springEndpointPathPatternMatches(pattern, path) {
+		return true
+	}
+	for _, patternVariant := range knownBasePrefixPathVariants(pattern)[1:] {
+		if springEndpointPathPatternMatches(patternVariant, path) {
+			return true
+		}
+	}
+	for _, pathVariant := range knownBasePrefixPathVariants(path)[1:] {
+		if springEndpointPathPatternMatches(pattern, pathVariant) {
+			return true
 		}
 	}
 	return false

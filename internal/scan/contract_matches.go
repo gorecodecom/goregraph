@@ -168,11 +168,14 @@ func pathsCompatibleWithKnownBasePrefixes(left, right string) bool {
 	if pathsCompatible(left, right) {
 		return true
 	}
-	for _, leftVariant := range knownBasePrefixPathVariants(left) {
-		for _, rightVariant := range knownBasePrefixPathVariants(right) {
-			if pathsCompatible(leftVariant, rightVariant) {
-				return true
-			}
+	for _, leftVariant := range knownBasePrefixPathVariants(left)[1:] {
+		if pathsCompatible(leftVariant, right) {
+			return true
+		}
+	}
+	for _, rightVariant := range knownBasePrefixPathVariants(right)[1:] {
+		if pathsCompatible(left, rightVariant) {
+			return true
 		}
 	}
 	return false
