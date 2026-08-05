@@ -980,6 +980,10 @@ func redactContextConfigurationValues(path, content string) string {
 	for index, line := range lines {
 		prefix, source := contextConfigurationLinePrefix(line)
 		trimmed := strings.TrimSpace(source)
+		if redactedComment, ok := contextConfigurationRedactedComment(path, source); ok {
+			lines[index] = prefix + redactedComment
+			continue
+		}
 		if isContextConfigurationYAML(path) && yamlQuotedScalar != 0 {
 			if trimmed == "" {
 				continue
@@ -1031,6 +1035,8 @@ func redactContextConfigurationValues(path, content string) string {
 					if yamlQuotedScalar == 0 {
 						yamlValueIndent = contextConfigurationYAMLMappingIndent(source, delimiter)
 					}
+				} else if redactedComment, ok := contextConfigurationRedactedYAMLInlineComment(source, delimiter); ok {
+					lines[index] = prefix + redactedComment
 				}
 				continue
 			}
@@ -1055,6 +1061,106 @@ func redactContextConfigurationValues(path, content string) string {
 		propertiesContinuation = contextConfigurationPropertyContinues(source)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func contextConfigurationRedactedComment(path, line string) (string, bool) {
+	indent := contextConfigurationIndent(line)
+	if indent == len(line) {
+		return "", false
+	}
+	marker := line[indent]
+	if marker != '#' && (isContextConfigurationYAML(path) || marker != '!') {
+		return "", false
+	}
+	keyPrefix, ok := contextConfigurationCommentAssignmentPrefix(line[indent+1:], isContextConfigurationYAML(path))
+	if !ok {
+		return "", false
+	}
+	replacement := "<redacted>"
+	if isContextConfigurationYAML(path) && strings.HasSuffix(keyPrefix, ":") {
+		replacement = " <redacted>"
+	}
+	return line[:indent+1] + keyPrefix + replacement, true
+}
+
+func contextConfigurationRedactedYAMLInlineComment(line string, delimiter int) (string, bool) {
+	commentStart := delimiter + 1
+	for commentStart < len(line) && (line[commentStart] == ' ' || line[commentStart] == '\t') {
+		commentStart++
+	}
+	if commentStart == len(line) || line[commentStart] != '#' {
+		return "", false
+	}
+	keyPrefix, ok := contextConfigurationCommentAssignmentPrefix(line[commentStart+1:], true)
+	if !ok {
+		return "", false
+	}
+	return line[:commentStart+1] + keyPrefix + "<redacted>", true
+}
+
+func contextConfigurationCommentAssignmentPrefix(line string, yaml bool) (string, bool) {
+	if !yaml {
+		keyPrefix, hasValue := contextConfigurationPropertyKeyPrefix(line)
+		if !hasValue || strings.TrimSpace(line[len(keyPrefix):]) == "" ||
+			!contextConfigurationCredentialSensitivePropertyKey(keyPrefix) {
+			return "", false
+		}
+		return keyPrefix, true
+	}
+	if yaml {
+		if delimiter := contextConfigurationYAMLMappingDelimiter(line); delimiter >= 0 && strings.TrimSpace(line[delimiter+1:]) != "" {
+			return line[:delimiter+1], true
+		}
+		return contextConfigurationEqualsAssignmentPrefix(line)
+	}
+	return "", false
+}
+
+func contextConfigurationEqualsAssignmentPrefix(line string) (string, bool) {
+	escaped := false
+	for index := 0; index < len(line); index++ {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if line[index] == '\\' {
+			escaped = true
+			continue
+		}
+		if line[index] == '=' && strings.TrimSpace(line[:index]) != "" && strings.TrimSpace(line[index+1:]) != "" {
+			return line[:index+1], true
+		}
+	}
+	return "", false
+}
+
+func contextConfigurationCredentialSensitivePropertyKey(keyPrefix string) bool {
+	key := strings.TrimRight(strings.TrimSpace(keyPrefix), "=:")
+	components := contextOrderedTokens(key)
+	for index, component := range components {
+		switch component {
+		case "password", "passwd", "pwd", "passphrase", "secret", "token", "credential", "credentials", "apikey", "accesskey", "privatekey":
+			return true
+		case "key":
+			if index > 0 && contextConfigurationSensitiveKeyModifier(components[index-1]) {
+				return true
+			}
+		case "api", "access", "private", "signing", "encryption":
+			if index+1 < len(components) && components[index+1] == "key" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func contextConfigurationSensitiveKeyModifier(component string) bool {
+	switch component {
+	case "api", "access", "private", "signing", "encryption":
+		return true
+	default:
+		return false
+	}
 }
 
 func contextConfigurationYAMLBlockScalar(line string) (string, int, bool) {

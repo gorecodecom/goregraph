@@ -6771,6 +6771,83 @@ func TestRenderSourceCandidateRedactsConfigurationValues(t *testing.T) {
 	}
 }
 
+func TestRenderSourceCandidateRedactsAssignmentShapedConfigurationComments(t *testing.T) {
+	propertyTests := []struct {
+		name   string
+		input  string
+		want   string
+		secret bool
+	}{
+		{name: "ordinary prose", input: "# deployment notes remain visible", want: "# deployment notes remain visible"},
+		{name: "non-sensitive assignment", input: "! client.timeout 2500", want: "! client.timeout 2500"},
+		{name: "password equals", input: "# client.password=SENTINEL_COMMENTED_PROPERTY_PASSWORD", want: "# client.password=<redacted>", secret: true},
+		{name: "token equals", input: "! token=SENTINEL_COMMENTED_PROPERTY_TOKEN", want: "! token=<redacted>", secret: true},
+		{name: "password colon", input: "# client.password: SENTINEL_COLON_PROPERTY_PASSWORD", want: "# client.password:<redacted>", secret: true},
+		{name: "token whitespace", input: "! token SENTINEL_WHITESPACE_PROPERTY_TOKEN", want: "! token <redacted>", secret: true},
+		{name: "dotted camel equals", input: "# oauth.clientSecret=SENTINEL_CLIENT_SECRET", want: "# oauth.clientSecret=<redacted>", secret: true},
+		{name: "camel colon", input: "! authToken: SENTINEL_AUTH_TOKEN", want: "! authToken:<redacted>", secret: true},
+		{name: "dotted camel whitespace", input: "# signing.secretKey SENTINEL_SECRET_KEY", want: "# signing.secretKey <redacted>", secret: true},
+		{name: "passphrase equals", input: "! keystore.passphrase=SENTINEL_PASSPHRASE", want: "! keystore.passphrase=<redacted>", secret: true},
+		{name: "abbreviated password colon", input: "# database.pwd: SENTINEL_PWD", want: "# database.pwd:<redacted>", secret: true},
+		{name: "compound signing key whitespace", input: "! signingKey SENTINEL_SIGNING_KEY", want: "! signingKey <redacted>", secret: true},
+		{name: "compound encryption key equals", input: "# encryptionKey=SENTINEL_ENCRYPTION_KEY", want: "# encryptionKey=<redacted>", secret: true},
+	}
+	for _, test := range propertyTests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := sourceCandidate{
+				Path: "src/main/resources/application.properties", StartLine: 1, EndLine: 1,
+			}
+			section, err := renderSourceCandidate(
+				candidate,
+				sourceFile{Path: candidate.Path, Lines: []string{test.input}},
+				"focused",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.secret && strings.Contains(section.Content, "SENTINEL_") {
+				t.Fatalf("rendered properties retain secret:\n%s", section.Content)
+			}
+			if section.Content != "1\t"+test.want {
+				t.Fatalf("rendered properties = %q, want %q", section.Content, "1\t"+test.want)
+			}
+		})
+	}
+
+	yaml := []string{
+		"# ordinary YAML comment",
+		"# password: SENTINEL_COMMENTED_YAML_PASSWORD",
+		"password: # token=SENTINEL_INLINE_YAML_TOKEN",
+		"username: # ordinary inline YAML comment",
+	}
+	yamlCandidate := sourceCandidate{
+		Path: "src/main/resources/application.yml", StartLine: 1, EndLine: len(yaml),
+	}
+	yamlSection, err := renderSourceCandidate(
+		yamlCandidate,
+		sourceFile{Path: yamlCandidate.Path, Lines: yaml},
+		"focused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sentinel := range []string{"SENTINEL_COMMENTED_YAML_PASSWORD", "SENTINEL_INLINE_YAML_TOKEN"} {
+		if strings.Contains(yamlSection.Content, sentinel) {
+			t.Fatalf("rendered YAML retains %q:\n%s", sentinel, yamlSection.Content)
+		}
+	}
+	for _, line := range []string{
+		"1\t# ordinary YAML comment",
+		"2\t# password: <redacted>",
+		"3\tpassword: # token=<redacted>",
+		"4\tusername: # ordinary inline YAML comment",
+	} {
+		if !strings.Contains(yamlSection.Content, line) {
+			t.Fatalf("rendered YAML missing %q:\n%s", line, yamlSection.Content)
+		}
+	}
+}
+
 func TestRenderSourceCandidateRedactsMultilineConfigurationValues(t *testing.T) {
 	properties := []string{
 		"auth.password=first\\\\\\",
