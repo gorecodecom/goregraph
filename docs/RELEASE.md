@@ -192,12 +192,12 @@ release documentation, and decide explicitly whether to ship dashboard-only or
 continue Context-ranking work in a later version.
 
 <!-- goregraph:generated release-evidence-status start -->
-The last controlled three-by-three release benchmark passed for candidate fb14d65. Effective-token medians were 162410 baseline and 28215 assisted, an 82.63% reduction; mean effective tokens were 162089 baseline and 26390 assisted, an 83.72% reduction. Tool-call medians were 28 and 3, and source-read medians were 21 and 2. All six runs had zero external skill reads. The signed 12-point review scored baseline quality at a median of 11 and assisted quality at 12, with every assisted run scoring 12/12. That result qualifies the runtime candidate fb14d65 and documentation-only descendants. This evidence covers one frozen historical three-repository Java case and is not a general token-savings guarantee.
+The last controlled three-by-three release benchmark passed for candidate 0edc6d8. Effective-token medians were 142796 baseline and 20105 assisted, an 85.92% reduction; mean effective tokens were 138549 baseline and 23000 assisted, an 83.40% reduction. Tool-call medians were 28 and 3, and source-read medians were 19 and 2. All six runs had zero external skill reads. The signed 12-point review scored baseline quality at a median of 11 and assisted quality at 12, with every assisted run scoring 12/12. That result qualifies the runtime candidate 0edc6d8 and documentation-only descendants. This evidence covers one frozen historical three-repository Java case and is not a general token-savings guarantee.
 <!-- goregraph:generated release-evidence-status end -->
 
 The previous failed controlled result remains retained and is not rescored.
 The passing prospectively calibrated matrix above supersedes it and qualifies
-runtime candidate `fb14d65` and documentation-only descendants. A different
+runtime candidate `0edc6d8` and documentation-only descendants. A different
 runtime candidate requires a fresh matched matrix before entering the 1.3.0
 release flow.
 
@@ -494,7 +494,7 @@ schema: 3
 
 Execute this flow only after the exact commit to be tagged has passed every
 documented release gate and release approval is explicit. The current
-runtime candidate `fb14d65` and documentation-only descendants are qualified
+runtime candidate `0edc6d8` and documentation-only descendants are qualified
 by the passing matched matrix; no tag or release has been created.
 
 1. Confirm `main` is clean and pushed.

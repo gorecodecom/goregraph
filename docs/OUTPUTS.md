@@ -324,12 +324,12 @@ The harness records plugin state but never mutates it. Normal GoreGraph use
 remains compatible with Brainstorming, TDD, debugging, and review skills.
 
 The last prospectively calibrated three-by-three release matrix passed for
-candidate `fb14d65`: effective-token medians were 162,410 baseline and 28,215
-assisted (82.63% lower), and means were 162,089 baseline and 26,390 assisted
-(83.72% lower). Tool-call medians were 28 baseline and 3 assisted; source-read
-medians were 21 baseline and 2 assisted. All six runs had zero external skill
+candidate `0edc6d8`: effective-token medians were 142,796 baseline and 20,105
+assisted (85.92% lower), and means were 138,549 baseline and 23,000 assisted
+(83.40% lower). Tool-call medians were 28 baseline and 3 assisted; source-read
+medians were 19 baseline and 2 assisted. All six runs had zero external skill
 reads. Quality medians were 11 baseline and 12 assisted, with every assisted
-run scoring 12/12. This qualifies runtime candidate `fb14d65` and
+run scoring 12/12. This qualifies runtime candidate `0edc6d8` and
 documentation-only descendants. It covers one frozen historical
 three-repository Java case, not a general savings guarantee.
 

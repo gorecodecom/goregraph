@@ -138,24 +138,24 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	releaseEvidence := renderCurrentReleaseEvidenceStatus()
 	for _, want := range []string{
 		"last controlled three-by-three release benchmark passed",
-		"candidate fb14d65",
-		"Effective-token medians were 162410 baseline and 28215 assisted",
-		"82.63% reduction",
-		"mean effective tokens were 162089 baseline and 26390 assisted",
-		"83.72% reduction",
+		"candidate 0edc6d8",
+		"Effective-token medians were 142796 baseline and 20105 assisted",
+		"85.92% reduction",
+		"mean effective tokens were 138549 baseline and 23000 assisted",
+		"83.40% reduction",
 		"Tool-call medians were 28 and 3",
-		"source-read medians were 21 and 2",
+		"source-read medians were 19 and 2",
 		"zero external skill reads",
 		"baseline quality at a median of 11 and assisted quality at 12",
 		"every assisted run scoring 12/12",
-		"qualifies the runtime candidate fb14d65 and documentation-only descendants",
+		"qualifies the runtime candidate 0edc6d8 and documentation-only descendants",
 		"not a general token-savings guarantee",
 	} {
 		if !strings.Contains(releaseEvidence, want) {
 			t.Fatalf("release evidence is missing %q: %s", want, releaseEvidence)
 		}
 	}
-	for _, staleValue := range []string{"candidate d452b16", "qualifies only candidate d452b16", "fresh matched matrix before 1.3.0 publication", "160072", "20228", "87.36%", "164199", "21146", "87.12%", "Tool-call medians were 26 and 3", "source-read medians were 19 and 2", "candidate b102756", "148625", "18628", "87.47%", "quality medians were 11 baseline and 10 assisted"} {
+	for _, staleValue := range []string{"candidate fb14d65", "162410", "28215", "82.63%", "162089", "26390", "83.72%", "source-read medians were 21 and 2", "candidate d452b16", "qualifies only candidate d452b16", "fresh matched matrix before 1.3.0 publication", "160072", "20228", "87.36%", "164199", "21146", "87.12%", "Tool-call medians were 26 and 3", "candidate b102756", "148625", "18628", "87.47%", "quality medians were 11 baseline and 10 assisted"} {
 		if strings.Contains(releaseEvidence, staleValue) {
 			t.Fatalf("release evidence contains stale diagnostic value %q: %s", staleValue, releaseEvidence)
 		}
