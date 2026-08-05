@@ -187,6 +187,59 @@ func TestReleaseFilesKeep130Unreleased(t *testing.T) {
 	}
 }
 
+func TestReleaseSourcesExcludeHistoricalDevelopmentArtifacts(t *testing.T) {
+	historicalPaths := []string{
+		".superpowers/sdd/issue25-task-5-report.md",
+		".superpowers/sdd/issue25-task-7-report.md",
+		"docs/superpowers/plans",
+		"docs/superpowers/specs",
+		"AI_INTEGRATION_PLAN.md",
+		"BUILD_PLAN.md",
+		"DISTRIBUTION_PLAN.md",
+		"TOKEN_EFFICIENCY_PLAN.md",
+		"architecture-current-snapshot.md",
+		"design-qa.md",
+	}
+	for _, path := range historicalPaths {
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("historical development artifact remains: %s", path)
+		} else if !os.IsNotExist(err) {
+			t.Errorf("inspect historical development artifact %s: %v", path, err)
+		}
+	}
+
+	publicMarkdown := []string{
+		"README.md",
+		"COMMANDS.md",
+		"ROADMAP.md",
+		"SCHEMA.md",
+		"docs/BENCHMARKING.md",
+		"docs/OUTPUTS.md",
+		"docs/RELEASE.md",
+		"docs/design-system.md",
+	}
+	forbidden := []string{
+		"/Users/gorecode/",
+		"C:/Users/goretzkh/",
+		"goregraph-benchmark/0442483-pre-fix",
+		"rdbv",
+		"weka",
+	}
+	for _, path := range publicMarkdown {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("read retained public Markdown %s: %v", path, err)
+			continue
+		}
+		text := strings.ToLower(string(body))
+		for _, value := range forbidden {
+			if strings.Contains(text, strings.ToLower(value)) {
+				t.Errorf("retained public Markdown %s exposes forbidden value %q", path, value)
+			}
+		}
+	}
+}
+
 func TestReleaseDocumentationDefinesSourceBackedContextContract(t *testing.T) {
 	body, err := os.ReadFile("docs/RELEASE.md")
 	if err != nil {

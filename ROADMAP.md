@@ -397,7 +397,7 @@ Acceptance criteria:
 
 Status: delivered in the current development branch.
 
-Goal: close the biggest practical gaps found in real WEKA test scans after `v0.6.0`: empty frontend API contracts, occasional cross-app route handler resolution, and missing Maven dependency graph output.
+Goal: close the biggest practical gaps found in real workspace test scans after `v0.6.0`: empty frontend API contracts, occasional cross-app route handler resolution, and missing Maven dependency graph output.
 
 Delivered in this milestone:
 

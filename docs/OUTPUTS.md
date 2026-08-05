@@ -418,7 +418,7 @@ These legacy/manual CLI operations remain supported:
 
 ```bash
 goregraph query . symbol-inventory --query microservices/ms-user --format markdown --limit 20
-goregraph query . symbol-resolve --query com.weka.UserService --format json --limit 20
+goregraph query . symbol-resolve --query com.acme.UserService --format json --limit 20
 goregraph query . symbol-usages --query symbol:<stable-id> --format markdown --limit 20
 goregraph query . symbol-api-consumers --query symbol:<stable-id> --format json --limit 20
 goregraph query . symbol-explain --query usage:<stable-id> --detail full --format markdown --limit 20

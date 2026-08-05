@@ -402,7 +402,7 @@ goregraph query . audit
 Workspace aliases also work after workspace output exists:
 
 ```bash
-cd ~/projects/weka
+cd ~/projects/acme-workspace
 goregraph query . workspace-context
 goregraph query . workspace-contracts
 goregraph query . workspace-features
@@ -516,7 +516,7 @@ returned stable ID:
 
 ```bash
 goregraph query . symbol-inventory --query microservices/ms-user --format markdown --limit 20
-goregraph query . symbol-resolve --query com.weka.UserService --format json --limit 20
+goregraph query . symbol-resolve --query com.acme.UserService --format json --limit 20
 goregraph query . symbol-usages --query symbol:<stable-id> --format markdown --limit 20
 goregraph query . symbol-api-consumers --query symbol:<stable-id> --format json --limit 20
 goregraph query . symbol-explain --query usage:<stable-id> --detail full --format markdown --limit 20

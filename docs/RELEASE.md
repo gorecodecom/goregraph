@@ -434,7 +434,7 @@ Completed release checks:
 - Open Issues is the default dashboard view and groups unresolved, mismatched, dynamic, and out-of-scope contracts by cause, including repeated `/tree/...` frontend prefix/gateway candidates.
 - Endpoint Paths lists a selected service as caller -> endpoint/relation -> provider/next hop and replaces the previous low-level raw node cloud.
 - The dashboard keeps scanned frontend projects visible even when no outgoing API contracts were detected, supports graph-node selection in the canvas and sidebar, supports deselection via repeated node click, Escape, or Clear selection, avoids clearing selection on accidental canvas clicks, prevents accidental page text selection while dragging, includes generated source file/line links, and explains status terms such as `RESOLVED`, `MISMATCH`, `UNRESOLVED`, `OUT_OF_SCOPE`, `EXTRACTED`, and `MATCHED`.
-- `api-contracts.json` now detects project-local `weka.request(method, path, ...)` frontend clients and maps RDBV-style `tree`, `downloads`, and `regulations` paths to the expected service candidates.
+- `api-contracts.json` detects supported project-local `<receiver>.request(method, path, ...)` frontend calls and derives service ownership from source and workspace evidence.
 - `service-dependencies.json` records Java backend service-client dependencies, and `workspace-service-map.json` merges those backend-to-backend relationships with frontend API contract relationships.
 - Architecture Map groups services into generic frontend, document, cadaster/regulation, identity/commerce, and platform/internal domains from scan metadata instead of hardcoding one workspace layout.
 - `goregraph workspace refresh` rebuilds workspace overlays from existing project outputs without scanning source files.

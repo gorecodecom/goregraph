@@ -110,7 +110,7 @@ created by `goregraph workspace build all` (or its `workspace scan-all` alias):
 
 ```bash
 goregraph query . symbol-inventory --query microservices/ms-user --format markdown --limit 20
-goregraph query . symbol-resolve --query com.weka.UserService --format json --limit 20
+goregraph query . symbol-resolve --query com.acme.UserService --format json --limit 20
 goregraph query . symbol-usages --query symbol:<stable-id> --format markdown --limit 20
 goregraph query . symbol-api-consumers --query symbol:<stable-id> --format json --limit 20
 goregraph query . symbol-explain --query usage:<stable-id> --detail full --format markdown --limit 20
@@ -847,7 +847,7 @@ goregraph query . audit
 Workspace aliases can be read from either a scanned project root or the workspace root:
 
 ```bash
-cd /Users/name/projects/weka
+cd /Users/name/projects/acme-workspace
 goregraph query . workspace-context
 goregraph query . workspace-contracts
 goregraph query . workspace-features
@@ -1097,7 +1097,7 @@ Examples:
 ```bash
 goregraph workspace status .
 goregraph workspace status frontend/frontend-monorepo
-goregraph workspace status . --workspace /Users/name/projects/weka
+goregraph workspace status . --workspace /Users/name/projects/acme-workspace
 ```
 
 Expected output:
@@ -1179,7 +1179,7 @@ Examples:
 goregraph workspace scan-missing .
 goregraph workspace scan-missing . --top 5
 goregraph workspace scan-missing . --top 5 --execute
-goregraph workspace scan-missing frontend/frontend-monorepo --workspace /Users/name/projects/weka
+goregraph workspace scan-missing frontend/frontend-monorepo --workspace /Users/name/projects/acme-workspace
 ```
 
 Default behavior:
@@ -1217,7 +1217,7 @@ goregraph workspace build agent .
 goregraph workspace build dashboard .
 goregraph workspace build all .
 goregraph workspace build all . --dry-run
-goregraph workspace build all frontend/frontend-monorepo --workspace /Users/name/projects/weka
+goregraph workspace build all frontend/frontend-monorepo --workspace /Users/name/projects/acme-workspace
 ```
 
 Targets:
@@ -1269,7 +1269,7 @@ Examples:
 ```bash
 goregraph workspace scan-all .
 goregraph workspace scan-all . --dry-run
-goregraph workspace scan-all frontend/frontend-monorepo --workspace /Users/name/projects/weka
+goregraph workspace scan-all frontend/frontend-monorepo --workspace /Users/name/projects/acme-workspace
 goregraph workspace scan-all . --no-update-gitignore
 ```
 
@@ -1316,7 +1316,7 @@ Examples:
 ```bash
 goregraph workspace clean .
 goregraph workspace clean . --execute
-goregraph workspace clean . --workspace /Users/name/projects/weka
+goregraph workspace clean . --workspace /Users/name/projects/acme-workspace
 ```
 
 Default behavior:
@@ -1348,7 +1348,7 @@ goregraph workspace refresh .
 goregraph workspace refresh . --target agent
 goregraph workspace refresh . --target dashboard
 goregraph workspace refresh . --target all
-goregraph workspace refresh frontend/frontend-monorepo --workspace /Users/name/projects/weka
+goregraph workspace refresh frontend/frontend-monorepo --workspace /Users/name/projects/acme-workspace
 ```
 
 Important behavior:
