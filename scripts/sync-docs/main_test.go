@@ -138,26 +138,24 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	releaseEvidence := renderCurrentReleaseEvidenceStatus()
 	for _, want := range []string{
 		"last controlled three-by-three release benchmark passed",
-		"candidate d452b16",
-		"Effective-token medians were 160072 baseline and 20228 assisted",
-		"87.36% reduction",
-		"mean effective tokens were 164199 baseline and 21146 assisted",
-		"87.12% reduction",
-		"Tool-call medians were 26 and 3",
-		"source-read medians were 19 and 2",
+		"candidate fb14d65",
+		"Effective-token medians were 162410 baseline and 28215 assisted",
+		"82.63% reduction",
+		"mean effective tokens were 162089 baseline and 26390 assisted",
+		"83.72% reduction",
+		"Tool-call medians were 28 and 3",
+		"source-read medians were 21 and 2",
 		"zero external skill reads",
 		"baseline quality at a median of 11 and assisted quality at 12",
 		"every assisted run scoring 12/12",
-		"qualifies only candidate d452b16",
-		"later source-derived generality changes are not covered",
-		"fresh matched matrix before 1.3.0 publication",
+		"qualifies the runtime candidate fb14d65 and documentation-only descendants",
 		"not a general token-savings guarantee",
 	} {
 		if !strings.Contains(releaseEvidence, want) {
 			t.Fatalf("release evidence is missing %q: %s", want, releaseEvidence)
 		}
 	}
-	for _, staleValue := range []string{"candidate b102756", "148625", "18628", "87.47%", "quality medians were 11 baseline and 10 assisted"} {
+	for _, staleValue := range []string{"candidate d452b16", "qualifies only candidate d452b16", "fresh matched matrix before 1.3.0 publication", "160072", "20228", "87.36%", "164199", "21146", "87.12%", "Tool-call medians were 26 and 3", "source-read medians were 19 and 2", "candidate b102756", "148625", "18628", "87.47%", "quality medians were 11 baseline and 10 assisted"} {
 		if strings.Contains(releaseEvidence, staleValue) {
 			t.Fatalf("release evidence contains stale diagnostic value %q: %s", staleValue, releaseEvidence)
 		}
