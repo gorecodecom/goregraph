@@ -1,7 +1,7 @@
 # GoreGraph Output Contract
 
 <!-- goregraph:generated current-contract start -->
-Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until 1.3.0 is explicitly published.
+Current release: GoreGraph 1.3.0 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 ## Build Targets and Extraction
@@ -329,9 +329,10 @@ assisted (85.92% lower), and means were 138,549 baseline and 23,000 assisted
 (83.40% lower). Tool-call medians were 28 baseline and 3 assisted; source-read
 medians were 19 baseline and 2 assisted. All six runs had zero external skill
 reads. Quality medians were 11 baseline and 12 assisted, with every assisted
-run scoring 12/12. This qualifies runtime candidate `0edc6d8` and
-documentation-only descendants. It covers one frozen historical
-three-repository Java case, not a general savings guarantee.
+run scoring 12/12. This qualifies runtime candidate `0edc6d8` and the final
+release descendant, whose later changes are confined to documentation, tests,
+and documentation-sync tooling. It covers one frozen historical three-repository
+Java case, not a general savings guarantee.
 
 ## Human Dashboard
 

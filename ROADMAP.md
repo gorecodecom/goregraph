@@ -110,9 +110,10 @@ Status: delivered.
 
 Goal: make GoreGraph easy to install and update on macOS, Linux, and Windows.
 
-Released versions: `0.1.0`, `0.1.1`.
-
-Reasoning: `0.1.0` is the first public pre-1.0 release. `0.1.1` validates package-manager release automation for Homebrew, Scoop, and manual Winget PR publishing. `1.0.0` is reserved for a stable public CLI/schema contract.
+Release automation has published tagged versions since `0.1.0`; the current
+release is `1.3.0`. `0.1.1` validated package-manager automation for Homebrew,
+Scoop, and manual Winget PR publishing. `1.0.0` established the stable public
+CLI and schema contract.
 
 Planned work:
 
@@ -352,7 +353,7 @@ Acceptance criteria:
 
 ## Milestone 10: Noise-Aware Frontend And Package Intelligence
 
-Status: delivered in the current development branch.
+Status: delivered in `v0.6.0`.
 
 Goal: make frontend monorepos and mixed JS/TS projects more useful by reducing static-analysis noise and adding deterministic package/API context.
 
@@ -395,7 +396,7 @@ Acceptance criteria:
 
 ## Milestone 11: Realistic API Contracts And Maven Graph
 
-Status: delivered in the current development branch.
+Status: delivered in `v0.7.0`.
 
 Goal: close the biggest practical gaps found in real workspace test scans after `v0.6.0`: empty frontend API contracts, occasional cross-app route handler resolution, and missing Maven dependency graph output.
 

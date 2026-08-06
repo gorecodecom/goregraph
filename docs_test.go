@@ -245,7 +245,7 @@ func TestDocumentationCoversExactCodeExplorer(t *testing.T) {
 		"UNRESOLVED",
 		"coverage warnings",
 		"API path steps",
-		"unreleased 1.3.0",
+		"1.3.0",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("exact Code Explorer documentation missing %q", want)
@@ -268,7 +268,7 @@ func TestDocumentationCoversEditableDashboardAndAPIContext(t *testing.T) {
 			"index/api-catalog.json",
 			"agent/context-index.json",
 			"4000",
-			"unreleased 1.3.0",
+			"`v1.3.0` is the current GoreGraph release",
 		},
 		"COMMANDS.md": {
 			"goregraph workspace dashboard edit [path]",
@@ -306,7 +306,7 @@ func TestDocumentationCoversEditableDashboardAndAPIContext(t *testing.T) {
 			"API Catalog",
 			"No auth evidence detected",
 			"agent/context-index.json",
-			"unreleased 1.3.0",
+			"`v1.3.0` is the current GoreGraph release",
 		},
 	}
 	for file, wants := range required {

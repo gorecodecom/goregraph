@@ -129,10 +129,13 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	}
 
 	currentContract := renderCurrentContract()
-	for _, want := range []string{"1.3.0", "Schema 3", "unreleased", "until 1.3.0 is explicitly published"} {
+	for _, want := range []string{"Current release", "1.3.0", "Schema 3"} {
 		if !strings.Contains(currentContract, want) {
 			t.Fatalf("current contract is missing %q: %s", want, currentContract)
 		}
+	}
+	if strings.Contains(strings.ToLower(currentContract), "unreleased") {
+		t.Fatalf("current release contract still claims an unreleased version: %s", currentContract)
 	}
 
 	releaseEvidence := renderCurrentReleaseEvidenceStatus()
@@ -148,7 +151,8 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 		"zero external skill reads",
 		"baseline quality at a median of 11 and assisted quality at 12",
 		"every assisted run scoring 12/12",
-		"qualifies the runtime candidate 0edc6d8 and documentation-only descendants",
+		"qualifies the runtime candidate 0edc6d8 and the final release descendant",
+		"confined to documentation, tests, and documentation-sync tooling",
 		"not a general token-savings guarantee",
 	} {
 		if !strings.Contains(releaseEvidence, want) {

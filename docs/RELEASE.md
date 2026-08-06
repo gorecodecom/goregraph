@@ -1,12 +1,12 @@
 # GoreGraph Release Checklist
 
-## Current Source Target
+## Current Release
 
 <!-- goregraph:generated current-contract start -->
-Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until 1.3.0 is explicitly published.
+Current release: GoreGraph 1.3.0 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-The unreleased 1.3.0 source target moves generated output to Schema 3 and adds
+The 1.3.0 release moves generated output to Schema 3 and adds
 preview-first safe Git updates, target-aware agent/dashboard builds, a bounded
 Context Pack workflow, and the exact cross-project Code Explorer from Issue
 #25:
@@ -192,16 +192,21 @@ release documentation, and decide explicitly whether to ship dashboard-only or
 continue Context-ranking work in a later version.
 
 <!-- goregraph:generated release-evidence-status start -->
-The last controlled three-by-three release benchmark passed for candidate 0edc6d8. Effective-token medians were 142796 baseline and 20105 assisted, an 85.92% reduction; mean effective tokens were 138549 baseline and 23000 assisted, an 83.40% reduction. Tool-call medians were 28 and 3, and source-read medians were 19 and 2. All six runs had zero external skill reads. The signed 12-point review scored baseline quality at a median of 11 and assisted quality at 12, with every assisted run scoring 12/12. That result qualifies the runtime candidate 0edc6d8 and documentation-only descendants. This evidence covers one frozen historical three-repository Java case and is not a general token-savings guarantee.
+The last controlled three-by-three release benchmark passed for candidate 0edc6d8. Effective-token medians were 142796 baseline and 20105 assisted, an 85.92% reduction; mean effective tokens were 138549 baseline and 23000 assisted, an 83.40% reduction. Tool-call medians were 28 and 3, and source-read medians were 19 and 2. All six runs had zero external skill reads. The signed 12-point review scored baseline quality at a median of 11 and assisted quality at 12, with every assisted run scoring 12/12. That result qualifies the runtime candidate 0edc6d8 and the final release descendant, whose later changes are confined to documentation, tests, and documentation-sync tooling. This evidence covers one frozen historical three-repository Java case and is not a general token-savings guarantee.
 <!-- goregraph:generated release-evidence-status end -->
 
 The previous failed controlled result remains retained and is not rescored.
 The passing prospectively calibrated matrix above supersedes it and qualifies
-runtime candidate `0edc6d8` and documentation-only descendants. A different
-runtime candidate requires a fresh matched matrix before entering the 1.3.0
-release flow.
+runtime candidate `0edc6d8` plus the final release descendant, whose later
+changes are confined to documentation, tests, and documentation-sync tooling. A
+different runtime candidate requires a fresh matched matrix before entering the
+1.3.0 release flow.
 
-No `v1.3.0` release has been published. Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending. Release workflow configuration is unchanged, and no release workflow has been run for this source target.
+`v1.3.0` is the current GoreGraph release, prepared on 2026-08-06. Its annotated
+tag publishes checksummed macOS, Linux, and Windows archives through GitHub
+Releases and updates the configured Homebrew, Scoop, and Winget publication
+repositories. Public Winget availability remains subject to Microsoft package
+acceptance.
 
 ## Completed v1.2.0 Milestone
 
@@ -492,10 +497,11 @@ schema: 3
 
 ## Release Flow
 
-Execute this flow only after the exact commit to be tagged has passed every
-documented release gate and release approval is explicit. The current
-runtime candidate `0edc6d8` and documentation-only descendants are qualified
-by the passing matched matrix; no tag or release has been created.
+This is the flow used for the current release. The exact tagged commit must pass
+every documented release gate and have explicit release approval. Runtime
+candidate `0edc6d8` and the final release descendant, whose later changes are
+confined to documentation, tests, and documentation-sync tooling, are qualified
+by the passing matched matrix.
 
 1. Confirm `main` is clean and pushed.
 2. Confirm README installation instructions are current.

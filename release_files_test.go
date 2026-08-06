@@ -108,7 +108,8 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 		"docs/RELEASE.md": {
 			"v1.3.0",
 			"v1.2.0",
-			"Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending.",
+			"Current Release",
+			"2026-08-06",
 			"Schema 2",
 			"v0.9.4",
 			"Architecture",
@@ -154,7 +155,7 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 	}
 }
 
-func TestReleaseFilesKeep130Unreleased(t *testing.T) {
+func TestReleaseFilesDescribe130AsCurrent(t *testing.T) {
 	files := []string{"README.md", "docs/RELEASE.md"}
 	var combined strings.Builder
 	for _, file := range files {
@@ -167,23 +168,20 @@ func TestReleaseFilesKeep130Unreleased(t *testing.T) {
 	}
 	text := combined.String()
 	for _, want := range []string{
-		"unreleased 1.3.0",
-		"Git tags, GitHub Releases, Homebrew publication, Scoop publication, and Winget publication all remain pending.",
+		"Current release: GoreGraph 1.3.0 with output Schema 3.",
+		"`v1.3.0` is the current GoreGraph release",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("release documentation missing %q", want)
 		}
 	}
 	for _, forbidden := range []string{
-		"`v1.3.0` is published",
-		"`v1.3.0` has been released",
-		"`v1.3.0` tag was created",
-		"Homebrew was updated to `v1.3.0`",
-		"Scoop was updated to `v1.3.0`",
-		"Winget was updated to `v1.3.0`",
+		"unreleased 1.3.0",
+		"has not been published",
+		"remain pending",
 	} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("release documentation must not claim publication: %q", forbidden)
+			t.Fatalf("release documentation contains stale pre-release claim: %q", forbidden)
 		}
 	}
 }
@@ -261,14 +259,15 @@ func TestReleaseDocumentationDefinesSourceBackedContextContract(t *testing.T) {
 	}
 }
 
-func TestReleaseNotesDescribeEditableDashboardWithoutPublishing130(t *testing.T) {
+func TestReleaseNotesDescribeEditableDashboardFor130(t *testing.T) {
 	body, err := os.ReadFile("docs/RELEASE.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(body)
 	for _, want := range []string{
-		"unreleased 1.3.0",
+		"Current Release",
+		"`v1.3.0` is the current GoreGraph release",
 		"goregraph workspace dashboard edit .",
 		".goregraph-dashboard.json",
 		"API Catalog",

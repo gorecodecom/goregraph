@@ -29,7 +29,7 @@ Example:
 ## Compatibility Rule
 
 <!-- goregraph:generated current-contract start -->
-Current source contract: GoreGraph 1.3.0 with output Schema 3 (unreleased). Published artifacts remain tied to the latest released tag until 1.3.0 is explicitly published.
+Current release: GoreGraph 1.3.0 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 Older Schema 1 and

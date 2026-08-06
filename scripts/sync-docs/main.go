@@ -199,7 +199,7 @@ func renderAgentInstruction() string {
 
 func renderCurrentContract() string {
 	return fmt.Sprintf(
-		"Current source contract: GoreGraph %s with output Schema %d (unreleased). Published artifacts remain tied to the latest released tag until 1.3.0 is explicitly published.",
+		"Current release: GoreGraph %s with output Schema %d.",
 		version.Version,
 		scan.SchemaVersion,
 	)
@@ -212,7 +212,8 @@ func renderCurrentReleaseEvidenceStatus() string {
 		"Tool-call medians were 28 and 3, and source-read medians were 19 and 2. All six runs had " +
 		"zero external skill reads. The signed 12-point review scored baseline quality at a median " +
 		"of 11 and assisted quality at 12, with every assisted run scoring 12/12. That result qualifies " +
-		"the runtime candidate 0edc6d8 and documentation-only descendants. This evidence covers " +
+		"the runtime candidate 0edc6d8 and the final release descendant, whose later changes are " +
+		"confined to documentation, tests, and documentation-sync tooling. This evidence covers " +
 		"one frozen historical three-repository Java case and is not a general token-savings guarantee."
 }
 
