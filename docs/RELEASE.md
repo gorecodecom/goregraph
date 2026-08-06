@@ -560,7 +560,9 @@ Expected command after Microsoft accepts the package:
 winget install --id GoreCode.GoreGraph -e
 ```
 
-GoReleaser is configured to generate Winget manifests and push them to the configured fork. The package is not live until the manifest is accepted in `microsoft/winget-pkgs`.
+When `WINGET_TOKEN` is present, GoReleaser generates Winget manifests and
+pushes them to the configured fork. The package is not live until the manifest
+is accepted in `microsoft/winget-pkgs`.
 
 `v0.1.1` status:
 
@@ -570,7 +572,7 @@ GoReleaser is configured to generate Winget manifests and push them to the confi
 - The PR was opened manually: `https://github.com/microsoft/winget-pkgs/pull/397959`.
 - The PR is waiting on Microsoft CLA/review checks.
 
-Current release behavior:
+Current release behavior when `WINGET_TOKEN` is present:
 
 - GoReleaser generates the Winget manifests.
 - GoReleaser pushes a `goregraph-<version>` branch to `gorecodecom/winget-pkgs`.

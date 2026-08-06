@@ -172,6 +172,7 @@ func TestReleaseFilesDescribe130AsCurrent(t *testing.T) {
 		"`v1.3.0` is the current GoreGraph release",
 		"Scoop and Winget publication",
 		"repositories are updated only when their respective repository tokens are",
+		"Current release behavior when `WINGET_TOKEN` is present:",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("release documentation missing %q", want)
