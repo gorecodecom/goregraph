@@ -204,8 +204,9 @@ different runtime candidate requires a fresh matched matrix before entering the
 
 `v1.3.0` is the current GoreGraph release, prepared on 2026-08-06. Its annotated
 tag publishes checksummed macOS, Linux, and Windows archives through GitHub
-Releases and updates the configured Homebrew, Scoop, and Winget publication
-repositories. Public Winget availability remains subject to Microsoft package
+Releases. Homebrew publication is configured; Scoop and Winget publication
+repositories are updated only when their respective repository tokens are
+configured. Public Winget availability remains subject to Microsoft package
 acceptance.
 
 ## Completed v1.2.0 Milestone
@@ -235,7 +236,7 @@ GitHub repository secrets:
 
 ## Public Release Status
 
-`v0.1.0` through `v0.9.8` established packaging, the Architecture-first dashboard, evidence, diagnostics, Query/MCP, directed traces, Data Flow, full Java/Spring, JS/TS/Node/React, Go, PHP, Rust, and Python adapters, honest Shell integration, and generic workspace discovery. `v1.0.0-rc.1` froze and passed the Schema 2 plus CLI/Query/MCP contracts. `v1.0.0` is the stable public release and changes no frozen contract from the release candidate.
+`v0.1.0` through `v0.9.8` established packaging, the Architecture-first dashboard, evidence, diagnostics, Query/MCP, directed traces, Data Flow, full Java/Spring, JS/TS/Node/React, Go, PHP, Rust, and Python adapters, honest Shell integration, and generic workspace discovery. `v1.0.0-rc.1` froze and passed the Schema 2 plus CLI/Query/MCP contracts. `v1.0.0` was the first stable public release and changed no frozen contract from the release candidate.
 
 Milestone history includes `v0.9.4` for directed traces and Data Flow.
 
@@ -462,15 +463,6 @@ Completed release checks:
 - Fresh-scan acceptance previews `goregraph workspace clean .`, reviews the listed generated paths, executes `goregraph workspace clean . --execute`, and then runs `goregraph workspace scan-all .` with the newly installed binary. Existing refreshed outputs are not accepted as a substitute.
 - `.goregraph-workspace/workspace-map.html` remains compatible with Schema 1 payloads.
 - `goregraph version` reports `0.9.1`.
-
-Remaining post-release checks:
-
-- Verify the GitHub release contains all configured platform archives and `checksums.txt`.
-- Verify the Homebrew tap installs and reports `1.0.0`.
-- Verify after tagging that the Scoop bucket was updated automatically.
-- Open the Winget PR manually when a new manifest branch is generated.
-- Wait for Microsoft acceptance before documenting Winget as an active install path.
-- Decide later whether macOS notarization or Windows code signing is worth the operational cost.
 
 ## Pre-Release Checks
 

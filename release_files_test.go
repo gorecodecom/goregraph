@@ -170,6 +170,8 @@ func TestReleaseFilesDescribe130AsCurrent(t *testing.T) {
 	for _, want := range []string{
 		"Current release: GoreGraph 1.3.0 with output Schema 3.",
 		"`v1.3.0` is the current GoreGraph release",
+		"Scoop and Winget publication",
+		"repositories are updated only when their respective repository tokens are",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("release documentation missing %q", want)
@@ -179,6 +181,9 @@ func TestReleaseFilesDescribe130AsCurrent(t *testing.T) {
 		"unreleased 1.3.0",
 		"has not been published",
 		"remain pending",
+		"`v1.0.0` is the stable public release",
+		"Remaining post-release checks",
+		"reports `1.0.0`",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("release documentation contains stale pre-release claim: %q", forbidden)
