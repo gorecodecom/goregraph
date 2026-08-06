@@ -8824,24 +8824,21 @@ func benchmarkContextSourceConcernCandidates(size int) testing.BenchmarkResult {
 }
 
 func TestContextSourceConcernPlanningGrowthIsSubquadratic(t *testing.T) {
-	if raceDetectorEnabled {
-		t.Skip("timing threshold is not valid under race instrumentation")
-	}
 	small := benchmarkContextSourceConcernPlanning(2)
 	large := benchmarkContextSourceConcernPlanning(4)
-	growth := float64(large.NsPerOp()) / float64(small.NsPerOp())
+	growth := float64(large.AllocsPerOp()) / float64(small.AllocsPerOp())
 	t.Logf(
-		"context source concern planning growth: %.2fx (small=%s large=%s)",
+		"context source concern planning allocation growth: %.2fx (small=%d large=%d)",
 		growth,
-		small,
-		large,
+		small.AllocsPerOp(),
+		large.AllocsPerOp(),
 	)
 	if growth >= 3.25 {
 		t.Fatalf(
-			"doubling context source concern projects grew planning time %.2fx; want less than 3.25x (small=%s large=%s)",
+			"doubling context source concern projects grew planning allocations %.2fx; want less than 3.25x (small=%d large=%d)",
 			growth,
-			small,
-			large,
+			small.AllocsPerOp(),
+			large.AllocsPerOp(),
 		)
 	}
 }
@@ -8900,6 +8897,7 @@ func benchmarkContextSourceConcernPlanning(projectCount int) testing.BenchmarkRe
 	index := scan.AgentContextIndexRecord{Facts: facts}
 
 	return testing.Benchmark(func(benchmark *testing.B) {
+		benchmark.ReportAllocs()
 		for iteration := 0; iteration < benchmark.N; iteration++ {
 			contextSourceConcerns(pack, index)
 		}

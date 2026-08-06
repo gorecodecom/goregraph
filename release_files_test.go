@@ -18,9 +18,10 @@ func TestOptionalPublisherTemplatesHandleMissingSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	text := strings.ReplaceAll(string(body), "\r\n", "\n")
 
 	skipTemplatePattern := regexp.MustCompile(`(?m)^    skip_upload: ['"](.*)['"]$`)
-	matches := skipTemplatePattern.FindAllStringSubmatch(string(body), -1)
+	matches := skipTemplatePattern.FindAllStringSubmatch(text, -1)
 	if len(matches) != 2 {
 		t.Fatalf("found %d optional publisher templates, want 2", len(matches))
 	}
@@ -245,6 +246,7 @@ func TestReleaseDocumentationDefinesSourceBackedContextContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	text := strings.ReplaceAll(string(body), "\r\n", "\n")
 	for _, want := range []string{
 		"source sections replace reads of included ranges",
 		"`source_coverage` is authoritative",
@@ -253,7 +255,7 @@ func TestReleaseDocumentationDefinesSourceBackedContextContract(t *testing.T) {
 		"`effective_tokens` is\n`input_tokens - cached_input_tokens + output_tokens`, or uncached input plus\noutput",
 		"offline, explicit, dependency-free, and watcher-free",
 	} {
-		if !strings.Contains(string(body), want) {
+		if !strings.Contains(text, want) {
 			t.Fatalf("release notes missing source-backed Context contract %q", want)
 		}
 	}
