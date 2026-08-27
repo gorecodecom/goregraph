@@ -29,7 +29,7 @@ Example:
 ## Compatibility Rule
 
 <!-- goregraph:generated current-contract start -->
-Current release: GoreGraph 1.3.1 with output Schema 3.
+Current release: GoreGraph 1.4.0 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 Older Schema 1 and

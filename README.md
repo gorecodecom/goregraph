@@ -47,12 +47,12 @@ handling.
 ## Installation
 
 <!-- goregraph:generated current-contract start -->
-Current release: GoreGraph 1.3.1 with output Schema 3.
+Current release: GoreGraph 1.4.0 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-`v1.3.1` is the current GoreGraph release. This patch makes the standard
-`goregraph dashboard` commands prefer an existing interactive workspace HTML
-dashboard over project Markdown reports. GitHub Releases provides checksummed
+`v1.4.0` is the current GoreGraph release. It adds content-aware
+`goregraph workspace update`, which rebuilds only changed or incomplete projects
+before reconciling the workspace views. GitHub Releases provides checksummed
 archives for macOS, Linux, and Windows. The release workflow also updates
 Homebrew and, when their repository tokens are configured, Scoop and Winget
 publication repositories. Winget availability still depends on Microsoft
@@ -229,6 +229,7 @@ Choose the command by scan scope, not only by output type:
 |---|---|---|---|
 | Current project with workspace refresh | `goregraph build dashboard .` | Only the selected project; sibling projects are not scanned | Project reports in `goregraph-out/dashboard/`; a detected workspace overlay is refreshed from existing sibling indexes |
 | Current project only | `goregraph build dashboard . --no-workspace` | Only the selected project | Project reports in `goregraph-out/dashboard/`; workspace discovery and reconciliation are skipped |
+| Changed workspace projects | `goregraph workspace update . --target dashboard` | Every project is content-checked; only changed, new, or incomplete projects are scanned | Updated project reports plus one reconciled interactive workspace dashboard |
 | Complete workspace | `goregraph workspace build dashboard .` | Every discovered workspace project | Project reports plus the interactive dashboard in `.goregraph-workspace/dashboard/` |
 
 A project dashboard consists of human-readable reports. The full interactive
@@ -369,16 +370,19 @@ eligible clean repository. It never stashes, resets, rebases, force-switches, ru
 repository hooks, or executes project code. Add `--format json` for structured
 output.
 
-For a workspace, update each unique Git repository before rebuilding the projections:
+For a workspace, update each unique Git repository before incrementally updating
+the projections:
 
 ```bash
 goregraph workspace git update .
 goregraph workspace git update . --execute
-goregraph workspace build all .
+goregraph workspace update .
 ```
 
 Workspace execution continues after blockers so eligible repositories can still
 update, then returns a non-zero exit code when any repository needs attention.
+The Git command changes checkouts only; `workspace update` then detects relevant
+content changes and rebuilds the affected GoreGraph projects.
 
 Print the generated human report:
 
@@ -421,10 +425,14 @@ Refresh after code changes:
 
 ```bash
 goregraph update [path] [--target agent|dashboard|all]
+goregraph workspace update [path] [--target agent|dashboard|all] [--dry-run]
 ```
 
-`update` defaults to an explicit full refresh; `--target` selects one projection.
-It does not install hooks, run in the background, or watch files.
+Project `update` explicitly rebuilds one selected project. `workspace update`
+checks every discovered project by relevant file path and content hash, fully
+rebuilds only changed, new, or incomplete projects, and reconciles the workspace
+once. Both commands default to `--target all`; neither installs hooks, runs in
+the background, or watches files.
 
 Inspect the detected workspace without scanning:
 
@@ -450,7 +458,25 @@ Build both projections for every discovered project in the workspace:
 goregraph workspace build all .
 ```
 
-`goregraph workspace scan-all .` remains a compatibility alias for this command.
+For the normal incremental workflow after source changes, inspect all projects
+and rebuild only those whose relevant content changed:
+
+```bash
+goregraph workspace update . --dry-run
+goregraph workspace update .
+```
+
+Change detection compares the actual included file paths and SHA-256 content
+hashes with each project's existing `index/files.json`. It therefore detects
+uncommitted modifications plus added and deleted files without requiring Git.
+Missing or invalid indexes, an incompatible output schema, and missing selected
+projections also cause a safe project rebuild. Unchanged project indexes are
+preserved, and the workspace is reconciled once even when no project needs a
+rebuild. Use `--target agent|dashboard|all`, `--workspace <path>`, and
+`--no-update-gitignore` as needed.
+
+`goregraph workspace scan-all .` remains a compatibility alias for
+`goregraph workspace build all .`.
 Workspace builds scan each discovered project once, then reconcile the workspace
 once after all project indexes exist. `workspace build agent` and
 `workspace build dashboard` select one projection without rebuilding the other.
@@ -689,6 +715,15 @@ goregraph workspace build <agent|dashboard|all> [path]
 
 Scan every discovered project once and reconcile the workspace once for the
 selected projection or both. Use `--dry-run` to print the plan.
+
+```bash
+goregraph workspace update [path] [--target agent|dashboard|all] [--dry-run]
+```
+
+Content-check every discovered project, rebuild only changed or incomplete
+projects, and reconcile the workspace once. The default target is `all`.
+`--dry-run` prints each project's `build` or `skip` decision and added, modified,
+and deleted file counts without writing output.
 
 ```bash
 goregraph workspace scan-all <path>

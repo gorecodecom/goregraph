@@ -33,6 +33,7 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 
 func TestWorkspaceSubcommandsSupportShortHelp(t *testing.T) {
 	for _, command := range []string{
+		"update",
 		"refresh",
 		"dashboard",
 		"explain",
@@ -266,6 +267,116 @@ func TestRunWorkspaceBuildCommandsWriteSelectedProjection(t *testing.T) {
 			assertCLIWorkspaceProjection(t, out, "agent", target == "agent" || target == "all")
 			assertCLIWorkspaceProjection(t, out, "dashboard", target == "dashboard" || target == "all")
 		})
+	}
+}
+
+func TestRunWorkspaceUpdateDryRunsThenBuildsOnlyChangedProjects(t *testing.T) {
+	workspace := t.TempDir()
+	orders := filepath.Join(workspace, "services", "orders")
+	users := filepath.Join(workspace, "services", "users")
+	writeFile(t, orders, "go.mod", "module example.test/orders\n")
+	writeFile(t, orders, "main.go", "package main\nconst version = 1\n")
+	writeFile(t, users, "go.mod", "module example.test/users\n")
+	writeFile(t, users, "main.go", "package main\nconst version = 1\n")
+
+	var buildOut, buildErr bytes.Buffer
+	if code := Run([]string{"workspace", "build", "all", workspace, "--workspace", workspace, "--no-update-gitignore"}, &buildOut, &buildErr); code != 0 {
+		t.Fatalf("initial workspace build exit code = %d, stderr=%s", code, buildErr.String())
+	}
+	writeFile(t, orders, "main.go", "package main\nconst version = 2\n")
+	ordersAudit := filepath.Join(orders, "goregraph-out", "index", "audit.json")
+	usersAudit := filepath.Join(users, "goregraph-out", "index", "audit.json")
+	if err := os.WriteFile(ordersAudit, []byte("changed sentinel"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(usersAudit, []byte("unchanged sentinel"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var dryOut, dryErr bytes.Buffer
+	dryCode := Run([]string{"workspace", "update", workspace, "--workspace", workspace, "--dry-run", "--no-update-gitignore"}, &dryOut, &dryErr)
+	if dryCode != 0 {
+		t.Fatalf("dry run exit code = %d, stderr=%s", dryCode, dryErr.String())
+	}
+	for _, want := range []string{
+		"# GoreGraph Workspace Update Plan",
+		"Dry run: true",
+		"project `services/orders` - build - source files changed - added 0, modified 1, deleted 0",
+		"project `services/users` - skip - source files unchanged",
+	} {
+		if !strings.Contains(dryOut.String(), want) {
+			t.Fatalf("dry-run output missing %q:\n%s", want, dryOut.String())
+		}
+	}
+	for path, want := range map[string]string{ordersAudit: "changed sentinel", usersAudit: "unchanged sentinel"} {
+		body, err := os.ReadFile(path)
+		if err != nil || string(body) != want {
+			t.Fatalf("dry run changed %s: body=%q err=%v", path, body, err)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "update", workspace, "--workspace", workspace, "--no-update-gitignore"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("update exit code = %d, stdout=%s, stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Updated 1 workspace project(s); 1 unchanged.") {
+		t.Fatalf("update summary missing:\n%s", stdout.String())
+	}
+	ordersAuditBody, err := os.ReadFile(ordersAudit)
+	if err != nil || string(ordersAuditBody) == "changed sentinel" {
+		t.Fatalf("changed project was not rebuilt: body=%q err=%v", ordersAuditBody, err)
+	}
+	usersAuditBody, err := os.ReadFile(usersAudit)
+	if err != nil || string(usersAuditBody) != "unchanged sentinel" {
+		t.Fatalf("unchanged project was rebuilt: body=%q err=%v", usersAuditBody, err)
+	}
+	assertCLIPathExists(t, filepath.Join(workspace, ".goregraph-workspace", "dashboard", "workspace-map.html"))
+}
+
+func TestRunWorkspaceUpdateReconcilesRemovedProjectWhenSourcesAreOtherwiseUnchanged(t *testing.T) {
+	workspace := t.TempDir()
+	orders := filepath.Join(workspace, "services", "orders")
+	users := filepath.Join(workspace, "services", "users")
+	writeFile(t, orders, "go.mod", "module example.test/orders\n")
+	writeFile(t, orders, "main.go", "package main\n")
+	writeFile(t, users, "go.mod", "module example.test/users\n")
+	writeFile(t, users, "main.go", "package main\n")
+	var buildOut, buildErr bytes.Buffer
+	if code := Run([]string{"workspace", "build", "all", workspace, "--workspace", workspace, "--no-update-gitignore"}, &buildOut, &buildErr); code != 0 {
+		t.Fatalf("initial workspace build exit code = %d, stderr=%s", code, buildErr.String())
+	}
+	if err := os.RemoveAll(orders); err != nil {
+		t.Fatal(err)
+	}
+	usersAudit := filepath.Join(users, "goregraph-out", "index", "audit.json")
+	if err := os.WriteFile(usersAudit, []byte("unchanged sentinel"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"workspace", "update", workspace, "--workspace", workspace, "--no-update-gitignore"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("update exit code = %d, stdout=%s, stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Updated 0 workspace project(s); 1 unchanged.") {
+		t.Fatalf("update summary missing:\n%s", stdout.String())
+	}
+	usersAuditBody, err := os.ReadFile(usersAudit)
+	if err != nil || string(usersAuditBody) != "unchanged sentinel" {
+		t.Fatalf("unchanged project was rebuilt: body=%q err=%v", usersAuditBody, err)
+	}
+	registryPath := filepath.Join(workspace, ".goregraph-workspace", "index", "registry.json")
+	registryBody, err := os.ReadFile(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registry scan.WorkspaceRegistryRecord
+	if err := json.Unmarshal(registryBody, &registry); err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Projects) != 1 || registry.Projects[0].Path != "services/users" {
+		t.Fatalf("registry projects = %#v, want only services/users", registry.Projects)
 	}
 }
 
@@ -1217,7 +1328,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 1.3.1",
+		"goregraph 1.4.0",
 		"commit:",
 		"built:",
 		"go:",
@@ -1873,6 +1984,7 @@ func TestGlobalAndWorkspaceHelpLeadWithCanonicalBuildsAndMarkerRules(t *testing.
 				"goregraph build dashboard .",
 				"goregraph build all .",
 				"goregraph update . --target agent",
+				"goregraph workspace update . --dry-run",
 				"scan is the compatibility alias for build all",
 				"standard MCP exposes only task_context",
 				"--expert-tools is for manual diagnostics",
@@ -1887,6 +1999,8 @@ func TestGlobalAndWorkspaceHelpLeadWithCanonicalBuildsAndMarkerRules(t *testing.
 				"goregraph workspace build agent .",
 				"goregraph workspace build dashboard .",
 				"goregraph workspace build all .",
+				"goregraph workspace update . --dry-run",
+				"rebuilds only changed or incomplete projects",
 				"goregraph workspace refresh . --target agent",
 				"scan-all is the compatibility alias for workspace build all",
 				"Scans each discovered project once and reconciles once",
@@ -1920,7 +2034,7 @@ func TestWorkspaceHelpUsesProgressiveDisclosure(t *testing.T) {
 			t.Fatalf("%v exit code = %d, stderr=%s", args, code, stderr.String())
 		}
 		for _, want := range []string{
-			"build <target>", "dashboard", "status", "explain", "path", "impact",
+			"build <target>", "update [path]", "dashboard", "status", "explain", "path", "impact",
 			"goregraph workspace help --all",
 			"--workspace <path>",
 			".goregraph-workspace.yml",
@@ -1948,7 +2062,7 @@ func TestWorkspaceAllHelpPreservesCompleteCommandCatalog(t *testing.T) {
 		for _, want := range []string{
 			"Core commands:", "build <target>", "status", "dashboard",
 			"Exploration:", "explain", "path", "impact", "diff",
-			"Maintenance:", "scan-missing", "refresh", "clean", "git update",
+			"Maintenance:", "update [path]", "scan-missing", "refresh", "clean", "git update",
 			"Compatibility:", "scan-all",
 		} {
 			if !strings.Contains(stdout.String(), want) {
@@ -1973,7 +2087,7 @@ func TestWorkspaceUsageAndDashboardHelpMatchCanonicalActions(t *testing.T) {
 	if code := Run([]string{"workspace"}, &stdout, &stderr); code != 2 {
 		t.Fatalf("workspace exit code = %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "workspace <build|status|") {
+	if !strings.Contains(stderr.String(), "workspace <build|update|status|") {
 		t.Fatalf("workspace usage omits build:\n%s", stderr.String())
 	}
 
@@ -1991,6 +2105,27 @@ func TestWorkspaceUsageAndDashboardHelpMatchCanonicalActions(t *testing.T) {
 		}
 		if !strings.Contains(stdout.String(), test.want) {
 			t.Fatalf("%v help missing %q:\n%s", test.args, test.want, stdout.String())
+		}
+	}
+}
+
+func TestWorkspaceUpdateHelpDocumentsContentBasedIncrementalBuild(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"workspace", "update", "help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("workspace update help exit code = %d, stderr=%s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Usage: goregraph workspace update [path]",
+		"relevant file path and content hash",
+		"only changed or incomplete projects",
+		"Uncommitted, added, and deleted files",
+		"--target agent|dashboard|all",
+		"--dry-run",
+		"--workspace <path>",
+		"--no-update-gitignore",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("workspace update help missing %q:\n%s", want, stdout.String())
 		}
 	}
 }

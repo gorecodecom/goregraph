@@ -147,12 +147,14 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 		)
 	}
 	if len(args) == 0 {
-		fmt.Fprint(stderr, "error: usage: goregraph workspace <build|status|scan-missing|scan-all|refresh|clean|diff|dashboard|explain|path|impact|git> [path] [options]\n")
+		fmt.Fprint(stderr, "error: usage: goregraph workspace <build|update|status|scan-missing|scan-all|refresh|clean|diff|dashboard|explain|path|impact|git> [path] [options]\n")
 		return 2
 	}
 	switch args[0] {
 	case "build":
 		return runWorkspaceBuild(args[1:], stdout, stderr)
+	case "update":
+		return runWorkspaceUpdate(args[1:], stdout, stderr)
 	case "status":
 		return runWorkspaceStatus(args[1:], stdout, stderr)
 	case "scan-missing":
@@ -229,6 +231,142 @@ Use a detected grouped layout, --workspace <path>, or .goregraph-workspace.yml.
 		return 2
 	}
 	return runWorkspaceScanAllTarget(args[1:], stdout, stderr, target)
+}
+
+func runWorkspaceUpdate(args []string, stdout, stderr io.Writer) int {
+	root := "."
+	dryRun := false
+	target := scan.BuildTargetAll
+	overrides := config.Defaults()
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--dry-run":
+			dryRun = true
+		case "--target":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --target requires agent, dashboard, or all\n")
+				return 2
+			}
+			i++
+			parsed, err := scan.ParseBuildTarget(args[i])
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+				return 2
+			}
+			target = parsed
+		case "--workspace":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, "error: --workspace requires a path\n")
+				return 2
+			}
+			i++
+			overrides.WorkspaceRoot = args[i]
+		case "--no-update-gitignore":
+			overrides.UpdateGitignore = false
+		case "--help", "-h", "help":
+			printWorkspaceUpdateHelp(stdout)
+			return 0
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(stderr, "unknown option: %s\n", arg)
+				return 2
+			}
+			root = arg
+		}
+	}
+
+	loaded, err := config.Load(root)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+	loaded.UpdateGitignore = overrides.UpdateGitignore
+	loaded.Workspace = true
+	loaded.WorkspaceRoot = overrides.WorkspaceRoot
+	plan, err := scan.WorkspaceUpdatePlan(root, loaded, target)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace update failed: %v\n", err)
+		if err.Error() == "no GoreGraph workspace detected" {
+			fmt.Fprint(stderr, "hint: rerun with --workspace <workspace-root> or add .goregraph-workspace.yml to the workspace root\n")
+		}
+		return 1
+	}
+	printWorkspaceUpdatePlan(stdout, plan, dryRun)
+	if dryRun {
+		return 0
+	}
+
+	buildCount := 0
+	for _, item := range plan.Items {
+		if item.Action == scan.WorkspaceUpdateActionBuild {
+			buildCount++
+		}
+	}
+	updated := 0
+	for _, item := range plan.Items {
+		if item.Action != scan.WorkspaceUpdateActionBuild {
+			continue
+		}
+		projectConfig, err := config.Load(item.AbsPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
+			return 1
+		}
+		projectConfig.UpdateGitignore = loaded.UpdateGitignore
+		projectConfig.Workspace = false
+		projectConfig.WorkspaceRoot = plan.WorkspaceRoot
+		if projectConfig.UpdateGitignore {
+			changed, err := gitignore.EnsureOutputIgnored(item.AbsPath, projectConfig.OutputDir)
+			if err != nil {
+				fmt.Fprintf(stderr, "error: updating %s .gitignore failed: %v\n", item.Project, err)
+				return 1
+			}
+			if changed {
+				fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(item.AbsPath, ".gitignore"))
+			}
+		}
+		_, err = runWorkspaceProjectWithProgress(
+			stdout,
+			stderr,
+			updated+1,
+			buildCount,
+			item.Project,
+			defaultWorkspaceProgressClock(),
+			func() (scan.Result, error) {
+				return scan.RunBuild(item.AbsPath, projectConfig, target)
+			},
+		)
+		if err != nil {
+			return 1
+		}
+		updated++
+	}
+
+	loaded.Workspace = true
+	loaded.WorkspaceRoot = plan.WorkspaceRoot
+	if _, err := scan.ReconcileWorkspaceTarget(plan.WorkspaceRoot, loaded, target); err != nil {
+		fmt.Fprintf(stderr, "error: reconciling workspace failed: %v\n", err)
+		return 1
+	}
+	if loaded.UpdateGitignore {
+		changed, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: updating workspace .gitignore failed: %v\n", err)
+			return 1
+		}
+		if changed {
+			fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(plan.WorkspaceRoot, ".gitignore"))
+		}
+	}
+	unchanged := len(plan.Items) - updated
+	fmt.Fprintf(stdout, "\nUpdated %d workspace project(s); %d unchanged.\n", updated, unchanged)
+	manifest := scan.NewWorkspaceOutputLayout(filepath.Join(plan.WorkspaceRoot, ".goregraph-workspace")).Manifest
+	if err := printProjectionSummary(stdout, target, manifest); err != nil {
+		fmt.Fprintf(stderr, "error: reading workspace update manifest failed: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
@@ -1069,6 +1207,29 @@ func printWorkspaceScanAllPlan(w io.Writer, plan scan.WorkspaceProjectScanPlanRe
 	}
 }
 
+func printWorkspaceUpdatePlan(w io.Writer, plan scan.WorkspaceUpdatePlanRecord, dryRun bool) {
+	fmt.Fprint(w, "# GoreGraph Workspace Update Plan\n\n")
+	fmt.Fprintf(w, "- Workspace root: `%s`\n", plan.WorkspaceRoot)
+	if plan.Current != "" {
+		fmt.Fprintf(w, "- Current project: `%s`\n", plan.Current)
+	}
+	fmt.Fprintf(w, "- Dry run: %t\n\n", dryRun)
+	if len(plan.Items) == 0 {
+		fmt.Fprint(w, "- none\n")
+		return
+	}
+	for index, item := range plan.Items {
+		fmt.Fprintf(w, "%d. project `%s` - %s - %s", index+1, item.Project, item.Action, item.Reason)
+		if item.Added != 0 || item.Modified != 0 || item.Deleted != 0 {
+			fmt.Fprintf(w, " - added %d, modified %d, deleted %d", item.Added, item.Modified, item.Deleted)
+		}
+		fmt.Fprintln(w)
+	}
+	if dryRun {
+		fmt.Fprint(w, "\nRun without `--dry-run` to build changed projects and reconcile the workspace.\n")
+	}
+}
+
 func printWorkspaceCleanPlan(w io.Writer, plan scan.WorkspaceCleanPlanRecord, dryRun bool) {
 	fmt.Fprint(w, "# GoreGraph Workspace Clean Plan\n\n")
 	fmt.Fprintf(w, "- Workspace root: `%s`\n", plan.WorkspaceRoot)
@@ -1523,7 +1684,7 @@ Core commands:
   context <path>    Build one deterministic, budgeted Context Pack
   dashboard         Print, open, or edit the applicable dashboard
   doctor <path>     Check generated output health
-  workspace         Build and inspect workspace-wide projections
+  workspace         Build, update, and inspect workspace-wide projections
   mcp               Start standard MCP with task_context only
 
 More commands and compatibility aliases:
@@ -1544,7 +1705,7 @@ Core commands:
   context <path>    Build one deterministic, budgeted Context Pack
   dashboard         Print, open, or edit the applicable dashboard
   doctor <path>     Check generated output health
-  workspace         Show, scan, clean, and inspect workspace projects
+  workspace         Show, build, update, clean, and inspect workspace projects
   mcp               Start standard MCP with task_context only
 
 Manual exploration:
@@ -1590,6 +1751,7 @@ Examples:
   goregraph workspace build agent .
   goregraph workspace build dashboard .
   goregraph workspace build all .
+  goregraph workspace update . --dry-run
   goregraph workspace scan-all .
   goregraph workspace git update .
   goregraph workspace git update . --execute
@@ -1653,6 +1815,7 @@ func printWorkspaceHelp(w io.Writer) {
 
 Core commands:
   build <target>    Build agent, dashboard, or all workspace projections
+  update [path]     Rebuild changed projects and reconcile the workspace
   dashboard [path] Print, open, or edit the workspace dashboard
   status [path]    Show projects and loaded indexes without scanning
 
@@ -1688,6 +1851,7 @@ Exploration:
   diff                 Compare two generated workspace output directories
 
 Maintenance:
+  update [path]        Rebuild content-changed or incomplete workspace projects
   scan-missing [path]  Show prioritized missing service scans; add --execute to scan
   refresh [path]       Refresh workspace overlays without scanning source files
   clean [path]         Show generated workspace outputs; add --execute to remove
@@ -1703,6 +1867,9 @@ Examples:
   goregraph workspace build agent .
   goregraph workspace build dashboard .
   goregraph workspace build all .
+  goregraph workspace update .
+  goregraph workspace update . --dry-run
+  goregraph workspace update . --target dashboard
   goregraph workspace refresh . --target agent
   goregraph workspace scan-all .
   goregraph workspace git update .
@@ -1725,6 +1892,8 @@ Workspace detection:
   explicit project build can still scan a deliberately selected markerless directory.
   Once a project root is detected, nested manifests remain part of that project.
   Scans each discovered project once and reconciles once after the project loop.
+  workspace update hashes relevant project files and rebuilds only changed or incomplete projects.
+  It reconciles once after those selective builds.
   scan-all is the compatibility alias for workspace build all.
   A build or scan does not create .goregraph-workspace.yml. The generated
   .goregraph-workspace/ is removable generated output, not a persistent marker.
@@ -1771,5 +1940,26 @@ Examples:
   goregraph update . --target agent
   goregraph update . --target dashboard --no-workspace
   goregraph update . --target all --workspace ..
+`)
+}
+
+func printWorkspaceUpdateHelp(w io.Writer) {
+	fmt.Fprint(w, `Usage: goregraph workspace update [path] [--target agent|dashboard|all] [--dry-run] [--workspace <path>] [--no-update-gitignore]
+
+Checks every discovered project by relevant file path and content hash, rebuilds
+only changed or incomplete projects, then reconciles the workspace once.
+Uncommitted, added, and deleted files are detected without requiring Git.
+
+Options:
+  --target <target>          Build agent, dashboard, or all projections (default: all)
+  --dry-run                  Show changed and unchanged projects without writing files
+  --workspace <path>         Use an explicit workspace root
+  --no-update-gitignore      Do not add generated outputs to .gitignore
+
+Examples:
+  goregraph workspace update .
+  goregraph workspace update . --dry-run
+  goregraph workspace update . --target dashboard
+  goregraph workspace update . --workspace C:\path\to\workspace
 `)
 }

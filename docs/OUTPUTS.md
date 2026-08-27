@@ -1,7 +1,7 @@
 # GoreGraph Output Contract
 
 <!-- goregraph:generated current-contract start -->
-Current release: GoreGraph 1.3.1 with output Schema 3.
+Current release: GoreGraph 1.4.0 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 ## Build Targets and Extraction
@@ -17,12 +17,15 @@ goregraph update . --target dashboard
 goregraph update . --target all
 ```
 
-Workspace builds and refreshes use the same targets:
+Workspace builds, incremental updates, and refreshes use the same targets:
 
 ```bash
 goregraph workspace build agent .
 goregraph workspace build dashboard .
 goregraph workspace build all .
+goregraph workspace update . --target agent
+goregraph workspace update . --target dashboard
+goregraph workspace update . --target all
 goregraph workspace refresh . --target agent
 goregraph workspace refresh . --target dashboard
 goregraph workspace refresh . --target all
@@ -35,8 +38,11 @@ goregraph workspace refresh . --target all
 A project build extracts source once. The `all` target writes the agent and
 dashboard projections from that shared extraction; it does not scan once per
 projection. A workspace build scans each discovered project once, then
-reconciles the workspace once after the project loop. Target-aware `update` and
-`workspace refresh` preserve an already-valid projection that was not selected.
+reconciles the workspace once after the project loop. `workspace update`
+content-checks every project, rebuilds only changed or incomplete projects, and
+then performs the same single reconciliation. Target-aware project `update`,
+`workspace update`, and `workspace refresh` preserve an already-valid projection
+that was not selected.
 
 A single-project build requires no workspace marker. Workspace-wide commands
 require one of:
@@ -68,7 +74,7 @@ The ownership rules are strict:
   dashboard Markdown, HTML, assets, or `index/symbol-usages.json` as prompt
   context.
 - A project dashboard build writes human-readable Markdown reports. The
-  interactive eight-view dashboard is workspace-only in 1.3.0.
+  interactive eight-view dashboard is workspace-only in Schema 3.
 - `.goregraph-dashboard.json` is user-owned workspace configuration, not
   generated output. Dashboard rebuilds read it; clean commands preserve it.
 

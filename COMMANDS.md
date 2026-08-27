@@ -139,8 +139,10 @@ normal workflow in standard help:
 - `goregraph update [path] --target agent|dashboard|all` refreshes selected
   project projections;
 - `goregraph git update [path]` previews or executes a safe repository update;
+- `goregraph workspace update [path]` content-checks every project and rebuilds
+  only changed or incomplete projects;
 - `goregraph workspace scan-missing`, `refresh`, `clean`, and `git update`
-  maintain generated workspace state and source checkouts.
+  provide narrower workspace maintenance operations.
 
 Use `goregraph help --all` or the command-specific help for exact options and
 safety behavior.
@@ -1155,7 +1157,7 @@ Recommended update-then-build flow:
 ```bash
 goregraph workspace git update .
 goregraph workspace git update . --execute
-goregraph workspace build all .
+goregraph workspace update .
 ```
 
 Review the preview before adding `--execute`. If execution reports a blocker or
@@ -1253,6 +1255,47 @@ opt a non-standard project into automatic discovery. An explicit
 `goregraph build <target> <path>` can still scan a deliberately selected
 markerless directory. Once a project root is detected, nested manifests remain
 part of that project.
+
+## `goregraph workspace update [path] [--target agent|dashboard|all] [--dry-run]`
+
+Checks every discovered workspace project using the relevant file paths and
+SHA-256 content hashes stored in its existing `goregraph-out/index/files.json`.
+It fully rebuilds only projects whose included content changed or whose selected
+output is missing or incompatible, then reconciles the workspace once.
+
+Examples:
+
+```bash
+goregraph workspace update . --dry-run
+goregraph workspace update .
+goregraph workspace update . --target dashboard
+goregraph workspace update frontend/frontend-monorepo --workspace /Users/name/projects/acme-workspace
+```
+
+Default behavior:
+
+- checks all discovered projects and defaults to the `all` target
+- detects uncommitted modifications plus added and deleted files without Git
+- rebuilds new projects and projects with missing or invalid indexes
+- rebuilds projects with an incompatible output schema
+- rebuilds a project when its selected agent or dashboard projection is missing
+  or incomplete
+- preserves unchanged project indexes
+- reconciles workspace output once, including when every project is unchanged
+
+Options:
+
+- `--target agent|dashboard|all`: select the projections to rebuild; defaults to
+  `all`.
+- `--dry-run`: print each project's `build` or `skip` decision and added,
+  modified, and deleted file counts without writing files.
+- `--workspace <path>`: force the workspace root used for discovery.
+- `--no-update-gitignore`: skip generated-output `.gitignore` updates.
+
+This command still reads and hashes relevant files in every project so it can
+make a Git-independent decision. It avoids the more expensive parsing, graph
+construction, and projection writes for unchanged projects. Use
+`goregraph workspace build all` when an unconditional full rebuild is required.
 
 ## `goregraph workspace scan-all [path]`
 

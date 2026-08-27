@@ -647,12 +647,16 @@ func validProjectionStatus(root string, status ProjectionStatus) ProjectionStatu
 }
 
 func currentAgentProjectionStatus(root string, status ProjectionStatus) ProjectionStatus {
+	return currentProjectionStatus(root, status, prefixedGeneratedFiles("agent", AgentGeneratedFiles))
+}
+
+func currentProjectionStatus(root string, status ProjectionStatus, expected []string) ProjectionStatus {
 	status = validProjectionStatus(root, status)
 	if !status.Complete {
 		return ProjectionStatus{}
 	}
 	actual := append([]string(nil), status.Files...)
-	expected := prefixedGeneratedFiles("agent", AgentGeneratedFiles)
+	expected = append([]string(nil), expected...)
 	sort.Strings(actual)
 	sort.Strings(expected)
 	if len(actual) != len(expected) {
