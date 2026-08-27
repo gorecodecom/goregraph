@@ -106,10 +106,11 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 			"WINGET_TOKEN",
 		},
 		"docs/RELEASE.md": {
+			"v1.3.1",
 			"v1.3.0",
 			"v1.2.0",
 			"Current Release",
-			"2026-08-06",
+			"2026-08-27",
 			"Schema 2",
 			"v0.9.4",
 			"Architecture",
@@ -155,7 +156,7 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 	}
 }
 
-func TestReleaseFilesDescribe130AsCurrent(t *testing.T) {
+func TestReleaseFilesDescribe131AsCurrent(t *testing.T) {
 	files := []string{"README.md", "docs/RELEASE.md"}
 	var combined strings.Builder
 	for _, file := range files {
@@ -168,8 +169,8 @@ func TestReleaseFilesDescribe130AsCurrent(t *testing.T) {
 	}
 	text := combined.String()
 	for _, want := range []string{
-		"Current release: GoreGraph 1.3.0 with output Schema 3.",
-		"`v1.3.0` is the current GoreGraph release",
+		"Current release: GoreGraph 1.3.1 with output Schema 3.",
+		"`v1.3.1` is the current GoreGraph release",
 		"Scoop and Winget publication",
 		"repositories are updated only when their respective repository tokens are",
 		"Current release behavior when `WINGET_TOKEN` is present:",
@@ -179,7 +180,8 @@ func TestReleaseFilesDescribe130AsCurrent(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"unreleased 1.3.0",
+		"unreleased 1.3.1",
+		"`v1.3.0` is the current GoreGraph release",
 		"has not been published",
 		"remain pending",
 		"`v1.0.0` is the stable public release",
@@ -265,7 +267,7 @@ func TestReleaseDocumentationDefinesSourceBackedContextContract(t *testing.T) {
 	}
 }
 
-func TestReleaseNotesDescribeEditableDashboardFor130(t *testing.T) {
+func TestReleaseNotesDescribeEditableDashboardForCurrentRelease(t *testing.T) {
 	body, err := os.ReadFile("docs/RELEASE.md")
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +275,7 @@ func TestReleaseNotesDescribeEditableDashboardFor130(t *testing.T) {
 	text := string(body)
 	for _, want := range []string{
 		"Current Release",
-		"`v1.3.0` is the current GoreGraph release",
+		"`v1.3.1` is the current GoreGraph release",
 		"goregraph workspace dashboard edit .",
 		".goregraph-dashboard.json",
 		"API Catalog",

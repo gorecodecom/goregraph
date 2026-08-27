@@ -1217,7 +1217,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 1.3.0",
+		"goregraph 1.3.1",
 		"commit:",
 		"built:",
 		"go:",
@@ -1274,11 +1274,11 @@ func TestRunDashboardUsesWorkspaceDashboardWhenProjectDashboardMissing(t *testin
 	}
 }
 
-func TestRunDashboardPrefersProjectDashboardWhenBothExist(t *testing.T) {
+func TestRunDashboardPrefersInteractiveWorkspaceDashboardWhenBothExist(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, ".goregraph-workspace.yml", "")
 	writeFile(t, root, "goregraph-out/dashboard/report.md", "# Project dashboard\n")
-	writeCompleteCLIWorkspaceDashboard(t, root)
+	dashboard := writeCompleteCLIWorkspaceDashboard(t, root)
 	var stdout, stderr bytes.Buffer
 
 	code := Run([]string{"dashboard", root}, &stdout, &stderr)
@@ -1286,12 +1286,12 @@ func TestRunDashboardPrefersProjectDashboardWhenBothExist(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
-	want, err := filepath.Abs(filepath.Join(root, "goregraph-out", "dashboard"))
+	want, err := filepath.Abs(dashboard)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.TrimSpace(stdout.String()); got != want {
-		t.Fatalf("dashboard path = %q, want project dashboard %q", got, want)
+		t.Fatalf("dashboard path = %q, want interactive workspace dashboard %q", got, want)
 	}
 }
 
@@ -1329,9 +1329,9 @@ func TestDashboardHelpExplainsAutomaticProjectAndWorkspaceResolution(t *testing.
 	}
 	for _, want := range []string{
 		"path|open|edit",
-		"existing project dashboard first",
+		"interactive workspace dashboard first",
 		"falls back",
-		"workspace dashboard",
+		"project reports",
 		"open opens",
 		"edit starts",
 	} {

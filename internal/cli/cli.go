@@ -403,8 +403,8 @@ func runDashboard(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
 		fmt.Fprint(stdout, `Usage: goregraph dashboard path|open|edit [path]
 
-GoreGraph resolves an existing project dashboard first and falls back to the
-generated workspace dashboard. path prints the resolved dashboard path.
+GoreGraph resolves a generated interactive workspace dashboard first
+and falls back to project reports in Markdown. path prints the resolved path.
 open opens its primary file in the configured browser.
 edit starts the authenticated local editor for the workspace dashboard.
 `)
@@ -450,12 +450,13 @@ func resolveDashboardPaths(root string, cfg config.Config) (string, string, erro
 	projectLayout := scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir))
 	projectPath := filepath.Join(projectLayout.Root, "dashboard")
 	projectFile := projectLayout.Dashboard("report.md")
-	if regularFileExists(projectFile) {
-		return projectPath, projectFile, nil
-	}
+	projectDashboardExists := regularFileExists(projectFile)
 
 	workspaceRoot, ok, err := scan.WorkspaceRoot(root, cfg)
 	if err != nil {
+		if projectDashboardExists {
+			return projectPath, projectFile, nil
+		}
 		return "", "", fmt.Errorf("detect workspace dashboard: %w", err)
 	}
 	if ok {
@@ -465,6 +466,9 @@ func resolveDashboardPaths(root string, cfg config.Config) (string, string, erro
 		if regularFileExists(workspaceFile) {
 			return workspaceFile, workspaceFile, nil
 		}
+	}
+	if projectDashboardExists {
+		return projectPath, projectFile, nil
 	}
 
 	return "", "", fmt.Errorf(

@@ -3,10 +3,16 @@
 ## Current Release
 
 <!-- goregraph:generated current-contract start -->
-Current release: GoreGraph 1.3.0 with output Schema 3.
+Current release: GoreGraph 1.3.1 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-The 1.3.0 release moves generated output to Schema 3 and adds
+The 1.3.1 patch release makes `goregraph dashboard path|open` prefer an existing
+interactive workspace `workspace-map.html` over project Markdown reports. The
+Markdown project dashboard remains the fallback when no workspace dashboard is
+available. This patch does not change Schema 3, source extraction, Context
+ranking, Context budgeting, or generated output formats.
+
+The 1.3.0 release moved generated output to Schema 3 and added
 preview-first safe Git updates, target-aware agent/dashboard builds, a bounded
 Context Pack workflow, and the exact cross-project Code Explorer from Issue
 #25:
@@ -202,7 +208,7 @@ changes are confined to documentation, tests, and documentation-sync tooling. A
 different runtime candidate requires a fresh matched matrix before entering the
 1.3.0 release flow.
 
-`v1.3.0` is the current GoreGraph release, prepared on 2026-08-06. Its annotated
+`v1.3.1` is the current GoreGraph release, prepared on 2026-08-27. Its annotated
 tag publishes checksummed macOS, Linux, and Windows archives through GitHub
 Releases. Homebrew publication is configured; Scoop and Winget publication
 repositories are updated only when their respective repository tokens are
@@ -479,7 +485,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.3.0
+goregraph 1.3.1
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -490,10 +496,10 @@ schema: 3
 ## Release Flow
 
 This is the flow used for the current release. The exact tagged commit must pass
-every documented release gate and have explicit release approval. Runtime
-candidate `0edc6d8` and the final release descendant, whose later changes are
-confined to documentation, tests, and documentation-sync tooling, are qualified
-by the passing matched matrix.
+every documented release gate and have explicit release approval. The v1.3.1
+patch changes only dashboard artifact selection and its documentation; it does
+not change the Context extraction, ranking, budgeting, or serialization covered
+by the v1.3.0 matched matrix.
 
 1. Confirm `main` is clean and pushed.
 2. Confirm README installation instructions are current.
@@ -501,8 +507,8 @@ by the passing matched matrix.
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v1.3.0 -m "Release v1.3.0"
-   git push origin v1.3.0
+   git tag -a v1.3.1 -m "Release v1.3.1"
+   git push origin v1.3.1
    ```
 
 5. GitHub Actions runs GoReleaser.

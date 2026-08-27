@@ -502,9 +502,9 @@ Important behavior:
 ## `goregraph dashboard path|open|edit [path]`
 
 Locates or opens the dashboard that applies to the selected path. GoreGraph
-uses an existing project dashboard first. If none exists and the path belongs
-to a workspace with a generated dashboard, it automatically uses
-`.goregraph-workspace/dashboard/workspace-map.html`.
+uses `.goregraph-workspace/dashboard/workspace-map.html` first when the path
+belongs to a workspace with a generated interactive dashboard. If none exists,
+it falls back to the project's Markdown reports.
 
 Open the applicable dashboard directly:
 
@@ -524,9 +524,9 @@ Start the authenticated local Architecture editor:
 goregraph dashboard edit .
 ```
 
-For a project, `path` prints `<configured-output>/dashboard/` and `open` opens
-`dashboard/report.md`. For a workspace fallback, both actions resolve the
-generated `workspace-map.html`; `open` launches the interactive Code Explorer.
+For a workspace dashboard, both actions resolve `workspace-map.html`; `open`
+launches the interactive Code Explorer. Without one, `path` prints
+`<configured-output>/dashboard/` and `open` opens `dashboard/report.md`.
 `edit` deliberately targets the workspace dashboard, starts the loopback-only
 editor, and saves confirmed layout choices to `.goregraph-dashboard.json`.
 The static dashboard's **Edit layout** button displays this command instead of

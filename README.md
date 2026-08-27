@@ -47,10 +47,12 @@ handling.
 ## Installation
 
 <!-- goregraph:generated current-contract start -->
-Current release: GoreGraph 1.3.0 with output Schema 3.
+Current release: GoreGraph 1.3.1 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-`v1.3.0` is the current GoreGraph release. GitHub Releases provides checksummed
+`v1.3.1` is the current GoreGraph release. This patch makes the standard
+`goregraph dashboard` commands prefer an existing interactive workspace HTML
+dashboard over project Markdown reports. GitHub Releases provides checksummed
 archives for macOS, Linux, and Windows. The release workflow also updates
 Homebrew and, when their repository tokens are configured, Scoop and Winget
 publication repositories. Winget availability still depends on Microsoft
@@ -248,7 +250,7 @@ Architecture view, run the local editor explicitly:
 
 `goregraph workspace dashboard path .` and
 `goregraph workspace dashboard open .` remain the explicit workspace-only
-compatibility forms when scripts must avoid automatic project-first resolution.
+compatibility forms for scripts that require workspace-only resolution.
 
 ```bash
 goregraph dashboard edit .
@@ -591,12 +593,12 @@ goregraph dashboard open [path]
 goregraph dashboard edit [path]
 ```
 
-Resolve an existing project dashboard first, then fall back to the generated
-workspace dashboard when the selected path belongs to a workspace. The bare
-form and `path` print the resolved path; `open` directly opens the project
-`dashboard/report.md` or workspace `workspace-map.html`. If neither exists,
-GoreGraph reports the build command needed to create one. `edit` opens the
-authenticated local editor for the workspace dashboard; it never edits the
+Resolve the generated interactive workspace dashboard first when the selected
+path belongs to a workspace, then fall back to the project's Markdown reports.
+The bare form and `path` print the resolved path; `open` directly opens the
+workspace `workspace-map.html` or the fallback `dashboard/report.md`. If neither
+exists, GoreGraph reports the build command needed to create one. `edit` opens
+the authenticated local editor for the workspace dashboard; it never edits the
 generated static file directly.
 
 ```bash
