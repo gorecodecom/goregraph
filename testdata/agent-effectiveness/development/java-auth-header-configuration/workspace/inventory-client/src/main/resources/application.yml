@@ -1,0 +1,3 @@
+inventory:
+  base-url: ${INVENTORY_URL}
+  service-token: ${INVENTORY_TOKEN}

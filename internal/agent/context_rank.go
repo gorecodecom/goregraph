@@ -63,6 +63,12 @@ type rankedContextSupportFact struct {
 
 func compileContextPack(index scan.AgentContextIndexRecord, request ContextRequest) (ContextPack, error) {
 	ranked := rankContextFacts(index.Facts, request.Query)
+	for i := range ranked {
+		if request.sourceSearchID != "" && ranked[i].fact.ID == request.sourceSearchID {
+			ranked[i].score = max(ranked[i].score, minimumContextMediumScore)
+			ranked[i].reason = "verified source vocabulary"
+		}
+	}
 	seeds := selectContextSeeds(ranked)
 	endpointSeed, hasEndpoint, endpointFallbackReason := selectContextEndpoint(index, ranked, request.Query)
 	if endpointFallbackReason != "" {
@@ -4035,6 +4041,15 @@ func cloneContextPack(pack ContextPack) ContextPack {
 	pack.SourceSections = append([]ContextSourceSection(nil), pack.SourceSections...)
 	pack.SourceOmissions = append([]ContextSourceOmission(nil), pack.SourceOmissions...)
 	pack.RetryAnchors = append([]string(nil), pack.RetryAnchors...)
+	pack.VerificationRequests = append(
+		[]ContextVerificationRequest(nil),
+		pack.VerificationRequests...,
+	)
+	if pack.Health != nil {
+		health := *pack.Health
+		health.Reasons = append([]string(nil), pack.Health.Reasons...)
+		pack.Health = &health
+	}
 	pack.selectedSourceFactIDs = append([]string(nil), pack.selectedSourceFactIDs...)
 	pack.selectedFactIDs = append([]string(nil), pack.selectedFactIDs...)
 	pack.selectedEdgeIDs = append([]string(nil), pack.selectedEdgeIDs...)

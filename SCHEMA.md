@@ -29,7 +29,7 @@ Example:
 ## Compatibility Rule
 
 <!-- goregraph:generated current-contract start -->
-Current release: GoreGraph 1.4.0 with output Schema 3.
+Source version: GoreGraph 1.4.1 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 Older Schema 1 and
@@ -277,3 +277,24 @@ GoreGraph confidence values are static-analysis labels, not runtime proof:
 Schema version 3 may contain language-specific symbols and relations. Current symbol kinds include packages, modules, classes, interfaces, traits, functions, methods, tests, scripts, headings, namespaces, autoload hints, types, and entrypoints.
 
 Current relation types include imports, imports_internal, imports_external, includes, sources, calls, and tests. Local Go, Python, PHP, Shell, and Java relations are resolved to root-relative files where GoreGraph can do so deterministically.
+
+## Additive 1.4.1 metadata
+
+Schema 3 manifests may contain `generation_id`, `build_identity`,
+`analysis_coverage`, and `analysis_issues`. Each projection may contain
+`input_fingerprint` and `stale`. Readers must tolerate absent fields in older
+outputs and report unknown identity/freshness rather than infer currency from a
+generation timestamp. See [output lifecycle](docs/OUTPUTS.md#141-publication-identity-and-health).
+
+Projection health exposes `integrity` (valid/invalid/unavailable), `freshness`
+(current/stale/unknown), `coverage` (complete/partial/unsupported/unknown), a
+generation ID and bounded reason codes. These axes are independent.
+
+The opt-in `adaptive-v2` Context Pack adds protocol/generation metadata and at
+most three `verification_requests`, each with a project-relative path, positive
+start/end line bounds and a reason. All metadata counts against the Context Pack
+budget. Strict-v1 remains the default; the historical instruction and bounded
+source policy remain unchanged. Adaptive fallback codes include `index_missing`,
+`index_stale`, `ambiguous_entrypoint`, `unsupported_analysis`, `budget_exhausted`,
+`source_unreadable` and `evidence_conflict`. Missing evidence is never converted
+into proof that a provider or behavior is absent.

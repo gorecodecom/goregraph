@@ -44,19 +44,30 @@ work is in [`ROADMAP.md`](ROADMAP.md). The
 defines the frozen Golden comparison, full-run gates, and external G1 evidence
 handling.
 
+Local 1.4.1 testing and rollback are documented in
+[`docs/LOCAL-1.4.1.md`](docs/LOCAL-1.4.1.md).
+
 ## Installation
 
 <!-- goregraph:generated current-contract start -->
-Current release: GoreGraph 1.4.0 with output Schema 3.
+Source version: GoreGraph 1.4.1 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-`v1.4.0` is the current GoreGraph release. It adds content-aware
-`goregraph workspace update`, which rebuilds only changed or incomplete projects
-before reconciling the workspace views. GitHub Releases provides checksummed
-archives for macOS, Linux, and Windows. The release workflow also updates
-Homebrew and, when their repository tokens are configured, Scoop and Winget
-publication repositories. Winget availability still depends on Microsoft
-package acceptance.
+This checkout contains the local **1.4.1 candidate** for testing. It has not been
+pushed or published by this implementation. Existing package-manager commands
+below install published builds, not this local candidate.
+
+Version 1.4.1 adds scoped Git ignore rules, faster script analysis, cancellable
+builds with file/phase progress, input-aware updates, recoverable output
+publication, and explicit partial/stale health. The historical strict agent
+workflow remains the default; `goregraph context . --query "<task>" --protocol
+adaptive-v2` enables bounded verification and fallback metadata. MCP uses the
+same opt-in via `goregraph mcp --protocol adaptive-v2`.
+
+The 1.4.0 baseline introduced content-aware workspace updates. GitHub Releases
+provides checksummed archives for macOS, Linux, and Windows. Release publication
+updates Homebrew and, when configured, Scoop and Winget publication repositories.
+Winget availability still depends on Microsoft package acceptance.
 
 ### Homebrew macOS/Linux
 

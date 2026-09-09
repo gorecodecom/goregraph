@@ -331,7 +331,7 @@ func TestWorkspaceReconcileRepublishesAffectedProjectManifests(t *testing.T) {
 	}
 }
 
-func TestFailedSelectedProjectionRewritePublishesIncompleteManifest(t *testing.T) {
+func TestFailedSelectedProjectionRewritePreservesCommittedManifest(t *testing.T) {
 	t.Run("project", func(t *testing.T) {
 		root := writeBuildFixture(t)
 		cfg := config.Defaults()
@@ -353,8 +353,8 @@ func TestFailedSelectedProjectionRewritePublishesIncompleteManifest(t *testing.T
 
 		var manifest OutputManifest
 		readJSON(t, NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir)).Manifest, &manifest)
-		if manifest.Dashboard.Complete {
-			t.Fatalf("failed dashboard rewrite left an old complete status: %#v", manifest.Dashboard)
+		if !manifest.Dashboard.Complete {
+			t.Fatalf("failed dashboard rewrite lost previous complete status: %#v", manifest.Dashboard)
 		}
 		if !manifest.Agent.Complete {
 			t.Fatalf("valid unselected agent projection was not preserved: %#v", manifest.Agent)
@@ -381,8 +381,8 @@ func TestFailedSelectedProjectionRewritePublishesIncompleteManifest(t *testing.T
 
 		var manifest OutputManifest
 		readJSON(t, NewWorkspaceOutputLayout(filepath.Join(workspace, ".goregraph-workspace")).Manifest, &manifest)
-		if manifest.Agent.Complete {
-			t.Fatalf("failed workspace agent rewrite left an old complete status: %#v", manifest.Agent)
+		if !manifest.Agent.Complete {
+			t.Fatalf("failed workspace agent rewrite lost previous complete status: %#v", manifest.Agent)
 		}
 		if !manifest.Dashboard.Complete {
 			t.Fatalf("valid unselected workspace dashboard was not preserved: %#v", manifest.Dashboard)

@@ -1,8 +1,10 @@
 package scan
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gorecodecom/goregraph/internal/outputstore"
 	"os"
 	"path/filepath"
 	"sort"
@@ -161,6 +163,16 @@ func BuildWorkspaceGraph(registry WorkspaceRegistryRecord, matches []WorkspaceCo
 }
 
 func readWorkspaceGraph(path string) (WorkspaceGraphRecord, error) {
+	var result WorkspaceGraphRecord
+	err := outputstore.WithRead(context.Background(), filepath.Dir(filepath.Dir(path)), func(string) error {
+		var err error
+		result, err = readWorkspaceGraphUnlocked(path)
+		return err
+	})
+	return result, err
+}
+
+func readWorkspaceGraphUnlocked(path string) (WorkspaceGraphRecord, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return WorkspaceGraphRecord{}, err

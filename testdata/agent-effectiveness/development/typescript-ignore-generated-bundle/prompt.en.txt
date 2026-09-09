@@ -1,0 +1,1 @@
+Exclude the generated browser bundle from project discovery while retaining the maintained client source.

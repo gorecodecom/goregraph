@@ -1,9 +1,11 @@
 package scan
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/gitignore"
+	"github.com/gorecodecom/goregraph/internal/outputstore"
 )
 
 const (
@@ -114,7 +117,7 @@ func Run(root string, cfg config.Config) (Result, error) {
 
 type projectExtractorFunc func(string, config.Config, gitignore.Matcher) (Index, int, error)
 
-var projectExtractor projectExtractorFunc = scanProject
+var projectExtractor = scanProjectWithOptions
 
 type projectionWriteHookFunc func(scope, projection string) error
 
@@ -122,7 +125,9 @@ var projectionWriteHook projectionWriteHookFunc = func(string, string) error { r
 
 func replaceProjectExtractorForTest(replacement projectExtractorFunc) func() {
 	previous := projectExtractor
-	projectExtractor = replacement
+	projectExtractor = func(_ context.Context, root string, cfg config.Config, matcher gitignore.Matcher, _ BuildOptions) (Index, int, error) {
+		return replacement(root, cfg, matcher)
+	}
 	return func() {
 		projectExtractor = previous
 	}
@@ -137,6 +142,19 @@ func replaceProjectionWriteHookForTest(replacement projectionWriteHookFunc) func
 }
 
 func RunBuild(root string, cfg config.Config, target BuildTarget) (Result, error) {
+	return RunBuildWithOptions(context.Background(), root, cfg, target, DefaultBuildOptions())
+}
+
+// RunBuildWithOptions builds a project with cancellation and phase-level progress.
+func RunBuildWithOptions(ctx context.Context, root string, cfg config.Config, target BuildTarget, options BuildOptions) (Result, error) {
+	if err := options.validate(); err != nil {
+		return Result{}, err
+	}
+	ctx, cancel := budgetContext(ctx, options.ProjectTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 	if err := target.Validate(); err != nil {
 		return Result{}, err
 	}
@@ -162,29 +180,37 @@ func RunBuild(root string, cfg config.Config, target BuildTarget) (Result, error
 		matcher = gitignore.Load(resolved)
 	}
 
-	index, skipped, err := projectExtractor(resolved, cfg, matcher)
+	options.emit("discover", resolved, "", "started", 0, 0, started)
+	index, skipped, err := projectExtractor(ctx, resolved, cfg, matcher, options)
 	if err != nil {
 		return Result{}, err
 	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	options.emit("resolve", resolved, "", "started", 0, 0, started)
+	index.BuildIdentity = CurrentBuildIdentity(cfg, options, index.IgnoreDigest, sourceFingerprint(index.Files))
 	sortIndex(&index)
-
-	if err := os.MkdirAll(out, 0o755); err != nil {
+	if err := ctx.Err(); err != nil {
 		return Result{}, err
-	}
-	if err := writeOutputs(out, resolved, cfg, index, skipped, started, target); err != nil {
-		return Result{}, err
-	}
-	if _, err := ReconcileWorkspaceTarget(resolved, cfg, target); err != nil {
-		return Result{}, err
-	}
-	layout := NewProjectOutputLayout(out)
-	if manifest := readCurrentOutputManifest(layout.Manifest); manifest.Tool == ToolName {
-		if err := writeOutputManifestAtomic(layout.Manifest, manifest); err != nil {
-			return Result{}, err
-		}
 	}
 
-	return Result{ScannedFiles: len(index.Files), SkippedFiles: skipped, OutputDir: out}, nil
+	currentFiles, currentReport, err := SnapshotProjectFiles(ctx, resolved, cfg)
+	if err != nil {
+		return Result{}, err
+	}
+	if index.BuildIdentity.SourceFingerprint != sourceFingerprint(currentFiles) || index.IgnoreDigest != currentReport.IgnoreDigest {
+		return Result{}, fmt.Errorf("source inputs changed during analysis; retry the build")
+	}
+	options.emit("project", resolved, "", "started", 0, 0, started)
+	if err := writeOutputsWithContext(ctx, out, resolved, cfg, index, skipped, started, target); err != nil {
+		return Result{}, err
+	}
+	if _, err := ReconcileWorkspaceWithOptions(ctx, resolved, cfg, target, options); err != nil {
+		return Result{}, err
+	}
+	options.emit("publish", resolved, "", "completed", len(index.Files), len(index.Files), started)
+	return Result{ScannedFiles: len(index.Files), SkippedFiles: skipped, OutputDir: out, PartialFiles: len(index.AnalysisIssues)}, nil
 }
 
 func legacyGeneratedOutputExists(out string) bool {
@@ -197,67 +223,48 @@ func legacyGeneratedOutputExists(out string) bool {
 }
 
 func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Index, int, error) {
+	return scanProjectWithOptions(context.Background(), root, cfg, matcher, DefaultBuildOptions())
+}
+
+func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config, matcher gitignore.Matcher, options BuildOptions) (Index, int, error) {
 	var index Index
 	javaBodies := map[string]string{}
-	scriptBodies := map[string]string{}
+	var scriptFacts ProjectSymbolFacts
 	skipped := 0
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			skipped++
-			if entry != nil && entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if path == root {
-			return nil
-		}
-
-		rel, err := filepath.Rel(root, path)
+	report, err := walkProjectFiles(ctx, root, cfg, matcher, func(file WalkedFile) error {
+		started := time.Now()
+		rel := file.Path
+		options.emit("extract", root, rel, "started", len(index.Files), 0, started)
+		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
-			skipped++
-			return nil
+			return fmt.Errorf("read %s: %w", rel, err)
 		}
-		rel = filepath.ToSlash(rel)
-
-		info, err := entry.Info()
-		if err != nil {
-			skipped++
-			return nil
-		}
-		if shouldSkipPath(rel, entry.IsDir(), cfg, matcher) {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			skipped++
-			return nil
-		}
-		if info.Mode()&os.ModeSymlink != 0 && !cfg.FollowSymlinks {
-			skipped++
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if info.Size() > cfg.MaxFileSizeBytes {
-			skipped++
-			return nil
-		}
-
-		body, err := os.ReadFile(path)
-		if err != nil {
-			skipped++
-			return nil
+		if int64(len(body)) != file.Size {
+			return fmt.Errorf("source changed during scan: %s", rel)
 		}
 		if isBinary(body) {
 			skipped++
 			return nil
 		}
-
-		record := fileRecord(rel, info.Size(), body)
+		record := fileRecord(rel, file.Size, body)
+		fileContext, cancel := budgetContext(ctx, options.FileTimeout)
+		defer cancel()
+		var facts ProjectSymbolFacts
+		if record.Language == "javascript" || record.Language == "typescript" {
+			facts, err = ExtractScriptSymbolFactsContext(fileContext, record, string(body))
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+					index.Files = append(index.Files, record)
+					index.AnalysisIssues = append(index.AnalysisIssues, AnalysisIssue{File: rel, Reason: "file analysis time budget exceeded"})
+					options.emit("extract", root, rel, "partial", len(index.Files), 0, started)
+					return nil
+				}
+				return err
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		index.Files = append(index.Files, record)
 		text := string(body)
 		index.AgentContextConfigurationFacts = append(index.AgentContextConfigurationFacts, extractAgentContextConfigurationFacts(record, text)...)
@@ -268,9 +275,7 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 			index.JavaSources = append(index.JavaSources, source)
 			javaBodies[source.File] = text
 		}
-		if record.Language == "javascript" || record.Language == "typescript" {
-			scriptBodies[record.Path] = text
-		}
+		MergeProjectSymbolFacts(&scriptFacts, facts)
 		if base := filepath.Base(record.Path); base == "tsconfig.json" || base == "jsconfig.json" {
 			if scriptConfig, ok := ExtractScriptResolutionConfig(record.Path, text); ok {
 				if index.ScriptConfigs == nil {
@@ -284,18 +289,26 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 		mergeCodeIntelligence(&index.Code, extractCodeIntelligence(record, text))
 		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, extractArchitectureCapabilityFacts(record, text)...)
 		mergeWorkspaceIndex(&index.Workspace, extractWorkspaceRecord(record, text))
-		return nil
+		options.emit("extract", root, rel, "completed", len(index.Files), 0, started)
+		return ctx.Err()
 	})
+	skipped -= report.SkippedDirectories
+	for _, count := range report.Skipped {
+		skipped += count
+	}
 	if err == nil {
-		javaFacts := ExtractJavaProjectSymbolFacts(index.JavaSources, javaBodies, index.Workspace)
-		var scriptFacts ProjectSymbolFacts
-		for _, file := range index.Files {
-			if file.Language != "javascript" && file.Language != "typescript" {
-				continue
-			}
-			MergeProjectSymbolFacts(&scriptFacts, ExtractScriptSymbolFacts(file, scriptBodies[file.Path]))
+		options.emit("resolve", root, "", "started", 0, 0, time.Now())
+		if err := ctx.Err(); err != nil {
+			return Index{}, skipped, err
 		}
-		scriptFacts = ResolveScriptSymbolFacts(index.Files, index.Workspace.NodePackages, index.ScriptConfigs, scriptFacts)
+		javaFacts := ExtractJavaProjectSymbolFacts(index.JavaSources, javaBodies, index.Workspace)
+		if err := ctx.Err(); err != nil {
+			return Index{}, skipped, err
+		}
+		scriptFacts, err = ResolveScriptSymbolFactsContext(ctx, index.Files, index.Workspace.NodePackages, index.ScriptConfigs, scriptFacts)
+		if err != nil {
+			return Index{}, skipped, err
+		}
 		if len(index.scriptConfigLimitations) > 0 {
 			for factIndex := range scriptFacts.Declarations {
 				scriptFacts.Declarations[factIndex].Coverage = CoveragePartial
@@ -305,6 +318,10 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 		index.SymbolFacts = javaFacts
 		MergeProjectSymbolFacts(&index.SymbolFacts, scriptFacts)
 		index.SymbolFacts = FinalizeProjectSymbolFacts(index.Files, index.Workspace, index.SymbolFacts)
+	}
+	index.IgnoreDigest = report.IgnoreDigest
+	if err == nil {
+		err = ctx.Err()
 	}
 	return index, skipped, err
 }
@@ -354,6 +371,41 @@ func sortIndex(index *Index) {
 }
 
 func writeOutputs(out, root string, cfg config.Config, index Index, skipped int, started time.Time, target BuildTarget) error {
+	return writeOutputsWithContext(context.Background(), out, root, cfg, index, skipped, started, target)
+}
+
+func writeOutputsWithContext(ctx context.Context, out, root string, cfg config.Config, index Index, skipped int, started time.Time, target BuildTarget) error {
+	return outputstore.Update(ctx, outputstore.UpdateRequest{
+		Root: out,
+		Write: func(stage string) error {
+			return writeOutputsStage(ctx, stage, root, cfg, index, skipped, started, target)
+		},
+		Validate: func(stage string) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := validateGeneratedOutput(stage, target); err != nil {
+				return err
+			}
+			if index.BuildIdentity.SourceFingerprint == "" {
+				return nil
+			}
+			files, report, err := SnapshotProjectFiles(ctx, root, cfg)
+			if err != nil {
+				return err
+			}
+			if sourceFingerprint(files) != index.BuildIdentity.SourceFingerprint || report.IgnoreDigest != index.IgnoreDigest {
+				return fmt.Errorf("source inputs changed during publication; retry the build")
+			}
+			return nil
+		},
+	})
+}
+
+func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config, index Index, skipped int, started time.Time, target BuildTarget) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	graph := buildGraph(index.Files, index.Symbols, index.Relations)
 	springIndex := buildSpringIndex(index.JavaSources)
 	callGraph := buildJavaCallGraph(index.JavaSources)
@@ -389,6 +441,7 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	analyzers := buildAnalyzerInventory(index.Files, index.Workspace)
 	prefixAnalyzerOutputPaths(analyzers)
 	capabilities := BuildCapabilityInventory(index.Files, index.Workspace, index.ArchitectureCapabilities)
+	applyAnalysisIssues(capabilities, index.Files, index.AnalysisIssues)
 	coverage := BuildCoverage(index.Files, capabilities)
 	richSymbols := dedupeRichSymbolFacts(append(buildRichSymbols(index.Files, index.Symbols), index.SymbolFacts.Declarations...))
 	richRelations := dedupeRichRelationFacts(append(buildRichRelations(index.Files, index.Relations), index.SymbolFacts.References...))
@@ -424,14 +477,15 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 	previous.Agent = currentAgentProjectionStatus(layout.Root, previous.Agent)
 	previous.Dashboard = validProjectionStatus(layout.Root, previous.Dashboard)
 	manifest := OutputManifest{
-		Tool:        ToolName,
-		Schema:      SchemaVersion,
-		Scope:       "project",
-		OutputDir:   cfg.OutputDir,
-		Files:       len(index.Files),
-		Skipped:     skipped,
-		ProjectRoot: filepath.Base(root),
-		Git:         readGitMetadata(root),
+		BuildIdentity: index.BuildIdentity,
+		Tool:          ToolName,
+		Schema:        SchemaVersion,
+		Scope:         "project",
+		OutputDir:     cfg.OutputDir,
+		Files:         len(index.Files),
+		Skipped:       skipped,
+		ProjectRoot:   filepath.Base(root),
+		Git:           readGitMetadata(root),
 		Index: ProjectionStatus{
 			GeneratedAt: finished.Format(time.RFC3339),
 			Complete:    true,
@@ -440,6 +494,11 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		Agent:     previous.Agent,
 		Dashboard: previous.Dashboard,
 	}
+	generation, err := newOutputGeneration()
+	if err != nil {
+		return err
+	}
+	manifest.GenerationID = generation
 	if target.IncludesAgent() {
 		manifest.Agent = ProjectionStatus{
 			GeneratedAt: finished.Format(time.RFC3339),
@@ -454,8 +513,25 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 			Files:       prefixedGeneratedFiles("dashboard", DashboardGeneratedFiles),
 		}
 	}
+	manifest.Index.InputFingerprint = index.BuildIdentity.fingerprint("index")
+	if target.IncludesAgent() {
+		manifest.Agent.InputFingerprint = index.BuildIdentity.fingerprint("agent")
+	}
+	if target.IncludesDashboard() {
+		manifest.Dashboard.InputFingerprint = index.BuildIdentity.fingerprint("dashboard")
+	}
+	manifest.Agent.Stale = manifest.Agent.Complete && manifest.Agent.InputFingerprint != index.BuildIdentity.fingerprint("agent")
+	manifest.Dashboard.Stale = manifest.Dashboard.Complete && manifest.Dashboard.InputFingerprint != index.BuildIdentity.fingerprint("dashboard")
 	freshness := BuildArtifactFreshness(manifest.Schema, finished.Format(time.RFC3339), index.Files, prefixedGeneratedFiles("index", IndexGeneratedFiles))
+	manifest.AnalysisCoverage = analysisCoverage(capabilities, index.AnalysisIssues)
+	manifest.AnalysisIssues = append([]AnalysisIssue(nil), index.AnalysisIssues...)
 	audit := newAuditRecord(root, cfg.OutputDir, started, finished, len(index.Files), skipped, generatedFilesForTarget(target))
+	for _, issue := range index.AnalysisIssues {
+		audit.Warnings = append(audit.Warnings, issue.File+": "+issue.Reason)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := writeOutputManifestAtomic(layout.Manifest, incompleteManifestForTarget(manifest, target)); err != nil {
 		return err
 	}
@@ -512,6 +588,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		return err
 	}
 	for _, write := range writes {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := writeJSON(layout.Index(write.name), write.value); err != nil {
 			return err
 		}
@@ -566,6 +645,9 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 		}
 	}
 	for _, report := range reports {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if !target.IncludesDashboard() {
 			break
 		}

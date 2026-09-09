@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gorecodecom/goregraph/internal/agentguide"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
@@ -28,6 +30,8 @@ const (
 	MaxContextSourceFileBytes          = 2 * 1024 * 1024
 	contextQueryJSONBudgetBytes        = 256
 	finalContextBudgetFallbackReason   = "source evidence and final decision metadata exceed the requested budget"
+	StrictV1                           = agentguide.StrictV1
+	AdaptiveV2                         = agentguide.AdaptiveV2
 )
 
 type ContextRequest struct {
@@ -36,6 +40,8 @@ type ContextRequest struct {
 	BudgetTokens      int    `json:"budget_tokens,omitempty"`
 	MaxFiles          int    `json:"max_files,omitempty"`
 	PreviousContextID string `json:"previous_context_id,omitempty"`
+	ProtocolVersion   string `json:"protocol_version,omitempty"`
+	sourceSearchID    string
 }
 
 type ContextLocation struct {
@@ -151,6 +157,9 @@ type ContextPack struct {
 	selectionQuery         string
 	budgetQuery            string
 	Freshness              string                              `json:"freshness,omitempty"`
+	ProtocolVersion        string                              `json:"protocol_version,omitempty"`
+	Generation             string                              `json:"generation,omitempty"`
+	Health                 *scan.ProjectionHealth              `json:"health,omitempty"`
 	Confidence             string                              `json:"confidence"`
 	FallbackRequired       bool                                `json:"fallback_required"`
 	FallbackReason         string                              `json:"fallback_reason,omitempty"`
@@ -176,6 +185,7 @@ type ContextPack struct {
 	DuplicateOf            string                              `json:"duplicate_of,omitempty"`
 	RetryAllowed           bool                                `json:"retry_allowed"`
 	RetryAnchors           []string                            `json:"retry_anchors,omitempty"`
+	VerificationRequests   []ContextVerificationRequest        `json:"verification_requests,omitempty"`
 
 	selectedSourceFactIDs []string
 	selectedFactIDs       []string
@@ -188,11 +198,28 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	if err != nil {
 		return ContextPack{}, err
 	}
+	var pack ContextPack
+	err = scan.WithOutputRead(context.Background(), request.Root, func() error {
+		pack, err = buildContext(request)
+		return err
+	})
+	return pack, err
+}
+
+func buildContext(request ContextRequest) (ContextPack, error) {
 	loaded, err := loadContextIndex(request)
 	if err != nil {
+		if request.ProtocolVersion == AdaptiveV2 {
+			var loadErr *contextIndexLoadError
+			if errors.As(err, &loadErr) {
+				return adaptiveContextFailurePack(request, loadErr.code)
+			}
+		}
 		return ContextPack{}, err
 	}
 	metadataRequest := request
+	loaded = withContextSourceSearch(loaded, request.Query)
+	metadataRequest.sourceSearchID = loaded.sourceSearchID
 	metadataBudget := contextMetadataBudget(request.BudgetTokens)
 	publicConcerns := []ContextConcern(nil)
 	if seed, ok := contextConcernPlanningSeed(loaded.Index, request.Query); ok {
@@ -213,6 +240,7 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	if err != nil {
 		return ContextPack{}, err
 	}
+	pack = applyAdaptiveContextHealth(pack, loaded.Health)
 	if len(publicConcerns) > 0 && !pack.FallbackRequired {
 		pack.Concerns = publicConcerns
 		pack, err = finalizeContextEstimate(pack)
@@ -228,17 +256,31 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 		}
 	}
 	pack.BudgetTokens = request.BudgetTokens
-	pack.ContextID = contextIdentity(
-		pack.Freshness,
-		pack.selectedFactIDs,
-		pack.selectedEdgeIDs,
-		pack.selectedConcernKeys,
-	)
+	if request.ProtocolVersion == AdaptiveV2 {
+		pack.ContextID = contextIdentityForProtocol(
+			request.ProtocolVersion,
+			pack.Generation,
+			pack.selectedFactIDs,
+			pack.selectedEdgeIDs,
+			pack.selectedConcernKeys,
+		)
+	} else {
+		pack.ContextID = contextIdentity(
+			pack.Freshness,
+			pack.selectedFactIDs,
+			pack.selectedEdgeIDs,
+			pack.selectedConcernKeys,
+		)
+	}
+	if reason := adaptiveHealthFallbackReason(pack); reason != "" {
+		return adaptiveHealthFallbackPack(loaded.Index, request, pack.ContextID, loaded.Health, reason)
+	}
 	if request.PreviousContextID != "" && request.PreviousContextID == pack.ContextID {
 		return duplicateContextPack(pack)
 	}
 	if pack.FallbackRequired || pack.Confidence == "LOW" {
 		pack.SourceCoverage = "none"
+		pack = adaptiveContextMetadata(pack)
 		return finalizeContextPackWithinBudget(pack, request)
 	}
 	return attachContextSourceWithinFinalBudget(pack, loaded, request)
@@ -281,6 +323,7 @@ func attachContextSourceWithinFinalBudget(
 
 		pack = finalizeContextSourceDecision(pack, loaded.Index)
 		pack.RetryAllowed, pack.RetryAnchors = contextRetryPermission(pack, loaded.Index)
+		pack = adaptiveContextMetadata(pack)
 		pack, err = finalizeContextEstimate(pack)
 		if err != nil {
 			return ContextPack{}, err
@@ -641,6 +684,29 @@ func contextIdentity(freshness string, factIDs, edgeIDs, concernKeys []string) s
 	return hex.EncodeToString(digest[:12])
 }
 
+func contextIdentityForProtocol(
+	protocol string,
+	generation string,
+	factIDs, edgeIDs, concernKeys []string,
+) string {
+	identity := struct {
+		Protocol    string   `json:"protocol"`
+		Generation  string   `json:"generation"`
+		FactIDs     []string `json:"fact_ids"`
+		EdgeIDs     []string `json:"edge_ids"`
+		ConcernKeys []string `json:"concern_keys"`
+	}{
+		Protocol:    strings.TrimSpace(protocol),
+		Generation:  strings.TrimSpace(generation),
+		FactIDs:     orderedContextIdentityValues(factIDs),
+		EdgeIDs:     orderedContextIdentityValues(edgeIDs),
+		ConcernKeys: orderedContextIdentityValues(concernKeys),
+	}
+	body, _ := json.Marshal(identity)
+	digest := sha256.Sum256(body)
+	return hex.EncodeToString(digest[:12])
+}
+
 func orderedContextIdentityValues(values []string) []string {
 	ordered := make([]string, 0, len(values))
 	for _, value := range values {
@@ -661,12 +727,15 @@ func orderedContextIdentityValues(values []string) []string {
 
 func duplicateContextPack(pack ContextPack) (ContextPack, error) {
 	duplicate := ContextPack{
-		Schema:       pack.Schema,
-		Freshness:    pack.Freshness,
-		Confidence:   pack.Confidence,
-		ContextID:    pack.ContextID,
-		DuplicateOf:  pack.ContextID,
-		BudgetTokens: pack.BudgetTokens,
+		Schema:          pack.Schema,
+		Freshness:       pack.Freshness,
+		ProtocolVersion: pack.ProtocolVersion,
+		Generation:      pack.Generation,
+		Health:          pack.Health,
+		Confidence:      pack.Confidence,
+		ContextID:       pack.ContextID,
+		DuplicateOf:     pack.ContextID,
+		BudgetTokens:    pack.BudgetTokens,
 	}
 	return finalizeContextEstimate(duplicate)
 }
@@ -768,6 +837,12 @@ func normalizeContextRequest(request ContextRequest) (ContextRequest, error) {
 	if request.MaxFiles == 0 {
 		request.MaxFiles = DefaultContextMaxFiles
 	}
+	if request.ProtocolVersion == "" {
+		request.ProtocolVersion = StrictV1
+	}
+	if _, err := agentguide.Instruction(request.ProtocolVersion); err != nil {
+		return ContextRequest{}, fmt.Errorf("context protocol must be %q or %q", StrictV1, AdaptiveV2)
+	}
 	if request.BudgetTokens < MinContextBudgetTokens || request.BudgetTokens > MaxContextBudgetTokens {
 		return ContextRequest{}, fmt.Errorf(
 			"budget-tokens must be between %d and %d",
@@ -818,7 +893,7 @@ func newContextEnvelope(index scan.AgentContextIndexRecord, request ContextReque
 	if compacted {
 		budgetQuery = contextQueryBudgetPlaceholder()
 	}
-	pack, err := finalizeContextEstimate(ContextPack{
+	envelope := ContextPack{
 		Schema:         scan.SchemaVersion,
 		Query:          publicQuery,
 		selectionQuery: request.Query,
@@ -826,7 +901,11 @@ func newContextEnvelope(index scan.AgentContextIndexRecord, request ContextReque
 		Freshness:      freshness,
 		Confidence:     "LOW",
 		BudgetTokens:   request.BudgetTokens,
-	})
+	}
+	if request.ProtocolVersion == AdaptiveV2 {
+		envelope.ProtocolVersion = AdaptiveV2
+	}
+	pack, err := finalizeContextEstimate(envelope)
 	if err != nil {
 		return ContextPack{}, err
 	}

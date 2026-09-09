@@ -1,0 +1,1 @@
+Bestimme die HTTP-Route der dekorierten Abbruchmethode. Nenne die Nachweise und jede Grenze, die eine verifizierte Route verhindert.

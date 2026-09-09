@@ -1,0 +1,1 @@
+Fix account deletion so its missing audit side effect is recorded. Preserve the existing deletion and notification behavior, and use the supplied tests to choose the smallest safe change.

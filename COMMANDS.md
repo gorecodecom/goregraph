@@ -2,6 +2,27 @@
 
 This file lists every user-facing GoreGraph command, what it does, and common variations.
 
+## Local 1.4.1 controls
+
+Build, scan and workspace update commands accept `--progress auto|plain|json|off`.
+Progress and five-second heartbeats use stderr; command summaries remain on stdout.
+`--file-timeout 5s` bounds cooperative script analysis per file; `0s` disables it.
+`--project-timeout 0s` is unlimited by default and also applies to project snapshot
+checks. Ctrl-C cancels work and interrupted publication preserves a recoverable
+previous generation. Cancellation takes effect at cooperative checkpoints.
+
+The agent workflow defaults to the existing `strict-v1` protocol. Compare the
+optional adaptive workflow with:
+
+```bash
+goregraph context . --query "<current coding task>" --protocol adaptive-v2
+goregraph mcp --protocol adaptive-v2
+```
+
+Adaptive responses add generation/health metadata, bounded source verification
+requests and stable fallback reasons within the existing token budget. This is
+an opt-in local candidate; new end-to-end token savings have not been established.
+
 ## Quick start
 
 ### Agent context
@@ -1212,6 +1233,10 @@ then reconciles the workspace once. Each project is scanned once; `all` shares
 that extraction across `index/`, `agent/`, and `dashboard/` instead of running
 separate agent and dashboard scans.
 
+Project failures do not stop the remaining projects. The command reports all
+failed projects and exits `1`; workspace reconciliation runs only when every
+project build succeeds. Cancellation stops the loop.
+
 Examples:
 
 ```bash
@@ -1322,7 +1347,10 @@ Default behavior:
 - reconciles workspace output once after all project scans
 - shares each project's extraction across `index/`, `agent/`, and `dashboard/`
 - keeps each project's configured output directory
-- stops on the first scan error and reports the failing project
+- continues after project errors and reports success/failure counts and all failed projects
+- skips workspace reconciliation and exits `1` if any project failed; existing
+  workspace output is retained and successful project indexes remain available
+- stops immediately on cancellation instead of starting another project
 
 Options:
 

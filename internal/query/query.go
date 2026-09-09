@@ -1,6 +1,7 @@
 package query
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -239,6 +240,16 @@ var workspaceOutputFallbacks = map[string]string{
 }
 
 func ReadOutput(root, name string) (string, error) {
+	var result string
+	err := scan.WithOutputRead(context.Background(), root, func() error {
+		var err error
+		result, err = readOutputUnlocked(root, name)
+		return err
+	})
+	return result, err
+}
+
+func readOutputUnlocked(root, name string) (string, error) {
 	cfg, err := config.Load(root)
 	if err != nil {
 		return "", err
@@ -334,6 +345,18 @@ func Explain(root, target string) (string, error) {
 }
 
 func loadIndex(root string) ([]scan.FileRecord, []scan.SymbolRecord, []scan.RelationRecord, error) {
+	var files []scan.FileRecord
+	var symbols []scan.SymbolRecord
+	var relations []scan.RelationRecord
+	err := scan.WithOutputRead(context.Background(), root, func() error {
+		var err error
+		files, symbols, relations, err = loadIndexUnlocked(root)
+		return err
+	})
+	return files, symbols, relations, err
+}
+
+func loadIndexUnlocked(root string) ([]scan.FileRecord, []scan.SymbolRecord, []scan.RelationRecord, error) {
 	cfg, err := config.Load(root)
 	if err != nil {
 		return nil, nil, nil, err

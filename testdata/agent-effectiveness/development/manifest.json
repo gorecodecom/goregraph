@@ -1,0 +1,150 @@
+{
+  "schema": 1,
+  "suite": "development",
+  "tasks": [
+    {
+      "schema": 1,
+      "id": "java-missing-audit-call",
+      "family": "java-spring",
+      "task_kind": "fix",
+      "languages": ["de", "en"],
+      "prompts": {"de": "java-missing-audit-call/prompt.de.txt", "en": "java-missing-audit-call/prompt.en.txt"},
+      "fixture": "java-missing-audit-call/fixture.json",
+      "required_outcomes": ["AccountService.remove records account.removed after repository deletion and before notification"],
+      "forbidden_outcomes": ["Record account.removed when repository deletion fails", "Remove the existing notification side effect"],
+      "verification": {"kind": "fixture_tests", "expected": "pass", "visible": ["AccountServiceTest.removesAccount"], "acceptance": ["AccountRemovalAcceptanceTest.recordsAuditOnlyAfterDeletion"]}
+    },
+    {
+      "schema": 1,
+      "id": "java-auth-header-configuration",
+      "family": "java-spring",
+      "task_kind": "feature",
+      "languages": ["de", "en"],
+      "prompts": {"de": "java-auth-header-configuration/prompt.de.txt", "en": "java-auth-header-configuration/prompt.en.txt"},
+      "fixture": "java-auth-header-configuration/fixture.json",
+      "required_outcomes": ["InventoryClient sends the configured X-Service-Token value on inventory requests"],
+      "forbidden_outcomes": ["Hard-code the token value", "Log or return the token value"],
+      "verification": {"kind": "fixture_tests", "expected": "pass", "visible": ["InventoryClientTest.callsInventory"], "acceptance": ["InventoryClientSecurityAcceptanceTest.usesConfiguredHeaderWithoutDisclosure"]}
+    },
+    {
+      "schema": 1,
+      "id": "java-stale-controller-source",
+      "family": "java-spring",
+      "task_kind": "investigation",
+      "languages": ["de", "en"],
+      "prompts": {"de": "java-stale-controller-source/prompt.de.txt", "en": "java-stale-controller-source/prompt.en.txt"},
+      "fixture": "java-stale-controller-source/fixture.json",
+      "required_outcomes": ["Identify POST /v2/orders in OrderController.java as the current route and mark the indexed /v1/orders route stale"],
+      "forbidden_outcomes": ["Report POST /v1/orders as current", "Claim runtime reachability beyond the supplied source"],
+      "verification": {"kind": "blinded_source_evidence", "expected": "rubric", "evidence_criteria": ["Cites the live OrderController.java route", "Explains the snapshot/source mismatch"]}
+    },
+    {
+      "schema": 1,
+      "id": "java-ambiguous-payment-handler",
+      "family": "java-spring",
+      "task_kind": "investigation",
+      "languages": ["de", "en"],
+      "prompts": {"de": "java-ambiguous-payment-handler/prompt.de.txt", "en": "java-ambiguous-payment-handler/prompt.en.txt"},
+      "fixture": "java-ambiguous-payment-handler/fixture.json",
+      "required_outcomes": ["Report both CardPaymentController.capture and TransferPaymentController.capture as unresolved candidates"],
+      "forbidden_outcomes": ["Choose one capture handler without caller or route evidence", "Merge the two payment implementations into one flow"],
+      "verification": {"kind": "blinded_source_evidence", "expected": "rubric", "evidence_criteria": ["Names both source-backed candidates", "States what evidence would disambiguate them"]}
+    },
+    {
+      "schema": 1,
+      "id": "typescript-import-shadowing",
+      "family": "typescript-react",
+      "task_kind": "fix",
+      "languages": ["de", "en"],
+      "prompts": {"de": "typescript-import-shadowing/prompt.de.txt", "en": "typescript-import-shadowing/prompt.en.txt"},
+      "fixture": "typescript-import-shadowing/fixture.json",
+      "required_outcomes": ["The module-level imported saveOrder call still reaches the provider"],
+      "forbidden_outcomes": ["Bind the module-level call to the nested saveOrder callback parameter", "Rename the provider API"],
+      "verification": {"kind": "fixture_tests", "expected": "pass", "visible": ["useCheckout.test.ts submits an order"], "acceptance": ["useCheckout.acceptance.test.ts calls imported provider once"]}
+    },
+    {
+      "schema": 1,
+      "id": "typescript-ignore-generated-bundle",
+      "family": "typescript-react",
+      "task_kind": "feature",
+      "languages": ["de", "en"],
+      "prompts": {"de": "typescript-ignore-generated-bundle/prompt.de.txt", "en": "typescript-ignore-generated-bundle/prompt.en.txt"},
+      "fixture": "typescript-ignore-generated-bundle/fixture.json",
+      "required_outcomes": ["Project discovery ignores public/vendor.generated.js while retaining src/vendorClient.ts"],
+      "forbidden_outcomes": ["Ignore every file containing vendor in its name", "Delete the generated bundle"],
+      "verification": {"kind": "fixture_tests", "expected": "pass", "visible": ["discovery.test.ts indexes src"], "acceptance": ["discovery.acceptance.test.ts excludes only configured generated bundle"]}
+    },
+    {
+      "schema": 1,
+      "id": "typescript-unsupported-decorator",
+      "family": "typescript-react",
+      "task_kind": "investigation",
+      "languages": ["de", "en"],
+      "prompts": {"de": "typescript-unsupported-decorator/prompt.de.txt", "en": "typescript-unsupported-decorator/prompt.en.txt"},
+      "fixture": "typescript-unsupported-decorator/fixture.json",
+      "required_outcomes": ["State that the macro-generated @rpc route cannot be resolved by the supplied static syntax evidence"],
+      "forbidden_outcomes": ["Invent an HTTP method or path", "Treat the decorator argument as a verified runtime route"],
+      "verification": {"kind": "blinded_source_evidence", "expected": "rubric", "evidence_criteria": ["Cites RpcOrders.ts", "Names unsupported macro expansion as the evidence gap"]}
+    },
+    {
+      "schema": 1,
+      "id": "typescript-focused-test-selection",
+      "family": "typescript-react",
+      "task_kind": "investigation",
+      "languages": ["de", "en"],
+      "prompts": {"de": "typescript-focused-test-selection/prompt.de.txt", "en": "typescript-focused-test-selection/prompt.en.txt"},
+      "fixture": "typescript-focused-test-selection/fixture.json",
+      "required_outcomes": ["Select cartStore.test.ts and CheckoutPanel.test.tsx as the focused tests for the quantity validation change"],
+      "forbidden_outcomes": ["Select unrelated SearchPage.test.tsx as required evidence", "Claim the focused tests replace the full repository suite"] ,
+      "verification": {"kind": "blinded_source_evidence", "expected": "rubric", "evidence_criteria": ["Links cartStore validation to both selected tests", "Separates focused verification from broader CI"]}
+    },
+    {
+      "schema": 1,
+      "id": "cross-route-contract-trace",
+      "family": "cross-project",
+      "task_kind": "investigation",
+      "languages": ["de", "en"],
+      "prompts": {"de": "cross-route-contract-trace/prompt.de.txt", "en": "cross-route-contract-trace/prompt.en.txt"},
+      "fixture": "cross-route-contract-trace/fixture.json",
+      "required_outcomes": ["Trace ordersApi.cancel through DELETE /api/orders/{id} to OrderController.cancel and OrderService.cancel"],
+      "forbidden_outcomes": ["Route the call through GET /api/orders", "Claim the Java repository call is directly invoked by the TypeScript client"],
+      "verification": {"kind": "blinded_source_evidence", "expected": "rubric", "evidence_criteria": ["Cites the consumer contract and provider handler", "Preserves the HTTP boundary"]}
+    },
+    {
+      "schema": 1,
+      "id": "cross-cancellation-side-effects",
+      "family": "cross-project",
+      "task_kind": "feature",
+      "languages": ["de", "en"],
+      "prompts": {"de": "cross-cancellation-side-effects/prompt.de.txt", "en": "cross-cancellation-side-effects/prompt.en.txt"},
+      "fixture": "cross-cancellation-side-effects/fixture.json",
+      "required_outcomes": ["Cancellation publishes OrderCancelled only after the database transaction commits"],
+      "forbidden_outcomes": ["Publish OrderCancelled before commit", "Send the event from the React client"],
+      "verification": {"kind": "fixture_tests", "expected": "pass", "visible": ["OrderServiceTest.cancelsOrder"], "acceptance": ["CancellationAcceptanceTest.publishesAfterCommitAndNeverOnRollback"]}
+    },
+    {
+      "schema": 1,
+      "id": "cross-stale-client-contract",
+      "family": "cross-project",
+      "task_kind": "fix",
+      "languages": ["de", "en"],
+      "prompts": {"de": "cross-stale-client-contract/prompt.de.txt", "en": "cross-stale-client-contract/prompt.en.txt"},
+      "fixture": "cross-stale-client-contract/fixture.json",
+      "required_outcomes": ["Update shipmentClient to call PATCH /shipments/{id}/dispatch and retain its authorization header"],
+      "forbidden_outcomes": ["Restore the removed POST /shipments/{id}/send route", "Drop the authorization header"],
+      "verification": {"kind": "fixture_tests", "expected": "pass", "visible": ["shipmentClient.test.ts dispatches shipment"], "acceptance": ["ShipmentContractAcceptanceTest.matchesLivePatchRouteWithAuth"]}
+    },
+    {
+      "schema": 1,
+      "id": "cross-unanswerable-runtime-owner",
+      "family": "cross-project",
+      "task_kind": "investigation",
+      "languages": ["de", "en"],
+      "prompts": {"de": "cross-unanswerable-runtime-owner/prompt.de.txt", "en": "cross-unanswerable-runtime-owner/prompt.en.txt"},
+      "fixture": "cross-unanswerable-runtime-owner/fixture.json",
+      "required_outcomes": ["State that the production owner of /reports/export cannot be determined from the two generated clients alone"],
+      "forbidden_outcomes": ["Name analytics-service or archive-service as the verified production owner", "Fabricate a provider source file"],
+      "verification": {"kind": "blinded_source_evidence", "expected": "rubric", "evidence_criteria": ["Cites both generated clients as ambiguous consumers", "Requests provider deployment or source evidence"]}
+    }
+  ]
+}

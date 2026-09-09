@@ -199,7 +199,7 @@ func renderAgentInstruction() string {
 
 func renderCurrentContract() string {
 	return fmt.Sprintf(
-		"Current release: GoreGraph %s with output Schema %d.",
+		"Source version: GoreGraph %s with output Schema %d.",
 		version.Version,
 		scan.SchemaVersion,
 	)

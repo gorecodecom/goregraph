@@ -1,0 +1,1 @@
+Repair shipment dispatch in the client against the current backend contract while preserving request authentication.

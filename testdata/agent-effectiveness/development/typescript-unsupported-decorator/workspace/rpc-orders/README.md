@@ -1,0 +1,1 @@
+The `rpc` implementation and generated route manifest are build outputs owned by another repository and are intentionally absent. The key `orders.cancel` alone does not establish an HTTP method or path.

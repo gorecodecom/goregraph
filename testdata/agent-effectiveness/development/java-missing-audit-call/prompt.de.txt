@@ -1,0 +1,1 @@
+Behebe das Löschen eines Kontos so, dass der fehlende Audit-Nebeneffekt aufgezeichnet wird. Erhalte das bestehende Lösch- und Benachrichtigungsverhalten und wähle anhand der vorhandenen Tests die kleinste sichere Änderung.

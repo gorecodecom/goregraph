@@ -1,7 +1,7 @@
 # GoreGraph Output Contract
 
 <!-- goregraph:generated current-contract start -->
-Current release: GoreGraph 1.4.0 with output Schema 3.
+Source version: GoreGraph 1.4.1 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 ## Build Targets and Extraction
@@ -490,3 +490,58 @@ GoreGraph provides full adapters for Go, Java / Spring, JavaScript / TypeScript 
 
 Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for C, C++, C#, Kotlin, Ruby, Scala, and Swift provide best-effort declarations and imports only. All records share the Schema 3 index.
 <!-- goregraph:generated language-inventory end -->
+
+## 1.4.1 publication, identity and health
+
+A build stages output beside its destination, validates generated JSON and
+manifest paths, and publishes under OS-backed locks with a recovery journal.
+Workspace reconciliation publishes its workspace projection and sibling overlays
+as one recoverable transaction. Failed staging leaves the previous output intact.
+Interrupted promotion is recovered by the next mutating build/update. Read-only
+queries and Doctor reject pending recovery instead of repairing output.
+
+Built-in multi-file readers hold a stable boundary. Arbitrary third-party direct
+JSON reads are outside that guarantee. Lazy dashboard shards use content-derived
+URLs; the current and immediately previous dashboard's assets are retained so an
+open prior page can finish loading. Older open pages may require a reload.
+
+Manifest additions retain Schema 3 readability:
+
+- `generation_id`: one committed publication identity;
+- `build_identity`: extractor/resolver/projection revisions, configuration and
+  analysis-policy digests, ignore digest and source fingerprint;
+- projection `input_fingerprint` and `stale`: whether a preserved target belongs
+  to the current analysis inputs;
+- `analysis_coverage` and `analysis_issues`: capability coverage and specific files
+  that exceeded the cooperative script-analysis budget.
+
+Integrity, freshness and coverage are separate axes. A retained dashboard can be
+valid and stale. A successfully published index can contain partial analysis.
+Without a live input check, freshness is unknown, regardless of timestamp. Legacy
+manifests have unknown identities until rebuilt. Revision, ignore-rule or scan
+configuration changes invalidate unchanged-file shortcuts. Fully unchanged
+workspace updates preserve output bytes and modification times.
+
+`--progress auto|plain|json|off` controls stderr progress. JSON emits phase/file
+outcomes plus heartbeat events; stdout retains command results. `--file-timeout
+5s` is the default cooperative script budget, and `--project-timeout 0s` leaves the
+project deadline unlimited. Zero disables a budget. Cancellation is checked
+between analysis/projection operations and rolls back publication; it cannot
+interrupt an individual blocking OS call or every legacy analyzer operation.
+Timed-out script files retain metadata and explicit partial coverage. Retry with
+a larger file budget to complete their facts.
+
+Internal `.goregraph-stage-*`, `.goregraph-backup-*`, `.goregraph-journal-*` and
+`.goregraph-lock-*` entries are generated bookkeeping, excluded from scan inputs.
+Do not manually delete journal-referenced directories during recovery.
+
+On Windows, rename operations retry access/sharing/lock violations for at most
+two seconds to tolerate short-lived readers. Persistent locks or permission
+errors remain failures with a diagnostic; transaction rollback/recovery still
+preserves the last good generation. Each rename, including rollback renames,
+has its own bounded retry window.
+
+Mutating CLI builds/updates add the output directory and publication bookkeeping
+patterns to `.gitignore` unless `--no-update-gitignore` is set. Read-only commands
+never edit ignore rules; their stable lock files can remain visible to Git when
+those patterns are intentionally absent.

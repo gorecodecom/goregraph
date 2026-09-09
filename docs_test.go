@@ -268,7 +268,7 @@ func TestDocumentationCoversEditableDashboardAndAPIContext(t *testing.T) {
 			"index/api-catalog.json",
 			"agent/context-index.json",
 			"4000",
-			"`v1.4.0` is the current GoreGraph release",
+			"local **1.4.1 candidate**",
 		},
 		"COMMANDS.md": {
 			"goregraph workspace dashboard edit [path]",
@@ -306,7 +306,7 @@ func TestDocumentationCoversEditableDashboardAndAPIContext(t *testing.T) {
 			"API Catalog",
 			"No auth evidence detected",
 			"agent/context-index.json",
-			"`v1.4.0` is the current GoreGraph release",
+			"local **1.4.1 candidate**",
 		},
 	}
 	for file, wants := range required {

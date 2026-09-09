@@ -10854,7 +10854,7 @@ func TestResolveSourcePathUsesSelectedIndexScope(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			want, err := filepath.EvalSymlinks(test.want)
+			want, err := os.Stat(test.want)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -10862,8 +10862,9 @@ func TestResolveSourcePathUsesSelectedIndexScope(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got != want {
-				t.Fatalf("resolveSourcePath() = %q, want %q", got, want)
+			actual, err := os.Stat(got)
+			if err != nil || !os.SameFile(actual, want) {
+				t.Fatalf("resolveSourcePath() = %q, want file identity of %q: %v", got, test.want, err)
 			}
 		})
 	}

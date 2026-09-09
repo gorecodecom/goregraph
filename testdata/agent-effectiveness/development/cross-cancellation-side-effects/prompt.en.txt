@@ -1,0 +1,1 @@
+Add the cancellation event so consumers observe only committed order cancellations. Keep event production in the owning backend.

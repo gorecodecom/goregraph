@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -63,6 +64,18 @@ func (Service) Run(request Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	if request.Task == "workspace-delta" {
+		return runServiceRead(request, offset)
+	}
+	var result Result
+	err = scan.WithOutputRead(context.Background(), request.Root, func() error {
+		result, err = runServiceRead(request, offset)
+		return err
+	})
+	return result, err
+}
+
+func runServiceRead(request Request, offset int) (Result, error) {
 	items, warnings, err := loadTask(request)
 	if err != nil {
 		return Result{}, err
@@ -478,10 +491,11 @@ func symbolCoverageWarnings(coverage []scan.SymbolCoverageRecord, projects []str
 
 func loadCompiledTaskContext(request Request) ([]Item, []string, error) {
 	pack, err := BuildContext(ContextRequest{
-		Root:         request.Root,
-		Query:        request.Query,
-		BudgetTokens: request.BudgetTokens,
-		MaxFiles:     request.MaxFiles,
+		Root:            request.Root,
+		Query:           request.Query,
+		BudgetTokens:    request.BudgetTokens,
+		MaxFiles:        request.MaxFiles,
+		ProtocolVersion: request.ProtocolVersion,
 	})
 	if err != nil {
 		return nil, nil, err

@@ -1,0 +1,1 @@
+Verfolge den Handler für das Erfassen einer Zahlung und beschreibe die nötige Änderung. Benenne jede Mehrdeutigkeit, die eine eindeutige Antwort verhindert.

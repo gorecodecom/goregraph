@@ -1,0 +1,1 @@
+Determine the HTTP route implemented by the decorated cancellation method. Report the evidence and any limit that prevents a verified route.

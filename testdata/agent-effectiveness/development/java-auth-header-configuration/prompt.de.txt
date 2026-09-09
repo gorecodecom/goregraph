@@ -1,0 +1,1 @@
+Ergänze die konfigurierte Service-Authentifizierung für Inventaranfragen. Geheimnisse dürfen weder im Quellcode noch in Logs oder Antworten erscheinen.

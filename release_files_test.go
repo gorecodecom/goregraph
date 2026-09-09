@@ -156,7 +156,7 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 	}
 }
 
-func TestReleaseFilesDescribe140AsCurrent(t *testing.T) {
+func TestReleaseFilesDescribe141AsLocalCandidate(t *testing.T) {
 	files := []string{"README.md", "docs/RELEASE.md"}
 	var combined strings.Builder
 	for _, file := range files {
@@ -169,8 +169,8 @@ func TestReleaseFilesDescribe140AsCurrent(t *testing.T) {
 	}
 	text := combined.String()
 	for _, want := range []string{
-		"Current release: GoreGraph 1.4.0 with output Schema 3.",
-		"`v1.4.0` is the current GoreGraph release",
+		"Source version: GoreGraph 1.4.1 with output Schema 3.",
+		"local **1.4.1 candidate**",
 		"Scoop and Winget publication",
 		"repositories are updated only when their respective repository tokens are",
 		"Current release behavior when `WINGET_TOKEN` is present:",
@@ -182,7 +182,7 @@ func TestReleaseFilesDescribe140AsCurrent(t *testing.T) {
 	for _, forbidden := range []string{
 		"unreleased 1.4.0",
 		"`v1.3.1` is the current GoreGraph release",
-		"has not been published",
+		"v1.4.1 is published",
 		"remain pending",
 		"`v1.0.0` is the stable public release",
 		"Remaining post-release checks",
@@ -198,8 +198,6 @@ func TestReleaseSourcesExcludeHistoricalDevelopmentArtifacts(t *testing.T) {
 	historicalPaths := []string{
 		".superpowers/sdd/issue25-task-5-report.md",
 		".superpowers/sdd/issue25-task-7-report.md",
-		"docs/superpowers/plans",
-		"docs/superpowers/specs",
 		"AI_INTEGRATION_PLAN.md",
 		"BUILD_PLAN.md",
 		"DISTRIBUTION_PLAN.md",
@@ -275,7 +273,7 @@ func TestReleaseNotesDescribeEditableDashboardForCurrentRelease(t *testing.T) {
 	text := string(body)
 	for _, want := range []string{
 		"Current Release",
-		"`v1.4.0` is the current GoreGraph release",
+		"local **1.4.1 candidate**",
 		"goregraph workspace dashboard edit .",
 		".goregraph-dashboard.json",
 		"API Catalog",

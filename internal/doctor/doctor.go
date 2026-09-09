@@ -1,8 +1,7 @@
 package doctor
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,6 +21,16 @@ type Result struct {
 }
 
 func Run(root string) (Result, error) {
+	var result Result
+	err := scan.WithOutputRead(context.Background(), root, func() error {
+		var err error
+		result, err = runUnlocked(root)
+		return err
+	})
+	return result, err
+}
+
+func runUnlocked(root string) (Result, error) {
 	cfg, err := config.Load(root)
 	if err != nil {
 		return Result{}, err
@@ -368,22 +377,47 @@ func checkStaleFiles(root string, manifest scan.Manifest, result *Result) {
 		return
 	}
 	stale := 0
-	for _, file := range files {
-		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file.Path)))
-		if err != nil {
-			stale++
-			continue
-		}
-		sum := sha256.Sum256(body)
-		if hex.EncodeToString(sum[:]) != file.Hash {
-			stale++
-		}
-	}
-	if stale > 0 {
-		result.warn("stale", fmt.Sprintf("%d indexed files changed or disappeared", stale))
+	cfg, err := config.Load(root)
+	if err != nil {
+		result.warn("stale", "cannot verify source inventory: "+err.Error())
 		return
 	}
-	result.ok("stale", "indexed file hashes match")
+	current, report, err := scan.SnapshotProjectFiles(context.Background(), root, cfg)
+	if err != nil {
+		result.warn("stale", "cannot verify source inventory: "+err.Error())
+		return
+	}
+	previous := make(map[string]string, len(files))
+	for _, file := range files {
+		previous[file.Path] = file.Hash
+	}
+	for _, file := range current {
+		if previous[file.Path] != file.Hash {
+			stale++
+		}
+		delete(previous, file.Path)
+	}
+	stale += len(previous)
+	if stale > 0 {
+		result.warn("stale", fmt.Sprintf("%d source files added, changed or disappeared", stale))
+		return
+	}
+	identity := scan.CurrentBuildIdentity(cfg, scan.DefaultBuildOptions(), report.IgnoreDigest, "")
+	if manifest.BuildIdentity.ExtractorRevision == "" {
+		result.warn("identity", "analysis input identity is unknown; rebuild the index")
+	} else if identity.ExtractorRevision != manifest.BuildIdentity.ExtractorRevision || identity.ResolverRevision != manifest.BuildIdentity.ResolverRevision || identity.ConfigDigest != manifest.BuildIdentity.ConfigDigest || identity.IgnoreDigest != manifest.BuildIdentity.IgnoreDigest {
+		result.warn("identity", "analyzer or scan rules changed; rebuild the index")
+	} else if manifest.BuildIdentity.AnalysisPolicyDigest == "" {
+		result.warn("identity", "analysis policy is unknown; source files match, but rebuild to record analysis timeout settings")
+	} else if identity.AnalysisPolicyDigest != manifest.BuildIdentity.AnalysisPolicyDigest {
+		result.ok("stale", "source files match; analysis policy differs from Doctor defaults, so custom timeout policy freshness was not evaluated")
+	} else {
+		result.ok("stale", "indexed file hashes match")
+	}
+	checkProjectionHealth(manifest, true, result)
+	for _, issue := range manifest.AnalysisIssues {
+		result.warn("analysis", issue.File+": "+issue.Reason)
+	}
 }
 
 func checkWorkspace(root string, result *Result) {
@@ -400,6 +434,7 @@ func checkWorkspace(root string, result *Result) {
 		return
 	}
 	checkGeneratedFiles(out, manifest, result)
+	checkProjectionHealth(manifest, false, result)
 	checkWorkspaceJSONFiles(out, manifest.Index.Files, result)
 	if registry := loadWorkspaceAPICatalogRegistry(root, out, manifest, result); registry != nil {
 		checkAPICatalog(out, manifest, root, registry, result)
@@ -410,6 +445,18 @@ func checkWorkspace(root string, result *Result) {
 	}
 	if dashboardConfigValid {
 		checkStaleWorkspaceDashboardServices(out, dashboardConfig, result)
+	}
+}
+
+func checkProjectionHealth(manifest scan.Manifest, liveVerified bool, result *Result) {
+	for _, projection := range []string{"agent", "dashboard"} {
+		health := scan.HealthForProjection(manifest, projection, liveVerified)
+		if health.Integrity == "unavailable" {
+			continue
+		}
+		if health.Freshness == "stale" {
+			result.warn(projection, "projection is readable but stale; rebuild this target")
+		}
 	}
 }
 

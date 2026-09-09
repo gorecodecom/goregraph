@@ -123,8 +123,6 @@ func buildWorkspaceDashboardUsageAssets(symbolIndex WorkspaceSymbolIndexRecord, 
 	assets := make(map[string][]byte, len(projects))
 	assetByProject := make(map[string]string, len(projects))
 	for _, project := range projects {
-		sum := sha256.Sum256([]byte(project))
-		assetPath := fmt.Sprintf("%s/code-usages-%x.js", workspaceDashboardAssetDir, sum[:8])
 		payload := WorkspaceSymbolUsageIndexRecord{
 			SchemaVersion: symbolUsages.SchemaVersion,
 			Generated:     symbolUsages.Generated,
@@ -139,6 +137,8 @@ func buildWorkspaceDashboardUsageAssets(symbolIndex WorkspaceSymbolIndexRecord, 
 		asset = append(asset, ',')
 		asset = append(asset, payloadJSON...)
 		asset = append(asset, ");\n"...)
+		sum := sha256.Sum256(asset)
+		assetPath := fmt.Sprintf("%s/code-usages-%x.js", workspaceDashboardAssetDir, sum[:16])
 		assets[assetPath] = asset
 		assetByProject[project] = assetPath
 	}

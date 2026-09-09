@@ -1,0 +1,1 @@
+Ergänze das Abbruchereignis so, dass Verbraucher nur bestätigte Bestellabbrüche sehen. Die Ereigniserzeugung bleibt im zuständigen Backend.

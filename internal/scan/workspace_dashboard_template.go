@@ -9,6 +9,11 @@ const workspaceDashboardShell = `<div class="shell" id="workspace-shell">
 <aside class="side" id="workspace-sidebar">
 <h1>GoreGraph Workspace</h1>
 <div class="summary"><div class="metric"><strong id="service-count">0</strong><span>services</span></div><div class="metric"><strong id="edge-count">0</strong><span>relations</span></div><div class="metric"><strong id="trace-count">0</strong><span>traces</span></div><div class="metric"><strong id="contract-count">0</strong><span>contracts</span></div></div>
+<section id="workspace-health" class="workspace-health" aria-label="Workspace evidence status">
+<h2>Evidence status</h2>
+<dl><div><dt>Integrity</dt><dd id="health-integrity" data-state="unknown">unknown</dd></div><div><dt>Freshness</dt><dd id="health-freshness" data-state="unknown">unknown</dd></div><div><dt>Coverage</dt><dd id="health-coverage" data-state="unknown">unknown</dd></div></dl>
+<p id="health-generation">Last successful generation unknown</p><p id="health-reasons" class="help">No verified projection health was recorded.</p>
+</section>
 <h2>View</h2>
 <div class="modes">
 <button data-view-mode="architecture" class="active" aria-pressed="true">Architecture</button>
@@ -68,6 +73,7 @@ const workspaceDashboardShell = `<div class="shell" id="workspace-shell">
 <main>
 <button type="button" id="toggle-left-panel" class="panel-toggle panel-toggle-left" aria-controls="workspace-sidebar" aria-expanded="true" aria-label="Hide navigation panel"><span aria-hidden="true">‹</span></button>
 <button type="button" id="toggle-right-panel" class="panel-toggle panel-toggle-right" aria-controls="details" aria-expanded="true" aria-label="Hide details panel"><span aria-hidden="true">›</span></button>
+<button type="button" id="journey-back" class="journey-back" hidden>Back to previous investigation step</button>
 <nav id="architecture-view-tabs" class="architecture-tabs" aria-label="Architecture presentation">
 <button type="button" data-architecture-view="flow" aria-pressed="true">Flow</button>
 <button type="button" data-architecture-view="matrix" aria-pressed="false">Matrix</button>

@@ -286,10 +286,10 @@ func TestRunWorkspaceUpdateDryRunsThenBuildsOnlyChangedProjects(t *testing.T) {
 	writeFile(t, orders, "main.go", "package main\nconst version = 2\n")
 	ordersAudit := filepath.Join(orders, "goregraph-out", "index", "audit.json")
 	usersAudit := filepath.Join(users, "goregraph-out", "index", "audit.json")
-	if err := os.WriteFile(ordersAudit, []byte("changed sentinel"), 0o644); err != nil {
+	if err := os.WriteFile(ordersAudit, []byte(`{"marker":"changed sentinel"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(usersAudit, []byte("unchanged sentinel"), 0o644); err != nil {
+	if err := os.WriteFile(usersAudit, []byte(`{"marker":"unchanged sentinel"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -308,7 +308,7 @@ func TestRunWorkspaceUpdateDryRunsThenBuildsOnlyChangedProjects(t *testing.T) {
 			t.Fatalf("dry-run output missing %q:\n%s", want, dryOut.String())
 		}
 	}
-	for path, want := range map[string]string{ordersAudit: "changed sentinel", usersAudit: "unchanged sentinel"} {
+	for path, want := range map[string]string{ordersAudit: `{"marker":"changed sentinel"}`, usersAudit: `{"marker":"unchanged sentinel"}`} {
 		body, err := os.ReadFile(path)
 		if err != nil || string(body) != want {
 			t.Fatalf("dry run changed %s: body=%q err=%v", path, body, err)
@@ -324,11 +324,11 @@ func TestRunWorkspaceUpdateDryRunsThenBuildsOnlyChangedProjects(t *testing.T) {
 		t.Fatalf("update summary missing:\n%s", stdout.String())
 	}
 	ordersAuditBody, err := os.ReadFile(ordersAudit)
-	if err != nil || string(ordersAuditBody) == "changed sentinel" {
+	if err != nil || string(ordersAuditBody) == `{"marker":"changed sentinel"}` {
 		t.Fatalf("changed project was not rebuilt: body=%q err=%v", ordersAuditBody, err)
 	}
 	usersAuditBody, err := os.ReadFile(usersAudit)
-	if err != nil || string(usersAuditBody) != "unchanged sentinel" {
+	if err != nil || string(usersAuditBody) != `{"marker":"unchanged sentinel"}` {
 		t.Fatalf("unchanged project was rebuilt: body=%q err=%v", usersAuditBody, err)
 	}
 	assertCLIPathExists(t, filepath.Join(workspace, ".goregraph-workspace", "dashboard", "workspace-map.html"))
@@ -350,7 +350,7 @@ func TestRunWorkspaceUpdateReconcilesRemovedProjectWhenSourcesAreOtherwiseUnchan
 		t.Fatal(err)
 	}
 	usersAudit := filepath.Join(users, "goregraph-out", "index", "audit.json")
-	if err := os.WriteFile(usersAudit, []byte("unchanged sentinel"), 0o644); err != nil {
+	if err := os.WriteFile(usersAudit, []byte(`{"marker":"unchanged sentinel"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -363,7 +363,7 @@ func TestRunWorkspaceUpdateReconcilesRemovedProjectWhenSourcesAreOtherwiseUnchan
 		t.Fatalf("update summary missing:\n%s", stdout.String())
 	}
 	usersAuditBody, err := os.ReadFile(usersAudit)
-	if err != nil || string(usersAuditBody) != "unchanged sentinel" {
+	if err != nil || string(usersAuditBody) != `{"marker":"unchanged sentinel"}` {
 		t.Fatalf("unchanged project was rebuilt: body=%q err=%v", usersAuditBody, err)
 	}
 	registryPath := filepath.Join(workspace, ".goregraph-workspace", "index", "registry.json")
@@ -1244,7 +1244,7 @@ func TestRunDoctorWarnsForStaleIndex(t *testing.T) {
 }
 
 func TestRunMCPHelpPrintsUsage(t *testing.T) {
-	want := `Usage: goregraph mcp [--expert-tools]
+	want := `Usage: goregraph mcp [--expert-tools] [--protocol strict-v1|adaptive-v2]
 
 Starts the read-only MCP stdio server.
 Default mode exposes only task_context to prevent query cascades.
@@ -1328,7 +1328,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 1.4.0",
+		"goregraph 1.4.1",
 		"commit:",
 		"built:",
 		"go:",

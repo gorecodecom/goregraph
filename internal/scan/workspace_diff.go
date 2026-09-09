@@ -1,13 +1,25 @@
 package scan
 
 import (
+	"context"
 	"fmt"
+	"github.com/gorecodecom/goregraph/internal/outputstore"
 	"os"
 	"sort"
 	"strings"
 )
 
 func WorkspaceDiff(beforeDir, afterDir string) (WorkspaceDiffRecord, error) {
+	var result WorkspaceDiffRecord
+	err := outputstore.WithReads(context.Background(), []string{beforeDir, afterDir}, func() error {
+		var err error
+		result, err = workspaceDiffUnlocked(beforeDir, afterDir)
+		return err
+	})
+	return result, err
+}
+
+func workspaceDiffUnlocked(beforeDir, afterDir string) (WorkspaceDiffRecord, error) {
 	before, err := readWorkspaceSnapshot(beforeDir)
 	if err != nil {
 		return WorkspaceDiffRecord{}, err

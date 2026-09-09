@@ -1,0 +1,1 @@
+Schließe das generierte Browser-Bundle von der Projekterkennung aus und behalte die gepflegte Client-Quelle bei.

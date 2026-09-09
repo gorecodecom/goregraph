@@ -1,16 +1,17 @@
 package agent
 
 type Request struct {
-	Root         string `json:"root,omitempty"`
-	Task         string `json:"task"`
-	Query        string `json:"query,omitempty"`
-	Scope        string `json:"scope,omitempty"`
-	Format       string `json:"format,omitempty"`
-	Detail       string `json:"detail,omitempty"`
-	Limit        int    `json:"limit,omitempty"`
-	Continuation string `json:"continuation,omitempty"`
-	BudgetTokens int    `json:"budget_tokens,omitempty"`
-	MaxFiles     int    `json:"max_files,omitempty"`
+	Root            string `json:"root,omitempty"`
+	Task            string `json:"task"`
+	Query           string `json:"query,omitempty"`
+	Scope           string `json:"scope,omitempty"`
+	Format          string `json:"format,omitempty"`
+	Detail          string `json:"detail,omitempty"`
+	Limit           int    `json:"limit,omitempty"`
+	Continuation    string `json:"continuation,omitempty"`
+	BudgetTokens    int    `json:"budget_tokens,omitempty"`
+	MaxFiles        int    `json:"max_files,omitempty"`
+	ProtocolVersion string `json:"protocol_version,omitempty"`
 }
 
 type Item struct {

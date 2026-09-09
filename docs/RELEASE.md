@@ -1,10 +1,22 @@
 # GoreGraph Release Checklist
 
-## Current Release
+## Current Release Status
 
 <!-- goregraph:generated current-contract start -->
-Current release: GoreGraph 1.4.0 with output Schema 3.
+Source version: GoreGraph 1.4.1 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
+
+The local **1.4.1 candidate** is for testing. Do not infer publication from the source
+version above. This implementation does not push a commit, tag, release, or
+package-manager update. Install the locally built binary only after validation;
+retain the previously installed executable for rollback.
+
+Candidate scope: reliable scoped file selection, indexed script extraction,
+cooperative cancellation and progress, build/input identities, last-good-output
+recovery, independent integrity/freshness/coverage labels, investigation
+navigation, and an opt-in adaptive agent protocol. No new end-to-end token-saving
+claim is made; the historical strict benchmark remains the baseline. The offline
+[effectiveness harness](AGENT-EFFECTIVENESS.md) prepares independent evaluation.
 
 The 1.4.0 minor release adds `goregraph workspace update`, a content-aware
 workspace maintenance command. It detects added, modified, and deleted project

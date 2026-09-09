@@ -38,7 +38,7 @@ func TestEnsureOutputIgnoredAppendsBlockWhenMissing(t *testing.T) {
 func TestEnsureOutputIgnoredIsIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".gitignore")
-	if err := os.WriteFile(path, []byte("# GoreGraph local scan output\ngoregraph-out/\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("# GoreGraph local scan output\ngoregraph-out/\n.goregraph-lock-*\n.goregraph-journal-*\n.goregraph-stage-*\n.goregraph-backup-*\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,5 +94,27 @@ func TestParseMatchesRootRelativeIgnoredPaths(t *testing.T) {
 	}
 	if matcher.Ignored("important.log", false) {
 		t.Fatal("important.log ignored despite negation")
+	}
+}
+
+func TestEnsureOutputIgnoredMigratesTransactionBookkeeping(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("goregraph-out/\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EnsureOutputIgnored(root, "goregraph-out"); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".goregraph-lock-123.lock", ".goregraph-journal-123.json", ".goregraph-stage-123/file.json", ".goregraph-backup-123/file.json"} {
+		if !Parse(string(body)).Ignored(name, false) {
+			t.Errorf("generated bookkeeping is not ignored: %s", name)
+		}
+	}
+	if changed, err := EnsureOutputIgnored(root, "goregraph-out"); err != nil || changed {
+		t.Fatalf("repeat changed=%v err=%v", changed, err)
 	}
 }

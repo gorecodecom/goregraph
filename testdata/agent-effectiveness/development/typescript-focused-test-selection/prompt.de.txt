@@ -1,0 +1,1 @@
+Welche fokussierten Tests sollten beim Verschieben der Mengenvalidierung in den Warenkorb-Store laufen? Begründe die Auswahl und ihre Grenzen.

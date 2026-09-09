@@ -3,3 +3,9 @@ dist/
 
 # GoreGraph local scan output
 goregraph-out/
+
+# GoreGraph publication bookkeeping
+.goregraph-lock-*
+.goregraph-journal-*
+.goregraph-stage-*
+.goregraph-backup-*

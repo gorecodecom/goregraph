@@ -1,14 +1,26 @@
 package scan
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gorecodecom/goregraph/internal/outputstore"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 func WorkspaceImpact(workspaceOut string, changedFiles []string) (WorkspaceImpactRecord, error) {
+	var result WorkspaceImpactRecord
+	err := outputstore.WithRead(context.Background(), workspaceOut, func(committed string) error {
+		var err error
+		result, err = workspaceImpactUnlocked(committed, changedFiles)
+		return err
+	})
+	return result, err
+}
+
+func workspaceImpactUnlocked(workspaceOut string, changedFiles []string) (WorkspaceImpactRecord, error) {
 	var dossiers []FeatureDossierRecord
 	layout := NewWorkspaceOutputLayout(workspaceOut)
 	if err := readWorkspaceJSON(layout.Index("feature-dossiers.json"), &dossiers); err != nil {

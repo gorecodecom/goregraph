@@ -1,0 +1,1 @@
+Trace order cancellation from the web client to the backend behavior, preserving each contract boundary in the explanation.

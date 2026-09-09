@@ -11,16 +11,35 @@ import (
 )
 
 type loadedContextIndex struct {
-	Index     scan.AgentContextIndexRecord
-	Path      string
-	ScopeRoot string
-	Workspace bool
+	Index          scan.AgentContextIndexRecord
+	Path           string
+	ScopeRoot      string
+	Workspace      bool
+	Health         scan.ProjectionHealth
+	sourceSearchID string
 }
 
 type contextIndexCandidate struct {
 	Path      string
 	ScopeRoot string
 	Workspace bool
+}
+
+type contextIndexLoadError struct {
+	code string
+	err  error
+}
+
+func (err *contextIndexLoadError) Error() string {
+	return err.err.Error()
+}
+
+func (err *contextIndexLoadError) Unwrap() error {
+	return err.err
+}
+
+func newContextIndexLoadError(code string, err error) error {
+	return &contextIndexLoadError{code: code, err: err}
 }
 
 func loadContextIndex(request ContextRequest) (loadedContextIndex, error) {
@@ -70,11 +89,11 @@ func loadContextIndex(request ContextRequest) (loadedContextIndex, error) {
 			continue
 		}
 		if statErr != nil {
-			return loadedContextIndex{}, fmt.Errorf(
+			return loadedContextIndex{}, newContextIndexLoadError(ContextFallbackSourceUnreadable, fmt.Errorf(
 				"context index %q is not readable: %w",
 				candidate.Path,
 				statErr,
-			)
+			))
 		}
 		if info.IsDir() {
 			return loadedContextIndex{}, fmt.Errorf(
@@ -84,36 +103,57 @@ func loadContextIndex(request ContextRequest) (loadedContextIndex, error) {
 		}
 		body, readErr := os.ReadFile(candidate.Path)
 		if readErr != nil {
-			return loadedContextIndex{}, fmt.Errorf(
+			return loadedContextIndex{}, newContextIndexLoadError(ContextFallbackSourceUnreadable, fmt.Errorf(
 				"context index %q is not readable: %w",
 				candidate.Path,
 				readErr,
-			)
+			))
 		}
 		var index scan.AgentContextIndexRecord
 		if decodeErr := json.Unmarshal(body, &index); decodeErr != nil {
-			return loadedContextIndex{}, fmt.Errorf(
+			return loadedContextIndex{}, newContextIndexLoadError(ContextFallbackIndexStale, fmt.Errorf(
 				"context index %q is invalid JSON: %w",
 				candidate.Path,
 				decodeErr,
-			)
+			))
 		}
 		if validateErr := validateContextIndex(index); validateErr != nil {
-			return loadedContextIndex{}, fmt.Errorf(
+			return loadedContextIndex{}, newContextIndexLoadError(ContextFallbackIndexStale, fmt.Errorf(
 				"context index %q is invalid: %w",
 				candidate.Path,
 				validateErr,
-			)
+			))
 		}
 		return loadedContextIndex{
 			Index: index, Path: candidate.Path, ScopeRoot: candidate.ScopeRoot, Workspace: candidate.Workspace,
+			Health: loadContextProjectionHealth(candidate.Path),
 		}, nil
 	}
 
-	return loadedContextIndex{}, fmt.Errorf(
+	return loadedContextIndex{}, newContextIndexLoadError(ContextFallbackIndexMissing, fmt.Errorf(
 		"context index is missing; run `goregraph build agent %s` first",
 		requestRoot,
-	)
+	))
+}
+
+func loadContextProjectionHealth(indexPath string) scan.ProjectionHealth {
+	manifestPath := filepath.Join(filepath.Dir(filepath.Dir(indexPath)), "manifest.json")
+	body, err := os.ReadFile(manifestPath)
+	if err != nil {
+		health := scan.HealthForProjection(scan.OutputManifest{}, "agent", false)
+		if !os.IsNotExist(err) {
+			health.Reasons = []string{"manifest_unreadable"}
+		}
+		return health
+	}
+	var manifest scan.OutputManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return scan.ProjectionHealth{
+			Integrity: "invalid", Freshness: "unknown", Coverage: "unknown",
+			Reasons: []string{"manifest_invalid"},
+		}
+	}
+	return scan.HealthForProjection(manifest, "agent", false)
 }
 
 func validateContextIndex(index scan.AgentContextIndexRecord) error {

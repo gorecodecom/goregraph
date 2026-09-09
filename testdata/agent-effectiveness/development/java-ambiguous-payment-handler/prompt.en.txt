@@ -1,0 +1,1 @@
+Trace the payment capture handler and say what would need to change. State any ambiguity that prevents a unique answer.

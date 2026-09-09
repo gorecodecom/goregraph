@@ -71,23 +71,29 @@ func (t BuildTarget) IncludesDashboard() bool {
 }
 
 type ProjectionStatus struct {
-	GeneratedAt string   `json:"generated_at,omitempty"`
-	Complete    bool     `json:"complete"`
-	Files       []string `json:"files,omitempty"`
+	InputFingerprint string   `json:"input_fingerprint,omitempty"`
+	Stale            bool     `json:"stale,omitempty"`
+	GeneratedAt      string   `json:"generated_at,omitempty"`
+	Complete         bool     `json:"complete"`
+	Files            []string `json:"files,omitempty"`
 }
 
 type OutputManifest struct {
-	Tool        string           `json:"tool"`
-	Schema      int              `json:"schema"`
-	Scope       string           `json:"scope"`
-	OutputDir   string           `json:"output_dir"`
-	ProjectRoot string           `json:"project_root,omitempty"`
-	Files       int              `json:"files,omitempty"`
-	Skipped     int              `json:"skipped,omitempty"`
-	Index       ProjectionStatus `json:"index"`
-	Agent       ProjectionStatus `json:"agent"`
-	Dashboard   ProjectionStatus `json:"dashboard"`
-	Git         *GitMetadata     `json:"git,omitempty"`
+	GenerationID     string           `json:"generation_id,omitempty"`
+	AnalysisCoverage string           `json:"analysis_coverage,omitempty"`
+	BuildIdentity    BuildIdentity    `json:"build_identity"`
+	AnalysisIssues   []AnalysisIssue  `json:"analysis_issues,omitempty"`
+	Tool             string           `json:"tool"`
+	Schema           int              `json:"schema"`
+	Scope            string           `json:"scope"`
+	OutputDir        string           `json:"output_dir"`
+	ProjectRoot      string           `json:"project_root,omitempty"`
+	Files            int              `json:"files,omitempty"`
+	Skipped          int              `json:"skipped,omitempty"`
+	Index            ProjectionStatus `json:"index"`
+	Agent            ProjectionStatus `json:"agent"`
+	Dashboard        ProjectionStatus `json:"dashboard"`
+	Git              *GitMetadata     `json:"git,omitempty"`
 }
 
 type Manifest = OutputManifest

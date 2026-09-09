@@ -16,6 +16,7 @@ import (
 	"github.com/gorecodecom/goregraph/internal/doctor"
 	"github.com/gorecodecom/goregraph/internal/query"
 	"github.com/gorecodecom/goregraph/internal/scan"
+	"github.com/gorecodecom/goregraph/internal/version"
 )
 
 type request struct {
@@ -43,7 +44,8 @@ type callParams struct {
 }
 
 type Options struct {
-	ExpertTools bool
+	ProtocolVersion string
+	ExpertTools     bool
 }
 
 func Serve(input io.Reader, output io.Writer) error {
@@ -51,6 +53,9 @@ func Serve(input io.Reader, output io.Writer) error {
 }
 
 func ServeWithOptions(input io.Reader, output io.Writer, options Options) error {
+	if _, err := agentguide.Instruction(options.ProtocolVersion); err != nil {
+		return err
+	}
 	scanner := bufio.NewScanner(input)
 	encoder := json.NewEncoder(output)
 	for scanner.Scan() {
@@ -77,10 +82,10 @@ func handle(req request, options Options) response {
 	case "initialize":
 		return okResponse(req.ID, map[string]any{
 			"protocolVersion": "2024-11-05",
-			"instructions":    serverInstructions(),
+			"instructions":    instructionsForProtocol(options.ProtocolVersion),
 			"serverInfo": map[string]any{
 				"name":    "goregraph",
-				"version": "dev",
+				"version": version.Version,
 			},
 			"capabilities": map[string]any{"tools": map[string]any{}},
 		})
@@ -104,7 +109,11 @@ func handle(req request, options Options) response {
 }
 
 func tools(options Options) []map[string]any {
-	listed := []map[string]any{taskContextTool()}
+	contextTool := taskContextTool()
+	if options.ProtocolVersion == agentguide.AdaptiveV2 {
+		contextTool["description"] = instructionsForProtocol(options.ProtocolVersion)
+	}
+	listed := []map[string]any{contextTool}
 	if options.ExpertTools {
 		listed = append(listed, legacyTools()...)
 	}
@@ -183,7 +192,7 @@ func tool(name, description string) map[string]any {
 
 func callTool(options Options, name string, args map[string]any) (string, error) {
 	if name == "task_context" {
-		return callTaskContext(args)
+		return callTaskContextWithProtocol(args, options.ProtocolVersion)
 	}
 	if !options.ExpertTools {
 		return "", fmt.Errorf("unknown tool: %s", name)
@@ -230,7 +239,16 @@ func callTool(options Options, name string, args map[string]any) (string, error)
 	}
 }
 
+func instructionsForProtocol(protocol string) string {
+	instruction, _ := agentguide.Instruction(protocol)
+	return instruction
+}
+
 func callTaskContext(args map[string]any) (string, error) {
+	return callTaskContextWithProtocol(args, "")
+}
+
+func callTaskContextWithProtocol(args map[string]any, protocol string) (string, error) {
 	for name := range args {
 		switch name {
 		case "root", "query", "budget_tokens", "max_files", "previous_context_id":
@@ -272,6 +290,7 @@ func callTaskContext(args map[string]any) (string, error) {
 		}
 	}
 	pack, err := agent.BuildContext(agent.ContextRequest{
+		ProtocolVersion:   protocol,
 		Root:              root,
 		Query:             query,
 		BudgetTokens:      budgetTokens,

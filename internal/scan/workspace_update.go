@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,9 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gorecodecom/goregraph/internal/config"
-	"github.com/gorecodecom/goregraph/internal/gitignore"
+	"github.com/gorecodecom/goregraph/internal/outputstore"
 )
 
 const (
@@ -40,6 +42,17 @@ type WorkspaceUpdateItemRecord struct {
 
 // WorkspaceUpdatePlan compares current project content with existing project indexes.
 func WorkspaceUpdatePlan(root string, cfg config.Config, target BuildTarget) (WorkspaceUpdatePlanRecord, error) {
+	return WorkspaceUpdatePlanWithOptions(context.Background(), root, cfg, target, DefaultBuildOptions())
+}
+
+// WorkspaceUpdatePlanWithOptions compares current inputs with cancellable snapshots.
+func WorkspaceUpdatePlanWithOptions(ctx context.Context, root string, cfg config.Config, target BuildTarget, options BuildOptions) (WorkspaceUpdatePlanRecord, error) {
+	if err := options.validate(); err != nil {
+		return WorkspaceUpdatePlanRecord{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return WorkspaceUpdatePlanRecord{}, err
+	}
 	if err := target.Validate(); err != nil {
 		return WorkspaceUpdatePlanRecord{}, err
 	}
@@ -53,7 +66,11 @@ func WorkspaceUpdatePlan(root string, cfg config.Config, target BuildTarget) (Wo
 		Items:         make([]WorkspaceUpdateItemRecord, 0, len(projects.Items)),
 	}
 	for _, project := range projects.Items {
-		item, err := workspaceProjectUpdateItem(project, target)
+		if err := ctx.Err(); err != nil {
+			return WorkspaceUpdatePlanRecord{}, err
+		}
+		options.emit("snapshot", project.AbsPath, "", "started", len(plan.Items), len(projects.Items), time.Now())
+		item, err := workspaceProjectUpdateItemWithOptions(ctx, project, target, options)
 		if err != nil {
 			return WorkspaceUpdatePlanRecord{}, fmt.Errorf("inspect %s: %w", project.Project, err)
 		}
@@ -63,6 +80,26 @@ func WorkspaceUpdatePlan(root string, cfg config.Config, target BuildTarget) (Wo
 }
 
 func workspaceProjectUpdateItem(project WorkspaceProjectScanItemRecord, target BuildTarget) (WorkspaceUpdateItemRecord, error) {
+	return workspaceProjectUpdateItemWithOptions(context.Background(), project, target, DefaultBuildOptions())
+}
+
+func workspaceProjectUpdateItemWithOptions(ctx context.Context, project WorkspaceProjectScanItemRecord, target BuildTarget, options BuildOptions) (WorkspaceUpdateItemRecord, error) {
+	ctx, cancel := budgetContext(ctx, options.ProjectTimeout)
+	defer cancel()
+	cfg, err := config.Load(project.AbsPath)
+	if err != nil {
+		return WorkspaceUpdateItemRecord{}, err
+	}
+	var result WorkspaceUpdateItemRecord
+	err = outputstore.WithReads(ctx, []string{filepath.Join(project.AbsPath, cfg.OutputDir)}, func() error {
+		var err error
+		result, err = workspaceProjectUpdateItemUnlocked(ctx, project, target, options)
+		return err
+	})
+	return result, err
+}
+
+func workspaceProjectUpdateItemUnlocked(ctx context.Context, project WorkspaceProjectScanItemRecord, target BuildTarget, options BuildOptions) (WorkspaceUpdateItemRecord, error) {
 	item := WorkspaceUpdateItemRecord{
 		Project: project.Project,
 		AbsPath: project.AbsPath,
@@ -93,12 +130,21 @@ func workspaceProjectUpdateItem(project WorkspaceProjectScanItemRecord, target B
 		item.Reason = "project file index is missing or invalid"
 		return item, nil
 	}
-	current, err := snapshotProjectFiles(project.AbsPath, projectConfig)
+	current, report, err := SnapshotProjectFiles(ctx, project.AbsPath, projectConfig)
 	if err != nil {
 		return item, err
 	}
 	item.Added, item.Modified, item.Deleted = compareProjectFiles(previous, current)
 	if item.Added == 0 && item.Modified == 0 && item.Deleted == 0 {
+		identity := CurrentBuildIdentity(projectConfig, options, report.IgnoreDigest, sourceFingerprint(current))
+		if reason := identityChange(manifest.BuildIdentity, identity, target); reason != "" {
+			item.Reason = reason
+			return item, nil
+		}
+		if (target.IncludesAgent() && manifest.Agent.Stale) || (target.IncludesDashboard() && manifest.Dashboard.Stale) {
+			item.Reason = "requested projection is stale"
+			return item, nil
+		}
 		item.Action = WorkspaceUpdateActionSkip
 		item.Reason = "source files unchanged"
 		return item, nil
@@ -143,62 +189,9 @@ func readProjectFileRecords(path string) ([]FileRecord, error) {
 }
 
 func snapshotProjectFiles(root string, cfg config.Config) ([]FileRecord, error) {
-	resolved, err := filepath.Abs(root)
-	if err != nil {
-		return nil, err
-	}
-	matcher := gitignore.Matcher{}
-	if cfg.UseGitignore {
-		matcher = gitignore.Load(resolved)
-	}
-	var records []FileRecord
-	err = filepath.WalkDir(resolved, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			if entry != nil && entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if path == resolved {
-			return nil
-		}
-		rel, err := filepath.Rel(resolved, path)
-		if err != nil {
-			return nil
-		}
-		rel = filepath.ToSlash(rel)
-		info, err := entry.Info()
-		if err != nil {
-			return nil
-		}
-		if shouldSkipPath(rel, entry.IsDir(), cfg, matcher) {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if info.Mode()&os.ModeSymlink != 0 && !cfg.FollowSymlinks {
-			if entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.IsDir() || info.Size() > cfg.MaxFileSizeBytes {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil || isBinary(body) {
-			return nil
-		}
-		records = append(records, fileRecord(rel, info.Size(), body))
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return records, nil
+	records, _, err := SnapshotProjectFiles(context.Background(), root, cfg)
+	return records, err
 }
-
 func compareProjectFiles(previous, current []FileRecord) (added, modified, deleted int) {
 	previousByPath := make(map[string]FileRecord, len(previous))
 	for _, record := range previous {

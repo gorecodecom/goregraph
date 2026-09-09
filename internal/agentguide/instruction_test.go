@@ -1,9 +1,63 @@
 package agentguide
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 )
+
+func TestStrictInstructionPreservesHistoricalReplay(t *testing.T) {
+	text, err := Instruction(StrictV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != AssistedInstruction {
+		t.Fatal("strict protocol changed the historical assisted instruction")
+	}
+	digest := sha256.Sum256([]byte(text))
+	if got := hex.EncodeToString(digest[:]); got != "6a06280eeeb09a6985711c405faf1d536dc6eecba95b650b2ac09f1518a7b204" {
+		t.Fatalf("strict instruction hash = %s", got)
+	}
+}
+
+func TestInstructionDefaultsToStrictV1(t *testing.T) {
+	text, err := Instruction("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != AssistedInstruction {
+		t.Fatal("empty protocol did not preserve the strict default")
+	}
+}
+
+func TestInstructionRejectsUnknownProtocol(t *testing.T) {
+	if _, err := Instruction("unknown"); err == nil {
+		t.Fatal("accepted unknown protocol")
+	}
+}
+
+func TestAdaptiveInstructionPreservesCallerAuthority(t *testing.T) {
+	text, err := Instruction(AdaptiveV2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"caller's permissions",
+		"verified source",
+		"verification_requests",
+		"previous_context_id",
+		"expert MCP tools remain opt-in",
+		"unknown design decisions",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("adaptive instruction does not contain %q", want)
+		}
+	}
+	if strings.Contains(text, "run no source-reading commands") {
+		t.Fatal("adaptive instruction retained blanket source-read prohibition")
+	}
+}
 
 func TestAssistedInstructionDefinesExecutableBoundedWorkflow(t *testing.T) {
 	lines := strings.Split(AssistedInstruction, "\n")

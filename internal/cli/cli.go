@@ -21,6 +21,7 @@ import (
 	"github.com/gorecodecom/goregraph/internal/doctor"
 	"github.com/gorecodecom/goregraph/internal/gitignore"
 	"github.com/gorecodecom/goregraph/internal/mcp"
+	"github.com/gorecodecom/goregraph/internal/outputstore"
 	"github.com/gorecodecom/goregraph/internal/query"
 	"github.com/gorecodecom/goregraph/internal/scan"
 	"github.com/gorecodecom/goregraph/internal/version"
@@ -31,7 +32,18 @@ var (
 	openDashboardEditorURL = openGeneratedPath
 )
 
-func Run(args []string, stdout, stderr io.Writer) int {
+func Run(args []string, stdout, stderr io.Writer) (code int) {
+	args, execution, closeExecution, err := prepareBuildExecution(args, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+	defer closeExecution()
+	defer func() {
+		if execution.ctx.Err() != nil {
+			code = 130
+		}
+	}()
 	if len(args) == 0 {
 		printHelp(stdout)
 		return 0
@@ -42,11 +54,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 	switch args[0] {
 	case "build":
-		return runBuild(args[1:], stdout, stderr)
+		return runBuild(args[1:], stdout, stderr, execution)
 	case "scan":
-		return runScan(args[1:], stdout, stderr, false, false)
+		return runScan(args[1:], stdout, stderr, false, false, execution)
 	case "update":
-		return runScan(args[1:], stdout, stderr, true, true)
+		return runScan(args[1:], stdout, stderr, true, true, execution)
 	case "report":
 		return runReport(args[1:], stdout, stderr)
 	case "dashboard":
@@ -62,7 +74,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "git":
 		return runGit(args[1:], stdout, stderr)
 	case "workspace":
-		return runWorkspace(args[1:], stdout, stderr)
+		return runWorkspace(args[1:], stdout, stderr, execution)
 	case "mcp":
 		return runMCP(args[1:], stdout, stderr)
 	case "version":
@@ -88,7 +100,7 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 }
 
 func runMCP(args []string, stdout, stderr io.Writer) int {
-	const help = `Usage: goregraph mcp [--expert-tools]
+	const help = `Usage: goregraph mcp [--expert-tools] [--protocol strict-v1|adaptive-v2]
 
 Starts the read-only MCP stdio server.
 Default mode exposes only task_context to prevent query cascades.
@@ -99,13 +111,31 @@ Default mode exposes only task_context to prevent query cascades.
 		return 0
 	}
 	options := mcp.Options{}
-	switch {
-	case len(args) == 0:
-	case len(args) == 1 && args[0] == "--expert-tools":
-		options.ExpertTools = true
-	default:
-		fmt.Fprint(stderr, "error: usage: goregraph mcp [--expert-tools]\n")
-		return 2
+	seen := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		if seen[args[i]] {
+			fmt.Fprintln(stderr, "error: usage: goregraph mcp [--expert-tools] [--protocol strict-v1|adaptive-v2]; duplicate option", args[i])
+			return 2
+		}
+		seen[args[i]] = true
+		switch args[i] {
+		case "--expert-tools":
+			options.ExpertTools = true
+		case "--protocol":
+			i++
+			if i >= len(args) {
+				fmt.Fprintln(stderr, "error: --protocol requires strict-v1 or adaptive-v2")
+				return 2
+			}
+			options.ProtocolVersion = args[i]
+			if _, err := agentguide.Instruction(options.ProtocolVersion); err != nil {
+				fmt.Fprintln(stderr, "error:", err)
+				return 2
+			}
+		default:
+			fmt.Fprintln(stderr, "error: usage: goregraph mcp [--expert-tools] [--protocol strict-v1|adaptive-v2]; unknown option", args[i])
+			return 2
+		}
 	}
 	if err := mcp.ServeWithOptions(os.Stdin, stdout, options); err != nil {
 		fmt.Fprintf(stderr, "error: mcp failed: %v\n", err)
@@ -135,7 +165,7 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runWorkspace(args []string, stdout, stderr io.Writer) int {
+func runWorkspace(args []string, stdout, stderr io.Writer, execution buildExecution) int {
 	if len(args) > 0 && isHelp(args[0]) {
 		return runHelpSelector(
 			args[1:],
@@ -152,17 +182,17 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 	}
 	switch args[0] {
 	case "build":
-		return runWorkspaceBuild(args[1:], stdout, stderr)
+		return runWorkspaceBuild(args[1:], stdout, stderr, execution)
 	case "update":
-		return runWorkspaceUpdate(args[1:], stdout, stderr)
+		return runWorkspaceUpdate(args[1:], stdout, stderr, execution)
 	case "status":
 		return runWorkspaceStatus(args[1:], stdout, stderr)
 	case "scan-missing":
-		return runWorkspaceScanMissing(args[1:], stdout, stderr)
+		return runWorkspaceScanMissing(args[1:], stdout, stderr, execution)
 	case "scan-all":
-		return runWorkspaceScanAll(args[1:], stdout, stderr)
+		return runWorkspaceScanAll(args[1:], stdout, stderr, execution)
 	case "refresh":
-		return runWorkspaceRefresh(args[1:], stdout, stderr)
+		return runWorkspaceRefresh(args[1:], stdout, stderr, execution)
 	case "clean":
 		return runWorkspaceClean(args[1:], stdout, stderr)
 	case "diff":
@@ -183,7 +213,7 @@ func runWorkspace(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-func runBuild(args []string, stdout, stderr io.Writer) int {
+func runBuild(args []string, stdout, stderr io.Writer, execution buildExecution) int {
 	if len(args) == 0 || isHelp(args[0]) {
 		if len(args) > 0 {
 			fmt.Fprint(stdout, `Usage: goregraph build <agent|dashboard|all> [path] [--no-update-gitignore] [--no-workspace]
@@ -195,6 +225,8 @@ Builds the shared machine index and the selected project projection.
 
 Extracts source once per command; all reuses that extraction for both projections.
 A single-project build does not require a workspace marker.
+Build controls: --progress auto|plain|json|off, --file-timeout 5s, --project-timeout 0s.
+Zero disables a time budget. Progress uses stderr; cancellation returns exit code 130.
 `)
 			return 0
 		}
@@ -208,17 +240,20 @@ A single-project build does not require a workspace marker.
 	}
 	projectArgs := append([]string(nil), args[1:]...)
 	projectArgs = append(projectArgs, "--target", string(target))
-	return runScan(projectArgs, stdout, stderr, false, true)
+	return runScan(projectArgs, stdout, stderr, false, true, execution)
 }
 
-func runWorkspaceBuild(args []string, stdout, stderr io.Writer) int {
+func runWorkspaceBuild(args []string, stdout, stderr io.Writer, execution buildExecution) int {
 	if len(args) == 0 || isHelp(args[0]) {
 		if len(args) > 0 {
 			fmt.Fprint(stdout, `Usage: goregraph workspace build <agent|dashboard|all> [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]
 
 Builds the shared workspace index and the selected projection.
 Scans each discovered project once and reconciles the workspace once after the project loop.
+Continues after project failures, reports all failed projects and exits non-zero.
+Workspace reconciliation is skipped if any project failed. Ctrl-C stops the loop.
 Use a detected grouped layout, --workspace <path>, or .goregraph-workspace.yml.
+Build controls: --progress auto|plain|json|off, --file-timeout 5s, --project-timeout 0s.
 `)
 			return 0
 		}
@@ -230,10 +265,10 @@ Use a detected grouped layout, --workspace <path>, or .goregraph-workspace.yml.
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
-	return runWorkspaceScanAllTarget(args[1:], stdout, stderr, target)
+	return runWorkspaceScanAllTarget(args[1:], stdout, stderr, target, execution)
 }
 
-func runWorkspaceUpdate(args []string, stdout, stderr io.Writer) int {
+func runWorkspaceUpdate(args []string, stdout, stderr io.Writer, execution buildExecution) int {
 	root := "."
 	dryRun := false
 	target := scan.BuildTargetAll
@@ -284,7 +319,19 @@ func runWorkspaceUpdate(args []string, stdout, stderr io.Writer) int {
 	loaded.UpdateGitignore = overrides.UpdateGitignore
 	loaded.Workspace = true
 	loaded.WorkspaceRoot = overrides.WorkspaceRoot
-	plan, err := scan.WorkspaceUpdatePlan(root, loaded, target)
+	if !dryRun {
+		if err := scan.RecoverOutputPublications(execution.ctx, root, loaded); err != nil {
+			fmt.Fprintf(stderr, "error: recovering previous output failed: %v\n", err)
+			return 1
+		}
+		if loaded.UpdateGitignore {
+			if err := migrateWorkspaceIgnores(execution.ctx, root, loaded, stdout); err != nil {
+				fmt.Fprintf(stderr, "error: updating generated-output ignore rules failed: %v\n", err)
+				return 1
+			}
+		}
+	}
+	plan, err := scan.WorkspaceUpdatePlanWithOptions(execution.ctx, root, loaded, target, execution.options)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: workspace update failed: %v\n", err)
 		if err.Error() == "no GoreGraph workspace detected" {
@@ -326,28 +373,30 @@ func runWorkspaceUpdate(args []string, stdout, stderr io.Writer) int {
 				fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(item.AbsPath, ".gitignore"))
 			}
 		}
-		_, err = runWorkspaceProjectWithProgress(
-			stdout,
-			stderr,
-			updated+1,
-			buildCount,
-			item.Project,
-			defaultWorkspaceProgressClock(),
-			func() (scan.Result, error) {
-				return scan.RunBuild(item.AbsPath, projectConfig, target)
-			},
-		)
+		result, err := scan.RunBuildWithOptions(execution.ctx, item.AbsPath, projectConfig, target, execution.options)
 		if err != nil {
+			fmt.Fprintf(stderr, "error: building %s failed: %v\n", item.Project, err)
 			return 1
 		}
 		updated++
+		fmt.Fprintf(stdout, "Completed [%d/%d] %s (%d files, %d skipped, %d partial)\n", updated, buildCount, item.Project, result.ScannedFiles, result.SkippedFiles, result.PartialFiles)
 	}
 
 	loaded.Workspace = true
 	loaded.WorkspaceRoot = plan.WorkspaceRoot
-	if _, err := scan.ReconcileWorkspaceTarget(plan.WorkspaceRoot, loaded, target); err != nil {
-		fmt.Fprintf(stderr, "error: reconciling workspace failed: %v\n", err)
-		return 1
+	current := false
+	if updated == 0 {
+		current, err = scan.WorkspaceProjectionCurrentContext(execution.ctx, plan.WorkspaceRoot, loaded, target, execution.options)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: checking workspace inputs failed: %v\n", err)
+			return 1
+		}
+	}
+	if !current {
+		if _, err := scan.ReconcileWorkspaceWithOptions(execution.ctx, plan.WorkspaceRoot, loaded, target, execution.options); err != nil {
+			fmt.Fprintf(stderr, "error: reconciling workspace failed: %v\n", err)
+			return 1
+		}
 	}
 	if loaded.UpdateGitignore {
 		changed, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot)
@@ -369,7 +418,7 @@ func runWorkspaceUpdate(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
+func runWorkspaceRefresh(args []string, stdout, stderr io.Writer, execution buildExecution) int {
 	cfg := config.Defaults()
 	cfg.Workspace = true
 	root := "."
@@ -407,7 +456,7 @@ func runWorkspaceRefresh(args []string, stdout, stderr io.Writer) int {
 			root = arg
 		}
 	}
-	registry, err := scan.ReconcileWorkspaceTarget(root, cfg, target)
+	registry, err := scan.ReconcileWorkspaceWithOptions(execution.ctx, root, cfg, target, execution.options)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: workspace refresh failed: %v\n", err)
 		return 1
@@ -502,6 +551,12 @@ func runWorkspaceDashboard(args []string, stdout, stderr io.Writer) int {
 }
 
 func requireCompleteWorkspaceDashboard(workspaceRoot, dashboardPath string) error {
+	return outputstore.WithRead(context.Background(), filepath.Join(workspaceRoot, ".goregraph-workspace"), func(string) error {
+		return requireCompleteWorkspaceDashboardUnlocked(workspaceRoot, dashboardPath)
+	})
+}
+
+func requireCompleteWorkspaceDashboardUnlocked(workspaceRoot, dashboardPath string) error {
 	manifestPath := scan.NewWorkspaceOutputLayout(filepath.Join(workspaceRoot, ".goregraph-workspace")).Manifest
 	body, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -875,7 +930,7 @@ func runWorkspaceStatus(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
+func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer, execution buildExecution) int {
 	root := "."
 	top := 5
 	execute := false
@@ -938,7 +993,7 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
 	}
 	printWorkspaceMissingScanPlan(stdout, plan, false)
 	scanned := 0
-	for index, item := range plan.Items {
+	for _, item := range plan.Items {
 		projectCfg, err := config.Load(item.AbsPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
@@ -953,21 +1008,13 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
 				return 1
 			}
 		}
-		_, err = runWorkspaceProjectWithProgress(
-			stdout,
-			stderr,
-			index+1,
-			len(plan.Items),
-			item.Project,
-			defaultWorkspaceProgressClock(),
-			func() (scan.Result, error) {
-				return scan.Run(item.AbsPath, projectCfg)
-			},
-		)
+		result, err := scan.RunBuildWithOptions(execution.ctx, item.AbsPath, projectCfg, scan.BuildTargetAll, execution.options)
 		if err != nil {
+			fmt.Fprintf(stderr, "error: building %s failed: %v\n", item.Project, err)
 			return 1
 		}
 		scanned++
+		fmt.Fprintf(stdout, "Completed [%d/%d] %s (%d files, %d skipped, %d partial)\n", scanned, len(plan.Items), item.Project, result.ScannedFiles, result.SkippedFiles, result.PartialFiles)
 	}
 	if loaded.UpdateGitignore {
 		if _, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot); err != nil {
@@ -979,11 +1026,11 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runWorkspaceScanAll(args []string, stdout, stderr io.Writer) int {
-	return runWorkspaceScanAllTarget(args, stdout, stderr, scan.BuildTargetAll)
+func runWorkspaceScanAll(args []string, stdout, stderr io.Writer, execution buildExecution) int {
+	return runWorkspaceScanAllTarget(args, stdout, stderr, scan.BuildTargetAll, execution)
 }
 
-func runWorkspaceScanAllTarget(args []string, stdout, stderr io.Writer, target scan.BuildTarget) int {
+func runWorkspaceScanAllTarget(args []string, stdout, stderr io.Writer, target scan.BuildTarget, execution buildExecution) int {
 	root := "."
 	dryRun := false
 	overrides := config.Defaults()
@@ -1006,6 +1053,8 @@ func runWorkspaceScanAllTarget(args []string, stdout, stderr io.Writer, target s
 
 Compatibility alias for goregraph workspace build all.
 Scans each discovered project once and reconciles the workspace once after the project loop.
+Continues after project failures, reports all failed projects and exits non-zero.
+Workspace reconciliation is skipped if any project failed. Ctrl-C stops the loop.
 
 Workspace detection:
   GoreGraph detects common grouped frontend/services layouts. Otherwise use
@@ -1050,11 +1099,17 @@ Workspace detection:
 		return 0
 	}
 	scanned := 0
+	var failed []string
 	for index, item := range plan.Items {
+		if err := execution.ctx.Err(); err != nil {
+			fmt.Fprintf(stderr, "error: workspace scan canceled: %v\n", err)
+			return 1
+		}
 		projectCfg, err := config.Load(item.AbsPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
-			return 1
+			failed = append(failed, item.Project)
+			continue
 		}
 		projectCfg.UpdateGitignore = loaded.UpdateGitignore
 		projectCfg.Workspace = false
@@ -1063,31 +1118,33 @@ Workspace detection:
 			changed, err := gitignore.EnsureOutputIgnored(item.AbsPath, projectCfg.OutputDir)
 			if err != nil {
 				fmt.Fprintf(stderr, "error: updating %s .gitignore failed: %v\n", item.Project, err)
-				return 1
+				failed = append(failed, item.Project)
+				continue
 			}
 			if changed {
 				fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(item.AbsPath, ".gitignore"))
 			}
 		}
-		_, err = runWorkspaceProjectWithProgress(
-			stdout,
-			stderr,
-			index+1,
-			len(plan.Items),
-			item.Project,
-			defaultWorkspaceProgressClock(),
-			func() (scan.Result, error) {
-				return scan.RunBuild(item.AbsPath, projectCfg, target)
-			},
-		)
+		result, err := scan.RunBuildWithOptions(execution.ctx, item.AbsPath, projectCfg, target, execution.options)
 		if err != nil {
-			return 1
+			fmt.Fprintf(stderr, "error: building %s failed: %v\n", item.Project, err)
+			if execution.ctx.Err() != nil {
+				return 1
+			}
+			failed = append(failed, item.Project)
+			continue
 		}
 		scanned++
+		fmt.Fprintf(stdout, "Completed [%d/%d] %s (%d files, %d skipped, %d partial)\n", index+1, len(plan.Items), item.Project, result.ScannedFiles, result.SkippedFiles, result.PartialFiles)
+	}
+	if len(failed) > 0 {
+		fmt.Fprintf(stdout, "\nAttempted %d workspace project(s): %d succeeded, %d failed.\n", len(plan.Items), scanned, len(failed))
+		fmt.Fprintf(stderr, "error: workspace reconciliation skipped because %d project(s) failed: %s\n", len(failed), strings.Join(failed, ", "))
+		return 1
 	}
 	loaded.Workspace = true
 	loaded.WorkspaceRoot = plan.WorkspaceRoot
-	if _, err := scan.ReconcileWorkspaceTarget(plan.WorkspaceRoot, loaded, target); err != nil {
+	if _, err := scan.ReconcileWorkspaceWithOptions(execution.ctx, plan.WorkspaceRoot, loaded, target, execution.options); err != nil {
 		fmt.Fprintf(stderr, "error: reconciling workspace failed: %v\n", err)
 		return 1
 	}
@@ -1266,6 +1323,7 @@ func runContext(args []string, stdout, stderr io.Writer) int {
 
 Builds one deterministic, budgeted Context Pack from existing generated output.
 Budget tokens: 256-6000. Max files: 1-20.
+Protocol: --protocol strict-v1 (default) or adaptive-v2 (bounded verification/fallback).
 
 Normal agent workflow:
 
@@ -1292,6 +1350,8 @@ Do not read index/, dashboard/, dashboard assets, or index/symbol-usages.json as
 		value := args[i+1]
 		i++
 		switch option {
+		case "--protocol":
+			options.ProtocolVersion = value
 		case "--query":
 			options.Query = value
 		case "--budget-tokens":
@@ -1492,7 +1552,12 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
-	body, err := os.ReadFile(scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir)).Dashboard("report.md"))
+	var body []byte
+	err = outputstore.WithRead(context.Background(), filepath.Join(root, cfg.OutputDir), func(string) error {
+		var err error
+		body, err = os.ReadFile(scan.NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir)).Dashboard("report.md"))
+		return err
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "error: reading report failed: %v\n", err)
 		return 1
@@ -1501,7 +1566,7 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runScan(args []string, stdout, stderr io.Writer, update, allowTarget bool) int {
+func runScan(args []string, stdout, stderr io.Writer, update, allowTarget bool, execution buildExecution) int {
 	if len(args) > 0 && isHelp(args[0]) {
 		if update {
 			printUpdateHelp(stdout)
@@ -1581,7 +1646,7 @@ func runScan(args []string, stdout, stderr io.Writer, update, allowTarget bool) 
 		}
 	}
 
-	result, err := scan.RunBuild(root, loaded, target)
+	result, err := scan.RunBuildWithOptions(execution.ctx, root, loaded, target, execution.options)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: scan failed: %v\n", err)
 		return 1
@@ -1610,6 +1675,12 @@ func runScan(args []string, stdout, stderr io.Writer, update, allowTarget bool) 
 }
 
 func printProjectionSummary(stdout io.Writer, target scan.BuildTarget, manifestPath string) error {
+	return outputstore.WithRead(context.Background(), filepath.Dir(manifestPath), func(string) error {
+		return printProjectionSummaryUnlocked(stdout, target, manifestPath)
+	})
+}
+
+func printProjectionSummaryUnlocked(stdout io.Writer, target scan.BuildTarget, manifestPath string) error {
 	body, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return err
@@ -1922,6 +1993,7 @@ Examples:
   goregraph scan . --no-update-gitignore
   goregraph scan . --workspace ..
 `)
+	printBuildExecutionHelp(w)
 }
 
 func printUpdateHelp(w io.Writer) {
@@ -1941,6 +2013,7 @@ Examples:
   goregraph update . --target dashboard --no-workspace
   goregraph update . --target all --workspace ..
 `)
+	printBuildExecutionHelp(w)
 }
 
 func printWorkspaceUpdateHelp(w io.Writer) {
@@ -1961,5 +2034,16 @@ Examples:
   goregraph workspace update . --dry-run
   goregraph workspace update . --target dashboard
   goregraph workspace update . --workspace C:\path\to\workspace
+`)
+	printBuildExecutionHelp(w)
+}
+
+func printBuildExecutionHelp(w io.Writer) {
+	fmt.Fprint(w, `
+Build controls:
+  --progress <mode>         auto, plain, json, or off; events are written to stderr
+  --file-timeout <duration> Cooperative script analysis budget (default: 5s; 0 disables)
+  --project-timeout <time>  Project deadline (default: 0s, unlimited)
+  Ctrl-C                   Cancel safely; exit status 130
 `)
 }

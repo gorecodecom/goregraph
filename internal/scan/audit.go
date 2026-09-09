@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"github.com/gorecodecom/goregraph/internal/version"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +11,7 @@ import (
 func newAuditRecord(root string, cfgOutputDir string, started time.Time, finished time.Time, filesRead int, skipped int, generated []string) AuditRecord {
 	return AuditRecord{
 		Tool:             ToolName,
-		Version:          "dev",
+		Version:          version.Version,
 		Command:          "scan",
 		ProjectRoot:      filepath.Base(root),
 		OutputDir:        cfgOutputDir,

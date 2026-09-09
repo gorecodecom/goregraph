@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/gorecodecom/goregraph/internal/pathutil"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
@@ -2333,18 +2334,18 @@ func resolveSourcePath(loaded loadedContextIndex, candidate sourceCandidate) (st
 		return "", fmt.Errorf("source path is unsafe")
 	}
 
-	resolvedRoot, err := filepath.EvalSymlinks(loaded.ScopeRoot)
+	resolvedRoot, err := pathutil.Resolve(loaded.ScopeRoot)
 	if err != nil {
-		return "", fmt.Errorf("source path is unsafe")
+		return "", fmt.Errorf("source root is unreadable: %w", err)
 	}
-	resolvedProjectRoot, err := filepath.EvalSymlinks(projectRoot)
+	resolvedProjectRoot, err := pathutil.Resolve(projectRoot)
 	if err != nil {
 		return "", fmt.Errorf("source file is unreadable: %w", err)
 	}
 	if !pathIsWithin(resolvedRoot, resolvedProjectRoot) {
 		return "", fmt.Errorf("source path is unsafe")
 	}
-	resolvedCandidate, err = filepath.EvalSymlinks(resolvedCandidate)
+	resolvedCandidate, err = pathutil.Resolve(resolvedCandidate)
 	if err != nil {
 		return "", fmt.Errorf("source file is unreadable: %w", err)
 	}

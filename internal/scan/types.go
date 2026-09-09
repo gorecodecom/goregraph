@@ -4,9 +4,13 @@ type Result struct {
 	ScannedFiles int
 	SkippedFiles int
 	OutputDir    string
+	PartialFiles int
 }
 
 type Index struct {
+	BuildIdentity                  BuildIdentity
+	IgnoreDigest                   string
+	AnalysisIssues                 []AnalysisIssue
 	Files                          []FileRecord
 	Symbols                        []SymbolRecord
 	Relations                      []RelationRecord
@@ -897,6 +901,7 @@ type WorkspaceImpactRecord struct {
 }
 
 type WorkspaceServiceMapRecord struct {
+	Health             ProjectionHealth                   `json:"health"`
 	SchemaVersion      int                                `json:"schema_version"`
 	Generated          string                             `json:"generated,omitempty"`
 	Root               string                             `json:"root,omitempty"`

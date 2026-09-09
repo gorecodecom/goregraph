@@ -1,0 +1,1 @@
+Add the configured service authentication to inventory requests. Keep secrets out of source, logs, and responses.

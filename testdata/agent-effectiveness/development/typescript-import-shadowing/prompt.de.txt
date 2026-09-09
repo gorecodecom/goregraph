@@ -1,0 +1,1 @@
+Behebe das Absenden im Checkout, sodass das Speichern einer Bestellung die bestehende Provider-API erreicht. Der öffentliche Provider-Vertrag bleibt unverändert.

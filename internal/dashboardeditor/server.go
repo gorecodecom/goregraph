@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorecodecom/goregraph/internal/outputstore"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
@@ -35,7 +36,7 @@ const (
 	dashboardAssetPrefix = "/workspace-map-assets/"
 )
 
-var dashboardAssetName = regexp.MustCompile(`^code-usages-[0-9a-f]{16}\.js$`)
+var dashboardAssetName = regexp.MustCompile(`^code-usages-(?:[0-9a-f]{16}|[0-9a-f]{32})\.js$`)
 
 // Options configures one foreground dashboard editor session.
 type Options struct {
@@ -185,6 +186,16 @@ func (handler *editorHandler) ServeHTTP(response http.ResponseWriter, request *h
 }
 
 func (handler *editorHandler) serveDashboard(response http.ResponseWriter, request *http.Request) {
+	err := outputstore.WithRead(request.Context(), filepath.Dir(handler.dashboardDir), func(string) error {
+		handler.serveDashboardUnlocked(response, request)
+		return nil
+	})
+	if err != nil {
+		writeError(response, http.StatusServiceUnavailable, "dashboard publication is unavailable; rebuild to recover")
+	}
+}
+
+func (handler *editorHandler) serveDashboardUnlocked(response http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		response.Header().Set("Allow", http.MethodGet)
 		writeError(response, http.StatusMethodNotAllowed, "method not allowed")
@@ -276,6 +287,16 @@ func (handler *editorHandler) putConfig(response http.ResponseWriter, request *h
 }
 
 func (handler *editorHandler) serveAsset(response http.ResponseWriter, request *http.Request) {
+	err := outputstore.WithRead(request.Context(), filepath.Dir(handler.dashboardDir), func(string) error {
+		handler.serveAssetUnlocked(response, request)
+		return nil
+	})
+	if err != nil {
+		writeError(response, http.StatusServiceUnavailable, "dashboard publication is unavailable; rebuild to recover")
+	}
+}
+
+func (handler *editorHandler) serveAssetUnlocked(response http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		response.Header().Set("Allow", http.MethodGet)
 		writeError(response, http.StatusMethodNotAllowed, "method not allowed")

@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"context"
 	"encoding/json"
 	"path"
 	"regexp"
@@ -42,28 +43,60 @@ var (
 
 // ExtractScriptSymbolFacts extracts conservative declaration and module-binding facts.
 func ExtractScriptSymbolFacts(file FileRecord, body string) ProjectSymbolFacts {
-	masked := maskScriptLexical(body)
-	declarations := extractScriptDeclarations(file, masked)
-	moduleReferences := extractScriptModuleReferences(file, body, masked)
-	spans := scriptDeclarationSpans(file, masked, declarations)
-	bindScriptReferenceOwners(moduleReferences, spans)
+	facts, _ := ExtractScriptSymbolFactsContext(context.Background(), file, body)
+	return facts
+}
+
+// ExtractScriptSymbolFactsContext extracts script facts and discards partial facts
+// when its context is canceled.
+func ExtractScriptSymbolFactsContext(ctx context.Context, file FileRecord, body string) (ProjectSymbolFacts, error) {
+	masked, err := maskScriptLexicalContext(ctx, body)
+	if err != nil {
+		return ProjectSymbolFacts{}, err
+	}
+	lexical, err := newScriptLexicalIndex(ctx, masked)
+	if err != nil {
+		return ProjectSymbolFacts{}, err
+	}
+	if err := lexical.buildBindings(); err != nil {
+		return ProjectSymbolFacts{}, err
+	}
+	declarations := extractScriptDeclarations(file, masked, lexical)
+	if err := ctx.Err(); err != nil {
+		return ProjectSymbolFacts{}, err
+	}
+	moduleReferences := extractScriptModuleReferences(file, body, masked, lexical)
+	if err := ctx.Err(); err != nil {
+		return ProjectSymbolFacts{}, err
+	}
+	spans := scriptDeclarationSpans(file, masked, declarations, lexical)
+	lexical.setOwners(spans)
+	bindScriptReferenceOwners(moduleReferences, lexical)
 	facts := ProjectSymbolFacts{Declarations: declarations, References: moduleReferences}
-	facts.References = append(facts.References, extractScriptUsageReferences(file, masked, declarations, moduleReferences, spans)...)
+	facts.References = append(facts.References, extractScriptUsageReferences(file, masked, declarations, moduleReferences, lexical)...)
 	for index := range facts.References {
+		if index%128 == 0 {
+			if err := ctx.Err(); err != nil {
+				return ProjectSymbolFacts{}, err
+			}
+		}
 		refreshScriptReferenceID(&facts.References[index])
 	}
 	facts.References = dedupeRichRelationFacts(facts.References)
 	sort.Slice(facts.Declarations, func(i, j int) bool { return facts.Declarations[i].ID < facts.Declarations[j].ID })
 	sort.Slice(facts.References, func(i, j int) bool { return facts.References[i].ID < facts.References[j].ID })
-	return facts
+	if err := ctx.Err(); err != nil {
+		return ProjectSymbolFacts{}, err
+	}
+	return facts, nil
 }
 
-func extractScriptDeclarations(file FileRecord, masked string) []RichSymbolRecord {
+func extractScriptDeclarations(file FileRecord, masked string, lexical *scriptLexicalIndex) []RichSymbolRecord {
 	module := scriptModuleIdentity(file.Path)
 	var declarations []RichSymbolRecord
 	add := func(kind, name, exportName string, offset int) {
 		qualifiedName := module + "#" + name
-		line := scriptLineAt(masked, offset)
+		line := lexical.lineAt(offset)
 		id := StableWorkspaceSymbolID(kind, "", module, file.Language, qualifiedName, file.Path)
 		declarations = append(declarations, RichSymbolRecord{
 			ID:               id,
@@ -85,7 +118,10 @@ func extractScriptDeclarations(file FileRecord, masked string) []RichSymbolRecor
 		})
 	}
 	for _, match := range scriptTypeDeclarationRE.FindAllStringSubmatchIndex(masked, -1) {
-		if scriptBraceDepthAt(masked, match[0]) != 0 {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
+		if lexical.depthAt(match[0]) != 0 {
 			continue
 		}
 		kind := masked[match[6]:match[7]]
@@ -100,7 +136,10 @@ func extractScriptDeclarations(file FileRecord, masked string) []RichSymbolRecor
 		add(kind, name, exportName, match[0])
 	}
 	for _, match := range scriptFunctionRE.FindAllStringSubmatchIndex(masked, -1) {
-		if scriptBraceDepthAt(masked, match[0]) != 0 {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
+		if lexical.depthAt(match[0]) != 0 {
 			continue
 		}
 		name := masked[match[6]:match[7]]
@@ -118,7 +157,10 @@ func extractScriptDeclarations(file FileRecord, masked string) []RichSymbolRecor
 		add(kind, name, exportName, match[0])
 	}
 	for _, match := range scriptArrowRE.FindAllStringSubmatchIndex(masked, -1) {
-		if scriptBraceDepthAt(masked, match[0]) != 0 {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
+		if lexical.depthAt(match[0]) != 0 {
 			continue
 		}
 		name := masked[match[4]:match[5]]
@@ -146,14 +188,17 @@ func scriptDeclarationCapability(kind string) scriptSymbolCapability {
 	}
 }
 
-func extractScriptModuleReferences(file FileRecord, body, masked string) []RichRelationRecord {
+func extractScriptModuleReferences(file FileRecord, body, masked string, lexical *scriptLexicalIndex) []RichRelationRecord {
 	var references []RichRelationRecord
 	for _, location := range scriptImportKeywordRE.FindAllStringIndex(masked, -1) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
 		if !isStandaloneScriptImport(masked, location[0]) {
 			continue
 		}
 		statement, statementMasked := scriptStatementAt(body, masked, location[0])
-		line := scriptLineAt(masked, location[0])
+		line := lexical.lineAt(location[0])
 		trimmedMasked := strings.TrimSpace(statementMasked)
 		if strings.HasPrefix(trimmedMasked, "import(") || strings.HasPrefix(trimmedMasked, "import (") {
 			if module, ok := scriptStaticCallModule(statement); ok {
@@ -223,8 +268,11 @@ func extractScriptModuleReferences(file FileRecord, body, masked string) []RichR
 		}
 	}
 	for _, location := range scriptExportKeywordRE.FindAllStringIndex(masked, -1) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
 		statement, statementMasked := scriptStatementAt(body, masked, location[0])
-		line := scriptLineAt(masked, location[0])
+		line := lexical.lineAt(location[0])
 		trimmed := strings.TrimSpace(strings.TrimPrefix(statement, "export"))
 		if !strings.Contains(statementMasked, " from ") {
 			module := scriptModuleIdentity(file.Path)
@@ -379,7 +427,7 @@ type scriptDeclarationSpan struct {
 	declaration RichSymbolRecord
 }
 
-func scriptDeclarationSpans(file FileRecord, masked string, declarations []RichSymbolRecord) []scriptDeclarationSpan {
+func scriptDeclarationSpans(file FileRecord, masked string, declarations []RichSymbolRecord, lexical *scriptLexicalIndex) []scriptDeclarationSpan {
 	byOffset := map[int]RichSymbolRecord{}
 	for _, declaration := range declarations {
 		byOffset[declaration.scriptOffset] = declaration
@@ -397,19 +445,28 @@ func scriptDeclarationSpans(file FileRecord, masked string, declarations []RichS
 		}
 		if open := strings.Index(masked[signatureEnd:searchEnd], "{"); open >= 0 {
 			open += signatureEnd
-			if close := matchingScriptBrace(masked, open); close >= 0 {
+			if close := lexical.match(open); close >= 0 {
 				end = close + 1
 			}
 		}
 		spans = append(spans, scriptDeclarationSpan{start: start, end: end, declaration: declaration})
 	}
 	for _, match := range scriptFunctionRE.FindAllStringSubmatchIndex(masked, -1) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
 		add(match[0], match[1], true)
 	}
 	for _, match := range scriptArrowRE.FindAllStringSubmatchIndex(masked, -1) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
 		add(match[0], match[1], false)
 	}
 	for _, match := range scriptTypeDeclarationRE.FindAllStringSubmatchIndex(masked, -1) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
 		kind := masked[match[6]:match[7]]
 		if kind == "class" {
 			add(match[0], match[1], true)
@@ -433,30 +490,14 @@ func scriptStatementEnd(masked string, start int) int {
 	return len(masked)
 }
 
-func matchingScriptBrace(masked string, open int) int {
-	depth := 0
-	for index := open; index < len(masked); index++ {
-		switch masked[index] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return index
-			}
-		}
-	}
-	return -1
-}
-
-func bindScriptReferenceOwners(references []RichRelationRecord, spans []scriptDeclarationSpan) {
+func bindScriptReferenceOwners(references []RichRelationRecord, lexical *scriptLexicalIndex) {
 	for index := range references {
 		if references[index].Type != "imports_module" ||
 			!strings.Contains(references[index].Reason, "import()") ||
 			references[index].scriptOffset < 0 {
 			continue
 		}
-		if owner := innermostScriptOwner(spans, references[index].scriptOffset); owner.ID != "" {
+		if owner := lexical.ownerAt(references[index].scriptOffset); owner.ID != "" {
 			bindScriptReferenceOwner(&references[index], owner.ID)
 		}
 	}
@@ -497,7 +538,7 @@ func scriptReferenceAliasIdentity(reference RichRelationRecord, targetIdentity s
 	return targetIdentity
 }
 
-func extractScriptUsageReferences(file FileRecord, masked string, declarations []RichSymbolRecord, imports []RichRelationRecord, spans []scriptDeclarationSpan) []RichRelationRecord {
+func extractScriptUsageReferences(file FileRecord, masked string, declarations []RichSymbolRecord, imports []RichRelationRecord, lexical *scriptLexicalIndex) []RichRelationRecord {
 	bindings := map[string]RichRelationRecord{}
 	namespaces := map[string]RichRelationRecord{}
 	for _, reference := range imports {
@@ -516,29 +557,32 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 	}
 	var references []RichRelationRecord
 	add := func(kind, name string, offset int, binding RichRelationRecord, reason string) {
-		reference := newScriptReference(file, kind, binding.TargetModule, binding.TargetExport, scriptLineAt(masked, offset), reason, false)
+		reference := newScriptReference(file, kind, binding.TargetModule, binding.TargetExport, lexical.lineAt(offset), reason, false)
 		reference.scriptLocalName = name
 		if binding.Type == "imports_namespace" && binding.scriptLocalName != "" {
 			reference.scriptLocalName = binding.scriptLocalName
 		}
 		reference.scriptTypeOnly = binding.scriptTypeOnly
 		refreshScriptReferenceID(&reference)
-		if owner := innermostScriptOwner(spans, offset); owner.ID != "" {
+		if owner := lexical.ownerAt(offset); owner.ID != "" {
 			bindScriptReferenceOwner(&reference, owner.ID)
 		}
 		references = append(references, reference)
 	}
 	addUnresolved := func(kind, name string, offset int, reason string) {
-		reference := newScriptReference(file, kind, "", name, scriptLineAt(masked, offset), reason, true)
-		if owner := innermostScriptOwner(spans, offset); owner.ID != "" {
+		reference := newScriptReference(file, kind, "", name, lexical.lineAt(offset), reason, true)
+		if owner := lexical.ownerAt(offset); owner.ID != "" {
 			bindScriptReferenceOwner(&reference, owner.ID)
 		}
 		references = append(references, reference)
 	}
 	for _, match := range scriptVariableTypeRE.FindAllStringSubmatchIndex(masked, -1) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
 		name := masked[match[2]:match[3]]
 		if binding, ok := bindings[name]; ok {
-			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+			if reason := lexical.shadowReason(name, match[0]); reason != "" {
 				addUnresolved("type_reference", name, match[0], reason)
 			} else {
 				add("type_reference", name, match[0], binding, "explicit TypeScript variable type binding")
@@ -546,12 +590,15 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		}
 	}
 	for _, match := range scriptParameterTypeRE.FindAllStringSubmatchIndex(masked, -1) {
-		if !isProvenScriptParameterType(masked, match[2]) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
+		if !lexical.isParameterType(match[2]) {
 			continue
 		}
 		name := masked[match[2]:match[3]]
 		if binding, ok := bindings[name]; ok {
-			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+			if reason := lexical.shadowReason(name, match[0]); reason != "" {
 				addUnresolved("type_reference", name, match[0], reason)
 			} else {
 				add("type_reference", name, match[0], binding, "explicit TypeScript parameter type binding")
@@ -559,12 +606,15 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		}
 	}
 	for _, match := range scriptReturnTypeRE.FindAllStringSubmatchIndex(masked, -1) {
-		if !isProvenScriptReturnType(masked, match[0], match[3]) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
+		if !lexical.isReturnType(match[0], match[3]) {
 			continue
 		}
 		name := masked[match[2]:match[3]]
 		if binding, ok := bindings[name]; ok {
-			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+			if reason := lexical.shadowReason(name, match[0]); reason != "" {
 				addUnresolved("type_reference", name, match[0], reason)
 			} else {
 				add("type_reference", name, match[0], binding, "explicit TypeScript return type binding")
@@ -573,9 +623,12 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 	}
 	if strings.HasSuffix(strings.ToLower(file.Path), ".tsx") || strings.HasSuffix(strings.ToLower(file.Path), ".jsx") {
 		for _, match := range scriptJSXUsageRE.FindAllStringSubmatchIndex(masked, -1) {
+			if lexical.ctx.Err() != nil {
+				return nil
+			}
 			name := masked[match[2]:match[3]]
 			if binding, ok := bindings[name]; ok {
-				if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+				if reason := lexical.shadowReason(name, match[0]); reason != "" {
 					addUnresolved("renders_component", name, match[0], reason)
 				} else {
 					add("renders_component", name, match[0], binding, "JSX imported component binding")
@@ -584,29 +637,35 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		}
 	}
 	for _, match := range scriptNewUsageRE.FindAllStringSubmatchIndex(masked, -1) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
 		name := masked[match[2]:match[3]]
 		if binding, ok := bindings[name]; ok {
-			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+			if reason := lexical.shadowReason(name, match[0]); reason != "" {
 				addUnresolved("instantiates", name, match[0], reason)
 			} else {
 				add("instantiates", name, match[0], binding, "constructor imported binding")
 			}
 			continue
 		}
-		reference := newScriptReference(file, "instantiates", "", name, scriptLineAt(masked, match[0]), "constructor has no static module binding", true)
-		if owner := innermostScriptOwner(spans, match[0]); owner.ID != "" {
+		reference := newScriptReference(file, "instantiates", "", name, lexical.lineAt(match[0]), "constructor has no static module binding", true)
+		if owner := lexical.ownerAt(match[0]); owner.ID != "" {
 			bindScriptReferenceOwner(&reference, owner.ID)
 		}
 		references = append(references, reference)
 	}
 	memberMethodOffsets := map[int]bool{}
 	for _, match := range scriptMemberCallRE.FindAllStringSubmatchIndex(masked, -1) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
 		ownerName := masked[match[2]:match[3]]
 		methodName := masked[match[4]:match[5]]
 		memberMethodOffsets[match[4]] = true
 		if namespace, ok := namespaces[ownerName]; ok {
 			namespace.TargetExport = methodName
-			if reason := scriptShadowReason(masked, ownerName, match[0]); reason != "" {
+			if reason := lexical.shadowReason(ownerName, match[0]); reason != "" {
 				addUnresolved("calls_export", methodName, match[0], reason)
 			} else {
 				add("calls_export", methodName, match[0], namespace, "namespace imported call binding")
@@ -614,13 +673,16 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		}
 	}
 	for _, match := range scriptDirectCallRE.FindAllStringSubmatchIndex(masked, -1) {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
 		nameOffset := match[2]
 		name := masked[match[2]:match[3]]
 		if memberMethodOffsets[nameOffset] || isScriptNonCall(masked, match[0], name) {
 			continue
 		}
 		if binding, ok := bindings[name]; ok {
-			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+			if reason := lexical.shadowReason(name, match[0]); reason != "" {
 				addUnresolved("calls_export", name, match[0], reason)
 			} else {
 				add("calls_export", name, match[0], binding, "direct imported call binding")
@@ -628,7 +690,7 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 			continue
 		}
 		if local, ok := locals[name]; ok {
-			if reason := scriptShadowReason(masked, name, match[0]); reason != "" {
+			if reason := lexical.shadowReason(name, match[0]); reason != "" {
 				addUnresolved("calls_local", name, match[0], reason)
 			} else {
 				binding := RichRelationRecord{TargetModule: local.Module, TargetExport: local.Name}
@@ -637,91 +699,16 @@ func extractScriptUsageReferences(file FileRecord, masked string, declarations [
 		}
 	}
 	for _, match := range scriptComputedCallRE.FindAllStringSubmatchIndex(masked, -1) {
-		reference := newScriptReference(file, "calls_export", "", "", scriptLineAt(masked, match[0]), "computed property call", true)
-		if owner := innermostScriptOwner(spans, match[0]); owner.ID != "" {
+		if lexical.ctx.Err() != nil {
+			return nil
+		}
+		reference := newScriptReference(file, "calls_export", "", "", lexical.lineAt(match[0]), "computed property call", true)
+		if owner := lexical.ownerAt(match[0]); owner.ID != "" {
 			bindScriptReferenceOwner(&reference, owner.ID)
 		}
 		references = append(references, reference)
 	}
 	return dedupeRichRelationFacts(references)
-}
-
-func scriptBraceDepthAt(masked string, offset int) int {
-	depth := 0
-	for index := 0; index < offset; index++ {
-		switch masked[index] {
-		case '{':
-			depth++
-		case '}':
-			if depth > 0 {
-				depth--
-			}
-		}
-	}
-	return depth
-}
-
-func scriptShadowReason(masked, name string, usageOffset int) string {
-	if scriptParameterScopeShadows(masked, name, usageOffset) {
-		return "lexically shadowed by function or method parameter"
-	}
-	if scriptArrowScopeShadows(masked, name, usageOffset) {
-		return "lexically shadowed by arrow parameter"
-	}
-	if scriptVariableScopeShadows(masked, name, usageOffset) {
-		return "lexically shadowed by local variable"
-	}
-	for _, match := range scriptFunctionRE.FindAllStringSubmatchIndex(masked, -1) {
-		if scriptBraceDepthAt(masked, match[0]) == 0 || masked[match[6]:match[7]] != name {
-			continue
-		}
-		start, end := scriptContainingScope(masked, match[0])
-		if usageOffset > start && usageOffset < end {
-			return "lexically shadowed by nested function"
-		}
-	}
-	for _, match := range scriptTypeDeclarationRE.FindAllStringSubmatchIndex(masked, -1) {
-		if scriptBraceDepthAt(masked, match[0]) == 0 || masked[match[8]:match[9]] != name {
-			continue
-		}
-		start, end := scriptContainingScope(masked, match[0])
-		if usageOffset > start && usageOffset < end {
-			return "lexically shadowed by nested declaration"
-		}
-	}
-	return ""
-}
-
-func scriptParameterScopeShadows(masked, name string, usageOffset int) bool {
-	for open := strings.IndexByte(masked, '('); open >= 0; {
-		close := matchingScriptDelimiter(masked, open, '(', ')')
-		if close < 0 {
-			return false
-		}
-		next := nextScriptNonSpace(masked, close+1)
-		for next < len(masked) && masked[next] == ':' {
-			next++
-			for next < len(masked) && masked[next] != '{' && masked[next] != '\n' && masked[next] != ';' {
-				next++
-			}
-			next = nextScriptNonSpace(masked, next)
-		}
-		if next < len(masked) && masked[next] == '{' && isScriptParameterScopePrefix(masked, open) {
-			bodyEnd := matchingScriptBrace(masked, next)
-			if bodyEnd < 0 {
-				bodyEnd = len(masked)
-			}
-			if usageOffset > next && usageOffset < bodyEnd && scriptParameterBindsName(masked[open+1:close], name) {
-				return true
-			}
-		}
-		relative := strings.IndexByte(masked[close+1:], '(')
-		if relative < 0 {
-			break
-		}
-		open = close + 1 + relative
-	}
-	return false
 }
 
 func isScriptParameterScopePrefix(masked string, open int) bool {
@@ -748,71 +735,6 @@ func isScriptParameterScopePrefix(masked string, open int) bool {
 	}
 	before := strings.TrimSpace(masked[maxInt(0, open-32):open])
 	return strings.HasSuffix(before, "function")
-}
-
-func scriptArrowScopeShadows(masked, name string, usageOffset int) bool {
-	for search := 0; search < len(masked); {
-		relative := strings.Index(masked[search:], "=>")
-		if relative < 0 {
-			break
-		}
-		arrow := search + relative
-		paramsStart, paramsEnd, ok := scriptArrowParameterRange(masked, arrow)
-		if !ok || !scriptParameterBindsName(masked[paramsStart:paramsEnd], name) {
-			search = arrow + 2
-			continue
-		}
-		bodyStart := nextScriptNonSpace(masked, arrow+2)
-		if bodyStart >= len(masked) {
-			return usageOffset > arrow
-		}
-		bodyEnd := len(masked)
-		if masked[bodyStart] == '{' {
-			if close := matchingScriptBrace(masked, bodyStart); close >= 0 {
-				bodyEnd = close
-			}
-		} else {
-			bodyEnd = scriptArrowExpressionEnd(masked, bodyStart)
-		}
-		if usageOffset >= bodyStart && usageOffset < bodyEnd {
-			return true
-		}
-		search = arrow + 2
-	}
-	return false
-}
-
-func scriptArrowParameterRange(masked string, arrow int) (int, int, bool) {
-	end := arrow
-	for end > 0 && isScriptWhitespace(masked[end-1]) {
-		end--
-	}
-	if end == 0 {
-		return 0, 0, false
-	}
-	for close := end - 1; close >= 0; close-- {
-		if masked[close] != ')' {
-			continue
-		}
-		open := matchingScriptDelimiterBackward(masked, close, '(', ')')
-		if open < 0 {
-			continue
-		}
-		annotation := strings.TrimSpace(masked[close+1 : end])
-		if annotation != "" && !strings.HasPrefix(annotation, ":") {
-			close = open
-			continue
-		}
-		if isScriptArrowParameterOpen(masked, open) && isPlausibleScriptParameterList(masked[open+1:close]) {
-			return open + 1, close, true
-		}
-		close = open
-	}
-	start := end - 1
-	for start >= 0 && isScriptIdentifierByte(masked[start]) {
-		start--
-	}
-	return start + 1, end, start+1 < end
 }
 
 func isScriptArrowParameterOpen(masked string, open int) bool {
@@ -862,85 +784,6 @@ func isPlausibleScriptParameterList(params string) bool {
 		}
 	}
 	return true
-}
-
-func scriptVariableScopeShadows(masked, name string, usageOffset int) bool {
-	for _, location := range scriptVariableBindingRE.FindAllStringIndex(masked, -1) {
-		statementStart := nextScriptNonSpace(masked, location[1])
-		statementEnd := scriptVariableStatementEnd(masked, statementStart)
-		if statementStart >= statementEnd {
-			continue
-		}
-		bindsName := false
-		for _, declarator := range splitScriptTopLevel(masked[statementStart:statementEnd], ',') {
-			pattern := declarator
-			if equals := findScriptTopLevel(pattern, '='); equals >= 0 {
-				pattern = pattern[:equals]
-			}
-			if scriptBindingPatternNames(pattern)[name] {
-				bindsName = true
-				break
-			}
-		}
-		if !bindsName {
-			continue
-		}
-		start, end := scriptContainingScope(masked, location[0])
-		if masked[location[0]:location[1]] == "var" {
-			start, end = scriptContainingFunctionOrModuleScope(masked, location[0])
-		}
-		if usageOffset > start && usageOffset < end {
-			return true
-		}
-	}
-	return false
-}
-
-func scriptContainingFunctionOrModuleScope(masked string, offset int) (int, int) {
-	bestStart, bestEnd := -1, len(masked)
-	for open := strings.IndexByte(masked, '('); open >= 0 && open < offset; {
-		close := matchingScriptDelimiter(masked, open, '(', ')')
-		if close < 0 {
-			break
-		}
-		bodyStart := scriptParameterBlockBodyStart(masked, close)
-		if bodyStart >= 0 && bodyStart < offset && isScriptFunctionParameterScopePrefix(masked, open, close, bodyStart) {
-			bodyEnd := matchingScriptBrace(masked, bodyStart)
-			if bodyEnd < 0 {
-				bodyEnd = len(masked)
-			}
-			if offset < bodyEnd && bodyStart > bestStart {
-				bestStart, bestEnd = bodyStart, bodyEnd
-			}
-		}
-		relative := strings.IndexByte(masked[close+1:], '(')
-		if relative < 0 {
-			break
-		}
-		open = close + 1 + relative
-	}
-	for search := 0; search < offset; {
-		relative := strings.Index(masked[search:], "=>")
-		if relative < 0 {
-			break
-		}
-		arrow := search + relative
-		bodyStart := nextScriptNonSpace(masked, arrow+2)
-		if bodyStart < offset && bodyStart < len(masked) && masked[bodyStart] == '{' {
-			bodyEnd := matchingScriptBrace(masked, bodyStart)
-			if bodyEnd < 0 {
-				bodyEnd = len(masked)
-			}
-			if offset < bodyEnd && bodyStart > bestStart {
-				bestStart, bestEnd = bodyStart, bodyEnd
-			}
-		}
-		search = arrow + 2
-	}
-	if bestStart < 0 {
-		return 0, len(masked)
-	}
-	return bestStart, bestEnd
 }
 
 func isScriptFunctionParameterScopePrefix(masked string, open, close, bodyStart int) bool {
@@ -1114,21 +957,6 @@ func findScriptTopLevel(value string, target byte) int {
 	return -1
 }
 
-func scriptParameterBindsName(params, name string) bool {
-	for index := 0; index+len(name) <= len(params); index++ {
-		if params[index:index+len(name)] != name {
-			continue
-		}
-		beforeOK := index == 0 || !isScriptIdentifierByte(params[index-1])
-		after := index + len(name)
-		afterOK := after == len(params) || !isScriptIdentifierByte(params[after])
-		if beforeOK && afterOK {
-			return true
-		}
-	}
-	return false
-}
-
 func isScriptIdentifierByte(value byte) bool {
 	return (value >= 'A' && value <= 'Z') ||
 		(value >= 'a' && value <= 'z') ||
@@ -1195,53 +1023,6 @@ func scriptArrowExpressionEnd(masked string, start int) int {
 		}
 	}
 	return len(masked)
-}
-
-func isProvenScriptReturnType(masked string, closeParen, typeEnd int) bool {
-	openParen := matchingScriptDelimiterBackward(masked, closeParen, '(', ')')
-	if openParen < 0 {
-		return false
-	}
-	next := nextScriptNonSpace(masked, typeEnd)
-	if next+1 < len(masked) && masked[next:next+2] == "=>" {
-		paramsStart, paramsEnd, ok := scriptArrowParameterRange(masked, next)
-		return ok && paramsStart == openParen+1 && paramsEnd == closeParen
-	}
-	return next < len(masked) && masked[next] == '{' && isScriptParameterScopePrefix(masked, openParen)
-}
-
-func isProvenScriptParameterType(masked string, offset int) bool {
-	for search := 0; search < len(masked); {
-		relative := strings.Index(masked[search:], "=>")
-		if relative < 0 {
-			break
-		}
-		arrow := search + relative
-		paramsStart, paramsEnd, ok := scriptArrowParameterRange(masked, arrow)
-		if ok && offset >= paramsStart && offset < paramsEnd &&
-			isScriptParameterAnnotationAt(masked[paramsStart:paramsEnd], offset-paramsStart) {
-			return true
-		}
-		search = arrow + 2
-	}
-	for open := strings.IndexByte(masked, '('); open >= 0; {
-		close := matchingScriptDelimiter(masked, open, '(', ')')
-		if close < 0 {
-			return false
-		}
-		if offset > open && offset < close &&
-			isScriptParameterScopePrefix(masked, open) &&
-			scriptParameterBlockBodyStart(masked, close) >= 0 &&
-			isScriptParameterAnnotationAt(masked[open+1:close], offset-open-1) {
-			return true
-		}
-		relative := strings.IndexByte(masked[close+1:], '(')
-		if relative < 0 {
-			break
-		}
-		open = close + 1 + relative
-	}
-	return false
 }
 
 func isScriptParameterAnnotationAt(params string, offset int) bool {
@@ -1325,42 +1106,6 @@ func maxInt(left, right int) int {
 	return right
 }
 
-func scriptContainingScope(masked string, offset int) (int, int) {
-	stack := []int{}
-	for index := 0; index < offset; index++ {
-		switch masked[index] {
-		case '{':
-			stack = append(stack, index)
-		case '}':
-			if len(stack) > 0 {
-				stack = stack[:len(stack)-1]
-			}
-		}
-	}
-	if len(stack) == 0 {
-		return 0, len(masked)
-	}
-	open := stack[len(stack)-1]
-	close := matchingScriptBrace(masked, open)
-	if close < 0 {
-		close = len(masked)
-	}
-	return open, close
-}
-
-func innermostScriptOwner(spans []scriptDeclarationSpan, offset int) RichSymbolRecord {
-	best := scriptDeclarationSpan{start: -1, end: int(^uint(0) >> 1)}
-	for _, span := range spans {
-		if offset < span.start || offset >= span.end {
-			continue
-		}
-		if best.start < span.start || (best.start == span.start && span.end < best.end) {
-			best = span
-		}
-	}
-	return best.declaration
-}
-
 func isScriptNonCall(masked string, offset int, name string) bool {
 	if name == "import" || isCodeKeyword(name) {
 		return true
@@ -1376,10 +1121,6 @@ func isScriptNonCall(masked string, offset int, name string) bool {
 func scriptModuleIdentity(file string) string {
 	extension := path.Ext(file)
 	return strings.TrimSuffix(path.Clean(strings.ReplaceAll(file, `\`, "/")), extension)
-}
-
-func scriptLineAt(body string, offset int) int {
-	return 1 + strings.Count(body[:offset], "\n")
 }
 
 func scriptStatementAt(body, masked string, start int) (string, string) {
@@ -1434,11 +1175,32 @@ func scriptStaticCallModule(statement string) (string, bool) {
 }
 
 func maskScriptLexical(body string) string {
+	masked, _ := maskScriptLexicalContext(context.Background(), body)
+	return masked
+}
+
+func maskScriptLexicalContext(ctx context.Context, body string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	masked := []byte(body)
+	nextCheck := 0
 	for index := 0; index < len(masked); {
+		if index >= nextCheck {
+			nextCheck = index + 4096
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+		}
 		switch {
 		case index+1 < len(masked) && masked[index] == '/' && masked[index+1] == '/':
 			for index < len(masked) && masked[index] != '\n' {
+				if index >= nextCheck {
+					nextCheck = index + 4096
+					if err := ctx.Err(); err != nil {
+						return "", err
+					}
+				}
 				masked[index] = ' '
 				index++
 			}
@@ -1446,6 +1208,12 @@ func maskScriptLexical(body string) string {
 			masked[index], masked[index+1] = ' ', ' '
 			index += 2
 			for index < len(masked) && !(index+1 < len(masked) && masked[index] == '*' && masked[index+1] == '/') {
+				if index >= nextCheck {
+					nextCheck = index + 4096
+					if err := ctx.Err(); err != nil {
+						return "", err
+					}
+				}
 				if masked[index] != '\n' {
 					masked[index] = ' '
 				}
@@ -1456,12 +1224,21 @@ func maskScriptLexical(body string) string {
 				index += 2
 			}
 		case masked[index] == '/' && isScriptRegexStart(masked, index):
-			end := scriptRegexLiteralEnd(masked, index)
+			end, err := scriptRegexLiteralEndContext(ctx, masked, index)
+			if err != nil {
+				return "", err
+			}
 			if end < 0 {
 				index++
 				continue
 			}
 			for index < end {
+				if index >= nextCheck {
+					nextCheck = index + 4096
+					if err := ctx.Err(); err != nil {
+						return "", err
+					}
+				}
 				if masked[index] != '\n' {
 					masked[index] = ' '
 				}
@@ -1471,6 +1248,12 @@ func maskScriptLexical(body string) string {
 			quote := masked[index]
 			index++
 			for index < len(masked) {
+				if index >= nextCheck {
+					nextCheck = index + 4096
+					if err := ctx.Err(); err != nil {
+						return "", err
+					}
+				}
 				if masked[index] == '\\' {
 					masked[index] = ' '
 					if index+1 < len(masked) && masked[index+1] != '\n' {
@@ -1492,7 +1275,10 @@ func maskScriptLexical(body string) string {
 			index++
 		}
 	}
-	return string(masked)
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return string(masked), nil
 }
 
 func isScriptRegexStart(masked []byte, slash int) bool {
@@ -1568,10 +1354,10 @@ func isScriptStatementBlockOpen(masked []byte, open int) bool {
 			return true
 		}
 	}
-	if masked[previous] == ':' {
+	if previous >= 0 && masked[previous] == ':' {
 		return isScriptLabelledBlockOpen(masked, open, previous)
 	}
-	if masked[previous] == ')' {
+	if previous >= 0 && masked[previous] == ')' {
 		paramsOpen := matchingScriptDelimiterBackward(string(masked), previous, '(', ')')
 		if paramsOpen < 0 {
 			return false
@@ -1698,12 +1484,19 @@ func scriptStatementStart(masked []byte, before int) int {
 	return 0
 }
 
-func scriptRegexLiteralEnd(masked []byte, slash int) int {
+func scriptRegexLiteralEndContext(ctx context.Context, masked []byte, slash int) (int, error) {
 	inClass := false
 	escaped := false
+	nextCheck := slash + 1
 	for index := slash + 1; index < len(masked); index++ {
+		if index >= nextCheck {
+			nextCheck = index + 4096
+			if err := ctx.Err(); err != nil {
+				return -1, err
+			}
+		}
 		if masked[index] == '\n' || masked[index] == '\r' {
-			return -1
+			return -1, nil
 		}
 		if escaped {
 			escaped = false
@@ -1724,12 +1517,18 @@ func scriptRegexLiteralEnd(masked []byte, slash int) int {
 			}
 			index++
 			for index < len(masked) && ((masked[index] >= 'A' && masked[index] <= 'Z') || (masked[index] >= 'a' && masked[index] <= 'z')) {
+				if index >= nextCheck {
+					nextCheck = index + 4096
+					if err := ctx.Err(); err != nil {
+						return -1, err
+					}
+				}
 				index++
 			}
-			return index
+			return index, nil
 		}
 	}
-	return -1
+	return -1, nil
 }
 
 // ExtractScriptResolutionConfig parses JSON config with deterministic comment and trailing-comma removal.
@@ -1768,7 +1567,17 @@ func ExtractScriptResolutionConfig(_ string, body string) (ScriptResolutionConfi
 
 // ResolveScriptSymbolFacts resolves static module-backed bindings to canonical declarations.
 func ResolveScriptSymbolFacts(files []FileRecord, packages []NodePackageRecord, configs map[string]ScriptResolutionConfig, facts ProjectSymbolFacts) ProjectSymbolFacts {
+	result, _ := ResolveScriptSymbolFactsContext(context.Background(), files, packages, configs, facts)
+	return result
+}
+
+// ResolveScriptSymbolFactsContext resolves module bindings with cooperative cancellation.
+func ResolveScriptSymbolFactsContext(ctx context.Context, files []FileRecord, packages []NodePackageRecord, configs map[string]ScriptResolutionConfig, facts ProjectSymbolFacts) (ProjectSymbolFacts, error) {
+	if err := ctx.Err(); err != nil {
+		return ProjectSymbolFacts{}, err
+	}
 	resolver := scriptFactResolver{
+		ctx:          ctx,
 		files:        map[string]bool{},
 		declarations: map[string]map[string][]RichSymbolRecord{},
 		locals:       map[string]map[string][]RichSymbolRecord{},
@@ -1781,6 +1590,9 @@ func ResolveScriptSymbolFacts(files []FileRecord, packages []NodePackageRecord, 
 		resolver.files[path.Clean(strings.ReplaceAll(file.Path, `\`, "/"))] = true
 	}
 	for _, declaration := range facts.Declarations {
+		if err := ctx.Err(); err != nil {
+			return ProjectSymbolFacts{}, err
+		}
 		if resolver.locals[declaration.File] == nil {
 			resolver.locals[declaration.File] = map[string][]RichSymbolRecord{}
 		}
@@ -1796,6 +1608,9 @@ func ResolveScriptSymbolFacts(files []FileRecord, packages []NodePackageRecord, 
 	sort.Slice(resolver.packages, func(i, j int) bool { return resolver.packages[i].Path < resolver.packages[j].Path })
 	result := ProjectSymbolFacts{Declarations: append([]RichSymbolRecord(nil), facts.Declarations...), References: append([]RichRelationRecord(nil), facts.References...)}
 	for index := range result.References {
+		if err := ctx.Err(); err != nil {
+			return ProjectSymbolFacts{}, err
+		}
 		reference := &result.References[index]
 		if reference.Type == "imports_module" {
 			resolver.resolveModuleReference(reference)
@@ -1847,7 +1662,10 @@ func ResolveScriptSymbolFacts(files []FileRecord, packages []NodePackageRecord, 
 	}
 	result.Declarations = dedupeRichSymbolFacts(result.Declarations)
 	result.References = dedupeRichRelationFacts(result.References)
-	return result
+	if err := ctx.Err(); err != nil {
+		return ProjectSymbolFacts{}, err
+	}
+	return result, nil
 }
 
 func (resolver scriptFactResolver) resolveModuleReference(reference *RichRelationRecord) {
@@ -1882,6 +1700,7 @@ func (resolver scriptFactResolver) resolveModuleReference(reference *RichRelatio
 }
 
 type scriptFactResolver struct {
+	ctx          context.Context
 	files        map[string]bool
 	declarations map[string]map[string][]RichSymbolRecord
 	locals       map[string]map[string][]RichSymbolRecord
@@ -2050,6 +1869,9 @@ func filterScriptDeclarationsByCapability(declarations []RichSymbolRecord, requi
 }
 
 func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, exportName string, required scriptSymbolCapability, visited map[string]bool) scriptExportResolution {
+	if resolver.ctx != nil && resolver.ctx.Err() != nil {
+		return scriptExportResolution{}
+	}
 	memoKey := scriptExportMemoKey{file: module.file, exportName: exportName, capability: required}
 	if cached, ok := resolver.exportMemo[memoKey]; ok {
 		return cloneScriptExportResolution(cached)
@@ -2136,6 +1958,9 @@ func (resolver scriptFactResolver) resolveExport(module scriptResolvedModule, ex
 }
 
 func (resolver scriptFactResolver) resolveModule(fromFile, specifier, condition string) scriptModuleResolution {
+	if resolver.ctx != nil && resolver.ctx.Err() != nil {
+		return scriptModuleResolution{}
+	}
 	if strings.HasPrefix(specifier, ".") {
 		modules, reason := resolver.resolveFileModules(path.Join(path.Dir(fromFile), specifier))
 		return scriptModuleResolution{modules: modules, reason: reason, ambiguous: len(modules) > 1}
