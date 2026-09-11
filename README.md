@@ -53,21 +53,45 @@ Local 1.4.1 testing and rollback are documented in
 Source version: GoreGraph 1.4.1 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-This checkout contains the local **1.4.1 candidate** for testing. It has not been
-pushed or published by this implementation. Existing package-manager commands
-below install published builds, not this local candidate.
+`v1.4.1` is the current GoreGraph release. Package-manager indexes can take some
+time to ingest a new release, so always verify the installed version with
+`goregraph version` after installing or upgrading.
 
 Version 1.4.1 adds scoped Git ignore rules, faster script analysis, cancellable
 builds with file/phase progress, input-aware updates, recoverable output
-publication, and explicit partial/stale health. The historical strict agent
-workflow remains the default; `goregraph context . --query "<task>" --protocol
-adaptive-v2` enables bounded verification and fallback metadata. MCP uses the
-same opt-in via `goregraph mcp --protocol adaptive-v2`.
+publication, explicit partial/stale health, adaptive evidence retrieval, bounded
+source reads with pagination, and answer citation validation. The historical
+strict agent workflow remains the default. Use
+`goregraph context . --query "<task>" --protocol adaptive-v2` to enable bounded
+verification and fallback metadata. MCP uses the same opt-in via
+`goregraph mcp --protocol adaptive-v2`.
 
 The 1.4.0 baseline introduced content-aware workspace updates. GitHub Releases
 provides checksummed archives for macOS, Linux, and Windows. Release publication
-updates Homebrew and, when configured, Scoop and Winget publication repositories.
-Winget availability still depends on Microsoft package acceptance.
+updates Homebrew and Scoop and automatically opens the upstream Winget manifest
+PR when their repository tokens are configured.
+
+### Winget Windows — recommended
+
+Winget is the recommended installation method on Windows. GoreGraph is available
+from the public Winget source under the stable package ID `GoreCode.GoreGraph`:
+
+```powershell
+winget install --id GoreCode.GoreGraph --exact --source winget
+goregraph version
+```
+
+Upgrade an existing installation with:
+
+```powershell
+winget upgrade --id GoreCode.GoreGraph --exact --source winget
+```
+
+The 1.4.1 release workflow publishes the release archives and automatically
+submits the corresponding Winget manifest update. Microsoft must accept and
+publish that manifest before Winget offers 1.4.1. If `winget` is missing, install
+or update [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1) from
+Microsoft Store and open a new terminal.
 
 ### Homebrew macOS/Linux
 
@@ -101,16 +125,31 @@ brew upgrade goregraph
 
 `brew install goregraph` installs a missing formula. Updating an already installed version is done with `brew upgrade`.
 
-### Scoop Windows
+### Scoop Windows — alternative
 
-If Scoop is not installed, open a regular, non-administrative PowerShell and run:
+Scoop is an alternative when Winget cannot be used. For the normal per-user
+installation, open a regular, non-administrative PowerShell and run:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+irm get.scoop.sh | iex
 ```
 
-For other bootstrap options, see the
+If Scoop reports that the current PowerShell is running as Administrator, reopen
+PowerShell without **Run as administrator** and use the command above. When an
+administrator installation is explicitly required and permitted, use Scoop's
+official advanced installer from an elevated PowerShell:
+
+```powershell
+irm get.scoop.sh -OutFile install.ps1
+.\install.ps1 -RunAsAdmin
+Remove-Item .\install.ps1
+```
+
+If company policy prevents changing the execution policy or you do not have the
+required rights, use Winget or the manual installation below. Do not try to
+override an organization-managed policy. Proxy, custom-directory, and additional
+bootstrap options are documented in the
 [official Scoop installer documentation](https://github.com/ScoopInstaller/Install).
 
 Then add the GoreCode bucket and install GoreGraph:
@@ -126,7 +165,14 @@ Verify the installed binary:
 goregraph version
 ```
 
-### Manual Install Windows
+### Manual installation
+
+Manual installation requires more than extracting the archive: **the directory
+containing the GoreGraph executable must be on `PATH`**. Otherwise `goregraph`
+works only when invoked with its full or relative path, and Codex cannot reliably
+start `goregraph mcp`.
+
+#### Windows
 
 Download the Windows archive from the latest GitHub release:
 
@@ -134,13 +180,56 @@ Download the Windows archive from the latest GitHub release:
 goregraph_Windows_x86_64.zip
 ```
 
-Extract the ZIP and run:
+Extract the ZIP into a stable directory, for example
+`%LOCALAPPDATA%\Programs\GoreGraph\bin`, and place `goregraph.exe` directly in
+that directory. Then add the directory to your user `PATH`:
+
+1. Open **Start** and search for **Edit environment variables for your account**.
+2. Under **User variables**, select **Path**, choose **Edit**, then **New**.
+3. Add the directory that contains `goregraph.exe` and confirm all dialogs.
+4. Close and reopen PowerShell, Command Prompt, your IDE, and Codex.
+
+Verify from the new terminal:
 
 ```powershell
-.\goregraph.exe version
+Get-Command goregraph
+goregraph version
 ```
 
-For regular use, place `goregraph.exe` in a directory on your Windows `PATH`.
+Running `.\goregraph.exe version` inside the extraction directory alone does not
+prove that the `PATH` configuration works.
+
+#### macOS and Linux
+
+Download and extract the matching archive, then install the executable in a
+stable directory. A per-user location that does not require administrator rights
+is `~/.local/bin`:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+install -m 0755 goregraph "$HOME/.local/bin/goregraph"
+```
+
+Ensure that directory is on `PATH`. On macOS with the default Z shell, add the
+following line to `~/.zshrc`; on Linux, add it to `~/.profile` or your shell's
+equivalent startup file:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Open a new terminal, then verify:
+
+```bash
+command -v goregraph
+goregraph version
+```
+
+For a system-wide installation, `/usr/local/bin` is commonly already on `PATH`:
+
+```bash
+sudo install -m 0755 goregraph /usr/local/bin/goregraph
+```
 
 ### GitHub Releases
 
@@ -162,17 +251,8 @@ goregraph_Linux_x86_64.tar.gz
 goregraph_Windows_x86_64.zip
 ```
 
-After extracting the archive, run:
-
-```bash
-./goregraph version
-```
-
-On Windows PowerShell:
-
-```powershell
-.\goregraph.exe version
-```
+After extracting an archive, follow the manual installation steps above so the
+executable is available from every project directory.
 
 ### Build From Source
 
@@ -206,17 +286,11 @@ goregraph version
 goregraph scan .
 ```
 
-On Windows, `go install` writes `goregraph.exe` to `go env GOPATH` + `\bin`. Make sure that directory is on `PATH` before running `goregraph scan .` from another project.
-
-### Winget
-
-Future Windows install command after the package is accepted into `microsoft/winget-pkgs`:
-
-```powershell
-winget install --id GoreCode.GoreGraph -e
-```
-
-Winget metadata is generated during releases. The command is not live until the Winget manifest PR is accepted by Microsoft.
+`go install` writes the executable to `go env GOBIN` when configured, otherwise
+to the `bin` directory below `go env GOPATH`. That directory must also be on
+`PATH`. Use the Windows environment-variable dialog or the macOS/Linux shell
+startup files described in the manual installation section, then verify from a
+new terminal with `goregraph version`.
 
 ## Quick Start
 

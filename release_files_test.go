@@ -106,8 +106,9 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 			"WINGET_TOKEN",
 		},
 		"docs/RELEASE.md": {
+			"v1.4.1",
 			"v1.4.0",
-			"v1.3.0",
+			"1.3.0",
 			"v1.2.0",
 			"Current Release",
 			"2026-08-27",
@@ -123,7 +124,7 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 			"GoReleaser",
 			"checksums.txt",
 			"brew install gorecodecom/tap/goregraph",
-			"winget install --id GoreCode.GoreGraph -e",
+			"winget install --id GoreCode.GoreGraph --exact --source winget",
 		},
 		"internal/scan/scan.go": {
 			"SchemaVersion = 3",
@@ -156,7 +157,7 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 	}
 }
 
-func TestReleaseFilesDescribe141AsLocalCandidate(t *testing.T) {
+func TestReleaseFilesDescribe141AsCurrentRelease(t *testing.T) {
 	files := []string{"README.md", "docs/RELEASE.md"}
 	var combined strings.Builder
 	for _, file := range files {
@@ -170,16 +171,18 @@ func TestReleaseFilesDescribe141AsLocalCandidate(t *testing.T) {
 	text := combined.String()
 	for _, want := range []string{
 		"Source version: GoreGraph 1.4.1 with output Schema 3.",
-		"local **1.4.1 candidate**",
-		"Scoop and Winget publication",
-		"repositories are updated only when their respective repository tokens are",
-		"Current release behavior when `WINGET_TOKEN` is present:",
+		"`v1.4.1` is the current GoreGraph release.",
+		"Winget is the recommended installation method on Windows.",
+		"automatically opens the upstream manifest PR",
+		"git tag -a v1.4.1",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("release documentation missing %q", want)
 		}
 	}
 	for _, forbidden := range []string{
+		"local **1.4.1 candidate**",
+		"`v1.4.0` remains the current public GitHub release",
 		"unreleased 1.4.0",
 		"`v1.3.1` is the current GoreGraph release",
 		"v1.4.1 is published",
@@ -190,6 +193,56 @@ func TestReleaseFilesDescribe141AsLocalCandidate(t *testing.T) {
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("release documentation contains stale pre-release claim: %q", forbidden)
+		}
+	}
+}
+
+func TestWingetPublicationAndInstallationGuidance(t *testing.T) {
+	goreleaser, err := os.ReadFile(".goreleaser.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wingetStart := strings.Index(string(goreleaser), "winget:\n")
+	wingetEnd := strings.Index(string(goreleaser), "\nscoops:\n")
+	if wingetStart < 0 || wingetEnd <= wingetStart {
+		t.Fatal("cannot locate Winget publication configuration")
+	}
+	winget := string(goreleaser)[wingetStart:wingetEnd]
+	for _, want := range []string{
+		"package_identifier: GoreCode.GoreGraph",
+		"enabled: true",
+		"owner: microsoft",
+		"name: winget-pkgs",
+	} {
+		if !strings.Contains(winget, want) {
+			t.Fatalf("Winget publication configuration missing %q", want)
+		}
+	}
+
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(readme)
+	for _, want := range []string{
+		"### Winget Windows — recommended",
+		"winget install --id GoreCode.GoreGraph --exact --source winget",
+		"winget upgrade --id GoreCode.GoreGraph --exact --source winget",
+		".\\install.ps1 -RunAsAdmin",
+		"Edit environment variables for your account",
+		"`~/.zshrc`",
+		"`~/.profile`",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Windows/manual installation guidance missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"Future Windows install command",
+		"The command is not live",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("installation guidance contains stale Winget claim %q", forbidden)
 		}
 	}
 }
@@ -273,7 +326,7 @@ func TestReleaseNotesDescribeEditableDashboardForCurrentRelease(t *testing.T) {
 	text := string(body)
 	for _, want := range []string{
 		"Current Release",
-		"local **1.4.1 candidate**",
+		"`v1.4.1` is the current GoreGraph release.",
 		"goregraph workspace dashboard edit .",
 		".goregraph-dashboard.json",
 		"API Catalog",

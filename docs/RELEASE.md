@@ -6,19 +6,23 @@
 Source version: GoreGraph 1.4.1 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-The local **1.4.1 candidate** is for testing. Do not infer publication from the source
-version above. This implementation does not push a commit, tag, release, or
-package-manager update. Install the locally built binary only after validation;
-retain the previously installed executable for rollback.
+`v1.4.1` is the current GoreGraph release. Its tag publishes the GitHub archives
+and starts the Homebrew, Scoop, and Winget updates. Package-manager indexes can
+lag behind the GitHub release, so each channel must still be verified separately.
 
-Candidate scope: reliable scoped file selection, indexed script extraction,
+Release scope: reliable scoped file selection, indexed script extraction,
 cooperative cancellation and progress, build/input identities, last-good-output
 recovery, independent integrity/freshness/coverage labels, investigation
 navigation, and an opt-in adaptive agent protocol. No new end-to-end token-saving
-claim is made; the historical strict benchmark remains the baseline. The offline
-[effectiveness harness](AGENT-EFFECTIVENESS.md) prepares independent evaluation.
+general performance claim is made from the single frozen-workspace result; the
+historical strict benchmark remains the baseline. The offline [effectiveness
+harness](AGENT-EFFECTIVENESS.md) prepares independent evaluation.
 
-The 1.4.0 minor release adds `goregraph workspace update`, a content-aware
+The 1.4.1 release adds adaptive evidence retrieval, bounded source
+reads and pagination, answer citation validation, and the reliability changes
+listed above while preserving output Schema 3.
+
+The 1.4.0 minor release added `goregraph workspace update`, a content-aware
 workspace maintenance command. It detects added, modified, and deleted project
 files independently of Git, rebuilds only changed or incomplete projects, and
 then reconciles the selected workspace projections once. Schema 3 and generated
@@ -220,12 +224,13 @@ changes are confined to documentation, tests, and documentation-sync tooling. A
 different runtime candidate requires a fresh matched matrix before entering the
 1.3.0 release flow.
 
-`v1.4.0` is the current GoreGraph release, prepared on 2026-08-27. Its annotated
+`v1.4.1`, prepared on 2026-09-11, is the current GoreGraph release. Its annotated
 tag publishes checksummed macOS, Linux, and Windows archives through GitHub
-Releases. Homebrew publication is configured; Scoop and Winget publication
-repositories are updated only when their respective repository tokens are
-configured. Public Winget availability remains subject to Microsoft package
-acceptance.
+Releases. Homebrew and Scoop publication are configured. The public Winget
+package ID `GoreCode.GoreGraph` is live, and the release automatically opens the
+upstream manifest PR when `WINGET_TOKEN` is configured. Microsoft acceptance and
+publication of that PR still determine when Winget offers the new version.
+`v1.4.0`, prepared on 2026-08-27, is the previous release.
 
 ## Completed v1.2.0 Milestone
 
@@ -248,7 +253,8 @@ GitHub repository secrets:
 
 - `HOMEBREW_TAP_TOKEN`: token with write access to `gorecodecom/homebrew-tap`.
 - `SCOOP_BUCKET_TOKEN`: token with write access to `gorecodecom/scoop-bucket`.
-- `WINGET_TOKEN`: optional token for pushing Winget manifests to the configured `gorecodecom/winget-pkgs` fork.
+- `WINGET_TOKEN`: token for pushing Winget manifests to the configured
+  `gorecodecom/winget-pkgs` fork and opening the upstream manifest PR.
 
 `GITHUB_TOKEN` is provided by GitHub Actions for publishing the GoreGraph release.
 
@@ -277,6 +283,7 @@ Completed release checks:
 - `gorecodecom/winget-pkgs` fork exists for Winget manifest publishing.
 - `SCOOP_BUCKET_TOKEN` is visible in `gorecodecom/goregraph`.
 - `WINGET_TOKEN` is visible in `gorecodecom/goregraph`.
+- `GoreCode.GoreGraph` is available from the public Winget source.
 
 `v0.2.0` feature checks:
 
@@ -497,7 +504,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.4.0
+goregraph 1.4.1
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -508,10 +515,9 @@ schema: 3
 ## Release Flow
 
 This is the flow used for the current release. The exact tagged commit must pass
-every documented release gate and have explicit release approval. The v1.4.0
-minor release adds content-aware workspace update orchestration without changing
-the Context extraction, ranking, budgeting, serialization, or Schema 3 output
-contracts covered by the v1.3.0 matched matrix.
+every documented release gate and have explicit release approval. The v1.4.1
+patch release includes the completed adaptive evidence, source-reader,
+answer-check, and publication changes without changing Schema 3.
 
 1. Confirm `main` is clean and pushed.
 2. Confirm README installation instructions are current.
@@ -519,8 +525,8 @@ contracts covered by the v1.3.0 matched matrix.
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v1.4.0 -m "Release v1.4.0"
-   git push origin v1.4.0
+   git tag -a v1.4.1 -m "Release v1.4.1"
+   git push origin v1.4.1
    ```
 
 5. GitHub Actions runs GoReleaser.
@@ -533,7 +539,8 @@ contracts covered by the v1.3.0 matched matrix.
 7. GoReleaser uploads release archives and `checksums.txt`.
 8. GoReleaser updates the Homebrew tap.
 9. GoReleaser updates the Scoop bucket when `SCOOP_BUCKET_TOKEN` is present.
-10. GoReleaser pushes Winget manifests to the configured fork when `WINGET_TOKEN` is present.
+10. GoReleaser pushes Winget manifests to the configured fork and automatically
+    opens the upstream manifest PR when `WINGET_TOKEN` is present.
 11. Verify a downloaded binary:
 
    ```bash
@@ -572,31 +579,41 @@ Stable package identity:
 GoreCode.GoreGraph
 ```
 
-Expected command after Microsoft accepts the package:
+Winget is the recommended installation method on Windows. Current install command:
 
 ```powershell
-winget install --id GoreCode.GoreGraph -e
+winget install --id GoreCode.GoreGraph --exact --source winget
 ```
 
-When `WINGET_TOKEN` is present, GoReleaser generates Winget manifests and
-pushes them to the configured fork. The package is not live until the manifest
-is accepted in `microsoft/winget-pkgs`.
+Upgrade command:
 
-`v0.1.1` status:
+```powershell
+winget upgrade --id GoreCode.GoreGraph --exact --source winget
+```
+
+The package identity is already live in the public Winget source. A newly tagged
+version becomes available only after its generated manifest PR is accepted and
+published by Microsoft.
+
+Initial `v0.1.1` submission history:
 
 - GoReleaser generated the Winget manifests.
 - GoReleaser pushed branch `goregraph-0.1.1` to `gorecodecom/winget-pkgs`.
 - Automatic PR creation failed with GitHub `403 Resource not accessible by personal access token`.
 - The PR was opened manually: `https://github.com/microsoft/winget-pkgs/pull/397959`.
-- The PR is waiting on Microsoft CLA/review checks.
+
+That initial limitation no longer describes the current publication setup: the
+package is available through Winget and automatic upstream PR creation is enabled.
 
 Current release behavior when `WINGET_TOKEN` is present:
 
 - GoReleaser generates the Winget manifests.
 - GoReleaser pushes a `goregraph-<version>` branch to `gorecodecom/winget-pkgs`.
-- The PR to `microsoft/winget-pkgs` is opened manually.
+- GoReleaser automatically opens the upstream manifest PR against
+  `microsoft/winget-pkgs:master`.
 
-For future fully automatic Winget PR creation, `WINGET_TOKEN` must be able to create pull requests against public upstream repositories. A classic GitHub PAT with `public_repo` is the simplest known-good option. If a fine-grained token cannot create the upstream PR, keep the generated branch and open the PR manually.
+If upstream PR creation fails despite the configured token, retain the generated
+fork branch and open the PR manually rather than republishing the release.
 
 ## Scoop
 
