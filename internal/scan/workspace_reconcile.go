@@ -1386,6 +1386,7 @@ type workspaceAgentContextBuilder struct {
 	projectFactIDs   map[string]map[string]string
 	handlerLocations map[string][]workspaceAgentHandlerLocation
 	handlerFactIDs   map[string]string
+	sourceHashes     map[string]string
 }
 
 type workspaceAgentHandlerLocation struct {
@@ -1411,6 +1412,7 @@ func newWorkspaceAgentContextBuilder(registry WorkspaceRegistryRecord) *workspac
 		projectFactIDs:   map[string]map[string]string{},
 		handlerLocations: map[string][]workspaceAgentHandlerLocation{},
 		handlerFactIDs:   map[string]string{},
+		sourceHashes:     map[string]string{},
 	}
 }
 
@@ -1425,6 +1427,11 @@ func (builder *workspaceAgentContextBuilder) mergeProjectIndex(index AgentContex
 	}
 	if builder.projectFactIDs[project] == nil {
 		builder.projectFactIDs[project] = map[string]string{}
+	}
+	for file, hash := range index.SourceHashes {
+		if relative := workspaceAgentFile(project, file); relative != "" {
+			builder.sourceHashes[project+"/"+relative] = hash
+		}
 	}
 	for _, fact := range index.Facts {
 		originalID := fact.ID
@@ -2201,6 +2208,7 @@ func (builder *workspaceAgentContextBuilder) index(generated string) AgentContex
 		SchemaVersion: SchemaVersion,
 		Generated:     generated,
 		Root:          builder.registry.Root,
+		SourceHashes:  builder.sourceHashes,
 		Facts:         facts,
 		Edges:         edges,
 		Coverage:      coverage,

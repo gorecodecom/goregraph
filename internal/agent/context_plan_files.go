@@ -56,17 +56,17 @@ func contextPlanFileReserveView(before, after ContextPack) ContextPack {
 }
 
 func contextPlanFiles(pack ContextPack, index scan.AgentContextIndexRecord) []ContextPlanFile {
-	query := contextSelectionQuery(pack)
-	if !contextQueryRequestsExactEvidenceInventory(query) ||
-		!contextQueryPlansMissingTransition(query) ||
-		!contextQueryRequestsTests(query) {
+	evidenceQuery := contextEvidenceSelectionQuery(pack)
+	if !contextQueryRequestsExactEvidenceInventory(evidenceQuery) ||
+		!contextChangePlanInventoryEligible(pack) ||
+		!contextQueryRequestsTests(evidenceQuery) {
 		return nil
 	}
 	entrypointProject := contextPlanFileEntrypointProject(pack)
 	if entrypointProject == "" {
 		return nil
 	}
-	providerProjects := contextPlanFileProviderProjects(pack, entrypointProject)
+	providerProjects := contextPlanFileProviderProjects(pack, index, entrypointProject)
 	if len(providerProjects) == 0 {
 		return nil
 	}
@@ -77,6 +77,9 @@ func contextPlanFiles(pack ContextPack, index scan.AgentContextIndexRecord) []Co
 			continue
 		}
 		eligible = append(eligible, fact)
+	}
+	if pack.ProtocolVersion == AdaptiveV2 {
+		return contextAdaptivePlanTestFiles(pack, index, eligible, providerProjects, entrypointProject)
 	}
 
 	selected := make([]contextPlanFileFact, 0, maximumContextPlanFiles)
@@ -142,7 +145,11 @@ func contextPlanFileUniqueProject(projects []string) (string, bool) {
 	return result, true
 }
 
-func contextPlanFileProviderProjects(pack ContextPack, entrypointProject string) map[string]bool {
+func contextPlanFileProviderProjects(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	entrypointProject string,
+) map[string]bool {
 	result := make(map[string]bool)
 	for _, concern := range pack.Concerns {
 		project := normalizeContextProject(concern.Project)
@@ -151,7 +158,167 @@ func contextPlanFileProviderProjects(pack ContextPack, entrypointProject string)
 		}
 		result[project] = true
 	}
+	if len(result) != 0 || pack.ProtocolVersion != AdaptiveV2 {
+		return result
+	}
+	return contextSelectedPlanProviderProjects(pack, index, entrypointProject)
+}
+
+func contextSelectedPlanProviderProjects(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	entrypointProject string,
+) map[string]bool {
+	result := make(map[string]bool)
+	_, contractProjects, modelProjects := contextEvidenceProjectRoles(pack, index)
+	exactContractProjects := make(map[string]bool)
+	for _, contract := range pack.Contracts {
+		if strings.EqualFold(strings.TrimSpace(contract.Confidence), "EXACT") {
+			exactContractProjects[normalizeContextProject(contract.Project)] = true
+		}
+	}
+	selectedIDs := make(map[string]bool, len(pack.selectedSourceFactIDs))
+	for _, factID := range pack.selectedSourceFactIDs {
+		selectedIDs[factID] = true
+	}
+	exactContractFactProjects := make(map[string]bool)
+	exactModelProjects := make(map[string]bool)
+	domainTokens := contextSourceDomainModelTokens(pack, index)
+	for _, fact := range index.Facts {
+		if !contextTestInventoryFactSelected(pack, fact, selectedIDs[fact.ID]) ||
+			!strings.EqualFold(strings.TrimSpace(fact.Confidence), "EXACT") ||
+			contextFactUsesTestSource(fact) ||
+			contextExactInventoryPath(fact.File) == "" ||
+			contextPlanFileConfigurationSource(fact.File) {
+			continue
+		}
+		if contextExactProductionProviderContractFact(fact) {
+			exactContractFactProjects[normalizeContextProject(fact.Project)] = true
+		}
+		if contextDomainModelFact(fact, domainTokens) {
+			exactModelProjects[normalizeContextProject(fact.Project)] = true
+		}
+	}
+	exactSourceNavigationProjects := contextSelectedSourceNavigationProjects(pack, index)
+	explicitProjects := contextExplicitProjects(
+		contextSelectionQuery(pack),
+		contextProjectAliases(index.Facts, index.Coverage),
+	)
+	roleEvidence := []struct {
+		roles map[string]bool
+		exact map[string]bool
+	}{
+		{roles: contractProjects, exact: exactContractProjects},
+		{roles: modelProjects, exact: exactModelProjects},
+		{roles: exactContractFactProjects, exact: exactContractFactProjects},
+		{roles: exactSourceNavigationProjects, exact: exactSourceNavigationProjects},
+	}
+	for _, evidence := range roleEvidence {
+		for candidate, selected := range evidence.roles {
+			project := normalizeContextProject(candidate)
+			if !selected || !evidence.exact[project] || project == "" || project == entrypointProject ||
+				(len(explicitProjects) != 0 && !explicitProjects[project]) {
+				continue
+			}
+			result[project] = true
+		}
+	}
 	return result
+}
+
+func contextSelectedSourceNavigationProjects(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+) map[string]bool {
+	result := make(map[string]bool)
+	for _, section := range pack.SourceSections {
+		project := normalizeContextProject(section.Project)
+		path := contextExactInventoryPath(section.Path)
+		if project == "" || path == "" || section.StartLine <= 0 || section.EndLine < section.StartLine ||
+			section.SourceState != "indexed_range_current" {
+			continue
+		}
+		for _, fact := range index.Facts {
+			if normalizeContextProject(fact.Project) != project ||
+				contextExactInventoryPath(fact.File) != path ||
+				fact.Line < section.StartLine || fact.Line > section.EndLine ||
+				!(contextExactProductionProviderContractFact(fact) ||
+					contextExactProductionEndpointNavigationFact(fact) ||
+					contextExactProductionModelNavigationFact(fact, section)) {
+				continue
+			}
+			result[project] = true
+			break
+		}
+	}
+	return result
+}
+
+func contextExactProductionModelNavigationFact(
+	fact scan.AgentContextFactRecord,
+	section ContextSourceSection,
+) bool {
+	path := contextExactInventoryPath(fact.File)
+	identity := contextIdentifierLeaf(firstNonEmptyContext(fact.Name, fact.Qualified))
+	if !strings.EqualFold(strings.TrimSpace(fact.Confidence), "EXACT") ||
+		path == "" || fact.Line <= 0 || contextPlanFileConfigurationSource(path) ||
+		!contextDomainModelFact(fact, contextExpandedTokenSet(identity)) {
+		return false
+	}
+	lines := strings.Split(contextSourceSemanticContent(section.Content), "\n")
+	lineIndex := fact.Line - section.StartLine
+	if lineIndex < 0 || lineIndex >= len(lines) {
+		return false
+	}
+	declaration, found := contextSourceTypeDeclarationLine(lines[lineIndex])
+	if !found {
+		return false
+	}
+	fields := strings.Fields(declaration.header)
+	for len(fields) > 0 && contextSourceDeclarationModifier(fields[0]) {
+		fields = fields[1:]
+	}
+	declared := fields[1]
+	if end := strings.IndexFunc(declared, func(value rune) bool { return !isSourceIdentifierRune(value) }); end >= 0 {
+		declared = declared[:end]
+	}
+	return declared != "" && declared == identity
+}
+
+// A returned public endpoint identifies a project worth navigating without
+// asserting that the entrypoint calls it or that it implements an internal contract.
+func contextExactProductionEndpointNavigationFact(fact scan.AgentContextFactRecord) bool {
+	path := contextExactInventoryPath(fact.File)
+	if !strings.EqualFold(strings.TrimSpace(fact.Confidence), "EXACT") ||
+		path == "" || fact.Line <= 0 || contextFactUsesTestSource(fact) ||
+		contextPlanFileConfigurationSource(path) ||
+		!contextHTTPVerbs[strings.ToUpper(strings.TrimSpace(fact.HTTPMethod))] ||
+		!strings.HasPrefix(strings.TrimSpace(fact.Path), "/") {
+		return false
+	}
+	kind := strings.ToLower(strings.TrimSpace(fact.Kind))
+	return kind == "api_endpoint" || kind == "route"
+}
+
+func contextExactProductionProviderContractFact(fact scan.AgentContextFactRecord) bool {
+	path := contextExactInventoryPath(fact.File)
+	if !strings.EqualFold(strings.TrimSpace(fact.Confidence), "EXACT") ||
+		path == "" || fact.Line <= 0 || contextFactUsesTestSource(fact) ||
+		contextPlanFileConfigurationSource(path) {
+		return false
+	}
+	return contextProductionProviderContractFact(fact)
+}
+
+func contextPlanFileConfigurationSource(path string) bool {
+	normalized := strings.ToLower(contextExactInventoryPath(path))
+	if normalized == "" || isContextConfigurationResource(normalized) ||
+		strings.Contains("/"+normalized+"/", "/config/") ||
+		strings.Contains("/"+normalized+"/", "/configuration/") {
+		return true
+	}
+	base := strings.TrimSuffix(filepath.Base(normalized), filepath.Ext(normalized))
+	return strings.HasSuffix(base, "config") || strings.HasSuffix(base, "configuration")
 }
 
 func contextPlanFileRepresentedPaths(pack ContextPack) map[string]bool {
@@ -431,7 +598,11 @@ func contextPlanFileFactScore(
 		map[string]bool{},
 		index,
 	)
-	if contextQueryPlansMissingTransition(contextSelectionQuery(pack)) &&
+	adaptiveDeletionPlan := pack.ProtocolVersion == AdaptiveV2 &&
+		contextQueryRequestsCorrectionPlan(contextSelectionQuery(pack)) &&
+		len(pack.Endpoints) == 1 &&
+		strings.EqualFold(strings.TrimSpace(pack.Endpoints[0].HTTPMethod), "DELETE")
+	if (contextQueryPlansMissingTransition(contextSelectionQuery(pack)) || adaptiveDeletionPlan) &&
 		contextPlanFilePrimaryActionTest(fact) {
 		score += contextPlanFilePrimaryActionBonus
 	}

@@ -12,6 +12,16 @@ import (
 // WithOutputRead holds one stable boundary for built-in project/workspace readers.
 // Callbacks must not acquire output locks again or mutate generated output.
 func WithOutputRead(ctx context.Context, root string, read func() error) error {
+	return withOutputRead(ctx, root, read, true)
+}
+
+// WithExistingOutputRead reads the applicable outputs without creating lock files.
+// Missing locks require a separate authorized initialization operation.
+func WithExistingOutputRead(ctx context.Context, root string, read func() error) error {
+	return withOutputRead(ctx, root, read, false)
+}
+
+func withOutputRead(ctx context.Context, root string, read func() error, createMissing bool) error {
 	if root == "" {
 		root = "."
 	}
@@ -23,7 +33,7 @@ func WithOutputRead(ctx context.Context, root string, read func() error) error {
 	if err != nil {
 		return err
 	}
-	return withOutputReadConfig(ctx, resolved, cfg, read)
+	return withOutputReadConfigMode(ctx, resolved, cfg, read, createMissing)
 }
 
 // WithOutputReadConfig holds a stable boundary for the caller's effective
@@ -40,6 +50,10 @@ func WithOutputReadConfig(ctx context.Context, root string, cfg config.Config, r
 }
 
 func withOutputReadConfig(ctx context.Context, resolved string, cfg config.Config, read func() error) error {
+	return withOutputReadConfigMode(ctx, resolved, cfg, read, true)
+}
+
+func withOutputReadConfigMode(ctx context.Context, resolved string, cfg config.Config, read func() error, createMissing bool) error {
 	roots := []string{filepath.Join(resolved, cfg.OutputDir), filepath.Join(resolved, ".goregraph-workspace")}
 	workspaceRoot, ok, err := WorkspaceRoot(resolved, cfg)
 	if err != nil {
@@ -56,6 +70,9 @@ func withOutputReadConfig(ctx context.Context, resolved string, cfg config.Confi
 				roots = append(roots, filepath.Join(project.AbsPath, project.OutputDir))
 			}
 		}
+	}
+	if !createMissing {
+		return outputstore.WithExistingReads(ctx, roots, read)
 	}
 	return outputstore.WithReads(ctx, roots, read)
 }

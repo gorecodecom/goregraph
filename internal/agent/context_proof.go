@@ -242,7 +242,7 @@ func contextEvidenceInventoryProfiledCrossProjectPrimaryRoute(
 	pack ContextPack,
 	option contextSourceOption,
 ) bool {
-	if !contextQueryRequestsExactEvidenceInventory(contextSelectionQuery(pack)) ||
+	if !contextQueryRequestsExactEvidenceInventory(contextEvidenceSelectionQuery(pack)) ||
 		!option.profiled ||
 		strings.TrimSpace(option.candidate.Role) == "" ||
 		strings.EqualFold(option.candidate.Role, "test") ||
@@ -1169,6 +1169,12 @@ func contextDomainModelEvidenceConcerns(
 		)
 		concern.project = normalizeContextProject(model.Project)
 		result = append(result, concern)
+		if base.requireIdentity && len(concern.candidateFactIDs) > 1 {
+			identity := newExpandedContextEvidenceConcern(base, "model_identity:"+modelID,
+				[]string{modelID}, "concrete model declaration for "+model.Name)
+			identity.project = normalizeContextProject(model.Project)
+			result = append(result, identity)
+		}
 	}
 	return result
 }

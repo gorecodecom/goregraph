@@ -24,6 +24,22 @@ func TestVerificationRequestRetainsExactBoundedOmission(t *testing.T) {
 	}
 }
 
+func TestVerificationRequestsReadOnlyUnseenSourceRanges(t *testing.T) {
+	pack := ContextPack{SourceSections: []ContextSourceSection{
+		{Project: "billing", Path: "src/Invoice.java", StartLine: 3, EndLine: 5},
+		{Project: "billing", Path: "src/Invoice.java", StartLine: 8, EndLine: 10},
+	}, SourceOmissions: []ContextSourceOmission{
+		{Project: "billing", Path: "src/Invoice.java", StartLine: 3, EndLine: 5, Reason: "missing evidence"},
+		{Project: "billing", Path: "src/Invoice.java", StartLine: 4, EndLine: 12, Reason: "missing body"},
+		{Project: "other", Path: "src/Invoice.java", StartLine: 3, EndLine: 5, Reason: "missing evidence"},
+	}}
+	got := contextVerificationRequests(pack)
+	if len(got) != 3 || got[0].StartLine != 6 || got[0].EndLine != 7 ||
+		got[1].StartLine != 11 || got[1].EndLine != 12 || got[2].Project != "other" {
+		t.Fatalf("verification rereads supplied source or loses project scope: %+v", got)
+	}
+}
+
 func TestVerificationRequestsRejectUnsafeAndUnboundedPaths(t *testing.T) {
 	pack := ContextPack{SourceOmissions: []ContextSourceOmission{
 		{Path: "../secret", StartLine: 1, EndLine: 2, Reason: "missing evidence"},

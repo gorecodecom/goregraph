@@ -221,6 +221,16 @@ func WithRead(ctx context.Context, root string, read func(committed string) erro
 // parents are required; absent output directories remain available for caller
 // fallback. Duplicate roots share one lock and callbacks must not nest loads.
 func WithReads(ctx context.Context, roots []string, read func() error) error {
+	return withReads(ctx, roots, read, true)
+}
+
+// WithExistingReads holds shared output locks without creating missing lock files.
+// Missing locks fail closed; callers must arrange authorized initialization.
+func WithExistingReads(ctx context.Context, roots []string, read func() error) error {
+	return withReads(ctx, roots, read, false)
+}
+
+func withReads(ctx context.Context, roots []string, read func() error, createMissing bool) error {
 	if read == nil {
 		return errors.New("output reader is required")
 	}
@@ -240,7 +250,7 @@ func WithReads(ctx context.Context, roots []string, read func() error) error {
 		}
 	}
 	sort.Slice(canonical, func(i, j int) bool { return pathKey(canonical[i]) < pathKey(canonical[j]) })
-	locks, err := acquireRoots(ctx, canonical, true)
+	locks, err := acquireRootsMode(ctx, canonical, true, createMissing)
 	if err != nil {
 		return err
 	}
@@ -504,9 +514,13 @@ func requestRoots(requests []UpdateRequest) []string {
 }
 
 func acquireRoots(ctx context.Context, roots []string, shared bool) ([]*fileLock, error) {
+	return acquireRootsMode(ctx, roots, shared, true)
+}
+
+func acquireRootsMode(ctx context.Context, roots []string, shared, createMissing bool) ([]*fileLock, error) {
 	var locks []*fileLock
 	for _, root := range roots {
-		lock, err := acquireFileLock(ctx, lockPath(root), shared)
+		lock, err := acquireFileLockMode(ctx, lockPath(root), shared, createMissing)
 		if err != nil {
 			releaseLocks(locks)
 			return nil, fmt.Errorf("lock output %s: %w", root, err)

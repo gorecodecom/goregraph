@@ -13,20 +13,20 @@ import (
 	"time"
 )
 
-func setupReviewOutput(t *testing.T, root string) {
+func setupReviewOutput(t *testing.T, root string) string {
 	t.Helper()
 	if err := Update(context.Background(), UpdateRequest{Root: root, Write: func(stage string) error { return os.WriteFile(filepath.Join(stage, "sentinel"), []byte("old"), 0644) }}); err != nil {
 		t.Fatal(err)
 	}
-}
-func TestReviewPartialRollbackDeletion(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "out")
-	setupReviewOutput(t, root)
 	canonical, err := canonicalRoot(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	root = canonical
+	return canonical
+}
+func TestReviewPartialRollbackDeletion(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "out")
+	root = setupReviewOutput(t, root)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ops := systemOperations()
@@ -48,7 +48,7 @@ func TestReviewPartialRollbackDeletion(t *testing.T) {
 		}
 		return remove(path)
 	}
-	err = updateMany(ctx, []UpdateRequest{{Root: root, Write: func(stage string) error { return os.WriteFile(filepath.Join(stage, "sentinel"), []byte("new"), 0644) }}}, ops)
+	err := updateMany(ctx, []UpdateRequest{{Root: root, Write: func(stage string) error { return os.WriteFile(filepath.Join(stage, "sentinel"), []byte("new"), 0644) }}}, ops)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("post-promotion cancellation was not exercised: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestReviewPartialRollbackDeletion(t *testing.T) {
 
 func TestRollbackRecoversAfterPartialDiscardedStageDeletion(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "out")
-	setupReviewOutput(t, root)
+	root = setupReviewOutput(t, root)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ops := systemOperations()
@@ -103,7 +103,7 @@ func TestRollbackRecoversAfterPartialDiscardedStageDeletion(t *testing.T) {
 }
 func TestReviewPartialCommittedBackupDeletion(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "out")
-	setupReviewOutput(t, root)
+	root = setupReviewOutput(t, root)
 	ops := systemOperations()
 	remove := ops.removeAll
 	ops.removeAll = func(path string) error {
@@ -160,9 +160,9 @@ func interruptedRetirement(t *testing.T, rollback bool, retired int) []string {
 	parent := t.TempDir()
 	roots := []string{filepath.Join(parent, "a"), filepath.Join(parent, "b"), filepath.Join(parent, "c")}
 	var requests []UpdateRequest
-	for _, root := range roots {
-		setupReviewOutput(t, root)
-		requests = append(requests, replacement(root, "new"))
+	for i, root := range roots {
+		roots[i] = setupReviewOutput(t, root)
+		requests = append(requests, replacement(roots[i], "new"))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -241,7 +241,7 @@ func TestCleanupDecisionWriteFailuresRemainRecoverable(t *testing.T) {
 		for _, afterRename := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/afterRename=%v", state, afterRename), func(t *testing.T) {
 				root := filepath.Join(t.TempDir(), "out")
-				setupReviewOutput(t, root)
+				root = setupReviewOutput(t, root)
 				ops := systemOperations()
 				rename := ops.rename
 				injected := errors.New("cleanup decision write interrupted")
@@ -286,8 +286,8 @@ func TestCleanupProcessInterruptionRecovers(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			parent := t.TempDir()
 			root, peer := filepath.Join(parent, "a"), filepath.Join(parent, "b")
-			setupReviewOutput(t, root)
-			setupReviewOutput(t, peer)
+			root = setupReviewOutput(t, root)
+			peer = setupReviewOutput(t, peer)
 			executable, err := os.Executable()
 			if err != nil {
 				t.Fatal(err)

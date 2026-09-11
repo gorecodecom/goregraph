@@ -295,6 +295,214 @@ most three `verification_requests`, each with a project-relative path, positive
 start/end line bounds and a reason. All metadata counts against the Context Pack
 budget. Strict-v1 remains the default; the historical instruction and bounded
 source policy remain unchanged. Adaptive fallback codes include `index_missing`,
-`index_stale`, `ambiguous_entrypoint`, `unsupported_analysis`, `budget_exhausted`,
+`index_stale`, `ambiguous_entrypoint`, `insufficient_relevance`, `insufficient_evidence`, `unsupported_analysis`, `budget_exhausted`,
 `source_unreadable` and `evidence_conflict`. Missing evidence is never converted
 into proof that a provider or behavior is absent.
+
+`insufficient_evidence` preserves entrypoint confidence while requiring fallback
+for uncovered requested concerns. Exact verification ranges remain bounded;
+ordinary source investigation still requires the caller's existing authorization.
+Inferred model and extension-point candidates do not establish runtime ownership
+or create call/HTTP edges. A shared base declaration alone does not identify a
+newly inferred concrete model. Adaptive health and verification metadata are
+reserved before evidence selection, including their UTF-8 JSON byte costs.
+Adaptive source selection reserves file capacity for verified primary declarations.
+The primary-path concern requires the entrypoint and first local call bodies;
+signatures alone do not satisfy it. Missing primary bodies take precedence over
+supporting inventory gaps in bounded verification requests. This reservation uses
+the same aggregate file union as the public limit and does not create coverage.
+
+Low-relevance or ambiguous adaptive fallbacks can include up to three current
+source sections with role `candidate`, plus up to three bounded verification
+requests for omitted candidates. Query vocabulary matches do not establish a
+unique entrypoint or runtime owner: confidence stays LOW, fallback stays required,
+and source coverage stays partial. Source rendering, path validation, configuration
+value redaction and the requested token/file limits also apply to this evidence.
+
+The compact agent index may contain `source_hashes`, a map of indexed source paths
+to SHA-256 hashes of the raw file bytes. Project indexes use project-relative keys;
+workspace indexes prefix each key with the project path. Adaptive context checks
+selected and concern-expanded source against these snapshots before duplicate
+suppression. Changed source produces `evidence_conflict`, missing or unreadable
+source produces `source_unreadable`, and stale endpoint metadata is discarded.
+Absent hashes in older indexes cannot establish current source freshness. Rebuild
+the agent projection to populate hashes; the agent build revision is now 2.
+
+
+### Bounded CLI source reads and adaptive delivery receipts
+
+`goregraph read <root> --request '<JSON>'` is a read-only CLI interface. It does not
+change the default MCP `task_context` surface or grant permission to read source.
+Strict omission bounds, adaptive verification requests, or explicit caller fallback
+permissions still determine which ranges may be requested.
+
+Request (paths are relative to the requested root; a workspace path includes the
+project prefix):
+
+```json
+{"files":[{"path":"service/src/Handler.java","ranges":[[10,30],[40,50]],"seen":["<copied receipt>"]},{"path":"service/src/Model.java","ranges":[[1,40]]}]}
+```
+
+Each entry requires exactly one of nonempty `files[].ranges` or `files[].find`.
+These canonical selectors are preferred. The CLI also normalizes these shorthand
+forms before calling the unchanged agent API:
+
+```json
+{"files":[{"path":"service/src/Handler.java","start_line":10,"end_line":30}]}
+```
+
+```json
+{"files":[{"path":"service/src/Handler.java","start_line":10,"find":{"pattern":"handle"}}]}
+```
+
+The first becomes `"ranges":[[10,30]]`. The second sets
+`files[].find.start_line` to 10 only when the nested cursor is zero or omitted.
+Shorthand endpoints must be positive JSON integers; nulls, decimals, strings,
+booleans, missing range endpoints, nonempty ranges mixed with shorthand,
+`find` with `end_line`, and cursors supplied at both levels with a nonzero nested
+cursor (even equal values) are rejected. Empty or null ranges may accompany find.
+Bounds are neither defaulted nor swapped. Normalization grants no read authority
+and preserves all path, index, redaction, receipt, and size checks below.
+The original JSON is checked against the 64 KiB cap before decoding. Unknown
+root, file, and find fields and multiple JSON values remain rejected. After one
+complete, strictly decoded request object, the CLI tolerates exactly one redundant
+trailing `]}` pair; it cannot add fields or read authority. Other malformed wire
+requests fail with exit code 2 and empty stdout. If strict decoding fails only
+because a JSON string uses a backslash before a non-JSON escape character, the CLI
+treats that backslash literally and decodes once more. This supports shell-nested
+regexp forms such as `\(`; unknown fields, malformed standard escapes and all
+reader validation remain enforced. Downstream reader errors retain exit code 1
+and empty stdout. No partial source is emitted.
+
+For caller-authorized file search, use
+`"find":{"pattern":"handle|validate","before":2,"after":5,"max_matches":4}`.
+`pattern` is a nonempty Go regexp (RE2), at most 1024 bytes, evaluated independently
+against each fully redacted current-content line without rendered line-number
+prefixes. It cannot search across lines or discover hidden configuration values.
+`before`/`after` default to 0 and allow 0..100; `max_matches` defaults to 10 for
+0/omitted and otherwise allows 1..32; `files[].find.start_line` defaults to 1 for
+0/omitted and otherwise allows 1..2097153. Invalid selectors fail before source reads.
+Multiple `find` entries for one canonical file, including aliases, retain their
+independent patterns, cursors, match limits, and windows. The file is read and
+redacted once, and the union of selected windows is delivered once. Mixing
+`ranges` and `find` for that same canonical file remains an error; issue separate
+requests and carry the receipt forward.
+Find does not widen strict omission or verification read authority.
+
+Each result `files` entry contains `path` (canonical root-relative path), `sections`
+(an array of `start_line`, `end_line`, numbered `content`), `skipped_ranges`
+(previously delivered inclusive pairs), and a cumulative `receipt` if any current
+lines have been delivered. `eof_ranges` optionally reports requested lines past
+EOF; an end beyond EOF is clamped and a start past EOF returns no section. The
+reader uses the same normalized line splitting as context source sections.
+`ignored_receipts` optionally counts syntactically valid receipts for a different
+content/path fingerprint. Ranges-only duplicate aliases become one file entry;
+all requested and seen intervals are merged before delivery.
+
+Find results additionally contain `find.match_lines` (ascending unique selected
+line numbers, always `[]` for zero), `match_count` (all matching lines at/after
+`files[].find.start_line`, including already-seen matches), and
+`files[].find.next_start_line` only when more matches remain (one line after the
+last selected match). Copy output `files[].find.next_start_line` to request
+`files[].find.start_line` and pass the cumulative receipt in `seen` to paginate.
+If selected find windows would exceed the combined interval, line, or 24 KiB
+result limit, GoreGraph reduces match pages in reverse request order while
+retaining at least one selected match for every selector that has a match. A
+reduced result has `output_limited: true` and a `next_start_line`. Resume only
+the selectors whose remaining matches matter, using their cursor and cumulative
+receipt. `match_count` continues to describe all matches at or after that page's
+start. If the aggregate response is still too large, later whole-file results have
+file-level `output_limited: true` with empty `sections`. Repeat the same selectors
+with the cumulative receipts returned for files already delivered. Exact range
+requests stay atomic per file and are never shortened.
+When several find selectors address one canonical file, the single `find` field
+is replaced by `find_results`: an array of `{"request_index":0,"result":{...}}`.
+Each result has the same match/pagination fields; `request_index` identifies the
+original zero-based position in request `files`, before alias grouping. Resume
+each selector from its own result cursor. Match counts across selectors may
+overlap; they are not counts of unique delivered lines. Single-selector output
+gains only the optional `output_limited` field when an automatic result page is
+necessary.
+The first `max_matches` matching lines select
+context windows, clamped to actual EOF including the terminal empty line where
+present, then merged across overlaps/adjacency. These windows use the same receipt
+subtraction and delivery as ranges; there are no duplicate search snippets.
+Metadata is navigation, not a claim of source delivery. No matches succeeds with
+empty sections and explicit zero metadata; a receipt is retained only when valid
+previous ranges exist. Changed-source receipts are ignored as above while search
+uses the current redacted content.
+
+Optional adaptive-v2 `source_sections[].read_receipt` seeds already-delivered
+ranges from the existing current-source hash without another source read. Receipts
+are attached before source-option token estimation and fallback budget fitting;
+strict-v1 source sections and canonical guide bytes remain unchanged. Copy the
+complete receipt into `seen` for that file; carry later cumulative receipts forward.
+The format is `r1:<lowercase SHA256 fingerprint>:<start>-<end>,...`. The fingerprint
+hashes the version domain, canonical absolute real source path and current raw file
+SHA256 with NUL separators. A changed file invalidates old ranges. Receipts describe
+caller-reported delivery, not security proofs or read authority.
+
+Requests allow at most 16 entries, 32 requested ranges or merged find windows,
+500 lines per original range, 1000 requested lines total, 64 supplied receipts,
+64 intervals per receipt and 64 KiB JSON. Find windows are resolved and merged
+before combined interval/line caps apply; ranges-only counting is unchanged.
+Find pages are reduced automatically until these caps are met, retaining at
+least one match per matching selector in every delivered file, after which later
+whole files are paged. A request still fails atomically when one file's exact
+ranges or minimum find page cannot fit; reduce ranges, `before`, or `after`, or
+split the request. Each receipt
+is at most 4096 bytes. Responses, including receipts and the CLI newline, are
+bounded to 24 KiB. Cumulative receipts also allow at most 64 intervals. Malformed,
+versionless, structurally out-of-bounds receipts, and matching receipts beyond
+current EOF fail atomically. Valid receipts for different content/path are reported
+as ignored even if the old file was longer. Automatic find paging never claims
+unreturned lines as delivered; its explicit cursor and `output_limited` marker
+distinguish a partial page from a complete selection.
+
+Only explicitly named indexed source paths are eligible. Generated/Git paths,
+traversal, portable absolute paths, symlink escapes, nonregular, oversized and
+non-UTF8 files are rejected. Requested-root and loaded-workspace confinement both
+apply. Configuration values are redacted with whole-file context before slicing;
+fingerprints still bind the raw bytes. Reads use the existing output read lock and
+write no delivery ledger or cache, and do not modify source or generated data. Missing output locks cause an actionable error without
+creating files; initialize legacy locks separately only under caller authority. Shell readers/searches are not
+intercepted, so their delivered ranges must still be tracked by the caller.
+
+### Answer path and citation validation
+
+`goregraph answer-check --request '<JSON>'` or `--request-file <path>` checks
+explicit Markdown references against a caller-supplied discovery/delivery ledger.
+It neither reads the referenced sources nor authenticates that ledger. The only
+file opened is an explicitly supplied request JSON file. Integrators must derive
+the ledger from actual successful tool output, not receipts or match metadata.
+
+```json
+{"answer":"See `Handler.java:10-12`.","root":"/workspace","files":[{"path":"service/src/Handler.java","ranges":[[10,12]],"redacted_ranges":[]}],"repair_paths":true}
+```
+
+`files[].path` is an exact root-relative discovered identity. `ranges` contains
+inclusive source lines actually delivered; `redacted_ranges` contains delivered
+redacted representations, which do not prove hidden values. A metadata-only
+identity may omit both arrays. `root` supports absolute citations within the
+workspace; it is not opened or searched. Missing, escaping or ambiguous identities
+and uncovered cited lines produce findings. Adjacent delivered intervals cover
+a citation, but disjoint intervals do not prove their unread gap.
+
+When `repair_paths` is true, only uniquely resolvable explicit path tokens are
+expanded from the supplied ledger. If several files share an abbreviated name and
+the citation includes ranges, the identity is resolvable only when exactly one
+candidate covers every cited range in its delivered or redacted ranges. Claims,
+line ranges and identities that remain ambiguous are not rewritten. The result includes `answer`, `valid`, `findings`, `repairs`,
+`checked_references`, `checked_ranges`, `limitations` and
+`semantic_validity: "not_verified"`. A valid result means only that the supported
+explicit syntax passes these checks; it does not certify factual claims, test
+behavior, authorization or completeness of freeform prose. Supported syntax and
+parser limits are listed in command help. Independent semantic review remains
+necessary.
+
+Limits: 1 MiB request, 512 KiB UTF-8 answer, 1024 files, 4096 ledger ranges,
+4096 explicit references, 4096 cited ranges, 4096 bytes per path, and one-based
+line numbers up to 2147483647. Unknown fields, extra JSON values, malformed
+ranges and exceeded limits reject with exit 2. Exit 1 reports validation findings
+as JSON (or an output error); exit 0 reports validity within the stated scope.
+Zero recognized file references fails rather than certifying an unchecked answer.

@@ -68,6 +68,9 @@ func selectContextSourceOptions(
 	}
 	pack = contextPackWithSelectedClientPublicConcerns(pack)
 	concerns := contextSourceConcerns(pack, loaded.Index)
+	if pack.ProtocolVersion == AdaptiveV2 {
+		concerns = appendContextPrimarySourceConcerns(pack, loaded.Index, concerns)
+	}
 	requestedModelIDs := contextRequestedDomainModelIDsFromConcerns(
 		pack,
 		loaded.Index,
@@ -92,6 +95,15 @@ func selectContextSourceOptions(
 		return ContextPack{}, err
 	}
 	options = contextSourceProofFrontier(pack, options, concerns)
+	if pack.ProtocolVersion == AdaptiveV2 {
+		files := make([]ContextFile, 0, len(pack.Files))
+		for _, file := range pack.Files {
+			if contextEvidenceInventoryMandatoryFile(pack, file) {
+				files = append(files, file)
+			}
+		}
+		pack.Files = files
+	}
 
 	basePack := cloneContextPack(pack)
 	pack = cloneContextPack(pack)
@@ -104,23 +116,26 @@ func selectContextSourceOptions(
 	if err != nil {
 		return ContextPack{}, err
 	}
-	sectionRequest, err := contextSourceRequestWithOmissionReserve(
-		pack,
-		request,
-		contextSourceEvidenceOmissionsWithOptions(
+	sectionRequest := request
+	if pack.ProtocolVersion != AdaptiveV2 {
+		sectionRequest, err = contextSourceRequestWithOmissionReserve(
 			pack,
-			loaded.Index,
-			contextSourceConcernsWithoutRenderedOptions(concerns, options),
-			candidates,
-			options,
-			failures,
-			state.coveredConcerns,
-		),
-	)
-	if err != nil {
-		return ContextPack{}, err
+			request,
+			contextSourceEvidenceOmissionsWithOptions(
+				pack,
+				loaded.Index,
+				contextSourceConcernsWithoutRenderedOptions(concerns, options),
+				candidates,
+				options,
+				failures,
+				state.coveredConcerns,
+			),
+		)
+		if err != nil {
+			return ContextPack{}, err
+		}
 	}
-	if request.BudgetTokens >= DefaultContextBudgetTokens {
+	if request.BudgetTokens >= DefaultContextBudgetTokens && pack.ProtocolVersion != AdaptiveV2 {
 		basePack, err = appendContextEvidenceInventory(
 			basePack,
 			sectionRequest,
@@ -139,6 +154,12 @@ func selectContextSourceOptions(
 		if err != nil {
 			return ContextPack{}, err
 		}
+	}
+
+	if pack.ProtocolVersion == AdaptiveV2 {
+		inventoryBoundaries := contextCoreSourceBoundariesWithRelated(pack, loaded.Index, distances, false)
+		pack = reserveContextCoreSourceInventory(pack, options, concerns, inventoryBoundaries, request.MaxFiles)
+		basePack = reserveContextCoreSourceInventory(basePack, options, concerns, inventoryBoundaries, request.MaxFiles)
 	}
 
 	coreBoundaries := contextCoreSourceBoundaries(pack, loaded.Index, distances)
@@ -175,6 +196,15 @@ func selectContextSourceOptions(
 	)
 	if err != nil {
 		return ContextPack{}, err
+	}
+
+	if pack.ProtocolVersion == AdaptiveV2 {
+		sectionRequest, err = contextSourceRequestWithFollowupReserve(pack, request,
+			contextSourceEvidenceOmissionsForReserve(pack, loaded.Index, concerns, candidates,
+				options, failures, contextSourceCoverageFromFinalSections(pack, concerns, options)))
+		if err != nil {
+			return ContextPack{}, err
+		}
 	}
 
 	for len(pack.SourceSections) < MaxContextSourceSections {
@@ -222,7 +252,7 @@ func selectContextSourceOptions(
 	}
 	covered := contextSourceCoverageFromFinalSections(pack, concerns, options)
 	applyContextSourceCoverage(&pack, concerns, covered)
-	if contextQueryRequestsExactEvidenceInventory(contextSelectionQuery(pack)) {
+	if contextQueryRequestsExactEvidenceInventory(contextEvidenceSelectionQuery(pack)) {
 		reconcileRequest, err := contextSourceRequestWithOmissionReserve(
 			pack,
 			request,
@@ -253,7 +283,11 @@ func selectContextSourceOptions(
 		covered = contextSourceCoverageFromFinalSections(pack, concerns, options)
 		applyContextSourceCoverage(&pack, concerns, covered)
 	}
-	for _, omission := range contextSourceEvidenceOmissionsWithOptions(
+	omissionLimit := MaxContextSourceOmissions
+	if pack.ProtocolVersion == AdaptiveV2 {
+		omissionLimit = 0
+	}
+	for _, omission := range contextSourceEvidenceOmissionsWithOptionsLimit(
 		pack,
 		loaded.Index,
 		concerns,
@@ -261,6 +295,7 @@ func selectContextSourceOptions(
 		options,
 		failures,
 		covered,
+		omissionLimit,
 	) {
 		candidate := cloneContextPack(pack)
 		candidate.SourceOmissions = append(candidate.SourceOmissions, omission)
@@ -274,6 +309,9 @@ func selectContextSourceOptions(
 		}
 		if fits {
 			pack = candidate
+			if len(pack.SourceOmissions) == MaxContextSourceOmissions {
+				break
+			}
 		}
 	}
 	if pack.SourceCoverage == "complete" {
@@ -508,6 +546,7 @@ func contextSourceRequestWithOmissionReserve(
 		probe.SourceOmissions,
 		omissions[:min(len(omissions), MaxContextSourceOmissions)]...,
 	)
+	probe = adaptiveContextMetadata(probe)
 	probe, err = finalizeContextEstimate(probe)
 	if err != nil {
 		return ContextRequest{}, err
@@ -535,6 +574,39 @@ func contextSourceRequestWithOmissionReserve(
 	return request, nil
 }
 
+func contextSourceRequestWithFollowupReserve(
+	pack ContextPack,
+	request ContextRequest,
+	omissions []ContextSourceOmission,
+) (ContextRequest, error) {
+	useful := make([]ContextSourceOmission, 0, maximumContextVerificationRequests)
+	result := request
+	for _, omission := range omissions {
+		probe := cloneContextPack(pack)
+		probe.SourceOmissions = []ContextSourceOmission{omission}
+		if len(contextVerificationRequests(probe)) == 0 {
+			continue
+		}
+		potential := append(useful, omission)
+		reserved, err := contextSourceRequestWithOmissionReserve(pack, request, potential)
+		if err != nil {
+			return ContextRequest{}, err
+		}
+		fits, err := contextSourcePackFits(pack, reserved)
+		if err != nil {
+			return ContextRequest{}, err
+		}
+		if fits && reserved.BudgetTokens < request.BudgetTokens {
+			useful = potential
+			result = reserved
+			if len(useful) == maximumContextVerificationRequests {
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
 func contextSourceSectionsProductionFirst(sections []ContextSourceSection) []ContextSourceSection {
 	result := make([]ContextSourceSection, 0, len(sections))
 	for _, section := range sections {
@@ -553,7 +625,7 @@ func contextSourceSectionsProductionFirst(sections []ContextSourceSection) []Con
 func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord) []contextConcern {
 	planned := []contextConcern(nil)
 	if seed, ok := contextConcernPlanningSeed(index, contextSelectionQuery(pack)); ok {
-		planned = planContextConcerns(contextSelectionQuery(pack), index, seed)
+		planned = planContextSourceConcerns(contextSelectionQuery(pack), index, seed, pack.ProtocolVersion)
 	}
 	plannedByKey := make(map[string]int, len(planned))
 	for index, concern := range planned {
@@ -643,7 +715,7 @@ func contextSourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord)
 		contractProjects,
 		modelProjects,
 	)
-	if !contextQueryRequestsExactEvidenceInventory(contextSelectionQuery(pack)) {
+	if !contextQueryRequestsExactEvidenceInventory(contextEvidenceSelectionQuery(pack)) {
 		return expanded
 	}
 	result := make([]contextConcern, 0, len(expanded))
@@ -700,6 +772,9 @@ func contextRequiredEvidenceConcernForRoles(
 	contractProjects map[string]bool,
 	modelProjects map[string]bool,
 ) bool {
+	if strings.HasPrefix(concern.facet, "related:") {
+		return concern.required
+	}
 	switch concern.kind {
 	case contextConcernAuth:
 		return endpointProjects[concern.project] ||
@@ -1045,7 +1120,7 @@ func expandContextEvidenceConcernsWithProfile(
 			result = append(result, concern)
 		}
 	}
-	if contextQueryRequestsExactEvidenceInventory(query) {
+	if contextQueryRequestsExactEvidenceInventory(contextEvidenceSelectionQuery(pack)) {
 		result = append(result, contextExactInventoryEvidenceConcerns(pack, index, result)...)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].key < result[j].key })
@@ -1126,8 +1201,14 @@ func contextExactInventoryEvidenceConcerns(
 				}
 				if concern.kind == contextConcernConfiguration {
 					for _, fact := range allFacts {
+						if pack.ProtocolVersion == AdaptiveV2 &&
+							contextStableFactIdentityMatchCount(fact, anchors) == 0 &&
+							!contextExactInventoryConfigurationOwnerSupportsSelectedContract(pack, index, fact) &&
+							!contextExactInventoryConfigurationOwnerSupportsResource(fact, anchoredFacts) {
+							continue
+						}
 						if contextRequestedConfigurationFactScore(
-							contextSelectionQuery(pack),
+							contextEvidenceSelectionQuery(pack),
 							fact,
 						) > 0 {
 							facts = append(facts, fact)
@@ -1283,13 +1364,13 @@ func contextExactInventoryEvidenceConcerns(
 			for _, fact := range group.facts {
 				bestRequestedScore = max(
 					bestRequestedScore,
-					contextRequestedConfigurationFactScore(query, fact),
+					contextRequestedConfigurationFactScore(contextEvidenceSelectionQuery(pack), fact),
 				)
 			}
 			if bestRequestedScore > 0 {
 				requestedFacts := group.facts[:0]
 				for _, fact := range group.facts {
-					if contextRequestedConfigurationFactScore(query, fact) == bestRequestedScore {
+					if contextRequestedConfigurationFactScore(contextEvidenceSelectionQuery(pack), fact) == bestRequestedScore {
 						requestedFacts = append(requestedFacts, fact)
 					}
 				}
@@ -2087,7 +2168,7 @@ func contextPackWithSelectedClientPublicConcerns(pack ContextPack) ContextPack {
 		contextConcernConfiguration,
 		contextConcernResilience,
 	} {
-		if !contextQueryRequestsConcern(contextSelectionQuery(pack), kind) {
+		if !contextQueryRequestsConcern(contextEvidenceSelectionQuery(pack), kind) {
 			continue
 		}
 		missingProjects := []string{}
@@ -2848,6 +2929,9 @@ func appendContextSourceCandidateOptions(
 			contextSourceRecordFailure(failures, candidate, stableContextSourceOmissionReason(renderErr))
 			continue
 		}
+		if pack.ProtocolVersion == AdaptiveV2 {
+			attachSourceReadReceipt(&section, file)
+		}
 		verified, rejected := verifiedContextSourceFactIDs(pack, index, candidate, file, section)
 		for factID, reason := range rejected {
 			if _, recorded := failures[factID]; !recorded {
@@ -3183,7 +3267,7 @@ func contextRequestedDomainModelIDs(
 ) map[string]bool {
 	planned := []contextConcern(nil)
 	if seed, ok := contextConcernPlanningSeed(index, contextSelectionQuery(pack)); ok {
-		planned = planContextConcerns(contextSelectionQuery(pack), index, seed)
+		planned = planContextSourceConcerns(contextSelectionQuery(pack), index, seed, pack.ProtocolVersion)
 	}
 	return contextRequestedDomainModelIDsFromConcerns(pack, index, planned)
 }
@@ -3510,6 +3594,10 @@ func contextSourceOptionConcernsWithAction(
 			covered = candidate.Role != "test" && normalizeContextProject(candidate.Project) == concern.project
 		}
 		if !covered {
+			if len(concern.candidateFactIDs) > 0 &&
+				(concern.kind == contextConcernConfiguration || concern.kind == contextConcernResilience) {
+				continue
+			}
 			covered = contextSourceSectionSupportsConcern(section, concern)
 		}
 		if !covered {
@@ -3619,6 +3707,27 @@ func contextSourceSectionSupportsEvidence(
 		return contextSourceSectionSupportsConcern(section, concern)
 	}
 	content := strings.ToLower(contextSourceSemanticContent(section.Content))
+	if concern.kind == contextConcernPrimaryPath && strings.HasPrefix(concern.facet, "primary_declaration:") {
+		return section.RenderMode == "declaration_body" || section.RenderMode == "body"
+	}
+	if strings.HasPrefix(concern.facet, "related:") && concern.kind == contextConcernHTTPContract {
+		return section.RenderMode != "signature" && contextSourceContainsAny(content,
+			"@getmapping", "@postmapping", "@putmapping", "@deletemapping", "@requestmapping",
+			".exchange(", ".getforobject(", ".getforentity(", ".postforentity(", ".retrieve(",
+			"http.newrequest(", "fetch(")
+	}
+	if strings.HasPrefix(concern.facet, "related:") && concern.kind == contextConcernResilience {
+		return section.RenderMode != "signature" && contextSourceContainsAny(content,
+			"@retryable", "retrytemplate", ".retry(", ".retrywhen(", "@recover")
+	}
+	if concern.kind == contextConcernDomainModel && strings.HasPrefix(concern.facet, "model_identity:") {
+		for _, line := range strings.Split(content, "\n") {
+			if _, found := contextSourceTypeDeclarationLine(strings.TrimSpace(line)); found {
+				return true
+			}
+		}
+		return false
+	}
 	switch concern.kind + "#" + concern.facet {
 	case contextConcernAuth + "#client_transport":
 		return contextSourceContainsAny(
@@ -3724,10 +3833,14 @@ func contextSourceSectionSupportsConcern(
 			"securityfilterchain",
 		)
 	case contextConcernConfiguration:
-		return section.RenderMode != "signature" && isContextConfigurationResource(section.Path) ||
-			section.RenderMode != "signature" && contextValueRequestsConcern(semanticContent, contextConcernConfiguration) ||
+		if section.RenderMode == "signature" {
+			return false
+		}
+		return isContextConfigurationResource(section.Path) ||
+			contextValueRequestsConcern(semanticContent, contextConcernConfiguration) &&
+				(contextSourceSectionSupportsDomainModel(section) || strings.Contains(content, "@import(") ||
+					strings.Contains(content, "@bean") && contextSourceContainsAny(content, "return ", "return\t")) ||
 			contextSourceContainsAny(content,
-				"@configurationproperties",
 				"@value(",
 				"configuration.",
 				"config.",
@@ -4099,7 +4212,7 @@ func contextSourceCandidateQualityForFacts(
 			quality = max(
 				quality,
 				60*stableMatches+confidence+
-					contextRequestedConfigurationFactScore(contextSelectionQuery(pack), fact),
+					contextRequestedConfigurationFactScore(contextEvidenceSelectionQuery(pack), fact),
 			)
 		}
 	case contextConcernDomainModel:
@@ -4324,6 +4437,74 @@ type contextSourceBoundary struct {
 	project string
 }
 
+func appendContextPrimarySourceConcerns(pack ContextPack, index scan.AgentContextIndexRecord, concerns []contextConcern) []contextConcern {
+	var primary contextConcern
+	for _, concern := range concerns {
+		if concern.kind == contextConcernPrimaryPath && concern.facet == "" {
+			primary = concern
+			break
+		}
+	}
+	if primary.key == "" {
+		return concerns
+	}
+	boundaries := contextCoreSourceBoundariesWithRelated(pack, index, contextSourcePathDistances(pack, index), false)
+	for _, boundary := range boundaries {
+		if boundary.factID == "" {
+			continue
+		}
+		concerns = append(concerns, newExpandedContextEvidenceConcern(primary,
+			"primary_declaration:"+boundary.factID, []string{boundary.factID},
+			"primary declaration body is required to inspect the current operation"))
+	}
+	return concerns
+}
+
+// reserveContextCoreSourceInventory frees file slots for verified primary
+// declarations when supporting inventory would prevent their source selection.
+func reserveContextCoreSourceInventory(pack ContextPack, options []contextSourceOption, concerns []contextConcern, boundaries []contextSourceBoundary, maxFiles int) ContextPack {
+	paths := make(map[string]bool)
+	represented := contextSourceFileKeys(pack)
+	missing := 0
+	for _, boundary := range boundaries {
+		for _, option := range options {
+			if boundary.factID == "" || option.candidate.InventoryOnly || !contextSourceCandidateHasFact(option.candidate, boundary.factID) {
+				continue
+			}
+			key := contextEvidenceInventoryPathKey(option.section.Project, option.section.Path)
+			if !paths[key] && !represented[key] {
+				missing++
+			}
+			paths[key] = true
+			break
+		}
+	}
+	candidates := contextEvidenceInventoryCandidates(pack, options, concerns)
+	for contextSourceFileCount(pack)+missing > maxFiles {
+		bestIndex := -1
+		bestScore := contextEvidenceInventoryScore{}
+		for i, file := range pack.Files {
+			if paths[contextEvidenceInventoryPathKey(file.Project, file.Path)] || contextEvidenceInventoryMandatoryFile(pack, file) {
+				continue
+			}
+			trial := cloneContextPack(pack)
+			trial.Files = append(trial.Files[:i], trial.Files[i+1:]...)
+			if contextSourceFileCount(trial) >= contextSourceFileCount(pack) {
+				continue
+			}
+			score := contextEvidenceInventoryScoreFor(trial, candidates)
+			if bestIndex < 0 || betterContextEvidenceInventoryScore(score, bestScore) {
+				bestIndex, bestScore = i, score
+			}
+		}
+		if bestIndex < 0 {
+			break
+		}
+		pack.Files = append(pack.Files[:bestIndex], pack.Files[bestIndex+1:]...)
+	}
+	return pack
+}
+
 func mandatoryContextSourceBoundaries(
 	index scan.AgentContextIndexRecord,
 	concerns []contextConcern,
@@ -4364,6 +4545,10 @@ func contextCoreSourceBoundaries(
 	index scan.AgentContextIndexRecord,
 	distances map[string]int,
 ) []contextSourceBoundary {
+	return contextCoreSourceBoundariesWithRelated(pack, index, distances, true)
+}
+
+func contextCoreSourceBoundariesWithRelated(pack ContextPack, index scan.AgentContextIndexRecord, distances map[string]int, includeRelated bool) []contextSourceBoundary {
 	factByID := make(map[string]scan.AgentContextFactRecord, len(index.Facts))
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
@@ -4436,6 +4621,9 @@ func contextCoreSourceBoundaries(
 	})
 	if len(candidates) > 0 {
 		boundaries = append(boundaries, contextSourceBoundary{factID: candidates[0].factID})
+	}
+	if !includeRelated {
+		return boundaries
 	}
 	boundaryFactIDs := make(map[string]bool, len(boundaries))
 	for _, boundary := range boundaries {
@@ -4833,6 +5021,7 @@ func contextSourceOptionFits(
 		return false, nil
 	}
 	candidate := cloneContextPack(pack)
+	candidate = contextSourceInventoryForOption(candidate, request, option, concerns)
 	if !reusesSection {
 		candidate.SourceSections = append(candidate.SourceSections, option.section)
 	}
@@ -4878,6 +5067,10 @@ func contextSourceSectionAlreadyPresent(pack ContextPack, section ContextSourceS
 }
 
 func contextSourceFileCount(pack ContextPack) int {
+	return len(contextSourceFileKeys(pack))
+}
+
+func contextSourceFileKeys(pack ContextPack) map[string]bool {
 	files := make(map[string]bool)
 	add := func(project, path string) {
 		project = normalizeContextProject(project)
@@ -4907,7 +5100,7 @@ func contextSourceFileCount(pack ContextPack) int {
 	for _, section := range pack.SourceSections {
 		add(section.Project, section.Path)
 	}
-	return len(files)
+	return files
 }
 
 func addContextSourceOption(
@@ -4917,6 +5110,7 @@ func addContextSourceOption(
 	concerns []contextConcern,
 	state contextSourceSelectionState,
 ) (ContextPack, contextSourceSelectionState, error) {
+	pack = contextSourceInventoryForOption(cloneContextPack(pack), request, option, concerns)
 	if !contextSourceSectionAlreadyPresent(pack, option.section) {
 		pack.SourceSections = append(pack.SourceSections, option.section)
 	}
@@ -4963,6 +5157,16 @@ func addContextSourceOption(
 		return ContextPack{}, state, fmt.Errorf("selected context source option no longer fits the response budget")
 	}
 	return pack, state, nil
+}
+
+func contextSourceInventoryForOption(pack ContextPack, request ContextRequest, option contextSourceOption, concerns []contextConcern) ContextPack {
+	if pack.ProtocolVersion != AdaptiveV2 || request.MaxFiles <= 0 ||
+		contextSourceFileCount(pack) < request.MaxFiles ||
+		contextSourceFileKeys(pack)[contextEvidenceInventoryPathKey(option.section.Project, option.section.Path)] {
+		return pack
+	}
+	return reserveContextCoreSourceInventory(pack, []contextSourceOption{option}, concerns,
+		[]contextSourceBoundary{{factID: option.candidate.FactID}}, request.MaxFiles)
 }
 
 func contextProjectedSourceFile(
@@ -5366,6 +5570,15 @@ func contextSourceEvidenceOmissionsWithOptionsLimit(
 			options,
 			failures,
 		)
+		if pack.ProtocolVersion == AdaptiveV2 &&
+			omission.Reason == "source section does not fit the response budget" &&
+			omission.Path != "" && omission.StartLine > 0 && omission.EndLine >= omission.StartLine &&
+			len(contextUnseenVerificationRanges(pack, ContextVerificationRequest{
+				Project: omission.Project, Path: omission.Path,
+				StartLine: omission.StartLine, EndLine: omission.EndLine,
+			})) == 0 {
+			continue
+		}
 		if concern.exactInventory && contextEvidenceInventoryPathRepresented(pack, ContextFile{
 			Project: omission.Project,
 			Path:    omission.Path,
@@ -5446,7 +5659,14 @@ func contextSourceOmissionPriority(
 	if contextPackSourceFile(omission.Path) == "" {
 		return 0
 	}
-	if contextQueryRequestsExactEvidenceInventory(contextSelectionQuery(pack)) &&
+	if pack.ProtocolVersion == AdaptiveV2 && concern.kind == contextConcernPrimaryPath &&
+		strings.HasPrefix(concern.facet, "primary_declaration:") {
+		return 4_000
+	}
+	if pack.ProtocolVersion == AdaptiveV2 && concern.exactInventory {
+		return 1
+	}
+	if pack.ProtocolVersion != AdaptiveV2 && contextQueryRequestsExactEvidenceInventory(contextSelectionQuery(pack)) &&
 		concern.kind == contextConcernConfiguration && concern.facet == "binding" {
 		return 3_000
 	}

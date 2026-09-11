@@ -58,3 +58,26 @@ func TestSharedLockOpensReadOnlyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWithExistingReadsNeverCreatesMissingLock(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "output")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	err := WithExistingReads(context.Background(), []string{root}, func() error { called = true; return nil })
+	if !errors.Is(err, os.ErrNotExist) || called {
+		t.Fatalf("missing lock did not fail closed: %v callback=%v", err, called)
+	}
+	entries, err := os.ReadDir(parent)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "output" {
+		t.Fatalf("read created state: %v %v", entries, err)
+	}
+	if err := WithReads(context.Background(), []string{root}, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := WithExistingReads(context.Background(), []string{root}, func() error { called = true; return nil }); err != nil || !called {
+		t.Fatalf("existing lock read failed: %v callback=%v", err, called)
+	}
+}

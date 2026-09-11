@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,9 +39,11 @@ type sourceCandidate struct {
 type sourceFile struct {
 	Path  string
 	Lines []string
+	Hash  string
 }
 
 type ContextSourceSection struct {
+	ReadReceipt string `json:"read_receipt,omitempty"`
 	Project     string `json:"project,omitempty"`
 	Path        string `json:"path"`
 	StartLine   int    `json:"start_line"`
@@ -72,7 +76,7 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
-	query := contextSelectionQuery(pack)
+	query := contextEvidenceSelectionQuery(pack)
 	preferredConfigurationByPath := make(map[string]scan.AgentContextFactRecord)
 	for _, fact := range index.Facts {
 		if normalizedContextConcernKind(fact.Kind) != contextConcernConfiguration ||
@@ -89,7 +93,7 @@ func contextSourceCandidates(pack ContextPack, index scan.AgentContextIndexRecor
 			preferredConfigurationByPath[key] = fact
 		}
 	}
-	includeTests := contextQueryRequestsTests(contextSelectionQuery(pack))
+	includeTests := contextQueryRequestsTests(contextEvidenceSelectionQuery(pack))
 
 	candidates := make([]sourceCandidate, 0, len(pack.selectedSourceFactIDs))
 	added := make(map[string]bool, len(pack.selectedSourceFactIDs))
@@ -274,7 +278,8 @@ func contextSourceCandidatesForConcernsWithModels(
 				bestBySource[key] = fact
 			}
 		}
-		facts = facts[:0]
+		declarations := facts
+		facts = make([]scan.AgentContextFactRecord, 0, len(bestBySource))
 		for _, fact := range bestBySource {
 			facts = append(facts, fact)
 		}
@@ -312,6 +317,37 @@ func contextSourceCandidatesForConcernsWithModels(
 				selected[fact.ID] = true
 				selectedForConcern[fact.ID] = true
 				paired++
+			}
+		}
+		if len(selectedForConcern) < maximumContextSourcePlanningCandidates {
+			type declarationKey struct {
+				project string
+				path    string
+				line    int
+			}
+			keyForFact := func(fact scan.AgentContextFactRecord) declarationKey {
+				return declarationKey{normalizeContextProject(fact.Project), contextPackSourceFile(fact.File), fact.Line}
+			}
+			planned := make(map[declarationKey]bool, len(selectedForConcern))
+			for _, fact := range facts {
+				if selectedForConcern[fact.ID] {
+					planned[keyForFact(fact)] = true
+				}
+			}
+			sort.Slice(declarations, func(left, right int) bool {
+				return factLess(declarations[left], declarations[right])
+			})
+			for _, fact := range declarations {
+				if len(selectedForConcern) == maximumContextSourcePlanningCandidates {
+					break
+				}
+				key := keyForFact(fact)
+				if fact.Line <= 0 || planned[key] {
+					continue
+				}
+				planned[key] = true
+				selected[fact.ID] = true
+				selectedForConcern[fact.ID] = true
 			}
 		}
 	}
@@ -713,7 +749,7 @@ func contextFactMatchesSelectedEndpoint(fact scan.AgentContextFactRecord, endpoi
 }
 
 func contextQueryRequestsTests(query string) bool {
-	tokens := contextTokenSet(query)
+	tokens := contextExpandedTokenSet(query)
 	for _, token := range []string{"test", "tests", "testing", "junit", "jest", "playwright"} {
 		if tokens[token] {
 			return true
@@ -890,6 +926,9 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 		}, nil
 	}
 	declarations := declarationOccurrences(file.Path, codeLines, occurrences)
+	if len(declarations) == 0 && candidate.Kind == "test" && scriptTestSourcePath(candidate.Path) {
+		return renderScriptTestSource(candidate, file)
+	}
 
 	declaration := sourceOccurrence{}
 	state := ""
@@ -2409,6 +2448,7 @@ func readSourceFile(path string) (sourceFile, error) {
 	if !utf8.Valid(body) {
 		return sourceFile{}, fmt.Errorf("source file is not valid UTF-8")
 	}
+	sum := sha256.Sum256(body)
 	normalized := strings.ReplaceAll(string(body), "\r\n", "\n")
 	if isContextConfigurationResource(path) {
 		normalized = strings.ReplaceAll(normalized, "\r", "\n")
@@ -2416,5 +2456,6 @@ func readSourceFile(path string) (sourceFile, error) {
 	return sourceFile{
 		Path:  path,
 		Lines: strings.Split(normalized, "\n"),
+		Hash:  hex.EncodeToString(sum[:]),
 	}, nil
 }

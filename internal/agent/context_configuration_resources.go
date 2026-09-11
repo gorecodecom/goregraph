@@ -22,32 +22,51 @@ func contextConfigurationResources(
 	index scan.AgentContextIndexRecord,
 ) []ContextConfigurationResourceGroup {
 	query := contextSelectionQuery(pack)
-	if !contextQueryRequestsConcern(query, contextConcernConfiguration) ||
-		!contextQueryRequestsExactEvidenceInventory(query) {
+	evidenceQuery := contextEvidenceSelectionQuery(pack)
+	if !contextQueryRequestsConcern(evidenceQuery, contextConcernConfiguration) ||
+		!contextQueryRequestsExactEvidenceInventory(evidenceQuery) {
 		return nil
 	}
 	aliases := contextProjectAliases(index.Facts, index.Coverage)
 	explicitProjects := contextExplicitProjects(query, aliases)
-	if len(explicitProjects) == 0 {
+	eligibleProjects := explicitProjects
+	if len(eligibleProjects) == 0 && pack.ProtocolVersion == AdaptiveV2 {
+		eligibleProjects = contextSelectedConfigurationProjects(pack, index, evidenceQuery)
+	}
+	if len(eligibleProjects) == 0 {
 		return nil
 	}
 	represented := contextPlanFileRepresentedPaths(pack)
+	identityProjects := make(map[string]bool)
+	if pack.ProtocolVersion == AdaptiveV2 && contextChangePlanInventoryEligible(pack) {
+		if entrypointProject := contextPlanFileEntrypointProject(pack); entrypointProject != "" {
+			identityProjects = contextSelectedSourceNavigationProjects(pack, index)
+			identityProjects[entrypointProject] = true
+		}
+	}
 
 	rankedByPath := make(map[string]rankedContextConfigurationResource)
+	matchedKeyProjects := make(map[string]bool)
 	for _, fact := range index.Facts {
 		project := normalizeContextProject(fact.Project)
 		path := contextExactInventoryPath(fact.File)
-		if !explicitProjects[project] ||
+		if !eligibleProjects[project] ||
 			normalizedContextConcernKind(fact.Kind) != contextConcernConfiguration ||
 			!strings.EqualFold(strings.TrimSpace(fact.Confidence), "EXACT") ||
-			path == "" || !isContextConfigurationResource(path) ||
-			strings.EqualFold(strings.TrimSpace(fact.Summary), "Spring configuration resource") ||
-			strings.EqualFold(strings.TrimSpace(fact.Name), filepath.Base(fact.File)) {
+			path == "" || !isContextConfigurationResource(path) {
 			continue
 		}
-		score := contextRequestedConfigurationFactScore(query, fact)
-		if score == 0 {
+		resourceIdentity := strings.EqualFold(strings.TrimSpace(fact.Summary), "Spring configuration resource")
+		score := contextRequestedConfigurationFactScore(evidenceQuery, fact)
+		if resourceIdentity {
+			if !identityProjects[project] {
+				continue
+			}
+			score = 1
+		} else if score == 0 || strings.EqualFold(strings.TrimSpace(fact.Name), filepath.Base(fact.File)) {
 			continue
+		} else {
+			matchedKeyProjects[project] = true
 		}
 		key := contextEvidenceInventoryPathKey(project, path)
 		if represented[key] {
@@ -63,7 +82,7 @@ func contextConfigurationResources(
 			}
 		}
 		name := strings.TrimSpace(fact.Name)
-		if name != "" && !slicesContainsString(candidate.keyGroups, name) {
+		if !resourceIdentity && name != "" && !slicesContainsString(candidate.keyGroups, name) {
 			candidate.keyGroups = append(candidate.keyGroups, name)
 		}
 		candidate.score = max(candidate.score, score)
@@ -72,6 +91,9 @@ func contextConfigurationResources(
 
 	ranked := make([]rankedContextConfigurationResource, 0, len(rankedByPath))
 	for _, candidate := range rankedByPath {
+		if candidate.score == 1 && matchedKeyProjects[candidate.project] {
+			continue
+		}
 		sort.Strings(candidate.keyGroups)
 		ranked = append(ranked, candidate)
 	}
@@ -122,6 +144,127 @@ func contextConfigurationResources(
 			strings.Join(result[right].KeyGroups, "\x00")
 	})
 	return result
+}
+
+func contextSelectedConfigurationProjects(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	query string,
+) map[string]bool {
+	projects := make(map[string]bool)
+	add := func(value string) {
+		if project := normalizeContextProject(value); project != "" {
+			projects[project] = true
+		}
+	}
+	for _, entrypoint := range pack.Entrypoints {
+		add(entrypoint.Project)
+	}
+	for _, section := range pack.SourceSections {
+		add(section.Project)
+	}
+	selectedSourceFacts := make(map[string]bool, len(pack.selectedSourceFactIDs))
+	for _, factID := range pack.selectedSourceFactIDs {
+		selectedSourceFacts[factID] = true
+	}
+	for _, fact := range index.Facts {
+		if selectedSourceFacts[fact.ID] {
+			add(fact.Project)
+		}
+	}
+	for _, concern := range pack.Concerns {
+		if contextQueryRequestsConcern(query, normalizedContextConcernKind(concern.Kind)) {
+			add(concern.Project)
+		}
+	}
+	return projects
+}
+
+func fitInferredConfigurationNavigationWithinBudget(
+	pack ContextPack,
+	index scan.AgentContextIndexRecord,
+	request ContextRequest,
+) (ContextPack, bool, error) {
+	if pack.ProtocolVersion != AdaptiveV2 || len(pack.ConfigurationResources) == 0 {
+		return pack, false, nil
+	}
+	aliases := contextProjectAliases(index.Facts, index.Coverage)
+	if len(contextExplicitProjects(contextSelectionQuery(pack), aliases)) != 0 {
+		return pack, false, nil
+	}
+
+	candidate := cloneContextPack(pack)
+	if contextChangePlanInventoryEligible(pack) &&
+		contextQueryRequestsExactEvidenceInventory(contextEvidenceSelectionQuery(pack)) {
+		fits, err := contextSourcePackFits(pack, request)
+		if err != nil {
+			return ContextPack{}, false, err
+		}
+		if !fits {
+			files := candidate.Files[:0]
+			for _, file := range candidate.Files {
+				if !contextConfigurationFileRepeatedBySource(file, candidate.SourceSections) {
+					files = append(files, file)
+				}
+			}
+			candidate.Files = files
+			if len(candidate.Files) != len(pack.Files) {
+				candidate, err = finalizeContextEstimate(candidate)
+				if err != nil {
+					return ContextPack{}, false, err
+				}
+				fits, err = contextSourcePackFits(candidate, request)
+				if err != nil {
+					return ContextPack{}, false, err
+				}
+				if fits {
+					return candidate, true, nil
+				}
+			}
+		}
+	}
+	for len(candidate.ConfigurationResources) > 0 {
+		lastGroup := len(candidate.ConfigurationResources) - 1
+		resources := candidate.ConfigurationResources[lastGroup].Resources
+		resources = resources[:len(resources)-1]
+		if len(resources) == 0 {
+			candidate.ConfigurationResources = candidate.ConfigurationResources[:lastGroup]
+		} else {
+			candidate.ConfigurationResources[lastGroup].Resources = resources
+		}
+		var err error
+		candidate, err = finalizeContextEstimate(candidate)
+		if err != nil {
+			return ContextPack{}, false, err
+		}
+		fits, err := contextSourcePackFits(candidate, request)
+		if err != nil {
+			return ContextPack{}, false, err
+		}
+		if fits {
+			return candidate, true, nil
+		}
+	}
+	return pack, false, nil
+}
+
+func contextConfigurationFileRepeatedBySource(file ContextFile, sections []ContextSourceSection) bool {
+	project := normalizeContextProject(file.Project)
+	path := contextExactInventoryPath(file.Path)
+	if project == "" || path == "" || file.StartLine <= 0 || file.EndLine < file.StartLine ||
+		file.Reason != "" || file.Confidence != "" {
+		return false
+	}
+	for _, section := range sections {
+		if normalizeContextProject(section.Project) == project &&
+			contextExactInventoryPath(section.Path) == path &&
+			section.StartLine == file.StartLine && section.EndLine == file.EndLine &&
+			section.Role == file.Role && strings.TrimSpace(section.Content) != "" &&
+			(section.SourceState == "indexed_range_current" || section.SourceState == "relocated_current") {
+			return true
+		}
+	}
+	return false
 }
 
 func contextConfigurationProfile(path string) string {

@@ -22,7 +22,11 @@ var (
 type fileLock struct{ file *os.File }
 
 func acquireFileLock(ctx context.Context, path string, shared bool) (*fileLock, error) {
-	file, err := openLockFile(path, shared)
+	return acquireFileLockMode(ctx, path, shared, true)
+}
+
+func acquireFileLockMode(ctx context.Context, path string, shared, createMissing bool) (*fileLock, error) {
+	file, err := openLockFile(path, shared, createMissing)
 	if err != nil {
 		return nil, err
 	}

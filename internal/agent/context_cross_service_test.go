@@ -106,6 +106,8 @@ func TestContextSelectionIsLanguageNeutral(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := contextSelectionSnapshotForPack(pack)
+		// Syntax and byte costs can change render modes without changing evidence.
+		got.RenderModes = nil
 		if !reflect.DeepEqual(got.FactIDs, wantFactIDs) ||
 			!reflect.DeepEqual(got.ConcernKeys, wantConcernKeys) ||
 			got.SourceCoverage != "complete" {

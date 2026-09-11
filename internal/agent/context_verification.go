@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"path"
 	"sort"
 	"strings"
@@ -12,14 +13,29 @@ const maximumContextVerificationRequests = 3
 
 const adaptivePartialAnalysisReason = "analysis coverage is partial; selected evidence may omit unsupported or budget-limited files"
 
+func adaptiveContextHealthReserve(health scan.ProjectionHealth) (int, error) {
+	base := ContextPack{ProtocolVersion: AdaptiveV2}
+	before, err := json.Marshal(base)
+	if err != nil {
+		return 0, err
+	}
+	after, err := json.Marshal(applyAdaptiveContextHealth(base, health))
+	if err != nil {
+		return 0, err
+	}
+	return (len(after)-len(before)+3)/4 + 1, nil
+}
+
 const (
-	ContextFallbackIndexMissing        = "index_missing"
-	ContextFallbackIndexStale          = "index_stale"
-	ContextFallbackAmbiguousEntrypoint = "ambiguous_entrypoint"
-	ContextFallbackUnsupportedAnalysis = "unsupported_analysis"
-	ContextFallbackBudgetExhausted     = "budget_exhausted"
-	ContextFallbackSourceUnreadable    = "source_unreadable"
-	ContextFallbackEvidenceConflict    = "evidence_conflict"
+	ContextFallbackIndexMissing          = "index_missing"
+	ContextFallbackIndexStale            = "index_stale"
+	ContextFallbackAmbiguousEntrypoint   = "ambiguous_entrypoint"
+	ContextFallbackUnsupportedAnalysis   = "unsupported_analysis"
+	ContextFallbackBudgetExhausted       = "budget_exhausted"
+	ContextFallbackSourceUnreadable      = "source_unreadable"
+	ContextFallbackEvidenceConflict      = "evidence_conflict"
+	ContextFallbackInsufficientRelevance = "insufficient_relevance"
+	ContextFallbackInsufficientEvidence  = "insufficient_evidence"
 )
 
 // ContextVerificationRequest identifies one exact source range that may resolve
@@ -41,7 +57,18 @@ func adaptiveContextMetadata(pack ContextPack) ContextPack {
 		return pack
 	}
 	if pack.FallbackRequired {
+		if pack.FallbackReason == "" && len(pack.Concerns) > 0 {
+			pack.FallbackReason = ContextFallbackInsufficientEvidence
+		}
 		pack.FallbackReason = contextFallbackReasonCode(pack)
+	} else if pack.SourceCoverage == "partial" {
+		for _, concern := range pack.Concerns {
+			if !concern.Covered {
+				pack.FallbackRequired = true
+				pack.FallbackReason = ContextFallbackInsufficientEvidence
+				break
+			}
+		}
 	}
 	pack.VerificationRequests = contextVerificationRequests(pack)
 	return pack
@@ -124,6 +151,8 @@ func contextFallbackReasonCode(pack ContextPack) string {
 		ContextFallbackBudgetExhausted,
 		ContextFallbackSourceUnreadable,
 		ContextFallbackEvidenceConflict,
+		ContextFallbackInsufficientRelevance,
+		ContextFallbackInsufficientEvidence,
 	} {
 		if reason == code {
 			return code
@@ -146,6 +175,8 @@ func contextFallbackReasonCode(pack ContextPack) string {
 		}
 	}
 	switch {
+	case strings.Contains(reason, "no sufficiently relevant") || strings.Contains(reason, "confidence is low"):
+		return ContextFallbackInsufficientRelevance
 	case strings.Contains(reason, "budget") || strings.Contains(reason, "exceeds"):
 		return ContextFallbackBudgetExhausted
 	case strings.Contains(reason, "ambiguous") || strings.Contains(reason, "not exactly one") ||
@@ -176,18 +207,21 @@ func contextVerificationRequests(pack ContextPack) []ContextVerificationRequest 
 			!verifiableContextOmissionReason(omission.Reason) {
 			continue
 		}
-		ranked = append(ranked, rankedRequest{
-			request: ContextVerificationRequest{
-				Project: strings.TrimSpace(omission.Project),
-				Path:    requestPath, StartLine: omission.StartLine, EndLine: omission.EndLine,
-				Reason: strings.TrimSpace(omission.Reason),
-			},
-			priority: contextVerificationPriority(pack, omission),
-		})
+		request := ContextVerificationRequest{
+			Project: strings.TrimSpace(omission.Project),
+			Path:    requestPath, StartLine: omission.StartLine, EndLine: omission.EndLine,
+			Reason: strings.TrimSpace(omission.Reason),
+		}
+		for _, unseen := range contextUnseenVerificationRanges(pack, request) {
+			ranked = append(ranked, rankedRequest{request: unseen, priority: contextVerificationPriority(pack, omission)})
+		}
 	}
 	sort.SliceStable(ranked, func(left, right int) bool {
 		if ranked[left].priority != ranked[right].priority {
 			return ranked[left].priority < ranked[right].priority
+		}
+		if pack.ProtocolVersion == AdaptiveV2 {
+			return false
 		}
 		leftRequest, rightRequest := ranked[left].request, ranked[right].request
 		if leftRequest.Project != rightRequest.Project {
@@ -222,6 +256,36 @@ func contextVerificationRequests(pack ContextPack) []ContextVerificationRequest 
 		}
 	}
 	return requests
+}
+
+func contextUnseenVerificationRanges(pack ContextPack, request ContextVerificationRequest) []ContextVerificationRequest {
+	remaining := []ContextVerificationRequest{request}
+	for _, section := range pack.SourceSections {
+		if normalizeContextProject(section.Project) != normalizeContextProject(request.Project) ||
+			contextPackSourceFile(section.Path) != contextPackSourceFile(request.Path) ||
+			section.StartLine <= 0 || section.EndLine < section.StartLine {
+			continue
+		}
+		next := make([]ContextVerificationRequest, 0, len(remaining)+1)
+		for _, current := range remaining {
+			if section.EndLine < current.StartLine || section.StartLine > current.EndLine {
+				next = append(next, current)
+				continue
+			}
+			if current.StartLine < section.StartLine {
+				left := current
+				left.EndLine = section.StartLine - 1
+				next = append(next, left)
+			}
+			if current.EndLine > section.EndLine {
+				right := current
+				right.StartLine = section.EndLine + 1
+				next = append(next, right)
+			}
+		}
+		remaining = next
+	}
+	return remaining
 }
 
 func safeContextVerificationPath(path string) bool {
@@ -264,13 +328,15 @@ func contextVerificationPriority(pack ContextPack, omission ContextSourceOmissio
 			if strings.Contains(role, "entrypoint") {
 				return 0
 			}
-		case contextConcernPrimaryPath, contextConcernSideEffects:
+		case contextConcernPrimaryPath, contextConcernSideEffects,
+			contextConcernAuth, contextConcernConfiguration, contextConcernResilience:
 			if strings.Contains(role, "call_chain") {
 				return 0
 			}
-		case contextConcernTests, contextConcernAuth, contextConcernConfiguration,
-			contextConcernPersistence, contextConcernHTTPContract:
-			return 0
+		case contextConcernTests, contextConcernPersistence, contextConcernHTTPContract:
+			if role == contextSourceConcernRole(normalizedContextConcernKind(concern.Kind)) {
+				return 0
+			}
 		}
 	}
 	return 1

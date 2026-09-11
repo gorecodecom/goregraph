@@ -110,6 +110,15 @@ func TestSecondPromotionFailureRollsBackFirstSibling(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	var err error
+	first, err = canonicalRoot(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err = canonicalRoot(second)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ops := systemOperations()
 	rename := ops.rename
 	promotions := 0
@@ -123,7 +132,7 @@ func TestSecondPromotionFailureRollsBackFirstSibling(t *testing.T) {
 		}
 		return rename(from, to)
 	}
-	err := updateMany(context.Background(), []UpdateRequest{replacement(second, "new b"), replacement(first, "new a")}, ops)
+	err = updateMany(context.Background(), []UpdateRequest{replacement(second, "new b"), replacement(first, "new a")}, ops)
 	if !errors.Is(err, injected) || promotions != 2 {
 		t.Fatalf("did not fail after first promotion: %v, promotions=%d", err, promotions)
 	}

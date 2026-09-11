@@ -37,10 +37,20 @@ type contextConcern struct {
 	reason           string
 	rank             int
 	exactInventory   bool
+	requireIdentity  bool
 }
 
 func planContextConcerns(
 	query string,
+	index scan.AgentContextIndexRecord,
+	seed scan.AgentContextFactRecord,
+) []contextConcern {
+	return planContextConcernsWithEvidenceQuery(query, query, index, seed)
+}
+
+func planContextConcernsWithEvidenceQuery(
+	query string,
+	evidenceQuery string,
 	index scan.AgentContextIndexRecord,
 	seed scan.AgentContextFactRecord,
 ) []contextConcern {
@@ -97,21 +107,24 @@ func planContextConcerns(
 			"selected entrypoint project",
 		))
 	}
-	if contextQueryRequestsConcern(query, contextConcernDomainModel) {
-		candidates := contextDomainModelConcernCandidates(
-			query,
-			aliases,
-			explicitProjects,
-			index.Facts,
-		)
-		if len(candidates) > 0 {
-			concerns = append(concerns, newContextConcern(
+	if contextQueryRequestsConcern(evidenceQuery, contextConcernDomainModel) {
+		var candidates []string
+		if len(explicitProjects) > 0 {
+			candidates = contextDomainModelConcernCandidates(query, aliases, explicitProjects, index.Facts)
+		}
+		if len(candidates) > 0 || len(explicitProjects) == 0 {
+			concern := newContextConcern(
 				contextConcernDomainModel,
 				"",
 				true,
 				candidates,
 				"requested domain types and lookup attributes",
-			))
+			)
+			concern.requireIdentity = len(explicitProjects) == 0
+			if concern.requireIdentity {
+				concern.reason = "candidate domain types and lookup attributes; runtime ownership is unproven"
+			}
+			concerns = append(concerns, concern)
 		}
 	}
 
@@ -127,7 +140,7 @@ func planContextConcerns(
 				contextConcernSideEffects,
 				contextConcernTests,
 			} {
-				if !contextQueryRequestsConcern(query, kind) {
+				if !contextQueryRequestsConcern(evidenceQuery, kind) {
 					continue
 				}
 				candidates := contextExplicitProjectConcernCandidatesWithActions(
@@ -169,7 +182,7 @@ func planContextConcerns(
 		contractFactIDs = append(contractFactIDs, edge.FromFactID, edge.ToFactID)
 	}
 	if !scopedConcernKinds[contextConcernHTTPContract] &&
-		(contextQueryRequestsConcern(query, contextConcernHTTPContract) || len(contractFactIDs) > 0) {
+		(contextQueryRequestsConcern(evidenceQuery, contextConcernHTTPContract) || len(contractFactIDs) > 0) {
 		concerns = append(concerns, newContextConcern(
 			contextConcernHTTPContract,
 			"",
@@ -183,7 +196,7 @@ func planContextConcerns(
 	authCandidates = append(authCandidates, contextConcernEdgeCandidates(reachableEdges, contextConcernAuth)...)
 	authCandidates = orderedContextConcernIDs(authCandidates)
 	if !scopedConcernKinds[contextConcernAuth] &&
-		(contextQueryRequestsConcern(query, contextConcernAuth) || len(authCandidates) > 0) {
+		(contextQueryRequestsConcern(evidenceQuery, contextConcernAuth) || len(authCandidates) > 0) {
 		concerns = append(concerns, newContextConcern(
 			contextConcernAuth,
 			"",
@@ -202,7 +215,7 @@ func planContextConcerns(
 			continue
 		}
 		candidates := contextConcernFactCandidates(index.Facts, reachableFactIDs, kind)
-		if !contextQueryRequestsConcern(query, kind) && len(candidates) == 0 {
+		if !contextQueryRequestsConcern(evidenceQuery, kind) && len(candidates) == 0 {
 			continue
 		}
 		concerns = append(concerns, newContextConcern(
@@ -239,7 +252,7 @@ func planContextConcerns(
 			))
 		}
 	} else {
-		if contextQueryRequestsConcern(query, contextConcernPersistence) &&
+		if contextQueryRequestsConcern(evidenceQuery, contextConcernPersistence) &&
 			len(requestedActions) > 0 {
 			persistenceCandidates = contextAlignedReachablePersistenceCandidates(
 				queryTokens,
@@ -249,7 +262,7 @@ func planContextConcerns(
 				index.Facts,
 			)
 		}
-		if contextQueryRequestsConcern(query, contextConcernPersistence) ||
+		if contextQueryRequestsConcern(evidenceQuery, contextConcernPersistence) ||
 			len(persistenceCandidates) > 0 {
 			concerns = append(concerns, newContextConcern(
 				contextConcernPersistence,
@@ -260,7 +273,7 @@ func planContextConcerns(
 			))
 		}
 	}
-	if seedProjectImplicit && contextQueryRequestsConcern(query, contextConcernPersistence) {
+	if seedProjectImplicit && contextQueryRequestsConcern(evidenceQuery, contextConcernPersistence) {
 		primaryPersistence := contextAlignedReachablePersistenceCandidates(
 			queryTokens,
 			requestedActions,
@@ -280,7 +293,7 @@ func planContextConcerns(
 		}
 	}
 
-	if !scopedConcernKinds[contextConcernTests] && contextQueryRequestsConcern(query, contextConcernTests) {
+	if !scopedConcernKinds[contextConcernTests] && contextQueryRequestsConcern(evidenceQuery, contextConcernTests) {
 		concerns = append(concerns, newContextConcern(
 			contextConcernTests,
 			"",
@@ -289,7 +302,7 @@ func planContextConcerns(
 			"tests requested by task",
 		))
 	}
-	if seedProjectImplicit && contextQueryRequestsConcern(query, contextConcernTests) {
+	if seedProjectImplicit && contextQueryRequestsConcern(evidenceQuery, contextConcernTests) {
 		primaryTests := contextFactIDsForProject(
 			contextTestConcernCandidates(index, reachableFactIDs),
 			index.Facts,
@@ -967,12 +980,12 @@ func contextDomainModelConcernCandidates(
 	facts []scan.AgentContextFactRecord,
 ) []string {
 	domainTokens := contextDomainModelQueryTokens(query, aliases, explicitProjects)
-	if len(domainTokens) == 0 || len(explicitProjects) == 0 {
+	if len(domainTokens) == 0 {
 		return nil
 	}
 	candidates := make([]scan.AgentContextFactRecord, 0)
 	for _, fact := range facts {
-		if !explicitProjects[normalizeContextProject(fact.Project)] ||
+		if len(explicitProjects) > 0 && !explicitProjects[normalizeContextProject(fact.Project)] ||
 			!contextDomainModelFact(fact, domainTokens) {
 			continue
 		}

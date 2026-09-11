@@ -4414,7 +4414,7 @@ final class JobClient {
 	writeSourceFile(t, root, "JobClientConfig.java", `package example;
 
 @ConfigurationProperties
-final class JobClientConfig {}
+final class JobClientConfig { private String baseUrl; }
 `)
 	writeSourceFile(t, root, "JobClientAuth.java", `package example;
 
@@ -4441,12 +4441,12 @@ final class JobServerRetry {
 	writeSourceFile(t, root, "AuditClientConfig.java", `package example;
 
 @ConfigurationProperties
-final class AuditClientConfig {}
+final class AuditClientConfig { private String baseUrl; }
 `)
 	writeSourceFile(t, root, "InternalAuditClientConfig.java", `package example;
 
 @ConfigurationProperties
-final class InternalAuditClientConfig {}
+final class InternalAuditClientConfig { private String baseUrl; }
 `)
 	writeSourceFile(t, root, "InternalAuditClientAuth.java", `package example;
 
@@ -8561,7 +8561,7 @@ func TestContextSourceSectionSupportsOperationalConcerns(t *testing.T) {
 		content    string
 	}{
 		{name: "authentication", kind: contextConcernAuth, content: "authorize.anyRequest().authenticated();"},
-		{name: "configuration", kind: contextConcernConfiguration, content: "@ConfigurationProperties(prefix = \"jobs\")"},
+		{name: "configuration", kind: contextConcernConfiguration, content: "@ConfigurationProperties(prefix = \"jobs\")\nclass JobConfig { private String baseUrl; }"},
 		{name: "resilience", kind: contextConcernResilience, content: "@Retryable(maxAttempts = 3)"},
 		{name: "persistence", kind: contextConcernPersistence, content: "taskRepository.delete(task);"},
 		{name: "side effects", kind: contextConcernSideEffects, content: "protocolService.writeProtocol(id, text);"},

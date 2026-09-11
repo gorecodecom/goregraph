@@ -171,7 +171,12 @@ func compileContextPack(index scan.AgentContextIndexRecord, request ContextReque
 	for _, fact := range index.Facts {
 		factByID[fact.ID] = fact
 	}
-	concerns := planContextConcerns(request.Query, index, pathTop.fact)
+	concerns := planContextConcernsWithEvidenceQuery(
+		request.Query,
+		contextEvidenceQueryForProtocol(request.Query, request.ProtocolVersion),
+		index,
+		pathTop.fact,
+	)
 	pathSelection := selectContextPaths(index, pathTop, concerns)
 	pack, err = addSelectedContextPaths(
 		pack,
@@ -774,7 +779,12 @@ func contextRetryPermission(pack ContextPack, index scan.AgentContextIndexRecord
 		return false, nil
 	}
 	reachableFactIDs, _ := reachableContextConcernEvidence(index, seed.ID)
-	planned := planContextConcerns(selectionQuery, index, seed)
+	planned := planContextConcernsWithEvidenceQuery(
+		selectionQuery,
+		contextEvidenceSelectionQuery(pack),
+		index,
+		seed,
+	)
 	plannedByKey := make(map[string]contextConcern, len(planned))
 	for _, concern := range planned {
 		plannedByKey[concern.key] = concern
@@ -3271,6 +3281,16 @@ var contextIntentTokenAliases = map[string][]string{
 	"job":                 {"jobs", "task", "tasks"},
 	"jobs":                {"job", "task", "tasks"},
 	"konfiguration":       {"config", "configuration"},
+	"regressionstest":     {"test", "tests"},
+	"regressionstests":    {"test", "tests"},
+	"testdatei":           {"test", "tests", "file"},
+	"testdateien":         {"test", "tests", "files"},
+	"datenvariante":       {"model", "type"},
+	"datenvarianten":      {"models", "types"},
+	"zuordnungsmerkmal":   {"attribute", "identifier"},
+	"zuordnungsmerkmale":  {"attributes", "identifiers"},
+	"schnittstelle":       {"contract", "api"},
+	"schnittstellen":      {"contracts", "apis"},
 	"nebenwirkung":        {"side_effect", "side_effects"},
 	"nebenwirkungen":      {"side_effect", "side_effects"},
 	"persistenz":          {"persistence", "repository"},

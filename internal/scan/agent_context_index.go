@@ -54,6 +54,7 @@ type AgentContextIndexRecord struct {
 	Facts         []AgentContextFactRecord     `json:"facts"`
 	Edges         []AgentContextEdgeRecord     `json:"edges"`
 	Coverage      []AgentContextCoverageRecord `json:"coverage,omitempty"`
+	SourceHashes  map[string]string            `json:"source_hashes,omitempty"`
 }
 
 const (
@@ -1344,9 +1345,9 @@ func contextTypeNavigationSymbol(symbol RichSymbolRecord) bool {
 			return false
 		}
 		switch kind {
-		case "class", "component", "hook", "interface", "type", "enum":
+		case "class", "component", "hook", "interface", "type", "enum", "function":
 			return true
-		case "function", "method":
+		case "method":
 			return contextHookName(symbol.Name)
 		}
 	}

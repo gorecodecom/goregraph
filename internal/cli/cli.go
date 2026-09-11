@@ -65,6 +65,10 @@ func Run(args []string, stdout, stderr io.Writer) (code int) {
 		return runDashboard(args[1:], stdout, stderr)
 	case "context":
 		return runContext(args[1:], stdout, stderr)
+	case "read":
+		return runSourceRead(args[1:], stdout, stderr)
+	case "answer-check":
+		return runAnswerCheck(args[1:], stdout, stderr)
 	case "query":
 		return runQuery(args[1:], stdout, stderr)
 	case "explain":
@@ -1753,6 +1757,8 @@ Common workflows:
 Core commands:
   build <target>    Build agent, dashboard, or all project projections
   context <path>    Build one deterministic, budgeted Context Pack
+  read <root>       Read bounded source ranges with delivery receipts
+  answer-check      Check answer paths and citations against a supplied ledger
   dashboard         Print, open, or edit the applicable dashboard
   doctor <path>     Check generated output health
   workspace         Build, update, and inspect workspace-wide projections
@@ -1774,6 +1780,8 @@ Usage: goregraph <command> [options]
 Core commands:
   build <target>    Build agent, dashboard, or all project projections
   context <path>    Build one deterministic, budgeted Context Pack
+  read <root>       Read bounded source ranges with delivery receipts
+  answer-check      Check answer paths and citations against a supplied ledger
   dashboard         Print, open, or edit the applicable dashboard
   doctor <path>     Check generated output health
   workspace         Show, build, update, clean, and inspect workspace projects

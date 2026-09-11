@@ -222,8 +222,9 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 	metadataRequest.sourceSearchID = loaded.sourceSearchID
 	metadataBudget := contextMetadataBudget(request.BudgetTokens)
 	publicConcerns := []ContextConcern(nil)
+	concernQuery := contextEvidenceQueryForProtocol(request.Query, request.ProtocolVersion)
 	if seed, ok := contextConcernPlanningSeed(loaded.Index, request.Query); ok {
-		publicConcerns = publicContextConcerns(planContextConcerns(request.Query, loaded.Index, seed))
+		publicConcerns = publicContextConcerns(planContextConcernsWithEvidenceQuery(request.Query, concernQuery, loaded.Index, seed))
 		metadataBudget = contextMetadataBudgetForConcerns(request.BudgetTokens, publicConcerns)
 		metadataRequest.BudgetTokens = metadataBudget
 		var concernTokens int
@@ -236,8 +237,18 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 	} else {
 		metadataRequest.BudgetTokens = metadataBudget
 	}
+	if request.ProtocolVersion == AdaptiveV2 {
+		reserve, reserveErr := adaptiveContextHealthReserve(loaded.Health)
+		if reserveErr != nil {
+			return ContextPack{}, reserveErr
+		}
+		metadataRequest.BudgetTokens -= reserve
+	}
 	pack, err := compileContextPack(loaded.Index, metadataRequest)
 	if err != nil {
+		if request.ProtocolVersion == AdaptiveV2 && errors.Is(err, errContextPackBudget) {
+			return adaptiveHealthFallbackPack(loaded.Index, request, "", loaded.Health, ContextFallbackBudgetExhausted)
+		}
 		return ContextPack{}, err
 	}
 	pack = applyAdaptiveContextHealth(pack, loaded.Health)
@@ -252,7 +263,10 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 			return ContextPack{}, fitErr
 		}
 		if !fits {
-			return ContextPack{}, fmt.Errorf("required context concerns exceed metadata budget")
+			if request.ProtocolVersion == AdaptiveV2 {
+				return adaptiveHealthFallbackPack(loaded.Index, request, "", loaded.Health, ContextFallbackBudgetExhausted)
+			}
+			return ContextPack{}, fmt.Errorf("required context concerns exceed metadata budget: %w", errContextPackBudget)
 		}
 	}
 	pack.BudgetTokens = request.BudgetTokens
@@ -274,6 +288,20 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 	}
 	if reason := adaptiveHealthFallbackReason(pack); reason != "" {
 		return adaptiveHealthFallbackPack(loaded.Index, request, pack.ContextID, loaded.Health, reason)
+	}
+	if request.ProtocolVersion == AdaptiveV2 && !pack.FallbackRequired {
+		if reason := adaptiveSelectedSourceFallbackReason(pack, loaded); reason != "" {
+			pack, err = fallbackContextPack(loaded.Index, request, reason, nil)
+			if err != nil {
+				return ContextPack{}, err
+			}
+			pack = applyAdaptiveContextHealth(pack, loaded.Health)
+			pack.Health.Freshness = "stale"
+			pack.ContextID = contextIdentityForProtocol(request.ProtocolVersion, pack.Generation, []string{reason}, nil, nil)
+		}
+	}
+	if request.ProtocolVersion == AdaptiveV2 && (pack.FallbackRequired || pack.Confidence == "LOW") {
+		return attachAdaptiveFallbackEvidence(pack, loaded, request)
 	}
 	if request.PreviousContextID != "" && request.PreviousContextID == pack.ContextID {
 		return duplicateContextPack(pack)
@@ -334,6 +362,14 @@ func attachContextSourceWithinFinalBudget(
 		}
 		if fits {
 			return pack, nil
+		}
+		packWithoutOptionalNavigation, navigationHandled, navigationErr :=
+			fitInferredConfigurationNavigationWithinBudget(pack, loaded.Index, request)
+		if navigationErr != nil {
+			return ContextPack{}, navigationErr
+		}
+		if navigationHandled {
+			return packWithoutOptionalNavigation, nil
 		}
 		finalUncertainties = append([]ContextUncertainty(nil), pack.Uncertainties...)
 
@@ -783,8 +819,8 @@ func contextConcernMetadataTokens(concerns []ContextConcern) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	extraRunes := utf8.RuneCount(withConcerns) - utf8.RuneCount(withoutConcerns)
-	return (extraRunes+3)/4 + 1, nil
+	extraBytes := len(withConcerns) - len(withoutConcerns)
+	return (extraBytes+3)/4 + 1, nil
 }
 
 func contextConcernsWithinMetadataBudget(
@@ -915,8 +951,9 @@ func newContextEnvelope(index scan.AgentContextIndexRecord, request ContextReque
 	}
 	if !fits {
 		return ContextPack{}, fmt.Errorf(
-			"context envelope exceeds budget %d",
+			"context envelope exceeds budget %d: %w",
 			request.BudgetTokens,
+			errContextPackBudget,
 		)
 	}
 	return pack, nil
@@ -966,6 +1003,10 @@ func contextSelectionQuery(pack ContextPack) string {
 		return pack.selectionQuery
 	}
 	return pack.Query
+}
+
+func contextEvidenceSelectionQuery(pack ContextPack) string {
+	return contextEvidenceQueryForProtocol(contextSelectionQuery(pack), pack.ProtocolVersion)
 }
 
 func contextBudgetView(pack ContextPack) (ContextPack, error) {

@@ -471,6 +471,16 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 			index.AgentContextConfigurationFacts,
 		)
 		contextIndex = linkAgentContextContractConfiguration(contextIndex, apiContracts)
+		contextIndex.SourceHashes = make(map[string]string)
+		representedFiles := make(map[string]bool)
+		for _, fact := range contextIndex.Facts {
+			representedFiles[fact.File] = true
+		}
+		for _, file := range index.Files {
+			if representedFiles[file.Path] && file.Hash != "" {
+				contextIndex.SourceHashes[file.Path] = file.Hash
+			}
+		}
 	}
 	layout := NewProjectOutputLayout(out)
 	previous := readCurrentOutputManifest(layout.Manifest)

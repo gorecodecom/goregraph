@@ -20,15 +20,15 @@ func contextProductionPlanFiles(
 	index scan.AgentContextIndexRecord,
 ) []ContextProductionPlanFiles {
 	query := contextSelectionQuery(pack)
-	if !contextQueryRequestsExactEvidenceInventory(query) ||
-		!contextQueryPlansMissingTransition(query) {
+	if !contextQueryRequestsExactEvidenceInventory(contextEvidenceSelectionQuery(pack)) ||
+		!contextChangePlanInventoryEligible(pack) {
 		return nil
 	}
 	entrypointProject := contextPlanFileEntrypointProject(pack)
 	if entrypointProject == "" {
 		return nil
 	}
-	providerProjects := contextProductionPlanProviderProjects(pack, entrypointProject)
+	providerProjects := contextProductionPlanProviderProjects(pack, index, entrypointProject)
 	if len(providerProjects) == 0 {
 		return nil
 	}
@@ -45,7 +45,7 @@ func contextProductionPlanFiles(
 	for _, project := range projects {
 		group := ContextProductionPlanFiles{
 			Project:          project,
-			ProviderContract: contextProductionProviderContract(index, project, represented, requestedActions),
+			ProviderContract: contextProductionProviderContract(index, project, represented, requestedActions, pack.ProtocolVersion),
 			PrimaryPersistence: contextProductionPrimaryPersistence(
 				index,
 				project,
@@ -63,6 +63,7 @@ func contextProductionPlanFiles(
 
 func contextProductionPlanProviderProjects(
 	pack ContextPack,
+	index scan.AgentContextIndexRecord,
 	entrypointProject string,
 ) map[string]bool {
 	result := make(map[string]bool)
@@ -76,7 +77,10 @@ func contextProductionPlanProviderProjects(
 			result[project] = true
 		}
 	}
-	return result
+	if len(result) != 0 || pack.ProtocolVersion != AdaptiveV2 {
+		return result
+	}
+	return contextSelectedPlanProviderProjects(pack, index, entrypointProject)
 }
 
 func contextProductionProviderContract(
@@ -84,6 +88,7 @@ func contextProductionProviderContract(
 	project string,
 	represented map[string]bool,
 	requestedActions map[string]bool,
+	protocol string,
 ) string {
 	byPath := make(map[string]rankedContextProductionFile)
 	for _, fact := range index.Facts {
@@ -93,6 +98,9 @@ func contextProductionProviderContract(
 			path == "" || contextFactUsesTestSource(fact) ||
 			represented[contextEvidenceInventoryPathKey(project, path)] ||
 			!contextProductionProviderContractFact(fact) {
+			continue
+		}
+		if protocol == AdaptiveV2 && contextPlanFileConfigurationSource(path) {
 			continue
 		}
 		score := 100
