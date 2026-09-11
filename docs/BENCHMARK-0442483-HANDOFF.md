@@ -1,13 +1,146 @@
 # Benchmark 0442483: Übergabe für die Fortsetzung
 
-Stand: 09.09.2026. Diese Datei ist für Entwickler und Prüfer bestimmt und darf
+Stand: 11.09.2026. Diese Datei ist für Entwickler und Prüfer bestimmt und darf
 nicht als Kontext an einen Benchmark-Agenten gegeben werden: Sie enthält die
 Referenzlösung und Ergebnisse. Die beiden vollständigen Agent-Prompts stehen
 weiter unten separat und ohne Lösungshinweise.
 
-## Ergebnis und Einordnung
+## Fortsetzungsregel vom 10.09.2026
 
-Die aktuelle lokale GoreGraph 1.4.1 findet den richtigen Einstiegspunkt, liefert
+Auf ausdrücklichen Nutzerwunsch wird der Vergleich **ohne GoreGraph nicht bei
+jeder Fixrunde erneut ausgeführt**. Verwende den gespeicherten vollständigen
+Mac-Referenzlauf `local-update-baseline-cli`: 600,30 Sekunden, 165.839 ungecachte
+Eingabe- plus Ausgabetokens, 12/12 Abdeckungskriterien. Definitionen und Grenzen
+stehen im [Installationsvergleich](AGENT-INSTALLED-COMPARISON-2026-09-10.md).
+Ein neuer Baseline-Lauf benötigt einen neuen ausdrücklichen Nutzerauftrag.
+
+Der später gestartete Lauf `latency-baseline-cli` wurde auf Nutzerwunsch beendet
+und darf nicht als abgeschlossener Vergleich gewertet werden. Weitere Fixrunden
+messen den GoreGraph-Workflow gegen die gespeicherte Referenz; kennzeichne dabei,
+dass die Referenz aus einem früheren Lauf stammt.
+
+## Aktueller Nachlauf: Antwortprüfung und Mehrfachsuche
+
+Der neueste [Auto-Paging-Nachlauf](AGENT-READER-AUTOPAGE-2026-09-11.md) ist
+abgeschlossen. Nach zwei diagnostischen Runden erreicht der dritte unveränderte
+CLI-Lauf **12/12 Kernkriterien, 7/7 erforderliche Testidentitäten und null
+fehlgeschlagene GoreGraph-Befehle**. Er benötigt 505,816 Sekunden und 79.464
+effektive Tokens. Gegenüber der unverändert wiederverwendeten Referenz ist er
+15,74 % schneller und spart 52,08 % effektive Tokens. In den verifizierten
+Leserausgaben gibt es keine wiederholt gelieferten Quellzeilen.
+
+Der abschließende Answer-Checker-Fix löst gleichnamige Kurzpfade anhand eindeutig
+passender gelieferter Zeilenbereiche auf. Die gespeicherte Antwort aus Lauf 3 ist
+damit mechanisch gültig: 50 Referenzen, 52 Bereiche, 12 sichere Reparaturen und
+keine Findings. Installiert ist der geprüfte lokale 1.4.1-Entwicklungsstand vom
+11.09.2026, 15:09:29 UTC, SHA `0723dfdd2bb6…`. Vollständige Go-Suite, vet,
+Integritätsprüfungen, Quellen, Indizes und Baseline bestehen. Kein Rescan, kein
+erneuter Lauf ohne GoreGraph und kein Release.
+
+## Vorheriger Nachlauf: Antwortprüfung und Mehrfachsuche
+
+Der [Nachlauf zur Antwortprüfung](AGENT-ANSWER-GUARD-2026-09-11.md) ist lokal
+installiert: 1.4.1 Entwicklung, 12:57:46 UTC, SHA `fc815c8e3870…`.
+Mehrere Suchselektoren pro Datei werden unabhängig ausgeführt und gemeinsam
+ausgegeben. `answer-check` prüft Dateipfade und gelieferte Zitatbereiche und kann
+eindeutige Kurzpfade ergänzen. Fachliche Richtigkeit bleibt separat zu prüfen.
+Lokale Tests und unabhängiger Code-Review bestehen. Der erste diagnostische Lauf
+(716,87 Sekunden/101.877 effektive Tokens) bleibt mit seinen Fehlern erhalten.
+Nach gezielter Nachbesserung besteht der abschließende Lauf die mechanische Prüfung
+ohne Änderungen und den unabhängigen fachlichen Review: **12/12 Kernkriterien,
+7/7 exakte Testreferenzen, kein wesentlicher semantischer Fehler gefunden**.
+
+Abschluss: **627,60 Sekunden und 93.047 effektive Tokens**. Gegenüber der gespeicherten
+Referenz: 43,89 % weniger effektive Tokens, aber weiterhin 4,55 % mehr Zeit.
+23 statt 44 Befehle; ein statt fünf zurückgewiesene Leseranfragen. 22 erneut
+gelieferte Quellzeilen bleiben nachweisbar. Die mechanische Prüfung benötigt
+0,120 Sekunden; Rohantwort und finale Antwort sind bytegleich.
+
+Alle 374 Quellen, Indizes und 15 Baseline-Dateien sind unverändert. Kein Rescan
+oder Service-Test. Die beiden Stufen haben bewusst getrennte Kandidaten/Anleitungen
+und dürfen nicht als unverändertes Kandidatenpaar dargestellt werden. Die breitere
+Entwicklungs-Akzeptanz und ein allgemeiner Geschwindigkeitsnachweis bleiben offen.
+
+## Vorheriger Nachlauf: CLI-Leserfehler und präzisere Quellenbelege
+
+Der [Nachlauf vom 11.09.2026](AGENT-READER-PRECISION-2026-09-11.md) ist umgesetzt,
+lokal installiert und zweimal mit demselben Kandidaten geprüft. Entwicklungsstand
+1.4.1, 11:05:25 UTC, SHA a2938d66112e…; keine neue Release-Version.
+
+Die beiden historischen start_line-Fehlanfragen funktionieren nun exakt wie ihre
+kanonischen Varianten. Die adaptive Anleitung fordert präzise gelieferte Zitate
+und tatsächliche Testaktionen/Assertions. Beide Antworten vermeiden nach
+Zuordnung ungelesene Java-Zitatlücken, erfüllen den Ausgabeauftrag aber nicht
+gleich zuverlässig: **12/12 und 11/12 Kernkriterien**. Beide haben sieben
+erkennbare Testidentitäten/Rollen, jedoch nur 6/7 beziehungsweise 1/7 vollständig
+ausgeschriebene Testpfade. Lauf 2 verletzt wegen 32 verkürzter Inventarpfade das
+feste Pfadkriterium. Lauf 1 enthält ungenaue Regressionstestformulierungen.
+
+Zeit/effektive Tokens: **582,26 s / 103.649** und **680,44 s / 110.728**.
+Das sind 37,50 % / 33,23 % weniger effektive Tokens als die gespeicherte Referenz,
+aber nur Lauf 1 ist schneller. Mittelwert: 631,35 s und 107.188,5 effektive Tokens.
+Verifizierte wiederholt ausgegebene Quellzeilen: 0/64 bei 17/29 beziehungsweise
+25/36 Befehlen mit verifizierten Quellzeilen. Suchsyntax und doppelte Find-Pfade
+verursachen weiterhin korrigierte Fehler. Kein allgemeiner Qualitäts- oder
+Geschwindigkeitsnachweis.
+
+Go-Suite/vet, unabhängiger Code-Review, historische Fehlerreplays, 23 unveränderte
+Kontextantworten mit 180 Kontrollen, 115 Quellbelege und 55 Find-Prüfaufrufe bestehen.
+Quellen, Indizes, Build und alle 15 Baseline-Dateien sind unverändert. Kein Scan,
+kein neuer Lauf ohne GoreGraph, keine Service-Tests oder Service-Änderungen.
+Die vollständigen Rohdaten und getrennten Parserbewertungen liegen unter
+reader-precision* im vorhandenen privaten Benchmark-Verzeichnis.
+
+## Vorheriger Nachlauf: kombinierte Quellsuche und Quellausgabe
+
+Der [kombinierte Leser vom 11.09.2026](AGENT-COMBINED-READ-2026-09-11.md) ist
+implementiert, lokal installiert und mit zwei identischen Kandidatenläufen geprüft.
+Entwicklungsstand 1.4.1, 10:17:13 UTC, SHA `a67cac6a955f…`.
+
+Beide Antworten erreichen **12/12 Kernkriterien und 7/7 bekannte Testreferenzen**.
+Zeit/effektive Tokens: **544,16 s / 125.283** und **590,03 s / 95.784**.
+Gegenüber der gespeicherten Referenz sind das 9,35 % / 1,71 % weniger Zeit und
+24,46 % / 42,24 % weniger effektive Tokens. Der Mittelwert liegt bei 567,10 s und
+110.533,5 effektiven Tokens. Zwei Läufe sind kein allgemeiner Leistungsnachweis.
+
+In den verifizierbaren Ausgaben sind keine erneut gelieferten Quellzeilen mehr
+nachgewiesen (19/24 beziehungsweise 17/32 Befehle mit verifizierten Quellzeilen).
+Zu große Anfragen und falsch platzierte JSON-Felder verursachen noch korrigierte
+Fehlversuche. Breite Zitatbereiche enthalten teils ungelesene Zwischenzeilen;
+Mail-Testrollen sind teilweise nur als Referenzen belegt. Lauf 2 verwechselt an
+einer Stelle HTTP-Idempotenz mit identischen Statuscodes. Die feste Punktzahl
+bedeutet keine fehlerfreie Antwort oder Release-Freigabe.
+
+Go-Suite/vet, unabhängiger Code-Review, 180 Kontrollen aus 23 unveränderten
+Kontextantworten, 115 wiederverwendete Quellabschnitte und 55 reale Find-Prüfaufrufe
+bestehen. Quellen, Indizes und 15 Baseline-Dateien sind unverändert; kein Scan
+oder erneuter Lauf ohne GoreGraph. Rohdaten liegen unter `combined-read*` im
+vorhandenen privaten Benchmark-Verzeichnis; dieser Nachlauf ist historisch.
+
+## Vorheriger Nachlauf: Testinventar und Quellenwiederverwendung
+
+Der [vorherige Nachlauf](AGENT-INVENTORY-REUSE-2026-09-11.md) erreichte ebenfalls
+12/12 Kernpunkte und 7/7 Testreferenzen in beiden Läufen, bei 769,79 s / 123.863
+und 605,25 s / 109.660 effektiven Tokens. Der damalige Kandidat `14d3c9701f67…`
+bleibt mit seinen Ergebnissen unter `inventory-reuse-followup*` erhalten. Die
+neue kombinierte Such-/Lesefunktion war darin noch nicht enthalten.
+
+## Historischer Stand nach drei Fix- und Prüfrunden
+
+Die drei ausdrücklich beauftragten Adaptive-CLI-Runden sind abgeschlossen;
+[Details, Fixes und Grenzen](AGENT-THREE-CYCLE-2026-09-10.md).
+Alle drei erreichen 12/12 Kernkriterien. Zeit/effektive Tokens: 414,11 s/88.443,
+442,45 s/88.411 und 485,95 s/108.888. Die letzte Version ist lokal als
+1.4.1-Entwicklungsstand vom 10.09.2026, 20:58:40 UTC installiert.
+Go-Suite/vet, 21 lokale Suchkontrollen mit 152 Prüfungen und Gesamt-Review bestehen;
+Quellen/Indizes unverändert, kein Neuscan. Die gespeicherte Baseline wurde nie
+wiederholt. Weiter offen: nur 5/7 relevante Testdateien im letzten Ergebnis,
+wiederholte Quelllesevorgänge und keine stabile Verbesserung gegenüber dem besten
+Adaptive-Lauf. Keine Release-Freigabe. Die folgenden Messwerte sind historisch.
+
+## Historisches Ergebnis vom 09.09.2026
+
+Der damalige lokale GoreGraph-1.4.1-Stand findet den richtigen Einstiegspunkt, liefert
 aber noch keinen hinreichenden Kontext für die vollständige projektübergreifende
 Fehleranalyse. Die gemessene Tokenreduktion ist deshalb **kein Nachweis einer
 Einsparung bei vergleichbarer Qualität** und keine Release-Freigabe.

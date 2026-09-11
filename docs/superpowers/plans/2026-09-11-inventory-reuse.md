@@ -1,0 +1,19 @@
+# Inventory completeness and source reuse
+
+The user approved the five-step approach: trace the two missing test references, derive a general evidence inventory, technically subtract already delivered source ranges, validate locally, and measure one final candidate twice.
+
+## Scope and acceptance
+
+Preserve the dirty checkout and all earlier fixes. No commits, release, service edits, service builds/tests, or baseline rerun. The frozen baseline, service sources, indexes, benchmark task and model/settings remain unchanged. Private expected references are evaluation data only; never encode their names or answer into production logic or the benchmark prompt. Strict-v1 remains unchanged. Navigation is not source proof or read authority. Existing scope, confidence, freshness and output budget guarantees remain effective.
+
+### Task 1: General test evidence inventory
+
+Own internal/agent/context_plan_files.go, a new context_test_inventory.go and focused synthetic tests only. Diagnose the two missing references through the real index, last context packs and command/final-answer trace. Write the diagnosis privately. Implement a compact adaptive correction-plan test inventory using exact indexed test identities and actual selected production/domain/side-effect evidence. Preserve the old strict path. Avoid the current one-controller/one-service blind spot: represent distinct relevant test identities with explicit role, while deduplicating before bounded selection and respecting primary source budget. Do not merely increase output or include every project test. No private aliases/names. Exercise synthetic side-effect tests, unrelated neighbors, strict, explicit scope, low confidence, stale/current source, deterministic bounded output. Validate actual saved initial queries against the frozen index. Report unresolved final-answer omission separately from retrieval.
+
+### Task 2: Technical range reuse
+
+Own new internal/agent/source_read*.go, new internal/cli/source_read*.go, narrow CLI dispatch integration, adaptive guide and necessary schema/docs. After inspecting existing source resolution and source hashing, implement a minimal read-only bounded source reader with explicit caller-carried delivered-range receipts; no persistent workspace/cache writes. Receipts bind ranges to source content and scope so changed source is not suppressed. Initial context source can seed receipts without new source reads. Support batched exact ranges, return only unseen intervals, and report skipped ranges explicitly. Reject escaping/symlink paths, invalid intervals and oversized requests; preserve configuration redaction. The reader does not create read permission: strict source omissions/verification or explicit caller fallback remain prerequisites. Preserve strict guide bytes. Document that ordinary shell reads cannot be intercepted, and only reads/receipts routed through this interface are deduplicated. Test overlap, union, changed source, aliases, scope, malformed receipts, output limits, and CLI usability. Choose exact request shape after code inspection, record it before implementation.
+
+### Task 3: Final validation and two identical-candidate runs
+
+Review each task delta against fresh before snapshots. Run focused tests then full Go tests/vet and fixed local query probes once final code settles. Retain all negative controls and primary mutation source. Freeze one binary, install both local copies with backups, and run the unchanged adaptive Codex benchmark twice with that exact binary/guide/source/index state. Reuse only the saved baseline. Audit core12, held-out7 references, source citation validity, repeated-line lower bounds, command bytes, first/last tool times, elapsed time and effective tokens (input minus cached plus output). Preserve failed attempts. Report both outcomes and remaining limitations without declaring perfection from one run.
