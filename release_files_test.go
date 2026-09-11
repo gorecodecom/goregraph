@@ -202,12 +202,13 @@ func TestWingetPublicationAndInstallationGuidance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wingetStart := strings.Index(string(goreleaser), "winget:\n")
-	wingetEnd := strings.Index(string(goreleaser), "\nscoops:\n")
+	goreleaserText := strings.ReplaceAll(string(goreleaser), "\r\n", "\n")
+	wingetStart := strings.Index(goreleaserText, "winget:\n")
+	wingetEnd := strings.Index(goreleaserText, "\nscoops:\n")
 	if wingetStart < 0 || wingetEnd <= wingetStart {
 		t.Fatal("cannot locate Winget publication configuration")
 	}
-	winget := string(goreleaser)[wingetStart:wingetEnd]
+	winget := goreleaserText[wingetStart:wingetEnd]
 	for _, want := range []string{
 		"package_identifier: GoreCode.GoreGraph",
 		"enabled: true",
