@@ -420,7 +420,7 @@ func (server *testEditorServer) stop() {
 			if err != nil {
 				server.t.Errorf("Serve() = %v", err)
 			}
-		case <-time.After(5 * time.Second):
+		case <-time.After(shutdownTimeout + time.Second):
 			server.t.Error("Serve did not stop after cancellation")
 		}
 	})
@@ -466,7 +466,10 @@ func writeTestDashboard(t *testing.T) (string, string) {
 
 func doRequest(t *testing.T, request *http.Request) *http.Response {
 	t.Helper()
-	response, err := http.DefaultClient.Do(request)
+	client := &http.Client{
+		Transport: &http.Transport{DisableKeepAlives: true},
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
