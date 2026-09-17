@@ -174,11 +174,13 @@ start `goregraph mcp`.
 
 #### Windows
 
-Download the Windows archive from the latest GitHub release:
+Download the current Windows x86-64 archive directly:
 
-```text
-goregraph_Windows_x86_64.zip
-```
+[Download `goregraph_Windows_x86_64.zip`](https://github.com/gorecodecom/goregraph/releases/latest/download/goregraph_Windows_x86_64.zip)
+
+This ZIP is a portable archive, not an installer. Extracting it does not add
+GoreGraph to `PATH`; complete the following steps before using `goregraph` from
+PowerShell, Command Prompt, an IDE, or Codex.
 
 Extract the ZIP into a stable directory, for example
 `%LOCALAPPDATA%\Programs\GoreGraph\bin`, and place `goregraph.exe` directly in
