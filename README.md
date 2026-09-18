@@ -1091,70 +1091,87 @@ The analysis remains static and pattern-backed. Runtime-generated routes, reflec
 
 All normal output paths are relative to the scanned project root.
 
-## MCP Mode
+## MCP integration
 
-`goregraph mcp` starts a read-only stdio server. Standard mode exposes exactly
-one tool: `task_context`. It returns the same bounded Context Pack as the direct
-`context` command and follows the same source-backed workflow.
+### What MCP is and what GoreGraph exposes
 
-It:
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open
+standard that lets an AI client call external tools through a defined interface.
+For GoreGraph, the client starts `goregraph mcp` as a local child process and
+communicates with it over standard input/output (`stdio`). It is not a daemon:
+there is no background service to start manually, no network listener, and no
+remote GoreGraph service.
 
-- reads only the existing `agent/context-index.json` needed for Context Packs;
-- exposes `task_context` in standard mode;
-- does not scan automatically, write project files, or open a network port.
+Standard mode exposes exactly one read-only tool, `task_context`. For a focused
+coding question, that tool returns the same bounded, evidence-backed Context
+Pack as `goregraph context`. The pack contains the selected implementation path,
+line-numbered source sections, affected files, relevant tests, confidence,
+freshness, and explicit gaps. The MCP server:
 
-Run `goregraph build agent .` first, then point the MCP client at
-`goregraph mcp`. Use `goregraph mcp --expert-tools` only for explicit manual
-diagnostics or legacy exploration. Expert tools are not a fallback cascade after
-the one-call/at-most-one-retry Context workflow.
+- reads the existing agent index;
+- does not scan or execute project code;
+- does not modify project files;
+- does not open a network port;
+- is started and stopped automatically by the configured AI client.
 
-### Prepare a project
+Registering the server makes the tool available. It does not by itself guarantee
+that a model calls the tool before reading source. Add the persistent
+instructions below to establish the GoreGraph-first workflow.
+
+Use `goregraph mcp --expert-tools` only for explicit manual diagnostics or
+legacy exploration. Expert tools are not part of the normal AI workflow.
+
+### Prepare and refresh the local index
 
 GoreGraph must be installed on `PATH`. Verify the installation from a new
 terminal:
 
-```powershell
+```bash
 goregraph version
 ```
 
-Before using GoreGraph in Codex, generate the local index from the project root:
+Generate the index from the project or GoreGraph workspace root:
 
-```powershell
-cd C:\path\to\project
+```bash
+cd /path/to/project-or-workspace
 goregraph scan .
 ```
 
 `scan` builds both the agent and dashboard projections. To generate only the
-data required by the MCP server, run:
+projection used by `task_context`, run:
 
-```powershell
+```bash
 goregraph build agent .
 ```
 
-The MCP server is read-only and does not run a scan automatically. Refresh the
-agent index after relevant source changes:
+The MCP server intentionally does not scan automatically. Refresh its data after
+relevant source changes:
 
-```powershell
+```bash
 goregraph update . --target agent
 ```
 
-### Connect GoreGraph to Codex
+Each `task_context` call should pass the active project or workspace root
+explicitly. This avoids depending on the working directory from which an MCP
+client launches the local process.
 
-The ChatGPT/Codex desktop app, Codex CLI, and Codex IDE extension share the same
-local MCP configuration. ChatGPT web cannot start this local stdio server.
+### Codex — recommended
 
-The recommended setup uses the Codex CLI:
+Codex is the recommended MCP client for GoreGraph. The Codex desktop app, CLI,
+and IDE extension share the same local MCP configuration. Register GoreGraph
+once:
 
-```powershell
+```bash
 codex mcp add goregraph -- goregraph mcp
 codex mcp list
 ```
 
 Restart Codex after adding the server. In the desktop app or Codex terminal,
 enter `/mcp` and verify that `goregraph` is connected and exposes
-`task_context`.
+`task_context`. Codex then starts and stops `goregraph mcp` automatically for
+its sessions; do not run a second MCP process manually.
 
-Alternatively, open `~/.codex/config.toml` and add:
+Alternatively, add the server to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.goregraph]
@@ -1163,38 +1180,140 @@ command = "goregraph"
 args = ["mcp"]
 ```
 
-In the desktop app, the same configuration can be added through
-**Settings → MCP servers → Add server**:
+The desktop app also supports **Settings → MCP servers → Add server**. Select
+**STDIO**, use `goregraph` as the command, add `mcp` as the argument, save, and
+restart Codex. See the
+[official Codex MCP documentation](https://developers.openai.com/codex/mcp/)
+for current client-specific configuration options.
 
-1. Enter `goregraph` as the server name.
-2. Select **STDIO**.
-3. Enter `goregraph` as the command.
-4. Add `mcp` as the argument.
-5. Save the server and restart Codex.
+### Claude Code
 
-Codex starts and stops `goregraph mcp` automatically. Do not start a separate
-MCP process manually after configuring the server.
+Register GoreGraph once at user scope so it is available in every local Claude
+Code project:
 
-### Use GoreGraph in Codex
+```bash
+claude mcp add --transport stdio --scope user goregraph -- goregraph mcp
+claude mcp list
+```
 
-Open the indexed project as the active Codex workspace and ask Codex to use the
-GoreGraph `task_context` tool for the coding task. For example:
+Inside Claude Code, `/mcp` shows the connection and the `task_context` tool.
+Claude Code starts the local process when needed. A team can instead commit a
+project-scoped `.mcp.json`; see the
+[official Claude Code MCP documentation](https://code.claude.com/docs/en/mcp).
+
+Claude Code reads `CLAUDE.md`, not `AGENTS.md`. To keep one shared instruction
+source, add this project-root `CLAUDE.md`:
+
+```markdown
+@AGENTS.md
+```
+
+Claude Code expands that import at session start. Additional Claude-specific
+instructions may follow it.
+
+### GitHub Copilot CLI
+
+Register the local stdio server once in the user configuration:
+
+```bash
+copilot mcp add goregraph -- goregraph mcp
+copilot mcp list
+```
+
+Copilot CLI then starts the server automatically and can use `task_context` when
+it is relevant or explicitly requested. The configuration is stored in
+`~/.copilot/mcp-config.json`. See the
+[official Copilot CLI MCP documentation](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers).
+
+### GitHub Copilot in VS Code
+
+For repository-local configuration, create `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "goregraph": {
+      "command": "goregraph",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Save the file, select **Start** above the server definition, and approve the
+workspace trust prompt. In Copilot Chat, select **Agent** mode and use the tools
+button to verify that `goregraph` exposes `task_context`. VS Code retains the
+configuration and starts the local server for later sessions. See the
+[official GitHub Copilot MCP guide](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp).
+
+### Persistent GoreGraph-first instructions
+
+Put the following block in the project-root `AGENTS.md`. For a personal Codex
+default across every repository, the same block can be placed in
+`~/.codex/AGENTS.md` instead.
+
+```markdown
+## GoreGraph-first source workflow
+
+- For every coding task that requires repository knowledge, call the GoreGraph MCP tool `task_context` exactly once before reading or searching indexed source files.
+- Pass the active project or GoreGraph workspace root as `root`. Pass the caller's complete technical problem and requested evidence scope as a focused `query` without adding inferred component responsibilities.
+- Treat returned `source_sections` as source already read. Do not re-read, grep, or widen an included range.
+- When `source_coverage` is `complete`, do not read additional indexed project source. Mark details missing from the Context Pack as unknown.
+- When `source_coverage` is `partial` or `none`, read only the exact project, path, and line ranges listed in `source_omissions`.
+- Retry only when `retry_allowed` is true, using exactly one supplied `retry_anchor` and the returned `context_id` as `previous_context_id`.
+- Stop using GoreGraph when `fallback_required` is true, confidence is low, or the Context Pack does not identify exactly one reliable production entrypoint.
+- If the agent index is missing or stale, run `goregraph doctor <root>` and refresh it with `goregraph update <root> --target agent` before requesting context again.
+- Do not use specialist GoreGraph queries or expert MCP tools during the normal workflow.
+```
+
+Instruction files guide model behavior; they are not a hard technical gate.
+GoreGraph does not intercept ordinary file reads performed by an AI client.
+Keep the instruction concise, verify that the client loaded it, and explicitly
+name `task_context` in a prompt when auditing a new client setup.
+
+Client instruction-file support differs:
+
+- **Codex:** project `AGENTS.md`, or `~/.codex/AGENTS.md` for a personal global
+  default.
+- **Claude Code:** project `CLAUDE.md`; import the shared file with
+  `@AGENTS.md`. Personal global instructions belong in
+  `~/.claude/CLAUDE.md`.
+- **GitHub Copilot:** current VS Code and Copilot CLI versions support
+  `AGENTS.md`. For the broadest compatibility across Copilot surfaces, put the
+  same GoreGraph block in `.github/copilot-instructions.md` as well. Avoid
+  conflicting copies.
+
+Open the indexed project as the active workspace and test with a request such
+as:
 
 ```text
-Use GoreGraph task_context to identify the current implementation path,
-affected files, and relevant tests before reading additional source files.
+Use GoreGraph task_context first to identify the current implementation path,
+affected files, and relevant tests for this task.
 ```
 
-If the server is not available, verify the installation and configuration:
+### Other MCP clients and cloud agents
 
-```powershell
-Get-Command goregraph
+For another local MCP-capable client, register a stdio server whose command is
+`goregraph` and whose argument list is `["mcp"]`, then add equivalent persistent
+instructions using that client's supported instruction mechanism.
+
+The setup above is local. A cloud coding agent cannot reach the GoreGraph
+process or index on a developer workstation. To use GoreGraph in a cloud agent,
+the cloud environment must install the binary, obtain the source, build or
+restore a current agent index, and start `goregraph mcp` there. Do not point a
+cloud agent at a workstation-local stdio configuration.
+
+If a client cannot connect to the server, verify the executable and registration:
+
+```bash
 goregraph version
-codex mcp list
+codex mcp list       # Codex
+claude mcp list      # Claude Code
+copilot mcp list     # GitHub Copilot CLI
 ```
 
-After installing GoreGraph or changing `PATH`, close and restart all terminals
-and Codex clients before testing the MCP connection.
+After installing GoreGraph or changing `PATH`, close and restart the affected
+terminals, IDEs, and AI clients before testing the connection.
 
 ## Exclusions
 
