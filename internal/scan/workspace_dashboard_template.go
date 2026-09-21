@@ -1,10 +1,5 @@
 package scan
 
-import (
-	"html"
-	"strings"
-)
-
 const workspaceDashboardShell = `<div class="shell" id="workspace-shell">
 <aside class="side" id="workspace-sidebar">
 <h1>GoreGraph Workspace</h1>
@@ -145,22 +140,3 @@ const workspaceDashboardShell = `<div class="shell" id="workspace-shell">
 </main>
 <section class="details" id="details"><p class="empty">Select a service or endpoint to inspect directed relationships.</p></section>
 </div>`
-
-func renderWorkspaceDashboardDocument(title string, payload []byte) string {
-	var b strings.Builder
-	b.WriteString("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n")
-	b.WriteString("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>")
-	b.WriteString(html.EscapeString(title))
-	b.WriteString("</title>\n<style>")
-	b.WriteString(workspaceDashboardStyles)
-	b.WriteString("</style>\n</head>\n<body>\n")
-	b.WriteString(workspaceDashboardShell)
-	b.WriteString("\n<script>\nconst workspacePayload = ")
-	b.Write(payload)
-	b.WriteString(";\n")
-	b.WriteString(workspaceDashboardArchitectureModelScript)
-	b.WriteString("\n")
-	b.WriteString(workspaceDashboardScript)
-	b.WriteString("\n</script>\n</body>\n</html>")
-	return b.String()
-}

@@ -2,7 +2,7 @@
 
 This file lists every user-facing GoreGraph command, what it does, and common variations.
 
-## Local 1.4.1 controls
+## Local 1.4.2 controls
 
 Build, scan and workspace update commands accept `--progress auto|plain|json|off`.
 Progress and five-second heartbeats use stderr; command summaries remain on stdout.
@@ -548,11 +548,11 @@ goregraph dashboard edit .
 ```
 
 For a workspace dashboard, both actions resolve `workspace-map.html`; `open`
-launches the interactive Code Explorer. Without one, `path` prints
+launches the Workspace Explorer, with the interactive Code Explorer available under Service-Code. Without one, `path` prints
 `<configured-output>/dashboard/` and `open` opens `dashboard/report.md`.
 `edit` deliberately targets the workspace dashboard, starts the loopback-only
 editor, and saves confirmed layout choices to `.goregraph-dashboard.json`.
-The static dashboard's **Edit layout** button displays this command instead of
+The static dashboard's extended analysis tools retain an **Edit layout** button that displays this command instead of
 pretending that a read-only file can save changes.
 If neither dashboard exists, GoreGraph reports which project or workspace build
 command creates it instead of printing a hypothetical path.

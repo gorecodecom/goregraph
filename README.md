@@ -41,14 +41,7 @@ before comparing results or estimating costs.
 - Builds a workspace map across repositories or services, including confidence, diagnostics, and source evidence.
 - Produces human-readable reports, machine-readable JSON, and an offline workspace dashboard.
 
-The workspace dashboard answers eight separate questions without mixing their
-evidence models: Architecture maps services, API Catalog inventories provider
-endpoints, Endpoints follows consumer-to-provider relationships, Feature Flow
-shows an implementation chain, Data Flow follows fields, Code Explorer inspects
-exact classes and symbols, Diagnostics explains uncertainty, and Coverage
-distinguishes indexing completeness from analyzer support. Source locations,
-linked tests, safe verification commands, and bounded impact summaries remain
-evidence-backed and local.
+The workspace dashboard opens with Architecture, Interfaces, Service Code and Data Quality. The same selected service carries across these views. Extended analysis tools retain Feature Flow, Data Flow and layout editing. All displays use the existing evidence-backed local projections.
 
 For command reference, see [`COMMANDS.md`](COMMANDS.md). The output contract is
 documented in [`docs/OUTPUTS.md`](docs/OUTPUTS.md) and [`SCHEMA.md`](SCHEMA.md); future
@@ -60,13 +53,21 @@ handling.
 Local 1.4.1 testing and rollback are documented in
 [`docs/LOCAL-1.4.1.md`](docs/LOCAL-1.4.1.md).
 
+## 1.4.2 — Workspace Explorer
+
+Version 1.4.2 makes the redesigned Workspace Explorer the default offline dashboard.
+
+The offline Workspace Explorer now opens with four areas: Architecture, Interfaces, Service Code and Data Quality. Service selection is shared across areas. Architecture shows a directed domain matrix and service focus with side-by-side evidence. Interfaces combine offered APIs and consumer traces. Service Code shows canonical symbols with grouped incoming and outgoing usages, source lines and separate API-reachability evidence. Data Quality combines coverage and diagnostic drilldowns. Existing Feature Flow, Data Flow and layout editing remain available under the extended analysis tools.
+
+Only dashboard presentation changes: source indexing, reconciliation, agent/MCP contracts, Schema 3 and original grouping assignments remain unchanged. Usage evidence continues to load from the existing offline assets; retain workspace-map-assets next to workspace-map.html.
+
 ## Installation
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.1 with output Schema 3.
+Source version: GoreGraph 1.4.2 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-`v1.4.1` is the current GoreGraph release. Package-manager indexes can take some
+`v1.4.2` is the current GoreGraph release. Package-manager indexes can take some
 time to ingest a new release, so always verify the installed version with
 `goregraph version` after installing or upgrading.
 
@@ -100,9 +101,9 @@ Upgrade an existing installation with:
 winget upgrade --id GoreCode.GoreGraph --exact --source winget
 ```
 
-The 1.4.1 release workflow publishes the release archives and automatically
+The 1.4.2 release workflow publishes the release archives and automatically
 submits the corresponding Winget manifest update. Microsoft must accept and
-publish that manifest before Winget offers 1.4.1. If `winget` is missing, install
+publish that manifest before Winget offers 1.4.2. If `winget` is missing, install
 or update [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1) from
 Microsoft Store and open a new terminal.
 
@@ -1064,8 +1065,7 @@ updates these projections once after all selected project indexes are available.
 
 The workspace dashboard at
 `.goregraph-workspace/dashboard/workspace-map.html` is a
-standalone offline UI with eight top-level views, including a directly accessible
-Code Explorer. Its generated
+standalone offline Workspace Explorer with four main areas: **Architecture**, **Interfaces**, **Service Code**, and **Data Quality**. Service selection is shared between them. Its generated
 `.goregraph-workspace/dashboard/workspace-map-assets/` directory
 keeps project-specific symbol-usage evidence out of the startup document and
 loads it only when Code Explorer is opened; keep that directory next to the HTML

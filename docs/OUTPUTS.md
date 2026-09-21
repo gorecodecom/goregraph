@@ -1,7 +1,7 @@
 # GoreGraph Output Contract
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.1 with output Schema 3.
+Source version: GoreGraph 1.4.2 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 ## Build Targets and Extraction
@@ -343,8 +343,13 @@ Java case, not a general savings guarantee.
 ## Human Dashboard
 
 `.goregraph-workspace/dashboard/workspace-map.html` is the Schema 3 standalone
-offline dashboard. It contains Architecture, API Catalog, Endpoints, Feature
-Flow, Data Flow, Code Explorer, Diagnostics, and Coverage views.
+offline dashboard. Its default Workspace Explorer contains Architecture,
+Interfaces, Service Code, and Data Quality. Service selection is shared across
+these areas. Interfaces combines the API catalog and endpoint traces; Service
+Code shows symbols and their grouped incoming/outgoing usages. Data Quality
+combines coverage, freshness, integrity, and diagnostic drilldowns.
+
+The extended analysis tools retain the original views and layout editor:
 
 - Architecture derives dynamic domain lanes, keeps stable card coordinates,
   and distinguishes statically detected relationships from runtime traffic.

@@ -1,12 +1,20 @@
 # GoreGraph Release Checklist
 
+## 1.4.2 — Workspace Explorer
+
+Version 1.4.2 makes the redesigned Workspace Explorer the default offline dashboard.
+
+The offline Workspace Explorer now opens with four areas: Architecture, Interfaces, Service Code and Data Quality. Service selection is shared across areas. Architecture shows a directed domain matrix and service focus with side-by-side evidence. Interfaces combine offered APIs and consumer traces. Service Code shows canonical symbols with grouped incoming and outgoing usages, source lines and separate API-reachability evidence. Data Quality combines coverage and diagnostic drilldowns. Existing Feature Flow, Data Flow and layout editing remain available under the extended analysis tools.
+
+Only dashboard presentation changes: source indexing, reconciliation, agent/MCP contracts, Schema 3 and original grouping assignments remain unchanged. Usage evidence continues to load from the existing offline assets; retain workspace-map-assets next to workspace-map.html.
+
 ## Current Release Status
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.1 with output Schema 3.
+Source version: GoreGraph 1.4.2 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-`v1.4.1` is the current GoreGraph release. Its tag publishes the GitHub archives
+`v1.4.2` is the current GoreGraph release. Its tag publishes the GitHub archives
 and starts the Homebrew, Scoop, and Winget updates. Package-manager indexes can
 lag behind the GitHub release, so each channel must still be verified separately.
 
@@ -224,13 +232,14 @@ changes are confined to documentation, tests, and documentation-sync tooling. A
 different runtime candidate requires a fresh matched matrix before entering the
 1.3.0 release flow.
 
-`v1.4.1`, prepared on 2026-09-11, is the current GoreGraph release. Its annotated
+`v1.4.2`, prepared on 2026-09-21, is the current GoreGraph release. Its annotated
 tag publishes checksummed macOS, Linux, and Windows archives through GitHub
 Releases. Homebrew and Scoop publication are configured. The public Winget
 package ID `GoreCode.GoreGraph` is live, and the release automatically opens the
 upstream manifest PR when `WINGET_TOKEN` is configured. Microsoft acceptance and
 publication of that PR still determine when Winget offers the new version.
-`v1.4.0`, prepared on 2026-08-27, is the previous release.
+`v1.4.1`, prepared on 2026-09-11, is the previous release.
+`v1.4.0` was prepared on 2026-08-27.
 
 ## Completed v1.2.0 Milestone
 
@@ -504,7 +513,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.4.1
+goregraph 1.4.2
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -515,9 +524,9 @@ schema: 3
 ## Release Flow
 
 This is the flow used for the current release. The exact tagged commit must pass
-every documented release gate and have explicit release approval. The v1.4.1
-patch release includes the completed adaptive evidence, source-reader,
-answer-check, and publication changes without changing Schema 3.
+every documented release gate and have explicit release approval. The v1.4.2
+patch release integrates the Workspace Explorer without changing source
+indexing, analysis, agent/MCP contracts, or Schema 3.
 
 1. Confirm `main` is clean and pushed.
 2. Confirm README installation instructions are current.
@@ -525,8 +534,8 @@ answer-check, and publication changes without changing Schema 3.
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v1.4.1 -m "Release v1.4.1"
-   git push origin v1.4.1
+   git tag -a v1.4.2 -m "Release v1.4.2"
+   git push origin v1.4.2
    ```
 
 5. GitHub Actions runs GoReleaser.
