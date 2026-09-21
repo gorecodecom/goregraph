@@ -3,8 +3,12 @@ package scan
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/gorecodecom/goregraph/internal/config"
+	"github.com/gorecodecom/goregraph/internal/outputstore"
 )
 
 // cancelAfterChecks exercises cancellation during work without timer scheduling races.
@@ -43,9 +47,25 @@ func TestProjectSnapshotHonorsProjectBudget(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "main.go", "package example\n")
 	options := DefaultBuildOptions()
-	options.ProjectTimeout = time.Nanosecond
-	_, err := workspaceProjectUpdateItemWithOptions(context.Background(), WorkspaceProjectScanItemRecord{AbsPath: root}, BuildTargetAgent, options)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("snapshot ignored project budget: %v", err)
+	options.ProjectTimeout = 10 * time.Millisecond
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hold the output lock so even a fast filesystem must wait for the budget.
+	err = outputstore.Update(context.Background(), outputstore.UpdateRequest{
+		Root: filepath.Join(root, cfg.OutputDir),
+		Write: func(string) error {
+			parent, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_, snapshotErr := workspaceProjectUpdateItemWithOptions(parent, WorkspaceProjectScanItemRecord{AbsPath: root}, BuildTargetAgent, options)
+			if !errors.Is(snapshotErr, context.DeadlineExceeded) || parent.Err() != nil {
+				t.Errorf("snapshot ignored project budget: snapshot=%v parent=%v", snapshotErr, parent.Err())
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
