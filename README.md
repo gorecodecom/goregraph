@@ -21,6 +21,19 @@ The tool is intentionally conservative:
 - writes scan output to `goregraph-out/` and, when a workspace is detected, workspace metadata to `.goregraph-workspace/`
 - may add generated GoreGraph output paths to the relevant `.gitignore` files
 
+## Measured token use
+
+The newest documented local 1.4.1 development follow-up used **52.08% fewer
+effective tokens** in its successful third run: **79,464 versus 165,839** in the
+previously saved no-GoreGraph reference. That run met all 12 static core criteria
+and identified all seven required test files.
+
+This is one frozen-workspace comparison, not a general savings guarantee or a
+benchmark of the unchanged v1.4.1 release binary. The reference was reused, not
+rerun alongside the candidate. Two preceding diagnostic runs were not fully
+successful. See [the measurement and its limits](#local-141-development-follow-up)
+before comparing results or estimating costs.
+
 ## What GoreGraph does
 
 - Indexes symbols, imports, calls, routes, tests, API clients, and persistence patterns from source code.
@@ -1527,6 +1540,37 @@ The exact one-line baseline instruction, thirteen-line assisted instruction,
 execution protocol, rubric, and dashboard-only decision when a gate fails are
 defined in [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md). A failed gate blocks
 the 1.3.0 release.
+
+### Local 1.4.1 development follow-up
+
+The [reader auto-paging follow-up from September 11, 2026](docs/AGENT-READER-AUTOPAGE-2026-09-11.md)
+records a newer local development experiment, separate from the controlled
+release comparison above:
+
+| Measurement | Saved reference without GoreGraph | Successful third GoreGraph run |
+| --- | ---: | ---: |
+| Effective tokens | 165,839 | 79,464 |
+| Runtime, seconds | 600.300493 | 505.816309 |
+| Static core criteria met | 12/12 | 12/12 |
+
+The documented reductions are **52.08% effective tokens** and **15.74% runtime**.
+The assisted run also found 7/7 required test identities, completed 14 commands
+without a failed GoreGraph command, and delivered no repeated source rows in the
+verified read outputs.
+
+The tested binary was a local 1.4.1 development build, labeled
+`d67d1f4ab3c3-dirty`, built at `2026-09-11T15:09:29Z`. Sharing the version
+number with the current release does not establish that the tested binary and
+the released binary are identical. The saved reference was not rerun, and the
+two preceding diagnostic runs had remaining command or coverage failures. This
+is one successful run on one frozen workspace, not a matched multi-run median
+or a result that can be combined with the earlier 85.92% release benchmark.
+
+Effective tokens mean input tokens minus cached input tokens plus output tokens.
+They are not total tokens or a monetary cost measure; cached tokens are not
+universally free. Generated `goregraph-out/` indexes and Context Pack
+`estimated_tokens` describe analysis artifacts or response budgets, not measured
+end-to-end token savings.
 
 ## Security Model
 
