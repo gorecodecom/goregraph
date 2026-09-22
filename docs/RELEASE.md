@@ -1,5 +1,15 @@
 # GoreGraph Release Checklist
 
+## 1.4.3 — Unreleased
+
+The development source version is 1.4.3. No release or tag has been created for this version; v1.4.2 remains the published release.
+
+Explicit tooling inventories now use `task_context` with `mode: "audit"` or `goregraph context <path> --mode audit`. Both context protocols return bounded current sources for Storybook configuration, stories and their literal file references, package scripts, runner configuration, local CI includes, visual-test preparation and documentation. Audits allow multiple source roots, retain the full query for retrieval and report scoped coverage, static links and unknowns. Ordinary production-entrypoint requests retain their existing contract.
+
+The mandatory synthetic acceptance test delivers all seven Storybook evidence groups. A second multi-project test covers Playwright deployment triggers, INT/TEST, frontend `release` versus Playwright `master`, explicit service-to-app mappings and non-blocking failure policy. Source configuration never establishes successful execution or approved visual baselines. See [tooling audits](TOOLING-AUDITS.md) for limits, examples and index refresh requirements.
+
+The Service Code area now includes a **Tests & Tooling** subview alongside the existing classes and usages. It shows a project-scoped, filterable inventory, static source links, literal A11y/CI declarations and explicit evidence limits. Missing older exports are distinguished from an empty inventory. The four primary dashboard areas and the agent-context workflow remain unchanged. Rebuild the dashboard projection with this version to populate the new view.
+
 ## 1.4.2 — Workspace Explorer
 
 Version 1.4.2 makes the redesigned Workspace Explorer the default offline dashboard.
@@ -11,7 +21,7 @@ Only dashboard presentation changes: source indexing, reconciliation, agent/MCP 
 ## Current Release Status
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.2 with output Schema 3.
+Source version: GoreGraph 1.4.3 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 `v1.4.2` is the current GoreGraph release. Its tag publishes the GitHub archives
@@ -513,7 +523,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.4.2
+goregraph 1.4.3
 commit: <commit>
 built: <timestamp>
 go: <go-version>

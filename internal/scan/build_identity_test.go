@@ -48,3 +48,36 @@ func TestIdentityIgnoresObserverAndIncludesAnalysisBudget(t *testing.T) {
 		t.Fatal("budget omitted from identity")
 	}
 }
+
+func TestUpdateRebuildsPreviousAgentRevisionForToolingAudit(t *testing.T) {
+	workspace := t.TempDir()
+	root := filepath.Join(workspace, "apps", "frontend")
+	writeFile(t, root, "package.json", "{\"name\":\"frontend\"}\n")
+	writeFile(t, root, ".storybook/main.ts", "export default {};\n")
+	cfg := config.Defaults()
+	cfg.Workspace = false
+	cfg.UpdateGitignore = false
+	if _, err := RunBuild(root, cfg, BuildTargetAgent); err != nil {
+		t.Fatal(err)
+	}
+	layout := NewProjectOutputLayout(filepath.Join(root, cfg.OutputDir))
+	manifest := readCurrentOutputManifest(layout.Manifest)
+	manifest.BuildIdentity.AgentRevision = "2"
+	if err := writeOutputManifestAtomic(layout.Manifest, manifest); err != nil {
+		t.Fatal(err)
+	}
+	cfg.WorkspaceRoot, cfg.Workspace = workspace, true
+	plan, err := WorkspaceUpdatePlanWithOptions(context.Background(), workspace, cfg, BuildTargetAgent, DefaultBuildOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Items) != 1 || plan.Items[0].Action != WorkspaceUpdateActionBuild || plan.Items[0].Reason != "agent revision changed" {
+		t.Fatalf("old agent metadata would be skipped: %+v", plan)
+	}
+	current := CurrentBuildIdentity(cfg, DefaultBuildOptions(), "ignore", "source")
+	previous := current
+	previous.AgentRevision = "2"
+	if identityChange(previous, current, BuildTargetAgent) != "agent revision changed" || identityChange(previous, current, BuildTargetDashboard) != "" {
+		t.Fatal("agent revision does not isolate dashboard updates")
+	}
+}

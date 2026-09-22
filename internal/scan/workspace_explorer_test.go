@@ -45,13 +45,16 @@ func explorerTestFixture(t *testing.T, root string) workspaceDashboardArtifacts 
 	}}
 	symbols := WorkspaceSymbolIndexRecord{SchemaVersion: SchemaVersion, Symbols: []CanonicalSymbolRecord{
 		{ID: "order", Project: "services/orders", Name: "Order", QualifiedName: "example.Order", Kind: "class", DeclarationFile: "src/main/Order.java", DeclarationLine: 4},
+		{ID: "product-card", Project: "web/store", Name: "ProductCard", QualifiedName: "ProductCard", Kind: "component", DeclarationFile: "src/ProductCard.tsx", DeclarationLine: 1},
 		{ID: "consumer", Project: "web/store", Name: "OrderConsumer", QualifiedName: "example.OrderConsumer", Kind: "class", DeclarationFile: "src/main/Consumer.java", DeclarationLine: 8},
 	}}
 	usages := WorkspaceSymbolUsageIndexRecord{SchemaVersion: SchemaVersion, Usages: []CanonicalSymbolUsageRecord{
 		{ID: "u1", ProviderSymbolID: "order", ConsumerSymbolID: "consumer", ConsumerProject: "web/store", Category: SymbolUsageDirectReference, RelationKind: "imports_type", SourceFile: "src/main/Consumer.java", SourceLine: 3, Resolution: "EXACT"},
 		{ID: "u2", ProviderSymbolID: "order", ConsumerSymbolID: "consumer", ConsumerProject: "web/store", Category: SymbolUsageDirectReference, RelationKind: "field_type", SourceFile: "src/main/Consumer.java", SourceLine: 12, Resolution: "EXACT"},
 	}}
-	return buildWorkspaceDashboardArtifacts(WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: root}, serviceMap, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, symbols, usages)
+	sources, notes := toolingFixtureSources(t)
+	tooling := map[string]DashboardToolingRecord{"web/store": buildDashboardTooling(sources, notes), "services/orders": {Version: 1, Sources: []DashboardToolingSource{}}}
+	return buildWorkspaceDashboardArtifacts(WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: root}, serviceMap, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, symbols, usages, tooling)
 }
 
 func TestWorkspaceExplorerOfflineBrowser(t *testing.T) {

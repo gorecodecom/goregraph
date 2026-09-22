@@ -24,6 +24,7 @@ const (
 )
 
 var IndexGeneratedFiles = []string{
+	"tooling.json",
 	"freshness.json",
 	"files.json",
 	"symbols.json",
@@ -267,7 +268,17 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 		}
 		index.Files = append(index.Files, record)
 		text := string(body)
+		if source, ok := extractAgentAuditSource(record, text); ok {
+			index.AuditSources = append(index.AuditSources, source)
+			if notes := extractDashboardToolingObservations(source, text); len(notes) > 0 {
+				if index.ToolingObservations == nil {
+					index.ToolingObservations = map[string][]DashboardToolingObservation{}
+				}
+				index.ToolingObservations[record.Path] = notes
+			}
+		}
 		index.AgentContextConfigurationFacts = append(index.AgentContextConfigurationFacts, extractAgentContextConfigurationFacts(record, text)...)
+		index.AgentContextStoryFacts = append(index.AgentContextStoryFacts, extractAgentContextStoryFacts(record, text)...)
 		index.Symbols = append(index.Symbols, extractSymbols(record, text)...)
 		index.Relations = append(index.Relations, extractRelations(record, text)...)
 		if record.Language == "java" {
@@ -471,6 +482,9 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 			index.AgentContextConfigurationFacts,
 		)
 		contextIndex = linkAgentContextContractConfiguration(contextIndex, apiContracts)
+		contextIndex = appendAgentContextStoryFacts(contextIndex, filepath.Base(root), index.AgentContextStoryFacts, index.SymbolFacts)
+		contextIndex.AuditVersion = 1
+		contextIndex.AuditSources = finalizeAgentAuditSources(index.AuditSources, filepath.Base(root))
 		contextIndex.SourceHashes = make(map[string]string)
 		representedFiles := make(map[string]bool)
 		for _, fact := range contextIndex.Facts {
@@ -549,6 +563,7 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 		name  string
 		value any
 	}{
+		{"tooling.json", buildDashboardTooling(index.AuditSources, index.ToolingObservations)},
 		{"freshness.json", freshness},
 		{"files.json", index.Files},
 		{"symbols.json", index.Symbols},

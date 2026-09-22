@@ -1323,11 +1323,16 @@ func emptyCLI(value string) string {
 
 func runContext(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, `Usage: goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12] [--format markdown|json] [--previous-context-id <id>]
+		fmt.Fprint(stdout, `Usage: goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12] [--mode audit] [--format markdown|json] [--previous-context-id <id>]
 
 Builds one deterministic, budgeted Context Pack from existing generated output.
 Budget tokens: 256-6000. Max files: 1-20.
 Protocol: --protocol strict-v1 (default) or adaptive-v2 (bounded verification/fallback).
+
+Audit mode: --mode audit permits multiple tooling sources and reports scoped coverage.
+Use --max-files 20 for broad audits; runtime execution and repository-wide absence remain unproven.
+
+`+agentguide.AuditInstruction+`
 
 Normal agent workflow:
 
@@ -1354,6 +1359,8 @@ Do not read index/, dashboard/, dashboard assets, or index/symbol-usages.json as
 		value := args[i+1]
 		i++
 		switch option {
+		case "--mode":
+			options.Mode = value
 		case "--protocol":
 			options.ProtocolVersion = value
 		case "--query":

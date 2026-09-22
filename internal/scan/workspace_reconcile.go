@@ -18,6 +18,7 @@ var workspaceGroupDirs = []string{"frontend", "frontends", "microservices", "ser
 var workspaceReadDir = os.ReadDir
 
 type workspaceIndexProject struct {
+	tooling            DashboardToolingRecord
 	record             WorkspaceProjectRecord
 	routes             []CodeRouteRecord
 	legacyRelations    []RelationRecord
@@ -296,7 +297,7 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 	serviceMap.Health = HealthForProjection(manifest, "dashboard", false)
 	var dashboardArtifacts workspaceDashboardArtifacts
 	if target.IncludesDashboard() {
-		dashboardArtifacts = buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, apiCatalog, symbolIndex, symbolUsageIndex)
+		dashboardArtifacts = buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, apiCatalog, symbolIndex, symbolUsageIndex, workspaceDashboardTooling(indexed))
 		dashboardFiles = workspaceDashboardFiles(dashboardArtifacts.Assets)
 		manifest.Dashboard.Files = dashboardFiles
 	}
@@ -984,6 +985,9 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		}
 		layout := NewProjectOutputLayout(out)
 		loaded := workspaceIndexProject{record: project}
+		if err := readWorkspaceJSON(layout.Index("tooling.json"), &loaded.tooling); err != nil {
+			loaded.tooling = DashboardToolingRecord{}
+		}
 		loadSymbolFact := func(name string, dest any, reset func()) {
 			err := readWorkspaceJSON(layout.Index(name), dest)
 			if err == nil {
@@ -1378,6 +1382,9 @@ func (builder *workspaceAgentContextBuilder) findCanonicalContractFact(
 }
 
 type workspaceAgentContextBuilder struct {
+	auditSources     []AgentAuditSource
+	auditEnabled     bool
+	auditIncomplete  bool
 	registry         WorkspaceRegistryRecord
 	projects         map[string]bool
 	factsByID        map[string]AgentContextFactRecord
@@ -1424,6 +1431,21 @@ func (builder *workspaceAgentContextBuilder) mergeProjectIndex(index AgentContex
 	project := contextPathKey(index.Root)
 	if project == "" || !builder.hasProject(project) {
 		return
+	}
+	if index.AuditVersion == 1 {
+		builder.auditEnabled = true
+		for _, source := range index.AuditSources {
+			source.Project = project
+			source.File = workspaceAgentFile(project, source.File)
+			if source.File != "" {
+				builder.auditSources = append(builder.auditSources, source)
+			}
+		}
+	} else {
+		builder.auditIncomplete = true
+	}
+	if index.AuditIncomplete {
+		builder.auditIncomplete = true
 	}
 	if builder.projectFactIDs[project] == nil {
 		builder.projectFactIDs[project] = map[string]string{}
@@ -2184,6 +2206,17 @@ func (builder *workspaceAgentContextBuilder) addEdge(edge AgentContextEdgeRecord
 }
 
 func (builder *workspaceAgentContextBuilder) index(generated string) AgentContextIndexRecord {
+	auditVersion := 0
+	if builder.auditEnabled {
+		auditVersion = 1
+	}
+	sort.Slice(builder.auditSources, func(i, j int) bool {
+		l, r := builder.auditSources[i], builder.auditSources[j]
+		if l.Project != r.Project {
+			return l.Project < r.Project
+		}
+		return l.File < r.File
+	})
 	facts := make([]AgentContextFactRecord, 0, len(builder.factsByID))
 	for _, fact := range builder.factsByID {
 		facts = append(facts, fact)
@@ -2205,13 +2238,16 @@ func (builder *workspaceAgentContextBuilder) index(generated string) AgentContex
 		return contextCoverageLess(coverage[i], coverage[j])
 	})
 	return AgentContextIndexRecord{
-		SchemaVersion: SchemaVersion,
-		Generated:     generated,
-		Root:          builder.registry.Root,
-		SourceHashes:  builder.sourceHashes,
-		Facts:         facts,
-		Edges:         edges,
-		Coverage:      coverage,
+		SchemaVersion:   SchemaVersion,
+		Generated:       generated,
+		Root:            builder.registry.Root,
+		SourceHashes:    builder.sourceHashes,
+		AuditVersion:    auditVersion,
+		AuditIncomplete: builder.auditEnabled && (builder.auditIncomplete || len(builder.projectFactIDs) < len(builder.registry.Projects)),
+		AuditSources:    builder.auditSources,
+		Facts:           facts,
+		Edges:           edges,
+		Coverage:        coverage,
 	}
 }
 

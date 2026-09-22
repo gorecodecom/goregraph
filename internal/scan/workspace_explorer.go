@@ -54,7 +54,7 @@ func renderWorkspaceDashboardDocument(title string, payload []byte) string {
     document.getElementById('workspace-extended-shell').remove();
     document.getElementById('workspace-extended-script').remove();
 `)
-	for _, name := range []string{"adapter.js", "evidence-model.js", "app.js", "workspace-ui.js"} {
+	for _, name := range []string{"adapter.js", "evidence-model.js", "app.js", "tooling.js", "workspace-ui.js"} {
 		b.WriteString(dashboardFile(name))
 		b.WriteString("\n")
 	}

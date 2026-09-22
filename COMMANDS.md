@@ -2,7 +2,7 @@
 
 This file lists every user-facing GoreGraph command, what it does, and common variations.
 
-## Local 1.4.2 controls
+## Local 1.4.3 controls
 
 Build, scan and workspace update commands accept `--progress auto|plain|json|off`.
 Progress and five-second heartbeats use stderr; command summaries remain on stdout.
@@ -558,6 +558,16 @@ If neither dashboard exists, GoreGraph reports which project or workspace build
 command creates it instead of printing a hypothetical path.
 
 ## `goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12]`
+
+For tooling inventories, add `--mode audit` (MCP: `mode: "audit"`). This opt-in mode
+allows multiple source roots, uses the full query, and reports scoped
+`audit.areas`, static `audit.links` and `audit.unknown`. It does not establish
+effective activation, successful execution or repository-wide absence. Use
+`--max-files 20 --budget-tokens 6000` for broad audits. Read exact bounded
+`source_omissions`; if only `source_unrepresented` remains, narrow the request
+or increase the supported budget. See [tooling audits](docs/TOOLING-AUDITS.md).
+The production-workflow rules below apply when `--mode audit` is omitted.
+
 
 Returns the bounded Context Pack for the normal AI workflow. It reads only the
 generated `agent/context-index.json` projection and never asks an assistant to

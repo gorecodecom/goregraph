@@ -35,6 +35,7 @@ const (
 )
 
 type ContextRequest struct {
+	Mode              string `json:"mode,omitempty"`
 	Root              string `json:"root,omitempty"`
 	Query             string `json:"query"`
 	BudgetTokens      int    `json:"budget_tokens,omitempty"`
@@ -152,8 +153,10 @@ type ContextEndpoint struct {
 }
 
 type ContextPack struct {
-	Schema                 int    `json:"schema"`
-	Query                  string `json:"query"`
+	Mode                   string        `json:"mode,omitempty"`
+	Audit                  *ContextAudit `json:"audit,omitempty"`
+	Schema                 int           `json:"schema"`
+	Query                  string        `json:"query"`
 	selectionQuery         string
 	budgetQuery            string
 	Freshness              string                              `json:"freshness,omitempty"`
@@ -216,6 +219,9 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 			}
 		}
 		return ContextPack{}, err
+	}
+	if request.Mode == "audit" {
+		return buildAuditContext(loaded, request)
 	}
 	metadataRequest := request
 	loaded = withContextSourceSearch(loaded, request.Query)
@@ -860,6 +866,9 @@ func contextByteBudget(tokens int) int {
 }
 
 func normalizeContextRequest(request ContextRequest) (ContextRequest, error) {
+	if request.Mode != "" && request.Mode != "audit" {
+		return ContextRequest{}, fmt.Errorf("context mode must be audit or omitted")
+	}
 	if strings.TrimSpace(request.Root) == "" {
 		request.Root = "."
 	}

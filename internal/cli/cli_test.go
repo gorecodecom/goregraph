@@ -1328,7 +1328,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 1.4.2",
+		"goregraph 1.4.3",
 		"commit:",
 		"built:",
 		"go:",
@@ -2703,4 +2703,36 @@ func cliTestOutputPath(path string) string {
 		return filepath.Join(dir, "index", name)
 	}
 	return filepath.Join(dir, "dashboard", name)
+}
+
+func TestContextCLIAuditModePreservesFullQuery(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, ".storybook/main.ts", "export default { addons: ['@storybook/addon-a11y'] };\n")
+	writeFile(t, root, "docs/storybook.md", "Automatic accessibility execution is unknown.\n")
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"build", "agent", root, "--no-workspace", "--no-update-gitignore"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("build: %s", stderr.String())
+	}
+	queryText := "Prüfe Version 1.4.3. Berücksichtige Storybook und Dokumentation für vollständige Überprüfung."
+	for _, format := range []string{"json", "markdown"} {
+		stdout.Reset()
+		stderr.Reset()
+		if code := Run([]string{"context", root, "--mode", "audit", "--query", queryText, "--max-files", "20", "--budget-tokens", "6000", "--format", format}, &stdout, &stderr); code != 0 {
+			t.Fatalf("audit: %s", stderr.String())
+		}
+		if !strings.Contains(stdout.String(), queryText) || !strings.Contains(stdout.String(), "docs/storybook.md") || !strings.Contains(stdout.String(), "unknown") {
+			t.Fatalf("missing audit evidence: %s", stdout.String())
+		}
+		if format == "json" {
+			var pack agent.ContextPack
+			if err := json.Unmarshal(stdout.Bytes(), &pack); err != nil || pack.Mode != "audit" || pack.FallbackRequired || pack.Audit == nil {
+				t.Fatalf("CLI audit: %+v, %v", pack, err)
+			}
+		}
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run([]string{"context", root, "--mode", "typo", "--query", "Storybook"}, &stdout, &stderr); code == 0 || !strings.Contains(stderr.String(), "mode") {
+		t.Fatalf("accepted unknown mode: %s", stderr.String())
+	}
 }

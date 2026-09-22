@@ -9,8 +9,8 @@ import (
 const (
 	currentExtractorRevision = "2"
 	currentResolverRevision  = "1"
-	currentAgentRevision     = "2"
-	currentDashboardRevision = "2"
+	currentAgentRevision     = "3"
+	currentDashboardRevision = "3"
 )
 
 // BuildIdentity records inputs that affect analysis independently of release labels.

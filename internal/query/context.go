@@ -12,6 +12,7 @@ import (
 )
 
 type ContextOptions struct {
+	Mode              string
 	ProtocolVersion   string
 	Root              string
 	Query             string
@@ -23,6 +24,7 @@ type ContextOptions struct {
 
 func RunContext(options ContextOptions) (string, error) {
 	pack, err := agent.BuildContext(agent.ContextRequest{
+		Mode:              options.Mode,
 		ProtocolVersion:   options.ProtocolVersion,
 		Root:              options.Root,
 		Query:             options.Query,
@@ -51,6 +53,18 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		"# GoreGraph Context",
 		"",
 		"Query: " + contextInline(pack.Query),
+	}
+	if pack.Audit != nil {
+		lines = append(lines, "Mode: audit", "Audit scope: "+contextInline(pack.Audit.Scope), "Execution evidence: "+contextInline(pack.Audit.Execution))
+		for _, area := range pack.Audit.Areas {
+			lines = append(lines, fmt.Sprintf("Audit area %s: %d/%d indexed sources delivered (%s)", contextInline(area.Name), area.Delivered, area.Selected, area.Coverage))
+		}
+		for _, link := range pack.Audit.Links {
+			lines = append(lines, fmt.Sprintf("Audit link: %s -> %s (%s; %s)", contextInline(link.From), contextInline(link.To), contextInline(link.Kind), contextInline(link.Reason)))
+		}
+		for _, issue := range pack.Audit.Unknown {
+			lines = append(lines, "Unknown: "+contextInline(issue))
+		}
 	}
 	if pack.ProtocolVersion == agent.AdaptiveV2 {
 		lines = append(lines, "Protocol: "+pack.ProtocolVersion)

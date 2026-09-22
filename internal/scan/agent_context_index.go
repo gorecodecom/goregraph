@@ -48,13 +48,16 @@ type AgentContextCoverageRecord struct {
 }
 
 type AgentContextIndexRecord struct {
-	SchemaVersion int                          `json:"schema_version"`
-	Generated     string                       `json:"generated,omitempty"`
-	Root          string                       `json:"root,omitempty"`
-	Facts         []AgentContextFactRecord     `json:"facts"`
-	Edges         []AgentContextEdgeRecord     `json:"edges"`
-	Coverage      []AgentContextCoverageRecord `json:"coverage,omitempty"`
-	SourceHashes  map[string]string            `json:"source_hashes,omitempty"`
+	AuditVersion    int                          `json:"audit_version,omitempty"`
+	AuditIncomplete bool                         `json:"audit_incomplete,omitempty"`
+	AuditSources    []AgentAuditSource           `json:"audit_sources,omitempty"`
+	SchemaVersion   int                          `json:"schema_version"`
+	Generated       string                       `json:"generated,omitempty"`
+	Root            string                       `json:"root,omitempty"`
+	Facts           []AgentContextFactRecord     `json:"facts"`
+	Edges           []AgentContextEdgeRecord     `json:"edges"`
+	Coverage        []AgentContextCoverageRecord `json:"coverage,omitempty"`
+	SourceHashes    map[string]string            `json:"source_hashes,omitempty"`
 }
 
 const (

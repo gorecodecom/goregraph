@@ -1,0 +1,133 @@
+[
+  {
+    "id": "storybook_configuration",
+    "expected": "React/Vite with Docs, A11y and Vitest addons configured",
+    "sources": [
+      {
+        "path": ".storybook/main.ts",
+        "snippets": [
+          "framework: '@storybook/react-vite'",
+          "'@storybook/addon-a11y'",
+          "../src/**/*.stories.tsx"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "automatic_a11y",
+    "expected": "disabled; installing an addon is insufficient evidence of activation",
+    "sources": [
+      {
+        "path": ".storybook/preview.ts",
+        "snippets": [
+          "a11y: { test: 'off' }"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "component_story_fixture",
+    "expected": "story links the component, fixture and interaction assertions",
+    "sources": [
+      {
+        "path": "src/ProductCard.tsx",
+        "snippets": [
+          "export function ProductCard"
+        ]
+      },
+      {
+        "path": "src/productFixture.ts",
+        "snippets": [
+          "export function productFixture"
+        ]
+      },
+      {
+        "path": "src/ProductCard.stories.tsx",
+        "snippets": [
+          "from './ProductCard'",
+          "from './productFixture'",
+          "play: async",
+          "toBeVisible()"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "interaction_runner",
+    "expected": "Chromium interaction execution configured; successful execution not established",
+    "sources": [
+      {
+        "path": "package.json",
+        "snippets": [
+          "vitest run --config vitest.storybook.config.ts"
+        ]
+      },
+      {
+        "path": "vitest.storybook.config.ts",
+        "snippets": [
+          "storybookTest({ configDir: '.storybook' })",
+          "browser: 'chromium'",
+          "setupFiles: ['.storybook/vitest.setup.ts']"
+        ]
+      },
+      {
+        "path": ".storybook/vitest.setup.ts",
+        "snippets": [
+          "setProjectAnnotations(preview)"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ci_integration",
+    "expected": "included interaction job configured as non-blocking",
+    "sources": [
+      {
+        "path": ".gitlab-ci.yml",
+        "snippets": [
+          "local: '.gitlab/storybook.yml'"
+        ]
+      },
+      {
+        "path": ".gitlab/storybook.yml",
+        "snippets": [
+          "npm run storybook:test",
+          "allow_failure: true"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "visual_configuration",
+    "expected": "screenshot test configured; missing references checked separately against fixture inventory",
+    "sources": [
+      {
+        "path": "tests/storybook/playwright.config.ts",
+        "snippets": [
+          "snapshotPathTemplate: '{testDir}/references/{arg}{ext}'",
+          "testMatch: 'visual.spec.ts'"
+        ]
+      },
+      {
+        "path": "tests/storybook/visual.spec.ts",
+        "snippets": [
+          "toHaveScreenshot('product-card.png')"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "documented_limits",
+    "expected": "documentation distinguishes preparation, activation and unknown execution",
+    "sources": [
+      {
+        "path": "docs/storybook.md",
+        "snippets": [
+          "Their latest execution result is unknown",
+          "Approved reference images have not been supplied",
+          "An unreferenced CI file is not part of the pipeline"
+        ]
+      }
+    ]
+  }
+]

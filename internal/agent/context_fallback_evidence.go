@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
 const maximumFallbackSourceSections = 3
@@ -26,24 +28,60 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 	for _, token := range strings.Fields("which what when that this have from with without keep trace explain state current existing provided supplied describe determine source sources file files project projects production evidence change changes required deren diese einer eines einen einem nicht sollen sollte welche erkläre nenne behalte vorhandene vorhandenen quellcode quelle quellen") {
 		delete(tokens, token)
 	}
-	if len(tokens) == 0 {
+	storybookRequested := contextTokenSet(request.Query)["storybook"]
+	if len(tokens) == 0 && !storybookRequested {
 		return finalizeContextPackWithinBudget(pack, request)
 	}
 	type evidence struct {
-		section ContextSourceSection
-		factID  string
-		score   int
-		changed bool
+		section  ContextSourceSection
+		factID   string
+		score    int
+		changed  bool
+		priority int
 	}
 	byPath := map[string]evidence{}
 	files := map[string]sourceFile{}
+	storyPriorities := map[string]int{}
+	storyRequested := contextQueryRequestsStorySources(request.Query)
+	sourceLimit := maximumFallbackSourceSections
 	ranked := rankContextFacts(loaded.Index.Facts, request.Query)
-	for i, item := range ranked {
-		if i == maxContextSourceSearchHandlers {
+	if storybookRequested {
+		// Configuration evidence can be requested in a later sentence. Keep the
+		// production ranking intact and recover only these explicit file candidates.
+		var configurations []scan.AgentContextFactRecord
+		for _, fact := range loaded.Index.Facts {
+			if fact.Kind == "configuration" && scan.IsStorybookConfigurationSource(fact.File) {
+				configurations = append(configurations, fact)
+			}
+		}
+		ranked = append(rankContextFacts(configurations, "storybook"), ranked...)
+	}
+	if storyRequested {
+		stories, priorities := storybookFallbackStoryCandidates(loaded, request.Query, files)
+		storyPriorities = priorities
+		ranked = append(stories, ranked...)
+		sourceLimit = maximumStorybookFallbackSourceSections
+	}
+	seen := map[string]bool{}
+	for _, item := range ranked {
+		if seen[item.fact.ID] {
+			continue
+		}
+		if len(seen) == maxContextSourceSearchHandlers {
 			break
 		}
 		fact := item.fact
-		if fact.File == "" || fact.Line <= 0 || contextFactUsesTestSource(fact) && !contextQueryRequestsTests(request.Query) {
+		seen[fact.ID] = true
+		if storyRequested && storyPriorities[fact.ID] == 0 && !(fact.Kind == "configuration" && scan.IsStorybookConfigurationSource(fact.File)) {
+			continue
+		}
+		if fact.Kind == "storybook_story" && storyPriorities[fact.ID] == 0 {
+			continue
+		}
+		if fact.Kind == "configuration" && scan.IsStorybookConfigurationSource(fact.File) && !storybookRequested {
+			continue
+		}
+		if fact.File == "" || fact.Line <= 0 || contextFactUsesTestSource(fact) && !contextQueryRequestsTests(request.Query) && storyPriorities[fact.ID] == 0 {
 			continue
 		}
 		candidate := sourceCandidate{FactID: fact.ID, Project: fact.Project, Path: fact.File, StartLine: fact.Line,
@@ -70,7 +108,10 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 		attachSourceReadReceipt(&section, file)
 		contentTokens := contextExpandedTokenSet(section.Content)
 		identityTokens := contextExpandedTokenSet(strings.Join([]string{fact.Name, fact.Qualified, fact.File}, " "))
-		score := 0
+		score := storyPriorities[fact.ID]
+		if storybookRequested && fact.Kind == "configuration" && scan.IsStorybookConfigurationSource(fact.File) {
+			score++
+		}
 		for token := range tokens {
 			if contentTokens[token] || identityTokens[token] {
 				score++
@@ -82,7 +123,7 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 		key := normalizeContextProject(fact.Project) + "\x00" + candidate.Path
 		previous, found := byPath[key]
 		if !found || score > previous.score || score == previous.score && fact.ID < previous.factID {
-			byPath[key] = evidence{section: section, factID: fact.ID, score: score, changed: adaptiveSourceHashChanged(loaded, candidate, file)}
+			byPath[key] = evidence{section: section, factID: fact.ID, score: score, changed: adaptiveSourceHashChanged(loaded, candidate, file), priority: storyPriorities[fact.ID]}
 		}
 	}
 	options := make([]evidence, 0, len(byPath))
@@ -90,6 +131,9 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 		options = append(options, option)
 	}
 	sort.Slice(options, func(i, j int) bool {
+		if options[i].priority != options[j].priority {
+			return options[i].priority > options[j].priority
+		}
 		if options[i].score != options[j].score {
 			return options[i].score > options[j].score
 		}
@@ -98,7 +142,7 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 	identities := []string{}
 	included := map[string]bool{}
 	for _, option := range options {
-		if len(pack.SourceSections) >= min(maximumFallbackSourceSections, request.MaxFiles) {
+		if len(pack.SourceSections) >= min(sourceLimit, request.MaxFiles) {
 			break
 		}
 		candidate := cloneContextPack(pack)
@@ -112,8 +156,15 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 			candidate.SourceSections[len(candidate.SourceSections)-1].SourceState = "current_source_changed_since_index"
 		}
 		if len(pack.SourceSections) == 0 {
+			reason := "Query vocabulary occurs in these current declarations; a unique entrypoint, runtime ownership and complete task coverage are not established."
+			if storybookRequested {
+				reason = "Query vocabulary identifies these current sources; a unique entrypoint, runtime ownership, activation, successful execution and complete task coverage are not established."
+			}
+			if storyRequested {
+				reason += " Story evidence is limited to one indexed story and its direct resolved imports; inclusion by the Storybook configuration is not established."
+			}
 			candidate.Uncertainties = append(candidate.Uncertainties, ContextUncertainty{
-				Scope: "candidate_evidence", Reason: "Query vocabulary occurs in these current declarations; a unique entrypoint, runtime ownership and complete task coverage are not established.",
+				Scope: "candidate_evidence", Reason: reason,
 			})
 		}
 		fits, err := contextSourcePackFits(candidate, request)

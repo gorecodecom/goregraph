@@ -1,6 +1,6 @@
 'use strict';
 const workspace = window.WORKSPACE_DATA;
-Object.assign(state, {area:'architecture', moduleScope:'service', codeQuery:'', codeKind:'all', codeScope:'all', symbol:null, usageDirection:'incoming', usageScope:'all', usageCategory:'all', codeLimit:60, usageLimit:40, codeHistory:[], apiMode:'offered', apiQuery:'', apiStatus:'all', apiLimit:60, endpoint:null, trace:null});
+Object.assign(state, {codeView:'symbols', toolingQuery:'', toolingGroup:'all', toolingFile:null, toolingLimit:40, area:'architecture', moduleScope:'service', codeQuery:'', codeKind:'all', codeScope:'all', symbol:null, usageDirection:'incoming', usageScope:'all', usageCategory:'all', codeLimit:60, usageLimit:40, codeHistory:[], apiMode:'offered', apiQuery:'', apiStatus:'all', apiLimit:60, endpoint:null, trace:null});
 const symbolById = new Map(workspace.symbols.map(symbol => [symbol.id, symbol]));
 const symbolsByProject = new Map();
 const incomingUsages = new Map();
@@ -53,7 +53,7 @@ function renderAreaNavigation() {
   document.getElementById('area-crumb').textContent=areaNames[state.area];
 }
 window.resetWorkspaceSelection=()=>{
-  state.symbol=null;state.endpoint=null;state.trace=null;state.codeQuery='';state.codeLimit=60;state.usageLimit=40;state.codeHistory=[];state.moduleScope='service';state.qualityTraceIds=null;
+  state.toolingFile=null;state.toolingQuery='';state.toolingGroup='all';state.toolingLimit=40;state.symbol=null;state.endpoint=null;state.trace=null;state.codeQuery='';state.codeLimit=60;state.usageLimit=40;state.codeHistory=[];state.moduleScope='service';state.qualityTraceIds=null;
 };
 window.renderWorkspaceArea=()=>{
   renderAreaNavigation();
@@ -104,13 +104,14 @@ function symbolDetails(symbol) {
   return `<section class="symbol-detail" aria-label="Symbol und Verwendungen"><div class="detail-title"><div><span class="detail-eyebrow">${esc(kindNames[symbol.kind]||symbol.kind)} · ${esc(symbol.language)}</span><h2>${esc(symbol.name)}</h2></div>${state.codeHistory.length?'<button class="button" data-module-action="code-back">‹ Zurück</button>':''}</div><code class="qualified-name">${esc(symbol.qualified_name)}</code>${fileReference(symbol.project,symbol.declaration_file,symbol.declaration_line)}<div class="symbol-summary"><span>${direct} direkte Verwendungsnachweise</span><span>${indirect} über API</span><span>Verwendende Projekte: ${new Set(incoming.map(u=>u.consumer_project)).size}</span></div><div class="module-tabs segmented" aria-label="Verwendungsrichtung"><button data-usage-direction="incoming" class="${state.usageDirection==='incoming'?'active':''}" aria-pressed="${state.usageDirection==='incoming'}">Wird verwendet von (${incoming.length})</button><button data-usage-direction="outgoing" class="${state.usageDirection==='outgoing'?'active':''}" aria-pressed="${state.usageDirection==='outgoing'}">Verwendet selbst ${state.usageDirection==='outgoing'?'('+outgoing.length+')':''}</button></div><div class="module-filter usage-filters">${sourceSelector('usage-scope','Verwendungsstellen',state.usageScope)}${selector('usage-category','Nachweisart',[['all','Alle Nachweise'],['direct_reference','Direkte Referenzen'],['reached_through_api','Über API erreichbar'],['unresolved','Ungeklärt'],['ambiguous','Mehrdeutig']],state.usageCategory)}</div><p class="list-count">${rows.length} Nachweise in ${usageGroups.length} Einträgen · statische Beziehungen, keine Laufzeitmessung</p><div class="usage-list">${rows.length?usageGroups.slice(0,state.usageLimit).map(usageGroupCard).join(''):emptyState('Keine Verwendungsnachweise im Filter','Das belegt nicht, dass das Symbol ungenutzt ist. Dynamische Aufrufe, generierter Code und Dependency Injection können fehlen.')}</div>${usageGroups.length>state.usageLimit?`<button class="button load-more" data-module-action="more-usages">Weitere Einträge (${usageGroups.length-state.usageLimit})</button>`:''}</section>`;
 }
 function renderCode() {
+  if(state.codeView==='tooling')return renderTooling();
   state.usageLoad=ensureWorkspaceUsages(selectedProject(),state.usageDirection==='outgoing');
   const all=(symbolsByProject.get(selectedProject())||[]).slice().sort((a,b)=>a.name.localeCompare(b.name)||String(a.qualified_name||a.name).localeCompare(String(b.qualified_name||b.name)));
   const query=state.codeQuery.toLocaleLowerCase();
   const symbols=all.filter(symbol=>(state.codeKind==='all'||symbol.kind===state.codeKind)&&scopeMatches(symbol.declaration_file,state.codeScope)&&(!query||`${symbol.name} ${symbol.qualified_name} ${symbol.declaration_file}`.toLocaleLowerCase().includes(query)));
   if(!state.symbol||!symbols.some(symbol=>symbol.id===state.symbol)) state.symbol=symbols.find(s=>s.kind==='class'&&s.name.endsWith('Service')&&sourceScope(s.declaration_file)==='production'&&(incomingUsages.get(s.id)||[]).some(u=>u.category==='direct_reference'))?.id||symbols[0]?.id||null;
   const symbol=symbolById.get(state.symbol);
-  document.getElementById('content').innerHTML=moduleHeading('Service-Code','Klassen, Interfaces und Funktionen entdecken – und ihre Verwendungen nachvollziehen.',false)+moduleStats([[all.length,'Symbole im Export'],[all.filter(s=>['class','interface','record','enum'].includes(s.kind)).length,'Klassen & Typen'],[new Set(all.map(s=>s.declaration_file)).size,'Quelldateien']])+`<div class="module-filter"><label class="module-search" for="code-search">Symbole suchen<input id="code-search" type="search" placeholder="Klasse, Package oder Datei …" value="${esc(state.codeQuery)}"></label>${selector('code-kind','Symbolart',[['all','Alle Symbolarten'],...Object.entries(kindNames).filter(([kind])=>all.some(s=>s.kind===kind))],state.codeKind)}${sourceSelector('code-scope','Deklarationen',state.codeScope)}</div><div class="code-workbench"><section class="symbol-browser" aria-label="Symbole des Services"><header><h2>Symbole</h2><span>${symbols.length} Treffer</span></header><div class="symbol-list">${symbols.length?symbols.slice(0,state.codeLimit).map(s=>`<button class="symbol-row ${s.id===state.symbol?'active':''}" data-symbol="${esc(s.id)}" aria-pressed="${s.id===state.symbol}"><span class="symbol-kind">${esc(kindNames[s.kind]||s.kind)}</span><strong>${esc(s.name)}</strong><small>${esc(s.package||s.declaration_file)}</small><span class="symbol-row-meta">${state.usageLoad.loading||state.usageLoad.failed.length?'—':(incomingUsages.get(s.id)||[]).filter(u=>u.category==='direct_reference').length} direkte Nachweise · ${esc(scopeLabels[sourceScope(s.declaration_file)])}</span></button>`).join(''):emptyState('Keine Symbole gefunden',all.length?'Suche oder Filter anpassen.':'Für diesen Service sind keine Symboldeklarationen im vorliegenden Export enthalten.')}</div>${symbols.length>state.codeLimit?`<button class="button load-more" data-module-action="more-symbols">Weitere Symbole (${symbols.length-state.codeLimit})</button>`:''}</section>${symbolDetails(symbol)}</div><p class="data-note">Direkte Referenzen und Erreichbarkeit über APIs sind getrennt gekennzeichnet. Aufrufe auf einem Typ sind keine vollständige Methodenliste. Verwendungsanalyse: teilweise; fehlende Nachweise bedeuten nicht „ungenutzt“.</p>`;
+  document.getElementById('content').innerHTML=moduleHeading('Service-Code','Klassen, Interfaces und Funktionen entdecken – und ihre Verwendungen nachvollziehen.',false)+codeViewTabs()+moduleStats([[all.length,'Symbole im Export'],[all.filter(s=>['class','interface','record','enum'].includes(s.kind)).length,'Klassen & Typen'],[new Set(all.map(s=>s.declaration_file)).size,'Quelldateien']])+`<div class="module-filter"><label class="module-search" for="code-search">Symbole suchen<input id="code-search" type="search" placeholder="Klasse, Package oder Datei …" value="${esc(state.codeQuery)}"></label>${selector('code-kind','Symbolart',[['all','Alle Symbolarten'],...Object.entries(kindNames).filter(([kind])=>all.some(s=>s.kind===kind))],state.codeKind)}${sourceSelector('code-scope','Deklarationen',state.codeScope)}</div><div class="code-workbench"><section class="symbol-browser" aria-label="Symbole des Services"><header><h2>Symbole</h2><span>${symbols.length} Treffer</span></header><div class="symbol-list">${symbols.length?symbols.slice(0,state.codeLimit).map(s=>`<button class="symbol-row ${s.id===state.symbol?'active':''}" data-symbol="${esc(s.id)}" aria-pressed="${s.id===state.symbol}"><span class="symbol-kind">${esc(kindNames[s.kind]||s.kind)}</span><strong>${esc(s.name)}</strong><small>${esc(s.package||s.declaration_file)}</small><span class="symbol-row-meta">${state.usageLoad.loading||state.usageLoad.failed.length?'—':(incomingUsages.get(s.id)||[]).filter(u=>u.category==='direct_reference').length} direkte Nachweise · ${esc(scopeLabels[sourceScope(s.declaration_file)])}</span></button>`).join(''):emptyState('Keine Symbole gefunden',all.length?'Suche oder Filter anpassen.':'Für diesen Service sind keine Symboldeklarationen im vorliegenden Export enthalten.')}</div>${symbols.length>state.codeLimit?`<button class="button load-more" data-module-action="more-symbols">Weitere Symbole (${symbols.length-state.codeLimit})</button>`:''}</section>${symbolDetails(symbol)}</div><p class="data-note">Direkte Referenzen und Erreichbarkeit über APIs sind getrennt gekennzeichnet. Aufrufe auf einem Typ sind keine vollständige Methodenliste. Verwendungsanalyse: teilweise; fehlende Nachweise bedeuten nicht „ungenutzt“.</p>`;
 }
 function endpointController(endpoint) {
   const matches=(symbolsByProject.get(endpoint.provider_project)||[]).filter(s=>s.name===endpoint.controller&&s.declaration_file===endpoint.file);
@@ -151,10 +152,11 @@ function jumpToSymbol(id, remember=true) {
   const symbol=symbolById.get(id),node=symbol&&data.nodes.find(n=>n.project===symbol.project);
   if(!node) return;
   if(remember&&state.area==='code'&&state.symbol)state.codeHistory.push({symbol:state.symbol,selected:state.selected});
-  state.area='code';state.selected=node.id;state.symbol=id;state.codeQuery='';state.codeKind='all';state.codeScope='all';state.usageScope='all';state.usageCategory='all';state.usageLimit=40;state.usageDirection='incoming';state.codeLimit=Math.max(60,(symbolsByProject.get(symbol.project)||[]).length);state.edge=null;state.domainPair=null;
+  state.codeView='symbols';state.area='code';state.selected=node.id;state.symbol=id;state.codeQuery='';state.codeKind='all';state.codeScope='all';state.usageScope='all';state.usageCategory='all';state.usageLimit=40;state.usageDirection='incoming';state.codeLimit=Math.max(60,(symbolsByProject.get(symbol.project)||[]).length);state.edge=null;state.domainPair=null;
   render();document.querySelector('.symbol-detail')?.scrollIntoView({block:'start'});
 }
 function moduleClick(target) {
+  if(toolingClick(target))return;
   const area=target.closest('[data-area]');
   if(area){if(area.dataset.area==='architecture'&&state.area!=='architecture')state.view='focus';state.area=area.dataset.area;state.edge=null;state.domainPair=null;state.endpoint=null;state.trace=null;state.qualityTraceIds=null;render();window.scrollTo({top:0});return;}
   const scope=target.closest('[data-module-scope]');
@@ -174,6 +176,7 @@ function moduleClick(target) {
   const action=target.closest('[data-module-action]')?.dataset.moduleAction;
   if(action==='code-back'){const previous=state.codeHistory.pop();if(previous)jumpToSymbol(previous.symbol,false);}
   if(action==='retry-usages'){retryWorkspaceUsages();renderCode();}
+  if(action==='more-tooling'){state.toolingLimit+=40;renderTooling();}
   if(action==='more-symbols'){state.codeLimit+=60;renderCode();}
   if(action==='more-usages'){state.usageLimit+=40;renderCode();}
   if(action==='more-api'){state.apiLimit+=60;renderApi();}
@@ -181,11 +184,13 @@ function moduleClick(target) {
 }
 document.addEventListener('click',event=>moduleClick(event.target));
 document.addEventListener('change',event=>{
+  if(event.target.id==='tooling-group'){state.toolingGroup=event.target.value;state.toolingFile=null;state.toolingLimit=40;renderTooling();document.getElementById('tooling-group').focus({preventScroll:true});return;}
   const fields={'code-kind':'codeKind','code-scope':'codeScope','usage-scope':'usageScope','usage-category':'usageCategory','api-status':'apiStatus'};
   const field=fields[event.target.id];if(!field)return;
   state[field]=event.target.value;if(field==='apiStatus'){state.endpoint=null;state.trace=null;}state.codeLimit=60;state.usageLimit=40;state.apiLimit=60;render();document.getElementById(event.target.id)?.focus({preventScroll:true});
 });
 document.addEventListener('input',event=>{
+  if(event.target.id==='tooling-search'){const position=event.target.selectionStart;state.toolingQuery=event.target.value;state.toolingLimit=40;renderTooling();const input=document.getElementById('tooling-search');input.focus({preventScroll:true});input.setSelectionRange(position,position);return;}
   const field=event.target.id==='code-search'?'codeQuery':event.target.id==='api-search'?'apiQuery':null;
   if(!field)return;const id=event.target.id,position=event.target.selectionStart;state[field]=event.target.value;if(field==='apiQuery'){state.endpoint=null;state.trace=null;}state.codeLimit=60;state.apiLimit=60;render();const input=document.getElementById(id);input.focus({preventScroll:true});input.setSelectionRange(position,position);
 });

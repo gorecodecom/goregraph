@@ -8,6 +8,8 @@ type Result struct {
 }
 
 type Index struct {
+	ToolingObservations            map[string][]DashboardToolingObservation
+	AuditSources                   []AgentAuditSource
 	BuildIdentity                  BuildIdentity
 	IgnoreDigest                   string
 	AnalysisIssues                 []AnalysisIssue
@@ -19,6 +21,7 @@ type Index struct {
 	Code                           CodeIntelligenceRecord
 	ArchitectureCapabilities       []ArchitectureCapabilityFact
 	AgentContextConfigurationFacts []AgentContextFactRecord
+	AgentContextStoryFacts         []AgentContextFactRecord
 	SymbolFacts                    ProjectSymbolFacts
 	ScriptConfigs                  map[string]ScriptResolutionConfig `json:"script_configs,omitempty"`
 	scriptConfigLimitations        []string

@@ -12,6 +12,19 @@ import (
 const maxAgentContextConfigurationKeyGroups = 32
 
 func extractAgentContextConfigurationFacts(file FileRecord, body string) []AgentContextFactRecord {
+	if IsStorybookConfigurationSource(file.Path) {
+		normalized := strings.ReplaceAll(body, "\r\n", "\n")
+		lineCount := strings.Count(strings.TrimSuffix(normalized, "\n"), "\n") + 1
+		path := contextPathKey(file.Path)
+		return []AgentContextFactRecord{{
+			ID:   stableID("agent-context-configuration", path, "file"),
+			Kind: "configuration", Name: contextFileBase(path), Qualified: path,
+			File: path, Line: 1, EndLine: lineCount,
+			Summary:    "Storybook configuration source; activation and execution are not established",
+			Confidence: string(ConfidenceExact),
+			Search:     compactContextSearch("storybook configuration", contextFileBase(path), path),
+		}}
+	}
 	if !isAgentContextConfigurationResource(file.Path) {
 		return nil
 	}
@@ -402,4 +415,22 @@ func isAgentContextConfigurationResource(value string) bool {
 func isAgentContextConfigurationYAML(path string) bool {
 	extension := strings.ToLower(filepath.Ext(path))
 	return extension == ".yml" || extension == ".yaml"
+}
+
+// IsStorybookConfigurationSource identifies conventional Storybook configuration
+// files without admitting generated sources or other files from .storybook.
+func IsStorybookConfigurationSource(value string) bool {
+	path := filepath.ToSlash(value)
+	if filepath.Base(filepath.Dir(path)) != ".storybook" || isLowSignalCodeFile(filepath.Dir(filepath.Dir(path))) {
+		return false
+	}
+	base := filepath.Base(path)
+	extension := filepath.Ext(base)
+	switch extension {
+	case ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts":
+		name := strings.TrimSuffix(base, extension)
+		return name == "main" || name == "preview"
+	default:
+		return false
+	}
 }

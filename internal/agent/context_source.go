@@ -871,6 +871,15 @@ func stableContextSourceOmissionReason(err error) string {
 }
 
 func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode string) (ContextSourceSection, error) {
+	if candidate.Kind == "configuration" && scan.IsStorybookConfigurationSource(candidate.Path) ||
+		candidate.Kind == "storybook_story" && scan.IsStorybookStorySource(candidate.Path) {
+		start, end := indexedSourceRange(candidate, len(file.Lines))
+		return ContextSourceSection{
+			Project: candidate.Project, Path: candidate.Path, StartLine: start, EndLine: end,
+			Role: candidate.Role, RenderMode: mode, SourceState: "indexed_range_current",
+			Content: renderNumberedSource(file.Lines, start, end),
+		}, nil
+	}
 	if isContextConfigurationResource(file.Path) {
 		start, end := indexedSourceRange(candidate, len(file.Lines))
 		content := renderNumberedSource(file.Lines, start, end)

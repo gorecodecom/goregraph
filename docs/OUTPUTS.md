@@ -1,7 +1,7 @@
 # GoreGraph Output Contract
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.2 with output Schema 3.
+Source version: GoreGraph 1.4.3 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 ## Build Targets and Extraction
@@ -550,3 +550,13 @@ Mutating CLI builds/updates add the output directory and publication bookkeeping
 patterns to `.gitignore` unless `--no-update-gitignore` is set. Read-only commands
 never edit ignore rules; their stable lock files can remain visible to Git when
 those patterns are intentionally absent.
+
+## Tooling audit context (1.4.3)
+
+`goregraph context <path> --mode audit` reads optional audit metadata from the existing agent context index and returns current tooling source. It does not produce a separate dashboard or execute tests. `audit.areas` counts selected/delivered indexed files, `audit.links` reports static references between delivered current files, and `audit.unknown` states unverified activation, runtime, external includes and workspace limits. The full query controls selection; `audit.query_hash` identifies it when the display is shortened.
+
+Global source coverage remains partial, even when every selected file fits. Read exact `source_omissions` when necessary; if only `source_unrepresented` fits, ask for a narrower scope or larger supported budget. Source sections and omissions share the standard project/path/line identity and receipts. Old indexes without `audit_version: 1` require an agent update using the development binary. See [tooling audits](TOOLING-AUDITS.md) for usage, supported references, acceptance tests and limits.
+
+### Dashboard tooling inventory
+
+Project `index/tooling.json` (record version 1) contains a bounded tooling source inventory for the Service Code → Tests & Tooling view. Workspace dashboard payloads expose it as `tooling`, keyed by exact project identity. It reuses static audit references and adds literal declaration observations with line numbers, without extending agent Context responses. Missing or unreadable project metadata produces an unavailable state; successful empty inventories use version 1 with an empty sources array. Regenerate older dashboards using `workspace update --target dashboard` after installing this version.

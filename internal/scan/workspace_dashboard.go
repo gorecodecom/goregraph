@@ -18,6 +18,7 @@ type workspaceDashboardArtifacts struct {
 }
 
 type workspaceDashboardPayload struct {
+	Tooling         map[string]DashboardToolingRecord `json:"tooling,omitempty"`
 	Graph           WorkspaceGraphRecord              `json:"graph"`
 	ServiceMap      WorkspaceServiceMapRecord         `json:"service_map"`
 	EndpointTraces  WorkspaceEndpointTraceIndexRecord `json:"endpoint_traces"`
@@ -50,18 +51,18 @@ func RenderWorkspaceDashboardHTMLWithCodeExplorer(graph WorkspaceGraphRecord, se
 	return renderWorkspaceDashboardHTML(graph, serviceMap, endpointTraces, APICatalogRecord{SchemaVersion: SchemaVersion}, symbolIndex, symbolUsages, nil)
 }
 
-func buildWorkspaceDashboardArtifacts(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, apiCatalog APICatalogRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord) workspaceDashboardArtifacts {
+func buildWorkspaceDashboardArtifacts(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, apiCatalog APICatalogRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord, tooling ...map[string]DashboardToolingRecord) workspaceDashboardArtifacts {
 	assets, assetByProject := buildWorkspaceDashboardUsageAssets(symbolIndex, symbolUsages)
 	deferredUsages := symbolUsages
 	deferredUsages.Usages = nil
 	return workspaceDashboardArtifacts{
-		HTML:           renderWorkspaceDashboardHTML(graph, serviceMap, endpointTraces, apiCatalog, symbolIndex, deferredUsages, assetByProject),
+		HTML:           renderWorkspaceDashboardHTML(graph, serviceMap, endpointTraces, apiCatalog, symbolIndex, deferredUsages, assetByProject, tooling...),
 		Assets:         assets,
 		AssetByProject: assetByProject,
 	}
 }
 
-func renderWorkspaceDashboardHTML(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, apiCatalog APICatalogRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord, codeUsageAssets map[string]string) string {
+func renderWorkspaceDashboardHTML(graph WorkspaceGraphRecord, serviceMap WorkspaceServiceMapRecord, endpointTraces WorkspaceEndpointTraceIndexRecord, apiCatalog APICatalogRecord, symbolIndex WorkspaceSymbolIndexRecord, symbolUsages WorkspaceSymbolUsageIndexRecord, codeUsageAssets map[string]string, tooling ...map[string]DashboardToolingRecord) string {
 	payloadValue := workspaceDashboardPayload{
 		Graph:           graph,
 		ServiceMap:      serviceMap,
@@ -71,6 +72,9 @@ func renderWorkspaceDashboardHTML(graph WorkspaceGraphRecord, serviceMap Workspa
 		SymbolUsages:    symbolUsages,
 		CodeUsageAssets: codeUsageAssets,
 		SourceIndex:     buildDashboardSourceIndex(endpointTraces),
+	}
+	if len(tooling) > 0 {
+		payloadValue.Tooling = tooling[0]
 	}
 	payload := marshalDashboardPayload(payloadValue)
 	title := "GoreGraph Workspace Map"

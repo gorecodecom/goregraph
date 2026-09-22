@@ -29,7 +29,7 @@ Example:
 ## Compatibility Rule
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.2 with output Schema 3.
+Source version: GoreGraph 1.4.3 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 Older Schema 1 and
@@ -506,3 +506,15 @@ line numbers up to 2147483647. Unknown fields, extra JSON values, malformed
 ranges and exceeded limits reject with exit 2. Exit 1 reports validation findings
 as JSON (or an output error); exit 0 reports validity within the stated scope.
 Zero recognized file references fails rather than certifying an unchecked answer.
+
+### Optional tooling-audit metadata (1.4.3)
+
+Schema 3 agent context indexes may contain `audit_version: 1`, `audit_incomplete` and `audit_sources`. These additive fields do not change production facts or call edges. Each audit source contains project-relative `file`, `project`, `kind`, `lines`, source `hash`, optional `topics`, literal file `references` (`file`, `kind`, `line`) and `unknown` reasons. Reference targets stay relative to the same project. Workspace aggregation retains separate project identities; missing project metadata sets `audit_incomplete`. Metadata stores source identity and references, not copied configuration values.
+
+The optional Context request `mode` accepts only `audit`; omit it for the existing production workflow. Audit Context Packs add `mode` and `audit`: `scope`, full-input SHA-256 `query_hash`, `query_truncated`, `execution: "unknown"`, `areas`, `links` and `unknown`. An area reports `selected`, `delivered` and `coverage` for selected indexed files only. Static links connect delivered, hash-current files and do not prove execution or effective activation. Overall `source_coverage` stays `partial` when sources are delivered and `none` otherwise; it never declares repository-wide audit completeness. Unchanged duplicate packs retain the original coverage metadata while suppressing sources and links.
+
+The displayed query may be shortened to fit the budget; selection and context identity use the full input. Source sections retain numbered current text and read receipts. Exact bounded `source_omissions` describe undelivered indexed files; `source_unrepresented` counts files whose source and omission metadata could not fit. `audit_index_unavailable` distinguishes indexes without audit metadata from ordinary partial evidence. See [tooling audits](docs/TOOLING-AUDITS.md) for the bounded fallback contract.
+
+### Dashboard tooling record
+
+The optional project `index/tooling.json` record has `version: 1`, `sources`, `total` and optional `truncated`. Sources reuse audit file identity and static references, with optional `observations` (`kind`, `value`, `line`). Supported observation kinds are `a11y_test_literal` and `allow_failure_literal`; these are literal source declarations, not effective runtime states. The dashboard payload `tooling` maps project paths to these records. Missing/unsupported metadata is distinct from a version-1 empty inventory. The agent Context Pack schema and token budgets are unaffected by this dashboard field.

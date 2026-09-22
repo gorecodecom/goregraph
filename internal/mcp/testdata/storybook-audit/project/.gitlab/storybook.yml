@@ -1,0 +1,6 @@
+storybook_interactions:
+  stage: test
+  script:
+    - npm run storybook:build
+    - npm run storybook:test
+  allow_failure: true

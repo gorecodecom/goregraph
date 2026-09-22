@@ -123,13 +123,14 @@ func tools(options Options) []map[string]any {
 func taskContextTool() map[string]any {
 	return map[string]any{
 		"name":        "task_context",
-		"description": "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Call it once with a focused query containing the caller's problem statement and requested evidence scope. Preserve domain language and identifiers; exclude workspace setup, tool policy, safety constraints, and output formatting, and never add inferred repository or component responsibilities. A missing future call, route, or symbol required by the fix is evidence of the current gap, not a source-fallback trigger. Treat source_sections as already read: for complete coverage, run no source-reading commands on indexed project files; answer only from source_sections and mark absent details as unknown. For partial or missing coverage, inspect only exact project/path and start_line/end_line ranges in source_omissions; do not inspect outside those ranges or other files, and report pathless or unbounded omissions as uncertainty. Retry only when retry_allowed is true, with one retry_anchor and previous_context_id.",
+		"description": "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Call it once with a focused query containing the caller's problem statement and requested evidence scope. Preserve domain language and identifiers; exclude workspace setup, tool policy, safety constraints, and output formatting, and never add inferred repository or component responsibilities. A missing future call, route, or symbol required by the fix is evidence of the current gap, not a source-fallback trigger. Treat source_sections as already read: for complete coverage, run no source-reading commands on indexed project files; answer only from source_sections and mark absent details as unknown. For partial or missing coverage, inspect only exact project/path and start_line/end_line ranges in source_omissions; do not inspect outside those ranges or other files, and report pathless or unbounded omissions as uncertainty. Retry only when retry_allowed is true, with one retry_anchor and previous_context_id." + "\n\n" + agentguide.AuditInstruction,
 		"inputSchema": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"required":             []string{"query"},
 			"properties": map[string]any{
 				"root":                map[string]any{"type": "string"},
+				"mode":                map[string]any{"type": "string", "enum": []string{"audit"}, "description": "Optional tooling inventory mode. Multiple source roots are valid; audit coverage is scoped to indexed sources and does not prove activation, execution, or repository-wide absence. Omit for the unchanged production-entrypoint workflow."},
 				"query":               map[string]any{"type": "string", "minLength": 1},
 				"budget_tokens":       map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
 				"max_files":           map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
@@ -241,7 +242,7 @@ func callTool(options Options, name string, args map[string]any) (string, error)
 
 func instructionsForProtocol(protocol string) string {
 	instruction, _ := agentguide.Instruction(protocol)
-	return instruction
+	return instruction + "\n\n" + agentguide.AuditInstruction
 }
 
 func callTaskContext(args map[string]any) (string, error) {
@@ -251,7 +252,7 @@ func callTaskContext(args map[string]any) (string, error) {
 func callTaskContextWithProtocol(args map[string]any, protocol string) (string, error) {
 	for name := range args {
 		switch name {
-		case "root", "query", "budget_tokens", "max_files", "previous_context_id":
+		case "root", "query", "budget_tokens", "max_files", "previous_context_id", "mode":
 		default:
 			return "", fmt.Errorf("unknown task_context argument: %s", name)
 		}
@@ -289,7 +290,16 @@ func callTaskContextWithProtocol(args map[string]any, protocol string) (string, 
 			return "", fmt.Errorf("task_context previous_context_id must be 24 lowercase hexadecimal characters")
 		}
 	}
+	mode := ""
+	if value, present := args["mode"]; present {
+		var valid bool
+		mode, valid = value.(string)
+		if !valid || mode != "audit" {
+			return "", fmt.Errorf("task_context mode must be audit")
+		}
+	}
 	pack, err := agent.BuildContext(agent.ContextRequest{
+		Mode:              mode,
 		ProtocolVersion:   protocol,
 		Root:              root,
 		Query:             query,
