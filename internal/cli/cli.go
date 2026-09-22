@@ -108,6 +108,7 @@ func runMCP(args []string, stdout, stderr io.Writer) int {
 
 Starts the read-only MCP stdio server.
 Default mode exposes only task_context to prevent query cascades.
+The default protocol is adaptive-v2; use --protocol strict-v1 for historical replay.
 --expert-tools exposes legacy diagnostic and exploration tools.
 `
 	if len(args) == 1 && isHelp(args[0]) {

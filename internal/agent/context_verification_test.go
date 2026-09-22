@@ -267,3 +267,16 @@ func TestResolveSourcePathRetainsMissingRootCause(t *testing.T) {
 		t.Fatalf("stable omission = %q", got)
 	}
 }
+
+func TestAdaptiveUnrepresentedSourceRequiresCallerAuthorizedFallback(t *testing.T) {
+	for _, protocol := range []string{StrictV1, AdaptiveV2} {
+		pack := adaptiveContextMetadata(ContextPack{ProtocolVersion: protocol, SourceCoverage: "partial", SourceUnrepresented: 1})
+		if protocol == AdaptiveV2 {
+			if !pack.FallbackRequired || pack.FallbackReason != ContextFallbackInsufficientEvidence {
+				t.Fatalf("unrepresented evidence became a dead end: %+v", pack)
+			}
+		} else if pack.FallbackRequired || pack.ProtocolVersion != "" {
+			t.Fatalf("strict replay changed: %+v", pack)
+		}
+	}
+}

@@ -57,7 +57,9 @@ Local 1.4.1 testing and rollback are documented in
 
 The development source version is 1.4.3. No release or tag has been created for this version; v1.4.2 remains the published release.
 
-Explicit tooling inventories now use `task_context` with `mode: "audit"` or `goregraph context <path> --mode audit`. Both context protocols return bounded current sources for Storybook configuration, stories and their literal file references, package scripts, runner configuration, local CI includes, visual-test preparation and documentation. Audits allow multiple source roots, retain the full query for retrieval and report scoped coverage, static links and unknowns. Ordinary production-entrypoint requests retain their existing contract.
+The regular MCP server now defaults to `adaptive-v2`, matching the existing adaptive CLI workflow. Incomplete context can lead to bounded verification or caller-authorized source fallback. Explicit `strict-v1` replay and tooling-audit boundaries remain available. Optional parameter limits are described in plain language, and invalid budget/file limits are reported together. Persistent agent instructions must allow the selected protocol while keeping GoreGraph ahead of optional skills.
+
+Explicit tooling inventories now use `task_context` with `mode: "audit"` or `goregraph context <path> --mode audit`. Both context protocols return bounded current sources for Storybook configuration, stories and their literal file references, package scripts, runner configuration, local CI includes, visual-test preparation and documentation. Audits allow multiple source roots, retain the full query for retrieval and report scoped coverage, static links and unknowns. Audit support does not alter ordinary production-entrypoint selection.
 
 The mandatory synthetic acceptance test delivers all seven Storybook evidence groups. A second multi-project test covers Playwright deployment triggers, INT/TEST, frontend `release` versus Playwright `master`, explicit service-to-app mappings and non-blocking failure policy. Source configuration never establishes successful execution or approved visual baselines. See [tooling audits](docs/TOOLING-AUDITS.md) for limits, examples and index refresh requirements.
 
@@ -1125,9 +1127,16 @@ communicates with it over standard input/output (`stdio`). It is not a daemon:
 there is no background service to start manually, no network listener, and no
 remote GoreGraph service.
 
-Standard mode exposes exactly one read-only tool, `task_context`. For a focused
-coding question, that tool returns the same bounded, evidence-backed Context
-Pack as `goregraph context`. The pack contains the selected implementation path,
+Standard mode exposes exactly one read-only tool, `task_context`. The default
+MCP protocol is `adaptive-v2`: it supplies bounded verification requests and
+explicit fallback signals when the initial pack cannot cover the task. Use
+`goregraph mcp --protocol strict-v1` for the historical bounded-only contract.
+The standalone `goregraph context` CLI keeps its historical strict default; use
+`--protocol adaptive-v2` to match the regular MCP workflow. No index rebuild is
+needed solely for this protocol change. Restart the MCP client after updating
+GoreGraph so it loads the new server instructions. For a focused
+coding question, that tool uses the same bounded, evidence-backed Context
+Pack compiler as `goregraph context`. The pack contains the selected implementation path,
 line-numbered source sections, affected files, relevant tests, confidence,
 freshness, and explicit gaps. The MCP server:
 
@@ -1138,8 +1147,8 @@ freshness, and explicit gaps. The MCP server:
 - is started and stopped automatically by the configured AI client.
 
 Registering the server makes the tool available. It does not by itself guarantee
-that a model calls the tool before reading source. Add the persistent
-instructions below to establish the GoreGraph-first workflow.
+that a model calls the tool before reading optional skills or project source.
+Add the persistent instructions below to establish the GoreGraph-first workflow.
 
 Use `goregraph mcp --expert-tools` only for explicit manual diagnostics or
 legacy exploration. Expert tools are not part of the normal AI workflow.
@@ -1278,21 +1287,27 @@ default across every repository, the same block can be placed in
 ```markdown
 ## GoreGraph-first source workflow
 
-- For every coding task that requires repository knowledge, call the GoreGraph MCP tool `task_context` exactly once before reading or searching indexed source files.
-- Pass the active project or GoreGraph workspace root as `root`. Pass the caller's complete technical problem and requested evidence scope as a focused `query` without adding inferred component responsibilities.
-- Treat returned `source_sections` as source already read. Do not re-read, grep, or widen an included range.
-- When `source_coverage` is `complete`, do not read additional indexed project source. Mark details missing from the Context Pack as unknown.
-- When `source_coverage` is `partial` or `none`, read only the exact project, path, and line ranges listed in `source_omissions`.
-- Retry only when `retry_allowed` is true, using exactly one supplied `retry_anchor` and the returned `context_id` as `previous_context_id`.
-- Stop using GoreGraph when `fallback_required` is true, confidence is low, or the Context Pack does not identify exactly one reliable production entrypoint.
-- If the agent index is missing or stale, run `goregraph doctor <root>` and refresh it with `goregraph update <root> --target agent` before requesting context again.
+- For every coding task that requires repository knowledge, the first investigative action must be exactly one GoreGraph MCP `task_context` call.
+- Before receiving and evaluating that Context Pack, do not read optional `SKILL.md` files, search or read project source, or start another analysis workflow. This also applies to debugging, code-review, and planning skills.
+- Required loading of governing instructions and minimal discovery of the workspace root or GoreGraph tool may precede the call; this does not permit skill or source investigation.
+- After evaluating the Context Pack, use optional skills only when needed for the remaining task. Skills must not override GoreGraph source-coverage, read-scope, or retry restrictions.
+- For normal calls pass only `root` and `query`; omit `budget_tokens` and `max_files`. Use the active project or workspace root and the caller's technical problem and requested evidence scope, without inferred component responsibilities, tool policy, or output-format instructions.
+- Treat returned `source_sections` as source already read. Never re-read or reconstruct delivered ranges; preserve exact range and receipt bookkeeping.
+- Follow the returned protocol. With `protocol_version: adaptive-v2`, resolve material gaps using exact `verification_requests` first. If task-relevant evidence is still missing or `fallback_required` is true, stop context retrieval and use focused source discovery and bounded reads within the caller-authorized workspace. Start from supplied projects and identities; metadata is navigation, not proof of unread source. Do not bypass filesystem permissions, reader scope, redaction, or other safety restrictions.
+- In adaptive source investigation, batch independent filename discovery and permitted `goregraph read` requests, carry forward read receipts, and read only still-missing evidence. Complete the requested production, configuration, and test inventories and verify behavior before claiming coverage. Do not declare a task complete merely because the initial pack is exhausted.
+- For `strict-v1` (no `protocol_version`) or explicit audit mode, keep the bounded contract: complete coverage permits no additional indexed source reads; partial or missing coverage permits only exact project/path/ranges in `source_omissions`. Mark other details unknown. Audit mode never grants ordinary source fallback.
+- Retry context only when `retry_allowed` is true, using exactly one supplied `retry_anchor` and the returned `context_id` as `previous_context_id`. Never repeat or expand the original query to force coverage.
+- Low confidence or an unreliable production entrypoint means stop context retrieval; ordinary source fallback remains limited to the caller's task and permissions. Multiple roots are valid only for explicitly requested audit mode.
+- If the agent index is missing or stale, run `goregraph doctor <root>` and refresh it with `goregraph update <root> --target agent` before requesting context again. Partial evidence alone is not a reason to rescan.
 - Do not use specialist GoreGraph queries or expert MCP tools during the normal workflow.
 ```
 
 Instruction files guide model behavior; they are not a hard technical gate.
 GoreGraph does not intercept ordinary file reads performed by an AI client.
-Keep the instruction concise, verify that the client loaded it, and explicitly
-name `task_context` in a prompt when auditing a new client setup.
+Keep the instruction concise and verify that the client loaded it. Check the
+first investigative action in normal sessions with the usual skills and settings
+enabled: it must be `task_context`, before any optional skill or source read.
+Explicitly name `task_context` in a prompt when diagnosing a new client setup.
 
 Client instruction-file support differs:
 

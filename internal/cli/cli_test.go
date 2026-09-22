@@ -1248,6 +1248,7 @@ func TestRunMCPHelpPrintsUsage(t *testing.T) {
 
 Starts the read-only MCP stdio server.
 Default mode exposes only task_context to prevent query cascades.
+The default protocol is adaptive-v2; use --protocol strict-v1 for historical replay.
 --expert-tools exposes legacy diagnostic and exploration tools.
 `
 	for _, help := range []string{"help", "--help", "-h"} {

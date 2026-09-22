@@ -62,6 +62,10 @@ func adaptiveContextMetadata(pack ContextPack) ContextPack {
 		}
 		pack.FallbackReason = contextFallbackReasonCode(pack)
 	} else if pack.SourceCoverage == "partial" {
+		if pack.SourceUnrepresented > 0 {
+			pack.FallbackRequired = true
+			pack.FallbackReason = ContextFallbackInsufficientEvidence
+		}
 		for _, concern := range pack.Concerns {
 			if !concern.Covered {
 				pack.FallbackRequired = true

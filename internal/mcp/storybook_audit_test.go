@@ -173,6 +173,10 @@ func storybookAuditContext(t *testing.T, root, query, protocol string) agent.Con
 
 func storybookAuditContextMode(t *testing.T, root, query, protocol, mode string) agent.ContextPack {
 	t.Helper()
+	// These retained fixtures compare the historical strict and adaptive contracts.
+	if protocol == "" {
+		protocol = "strict-v1"
+	}
 	args := map[string]any{"root": root, "query": query, "budget_tokens": 6000, "max_files": 12}
 	if mode != "" {
 		args["mode"], args["max_files"] = mode, 20

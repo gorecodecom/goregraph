@@ -53,6 +53,9 @@ func Serve(input io.Reader, output io.Writer) error {
 }
 
 func ServeWithOptions(input io.Reader, output io.Writer, options Options) error {
+	if options.ProtocolVersion == "" {
+		options.ProtocolVersion = agentguide.AdaptiveV2
+	}
 	if _, err := agentguide.Instruction(options.ProtocolVersion); err != nil {
 		return err
 	}
@@ -113,6 +116,7 @@ func tools(options Options) []map[string]any {
 	if options.ProtocolVersion == agentguide.AdaptiveV2 {
 		contextTool["description"] = instructionsForProtocol(options.ProtocolVersion)
 	}
+	contextTool["description"] = contextTool["description"].(string) + "\n\n" + taskContextParameterInstruction()
 	listed := []map[string]any{contextTool}
 	if options.ExpertTools {
 		listed = append(listed, legacyTools()...)
@@ -132,8 +136,8 @@ func taskContextTool() map[string]any {
 				"root":                map[string]any{"type": "string"},
 				"mode":                map[string]any{"type": "string", "enum": []string{"audit"}, "description": "Optional tooling inventory mode. Multiple source roots are valid; audit coverage is scoped to indexed sources and does not prove activation, execution, or repository-wide absence. Omit for the unchanged production-entrypoint workflow."},
 				"query":               map[string]any{"type": "string", "minLength": 1},
-				"budget_tokens":       map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
-				"max_files":           map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
+				"budget_tokens":       map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens, "description": "Optional response budget. Omit for normal tasks; use the documented integer bounds only when the caller requests a different budget."},
+				"max_files":           map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles, "description": "Optional context file limit. Omit for normal tasks; this is not an instruction to retrieve every project file."},
 				"previous_context_id": map[string]any{"type": "string", "minLength": 24, "maxLength": 24, "pattern": "^[0-9a-f]{24}$"},
 			},
 		},
@@ -245,6 +249,13 @@ func instructionsForProtocol(protocol string) string {
 	return instruction + "\n\n" + agentguide.AuditInstruction
 }
 
+func taskContextParameterInstruction() string {
+	return fmt.Sprintf("Make task_context the first investigative action, before optional skills or source reads. For normal tasks pass only root and query; omit budget_tokens and max_files. Defaults: budget_tokens=%d, max_files=%d. If explicitly needed, budget_tokens must be an integer from %d to %d and max_files from %d to %d. Do not guess larger values to cover more concerns: use the returned verification and fallback guidance for missing evidence.",
+		agent.DefaultContextBudgetTokens, agent.DefaultContextMaxFiles,
+		agent.MinContextBudgetTokens, agent.MaxContextBudgetTokens,
+		agent.MinContextMaxFiles, agent.MaxContextMaxFiles)
+}
+
 func callTaskContext(args map[string]any) (string, error) {
 	return callTaskContextWithProtocol(args, "")
 }
@@ -274,13 +285,16 @@ func callTaskContextWithProtocol(args map[string]any, protocol string) (string, 
 	if !ok || strings.TrimSpace(query) == "" {
 		return "", fmt.Errorf("task_context query must be a non-empty string")
 	}
-	budgetTokens, err := boundedIntegerArg(args, "budget_tokens", agent.MinContextBudgetTokens, agent.MaxContextBudgetTokens)
-	if err != nil {
-		return "", err
-	}
-	maxFiles, err := boundedIntegerArg(args, "max_files", agent.MinContextMaxFiles, agent.MaxContextMaxFiles)
-	if err != nil {
-		return "", err
+	budgetTokens, budgetErr := boundedIntegerArg(args, "budget_tokens", agent.MinContextBudgetTokens, agent.MaxContextBudgetTokens)
+	maxFiles, filesErr := boundedIntegerArg(args, "max_files", agent.MinContextMaxFiles, agent.MaxContextMaxFiles)
+	if budgetErr != nil || filesErr != nil {
+		var problems []string
+		for _, err := range []error{budgetErr, filesErr} {
+			if err != nil {
+				problems = append(problems, err.Error())
+			}
+		}
+		return "", fmt.Errorf("%s; omit both optional limits to use defaults (%d tokens, %d files). No context was generated", strings.Join(problems, "; "), agent.DefaultContextBudgetTokens, agent.DefaultContextMaxFiles)
 	}
 	previousContextID := ""
 	if value, ok := args["previous_context_id"]; ok {

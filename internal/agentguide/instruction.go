@@ -7,13 +7,13 @@ const (
 	// StrictV1 identifies the historical bounded-source protocol used by the
 	// published agent benchmark.
 	StrictV1 = "strict-v1"
-	// AdaptiveV2 identifies the opt-in verification and caller-authority
-	// protocol. It is not the default until its release gates pass.
+	// AdaptiveV2 identifies the verification and caller-authority
+	// protocol used by the regular MCP server. The context CLI remains opt-in.
 	AdaptiveV2 = "adaptive-v2"
 )
 
-// AssistedInstruction is the canonical bounded Context workflow used by every
-// user-facing integration surface. Keep this historical strict-v1 instruction
+// AssistedInstruction is the canonical bounded Context workflow used by
+// strict integration surfaces. Keep this historical strict-v1 instruction
 // byte-for-byte stable so existing benchmark evidence remains reproducible.
 const AssistedInstruction = `Call goregraph context . --query "<focused query>" exactly once before reading indexed source; put the caller's problem statement and requested evidence scope in the query.
 Preserve the caller's domain language, identifiers, and requested evidence; exclude workspace setup, tool policy, safety constraints, and output-format instructions. Do not translate or add inferred repository or component responsibilities.

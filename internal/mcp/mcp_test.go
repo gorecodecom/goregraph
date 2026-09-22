@@ -239,12 +239,13 @@ func TestDefaultMCPTaskContextSchemaAndInstructions(t *testing.T) {
 				"root":                map[string]any{"type": "string"},
 				"mode":                map[string]any{"type": "string", "enum": []string{"audit"}, "description": "Optional tooling inventory mode. Multiple source roots are valid; audit coverage is scoped to indexed sources and does not prove activation, execution, or repository-wide absence. Omit for the unchanged production-entrypoint workflow."},
 				"query":               map[string]any{"type": "string", "minLength": 1},
-				"budget_tokens":       map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens},
-				"max_files":           map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles},
+				"budget_tokens":       map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens, "description": "Optional response budget. Omit for normal tasks; use the documented integer bounds only when the caller requests a different budget."},
+				"max_files":           map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles, "description": "Optional context file limit. Omit for normal tasks; this is not an instruction to retrieve every project file."},
 				"previous_context_id": map[string]any{"type": "string", "minLength": 24, "maxLength": 24, "pattern": "^[0-9a-f]{24}$"},
 			},
 		},
 	}
+	want["description"] = want["description"].(string) + "\n\n" + taskContextParameterInstruction()
 	if len(listed) != 1 || !reflect.DeepEqual(listed[0], want) {
 		t.Fatalf("task_context schema = %#v, want %#v", listed, want)
 	}

@@ -11,11 +11,8 @@ import (
 	"github.com/gorecodecom/goregraph/internal/agentguide"
 )
 
-func TestAdaptiveProtocolIsOptInAtServerBoundary(t *testing.T) {
-	strict := tools(Options{})[0]
-	if !reflect.DeepEqual(strict, taskContextTool()) {
-		t.Fatal("default tool schema changed")
-	}
+func TestExplicitProtocolsShareBoundedToolArguments(t *testing.T) {
+	strict := tools(Options{ProtocolVersion: agentguide.StrictV1})[0]
 	adaptive := tools(Options{ProtocolVersion: agentguide.AdaptiveV2})[0]
 	if adaptive["description"] == strict["description"] {
 		t.Fatal("adaptive server advertises strict instructions")
