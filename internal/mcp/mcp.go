@@ -246,6 +246,9 @@ func callTool(options Options, name string, args map[string]any) (string, error)
 
 func instructionsForProtocol(protocol string) string {
 	instruction, _ := agentguide.Instruction(protocol)
+	if protocol == agentguide.AdaptiveV2 {
+		instruction += "\n\nReader results may provide next_request: a ready-to-use batched goregraph read request with independent find cursors and cumulative receipts. Use it only when remaining matches are material and already authorized; do not exhaust pages merely because they exist. Copy files[].citations for exact newly delivered source ranges; keep disjoint citations separate and never extend them across unread gaps."
+	}
 	return instruction + "\n\n" + agentguide.AuditInstruction
 }
 

@@ -51,6 +51,14 @@ files[].find.start_line defaults to 1 when 0 or omitted (otherwise 1..2097153).
 Context windows clamp to EOF and
 merge overlapping or adjacent windows before receipt subtraction.
 
+When more matches or deferred files remain, next_request contains a ready-to-use
+request for this same root, preserving independent find cursors and cumulative
+receipts. Use it only for material remaining evidence within your read authority.
+files[].citations lists exact newly delivered path:line or path:start-end ranges;
+keep disjoint citations separate. Skipped and EOF ranges are never cited.
+Optional navigation may be omitted at the output limit to preserve source;
+the existing sections, receipts and per-selector cursors remain authoritative.
+
 Output files contain canonical root-relative path, sections (start_line, end_line,
 content), skipped_ranges, and cumulative receipt. eof_ranges reports requested
 ranges past EOF; ignored_receipts counts changed content/path receipts. Find adds

@@ -57,12 +57,14 @@ type SourceReadFileRequest struct {
 
 // ReadSourceResult contains one entry per canonical source path, in request order.
 type ReadSourceResult struct {
-	Files []SourceReadFileResult `json:"files"`
+	Files       []SourceReadFileResult `json:"files"`
+	NextRequest *ReadSourceRequest     `json:"next_request,omitempty"`
 }
 
 // SourceReadFileResult describes actual delivery, prior delivery and EOF gaps.
 type SourceReadFileResult struct {
 	Path            string                      `json:"path"`
+	Citations       []string                    `json:"citations,omitempty"`
 	Sections        []SourceReadSection         `json:"sections"`
 	SkippedRanges   []SourceReadRange           `json:"skipped_ranges"`
 	OutputLimited   bool                        `json:"output_limited,omitempty"`
@@ -234,6 +236,27 @@ func readSource(request ReadSourceRequest) (ReadSourceResult, error) {
 		if deferSourceReadBatchFile(batch, result) {
 			continue
 		}
+		// Optional navigation must not make a previously deliverable minimum page fail.
+		if intervals <= 32 && lines <= 1000 {
+			result.NextRequest = nil
+			body, err = json.Marshal(result)
+			if err != nil {
+				return ReadSourceResult{}, err
+			}
+			if len(body)+1 <= MaxSourceReadResultBytes {
+				return result, nil
+			}
+			for i := range result.Files {
+				result.Files[i].Citations = nil
+			}
+			body, err = json.Marshal(result)
+			if err != nil {
+				return ReadSourceResult{}, err
+			}
+			if len(body)+1 <= MaxSourceReadResultBytes {
+				return result, nil
+			}
+		}
 		if intervals > 32 || lines > 1000 {
 			return ReadSourceResult{}, fmt.Errorf("source read exceeds 32 ranges or 1000 lines; reduce find before/after or split the request")
 		}
@@ -282,6 +305,7 @@ func deliverSourceReadBatch(batch []*sourceReadBatchFile) (ReadSourceResult, int
 		}
 		result.Files = append(result.Files, file)
 	}
+	result.NextRequest = sourceReadNextRequest(batch, result)
 	return result, intervals, lines, nil
 }
 
@@ -355,6 +379,7 @@ func deliverSourceReadFile(item sourceReadBatchFile) (SourceReadFileResult, erro
 	for _, r := range missing {
 		result.Sections = append(result.Sections, SourceReadSection{StartLine: r[0], EndLine: r[1], Content: renderNumberedSource(item.redacted, r[0], r[1])})
 	}
+	result.Citations = sourceReadCitations(item.path, result.Sections)
 	delivered := mergeSourceReadRanges(append(seen, requested...))
 	if len(delivered) > maxSourceReadReceiptRanges {
 		return SourceReadFileResult{}, fmt.Errorf("cumulative receipt exceeds 64 intervals")

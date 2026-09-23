@@ -1278,6 +1278,21 @@ button to verify that `goregraph` exposes `task_context`. VS Code retains the
 configuration and starts the local server for later sessions. See the
 [official GitHub Copilot MCP guide](https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp-in-your-ide/extend-copilot-chat-with-mcp).
 
+### Focused source follow-up
+
+Normal adaptive MCP context prioritizes the selected local call chain, including
+helpers in the same file, before related supporting evidence. Existing token,
+file, and source-coverage limits still apply; missing evidence remains explicit.
+The strict context and audit workflows retain their bounded contracts.
+
+`goregraph read` returns optional `next_request` navigation when matching source
+or deferred files remain. Pass that object as the next read request for the same
+root only when those remaining results are relevant and authorized. It preserves
+independent search cursors and cumulative receipts, avoiding repeated source
+delivery. `files[].citations` gives exact newly delivered `path:line` or
+`path:start-end` references; disjoint ranges remain separate. These fields do not
+grant additional read permissions or prove that an investigation is complete.
+
 ### Persistent GoreGraph-first instructions
 
 Put the following block in the project-root `AGENTS.md`. For a personal Codex

@@ -36,8 +36,20 @@ func TestSourceReadCLIFindAndAtomicFailure(t *testing.T) {
 	out.Reset()
 	errs.Reset()
 	code = Run([]string{"read", root, "--request", `{"files":[{"path":"a.go","find":{"pattern":"^hit$","max_matches":1,"after":1}},{"path":"./a.go","find":{"pattern":"^x$"}}]}`}, &out, &errs)
-	if code != 0 || !strings.Contains(out.String(), `"find_results":[{"request_index":0,"result":{"match_lines":[1],"match_count":2,"next_start_line":2}},{"request_index":1,"result":{"match_lines":[2],"match_count":1}}]`) || strings.Count(out.String(), `"path":`) != 1 || strings.Contains(out.String(), `"find":`) {
+	var batch struct {
+		Files       []map[string]json.RawMessage `json:"files"`
+		NextRequest json.RawMessage              `json:"next_request"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &batch); err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 || !strings.Contains(out.String(), `"find_results":[{"request_index":0,"result":{"match_lines":[1],"match_count":2,"next_start_line":2}},{"request_index":1,"result":{"match_lines":[2],"match_count":1}}]`) || len(batch.Files) != 1 || batch.Files[0]["find"] != nil {
 		t.Fatalf("batch find code=%d out=%s err=%s", code, &out, &errs)
+	}
+	out.Reset()
+	errs.Reset()
+	if code := Run([]string{"read", root, "--request", string(batch.NextRequest)}, &out, &errs); code != 0 || !strings.Contains(out.String(), `"content":"3\thit"`) || !strings.Contains(out.String(), `"citations":["a.go:3"]`) {
+		t.Fatalf("continuation code=%d out=%s err=%s", code, &out, &errs)
 	}
 	for _, request := range []string{
 		`{"files":[{"path":"a.go","find":{"pattern":"["}}]}`,

@@ -111,6 +111,9 @@ func TestSourceReadFindSingleJSONCompatibility(t *testing.T) {
 	}
 	// The fingerprint depends on the temporary absolute path; normalize only it.
 	result.Files[0].Receipt = "RECEIPT"
+	// Additive navigation is tested separately; preserve all legacy wire fields.
+	result.Files[0].Citations = nil
+	result.NextRequest = nil
 	body, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
