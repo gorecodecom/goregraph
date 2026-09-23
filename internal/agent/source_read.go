@@ -128,9 +128,9 @@ func validateSourceReadRequest(request ReadSourceRequest) error {
 			}
 			lines += r[1] - r[0] + 1
 		}
-		for _, receipt := range file.Seen {
+		for receiptIndex, receipt := range file.Seen {
 			if _, _, err := parseSourceReadReceipt(receipt); err != nil {
-				return err
+				return fmt.Errorf("files[%d] path %q seen[%d]: %w; copy the exact read_receipt or receipt returned for this file, including the full 64-character fingerprint", requestIndex, file.Path, receiptIndex, err)
 			}
 		}
 	}
