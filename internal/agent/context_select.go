@@ -4580,6 +4580,9 @@ func contextCoreSourceBoundariesWithRelated(pack ContextPack, index scan.AgentCo
 	boundaries := []contextSourceBoundary{{factID: entryID}}
 	entryProject := normalizeContextProject(entry.Project)
 	entryFile := contextPackSourceFile(entry.File)
+	if pack.ProtocolVersion == AdaptiveV2 {
+		distances = contextLocalCallDistances(entryID, entryProject, index, selectedFacts)
+	}
 	localCallTargets := make(map[string]bool)
 	for _, edge := range index.Edges {
 		kind := strings.ToLower(strings.TrimSpace(edge.Kind))
@@ -4599,12 +4602,15 @@ func contextCoreSourceBoundariesWithRelated(pack ContextPack, index scan.AgentCo
 		fact := factByID[factID]
 		distance, connected := distances[factID]
 		if !connected {
+			if pack.ProtocolVersion == AdaptiveV2 {
+				continue
+			}
 			distance = maximumContextPathHops + 1
 		}
 		kind := strings.ToLower(strings.TrimSpace(fact.Kind))
 		file := contextPackSourceFile(fact.File)
 		if distance <= 0 || normalizeContextProject(fact.Project) != entryProject ||
-			file == "" || file == entryFile || !localCallTargets[factID] ||
+			file == "" || (file == entryFile && pack.ProtocolVersion != AdaptiveV2) || !localCallTargets[factID] ||
 			(kind != "symbol" && kind != "backend_handler") || contextFactUsesTestSource(fact) {
 			continue
 		}
@@ -4619,8 +4625,11 @@ func contextCoreSourceBoundariesWithRelated(pack ContextPack, index scan.AgentCo
 		}
 		return candidates[i].factID < candidates[j].factID
 	})
-	if len(candidates) > 0 {
-		boundaries = append(boundaries, contextSourceBoundary{factID: candidates[0].factID})
+	for _, candidate := range candidates {
+		boundaries = append(boundaries, contextSourceBoundary{factID: candidate.factID})
+		if pack.ProtocolVersion != AdaptiveV2 {
+			break
+		}
 	}
 	if !includeRelated {
 		return boundaries
