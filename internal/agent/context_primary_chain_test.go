@@ -61,10 +61,17 @@ func TestAdaptiveContextRendersLocalChainThroughPersistence(t *testing.T) {
 		if i == 0 {
 			fact.Kind, fact.HTTPMethod, fact.Path = "route", "DELETE", "/invoices/{id}"
 		}
+		if i == len(ids)-1 {
+			fact.Kind = "persistence"
+		}
 		index.Facts = append(index.Facts, fact)
 		pack.selectedSourceFactIDs = append(pack.selectedSourceFactIDs, id)
 		if i > 0 {
-			index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{ID: ids[i-1] + id, FromFactID: ids[i-1], ToFactID: id, Kind: "call", Confidence: "EXACT"})
+			kind := "call"
+			if fact.Kind == "persistence" {
+				kind = "persistence"
+			}
+			index.Edges = append(index.Edges, scan.AgentContextEdgeRecord{ID: ids[i-1] + id, FromFactID: ids[i-1], ToFactID: id, Kind: kind, Reason: "flow", Confidence: "EXACT"})
 		}
 	}
 	got, err := attachContextSource(pack, loadedContextIndex{ScopeRoot: root, Index: index}, ContextRequest{BudgetTokens: 4000, MaxFiles: 3})

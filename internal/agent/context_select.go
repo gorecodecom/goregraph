@@ -4586,8 +4586,11 @@ func contextCoreSourceBoundariesWithRelated(pack ContextPack, index scan.AgentCo
 	localCallTargets := make(map[string]bool)
 	for _, edge := range index.Edges {
 		kind := strings.ToLower(strings.TrimSpace(edge.Kind))
-		if !selectedFacts[edge.FromFactID] || !selectedFacts[edge.ToFactID] ||
-			(kind != "call" && kind != "calls" && kind != "use") {
+		executable := kind == "call" || kind == "calls" || kind == "use"
+		if pack.ProtocolVersion == AdaptiveV2 {
+			executable = contextExecutableFlowEdge(edge)
+		}
+		if !selectedFacts[edge.FromFactID] || !selectedFacts[edge.ToFactID] || !executable {
 			continue
 		}
 		localCallTargets[edge.ToFactID] = true
@@ -4611,7 +4614,7 @@ func contextCoreSourceBoundariesWithRelated(pack ContextPack, index scan.AgentCo
 		file := contextPackSourceFile(fact.File)
 		if distance <= 0 || normalizeContextProject(fact.Project) != entryProject ||
 			file == "" || (file == entryFile && pack.ProtocolVersion != AdaptiveV2) || !localCallTargets[factID] ||
-			(kind != "symbol" && kind != "backend_handler") || contextFactUsesTestSource(fact) {
+			(kind != "symbol" && kind != "backend_handler" && (kind != "persistence" || pack.ProtocolVersion != AdaptiveV2)) || contextFactUsesTestSource(fact) {
 			continue
 		}
 		candidates = append(candidates, coreCandidate{factID: factID, distance: distance, file: file})

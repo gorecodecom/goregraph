@@ -6,8 +6,8 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
-// Follow selected local calls only; configuration links and disconnected cycles
-// do not establish a production call chain.
+// Follow selected local calls and persistence flow steps; configuration links
+// and disconnected cycles do not establish a production call chain.
 func contextLocalCallDistances(entryID, project string, index scan.AgentContextIndexRecord, selected map[string]bool) map[string]int {
 	local := make(map[string]bool)
 	for _, fact := range index.Facts {
@@ -17,8 +17,7 @@ func contextLocalCallDistances(entryID, project string, index scan.AgentContextI
 	}
 	children := make(map[string][]string)
 	for _, edge := range index.Edges {
-		kind := strings.ToLower(strings.TrimSpace(edge.Kind))
-		if local[edge.FromFactID] && local[edge.ToFactID] && (kind == "call" || kind == "calls") {
+		if local[edge.FromFactID] && local[edge.ToFactID] && contextExecutableFlowEdge(edge) {
 			children[edge.FromFactID] = append(children[edge.FromFactID], edge.ToFactID)
 		}
 	}
@@ -38,4 +37,10 @@ func contextLocalCallDistances(entryID, project string, index scan.AgentContextI
 		}
 	}
 	return distances
+}
+
+func contextExecutableFlowEdge(edge scan.AgentContextEdgeRecord) bool {
+	kind := strings.ToLower(strings.TrimSpace(edge.Kind))
+	return kind == "call" || kind == "calls" ||
+		(kind == "persistence" && strings.EqualFold(strings.TrimSpace(edge.Reason), "flow"))
 }
