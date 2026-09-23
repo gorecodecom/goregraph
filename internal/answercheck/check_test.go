@@ -394,3 +394,111 @@ func TestAdjacentSemicolonRangesCheckEveryInterval(t *testing.T) {
 		})
 	}
 }
+
+func TestProseLineCitationsAndRequiredCoverage(t *testing.T) {
+	request := Request{
+		Answer:               "- `src/F.go` — handler, Zeilen 3–5; current behavior.\n",
+		Files:                []File{{Path: "src/F.go", Ranges: []Range{{3, 5}}}},
+		RequireLineCitations: true,
+	}
+	got, err := Check(request)
+	if err != nil || !got.Valid || got.CheckedRanges != 1 || got.CitationStatus != "recognized_line_citations_checked" {
+		t.Fatalf("prose citation was not checked: %+v %v", got, err)
+	}
+	request.Files[0].Ranges = []Range{{3, 3}, {5, 5}}
+	got, err = Check(request)
+	if err != nil || got.Valid || !hasCode(got, "undelivered_range") {
+		t.Fatalf("unread gap accepted: %+v %v", got, err)
+	}
+	request.Answer = "- `src/F.go` — handler, Zeilen 3–5, 9."
+	got, err = Check(request)
+	if err != nil || got.Valid || !hasCode(got, "undelivered_range") || got.CheckedRanges != 2 {
+		t.Fatalf("second prose range ignored: %+v %v", got, err)
+	}
+	request.Answer = "`src/F.go` is a known file."
+	got, err = Check(request)
+	if err != nil || got.Valid || !hasCode(got, "no_line_citations") || got.CitationStatus != "no_line_citations_recognized" {
+		t.Fatalf("zero line citations appeared complete: %+v %v", got, err)
+	}
+	request.RequireLineCitations = false
+	got, err = Check(request)
+	if err != nil || !got.Valid || got.CitationStatus != "no_line_citations_recognized" {
+		t.Fatalf("optional identity-only check regressed: %+v %v", got, err)
+	}
+}
+
+func TestProseRangesRemainUnboundWithMultipleFiles(t *testing.T) {
+	got, err := Check(Request{
+		Answer:               "`src/F.go` and `src/G.go` — Zeilen 3–5",
+		Files:                []File{{Path: "src/F.go", Ranges: []Range{{3, 5}}}, {Path: "src/G.go", Ranges: []Range{{3, 5}}}},
+		RequireLineCitations: true,
+	})
+	if err != nil || got.Valid || got.CheckedRanges != 0 || !hasCode(got, "no_line_citations") {
+		t.Fatalf("ambiguous prose range was bound to files: %+v %v", got, err)
+	}
+}
+
+func TestNestedSourceListAndProsePunctuation(t *testing.T) {
+	request := Request{
+		Answer: "- `src/F.go`\n  - Handler: 3–5\n  - `handle`: 8–9\n- `src/G.go` — Zeilen 12–13, Werte redigiert.\n- `src/H.go` — nur Metadaten, keine Zeile beansprucht.",
+		Files: []File{
+			{Path: "src/F.go", Ranges: []Range{{3, 5}, {8, 9}}},
+			{Path: "src/G.go", Ranges: []Range{{12, 13}}},
+			{Path: "src/H.go"},
+		},
+		RequireLineCitations: true,
+	}
+	got, err := Check(request)
+	if err != nil || !got.Valid || got.CheckedRanges != 3 || got.CheckedReferences[0].Coverage != "delivered" || got.CheckedReferences[2].Coverage != "identity_only" {
+		t.Fatalf("nested or prose citations not checked: %+v %v", got, err)
+	}
+	request.Files[0].Ranges = []Range{{3, 5}}
+	got, err = Check(request)
+	if err != nil || got.Valid || !hasCode(got, "undelivered_range") {
+		t.Fatalf("missing nested range accepted: %+v %v", got, err)
+	}
+}
+
+func TestSingleLineProseRedactionIsNotAnInvalidRange(t *testing.T) {
+	got, err := Check(Request{
+		Answer:               "- `config/app.properties` — Zeile 56, Wert redaktiert",
+		Files:                []File{{Path: "config/app.properties", Ranges: []Range{{56, 56}}}},
+		RequireLineCitations: true,
+	})
+	if err != nil || !got.Valid || got.CheckedRanges != 1 {
+		t.Fatalf("single redacted prose range: %+v %v", got, err)
+	}
+}
+
+func TestNestedProseRangeWithTrailingDescription(t *testing.T) {
+	got, err := Check(Request{
+		Answer:               "- `config/app.properties`\n  - Date: Zeile 56, Wert redaktiert\n  - Templates: 70–72 und 79–81, Werte redaktiert",
+		Files:                []File{{Path: "config/app.properties", Ranges: []Range{{56, 56}, {70, 72}, {79, 81}}}},
+		RequireLineCitations: true,
+	})
+	if err != nil || !got.Valid || got.CheckedRanges != 3 {
+		t.Fatalf("nested prose descriptions: %+v %v", got, err)
+	}
+}
+
+func TestNestedUnmarkedCountIsNotAFileLine(t *testing.T) {
+	got, err := Check(Request{
+		Answer:               "- `src/F.go`\n  - HTTP status: 200",
+		Files:                []File{{Path: "src/F.go", Ranges: []Range{{200, 200}}}},
+		RequireLineCitations: true,
+	})
+	if err != nil || got.Valid || got.CheckedRanges != 0 || !hasCode(got, "no_line_citations") {
+		t.Fatalf("count was treated as an unmarked source line: %+v %v", got, err)
+	}
+}
+
+func TestTableRangeFollowedByDescription(t *testing.T) {
+	got, err := Check(Request{
+		Answer:               "| File | Lines | Role |\n| --- | --- | --- |\n| `config/app.properties` | Keys 64–67, Values redacted | Reference |",
+		Files:                []File{{Path: "config/app.properties", Ranges: []Range{{64, 67}}}},
+		RequireLineCitations: true,
+	})
+	if err != nil || !got.Valid || got.CheckedRanges != 1 {
+		t.Fatalf("descriptive table citation: %+v %v", got, err)
+	}
+}

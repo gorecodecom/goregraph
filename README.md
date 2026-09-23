@@ -23,16 +23,18 @@ The tool is intentionally conservative:
 
 ## Measured token use
 
-The newest documented local 1.4.1 development follow-up used **52.08% fewer
-effective tokens** in its successful third run: **79,464 versus 165,839** in the
-previously saved no-GoreGraph reference. That run met all 12 static core criteria
-and identified all seven required test files.
+The latest completed normal-MCP development comparison saved **32.97% effective
+tokens** across two unchanged pairs on one frozen diagnosis task. The assisted
+answers scored 11/12 and 10/12 static criteria, compared with 9/12 for both
+controls; they still missed one conditional side effect. See the
+[measurement and its limits](docs/AGENT-ADAPTIVE-MCP-MEASUREMENT-2026-09-23.md).
 
-This is one frozen-workspace comparison, not a general savings guarantee or a
-benchmark of the unchanged v1.4.1 release binary. The reference was reused, not
-rerun alongside the candidate. Two preceding diagnostic runs were not fully
-successful. See [the measurement and its limits](#local-141-development-follow-up)
-before comparing results or estimating costs.
+The older **52.08%** figure is a separate macOS 1.4.1 development experiment
+(79,464 versus a previously saved 165,839-token reference). Its baseline was
+not rerun alongside that candidate. See the
+[historical follow-up](#local-141-development-follow-up). Neither figure is a
+general savings guarantee. The current answer-check and instruction changes
+were made after the latest measured series; no new percentage is claimed.
 
 ## What GoreGraph does
 

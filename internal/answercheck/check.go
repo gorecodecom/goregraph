@@ -40,10 +40,11 @@ type File struct {
 
 // Request supplies the answer, optional absolute workspace root and delivery ledger.
 type Request struct {
-	Answer      string `json:"answer"`
-	Root        string `json:"root,omitempty"`
-	Files       []File `json:"files"`
-	RepairPaths bool   `json:"repair_paths,omitempty"`
+	Answer               string `json:"answer"`
+	Root                 string `json:"root,omitempty"`
+	Files                []File `json:"files"`
+	RepairPaths          bool   `json:"repair_paths,omitempty"`
+	RequireLineCitations bool   `json:"require_line_citations,omitempty"`
 }
 
 // Finding describes a mechanical citation issue at a one-based answer line.
@@ -78,6 +79,7 @@ type Result struct {
 	Repairs           []Repair    `json:"repairs"`
 	CheckedReferences []Reference `json:"checked_references"`
 	CheckedRanges     int         `json:"checked_ranges"`
+	CitationStatus    string      `json:"citation_status"`
 	SemanticValidity  string      `json:"semantic_validity"`
 	Limitations       []string    `json:"limitations"`
 }
@@ -180,6 +182,8 @@ var (
 	tableNumbers            = regexp.MustCompile(`[0-9]+`)
 	httpStatus              = regexp.MustCompile(`(?i)\bHTTP\s+[0-9]+(?:/[0-9]+)*`)
 	lineMarker              = regexp.MustCompile(`(?i)(?:\bZ\.|\bZeilen?\b|\blines?\b)\s*`)
+	nestedRangeLine         = regexp.MustCompile(`^  +-\s+`)
+	nestedUnmarkedRange     = regexp.MustCompile(`^[0-9]+\s*[-–—]\s*[0-9]+`)
 	unsupportedContinuation = regexp.MustCompile(`(?i)^(?:\.\.|\.\s*[0-9]|…|(?:to|through|bis)\b|;\s*(?:[0-9+;,.–—-]|Z\.|lines?\b|Zeilen?\b))`)
 )
 
@@ -202,7 +206,7 @@ func Check(request Request) (Result, error) {
 	}
 	result := Result{Answer: request.Answer, Findings: []Finding{}, Repairs: []Repair{}, CheckedReferences: []Reference{}, SemanticValidity: "not_verified", Limitations: []string{
 		"Caller-provided discovery and delivery ledger is not authenticated; receipts, match metadata and EOF metadata are not delivered source.",
-		"Checks explicit inline-code file tokens, inline Markdown link destinations, adjacent Z./Zeilen/lines citations and recognized table citation columns; not exhaustive Markdown or freeform claim parsing.",
+		"Checks explicit inline-code file tokens, inline Markdown link destinations, unambiguous same-line Z./Zeilen/lines citations, nested list ranges and recognized table citation columns; not exhaustive Markdown or freeform claim parsing.",
 		"Fenced and indented code, external HTTP(S) links and receipt strings are excluded; metadata-only references establish identity only.",
 		"Redacted ranges prove visible keys or structure only, never hidden values. Semantic correctness requires independent review.",
 	}}
@@ -261,6 +265,40 @@ func Check(request Request) (Result, error) {
 			citationColumns = nil
 		}
 		occurrences := extract(line, ledger)
+		if len(occurrences) == 1 && len(occurrences[0].ranges) == 0 && !strings.Contains(line, "|") {
+			_, ownRanges, _ := splitCitation(occurrences[0].token)
+			if len(ownRanges) == 0 {
+				tail := line[occurrences[0].start+len(occurrences[0].token):]
+				if ranges, code := proseRanges(tail); len(ranges) > 0 || code != "" {
+					occurrences[0].ranges, occurrences[0].code = ranges, code
+				}
+			}
+		}
+		// A file-only bullet may own ranges on its immediately nested bullets.
+		if len(occurrences) == 1 && strings.TrimSpace(line) == "- `"+occurrences[0].token+"`" {
+			for j := i + 1; j < len(lines) && nestedRangeLine.MatchString(lines[j]); j++ {
+				child := strings.TrimSpace(lines[j])
+				if len(extract(child, ledger)) > 0 {
+					break
+				}
+				value := strings.TrimSpace(strings.TrimPrefix(child, "-"))
+				if marker := lineMarker.FindStringIndex(value); marker != nil {
+					value = value[marker[0]:]
+				} else if colon := strings.LastIndex(value, ":"); colon >= 0 && nestedUnmarkedRange.MatchString(strings.TrimSpace(value[colon+1:])) {
+					value = value[colon+1:]
+				} else {
+					continue
+				}
+				ranges, code := proseRanges(value)
+				if len(ranges) == 0 && code == "" {
+					ranges, code = parseProseValue(strings.TrimSpace(value))
+				}
+				occurrences[0].ranges = append(occurrences[0].ranges, ranges...)
+				if code != "" {
+					occurrences[0].code = code
+				}
+			}
+		}
 		if unsupportedLine(line, ledger) {
 			result.Findings = append(result.Findings, Finding{AnswerLine: lineNumber, Code: "unsupported_citation", Message: "unsupported or multiline Markdown reference syntax requires manual review"})
 		}
@@ -348,6 +386,12 @@ func Check(request Request) (Result, error) {
 	}
 	if len(result.CheckedReferences) == 0 {
 		result.Findings = append(result.Findings, Finding{AnswerLine: 1, Code: "no_references", Message: "no supported explicit file references were checked"})
+	}
+	result.CitationStatus = "no_line_citations_recognized"
+	if result.CheckedRanges > 0 {
+		result.CitationStatus = "recognized_line_citations_checked"
+	} else if request.RequireLineCitations {
+		result.Findings = append(result.Findings, Finding{AnswerLine: 1, Code: "no_line_citations", Message: "no supported source line citations were checked"})
 	}
 	if len(edits) > 0 {
 		var repaired strings.Builder
@@ -448,6 +492,37 @@ func splitCitation(token string) (string, []Range, string) {
 	return p, ranges, ""
 }
 
+func proseRanges(tail string) ([]Range, string) {
+	marker := lineMarker.FindStringIndex(tail)
+	if marker == nil {
+		return nil, ""
+	}
+	return parseProseValue(tail[marker[1]:])
+}
+
+func parseProseValue(value string) ([]Range, string) {
+	match := rangePrefix.FindStringIndex(value)
+	if match == nil {
+		return nil, ""
+	}
+	ranges, bad := prefixRanges(value)
+	if bad && len(ranges) > 0 {
+		// A comma after a complete range can introduce descriptive prose.
+		last := strings.TrimSpace(value[match[1]:])
+		if strings.HasPrefix(last, ", ") {
+			first := strings.TrimPrefix(last, ", ")
+			r, _ := utf8.DecodeRuneInString(first)
+			if unicode.IsLetter(r) && (ranges[0][0] != ranges[0][1] || unicode.IsUpper(r)) {
+				bad = false
+			}
+		}
+	}
+	if bad {
+		return ranges, "unsupported_citation"
+	}
+	return ranges, ""
+}
+
 func adjacentRanges(tail string) ([]Range, string) {
 	m := adjacentMarker.FindStringIndex(tail)
 	if m == nil {
@@ -518,9 +593,9 @@ func tableRanges(cell string) ([]Range, bool) {
 				if tableNumbers.FindStringIndex(tail) == nil {
 					continue
 				}
-				parsed, bad := prefixRanges(tail)
+				parsed, code := parseProseValue(tail)
 				ranges = append(ranges, parsed...)
-				if bad {
+				if code != "" {
 					return ranges, true
 				}
 			}
@@ -554,9 +629,9 @@ func unmarkedTableRanges(cell string) ([]Range, bool) {
 		if match == nil {
 			return ranges, true
 		}
-		parsed, bad := prefixRanges(cell[start:])
+		parsed, code := parseProseValue(cell[start:])
 		ranges = append(ranges, parsed...)
-		if bad {
+		if code != "" {
 			return ranges, true
 		}
 		cursor = start + match[1]

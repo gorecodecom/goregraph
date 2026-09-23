@@ -291,6 +291,25 @@ func TestInitializeInstructsAgentsToReuseIncludedSource(t *testing.T) {
 	}
 }
 
+func TestInitializeAdaptiveInstructionRequiresSideEffectConditions(t *testing.T) {
+	result := handle(request{JSONRPC: "2.0", ID: 1, Method: "initialize"}, Options{ProtocolVersion: agentguide.AdaptiveV2})
+	body, err := json.Marshal(result.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Instructions string `json:"instructions"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"existing observable side effects of each relevant mutation", "guard, skip and recipient rules"} {
+		if !strings.Contains(payload.Instructions, want) {
+			t.Errorf("adaptive MCP initialize omits %q", want)
+		}
+	}
+}
+
 func TestMCPTaskContextPassesPreviousContextID(t *testing.T) {
 	root := writeMCPContextFixture(t)
 	firstText, err := callTool(Options{}, "task_context", map[string]any{"root": root, "query": "DELETE /users/{id}"})

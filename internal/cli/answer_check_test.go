@@ -21,6 +21,7 @@ func TestAnswerCheckCLI(t *testing.T) {
 		{nil, 2},
 		{[]string{"--request", `{"answer":"` + "`src/F.go:1`" + `","files":[{"path":"src/F.go","ranges":[[1,1]]}]}`}, 0},
 		{[]string{"--request", `{"answer":"` + "`src/F.go:2`" + `","files":[{"path":"src/F.go","ranges":[[1,1]]}]}`}, 1},
+		{[]string{"--request", `{"answer":"` + "`src/F.go`" + `","files":[{"path":"src/F.go"}],"require_line_citations":true}`}, 1},
 		{[]string{"--request", `{"answer":"x","unknown":1}`}, 2},
 		{[]string{"--request", "{}", "--request-file", "x"}, 2},
 	} {

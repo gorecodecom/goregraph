@@ -28,9 +28,12 @@ metadata do not establish delivery. Redacted ranges establish keys, never values
 Metadata-only files may omit ranges. Unknown fields and trailing JSON are rejected.
 Only uniquely resolvable basename or /.../ or /…/ path tokens can be repaired;
 claims, line ranges, code fences, receipt strings and external URLs stay unchanged.
-Supports inline-code file references, inline Markdown link targets, adjacent
-Z./Zeilen/lines ranges, and recognized table citation columns. This is a bounded
-parser, not exhaustive Markdown or semantic validation. Zero references fails.
+Supports inline-code file references, inline Markdown link targets, unambiguous
+same-line Z./Zeilen/lines ranges, indented source-file lists with nested
+line ranges, and recognized table citation columns. This is a bounded
+parser, not exhaustive Markdown or semantic validation. Zero references fails. Set require_line_citations=true when an answer must cite source lines;
+then zero recognized line citations fail. citation_status always reports whether
+any line citations were recognized, independently of valid.
 
 Limits: 1 MiB request, 512 KiB answer, 1024 ledger files, 4096 ledger ranges,
 4096 references, 4096 cited ranges, 4096 bytes/path, lines 1..2147483647.

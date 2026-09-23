@@ -49,6 +49,8 @@ func TestAdaptiveInstructionPreservesCallerAuthority(t *testing.T) {
 		"previous_context_id",
 		"expert MCP tools remain opt-in",
 		"unknown design decisions",
+		"call-site guard and the callee's own skip and recipient conditions",
+		"existing observable side effects of each relevant mutation",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("adaptive instruction does not contain %q", want)

@@ -493,9 +493,12 @@ expanded from the supplied ledger. If several files share an abbreviated name an
 the citation includes ranges, the identity is resolvable only when exactly one
 candidate covers every cited range in its delivered or redacted ranges. Claims,
 line ranges and identities that remain ambiguous are not rewritten. The result includes `answer`, `valid`, `findings`, `repairs`,
-`checked_references`, `checked_ranges`, `limitations` and
-`semantic_validity: "not_verified"`. A valid result means only that the supported
-explicit syntax passes these checks; it does not certify factual claims, test
+`checked_references`, `checked_ranges`, `citation_status`, `limitations` and
+`semantic_validity: "not_verified"`. Set optional
+`require_line_citations: true` to fail with `no_line_citations` when no supported
+source-line range is recognized; otherwise an identity-only answer may remain
+valid with `citation_status: "no_line_citations_recognized"`. A valid result
+means only that the supported explicit syntax passes these checks; it does not certify factual claims, test
 behavior, authorization or completeness of freeform prose. Supported syntax and
 parser limits are listed in command help. Independent semantic review remains
 necessary.
