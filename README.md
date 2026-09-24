@@ -1182,8 +1182,19 @@ The MCP server intentionally does not scan automatically. Refresh its data after
 relevant source changes:
 
 ```bash
-goregraph update . --target agent
+goregraph update . --target all
 ```
+
+`goregraph update` scans the selected project again; it does not process only
+changed files. `--target all` shares one source extraction between the agent
+index and dashboard, keeping both current. Use `--target agent` only when the
+dashboard does not need refreshing. Runtime depends on project size and analysis
+work. In multi-project workspaces, use `goregraph workspace update . --target all`:
+it checks file content and skips unchanged projects, but fully rebuilds each
+changed project.
+
+An optional agent-independent file watcher is outlined in the
+[file watcher proposal](docs/file-watcher-proposal.md); it is not implemented.
 
 Each `task_context` call should pass the active project or workspace root
 explicitly. This avoids depending on the working directory from which an MCP
@@ -1316,6 +1327,7 @@ default across every repository, the same block can be placed in
 - Retry context only when `retry_allowed` is true, using exactly one supplied `retry_anchor` and the returned `context_id` as `previous_context_id`. Never repeat or expand the original query to force coverage.
 - Low confidence or an unreliable production entrypoint means stop context retrieval; ordinary source fallback remains limited to the caller's task and permissions. Multiple roots are valid only for explicitly requested audit mode.
 - If the agent index is missing or stale, run `goregraph doctor <root>` and refresh it with `goregraph update <root> --target agent` before requesting context again. Partial evidence alone is not a reason to rescan.
+- After completing edits to indexed source, tests, or relevant configuration, run `goregraph update <root> --target all` before ending the coding task. Do this after the final edit so the next `task_context` and dashboard see the current files. If no index exists, run `goregraph build all <root>` instead. Report an update failure explicitly.
 - Do not use specialist GoreGraph queries or expert MCP tools during the normal workflow.
 ```
 
