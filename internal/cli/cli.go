@@ -1757,7 +1757,7 @@ func printHelp(w io.Writer) {
 
 Usage: goregraph <command> [options]
 
-File watcher (optional; never enabled by installation):
+File watcher (optional; never enabled by installation; guide: goregraph watch --help):
 `)
 	fmt.Fprint(w, watch.HelpSummary())
 	fmt.Fprint(w, `

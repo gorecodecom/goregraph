@@ -18,16 +18,28 @@ import (
 func printWatchHelp(out io.Writer) {
 	fmt.Fprint(out, `Usage: goregraph watch <start|stop|status|autostart|run> [path] [options]
 
-The watcher is optional. Installation never enables or starts it.
+Quick start from the project directory:
+  goregraph watch start .       Start watching this project in the background
+  goregraph watch status .      Check whether it is running and updating
+  goregraph dashboard open .   Open the dashboard; reload it after changes
+
+"." means the current directory. From elsewhere, pass the project path instead.
+The first interactive start asks about automatic startup at future logins;
+press Enter for no. For scripts, choose explicitly with --autostart on|off.
+
+To stop watching now, run "goregraph watch stop .". If Autostart is on,
+also run "goregraph watch autostart off ." to prevent future login startup.
+
+For a whole workspace, use "goregraph watch start <workspace-path> --workspace".
+The watcher updates the agent index and dashboard after file changes. It does
+not run tests or application code. Installation never enables or starts it.
+
+All commands:
   start [path] [--workspace] [--autostart on|off]  Start in the background
   stop [path]                                    Stop the running watcher
   status [path]                                  Show live and login status
   autostart on|off [path] [--workspace]          Change login startup
   run [path] [--workspace]                       Run in the foreground
-
-The first interactive start asks whether to enable login autostart; the default
-is off. Noninteractive start also defaults to off. A project watcher updates
-the agent index and dashboard; --workspace selects workspace-wide updates.
 `)
 }
 
