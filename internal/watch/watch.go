@@ -92,6 +92,19 @@ func Resolve(path string, workspace bool) (Root, error) {
 	return Root{Path: absolute, Workspace: workspace, ID: hex.EncodeToString(sum[:8])}, nil
 }
 
+// PreferredWorkspace reports whether the selected root is itself a recognized
+// workspace. A project inside a workspace keeps its own project watch scope.
+func PreferredWorkspace(root Root) (bool, error) {
+	workspaceRoot, found, err := scan.WorkspaceRoot(root.Path, config.Defaults())
+	if err != nil || !found {
+		return false, err
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(workspaceRoot, root.Path), nil
+	}
+	return workspaceRoot == root.Path, nil
+}
+
 func requireExistingRoot(root Root) error {
 	info, err := os.Stat(root.Path)
 	if err != nil {
@@ -305,6 +318,31 @@ func GetStatus(root Root) (Status, error) {
 	return status, nil
 }
 
+// ChangeMode reconfigures a stopped watcher while preserving its login choice.
+func ChangeMode(root Root, executable string) error {
+	status, err := GetStatus(root)
+	if err != nil {
+		return err
+	}
+	if status.Running {
+		return fmt.Errorf("stop the watcher before changing its mode")
+	}
+	if status.Workspace == root.Workspace {
+		return nil
+	}
+	if err := SetAutostart(root, status.Autostart, executable); err != nil {
+		return err
+	}
+	runtimePath, err := statePath(root, "runtime.json")
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(runtimePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 // RequestStop asks the live watcher to shut down after its current update.
 func RequestStop(root Root) (bool, error) {
 	status, err := GetStatus(root)
@@ -364,6 +402,7 @@ func SetAutostart(root Root, enabled bool, executable string) error {
 		}
 		saved.Autostart, saved.Method = false, ""
 	}
+	saved.Workspace = root.Workspace
 	saved.SetupError = ""
 	path, err := statePath(root, "setting.json")
 	if err != nil {

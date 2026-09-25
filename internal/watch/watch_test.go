@@ -131,6 +131,69 @@ func TestWatcherRejectsStateInsideWatchedRoot(t *testing.T) {
 	}
 }
 
+func TestPreferredWorkspaceOnlySelectsTheWorkspaceRoot(t *testing.T) {
+	workspace := t.TempDir()
+	project := filepath.Join(workspace, "frontend", "app")
+	if err := os.MkdirAll(project, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workspace, "microservices", "api"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		path string
+		want bool
+	}{
+		{workspace, true},
+		{project, false},
+	} {
+		root, err := Resolve(test.path, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := PreferredWorkspace(root)
+		if err != nil || got != test.want {
+			t.Fatalf("PreferredWorkspace(%s) = %t, %v; want %t", test.path, got, err, test.want)
+		}
+	}
+}
+
+func TestChangeModePreservesDisabledAutostartAndClearsOldSuccess(t *testing.T) {
+	t.Setenv("GOREGRAPH_WATCH_HOME", t.TempDir())
+	root, err := Resolve(t.TempDir(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureStateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	settingPath, err := statePath(root, "setting.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(settingPath, setting{Root: root.Path}); err != nil {
+		t.Fatal(err)
+	}
+	runtimePath, err := statePath(root, "runtime.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(runtimePath, runtimeState{Stopped: true, LastSuccess: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	root.Workspace = true
+	if err := ChangeMode(root, "goregraph"); err != nil {
+		t.Fatal(err)
+	}
+	status, err := GetStatus(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Workspace || status.Autostart || !status.LastSuccess.IsZero() {
+		t.Fatalf("status after mode change = %+v", status)
+	}
+}
+
 func TestStaleWatcherCannotRemoveReplacementLock(t *testing.T) {
 	original := userConfigDir
 	configPath := t.TempDir()

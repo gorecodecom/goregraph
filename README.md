@@ -1204,8 +1204,12 @@ goregraph watch stop .                  # stop now; keeps the autostart choice
 goregraph watch autostart off .         # remove future login startup
 ```
 
-Use `--workspace` with `watch start` to watch a whole workspace. Installation
-never starts the watcher or enables autostart. The same commands work on Windows,
+Recognized workspace roots are watched in workspace mode automatically; use
+`--workspace` for a flat or otherwise unrecognized workspace. `watch status`
+shows the output being updated and warns if an older project-mode watcher is
+pointed at a recognized workspace. Stop that watcher, then start it again with
+`--workspace` to switch modes. Installation never starts the watcher or enables
+autostart. The same commands work on Windows,
 macOS, and Linux; login autostart is opt-in and user-specific. The watcher checks
 selected file contents every few seconds, coalesces saves, and runs the existing
 project or workspace update for agent index and dashboard. It does not run tests

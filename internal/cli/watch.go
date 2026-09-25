@@ -4,13 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/scan"
 	"github.com/gorecodecom/goregraph/internal/watch"
 )
@@ -30,7 +34,9 @@ press Enter for no. For scripts, choose explicitly with --autostart on|off.
 To stop watching now, run "goregraph watch stop .". If Autostart is on,
 also run "goregraph watch autostart off ." to prevent future login startup.
 
-For a whole workspace, use "goregraph watch start <workspace-path> --workspace".
+Recognized workspace roots are selected automatically. For a workspace that
+is not recognized, use "goregraph watch start <workspace-path> --workspace".
+Stop a running watcher before changing its project/workspace mode.
 The watcher updates the agent index and dashboard after file changes. It does
 not run tests or application code. Installation never enables or starts it.
 
@@ -104,6 +110,16 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
+	if action == "start" && !workspaceFlag {
+		preferred, err := watch.PreferredWorkspace(root)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: detecting watcher mode: %v\n", err)
+			return 1
+		}
+		if preferred {
+			workspace, workspaceFlag, root.Workspace = true, true, true
+		}
+	}
 	if action == "start" || action == "run" || action == "autostart" {
 		registered, err := watch.HasSetting(root)
 		if err != nil {
@@ -120,8 +136,22 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 				workspace = status.Workspace
 				root.Workspace = workspace
 			} else if status.Workspace != workspace {
-				fmt.Fprintln(stderr, "error: this root is already configured with a different project/workspace mode")
-				return 2
+				if action != "start" {
+					fmt.Fprintln(stderr, "error: this root is already configured with a different project/workspace mode")
+					return 2
+				}
+				if status.Running {
+					fmt.Fprintf(stderr, "error: watcher is running in %s mode; run goregraph watch stop %s, then start it again with --workspace\n", watchMode(status.Workspace), root.Path)
+					return 2
+				}
+				executable, err := os.Executable()
+				if err == nil {
+					err = watch.ChangeMode(root, executable)
+				}
+				if err != nil {
+					fmt.Fprintf(stderr, "error: changing watcher mode: %v\n", err)
+					return 1
+				}
 			}
 		}
 	}
@@ -133,6 +163,15 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "Root: %s\nMode: %s\nRunning: %t\nAutostart: %t\n", root.Path, watchMode(status.Workspace), status.Running, status.Autostart)
+		if output, err := watchOutputPath(root.Path, status.Workspace); err == nil {
+			fmt.Fprintf(stdout, "Target output: %s\n", output)
+			printWatchOutputStatus(stdout, output)
+		} else {
+			fmt.Fprintf(stdout, "Output error: %v\n", err)
+		}
+		if preferred, err := watch.PreferredWorkspace(root); err == nil && preferred && !status.Workspace {
+			fmt.Fprintf(stdout, "Warning: this root is a workspace; this project watcher does not update its dashboard at %s. Stop it and start again with --workspace.\n", filepath.Join(root.Path, ".goregraph-workspace"))
+		}
 		if status.Method != "" {
 			fmt.Fprintf(stdout, "Start mechanism: %s\n", status.Method)
 		}
@@ -140,7 +179,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "Autostart error: %s\n", status.AutostartError)
 		}
 		if !status.LastSuccess.IsZero() {
-			fmt.Fprintf(stdout, "Last successful update: %s\n", status.LastSuccess.Format("2006-01-02 15:04:05 MST"))
+			fmt.Fprintf(stdout, "Last successful watcher check: %s\n", status.LastSuccess.Format("2006-01-02 15:04:05 MST"))
 		}
 		if status.LastError != "" {
 			fmt.Fprintf(stdout, "Last error: %s\n", status.LastError)
@@ -199,7 +238,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 				return 1
 			}
 		}
-		fmt.Fprintf(stdout, "Watcher started for %s.\n", root.Path)
+		fmt.Fprintf(stdout, "Watcher started for %s (%s mode).\n", root.Path, watchMode(workspace))
 		return 0
 	case "run":
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -245,4 +284,50 @@ func watchMode(workspace bool) string {
 		return "workspace"
 	}
 	return "project"
+}
+
+func watchOutputPath(path string, workspace bool) (string, error) {
+	if workspace {
+		return filepath.Join(path, ".goregraph-workspace"), nil
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(path, cfg.OutputDir), nil
+}
+
+func printWatchOutputStatus(out io.Writer, output string) {
+	body, err := os.ReadFile(filepath.Join(output, "manifest.json"))
+	if os.IsNotExist(err) {
+		fmt.Fprintln(out, "Output: not built yet")
+		return
+	}
+	if err != nil {
+		fmt.Fprintf(out, "Output error: %v\n", err)
+		return
+	}
+	var manifest scan.OutputManifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		fmt.Fprintf(out, "Output error: invalid manifest: %v\n", err)
+		return
+	}
+	for _, projection := range []struct {
+		name   string
+		status scan.ProjectionStatus
+	}{
+		{"Agent generated", manifest.Agent},
+		{"Dashboard generated", manifest.Dashboard},
+	} {
+		if !projection.status.Complete || projection.status.GeneratedAt == "" {
+			fmt.Fprintf(out, "%s: not built yet\n", projection.name)
+			continue
+		}
+		generated, err := time.Parse(time.RFC3339, projection.status.GeneratedAt)
+		if err != nil {
+			fmt.Fprintf(out, "%s: %s\n", projection.name, projection.status.GeneratedAt)
+			continue
+		}
+		fmt.Fprintf(out, "%s: %s\n", projection.name, generated.Local().Format("2006-01-02 15:04:05 MST"))
+	}
 }

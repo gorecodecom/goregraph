@@ -527,14 +527,19 @@ Important behavior:
 ## `goregraph watch start|stop|status|autostart|run [path]`
 
 The watcher is opt-in and is not started by installation. `watch start [path]`
-starts it in the background for one project; add `--workspace` for a workspace.
+starts it in the background. Recognized workspace roots use workspace mode
+automatically; add `--workspace` for an unrecognized workspace.
 On the first interactive start, GoreGraph asks whether to start it at future
 logins (default: no). Noninteractive use defaults to no; use `--autostart on|off`
 to make that choice explicitly. `watch autostart on|off [path]` changes the login
 setting later without starting or stopping the current process.
 
-`watch status [path]` reports the live process, autostart setting, last
-successful update and any error separately. `watch stop [path]` requests a
+`watch status [path]` reports the live process, autostart setting, target output,
+agent/dashboard generation times, the last successful watcher check and any
+error separately. A check can skip an unchanged build. It warns when an older
+project-mode watcher targets a recognized workspace and leaves its dashboard
+stale. Stop the watcher before restarting with `--workspace` to switch modes.
+`watch stop [path]` requests a
 graceful stop but leaves autostart unchanged. `watch run [path]` is the
 foreground form used by login startup. The watcher checks the same selected
 files as the scanner every three seconds, coalesces edits, and updates both

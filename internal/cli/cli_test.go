@@ -86,6 +86,33 @@ func TestRunWatchStatusReportsUnconfiguredRoot(t *testing.T) {
 	}
 }
 
+func TestRunWatchStatusWarnsWhenWorkspaceDashboardIsNotUpdated(t *testing.T) {
+	t.Setenv("GOREGRAPH_WATCH_HOME", t.TempDir())
+	root := t.TempDir()
+	writeFile(t, root, ".goregraph-workspace.yml", "")
+	writeFile(t, root, "goregraph-out/manifest.json", `{"agent":{"complete":true,"generated_at":"2026-09-25T11:23:17Z"},"dashboard":{"complete":false}}`)
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"watch", "status", root}, &stdout, &stderr); code != 0 {
+		t.Fatalf("status exit code = %d: %s", code, stderr.String())
+	}
+	for _, want := range []string{
+		"Mode: project",
+		"Target output: " + filepath.Join(canonicalRoot, "goregraph-out"),
+		"Agent generated: ",
+		"Dashboard generated: not built yet",
+		"Warning: this root is a workspace",
+		"Stop it and start again with --workspace",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("status missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestWorkspaceSubcommandsSupportShortHelp(t *testing.T) {
 	for _, command := range []string{
 		"update",
