@@ -208,6 +208,10 @@ Download the current Windows x86-64 archive directly:
 
 [Download `goregraph_Windows_x86_64.zip`](https://github.com/gorecodecom/goregraph/releases/latest/download/goregraph_Windows_x86_64.zip)
 
+This link currently downloads the published 1.4.2 archive. A downloadable
+1.4.3 executable requires a published binary asset; until then, build the
+unreleased 1.4.3 executable locally as described under [Build From Source](#build-from-source).
+
 This ZIP is a portable archive, not an installer. Extracting it does not add
 GoreGraph to `PATH`; complete the following steps before using `goregraph` from
 PowerShell, Command Prompt, an IDE, or Codex.
@@ -297,6 +301,18 @@ Build:
 ```bash
 go build -o goregraph ./cmd/goregraph
 ```
+
+To install the unreleased 1.4.3 source version manually on Windows, build its
+executable from the current checkout in PowerShell:
+
+```powershell
+go build -o goregraph.exe ./cmd/goregraph
+.\goregraph.exe version
+```
+
+Place `goregraph.exe` in the stable directory and add that directory to `PATH`
+using the [Windows steps above](#windows). This is a local development build,
+not a published release download.
 
 Run:
 
