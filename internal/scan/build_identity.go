@@ -10,7 +10,7 @@ const (
 	currentExtractorRevision = "2"
 	currentResolverRevision  = "1"
 	currentAgentRevision     = "3"
-	currentDashboardRevision = "3"
+	currentDashboardRevision = "5"
 )
 
 // BuildIdentity records inputs that affect analysis independently of release labels.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/outputstore"
+	"github.com/gorecodecom/goregraph/internal/testresults"
 )
 
 var workspaceGroupDirs = []string{"frontend", "frontends", "microservices", "services", "backends"}
@@ -19,6 +20,7 @@ var workspaceReadDir = os.ReadDir
 
 type workspaceIndexProject struct {
 	tooling            DashboardToolingRecord
+	results            testresults.Record
 	record             WorkspaceProjectRecord
 	routes             []CodeRouteRecord
 	legacyRelations    []RelationRecord
@@ -297,7 +299,7 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 	serviceMap.Health = HealthForProjection(manifest, "dashboard", false)
 	var dashboardArtifacts workspaceDashboardArtifacts
 	if target.IncludesDashboard() {
-		dashboardArtifacts = buildWorkspaceDashboardArtifacts(workspaceGraph, serviceMap, endpointTraces, apiCatalog, symbolIndex, symbolUsageIndex, workspaceDashboardTooling(indexed))
+		dashboardArtifacts = buildWorkspaceDashboardArtifactsWithResults(workspaceGraph, serviceMap, endpointTraces, apiCatalog, symbolIndex, symbolUsageIndex, workspaceDashboardTooling(indexed), workspaceDashboardResults(indexed))
 		dashboardFiles = workspaceDashboardFiles(dashboardArtifacts.Assets)
 		manifest.Dashboard.Files = dashboardFiles
 	}
@@ -988,6 +990,7 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		if err := readWorkspaceJSON(layout.Index("tooling.json"), &loaded.tooling); err != nil {
 			loaded.tooling = DashboardToolingRecord{}
 		}
+		loaded.results, _ = testresults.Load(out)
 		loadSymbolFact := func(name string, dest any, reset func()) {
 			err := readWorkspaceJSON(layout.Index(name), dest)
 			if err == nil {

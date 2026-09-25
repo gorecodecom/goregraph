@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gorecodecom/goregraph/internal/config"
+	"github.com/gorecodecom/goregraph/internal/testresults"
 )
 
 func toolingFixtureSources(t *testing.T) ([]AgentAuditSource, map[string][]DashboardToolingObservation) {
@@ -147,6 +149,7 @@ func TestDashboardToolingBuildAndWorkspaceProjection(t *testing.T) {
 			t.Fatal(err)
 		}
 		payload.Graph.Root = "Tooling-Demo"
+		payload.Results = map[string]testresults.Record{"frontend/store": {Version: 1, Runs: []testresults.Run{{Suite: "Storybook interactions", Origin: "local", ImportedAt: "2026-09-25T06:00:00Z", ExpectedShards: 20, Status: "incomplete", Counts: testresults.Counts{Tests: 1, Passed: 1}, Reports: []testresults.Report{{Name: "interactions-1.xml", Counts: testresults.Counts{Tests: 1, Passed: 1}}}}}}}
 		assets := map[string][]byte{}
 		for _, asset := range payload.CodeUsageAssets {
 			body, err := os.ReadFile(filepath.Join(workspace, ".goregraph-workspace/dashboard", filepath.FromSlash(asset)))
@@ -189,5 +192,37 @@ func TestDashboardToolingRebuildPreservesAgentProjection(t *testing.T) {
 	previous.DashboardRevision = "2"
 	if identityChange(previous, current, BuildTargetDashboard) != "dashboard revision changed" || identityChange(previous, current, BuildTargetAgent) != "" {
 		t.Fatal("dashboard upgrade invalidates the agent workflow")
+	}
+}
+
+func TestToolingResultsPresentationKeepsMissingEvidenceNeutral(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for dashboard script checks")
+	}
+	script := `
+const assert=require('node:assert/strict');
+const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const workspace={results:{}};
+const selectedProject=()=> 'frontend/store';
+` + dashboardFile("tooling.js") + `
+const empty=toolingResults();
+assert.match(empty,/Kein Ergebnis importiert/);
+assert.doesNotMatch(empty,/fehlgeschlagen/);
+workspace.results['frontend/store']={version:1,runs:[{suite:'<img src=x onerror=alert(1)>',origin:'local',status:'incomplete',imported_at:'2026-09-25T06:00:00Z',expected_shards:20,counts:{tests:1,passed:1},reports:[{name:'interactions-1.xml',counts:{tests:1}}]}]};
+const imported=toolingResults();
+assert.match(imported,/Unvollständiger Berichtssatz/);
+assert.match(imported,/Revision unbekannt/);
+assert.match(imported,/&lt;img/);
+assert.doesNotMatch(imported,/<img src=x/);
+workspace.results['frontend/store'].runs[0].status='passed';
+workspace.results['frontend/store'].runs[0].reports.push({name:'interactions-2.xml',counts:{tests:1}});
+assert.match(toolingResults(),/Berichte bestanden · Lauf nicht verifiziert/);
+assert.doesNotMatch(toolingResults(),/Commit entspricht dem Checkout/);
+`
+	command := exec.Command(node)
+	command.Stdin = strings.NewReader(script)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("tooling result script: %v\n%s", err, output)
 	}
 }

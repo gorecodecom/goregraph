@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/gorecodecom/goregraph/internal/testresults"
 )
 
 // DashboardToolingObservation identifies a literal declaration, not runtime state.
@@ -110,6 +112,14 @@ func workspaceDashboardTooling(indexed []workspaceIndexProject) map[string]Dashb
 	records := map[string]DashboardToolingRecord{}
 	for _, project := range indexed {
 		records[project.record.Path] = project.tooling
+	}
+	return records
+}
+
+func workspaceDashboardResults(indexed []workspaceIndexProject) map[string]testresults.Record {
+	records := map[string]testresults.Record{}
+	for _, project := range indexed {
+		records[project.record.Path] = project.results
 	}
 	return records
 }

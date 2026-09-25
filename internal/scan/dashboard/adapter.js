@@ -37,7 +37,7 @@ function dashboardProjection(payload) {
     if(remaining)records.push({id:edge.id+':unmapped',count:remaining,kind:'unknown',scope:'unknown',file:'',status:'UNKNOWN',evidence:'Im Service-Paar gezählt; keinem Einzelnachweis eindeutig zugeordnet.'});
     return {...projected,records};
   });
-  return {architecture:{generated:serviceMap.generated||graph.generated,nodes,edges,groups},workspace:{tooling:payload.tooling||{},generated:serviceMap.generated||graph.generated,root:graph.root||serviceMap.root||'',symbols:payload.symbol_index?.symbols||[],usages:payload.symbol_usages?.usages||[],usageCoverage:payload.symbol_usages?.coverage||[],endpoints:payload.api_catalog?.endpoints||[],traces,health:serviceMap.health||{},workspaceCoverage:serviceMap.workspace_coverage||{},contractSummary:serviceMap.contract_summary||{},capabilities:serviceMap.capabilities||[],diagnosticFamilies:serviceMap.diagnostic_families||[]}};
+  return {architecture:{generated:serviceMap.generated||graph.generated,nodes,edges,groups},workspace:{tooling:payload.tooling||{},results:payload.results||{},generated:serviceMap.generated||graph.generated,root:graph.root||serviceMap.root||'',symbols:payload.symbol_index?.symbols||[],usages:payload.symbol_usages?.usages||[],usageCoverage:payload.symbol_usages?.coverage||[],endpoints:payload.api_catalog?.endpoints||[],traces,health:serviceMap.health||{},workspaceCoverage:serviceMap.workspace_coverage||{},contractSummary:serviceMap.contract_summary||{},capabilities:serviceMap.capabilities||[],diagnosticFamilies:serviceMap.diagnostic_families||[]}};
 }
 const projectedDashboard=dashboardProjection(workspacePayload);
 window.ARCHITECTURE_DATA=projectedDashboard.architecture;

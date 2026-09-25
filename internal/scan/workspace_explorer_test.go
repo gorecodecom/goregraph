@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gorecodecom/goregraph/internal/testresults"
 )
 
 func TestWorkspaceExplorerProjectionPreservesEvidence(t *testing.T) {
@@ -54,7 +56,8 @@ func explorerTestFixture(t *testing.T, root string) workspaceDashboardArtifacts 
 	}}
 	sources, notes := toolingFixtureSources(t)
 	tooling := map[string]DashboardToolingRecord{"web/store": buildDashboardTooling(sources, notes), "services/orders": {Version: 1, Sources: []DashboardToolingSource{}}}
-	return buildWorkspaceDashboardArtifacts(WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: root}, serviceMap, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, symbols, usages, tooling)
+	results := map[string]testresults.Record{"web/store": {Version: 1, Runs: []testresults.Run{{Suite: "Storybook interactions", Origin: "local", ImportedAt: "2026-09-25T06:00:00Z", Status: "incomplete", ExpectedShards: 20, Counts: testresults.Counts{Tests: 1, Passed: 1}, Reports: []testresults.Report{{Name: "interactions-1.xml", Counts: testresults.Counts{Tests: 1, Passed: 1}}}}}}, "services/orders": {Version: 1}}
+	return buildWorkspaceDashboardArtifactsWithResults(WorkspaceGraphRecord{SchemaVersion: SchemaVersion, Root: root}, serviceMap, WorkspaceEndpointTraceIndexRecord{}, APICatalogRecord{}, symbols, usages, tooling, results)
 }
 
 func TestWorkspaceExplorerOfflineBrowser(t *testing.T) {

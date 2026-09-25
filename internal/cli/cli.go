@@ -63,6 +63,8 @@ func Run(args []string, stdout, stderr io.Writer) (code int) {
 		return runReport(args[1:], stdout, stderr)
 	case "dashboard":
 		return runDashboard(args[1:], stdout, stderr)
+	case "results":
+		return runResults(args[1:], stdout, stderr, execution)
 	case "context":
 		return runContext(args[1:], stdout, stderr)
 	case "read":
@@ -1768,6 +1770,7 @@ Core commands:
   read <root>       Read bounded source ranges with delivery receipts
   answer-check      Check answer paths and citations against a supplied ledger
   dashboard         Print, open, or edit the applicable dashboard
+  results           Import optional JUnit test evidence
   doctor <path>     Check generated output health
   workspace         Build, update, and inspect workspace-wide projections
   mcp               Start standard MCP with task_context only
@@ -1791,6 +1794,7 @@ Core commands:
   read <root>       Read bounded source ranges with delivery receipts
   answer-check      Check answer paths and citations against a supplied ledger
   dashboard         Print, open, or edit the applicable dashboard
+  results           Import optional JUnit test evidence
   doctor <path>     Check generated output health
   workspace         Show, build, update, clean, and inspect workspace projects
   mcp               Start standard MCP with task_context only

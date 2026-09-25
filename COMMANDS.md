@@ -61,7 +61,7 @@ form.
 
 ## Standard commands
 
-The standard CLI surface is `build`, `context`, `dashboard`, `doctor`,
+The standard CLI surface is `build`, `context`, `dashboard`, `results`, `doctor`,
 `workspace`, and `mcp`. For the normal agent workflow, build the bounded agent
 projection and request one task-specific Context Pack:
 
@@ -556,6 +556,29 @@ The static dashboard's extended analysis tools retain an **Edit layout** button 
 pretending that a read-only file can save changes.
 If neither dashboard exists, GoreGraph reports which project or workspace build
 command creates it instead of printing a hypothetical path.
+
+## Result import
+
+`goregraph results import <project-root> --suite <name> --from <junit.xml-or-glob>`
+imports explicitly selected JUnit XML files for the Tests & Tooling dashboard.
+It does not start tests, scan source or contact CI. Build GoreGraph output for
+the project first. Relative report paths resolve from the project root; quote a
+glob so GoreGraph expands it on every platform:
+
+```bash
+goregraph results import /path/to/frontends --suite storybook-interactions \
+  --from 'output/storybook/interactions-*.xml' --expected-shards 20
+```
+
+For one report, omit `--expected-shards`. A missing shard or a set with
+inconsistent timestamps stays **incomplete**, even if the available testcases
+passed. `--origin ci-artifact`, `--commit`, `--branch`, `--pipeline` and `--job`
+label a supplied artifact; these values are caller-declared and not verified
+against a CI server. The dashboard shows the imported run separately from the
+static source inventory. No report imported is a neutral state. The command
+replaces only the named suite's previous import, stores results under the
+project’s generated output, and refreshes an existing workspace dashboard from
+indexes without rescanning source.
 
 ## `goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12]`
 

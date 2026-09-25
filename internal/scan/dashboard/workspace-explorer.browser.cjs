@@ -26,6 +26,9 @@ const {pathToFileURL}=require('node:url');
     }
     await page.getByRole('button',{name:'Tests & Tooling',exact:true}).click();
     assert.equal(await page.locator('.tooling-workbench .symbol-row').count(),13);
+    assert.equal(await page.getByText('Unvollständiger Berichtssatz',{exact:true}).isVisible(),true);
+    assert.equal(await page.getByText('Revision unbekannt',{exact:false}).count()>0,true);
+    assert.equal(await page.locator('.tooling-run').count(),1);
     assert.equal(await page.getByText('Statischer Snapshot',{exact:true}).isVisible(),true);
     await page.locator('#tooling-group').selectOption('stories');
     await page.locator('#tooling-search').fill('ProductCard.stories');
@@ -51,6 +54,7 @@ const {pathToFileURL}=require('node:url');
     await page.locator('.nav-group').filter({has:page.locator('[data-node="a"]')}).locator('summary').click();
     await page.locator('.sidebar [data-node="a"]').click();
     assert.equal(await page.getByText('Keine passenden Tooling-Quellen im Index',{exact:true}).isVisible(),true);
+    assert.equal(await page.getByText('Kein Ergebnis importiert.',{exact:false}).isVisible(),true);
     await page.locator('.nav-group').filter({has:page.locator('[data-node="b"]')}).locator('summary').click();
     await page.locator('.sidebar [data-node="b"]').click();
     assert.equal(await page.locator('.tooling-workbench .symbol-row').count(),13);

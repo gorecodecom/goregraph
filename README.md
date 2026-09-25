@@ -65,7 +65,7 @@ Explicit tooling inventories now use `task_context` with `mode: "audit"` or `gor
 
 The mandatory synthetic acceptance test delivers all seven Storybook evidence groups. A second multi-project test covers Playwright deployment triggers, INT/TEST, frontend `release` versus Playwright `master`, explicit service-to-app mappings and non-blocking failure policy. Source configuration never establishes successful execution or approved visual baselines. See [tooling audits](docs/TOOLING-AUDITS.md) for limits, examples and index refresh requirements.
 
-The Service Code area now includes a **Tests & Tooling** subview alongside the existing classes and usages. It shows a project-scoped, filterable inventory, static source links, literal A11y/CI declarations and explicit evidence limits. Missing older exports are distinguished from an empty inventory. The four primary dashboard areas and the agent-context workflow remain unchanged. Rebuild the dashboard projection with this version to populate the new view.
+The offline dashboard adds **Tests & Tooling** under Service Code: a project-scoped, searchable inventory with source links and literal A11y/CI declarations. An optional, explicit JUnit import adds separate result evidence from local files. No import remains neutral. GoreGraph does not run tests, contact CI or store CI credentials; imported reports do not certify a pipeline or the current checkout. See [tooling audits](docs/TOOLING-AUDITS.md) and [result import](COMMANDS.md#result-import).
 
 ## 1.4.2 — Workspace Explorer
 
@@ -85,14 +85,12 @@ Source version: GoreGraph 1.4.3 with output Schema 3.
 time to ingest a new release, so always verify the installed version with
 `goregraph version` after installing or upgrading.
 
-Version 1.4.1 adds scoped Git ignore rules, faster script analysis, cancellable
+Version 1.4.1 added scoped Git ignore rules, faster script analysis, cancellable
 builds with file/phase progress, input-aware updates, recoverable output
 publication, explicit partial/stale health, adaptive evidence retrieval, bounded
-source reads with pagination, and answer citation validation. The historical
-strict agent workflow remains the default. Use
-`goregraph context . --query "<task>" --protocol adaptive-v2` to enable bounded
-verification and fallback metadata. MCP uses the same opt-in via
-`goregraph mcp --protocol adaptive-v2`.
+source reads with pagination, and answer citation validation. Version 1.4.3
+defaults MCP to `adaptive-v2`; pass `--protocol strict-v1` when strict replay is
+required.
 
 The 1.4.0 baseline introduced content-aware workspace updates. GitHub Releases
 provides checksummed archives for macOS, Linux, and Windows. Release publication
