@@ -289,44 +289,6 @@ goregraph_Windows_x86_64.zip
 After extracting an archive, follow the manual installation steps above so the
 executable is available from every project directory.
 
-### Build From Source
-
-Requirements:
-
-- Go 1.23 or newer
-
-Build:
-
-```bash
-go build -o goregraph ./cmd/goregraph
-```
-
-Run:
-
-```bash
-./goregraph help
-```
-
-During development you can also run:
-
-```bash
-go run ./cmd/goregraph help
-```
-
-Install the local checkout as the `goregraph` command:
-
-```bash
-go install ./cmd/goregraph
-goregraph version
-goregraph scan .
-```
-
-`go install` writes the executable to `go env GOBIN` when configured, otherwise
-to the `bin` directory below `go env GOPATH`. That directory must also be on
-`PATH`. Use the Windows environment-variable dialog or the macOS/Linux shell
-startup files described in the manual installation section, then verify from a
-new terminal with `goregraph version`.
-
 ## Quick Start
 
 Choose the integration depth and projection for the consumer that needs it:
