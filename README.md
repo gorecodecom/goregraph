@@ -1145,8 +1145,10 @@ projection used by `task_context`, run:
 goregraph build agent .
 ```
 
-The MCP server intentionally does not scan automatically. Refresh its data after
-relevant source changes:
+The MCP server intentionally does not scan automatically. Once enabled by the
+user, the watcher refreshes the agent index and dashboard after source changes;
+agents do not run update or build commands for this. If the watcher is stopped,
+the outputs remain at their last generated state. Users can refresh manually:
 
 ```bash
 goregraph update . --target all
@@ -1311,8 +1313,8 @@ default across every repository, the same block can be placed in
 - For `strict-v1` (no `protocol_version`) or explicit audit mode, keep the bounded contract: complete coverage permits no additional indexed source reads; partial or missing coverage permits only exact project/path/ranges in `source_omissions`. Mark other details unknown. Audit mode never grants ordinary source fallback.
 - Retry context only when `retry_allowed` is true, using exactly one supplied `retry_anchor` and the returned `context_id` as `previous_context_id`. Never repeat or expand the original query to force coverage.
 - Low confidence or an unreliable production entrypoint means stop context retrieval; ordinary source fallback remains limited to the caller's task and permissions. Multiple roots are valid only for explicitly requested audit mode.
-- If the agent index is missing or stale, run `goregraph doctor <root>` and refresh it with `goregraph update <root> --target agent` before requesting context again. Partial evidence alone is not a reason to rescan.
-- After completing edits to indexed source, tests, or relevant configuration, run `goregraph update <root> --target all` before ending the coding task. Do this after the final edit so the next `task_context` and dashboard see the current files. If no index exists, run `goregraph build all <root>` instead. Report an update failure explicitly.
+- If the agent index is missing or stale, use `goregraph doctor <root>` and `goregraph watch status <root>` to diagnose it. Do not run build or update commands; report the problem so the user can start or repair the watcher. Partial evidence alone is not a reason to rescan.
+- After edits to indexed source, tests, or relevant configuration, do not run build or update commands. The user-enabled watcher refreshes the agent index and dashboard. Check `goregraph watch status <root>` when freshness matters, and report a stopped watcher, an error, or stale output instead of updating it yourself.
 - Do not use specialist GoreGraph queries or expert MCP tools during the normal workflow.
 ```
 
