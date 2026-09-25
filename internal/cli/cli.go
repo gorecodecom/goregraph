@@ -25,6 +25,7 @@ import (
 	"github.com/gorecodecom/goregraph/internal/query"
 	"github.com/gorecodecom/goregraph/internal/scan"
 	"github.com/gorecodecom/goregraph/internal/version"
+	"github.com/gorecodecom/goregraph/internal/watch"
 )
 
 var (
@@ -65,6 +66,8 @@ func Run(args []string, stdout, stderr io.Writer) (code int) {
 		return runDashboard(args[1:], stdout, stderr)
 	case "results":
 		return runResults(args[1:], stdout, stderr, execution)
+	case "watch":
+		return runWatch(args[1:], stdout, stderr)
 	case "context":
 		return runContext(args[1:], stdout, stderr)
 	case "read":
@@ -1754,6 +1757,10 @@ func printHelp(w io.Writer) {
 
 Usage: goregraph <command> [options]
 
+File watcher (optional; never enabled by installation):
+`)
+	fmt.Fprint(w, watch.HelpSummary())
+	fmt.Fprint(w, `
 Common workflows:
   Agent context:
     goregraph build agent .
@@ -1770,6 +1777,7 @@ Core commands:
   read <root>       Read bounded source ranges with delivery receipts
   answer-check      Check answer paths and citations against a supplied ledger
   dashboard         Print, open, or edit the applicable dashboard
+  watch             Start, stop, and inspect the optional file watcher
   results           Import optional JUnit test evidence
   doctor <path>     Check generated output health
   workspace         Build, update, and inspect workspace-wide projections
@@ -1794,6 +1802,7 @@ Core commands:
   read <root>       Read bounded source ranges with delivery receipts
   answer-check      Check answer paths and citations against a supplied ledger
   dashboard         Print, open, or edit the applicable dashboard
+  watch             Start, stop, and inspect the optional file watcher
   results           Import optional JUnit test evidence
   doctor <path>     Check generated output health
   workspace         Show, build, update, clean, and inspect workspace projects

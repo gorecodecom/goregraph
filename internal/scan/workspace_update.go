@@ -45,6 +45,19 @@ func WorkspaceUpdatePlan(root string, cfg config.Config, target BuildTarget) (Wo
 	return WorkspaceUpdatePlanWithOptions(context.Background(), root, cfg, target, DefaultBuildOptions())
 }
 
+// ProjectUpdateNeeded applies the same content and projection checks to one project.
+func ProjectUpdateNeeded(ctx context.Context, root string, target BuildTarget, options BuildOptions) (bool, error) {
+	resolved, err := filepath.Abs(root)
+	if err != nil {
+		return false, err
+	}
+	item, err := workspaceProjectUpdateItemWithOptions(ctx, WorkspaceProjectScanItemRecord{Project: filepath.Base(resolved), AbsPath: resolved}, target, options)
+	if err != nil {
+		return false, err
+	}
+	return item.Action == WorkspaceUpdateActionBuild, nil
+}
+
 // WorkspaceUpdatePlanWithOptions compares current inputs with cancellable snapshots.
 func WorkspaceUpdatePlanWithOptions(ctx context.Context, root string, cfg config.Config, target BuildTarget, options BuildOptions) (WorkspaceUpdatePlanRecord, error) {
 	if err := options.validate(); err != nil {

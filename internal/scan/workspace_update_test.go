@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -293,4 +294,28 @@ func workspaceUpdateItemsByProject(items []WorkspaceUpdateItemRecord) map[string
 		result[item.Project] = item
 	}
 	return result
+}
+
+func TestProjectUpdateNeededSkipsCurrentOutputAndDetectsChanges(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "go.mod", "module example.test/watch\n")
+	writeFile(t, root, "main.go", "package main\n")
+	options := DefaultBuildOptions()
+	needed, err := ProjectUpdateNeeded(context.Background(), root, BuildTargetAll, options)
+	if err != nil || !needed {
+		t.Fatalf("missing output needed=%t err=%v", needed, err)
+	}
+	cfg := config.Defaults()
+	if _, err := RunBuild(root, cfg, BuildTargetAll); err != nil {
+		t.Fatal(err)
+	}
+	needed, err = ProjectUpdateNeeded(context.Background(), root, BuildTargetAll, options)
+	if err != nil || needed {
+		t.Fatalf("current output needed=%t err=%v", needed, err)
+	}
+	writeFile(t, root, "main.go", "package main\nconst changed = true\n")
+	needed, err = ProjectUpdateNeeded(context.Background(), root, BuildTargetAll, options)
+	if err != nil || !needed {
+		t.Fatalf("changed source needed=%t err=%v", needed, err)
+	}
 }

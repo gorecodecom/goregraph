@@ -67,6 +67,10 @@ The mandatory synthetic acceptance test delivers all seven Storybook evidence gr
 
 The offline dashboard adds **Tests & Tooling** under Service Code: a project-scoped, searchable inventory with source links and literal A11y/CI declarations. An optional, explicit JUnit import adds separate result evidence from local files. No import remains neutral. GoreGraph does not run tests, contact CI or store CI credentials; imported reports do not certify a pipeline or the current checkout. See [tooling audits](docs/TOOLING-AUDITS.md) and [result import](COMMANDS.md#result-import).
 
+An optional local watcher now refreshes the agent index and dashboard after
+source changes. It starts only on request; login autostart is a separate
+per-user choice on Windows, macOS, and Linux.
+
 ## 1.4.2 — Workspace Explorer
 
 Version 1.4.2 makes the redesigned Workspace Explorer the default offline dashboard.
@@ -1191,8 +1195,22 @@ work. In multi-project workspaces, use `goregraph workspace update . --target al
 it checks file content and skips unchanged projects, but fully rebuilds each
 changed project.
 
-An optional agent-independent file watcher is outlined in the
-[file watcher proposal](docs/file-watcher-proposal.md); it is not implemented.
+An optional local watcher can keep both projections current without an agent:
+
+```bash
+goregraph watch start .                 # background; first start asks about login autostart
+goregraph watch status .                # running and autostart are separate
+goregraph watch stop .                  # stop now; keeps the autostart choice
+goregraph watch autostart off .         # remove future login startup
+```
+
+Use `--workspace` with `watch start` to watch a whole workspace. Installation
+never starts the watcher or enables autostart. The same commands work on Windows,
+macOS, and Linux; login autostart is opt-in and user-specific. The watcher checks
+selected file contents every few seconds, coalesces saves, and runs the existing
+project or workspace update for agent index and dashboard. It does not run tests
+or application code. An already open static dashboard may need a browser reload.
+See the [watcher design and platform behavior](docs/file-watcher-proposal.md).
 
 Each `task_context` call should pass the active project or workspace root
 explicitly. This avoids depending on the working directory from which an MCP

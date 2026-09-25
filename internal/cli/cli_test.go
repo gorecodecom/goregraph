@@ -31,6 +31,35 @@ func TestRunHelpPrintsUsage(t *testing.T) {
 	}
 }
 
+func TestRunHelpShowsOptionalWatcherBeforeCommands(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("help exit code = %d: %s", code, stderr.String())
+	}
+	body := stdout.String()
+	watcher := strings.Index(body, "File watcher (optional")
+	commands := strings.Index(body, "Core commands:")
+	if watcher < 0 || commands < 0 || watcher >= commands {
+		t.Fatalf("watcher is not prominent in help:\n%s", body)
+	}
+	if !strings.Contains(body, "goregraph watch start ") || !strings.Contains(body, "goregraph watch status ") {
+		t.Fatalf("watch commands missing:\n%s", body)
+	}
+}
+
+func TestRunWatchStatusReportsUnconfiguredRoot(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := t.TempDir()
+	if code := Run([]string{"watch", "status", root}, &stdout, &stderr); code != 0 {
+		t.Fatalf("status exit code = %d: %s", code, stderr.String())
+	}
+	for _, want := range []string{"Running: false", "Autostart: false"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("status missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestWorkspaceSubcommandsSupportShortHelp(t *testing.T) {
 	for _, command := range []string{
 		"update",

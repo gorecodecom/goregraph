@@ -159,6 +159,8 @@ normal workflow in standard help:
 
 - `goregraph update [path] --target agent|dashboard|all` refreshes selected
   project projections;
+- `goregraph watch start|stop|status|autostart` manages an optional local
+  project or workspace watcher;
 - `goregraph git update [path]` previews or executes a safe repository update;
 - `goregraph workspace update [path]` content-checks every project and rebuilds
   only changed or incomplete projects;
@@ -521,6 +523,25 @@ Important behavior:
 - respects `goregraph.yml`
 - does not install hooks, watch files, or run in the background
 - returns a non-zero exit code if the refresh fails
+
+## `goregraph watch start|stop|status|autostart|run [path]`
+
+The watcher is opt-in and is not started by installation. `watch start [path]`
+starts it in the background for one project; add `--workspace` for a workspace.
+On the first interactive start, GoreGraph asks whether to start it at future
+logins (default: no). Noninteractive use defaults to no; use `--autostart on|off`
+to make that choice explicitly. `watch autostart on|off [path]` changes the login
+setting later without starting or stopping the current process.
+
+`watch status [path]` reports the live process, autostart setting, last
+successful update and any error separately. `watch stop [path]` requests a
+graceful stop but leaves autostart unchanged. `watch run [path]` is the
+foreground form used by login startup. The watcher checks the same selected
+files as the scanner every three seconds, coalesces edits, and updates both
+agent and dashboard projections. It never runs tests or application code.
+The CLI is the same on Windows, macOS and Linux; login startup uses the
+current user's native mechanism when available. An already open static
+dashboard may need reloading.
 
 ## `goregraph dashboard path|open|edit [path]`
 
