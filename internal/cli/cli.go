@@ -50,6 +50,10 @@ func Run(args []string, stdout, stderr io.Writer) (code int) {
 		return 0
 	}
 	if isHelp(args[0]) {
+		if len(args) == 2 && (args[1] == "watch" || args[1] == "watcher") {
+			printWatchHelp(stdout)
+			return 0
+		}
 		return runHelpSelector(args[1:], stdout, stderr, printHelp, printAllHelp, "goregraph help")
 	}
 
@@ -66,7 +70,7 @@ func Run(args []string, stdout, stderr io.Writer) (code int) {
 		return runDashboard(args[1:], stdout, stderr)
 	case "results":
 		return runResults(args[1:], stdout, stderr, execution)
-	case "watch":
+	case "watch", "watcher":
 		return runWatch(args[1:], stdout, stderr)
 	case "context":
 		return runContext(args[1:], stdout, stderr)
@@ -1757,7 +1761,7 @@ func printHelp(w io.Writer) {
 
 Usage: goregraph <command> [options]
 
-File watcher (optional; never enabled by installation; guide: goregraph watch --help):
+File watcher (optional; never enabled by installation; guide: goregraph help watch):
 `)
 	fmt.Fprint(w, watch.HelpSummary())
 	fmt.Fprint(w, `
@@ -1777,7 +1781,7 @@ Core commands:
   read <root>       Read bounded source ranges with delivery receipts
   answer-check      Check answer paths and citations against a supplied ledger
   dashboard         Print, open, or edit the applicable dashboard
-  watch             Start, stop, and inspect the optional file watcher
+  watch             Refresh index and dashboard after file changes
   results           Import optional JUnit test evidence
   doctor <path>     Check generated output health
   workspace         Build, update, and inspect workspace-wide projections

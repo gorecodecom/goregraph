@@ -47,6 +47,32 @@ func TestRunHelpShowsOptionalWatcherBeforeCommands(t *testing.T) {
 	}
 }
 
+func TestRunWatcherHelpPathsShowQuickStart(t *testing.T) {
+	for _, args := range [][]string{
+		{"help", "watch"},
+		{"help", "watcher"},
+		{"watch", "help"},
+		{"watcher", "help"},
+	} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if code := Run(args, &stdout, &stderr); code != 0 {
+				t.Fatalf("help exit code = %d: %s", code, stderr.String())
+			}
+			for _, want := range []string{
+				"Quick start from the project directory:",
+				"goregraph watch start .",
+				"goregraph watch status .",
+				"goregraph watch autostart off .",
+			} {
+				if !strings.Contains(stdout.String(), want) {
+					t.Fatalf("watcher help missing %q:\n%s", want, stdout.String())
+				}
+			}
+		})
+	}
+}
+
 func TestRunWatchStatusReportsUnconfiguredRoot(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := t.TempDir()
