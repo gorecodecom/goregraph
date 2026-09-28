@@ -2,6 +2,7 @@ package watch
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -79,6 +80,57 @@ func TestWatcherUpdatesSelectedFilesAndIgnoresGeneratedOutput(t *testing.T) {
 	}
 	if status.LastSuccess.IsZero() || status.LastError != "" {
 		t.Fatalf("stopped watcher lost its successful update or gained an error: %+v", status)
+	}
+}
+
+func TestWatcherRetriesFailedUpdateWithoutNewSourceChange(t *testing.T) {
+	originalConfigDir, originalPoll, originalQuiet, originalRetry, originalHeartbeat := userConfigDir, pollInterval, quietPeriod, retryInterval, heartbeatInterval
+	configPath := t.TempDir()
+	userConfigDir = func() (string, error) { return configPath, nil }
+	pollInterval, quietPeriod, retryInterval, heartbeatInterval = 20*time.Millisecond, 40*time.Millisecond, 120*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() {
+		userConfigDir, pollInterval, quietPeriod, retryInterval, heartbeatInterval = originalConfigDir, originalPoll, originalQuiet, originalRetry, originalHeartbeat
+	})
+	path := t.TempDir()
+	if err := os.WriteFile(filepath.Join(path, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := Resolve(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attempts atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, root, func() error {
+			if attempts.Add(1) == 1 {
+				return errors.New("transient update failure")
+			}
+			return nil
+		})
+	}()
+	waitFor(t, func() bool {
+		status, err := GetStatus(root)
+		return err == nil && attempts.Load() == 1 && strings.Contains(status.LastError, "transient update failure")
+	})
+	waitFor(t, func() bool {
+		status, err := GetStatus(root)
+		return err == nil && attempts.Load() == 2 && !status.LastSuccess.IsZero() && status.LastError == ""
+	})
+	time.Sleep(150 * time.Millisecond)
+	if got := attempts.Load(); got != 2 {
+		t.Fatalf("unchanged source triggered %d update attempts after success, want 2", got)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("watcher did not stop")
 	}
 }
 

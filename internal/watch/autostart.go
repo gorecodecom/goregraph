@@ -2,6 +2,7 @@ package watch
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode/utf16"
 )
 
 func xmlValue(value string) string {
@@ -122,11 +124,7 @@ func enableLaunchAgent(root Root, executable string) (string, error) {
 
 func taskName(root Root) string { return "GoreGraphWatch-" + root.ID }
 
-func enableScheduledTask(root Root, executable string) (string, error) {
-	current, err := user.Current()
-	if err != nil {
-		return "", err
-	}
+func scheduledTaskXML(root Root, executable, username string) []byte {
 	var args []string
 	for _, value := range runArguments(root) {
 		if strings.ContainsAny(value, " \t") {
@@ -136,18 +134,30 @@ func enableScheduledTask(root Root, executable string) (string, error) {
 	}
 	body := "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n" +
 		"<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">" +
-		"<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>" + xmlValue(current.Username) + "</UserId></LogonTrigger></Triggers>" +
-		"<Principals><Principal id=\"Author\"><UserId>" + xmlValue(current.Username) + "</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>" +
+		"<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>" + xmlValue(username) + "</UserId></LogonTrigger></Triggers>" +
+		"<Principals><Principal id=\"Author\"><UserId>" + xmlValue(username) + "</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>" +
 		"<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled></Settings>" +
 		"<Actions Context=\"Author\"><Exec><Command>" + xmlValue(executable) + "</Command><Arguments>" + xmlValue(strings.Join(args, " ")) + "</Arguments></Exec></Actions></Task>"
-	// schtasks accepts a UTF-8 XML file when its declaration names UTF-8.
-	body = strings.Replace(body, "UTF-16", "UTF-8", 1)
+	units := utf16.Encode([]rune(body))
+	encoded := make([]byte, 2+len(units)*2)
+	encoded[0], encoded[1] = 0xff, 0xfe
+	for i, unit := range units {
+		binary.LittleEndian.PutUint16(encoded[2+i*2:], unit)
+	}
+	return encoded
+}
+
+func enableScheduledTask(root Root, executable string) (string, error) {
+	current, err := user.Current()
+	if err != nil {
+		return "", err
+	}
 	file, err := os.CreateTemp("", "goregraph-watch-*.xml")
 	if err != nil {
 		return "", err
 	}
 	defer os.Remove(file.Name())
-	if _, err := file.WriteString(body); err != nil {
+	if _, err := file.Write(scheduledTaskXML(root, executable, current.Username)); err != nil {
 		file.Close()
 		return "", err
 	}

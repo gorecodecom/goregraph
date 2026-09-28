@@ -23,6 +23,7 @@ import (
 var (
 	pollInterval      = 3 * time.Second
 	quietPeriod       = 2 * time.Second
+	retryInterval     = 30 * time.Second
 	heartbeatInterval = 2 * time.Second
 )
 
@@ -466,6 +467,7 @@ func Run(ctx context.Context, root Root, update func() error) error {
 		_ = publish()
 	}()
 
+	var retryAt time.Time
 	apply := func() bool {
 		if !ownsLock(root, token) {
 			return false
@@ -474,9 +476,11 @@ func Run(ctx context.Context, root Root, update func() error) error {
 		mutex.Lock()
 		if err != nil {
 			live.LastError = err.Error()
+			retryAt = time.Now().Add(retryInterval)
 		} else {
 			live.LastError = ""
 			live.LastSuccess = time.Now()
+			retryAt = time.Time{}
 		}
 		mutex.Unlock()
 		_ = publish()
@@ -516,6 +520,9 @@ func Run(ctx context.Context, root Root, update func() error) error {
 			}
 			if current == previous {
 				pending = ""
+				if !retryAt.IsZero() && !time.Now().Before(retryAt) {
+					apply()
+				}
 				continue
 			}
 			if current != pending {
