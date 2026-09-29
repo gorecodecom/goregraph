@@ -2,6 +2,7 @@ package watch
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/xml"
 	"fmt"
@@ -124,20 +125,33 @@ func enableLaunchAgent(root Root, executable string) (string, error) {
 
 func taskName(root Root) string { return "GoreGraphWatch-" + root.ID }
 
-func scheduledTaskXML(root Root, executable, username string) []byte {
-	var args []string
-	for _, value := range runArguments(root) {
-		if strings.ContainsAny(value, " \t") {
-			value = "\"" + value + "\""
-		}
-		args = append(args, value)
+func powershellArgument(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func scheduledTaskAction(root Root, executable string) (string, string) {
+	parts := append([]string{executable}, runArguments(root)...)
+	for i := range parts {
+		parts[i] = powershellArgument(parts[i])
 	}
+	script := "$ErrorActionPreference = 'Stop'; try { & " + strings.Join(parts, " ") + "; exit $LASTEXITCODE } catch { exit 1 }"
+	units := utf16.Encode([]rune(script))
+	encoded := make([]byte, len(units)*2)
+	for i, unit := range units {
+		binary.LittleEndian.PutUint16(encoded[i*2:], unit)
+	}
+	return `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`,
+		"-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand " + base64.StdEncoding.EncodeToString(encoded)
+}
+
+func scheduledTaskXML(root Root, executable, username string) []byte {
+	command, arguments := scheduledTaskAction(root, executable)
 	body := "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n" +
 		"<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">" +
 		"<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>" + xmlValue(username) + "</UserId></LogonTrigger></Triggers>" +
 		"<Principals><Principal id=\"Author\"><UserId>" + xmlValue(username) + "</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>" +
 		"<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled></Settings>" +
-		"<Actions Context=\"Author\"><Exec><Command>" + xmlValue(executable) + "</Command><Arguments>" + xmlValue(strings.Join(args, " ")) + "</Arguments></Exec></Actions></Task>"
+		"<Actions Context=\"Author\"><Exec><Command>" + xmlValue(command) + "</Command><Arguments>" + xmlValue(arguments) + "</Arguments></Exec></Actions></Task>"
 	units := utf16.Encode([]rune(body))
 	encoded := make([]byte, 2+len(units)*2)
 	encoded[0], encoded[1] = 0xff, 0xfe

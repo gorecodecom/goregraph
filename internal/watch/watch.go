@@ -473,6 +473,9 @@ func Run(ctx context.Context, root Root, update func() error) error {
 			return false
 		}
 		err := update()
+		if ctx.Err() != nil {
+			return false
+		}
 		mutex.Lock()
 		if err != nil {
 			live.LastError = err.Error()
@@ -488,6 +491,9 @@ func Run(ctx context.Context, root Root, update func() error) error {
 	}
 	previous, err := fingerprint(ctx, root)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		mutex.Lock()
 		live.LastError = err.Error()
 		mutex.Unlock()
@@ -512,6 +518,9 @@ func Run(ctx context.Context, root Root, update func() error) error {
 			}
 			current, err := fingerprint(ctx, root)
 			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				mutex.Lock()
 				live.LastError = err.Error()
 				mutex.Unlock()

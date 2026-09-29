@@ -134,6 +134,53 @@ func TestWatcherRetriesFailedUpdateWithoutNewSourceChange(t *testing.T) {
 	}
 }
 
+func TestWatcherCancellationDuringUpdateIsNotAnError(t *testing.T) {
+	original := userConfigDir
+	configPath := t.TempDir()
+	userConfigDir = func() (string, error) { return configPath, nil }
+	t.Cleanup(func() { userConfigDir = original })
+	path := t.TempDir()
+	if err := os.WriteFile(filepath.Join(path, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := Resolve(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, root, func() error {
+			close(started)
+			<-ctx.Done()
+			return ctx.Err()
+		})
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("initial update did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("watcher did not exit")
+	}
+	status, err := GetStatus(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Running || status.LastError != "" {
+		t.Fatalf("canceled watcher reported an update error: %+v", status)
+	}
+}
+
 func TestStatusKeepsAutostartSeparateFromLiveness(t *testing.T) {
 	original := userConfigDir
 	configPath := t.TempDir()
