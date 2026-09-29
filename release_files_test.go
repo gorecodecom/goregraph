@@ -157,7 +157,7 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 	}
 }
 
-func TestReleaseFilesDescribe142AsCurrentRelease(t *testing.T) {
+func TestReleaseFilesDescribe143AsCurrentRelease(t *testing.T) {
 	files := []string{"README.md", "docs/RELEASE.md"}
 	var combined strings.Builder
 	for _, file := range files {
@@ -171,10 +171,10 @@ func TestReleaseFilesDescribe142AsCurrentRelease(t *testing.T) {
 	text := combined.String()
 	for _, want := range []string{
 		"Source version: GoreGraph 1.4.3 with output Schema 3.",
-		"`v1.4.2` is the current GoreGraph release.",
-		"Winget is the recommended installation method on Windows.",
-		"automatically opens the upstream manifest PR",
-		"git tag -a v1.4.2",
+		"`v1.4.3` is the current GoreGraph release.",
+		"Winget offers only versions accepted by Microsoft.",
+		"PUBLISH_WINGET=true",
+		"git tag -a v1.4.3",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("release documentation missing %q", want)
@@ -226,7 +226,7 @@ func TestWingetPublicationAndInstallationGuidance(t *testing.T) {
 	}
 	text := string(readme)
 	for _, want := range []string{
-		"### Winget Windows — recommended",
+		"### Winget Windows — separate approval",
 		"winget install --id GoreCode.GoreGraph --exact --source winget",
 		"winget upgrade --id GoreCode.GoreGraph --exact --source winget",
 		".\\install.ps1 -RunAsAdmin",
@@ -327,7 +327,7 @@ func TestReleaseNotesDescribeEditableDashboardForCurrentRelease(t *testing.T) {
 	text := string(body)
 	for _, want := range []string{
 		"Current Release",
-		"`v1.4.2` is the current GoreGraph release.",
+		"`v1.4.3` is the current GoreGraph release.",
 		"goregraph workspace dashboard edit .",
 		".goregraph-dashboard.json",
 		"API Catalog",

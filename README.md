@@ -55,9 +55,9 @@ handling.
 Local 1.4.1 testing and rollback are documented in
 [`docs/LOCAL-1.4.1.md`](docs/LOCAL-1.4.1.md).
 
-## 1.4.3 — Unreleased
+## 1.4.3 — GitHub Release
 
-The development source version is 1.4.3. No release or tag has been created for this version; v1.4.2 remains the published release.
+Version 1.4.3 is the current GitHub release. Its Winget manifest will be submitted separately after the pending 1.4.2 review.
 
 The regular MCP server now defaults to `adaptive-v2`, matching the existing adaptive CLI workflow. Incomplete context can lead to bounded verification or caller-authorized source fallback. Explicit `strict-v1` replay and tooling-audit boundaries remain available. Optional parameter limits are described in plain language, and invalid budget/file limits are reported together. Persistent agent instructions must allow the selected protocol while keeping GoreGraph ahead of optional skills.
 
@@ -69,7 +69,9 @@ The offline dashboard adds **Tests & Tooling** under Service Code: a project-sco
 
 An optional local watcher now refreshes the agent index and dashboard after
 source changes. It starts only on request; login autostart is a separate
-per-user choice on Windows, macOS, and Linux.
+per-user choice on Windows, macOS, and Linux. Windows login autostart runs
+without a visible console window, and normal shutdown no longer appears as an
+update error.
 
 ## 1.4.2 — Workspace Explorer
 
@@ -85,7 +87,7 @@ Only dashboard presentation changes: source indexing, reconciliation, agent/MCP 
 Source version: GoreGraph 1.4.3 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-`v1.4.2` is the current GoreGraph release. Package-manager indexes can take some
+`v1.4.3` is the current GoreGraph release. Package-manager indexes can take some
 time to ingest a new release, so always verify the installed version with
 `goregraph version` after installing or upgrading.
 
@@ -98,13 +100,16 @@ required.
 
 The 1.4.0 baseline introduced content-aware workspace updates. GitHub Releases
 provides checksummed archives for macOS, Linux, and Windows. Release publication
-updates Homebrew and Scoop and automatically opens the upstream Winget manifest
-PR when their repository tokens are configured.
+updates Homebrew and Scoop when their repository tokens are configured. Winget
+publication is separately enabled with `PUBLISH_WINGET=true`; it is disabled for
+the 1.4.3 release.
 
-### Winget Windows — recommended
+### Winget Windows — separate approval
 
-Winget is the recommended installation method on Windows. GoreGraph is available
-from the public Winget source under the stable package ID `GoreCode.GoreGraph`:
+Winget offers only versions accepted by Microsoft. GoreGraph is available from
+the public Winget source under the stable package ID `GoreCode.GoreGraph`, but
+1.4.3 is not available there yet. For 1.4.3, use the ZIP below. To install an
+approved version through Winget:
 
 ```powershell
 winget install --id GoreCode.GoreGraph --exact --source winget
@@ -117,10 +122,9 @@ Upgrade an existing installation with:
 winget upgrade --id GoreCode.GoreGraph --exact --source winget
 ```
 
-The 1.4.2 release workflow publishes the release archives and automatically
-submits the corresponding Winget manifest update. Microsoft must accept and
-publish that manifest before Winget offers 1.4.2. If `winget` is missing, install
-or update [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1) from
+The 1.4.2 Winget submission is still under Microsoft review. The 1.4.3 GitHub
+release does not submit a Winget manifest. If `winget` is missing, install or
+update [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1) from
 Microsoft Store and open a new terminal.
 
 ### Homebrew macOS/Linux
@@ -208,8 +212,8 @@ Download the current Windows x86-64 archive directly:
 
 [Download `goregraph_Windows_x86_64.zip`](https://github.com/gorecodecom/goregraph/releases/latest/download/goregraph_Windows_x86_64.zip)
 
-This link currently downloads the published 1.4.2 archive. A ready-to-use
-1.4.3 Windows executable can be linked here after its binary asset is published.
+This link downloads the latest published Windows archive, including
+`goregraph.exe`.
 
 This ZIP is a portable archive, not an installer. Extracting it does not add
 GoreGraph to `PATH`; complete the following steps before using `goregraph` from
