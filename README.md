@@ -1306,6 +1306,7 @@ default across every repository, the same block can be placed in
 ```markdown
 ## GoreGraph-first source workflow
 
+- Agents must only use read-only GoreGraph commands. Never initiate scans, builds, updates, workspace refreshes, or watcher/autostart changes. Report required actions to the user instead.
 - For every coding task that requires repository knowledge, the first investigative action must be exactly one GoreGraph MCP `task_context` call.
 - Before receiving and evaluating that Context Pack, do not read optional `SKILL.md` files, search or read project source, or start another analysis workflow. This also applies to debugging, code-review, and planning skills.
 - Required loading of governing instructions and minimal discovery of the workspace root or GoreGraph tool may precede the call; this does not permit skill or source investigation.
