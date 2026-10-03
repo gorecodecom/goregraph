@@ -26,6 +26,7 @@ type Index struct {
 	AgentContextConfigurationFacts []AgentContextFactRecord
 	AgentContextStoryFacts         []AgentContextFactRecord
 	SymbolFacts                    ProjectSymbolFacts
+	SemanticDependencies           []SemanticDependencyRecord
 	ScriptConfigs                  map[string]ScriptResolutionConfig `json:"script_configs,omitempty"`
 	scriptConfigLimitations        []string
 }

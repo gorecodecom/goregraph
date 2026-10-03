@@ -60,6 +60,8 @@ func Run(args []string, stdout, stderr io.Writer) (code int) {
 	switch args[0] {
 	case "assets":
 		return runAssets(args[1:], stdout, stderr)
+	case "languages":
+		return runLanguages(args[1:], stdout, stderr)
 	case "build":
 		return runBuild(args[1:], stdout, stderr, execution)
 	case "scan":
@@ -1825,6 +1827,7 @@ Core commands:
 
 Manual exploration:
   assets            Write explicit Unity/Blender exporter templates
+  languages         Read language inputs or write explicit compiler exporters
   query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
   report <path>     Print the generated Markdown report

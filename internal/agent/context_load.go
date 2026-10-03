@@ -124,10 +124,16 @@ func loadContextIndex(request ContextRequest) (loadedContextIndex, error) {
 				validateErr,
 			))
 		}
-		return loadedContextIndex{
+		loaded := loadedContextIndex{
 			Index: index, Path: candidate.Path, ScopeRoot: candidate.ScopeRoot, Workspace: candidate.Workspace,
 			Health: loadContextProjectionHealth(candidate.Path),
-		}, nil
+		}
+		// Audits verify their selected tooling sources independently and never use
+		// compiler call bindings or widen their read scope to snapshot dependencies.
+		if request.Mode != "audit" && !semanticDependenciesCurrent(loaded) {
+			return loadedContextIndex{}, newContextIndexLoadError(ContextFallbackIndexStale, fmt.Errorf("semantic source/configuration inputs changed; compiler snapshot requires an explicit new export"))
+		}
+		return loaded, nil
 	}
 
 	return loadedContextIndex{}, newContextIndexLoadError(ContextFallbackIndexMissing, fmt.Errorf(

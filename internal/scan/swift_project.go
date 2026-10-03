@@ -233,6 +233,9 @@ func swiftFindTypes(s swiftSource, name string, types map[string][]RichSymbolRec
 	for _, imp := range s.imports {
 		for qualified, records := range types {
 			for _, record := range records {
+				if s.visibleModules != nil && !s.visibleModules[record.Module] {
+					continue
+				}
 				if record.Name == name && (record.Module == imp || strings.HasSuffix(record.Module, "/"+imp)) && strings.HasSuffix(qualified, "."+name) {
 					result = append(result, record)
 				}

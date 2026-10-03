@@ -12,7 +12,7 @@ var assetYAMLLine = regexp.MustCompile(`^(\s*(?:-\s*)?)([A-Za-z_][A-Za-z0-9_]*)\
 var assetFileReference = regexp.MustCompile(`^\{fileID: -?[0-9]+(?:, guid: [a-fA-F0-9]{32})?(?:, type: [0-9]+)?\}$`)
 var assetSafeScalarKeys = func() map[string]bool {
 	safe := map[string]bool{}
-	for _, key := range strings.Fields("schema_version engine producer_version source source_sha256 id name kind property target object frame vertices polygons triangles degenerate_polygons bounds_min bounds_max location position scale rotation_mode hidden_render hierarchy active indices animation_length deform slot index interpolation keyframes_truncated m_Name m_IsActive m_Enabled m_Layer m_TagString m_LoopTime m_Speed m_IsTrigger m_Weight m_ApplyRootMotion fileID guid type x y z w") {
+	for _, key := range strings.Fields("schema_version engine producer_version source source_sha256 id name kind property target object frame vertices polygons triangles degenerate_polygons geometry_complete geometry_space bounds_min bounds_max location position scale rotation_mode hidden_render hierarchy active indices animation_length deform slot index interpolation keyframes_truncated from_node from_socket to_node to_socket valid bone transform_type packed m_MethodName m_Mode m_CallState m_Name m_IsActive m_Enabled m_Layer m_TagString m_LoopTime m_Speed m_IsTrigger m_Weight m_ApplyRootMotion fileID guid type x y z w") {
 		safe[key] = true
 	}
 	return safe
@@ -52,7 +52,7 @@ func redactAssetSourceLines(lines []string) []string {
 		if match := assetJSONLine.FindStringSubmatch(line); len(match) > 0 && strings.TrimSpace(match[2]) == "[" {
 			numeric := false
 			switch match[1] {
-			case "head", "tail", "bone_head", "bone_tail", "bone_matrix", "bounds_min", "bounds_max", "location", "position", "scale", "frame_value", "frame_range":
+			case "head", "tail", "bone_head", "bone_tail", "bone_matrix", "bounds_min", "bounds_max", "location", "position", "scale", "frame_value", "frame_range", "vertex_positions", "triangle_indices":
 				numeric = true
 			}
 			numericArrays = append(numericArrays, numeric)
@@ -109,7 +109,7 @@ func redactAssetSourceLine(line string) string {
 			if _, err := strconv.ParseFloat(value, 64); err == nil {
 				return line
 			}
-			if match[2] == "m_Name" || match[2] == "guid" || match[2] == "m_TagString" {
+			if match[2] == "m_Name" || match[2] == "guid" || match[2] == "m_TagString" || match[2] == "m_MethodName" {
 				return line
 			}
 		}

@@ -1405,18 +1405,19 @@ func (builder *workspaceAgentContextBuilder) findCanonicalContractFact(
 }
 
 type workspaceAgentContextBuilder struct {
-	auditSources     []AgentAuditSource
-	auditEnabled     bool
-	auditIncomplete  bool
-	registry         WorkspaceRegistryRecord
-	projects         map[string]bool
-	factsByID        map[string]AgentContextFactRecord
-	edgesByID        map[string]AgentContextEdgeRecord
-	coverageByKey    map[string]AgentContextCoverageRecord
-	projectFactIDs   map[string]map[string]string
-	handlerLocations map[string][]workspaceAgentHandlerLocation
-	handlerFactIDs   map[string]string
-	sourceHashes     map[string]string
+	auditSources         []AgentAuditSource
+	auditEnabled         bool
+	auditIncomplete      bool
+	registry             WorkspaceRegistryRecord
+	projects             map[string]bool
+	factsByID            map[string]AgentContextFactRecord
+	edgesByID            map[string]AgentContextEdgeRecord
+	coverageByKey        map[string]AgentContextCoverageRecord
+	projectFactIDs       map[string]map[string]string
+	handlerLocations     map[string][]workspaceAgentHandlerLocation
+	handlerFactIDs       map[string]string
+	sourceHashes         map[string]string
+	semanticDependencies []SemanticDependencyRecord
 }
 
 type workspaceAgentHandlerLocation struct {
@@ -1477,6 +1478,10 @@ func (builder *workspaceAgentContextBuilder) mergeProjectIndex(index AgentContex
 		if relative := workspaceAgentFile(project, file); relative != "" {
 			builder.sourceHashes[project+"/"+relative] = hash
 		}
+	}
+	for _, dependency := range index.SemanticDependencies {
+		dependency.Project = project
+		builder.semanticDependencies = append(builder.semanticDependencies, dependency)
 	}
 	for _, fact := range index.Facts {
 		originalID := fact.ID
@@ -2261,16 +2266,17 @@ func (builder *workspaceAgentContextBuilder) index(generated string) AgentContex
 		return contextCoverageLess(coverage[i], coverage[j])
 	})
 	return AgentContextIndexRecord{
-		SchemaVersion:   SchemaVersion,
-		Generated:       generated,
-		Root:            builder.registry.Root,
-		SourceHashes:    builder.sourceHashes,
-		AuditVersion:    auditVersion,
-		AuditIncomplete: builder.auditEnabled && (builder.auditIncomplete || len(builder.projectFactIDs) < len(builder.registry.Projects)),
-		AuditSources:    builder.auditSources,
-		Facts:           facts,
-		Edges:           edges,
-		Coverage:        coverage,
+		SchemaVersion:        SchemaVersion,
+		Generated:            generated,
+		Root:                 builder.registry.Root,
+		SourceHashes:         builder.sourceHashes,
+		SemanticDependencies: builder.semanticDependencies,
+		AuditVersion:         auditVersion,
+		AuditIncomplete:      builder.auditEnabled && (builder.auditIncomplete || len(builder.projectFactIDs) < len(builder.registry.Projects)),
+		AuditSources:         builder.auditSources,
+		Facts:                facts,
+		Edges:                edges,
+		Coverage:             coverage,
 	}
 }
 

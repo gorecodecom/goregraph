@@ -48,16 +48,24 @@ type AgentContextCoverageRecord struct {
 }
 
 type AgentContextIndexRecord struct {
-	AuditVersion    int                          `json:"audit_version,omitempty"`
-	AuditIncomplete bool                         `json:"audit_incomplete,omitempty"`
-	AuditSources    []AgentAuditSource           `json:"audit_sources,omitempty"`
-	SchemaVersion   int                          `json:"schema_version"`
-	Generated       string                       `json:"generated,omitempty"`
-	Root            string                       `json:"root,omitempty"`
-	Facts           []AgentContextFactRecord     `json:"facts"`
-	Edges           []AgentContextEdgeRecord     `json:"edges"`
-	Coverage        []AgentContextCoverageRecord `json:"coverage,omitempty"`
-	SourceHashes    map[string]string            `json:"source_hashes,omitempty"`
+	SemanticDependencies []SemanticDependencyRecord   `json:"semantic_dependencies,omitempty"`
+	AuditVersion         int                          `json:"audit_version,omitempty"`
+	AuditIncomplete      bool                         `json:"audit_incomplete,omitempty"`
+	AuditSources         []AgentAuditSource           `json:"audit_sources,omitempty"`
+	SchemaVersion        int                          `json:"schema_version"`
+	Generated            string                       `json:"generated,omitempty"`
+	Root                 string                       `json:"root,omitempty"`
+	Facts                []AgentContextFactRecord     `json:"facts"`
+	Edges                []AgentContextEdgeRecord     `json:"edges"`
+	Coverage             []AgentContextCoverageRecord `json:"coverage,omitempty"`
+	SourceHashes         map[string]string            `json:"source_hashes,omitempty"`
+}
+
+// SemanticDependencyRecord tracks the exact inputs of an opt-in compiler snapshot.
+type SemanticDependencyRecord struct {
+	Project  string            `json:"project,omitempty"`
+	Language string            `json:"language"`
+	Inputs   map[string]string `json:"inputs"`
 }
 
 const (
@@ -1342,7 +1350,7 @@ func contextTypeNavigationSymbol(symbol RichSymbolRecord) bool {
 		return kind == "asset"
 	case "csharp":
 		switch kind {
-		case "class", "interface", "record", "enum", "struct", "method", "constructor", "property", "field", "assembly", "persistence", "registration":
+		case "class", "interface", "record", "enum", "struct", "method", "function", "constructor", "property", "field", "enum_case", "typealias", "assembly", "persistence", "registration":
 			return true
 		}
 	case "swift":
@@ -1401,6 +1409,10 @@ func contextSemanticRelationKind(value string) (string, bool) {
 		return "call", true
 	case kind == "use" || kind == "uses" || strings.HasPrefix(kind, "uses_"):
 		return "use", true
+	case kind == "serialized_field", kind == "persistent_callback", kind == "declared_type", kind == "registers_service", kind == "registers_implementation":
+		return "use", true
+	case kind == "inherits_type":
+		return "extends", true
 	case kind == "implements" || strings.HasPrefix(kind, "implements_"):
 		return "implements", true
 	case kind == "extends" || strings.HasPrefix(kind, "extends_"):

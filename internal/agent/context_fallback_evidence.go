@@ -53,6 +53,7 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 		literalNames[name] = true
 	}
 	storyPriorities := map[string]int{}
+	assetPriorities := associatedAssetEvidencePriorities(loaded.Index, request.Query, literalNames)
 	storyRequested := contextQueryRequestsStorySources(request.Query)
 	sourceLimit := maximumFallbackSourceSections
 	ranked := rankContextFacts(loaded.Index.Facts, request.Query)
@@ -82,7 +83,7 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 			break
 		}
 		fact := item.fact
-		if namedOnly && (!(strings.HasSuffix(strings.ToLower(fact.File), ".cs") || strings.HasSuffix(strings.ToLower(fact.File), ".swift")) || !literalNames[strings.ToLower(fact.Name)]) {
+		if namedOnly && assetPriorities[fact.ID] == 0 && (!(strings.HasSuffix(strings.ToLower(fact.File), ".cs") || strings.HasSuffix(strings.ToLower(fact.File), ".swift")) || !literalNames[strings.ToLower(fact.Name)]) {
 			continue
 		}
 		alreadyRead := false
@@ -135,8 +136,7 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 			continue
 		}
 		section, err := renderSourceCandidate(candidate, file, "declaration_body")
-		if err != nil && (namedOnly || pack.FallbackReason == ContextFallbackUnsupportedAnalysis) &&
-			strings.HasSuffix(strings.ToLower(candidate.Path), ".cs") && literalNames[strings.ToLower(fact.Name)] {
+		if err != nil && (strings.HasSuffix(strings.ToLower(candidate.Path), ".cs") || strings.HasSuffix(strings.ToLower(candidate.Path), ".swift")) && literalNames[strings.ToLower(fact.Name)] {
 			section, err = renderSourceCandidate(candidate, file, "focused")
 		}
 		if err != nil && contextAssetSource(candidate.Path) {
@@ -148,7 +148,10 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 		attachSourceReadReceipt(&section, file)
 		contentTokens := contextExpandedTokenSet(section.Content)
 		identityTokens := contextExpandedTokenSet(strings.Join([]string{fact.Name, fact.Qualified, fact.File}, " "))
-		score := storyPriorities[fact.ID]
+		score := max(storyPriorities[fact.ID], assetPriorities[fact.ID])
+		if namedOnly && literalNames[strings.ToLower(fact.Name)] {
+			score++
+		}
 		if storybookRequested && fact.Kind == "configuration" && scan.IsStorybookConfigurationSource(fact.File) {
 			score++
 		}
@@ -161,7 +164,7 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 			continue
 		}
 		key := normalizeContextProject(fact.Project) + "\x00" + candidate.Path
-		priority := storyPriorities[fact.ID]
+		priority := max(storyPriorities[fact.ID], assetPriorities[fact.ID])
 		if strings.Contains(fact.Qualified, "#sample:") && (literalNames["frame"] || literalNames["frames"]) {
 			if at := strings.LastIndex(strings.ToLower(fact.Name), " frame "); at >= 0 && literalNames[strings.ToLower(fact.Name[at+7:])] {
 				for _, name := range strings.Fields(strings.ToLower(fact.Name[:at])) {
@@ -208,7 +211,7 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 		candidate.SourceSections = append(candidate.SourceSections, option.section)
 		candidate.SourceCoverage = "partial"
 		if namedOnly {
-			candidate.Uncertainties = append(candidate.Uncertainties, ContextUncertainty{Scope: "named_source_candidates", Reason: "Additional explicitly named C# declarations are supplied as source candidates; their relationship to the selected entrypoint is not established."})
+			candidate.Uncertainties = append(candidate.Uncertainties, ContextUncertainty{Scope: "named_source_candidates", Reason: "Explicitly named declarations and their indexed saved-asset links are supplied as source candidates; runtime activation and complete task coverage are not established."})
 		}
 		if option.changed {
 			candidate.FallbackReason = ContextFallbackEvidenceConflict

@@ -235,6 +235,9 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 	var unitySources []unitySource
 	var swiftSources []swiftSource
 	var exportSources []assetExportSource
+	var semanticSources []assetExportSource
+	var swiftMetadata []assetExportSource
+	semanticBodies := map[string]string{}
 	var dotnetFacts ProjectSymbolFacts
 	var scriptFacts ProjectSymbolFacts
 	skipped := 0
@@ -288,6 +291,15 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 		}
 		index.Files = append(index.Files, record)
 		text := string(body)
+		if strings.HasSuffix(rel, ".pbxproj") || filepath.Base(rel) == "Package.swift" {
+			swiftMetadata = append(swiftMetadata, assetExportSource{record, text})
+		}
+		if record.Language == "csharp" || record.Language == "swift" {
+			semanticBodies[record.Path] = text
+		}
+		if strings.HasSuffix(rel, ".goregraph-csharp.json") || strings.HasSuffix(rel, ".goregraph-swift.json") {
+			semanticSources = append(semanticSources, assetExportSource{record, text})
+		}
 		MergeProjectSymbolFacts(&dotnetFacts, extractDotnetMetadata(record, text))
 		if strings.HasSuffix(rel, ".goregraph-blender.json") || strings.HasSuffix(rel, ".goregraph-unity.json") {
 			exportSources = append(exportSources, assetExportSource{record, text})
@@ -372,7 +384,9 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 		dotnetFacts = resolveDotnetMetadata(dotnetFacts, unitySources)
 		assignCSharpModules(csharpSources, dotnetFacts)
 		index.CSharp = analyzeCSharpProject(csharpSources)
+		assignSwiftTargets(swiftSources, swiftMetadata)
 		index.Swift = analyzeSwiftProject(swiftSources)
+		applyLanguageSemanticSources(&index, semanticSources, semanticBodies)
 		mergeCodeIntelligence(&index.Code, index.CSharp.code)
 		mergeCodeIntelligence(&index.Code, index.Swift.code)
 		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, index.Swift.capabilities...)
@@ -383,7 +397,7 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 		MergeProjectSymbolFacts(&index.SymbolFacts, index.Swift.facts)
 		MergeProjectSymbolFacts(&index.SymbolFacts, scriptFacts)
 		var assetFacts ProjectSymbolFacts
-		index.Assets, assetFacts = analyzeUnityAssets(index.Files, unitySources, index.CSharp.facts)
+		index.Assets, assetFacts = analyzeUnityAssets(index.Files, unitySources, index.CSharp.facts, csharpSources)
 		MergeProjectSymbolFacts(&index.SymbolFacts, assetFacts)
 		exports, exportFacts := analyzeAssetExports(index.Files, exportSources)
 		mergeAssetIndex(&index.Assets, exports)
@@ -557,6 +571,7 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 		contextIndex.AuditVersion = 1
 		contextIndex.AuditSources = finalizeAgentAuditSources(index.AuditSources, filepath.Base(root))
 		contextIndex.SourceHashes = make(map[string]string)
+		contextIndex.SemanticDependencies = index.SemanticDependencies
 		representedFiles := make(map[string]bool)
 		for _, fact := range contextIndex.Facts {
 			representedFiles[fact.File] = true

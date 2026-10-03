@@ -19,7 +19,7 @@ type unitySource struct {
 	body string
 }
 
-func analyzeUnityAssets(files []FileRecord, sources []unitySource, csharp ProjectSymbolFacts) (AssetIndexRecord, ProjectSymbolFacts) {
+func analyzeUnityAssets(files []FileRecord, sources []unitySource, csharp ProjectSymbolFacts, codeSources ...[]csharpSource) (AssetIndexRecord, ProjectSymbolFacts) {
 	index := AssetIndexRecord{SchemaVersion: 1, Nodes: []AssetNodeRecord{}, References: []AssetReferenceRecord{}, Diagnostics: []AssetDiagnosticRecord{}}
 	facts := ProjectSymbolFacts{}
 	byFile := map[string]FileRecord{}
@@ -58,6 +58,7 @@ func analyzeUnityAssets(files []FileRecord, sources []unitySource, csharp Projec
 		}
 	}
 	objects := map[string]AssetNodeRecord{}
+	serialized := map[string]*yaml.Node{}
 	roots := map[string]AssetNodeRecord{}
 	for _, file := range files {
 		if file.Language != "unity" && guidByFile[file.Path] == "" {
@@ -110,6 +111,7 @@ func analyzeUnityAssets(files []FileRecord, sources []unitySource, csharp Projec
 				}
 			}
 			objects[source.file.Path+"#"+localID] = object
+			serialized[object.ID] = values
 			index.Nodes = append(index.Nodes, object)
 			index.References = append(index.References, AssetReferenceRecord{From: roots[source.file.Path].ID, To: object.ID, File: source.file.Path, Line: root.Line, Property: "contains", Resolution: SymbolResolutionExact, Reason: "serialized object belongs to asset document"})
 			unityReferences(values, "", object, &index.References)
@@ -195,6 +197,7 @@ func analyzeUnityAssets(files []FileRecord, sources []unitySource, csharp Projec
 			}
 		}
 	}
+	linkUnitySerializedCode(&index, &facts, serialized, csharp, codeSources...)
 	sort.Slice(index.Nodes, func(i, j int) bool { return index.Nodes[i].ID < index.Nodes[j].ID })
 	return index, facts
 }

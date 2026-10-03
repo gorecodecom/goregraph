@@ -23,7 +23,7 @@ func binaryAssetFile(name string) bool {
 func assetFileSizeLimit(name string, cfg config.Config) int64 {
 	limit := cfg.MaxFileSizeBytes
 	assetLimit := int64(0)
-	if detectLanguage(name) == "unity" || strings.HasSuffix(name, ".goregraph-blender.json") {
+	if detectLanguage(name) == "unity" || strings.HasSuffix(name, ".goregraph-blender.json") || strings.HasSuffix(name, ".goregraph-csharp.json") || strings.HasSuffix(name, ".goregraph-swift.json") {
 		assetLimit = cfg.MaxAssetFileSizeBytes
 	}
 	if binaryAssetFile(name) {

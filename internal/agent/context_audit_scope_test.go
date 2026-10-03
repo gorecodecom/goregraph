@@ -15,11 +15,12 @@ func TestAuditContextRootScope(t *testing.T) {
 	writeContextSourceFile(t, workspaceRoot, ".goregraph-workspace.yml", "projects: []\n")
 	projects := []string{"apps/a-legacy", "apps/z-current", "apps/z-current-old"}
 	index := scan.AgentContextIndexRecord{
-		SchemaVersion: scan.SchemaVersion,
-		Generated:     "2026-10-01T00:00:00Z",
-		Root:          workspaceRoot,
-		AuditVersion:  1,
-		SourceHashes:  map[string]string{},
+		SchemaVersion:        scan.SchemaVersion,
+		Generated:            "2026-10-01T00:00:00Z",
+		Root:                 workspaceRoot,
+		AuditVersion:         1,
+		SourceHashes:         map[string]string{},
+		SemanticDependencies: []scan.SemanticDependencyRecord{{Project: "../outside-audit", Language: "swift", Inputs: map[string]string{"Private.swift": "not-an-audit-input"}}},
 	}
 	for _, project := range projects {
 		for _, file := range []struct {

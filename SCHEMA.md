@@ -340,7 +340,16 @@ selected and concern-expanded source against these snapshots before duplicate
 suppression. Changed source produces `evidence_conflict`, missing or unreadable
 source produces `source_unreadable`, and stale endpoint metadata is discarded.
 Absent hashes in older indexes cannot establish current source freshness. Rebuild
-the agent projection to populate hashes; the agent build revision is now 2.
+the agent projection to populate hashes; the agent build revision is now 7.
+
+Optional `semantic_dependencies` records contain a language, a project path for
+workspace projections, and project-relative source/configuration/report SHA-256
+`inputs`. They preserve the provenance of explicitly supplied C#/Swift compiler
+snapshots. Normal context requests verify these hashes and detect newly indexed
+inputs; changed or unreadable inputs produce `index_stale` without delivering
+compiler bindings. Audits independently verify their selected audit sources.
+No dependency check runs a compiler or refreshes an index. See
+[Language analysis](docs/LANGUAGE-ANALYSIS.md) for the explicit report contract.
 
 
 ### Bounded CLI source reads and adaptive delivery receipts
@@ -548,5 +557,11 @@ asset evidence gaps. Binary assets are hash inventories, not readable source.
 Explicit `.goregraph-blender.json` and `.goregraph-unity.json` reports carry
 `schema_version: 1`, `engine`, `producer_version`, project-relative `source`,
 `source_sha256`, `objects`, optional `samples`, `limitations` and `truncated`.
-Only reports matching current indexed source hashes contribute object facts.
+Optional `dependencies` maps (Blender) or `dependency_files` lists with `file` and
+`sha256` (Unity) record owned linked/import inputs. Only reports matching current
+indexed source and dependency hashes contribute object facts. Frame samples may
+include bounded world-space `vertex_positions`, `triangle_indices`,
+`geometry_space` and `geometry_complete`; incomplete surfaces never claim complete
+geometry. Saved Unity `serialized_field` and `persistent_callback` relations are
+symbol uses, not execution callgraph edges.
 See [Asset analysis](docs/ASSET-ANALYSIS.md) for evidence boundaries.

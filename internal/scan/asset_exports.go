@@ -10,11 +10,13 @@ import (
 )
 
 type assetExportRecord struct {
-	SchemaVersion   int    `json:"schema_version"`
-	Engine          string `json:"engine"`
-	ProducerVersion string `json:"producer_version"`
-	Source          string `json:"source"`
-	SourceSHA256    string `json:"source_sha256"`
+	SchemaVersion   int                     `json:"schema_version"`
+	Engine          string                  `json:"engine"`
+	ProducerVersion string                  `json:"producer_version"`
+	Source          string                  `json:"source"`
+	SourceSHA256    string                  `json:"source_sha256"`
+	Dependencies    map[string]string       `json:"dependencies,omitempty"`
+	DependencyFiles []AssetExportDependency `json:"dependency_files,omitempty"`
 	Objects         []struct {
 		ID         string         `json:"id"`
 		Name       string         `json:"name"`
@@ -36,6 +38,10 @@ type assetExportRecord struct {
 		BoneHead           []float64   `json:"bone_head,omitempty"`
 		BoneTail           []float64   `json:"bone_tail,omitempty"`
 		BoneMatrix         [][]float64 `json:"bone_matrix,omitempty"`
+		VertexPositions    [][]float64 `json:"vertex_positions,omitempty"`
+		TriangleIndices    [][]int     `json:"triangle_indices,omitempty"`
+		GeometryComplete   bool        `json:"geometry_complete,omitempty"`
+		GeometrySpace      string      `json:"geometry_space,omitempty"`
 	} `json:"samples"`
 	Limitations []string `json:"limitations"`
 	Truncated   bool     `json:"truncated"`
@@ -80,6 +86,26 @@ func analyzeAssetExports(files []FileRecord, sources []assetExportSource) (Asset
 			diagnostic("asset_export_stale", "Export source is missing from the inventory or its SHA-256 has changed; re-export explicitly")
 			continue
 		}
+		dependenciesCurrent := true
+		dependencies, dependencyErr := NormalizeAssetExportDependencies(report.Dependencies, report.DependencyFiles)
+		if dependencyErr != nil {
+			dependenciesCurrent = false
+		}
+		for name, expected := range dependencies {
+			dependency, found := byFile[name]
+			if !found || name != path.Clean(name) || strings.ContainsAny(name, "\\:") || path.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") || expected == "" || dependency.Hash != expected {
+				dependenciesCurrent = false
+				break
+			}
+		}
+		if !dependenciesCurrent {
+			diagnostic("asset_export_stale", "A linked export dependency is missing or changed; re-export explicitly")
+			continue
+		}
+		if !validAssetExportSamples(source.body) {
+			diagnostic("asset_invalid_sample", "Export samples contain invalid coordinates, surface indices or geometry coverage")
+			continue
+		}
 		if len(report.Objects) > 100000 || len(report.Samples) > 524288 {
 			diagnostic("asset_export_limit", "Export exceeds the supported object or frame sample limit")
 			continue
@@ -113,6 +139,20 @@ func analyzeAssetExports(files []FileRecord, sources []assetExportSource) (Asset
 		}
 		if duplicate {
 			diagnostic("asset_export_duplicate_id", "Export object identities are empty or duplicated")
+			continue
+		}
+		seenSamples := map[string]bool{}
+		validSamples := true
+		for _, sample := range report.Samples {
+			key := sample.Object + "/" + strconv.Itoa(sample.Frame)
+			if _, exists := ids[sample.Object]; !exists || seenSamples[key] {
+				validSamples = false
+				break
+			}
+			seenSamples[key] = true
+		}
+		if !validSamples {
+			diagnostic("asset_invalid_sample", "Export samples refer to missing objects or duplicate object/frame identities")
 			continue
 		}
 		verified[identity] = true
@@ -237,7 +277,7 @@ func enrichAssetContext(contextIndex *AgentContextIndexRecord, assets AssetIndex
 
 func safeExportProperties(properties map[string]any) map[string]any {
 	result := map[string]any{}
-	for _, key := range strings.Fields("bone_head bone_tail deform channels location scale rotation_mode hidden_render modifiers drivers vertices polygons shape_keys bones use_nodes node_types frame_range slots hierarchy active components position indices blend_shapes animations animation_length bounds_min bounds_max") {
+	for _, key := range strings.Fields("bone_head bone_tail deform channels location scale rotation_mode hidden_render modifiers drivers vertices polygons shape_keys bones use_nodes node_types node_links packed image_size frame_range slots hierarchy active components position indices blend_shapes animations animation_length bounds_min bounds_max") {
 		if value, exists := properties[key]; exists {
 			result[key] = value
 		}

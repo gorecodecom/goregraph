@@ -22,13 +22,14 @@ type swiftType struct {
 	bases  []string
 }
 type swiftSource struct {
-	file, module string
-	tokens       []csharpToken
-	pairs        map[int]int
-	imports      []string
-	types        []swiftType
-	members      []swiftMember
-	limitations  []string
+	visibleModules map[string]bool
+	file, module   string
+	tokens         []csharpToken
+	pairs          map[int]int
+	imports        []string
+	types          []swiftType
+	members        []swiftMember
+	limitations    []string
 }
 
 func parseSwiftSource(file FileRecord, body string) swiftSource {

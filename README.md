@@ -929,14 +929,14 @@ Pattern-backed extraction can miss runtime-generated behavior such as routes, re
 Shell integration does not provide routes, tests, or architecture capabilities. Index adapters provide best-effort declarations and imports only; they do not provide normalized calls, routes, tests, or architecture facts.
 
 Supported static pattern families:
-- **C# / .NET / Unity:** C# type and member declarations; typed static calls with inheritance, named, optional and ref arguments; typed EF Core operations; literal DI registrations; literal ASP.NET controller routes; literal HttpClient requests; NUnit, xUnit and Unity test declarations.
+- **C# / .NET / Unity:** C# type and member declarations; typed static calls with inheritance, named, optional and ref arguments; optional hash-verified Roslyn symbol and call snapshots; typed EF Core operations; literal DI registrations; literal ASP.NET controller routes; literal HttpClient requests; NUnit, xUnit and Unity test declarations.
 - **Go:** net/http and common routers; net/http clients; database/sql and GORM; Kafka and AMQP; gRPC; JSON request/response boundaries; go test and httptest.
 - **Java / Spring:** Spring MVC and WebFlux; Java and Spring HTTP clients; Spring Data; Spring Messaging; gRPC; Jakarta Validation; JUnit and Spring Test.
 - **JavaScript / TypeScript / Node.js / React:** Express and Fastify; NestJS; Next.js; Web and Node HTTP clients; common Node persistence; Kafka and AMQP; gRPC; Node request/response boundaries; Jest, Vitest, Node Test, and React Testing Library.
 - **PHP:** Laravel and Symfony routes; PHP HTTP clients; Eloquent, Doctrine, and PDO; queues and messaging; gRPC; PHP request/response boundaries; PHPUnit and Pest.
 - **Python:** FastAPI, Flask, and Django routes; requests, httpx, and aiohttp; SQLAlchemy, Django ORM, and DB-API; Kafka, Celery, and AMQP; gRPC; Python web and validation boundaries; pytest and unittest.
 - **Rust:** Axum, Actix, and Rocket routes; reqwest; SQLx, Diesel, and SeaORM; Kafka and AMQP; tonic gRPC; Rust web request/response boundaries; Rust and Tokio tests.
-- **Swift / SwiftUI / Apple frameworks:** Swift types, extensions, properties and labeled methods; typed static calls; SwiftUI property wrappers; literal URLSession requests; SwiftData, Core Data and UserDefaults; XCTest and Swift Testing declarations.
+- **Swift / SwiftUI / Apple frameworks:** Swift types, extensions, properties and labeled methods; typed static calls; literal SwiftPM and Xcode target membership; optional hash-verified SourceKit symbol and call snapshots; SwiftUI property wrappers; literal URLSession requests; SwiftData, Core Data and UserDefaults; XCTest and Swift Testing declarations.
 
 Unity serialized assets and source-hash-verified Blender/Unity exports contribute static asset objects and references. Editors are never started by scans or context queries. See docs/ASSET-ANALYSIS.md for supported evidence and limits.
 

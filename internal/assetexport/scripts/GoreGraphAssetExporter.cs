@@ -14,6 +14,7 @@ using Object = UnityEngine.Object;
 public static class GoreGraphAssetExporter
 {
     [Serializable] public sealed class Reference { public string property; public string target; }
+    [Serializable] public sealed class Dependency { public string file; public string sha256; }
     [Serializable] public sealed class Properties
     {
         public string hierarchy;
@@ -41,6 +42,7 @@ public static class GoreGraphAssetExporter
         public int schema_version = 1; public string engine = "unity";
         public string producer_version = Application.unityVersion;
         public string source; public string source_sha256;
+        public List<Dependency> dependency_files = new List<Dependency>();
         public List<Record> objects = new List<Record>();
         public string[] limitations = { "Persistent imported asset metadata only; no scene or prefab instantiation",
             "No runtime, animation sampling or rendered geometry proof", "External references may remain unindexed" };
@@ -64,6 +66,16 @@ public static class GoreGraphAssetExporter
         using (var sha = SHA256.Create())
             return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
     }
+    private static string OwnedFile(string project, string relative)
+    {
+        string full = Path.GetFullPath(Path.Combine(project, relative));
+        if (!full.StartsWith(project + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new ArgumentException("Dependency escapes the project");
+        for (string current = full; current != project; current = Path.GetDirectoryName(current))
+            if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                throw new ArgumentException("Symlink dependencies are unsupported");
+        return full;
+    }
     private static void Link(Record record, string property, Object target)
     {
         if (target != null) record.references.Add(new Reference { property = property, target = Identity(target) });
@@ -73,6 +85,7 @@ public static class GoreGraphAssetExporter
         if (value == null || !EditorUtility.IsPersistent(value)) return;
         string id = Identity(value);
         if (!seen.Add(id)) return;
+        if (report.objects.Count >= 100000) { report.truncated = true; return; }
         var record = new Record { id = id, name = value.name, kind = value.GetType().Name };
         if (value is GameObject gameObject)
         {
@@ -101,6 +114,7 @@ public static class GoreGraphAssetExporter
             Link(record, "mesh", skinned.sharedMesh);
             record.properties.bones = skinned.bones.Select(bone => bone == null ? "MissingBone" : bone.name).ToArray();
             foreach (var bone in skinned.bones) Link(record, "bone", bone);
+            Link(record, "rootBone", skinned.rootBone);
         }
         if (value is MeshFilter filter) Link(record, "mesh", filter.sharedMesh);
         if (value is Renderer renderer) foreach (var material in renderer.sharedMaterials) Link(record, "material", material);
@@ -129,8 +143,21 @@ public static class GoreGraphAssetExporter
         string fullSource = Path.GetFullPath(Path.Combine(project, source));
         if (!fullSource.StartsWith(project + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !source.StartsWith("Assets/", StringComparison.Ordinal))
             throw new ArgumentException("Source must be an asset inside this project");
+        source = fullSource.Substring(project.Length + 1).Replace('\\', '/');
+        fullSource = OwnedFile(project, source);
         string before = Hash(fullSource);
         var report = new Report { source = source.Replace('\\', '/'), source_sha256 = before };
+        var dependencyPaths = new HashSet<string>(StringComparer.Ordinal) { source };
+        foreach (string dependency in AssetDatabase.GetDependencies(source, true))
+            if (dependency.StartsWith("Assets/", StringComparison.Ordinal)) dependencyPaths.Add(dependency);
+        foreach (string configuration in new[] { "ProjectSettings/ProjectVersion.txt", "Packages/manifest.json", "Packages/packages-lock.json" })
+            if (File.Exists(Path.Combine(project, configuration))) dependencyPaths.Add(configuration);
+        foreach (string dependency in dependencyPaths.ToArray())
+            if (File.Exists(Path.Combine(project, dependency + ".meta"))) dependencyPaths.Add(dependency + ".meta");
+        if (dependencyPaths.Count > 10000) throw new IOException("Dependency inventory exceeds 10000 files");
+        foreach (string dependency in dependencyPaths.OrderBy(path => path, StringComparer.Ordinal))
+            report.dependency_files.Add(new Dependency { file = dependency.Replace('\\', '/'), sha256 = Hash(OwnedFile(project, dependency)) });
+        string importedHash = AssetDatabase.GetAssetDependencyHash(source).ToString();
         var seen = new HashSet<string>();
         foreach (var value in AssetDatabase.LoadAllAssetsAtPath(source)) Add(report, value, seen);
         var root = AssetDatabase.LoadAssetAtPath<GameObject>(source);
@@ -140,13 +167,22 @@ public static class GoreGraphAssetExporter
                 Add(report, transform.gameObject, seen);
                 foreach (var component in transform.GetComponents<Component>()) Add(report, component, seen);
             }
+        if (Argument("-goregraph-include-dependencies") == "true")
+            foreach (string dependency in dependencyPaths.OrderBy(path => path, StringComparer.Ordinal))
+                if (dependency.StartsWith("Assets/", StringComparison.Ordinal) && !dependency.EndsWith(".meta", StringComparison.Ordinal))
+                    foreach (var value in AssetDatabase.LoadAllAssetsAtPath(dependency)) Add(report, value, seen);
         if (Hash(fullSource) != before) throw new IOException("Source changed during export");
+        foreach (var dependency in report.dependency_files)
+            if (Hash(OwnedFile(project, dependency.file)) != dependency.sha256) throw new IOException("Dependency changed during export");
+        if (AssetDatabase.GetAssetDependencyHash(source).ToString() != importedHash) throw new IOException("Imported asset dependencies changed during export");
         string destination = Path.GetFullPath(output);
         Directory.CreateDirectory(Path.GetDirectoryName(destination));
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            File.WriteAllText(temporary, JsonUtility.ToJson(report, true) + "\n");
+            string body = JsonUtility.ToJson(report, true) + "\n";
+            if (System.Text.Encoding.UTF8.GetByteCount(body) > 16 * 1024 * 1024) throw new IOException("Export exceeds 16 MiB; reduce dependency selection");
+            File.WriteAllText(temporary, body);
             if (File.Exists(destination)) File.Replace(temporary, destination, null);
             else File.Move(temporary, destination);
         }

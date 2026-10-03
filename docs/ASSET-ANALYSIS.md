@@ -18,7 +18,7 @@ and `.asmdef` / `.asmref` assembly dependencies are separate metadata evidence.
 Unique indexed `.meta` GUIDs resolve assembly references; `.asmref` folders retain
 the referenced assembly's code boundary. Duplicate GUIDs remain ambiguous.
 
-This is a static pattern adapter, not Roslyn or an MSBuild evaluation. Conditional
+The default source path is a static pattern adapter, not an MSBuild evaluation. Conditional
 compilation is not evaluated. Ambiguous overloads, unknown receivers, reflection,
 extension methods, virtual dispatch, dynamic strings and unresolved external
 assemblies remain uncertain. Generic constraints, complex receiver expressions,
@@ -63,6 +63,18 @@ collection remains a separate workspace source, not a backend service or a made-
 runtime dependency. This preserves the Unity code root and lets the workspace query
 include both actual registered source collections.
 
+Unique script classes also connect serialized field names to their source members,
+including supported inherited members. Unique prefab component correspondence can
+retain the source script for stripped scene components. Supported saved UnityEvent
+callbacks use the target component/script, method name and fixed listener signature;
+supported dynamic event signatures come from a verified `UnityEvent` source field.
+Only uniquely matched instance methods returning `void` are bound. Unknown object
+arguments, unsupported nested event paths, conditional providers and ambiguous
+signatures remain open. These are `serialized_field`/`persistent_callback` use
+relations, never executable callgraph edges. Adaptive context can deliver both the
+saved prefab and explicitly named receiver code, within its normal budgets and
+redaction/read-receipt rules. It does not prove the event is active or invoked.
+
 ## Explicit Blender export
 
 Write the bundled template to a new file (existing files are never overwritten):
@@ -83,20 +95,44 @@ blender --background --factory-startup --disable-autoexec /path/to/Art/Knight.bl
 The root must contain the source `.blend`. Put the report within the same indexed
 project/asset collection. The exporter never saves the source blend. It atomically
 writes objects, parent/material/modifier/constraint/action references, mesh topology
-counts, shape-key names, armature bone hierarchy, action ranges, bounded animation
-channels/keyframes and driver metadata.
+counts, shape keys, armature bone hierarchy, action ranges, bounded animation
+channels/keyframes and driver variable/target links. Materials and node groups retain
+image/group/object references and node connections; collections and scenes retain
+membership. Pose constraints and per-object pose-bone identities preserve instance
+ownership even when multiple armature objects share one data block.
 Selected scene frames contribute evaluated mesh counts, degenerate-polygon counts
 and world bounds, plus world-space pose-bone endpoints and matrices. It restores the
 scene frame and releases evaluated meshes.
 Blender evaluates selected frames only; viewport settings, external dependencies,
 unsampled frames, containment and exhaustive collision correctness are not proven.
 
-The source SHA-256 must match an indexed file before report objects become active
-facts. Invalid, duplicate-ID, out-of-project and stale reports contribute diagnostics
+Optional surfaces make detailed downstream geometry inspection possible:
+
+```sh
+blender --background --disable-autoexec /path/to/Art/Knight.blend \
+  --python /tmp/goregraph-blender.py -- \
+  --root /path/to/Art --output /path/to/Art/Knight.goregraph-blender.json \
+  --frames 1,10 --geometry
+```
+
+`--geometry` includes evaluated world-space vertex positions and triangle indices
+only for samples marked `geometry_complete: true`. Shared export budgets default
+to 20,000 vertices and 40,000 triangles across the selected objects/frames. Explicit
+`--max-geometry-vertices`/`--max-geometry-triangles` settings are capped at
+100,000/200,000; the report must fit 16 MiB. Samples exceeding the remaining budget
+retain counts/bounds and mark geometry incomplete. The exporter does not silently
+present a partial vertex subset as a complete surface, nor perform collision proofs.
+
+The source and owned linked-library SHA-256 hashes must match indexed files before
+report objects become active facts. Outside-root libraries and textures remain
+unverified dependencies and are named as limitations. Invalid coordinates, surface
+indices, duplicate object/frame identities, duplicate IDs, out-of-project and stale
+reports contribute diagnostics
 instead of current object facts. Source hashing confirms freshness, not the accuracy
 or authenticity of a third-party report. The scanner never executes the exporter.
 Adaptive context queries also verify the original asset hash before delivering an
-export as current source evidence, including changes since the last watcher update.
+export as current source evidence, including owned linked libraries and changes
+since the last watcher update. No external dependency is refreshed or exported.
 Asset source sections are bounded and redact unsupported serialized values; source
 read receipts preserve the original file hash and actual line numbers.
 Frame samples have separate source-backed navigation identities. Queries naming an
@@ -115,11 +151,18 @@ chosen Editor, for example:
 ```sh
 unity run /path/to/Unity -- -executeMethod GoreGraphAssetExporter.Export \
   -goregraph-source Assets/Knight.prefab \
+  -goregraph-include-dependencies true \
   -goregraph-output /path/to/Unity/Evidence/Knight.goregraph-unity.json
 ```
 
 The template reads persistent imported assets, hierarchy, components, serialized
 references, mesh counts/bounds, skinning bones, blend shapes and animation metadata.
+The optional `-goregraph-include-dependencies true` includes persistent owned
+imported sub-assets such as referenced meshes and materials. It does not load
+external project files. Regardless of this option, reports record SHA-256 hashes
+for owned import dependencies and their `.meta` files, package configuration and
+the Editor version. Changed dependencies invalidate exported evidence, even before
+the next watcher update. Built-in and unowned references remain limited evidence.
 It does not instantiate prefabs, open scenes, save assets or run gameplay. Starting
 an Editor can itself refresh its library/importers; that is why this is a manual
 operation and is never part of an AI query or normal scan. Reports are SHA-256-checked
