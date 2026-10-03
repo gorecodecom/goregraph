@@ -158,8 +158,11 @@ Both exporters require a new report filename. Reports contain compiler identitie
 source coordinates and SHA-256 hashes, not proof of successful application execution.
 The scanner validates every required indexed input and source location. Missing,
 stale, duplicate or competing snapshots produce diagnostics and retain static
-analysis. Queries recheck reports, source/configuration hashes and newly added
-inputs before delivering compiler bindings; stale snapshots require an explicit
+analysis. Queries recheck snapshots for the projects/languages represented by
+selected declarations, call edges or expanded source evidence, including duplicate
+requests. Unrelated snapshots do not block Go/Java or other unaffected context.
+Selected source/configuration hashes and newly added inputs are verified before
+delivering compiler bindings; stale snapshots require an explicit
 new export. Tooling audits verify their selected audit sources separately and do
 not widen their source scope to unrelated compiler inputs.
 

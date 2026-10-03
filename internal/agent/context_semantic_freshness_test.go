@@ -68,3 +68,38 @@ func TestSemanticDependencyPathsCannotEscapeProject(t *testing.T) {
 		t.Fatal("escaping semantic dependency accepted")
 	}
 }
+
+func TestUnrelatedSnapshotsDoNotBlockGoOrJavaSourceContext(t *testing.T) {
+	for _, test := range []struct{ path, body string }{
+		{"Main.go", "package main\nfunc Run() {}\n"},
+		{"Main.java", "class Main {\n public void Run() {}\n}\n"},
+	} {
+		index := scan.AgentContextIndexRecord{SchemaVersion: scan.SchemaVersion, Facts: []scan.AgentContextFactRecord{{ID: "main", Kind: "symbol", Name: "Run", Qualified: "Main.Run", File: test.path, Line: 2, Confidence: "EXACT"}}, SemanticDependencies: []scan.SemanticDependencyRecord{{Language: "csharp", Inputs: map[string]string{"Unrelated.cs": "stale"}}}}
+		root := writeContextIndexFixture(t, index)
+		writeSourceFile(t, root, test.path, test.body)
+		pack, err := BuildContext(ContextRequest{Root: root, Query: "Explain Main.Run", ProtocolVersion: AdaptiveV2})
+		if err != nil || pack.FallbackReason == ContextFallbackIndexStale || len(pack.SourceSections) == 0 {
+			t.Fatal("unrelated C# snapshot blocked current source", test.path, err, pack)
+		}
+	}
+}
+
+func TestSnapshotSelectionIncludesSourceExpansionAndDuplicateIdentities(t *testing.T) {
+	loaded := loadedContextIndex{Workspace: true, Index: scan.AgentContextIndexRecord{
+		SemanticDependencies: []scan.SemanticDependencyRecord{{Project: "selected", Language: "csharp"}, {Project: "neighbor", Language: "csharp"}, {Project: "selected", Language: "swift"}},
+		Facts:                []scan.AgentContextFactRecord{{ID: "method", Project: "selected", File: "Service.cs"}},
+	}}
+	for _, pack := range []ContextPack{
+		{SourceSections: []ContextSourceSection{{Project: "selected", Path: "Service.cs"}}},
+		{selectedFactIDs: []string{"method"}},
+	} {
+		selected := selectedSemanticDependencies(loaded, pack)
+		if len(selected) != 1 || selected[0].Project != "selected" || selected[0].Language != "csharp" {
+			t.Fatal(selected)
+		}
+	}
+	duplicate, err := duplicateContextPack(ContextPack{BudgetTokens: DefaultContextBudgetTokens, ContextID: "fixture", selectedFactIDs: []string{"method"}})
+	if err != nil || len(selectedSemanticDependencies(loaded, duplicate)) != 1 {
+		t.Fatal("duplicate lost freshness provenance", err, duplicate)
+	}
+}

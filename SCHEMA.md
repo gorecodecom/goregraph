@@ -345,8 +345,9 @@ the agent projection to populate hashes; the agent build revision is now 7.
 Optional `semantic_dependencies` records contain a language, a project path for
 workspace projections, and project-relative source/configuration/report SHA-256
 `inputs`. They preserve the provenance of explicitly supplied C#/Swift compiler
-snapshots. Normal context requests verify these hashes and detect newly indexed
-inputs; changed or unreadable inputs produce `index_stale` without delivering
+snapshots. Normal context requests verify hashes for selected projects/languages
+and detect newly indexed inputs; unrelated snapshots do not block unaffected
+context. Changed or unreadable selected inputs produce `index_stale` without delivering
 compiler bindings. Audits independently verify their selected audit sources.
 No dependency check runs a compiler or refreshes an index. See
 [Language analysis](docs/LANGUAGE-ANALYSIS.md) for the explicit report contract.
