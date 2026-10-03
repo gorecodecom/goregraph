@@ -58,6 +58,8 @@ func Run(args []string, stdout, stderr io.Writer) (code int) {
 	}
 
 	switch args[0] {
+	case "assets":
+		return runAssets(args[1:], stdout, stderr)
 	case "build":
 		return runBuild(args[1:], stdout, stderr, execution)
 	case "scan":
@@ -263,10 +265,15 @@ func runWorkspaceBuild(args []string, stdout, stderr io.Writer, execution buildE
 			fmt.Fprint(stdout, `Usage: goregraph workspace build <agent|dashboard|all> [path] [--dry-run] [--workspace <path>] [--no-update-gitignore]
 
 Builds the shared workspace index and the selected projection.
+Choose agent, dashboard, or all immediately after build.
 Scans each discovered project once and reconciles the workspace once after the project loop.
 Continues after project failures, reports all failed projects and exits non-zero.
 Workspace reconciliation is skipped if any project failed. Ctrl-C stops the loop.
 Use a detected grouped layout, --workspace <path>, or .goregraph-workspace.yml.
+The positional [path] selects where to scan; it does not declare a workspace.
+For flat layouts, run from the workspace root:
+  goregraph workspace build all . --workspace . --dry-run
+Remove --dry-run to scan the listed projects.
 Build controls: --progress auto|plain|json|off, --file-timeout 5s, --project-timeout 0s.
 `)
 			return 0
@@ -1073,6 +1080,10 @@ Workspace reconciliation is skipped if any project failed. Ctrl-C stops the loop
 Workspace detection:
   GoreGraph detects common grouped frontend/services layouts. Otherwise use
   --workspace <path> or add .goregraph-workspace.yml to the workspace root.
+  [path] selects where to scan; it does not declare a workspace. For a flat
+  layout, run from its root:
+    goregraph workspace scan-all . --workspace . --dry-run
+  Remove --dry-run to scan the listed projects.
   Automatic workspace scans require a project/build marker. A .git alone
   identifies a repository for Git operations but is not a scan project.
   Use a project-local goregraph.yml to opt in a non-standard project. An
@@ -1104,7 +1115,7 @@ Workspace detection:
 	if err != nil {
 		fmt.Fprintf(stderr, "error: workspace scan-all failed: %v\n", err)
 		if err.Error() == "no GoreGraph workspace detected" {
-			fmt.Fprint(stderr, "hint: a flat project layout is not auto-detected; rerun with --workspace <workspace-root> (for the current directory: --workspace .) or add .goregraph-workspace.yml to the workspace root\n")
+			fmt.Fprint(stderr, "hint: a flat project layout is not auto-detected; from the workspace root, run `goregraph workspace scan-all . --workspace . --dry-run` to preview, then omit --dry-run to scan (or add .goregraph-workspace.yml there)\n")
 		}
 		return 1
 	}
@@ -1813,6 +1824,7 @@ Core commands:
   mcp               Start standard MCP with task_context only
 
 Manual exploration:
+  assets            Write explicit Unity/Blender exporter templates
   query <path>      Search the generated index or print an output alias
   explain <path>    Explain a file or symbol from the generated index
   report <path>     Print the generated Markdown report
@@ -1905,6 +1917,10 @@ MCP behavior:
 Workspace detection:
   Workspace commands require a detected grouped layout, --workspace <path>, or
   .goregraph-workspace.yml at the workspace root.
+  [path] selects where to scan; it does not declare a workspace. For a flat
+  layout, run from its root:
+    goregraph workspace build all . --workspace . --dry-run
+  Remove --dry-run to scan the listed projects.
   Automatic workspace scans require a project/build marker. A .git alone
   identifies a repository for Git operations but is not a scan project.
   Use a project-local goregraph.yml to opt in a non-standard project. An
@@ -1928,9 +1944,20 @@ Exploration:
   path             Show a graph path between two workspace targets
   impact           Show affected features for changed files
 
+Compatibility:
+  scan-all [path]  Scan all discovered projects (alias for build all)
+
 Workspace detection:
   Grouped layouts are detected automatically. For flat layouts, use
   --workspace <path> or add .goregraph-workspace.yml to the workspace root.
+  [path] selects where to scan; it does not declare a workspace. From a flat
+  workspace root, preview with:
+    goregraph workspace build all . --workspace . --dry-run
+  Or use the alias:
+    goregraph workspace scan-all . --workspace . --dry-run
+  Remove --dry-run to scan the listed projects.
+  Scans include only projects with a build marker or goregraph.yml;
+  .git alone does not make a directory a scan project.
 
 More workspace commands and compatibility aliases:
   goregraph workspace help --all
@@ -1990,6 +2017,10 @@ Examples:
 Workspace detection:
   Common grouped frontend/services layouts are detected automatically. Otherwise
   use --workspace <path> or add .goregraph-workspace.yml to the workspace root.
+  [path] selects where to scan; it does not declare a workspace. From a flat
+  workspace root, preview with:
+    goregraph workspace scan-all . --workspace . --dry-run
+  Remove --dry-run to scan the listed projects.
   Automatic workspace scans require a project/build marker. A .git alone
   identifies a repository for Git operations but is not a scan project.
   Use a project-local goregraph.yml to opt in a non-standard project. An

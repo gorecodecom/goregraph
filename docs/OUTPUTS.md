@@ -1,7 +1,7 @@
 # GoreGraph Output Contract
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.3 with output Schema 3.
+Source version: GoreGraph 1.4.4 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 ## Build Targets and Extraction
@@ -187,6 +187,7 @@ The complete workspace layout for `workspace build all` is:
 │   ├── freshness.json
 │   ├── symbol-index.json
 │   ├── symbol-usages.json
+│   ├── api-specifications.json
 │   └── api-catalog.json
 ├── agent/
 │   ├── agent-guide.md
@@ -201,6 +202,42 @@ The complete workspace layout for `workspace build all` is:
     └── workspace-map-assets/
         └── code-usages-<project-hash>.js
 ```
+
+`index/api-specifications.json` is a supplementary workspace contract projection.
+It contains eligible Swagger/OpenAPI documents with Git-repository ownership,
+source hashes, operation/model/field source lines and compatible indexed code
+routes. It does not add code projects, runtime-call edges or normal AI context
+facts. The Data Quality dashboard receives the same records through the optional
+`api_specifications` field in `workspace-service-map.json`.
+
+Only structural facts are exported; server hosts/credentials, examples, defaults
+and other configuration values are omitted. External references are never loaded.
+Path-item references, YAML aliases, composed models, webhooks and OpenAPI 3.2
+additional operations are reported as limitations rather than silently resolved.
+Service matching uses the documented static server prefix, HTTP method and path;
+parameter names may differ, but arbitrary gateway prefixes are not guessed.
+If no full-path match exists, a literal service-local path with the same HTTP
+method may produce a `prefix_candidate`. Its `match_basis: document_path` and
+the dashboard explicitly identify the documented server prefix as unverified.
+Dynamic prefixes and aliases do not admit these candidates. Full-path matches
+use `match_basis: resolved_path` and take precedence over local-path candidates.
+Multiple matching service projects remain ambiguous. Invalid documents have no
+usable operations or models and do not interrupt code-index publication.
+
+The Data Quality coverage table reports JSON/YAML API-contract analysis in
+separate rows, with document/endpoint/model counts and contract-detail navigation.
+Code capabilities such as `calls` and `api_clients` retain their original scope.
+
+Unreadable candidates, incomplete directory traversal and invalid supplement
+settings produce separate contract issues and `inventory_complete: false`.
+They do not block otherwise valid code-index publication. Missing entries in an
+incomplete contract inventory are not proof of deletion. Unknown field constraints
+are omitted rather than reported as optional.
+
+The workspace setting `api_specifications: false` in `.goregraph-workspace.yml`
+disables the supplement. Existing workspace transactions publish contract and
+code outputs together; contract input changes invalidate the workspace projection
+without forcing otherwise unchanged code projects to be rescanned.
 
 The two canonical symbol projections are built for the workspace dashboard and
 remain under the shared `index/` ownership boundary. Code Explorer loads the
@@ -491,9 +528,9 @@ matched test coverage.
 ## Language Inventory
 
 <!-- goregraph:generated language-inventory start -->
-GoreGraph provides full adapters for Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, and Rust. They emit normalized symbols, imports, calls, routes, tests, and pattern-backed architecture evidence for their supported static syntax.
+GoreGraph provides full adapters for C# / .NET / Unity, Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, Rust, and Swift / SwiftUI / Apple frameworks. They emit normalized evidence for their supported static syntax; the capability table identifies the outputs each adapter implements. Swift does not provide HTTP server routes, messaging or end-to-end data flow, and C# does not provide messaging or end-to-end data flow.
 
-Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for C, C++, C#, Kotlin, Ruby, Scala, and Swift provide best-effort declarations and imports only. All records share the Schema 3 index.
+Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for C, C++, Kotlin, Ruby, and Scala provide best-effort declarations and imports only. Unity serialized assets and explicit source-hash-verified Blender/Unity exports provide partial asset object and reference analysis; scans and context queries never start an editor. All records share the Schema 3 index.
 <!-- goregraph:generated language-inventory end -->
 
 ## 1.4.1 publication, identity and health
@@ -562,3 +599,12 @@ Global source coverage remains partial, even when every selected file fits. Read
 Project `index/tooling.json` (record version 1) contains a bounded tooling source inventory for the Service Code → Tests & Tooling view. Workspace dashboard payloads expose it as `tooling`, keyed by exact project identity. It reuses static audit references and adds literal declaration observations with line numbers, without extending agent Context responses. Missing or unreadable project metadata produces an unavailable state; successful empty inventories use version 1 with an empty sources array. Regenerate older dashboards using `workspace update --target dashboard` after installing this version.
 
 Optional `goregraph results import` writes `test-results/results.json` (record version 1) in the project output directory. It contains one imported run per named suite, with JUnit counts, selected report names and digests, import time, and caller-declared provenance. Results are not part of the source index or agent Context Pack. Workspace dashboard payloads expose them as `results`, keyed by project; missing files become neutral empty records. Reimporting a suite replaces only that suite's prior result. A report does not certify pipeline success or the current source revision.
+
+## Asset evidence
+
+`index/assets.json` adds source-backed Unity objects and current explicit Blender/Unity
+export objects, static references and diagnostics. Existing symbols, relations, agent
+context and canonical diagnostics include the same evidence. Read the
+[asset analysis guide](ASSET-ANALYSIS.md) before interpreting geometry or runtime
+claims. Asset collections are workspace sources; their presence does not establish
+service ownership or a runtime relationship to a neighboring repository.

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -51,7 +52,16 @@ func auditArea(source scan.AgentAuditSource) string {
 	}
 }
 
-func selectAuditSources(loaded loadedContextIndex, query string, files map[string]sourceFile, reads *int) ([]scan.AgentAuditSource, []string) {
+func auditSourceWithinRoot(loaded loadedContextIndex, source scan.AgentAuditSource, root string) bool {
+	sourceRoot := loaded.ScopeRoot
+	if loaded.Workspace {
+		sourceRoot = filepath.Join(sourceRoot, filepath.FromSlash(source.Project))
+	}
+	relative, err := filepath.Rel(root, filepath.Join(sourceRoot, filepath.FromSlash(source.File)))
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+func selectAuditSources(loaded loadedContextIndex, query, root string, files map[string]sourceFile, reads *int) ([]scan.AgentAuditSource, []string) {
 	index := loaded.Index
 	tokens := contextTokenSet(query)
 	topics := []string{}
@@ -65,6 +75,9 @@ func selectAuditSources(loaded loadedContextIndex, query string, files map[strin
 	var queue []string
 	selected := map[string]bool{}
 	for _, source := range index.AuditSources {
+		if !auditSourceWithinRoot(loaded, source, root) {
+			continue
+		}
 		key := auditSourceKey(source.Project, source.File)
 		byKey[key] = source
 		seed := false
@@ -143,6 +156,10 @@ func selectAuditSources(loaded loadedContextIndex, query string, files map[strin
 }
 
 func buildAuditContext(loaded loadedContextIndex, request ContextRequest) (ContextPack, error) {
+	root, err := filepath.Abs(request.Root)
+	if err != nil {
+		return ContextPack{}, fmt.Errorf("resolve audit root: %w", err)
+	}
 	query := request.Query
 	if len([]rune(query)) > 1600 {
 		query = string([]rune(query)[:1600]) + "…"
@@ -164,7 +181,7 @@ func buildAuditContext(loaded loadedContextIndex, request ContextRequest) (Conte
 	}
 	files := map[string]sourceFile{}
 	reads := 0
-	sources, unknown := selectAuditSources(loaded, request.Query, files, &reads)
+	sources, unknown := selectAuditSources(loaded, request.Query, root, files, &reads)
 	pack.Audit.Unknown = append(pack.Audit.Unknown, unknown...)
 	if loaded.Index.AuditIncomplete {
 		pack.Audit.Unknown = append(pack.Audit.Unknown, "Some workspace projects lack current audit metadata; cross-project coverage is incomplete.")

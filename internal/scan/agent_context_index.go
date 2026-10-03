@@ -1338,6 +1338,18 @@ func contextTypeNavigationSymbol(symbol RichSymbolRecord) bool {
 	language := strings.ToLower(symbol.Language)
 	kind := strings.ToLower(symbol.Kind)
 	switch language {
+	case "unity", "blender":
+		return kind == "asset"
+	case "csharp":
+		switch kind {
+		case "class", "interface", "record", "enum", "struct", "method", "constructor", "property", "field", "assembly", "persistence", "registration":
+			return true
+		}
+	case "swift":
+		switch kind {
+		case "class", "struct", "enum", "actor", "protocol", "function", "method", "constructor", "property", "variable", "persistence", "destructor", "typealias", "associatedtype", "enum_case":
+			return true
+		}
 	case "java", "kotlin":
 		switch kind {
 		case "class", "interface", "record", "enum", "annotation", "annotation_class", "annotation_type", "@interface":

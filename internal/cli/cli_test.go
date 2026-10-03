@@ -702,7 +702,7 @@ func TestWorkspaceScanAllExplainsHowToUseFlatProjectLayout(t *testing.T) {
 	for _, want := range []string{
 		"no GoreGraph workspace detected",
 		"flat project layout",
-		"--workspace",
+		"goregraph workspace scan-all . --workspace . --dry-run",
 		".goregraph-workspace.yml",
 	} {
 		if !strings.Contains(stderr.String(), want) {
@@ -1411,7 +1411,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 1.4.3",
+		"goregraph 1.4.4",
 		"commit:",
 		"built:",
 		"go:",
@@ -2038,6 +2038,8 @@ func TestBuildHelpDocumentsSharedExtractionAndWorkspaceReconciliation(t *testing
 			args: []string{"workspace", "build", "help"},
 			want: []string{
 				"goregraph workspace build <agent|dashboard|all>",
+				"Choose agent, dashboard, or all immediately after build",
+				"goregraph workspace build all . --workspace . --dry-run",
 				"Scans each discovered project once",
 				"reconciles the workspace once",
 			},
@@ -2072,6 +2074,7 @@ func TestGlobalAndWorkspaceHelpLeadWithCanonicalBuildsAndMarkerRules(t *testing.
 				"standard MCP exposes only task_context",
 				"--expert-tools is for manual diagnostics",
 				"Project build commands do not require a workspace marker",
+				"goregraph workspace build all . --workspace . --dry-run",
 				"does not create .goregraph-workspace.yml",
 				".goregraph-workspace/ is removable generated output",
 			},
@@ -2086,6 +2089,7 @@ func TestGlobalAndWorkspaceHelpLeadWithCanonicalBuildsAndMarkerRules(t *testing.
 				"rebuilds only changed or incomplete projects",
 				"goregraph workspace refresh . --target agent",
 				"scan-all is the compatibility alias for workspace build all",
+				"goregraph workspace scan-all . --workspace . --dry-run",
 				"Scans each discovered project once and reconciles once",
 				"--workspace <path>",
 				".goregraph-workspace.yml",
@@ -2118,6 +2122,10 @@ func TestWorkspaceHelpUsesProgressiveDisclosure(t *testing.T) {
 		}
 		for _, want := range []string{
 			"build <target>", "update [path]", "dashboard", "status", "explain", "path", "impact",
+			"scan-all [path]",
+			"goregraph workspace build all . --workspace . --dry-run",
+			"goregraph workspace scan-all . --workspace . --dry-run",
+			".git alone does not make a directory a scan project",
 			"goregraph workspace help --all",
 			"--workspace <path>",
 			".goregraph-workspace.yml",
@@ -2125,9 +2133,6 @@ func TestWorkspaceHelpUsesProgressiveDisclosure(t *testing.T) {
 			if !strings.Contains(stdout.String(), want) {
 				t.Fatalf("%v workspace help missing %q:\n%s", args, want, stdout.String())
 			}
-		}
-		if strings.Contains(stdout.String(), "scan-all") {
-			t.Fatalf("%v standard workspace help exposes compatibility command:\n%s", args, stdout.String())
 		}
 	}
 }
@@ -2221,6 +2226,7 @@ func TestWorkspaceScanAllHelpDocumentsOneReconciliationAndProjectBoundaries(t *t
 	for _, want := range []string{
 		"Compatibility alias for goregraph workspace build all",
 		"Scans each discovered project once and reconciles the workspace once",
+		"goregraph workspace scan-all . --workspace . --dry-run",
 		"--workspace <path>",
 		".goregraph-workspace.yml",
 		"does not create .goregraph-workspace.yml",

@@ -1,12 +1,56 @@
 package watch
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 )
+
+// Restart waits for the current update to finish before launching a new watcher.
+// It preserves the existing autostart setting and never kills an update.
+func Restart(ctx context.Context, root Root) error {
+	return restartWithStart(ctx, root, Start)
+}
+
+func restartWithStart(ctx context.Context, root Root, start func(Root) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := requireExistingRoot(root); err != nil {
+		return err
+	}
+	requested, err := RequestStop(root)
+	if err != nil {
+		return err
+	}
+	if requested {
+		lock, err := statePath(root, "run.lock")
+		if err != nil {
+			return err
+		}
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			if _, err := os.Lstat(lock); os.IsNotExist(err) {
+				break
+			} else if err != nil {
+				return err
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("watcher has not stopped yet; the current update may still be finishing: %w", ctx.Err())
+			case <-ticker.C:
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return start(root)
+}
 
 // Start launches a detached watcher after an explicit user command.
 func Start(root Root) error {

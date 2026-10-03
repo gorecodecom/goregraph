@@ -16,6 +16,9 @@ type Index struct {
 	Files                          []FileRecord
 	Symbols                        []SymbolRecord
 	Relations                      []RelationRecord
+	Assets                         AssetIndexRecord
+	CSharp                         csharpAnalysis
+	Swift                          swiftAnalysis
 	JavaSources                    []JavaSourceRecord
 	Workspace                      WorkspaceIndex
 	Code                           CodeIntelligenceRecord
@@ -904,6 +907,7 @@ type WorkspaceImpactRecord struct {
 }
 
 type WorkspaceServiceMapRecord struct {
+	APISpecifications  *APISpecificationIndexRecord       `json:"api_specifications,omitempty"`
 	Health             ProjectionHealth                   `json:"health"`
 	SchemaVersion      int                                `json:"schema_version"`
 	Generated          string                             `json:"generated,omitempty"`

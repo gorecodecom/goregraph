@@ -102,6 +102,8 @@ func BuildCapabilityInventory(files []FileRecord, workspace WorkspaceIndex, fact
 
 func capabilitySourceClass(language string) string {
 	switch language {
+	case "unity", "blender":
+		return "asset"
 	case "markdown":
 		return "documentation"
 	case "yaml", "yml", "json", "xml", "toml", "properties":
@@ -120,6 +122,12 @@ func BuildCoverage(files []FileRecord, capabilities []CapabilityRecord) Coverage
 }
 
 func capabilityCoverage(analyzer AnalyzerRecord, known bool, capability CapabilityID) (Coverage, string) {
+	if analyzer.Language == "unity" || analyzer.Language == "blender" {
+		if capability == CapabilitySymbols || capability == CapabilityRelations {
+			return CoveragePartial, "Serialisierte Asset-Daten oder aktuelle, ausdrücklich erzeugte Exporte liefern statische Nachweise. Laufzeitverhalten und eine vollständige Geometrieprüfung gehören nicht zu diesem Analyseumfang."
+		}
+		return CoverageUnavailable, "Diese Quelle enthält Asset-Daten. Die Analyse ausführbaren Codes erfolgt über die verknüpften Quelldateien."
+	}
 	if !known {
 		if capability == CapabilitySymbols {
 			return CoveragePartial, "Generic indexing provides best-effort symbols without a full language adapter."

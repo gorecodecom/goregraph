@@ -20,10 +20,11 @@ import (
 )
 
 func printWatchHelp(out io.Writer) {
-	fmt.Fprint(out, `Usage: goregraph watch <start|stop|status|autostart|run> [path] [options]
+	fmt.Fprint(out, `Usage: goregraph watch <start|restart|stop|status|autostart|run> [path] [options]
 
 Quick start from the project directory:
   goregraph watch start .       Start watching this project in the background
+  goregraph watch restart .     Restart with the installed version; preserve autostart
   goregraph watch status .      Check whether it is running and updating
   goregraph dashboard open .   Open the dashboard; reload it after changes
 
@@ -33,6 +34,8 @@ press Enter for no. For scripts, choose explicitly with --autostart on|off.
 
 To stop watching now, run "goregraph watch stop .". If Autostart is on,
 also run "goregraph watch autostart off ." to prevent future login startup.
+Use "goregraph watch restart ." after installing a new version. It waits for
+the current update to finish before starting the new process.
 
 Recognized workspace roots are selected automatically. For a workspace that
 is not recognized, use "goregraph watch start <workspace-path> --workspace".
@@ -42,6 +45,7 @@ not run tests or application code. Installation never enables or starts it.
 
 All commands:
   start [path] [--workspace] [--autostart on|off]  Start in the background
+  restart [path] [--workspace]                   Restart, preserving autostart
   stop [path]                                    Stop the running watcher
   status [path]                                  Show live and login status
   autostart on|off [path] [--workspace]          Change login startup
@@ -55,7 +59,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	action := args[0]
-	if action != "start" && action != "stop" && action != "status" && action != "autostart" && action != "run" {
+	if action != "start" && action != "restart" && action != "stop" && action != "status" && action != "autostart" && action != "run" {
 		fmt.Fprintf(stderr, "error: unknown watch command %q\n", action)
 		return 2
 	}
@@ -110,7 +114,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
-	if action == "start" && !workspaceFlag {
+	if (action == "start" || action == "restart") && !workspaceFlag {
 		preferred, err := watch.PreferredWorkspace(root)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: detecting watcher mode: %v\n", err)
@@ -120,7 +124,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 			workspace, workspaceFlag, root.Workspace = true, true, true
 		}
 	}
-	if action == "start" || action == "run" || action == "autostart" {
+	if action == "start" || action == "restart" || action == "run" || action == "autostart" {
 		registered, err := watch.HasSetting(root)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
@@ -161,6 +165,23 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
+		}
+		if !status.Running && !workspaceFlag {
+			coveringRoot, coveringStatus, covered, err := coveringWorkspaceWatcher(root)
+			if err != nil {
+				fmt.Fprintf(stdout, "Coverage warning: %v\n", err)
+			} else if covered {
+				fmt.Fprintf(stdout, "Requested root: %s\nDirect watcher running: false\nCoverage: indexed project in active workspace watcher\n", root.Path)
+				if status.LastError != "" {
+					fmt.Fprintf(stdout, "Direct watcher error: %s\n", status.LastError)
+				}
+				if output, err := watchOutputPath(root.Path, false); err == nil {
+					fmt.Fprintf(stdout, "Project output: %s\n", output)
+				} else {
+					fmt.Fprintf(stdout, "Project output error: %v\n", err)
+				}
+				root, status = coveringRoot, coveringStatus
+			}
 		}
 		fmt.Fprintf(stdout, "Root: %s\nMode: %s\nRunning: %t\nAutostart: %t\n", root.Path, watchMode(status.Workspace), status.Running, status.Autostart)
 		if output, err := watchOutputPath(root.Path, status.Workspace); err == nil {
@@ -207,6 +228,18 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "Autostart: %s\n", autoChoice)
+		return 0
+	case "restart":
+		fmt.Fprintln(stdout, "Restarting watcher. The current update may finish first; autostart will be preserved.")
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		ctx, timeout := context.WithTimeout(ctx, time.Minute)
+		defer timeout()
+		if err := watch.Restart(ctx, root); err != nil {
+			fmt.Fprintf(stderr, "error: restarting watcher: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Watcher restarted for %s (%s mode). Autostart setting preserved.\n", root.Path, watchMode(workspace))
 		return 0
 	case "start":
 		registered, err := watch.HasSetting(root)

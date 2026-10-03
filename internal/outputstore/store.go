@@ -299,9 +299,9 @@ func Recover(ctx context.Context, root string) error {
 	if decision.State == "finalized" {
 		return recoverFinalized(ctx, decision)
 	}
-	roots := make([]string, len(initial.Entries))
-	for i, entry := range initial.Entries {
-		roots[i] = entry.Root
+	roots, absent, err := recoveryRoots(decision)
+	if err != nil {
+		return errors.Join(ErrRecoveryRequired, err)
 	}
 	locks, err := acquireRoots(ctx, roots, false)
 	if err != nil {
@@ -332,6 +332,14 @@ func Recover(ctx context.Context, root string) error {
 	if err := validateJournal(coordinator, canonical); err != nil {
 		return errors.Join(ErrRecoveryRequired, err)
 	}
+	if len(absent) > 0 && coordinator.State != decision.State {
+		return fmt.Errorf("%w: coordinator changed while acquiring locks", ErrRecoveryRequired)
+	}
+	for root := range absent {
+		if _, err := os.Lstat(filepath.Dir(root)); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("%w: absent output parent reappeared", ErrRecoveryRequired)
+		}
+	}
 	if coordinator.State == "finalized" {
 		if err := removeJournals(coordinator, systemOperations()); err != nil {
 			return errors.Join(ErrRecoveryRequired, err)
@@ -356,7 +364,7 @@ func Recover(ctx context.Context, root string) error {
 	ops := systemOperations()
 	switch coordinator.State {
 	case "prepared":
-		err = cleanupPrepared(coordinator, ops)
+		err = cleanupPreparedExcept(coordinator, ops, absent)
 	case "publishing":
 		err = rollback(coordinator, ops)
 	case "committed":
@@ -370,18 +378,32 @@ func Recover(ctx context.Context, root string) error {
 	return nil
 }
 
+func recoveryRoots(transaction journal) ([]string, map[string]bool, error) {
+	var roots []string
+	absent := make(map[string]bool)
+	for _, entry := range transaction.Entries {
+		// Preparation has not promoted any output. A moved project must not
+		// prevent discarding preparation for the remaining unchanged outputs.
+		if transaction.State == "prepared" || transaction.State == "finalized" {
+			if _, err := os.Lstat(filepath.Dir(entry.Root)); errors.Is(err, os.ErrNotExist) {
+				absent[entry.Root] = true
+				continue
+			} else if err != nil {
+				return nil, nil, err
+			}
+		}
+		roots = append(roots, entry.Root)
+	}
+	return roots, absent, nil
+}
+
 func recoverFinalized(ctx context.Context, transaction journal) error {
 	if err := validateJournalMetadata(transaction, transaction.Entries[0].Root); err != nil {
 		return errors.Join(ErrRecoveryRequired, err)
 	}
-	var roots []string
-	for _, entry := range transaction.Entries {
-		if _, err := os.Stat(filepath.Dir(entry.Root)); errors.Is(err, os.ErrNotExist) {
-			continue
-		} else if err != nil {
-			return err
-		}
-		roots = append(roots, entry.Root)
+	roots, absent, err := recoveryRoots(transaction)
+	if err != nil {
+		return err
 	}
 	locks, err := acquireRoots(ctx, roots, false)
 	if err != nil {
@@ -391,7 +413,7 @@ func recoverFinalized(ctx context.Context, transaction journal) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := removeJournals(transaction, systemOperations()); err != nil {
+	if err := removeJournalsExcept(transaction, systemOperations(), absent); err != nil {
 		return errors.Join(ErrRecoveryRequired, err)
 	}
 	return nil
@@ -874,10 +896,20 @@ func validateRollbackEntry(entry journalEntry, generation string) error {
 }
 
 func cleanupPrepared(transaction journal, ops fileOperations) error {
+	return cleanupPreparedExcept(transaction, ops, nil)
+}
+
+func cleanupPreparedExcept(transaction journal, ops fileOperations, absent map[string]bool) error {
 	if err := validateJournal(transaction, transaction.Entries[0].Root); err != nil {
 		return errors.Join(err, ErrRecoveryRequired)
 	}
 	for _, entry := range transaction.Entries {
+		if absent[entry.Root] {
+			if _, err := os.Lstat(filepath.Dir(entry.Root)); !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("%w: absent output parent reappeared", ErrRecoveryRequired)
+			}
+			continue
+		}
 		if err := verifyPrevious(entry); err != nil {
 			return errors.Join(err, ErrRecoveryRequired)
 		}
@@ -886,11 +918,14 @@ func cleanupPrepared(transaction journal, ops fileOperations) error {
 		}
 	}
 	for _, entry := range transaction.Entries {
+		if absent[entry.Root] {
+			continue
+		}
 		if err := ops.removeAll(entry.Stage); err != nil {
 			return errors.Join(err, ErrRecoveryRequired)
 		}
 	}
-	return finalizePublication(transaction, ops)
+	return finalizePublicationExcept(transaction, ops, absent)
 }
 
 func cleanupCommitted(transaction journal, ops fileOperations) error {
@@ -957,14 +992,22 @@ func resumeCommittedCleanup(transaction journal, ops fileOperations) error {
 }
 
 func finalizePublication(transaction journal, ops fileOperations) error {
+	return finalizePublicationExcept(transaction, ops, nil)
+}
+
+func finalizePublicationExcept(transaction journal, ops fileOperations, absent map[string]bool) error {
 	transaction.State = "finalized"
 	if err := writeJournal(journalPath(transaction.Entries[0].Root), transaction, ops); err != nil {
 		return err
 	}
-	return removeJournals(transaction, ops)
+	return removeJournalsExcept(transaction, ops, absent)
 }
 
 func removeJournals(transaction journal, ops fileOperations) error {
+	return removeJournalsExcept(transaction, ops, nil)
+}
+
+func removeJournalsExcept(transaction journal, ops fileOperations, absent map[string]bool) error {
 	if transaction.State != "finalized" {
 		return errors.New("publication is not finalized")
 	}
@@ -974,6 +1017,9 @@ func removeJournals(transaction journal, ops fileOperations) error {
 	// Finalization is durable before any peer becomes available to another
 	// transaction. Retire only this transaction's records, coordinator last.
 	for i := len(transaction.Entries) - 1; i >= 0; i-- {
+		if absent[transaction.Entries[i].Root] {
+			continue
+		}
 		path := journalPath(transaction.Entries[i].Root)
 		current, err := readJournal(path)
 		if errors.Is(err, os.ErrNotExist) {

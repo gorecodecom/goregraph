@@ -19,30 +19,28 @@ var workspaceGroupDirs = []string{"frontend", "frontends", "microservices", "ser
 var workspaceReadDir = os.ReadDir
 
 type workspaceIndexProject struct {
-	tooling            DashboardToolingRecord
-	results            testresults.Record
-	record             WorkspaceProjectRecord
-	routes             []CodeRouteRecord
-	legacyRelations    []RelationRecord
-	symbols            []RichSymbolRecord
-	relations          []RichRelationRecord
-	callGraph          CallGraphRecord
-	maven              MavenGraphRecord
-	packages           PackageGraphRecord
-	evidence           []EvidenceRecord
-	loadFailures       []string
-	missingFacts       []string
-	contracts          []APIContractRecord
-	codeFlows          []CodeFlowRecord
-	spring             SpringIndex
-	endpoints          []SpringEndpointRecord
-	endpointFlows      []SpringEndpointFlowRecord
-	testMap            []TestMapRecord
-	dependencies       []WorkspaceServiceDependencyRecord
-	capabilities       []CapabilityRecord
-	diagnostics        []CanonicalDiagnosticRecord
-	diagnosticFamilies []DiagnosticFamilyRecord
-	freshness          ArtifactFreshnessIndex
+	tooling         DashboardToolingRecord
+	results         testresults.Record
+	record          WorkspaceProjectRecord
+	routes          []CodeRouteRecord
+	legacyRelations []RelationRecord
+	symbols         []RichSymbolRecord
+	relations       []RichRelationRecord
+	callGraph       CallGraphRecord
+	maven           MavenGraphRecord
+	packages        PackageGraphRecord
+	evidence        []EvidenceRecord
+	loadFailures    []string
+	missingFacts    []string
+	contracts       []APIContractRecord
+	codeFlows       []CodeFlowRecord
+	spring          SpringIndex
+	endpoints       []SpringEndpointRecord
+	endpointFlows   []SpringEndpointFlowRecord
+	testMap         []TestMapRecord
+	dependencies    []WorkspaceServiceDependencyRecord
+	capabilities    []CapabilityRecord
+	freshness       ArtifactFreshnessIndex
 }
 
 type workspaceBackendRoute struct {
@@ -106,6 +104,7 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 
 	var indexed []workspaceIndexProject
 	var projectContextIndexes []AgentContextIndexRecord
+	var specifications APISpecificationIndexRecord
 	var identity BuildIdentity
 	var previous OutputManifest
 	var inputCoverage string
@@ -138,7 +137,12 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 				return err
 			}
 		}
-		identity, err = workspaceInputIdentity(workspaceRoot, projects, cfg, options)
+		var specificationFingerprint string
+		specifications, specificationFingerprint, err = snapshotWorkspaceAPISpecifications(ctx, workspaceRoot, true, workspaceAPISpecificationProjectRoots(projects)...)
+		if err != nil {
+			return err
+		}
+		identity, err = workspaceInputIdentityWithSpecifications(workspaceRoot, projects, cfg, options, specificationFingerprint)
 		if err != nil {
 			return err
 		}
@@ -159,7 +163,7 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		current, err := workspaceInputIdentity(workspaceRoot, projects, cfg, options)
+		current, err := workspaceInputIdentityContext(ctx, workspaceRoot, projects, cfg, options)
 		if err != nil {
 			return err
 		}
@@ -209,14 +213,18 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 		return nil, err
 	}
 	serviceMap := BuildWorkspaceServiceMapWithLayout(registry, matches, featureFlows, workspaceServiceDependencies(indexed), architectureLayout)
+	linkWorkspaceAPISpecifications(&specifications, indexed)
+	specifications.Generated = registry.Generated
+	serviceMap.APISpecifications = &specifications
 	serviceMap.WorkspaceCoverage = BuildWorkspaceCoverage(context, serviceMap.ContractSummary)
 	serviceMap.ImpactSummaries = BuildImpactSummaries(featureFlows, serviceMap, serviceMap.WorkspaceCoverage, 3)
 	serviceMap.EditorURLTemplate = cfg.EditorURLTemplate
 	serviceMap.DataFlows = dataFlows
 	for _, project := range indexed {
 		serviceMap.Capabilities = append(serviceMap.Capabilities, project.capabilities...)
-		serviceMap.Diagnostics = append(serviceMap.Diagnostics, project.diagnostics...)
-		serviceMap.DiagnosticFamilies = append(serviceMap.DiagnosticFamilies, project.diagnosticFamilies...)
+		diagnostics := buildWorkspaceProjectDiagnostics(project, matches)
+		serviceMap.Diagnostics = append(serviceMap.Diagnostics, diagnostics...)
+		serviceMap.DiagnosticFamilies = append(serviceMap.DiagnosticFamilies, BuildDiagnosticFamilies(project.record.Path, diagnostics)...)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -323,6 +331,9 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 				}
 			}
 			if err := writeJSON(layout.Index("registry.json"), registry); err != nil {
+				return err
+			}
+			if err := writeJSON(layout.Index("api-specifications.json"), specifications); err != nil {
 				return err
 			}
 			if err := writeJSON(layout.Index("context.json"), context); err != nil {
@@ -812,7 +823,7 @@ func skipWorkspaceDiscoveryDir(name string) bool {
 		return true
 	}
 	switch strings.ToLower(name) {
-	case "node_modules", "vendor", "target", "build", "dist", "coverage", "goregraph-out":
+	case "node_modules", "vendor", "target", "build", "dist", "coverage", "goregraph-out", "il2cppoutputproject":
 		return true
 	default:
 		return false
@@ -915,6 +926,9 @@ func projectOutputDir(abs, fallback string) string {
 }
 
 func workspaceProjectKind(group, abs string) string {
+	if workspaceRegularFileExists(filepath.Join(abs, "ProjectSettings", "ProjectVersion.txt")) && workspaceRegularFileExists(filepath.Join(abs, "Packages", "manifest.json")) {
+		return "game"
+	}
 	switch group {
 	case "frontend", "frontends":
 		return "frontend"
@@ -927,10 +941,16 @@ func workspaceProjectKind(group, abs string) string {
 	if workspaceFileExists(filepath.Join(abs, "pom.xml")) || workspaceFileExists(filepath.Join(abs, "build.gradle")) || workspaceFileExists(filepath.Join(abs, "build.gradle.kts")) || workspaceFileExists(filepath.Join(abs, "go.mod")) || workspaceFileExists(filepath.Join(abs, "Cargo.toml")) || workspaceFileExists(filepath.Join(abs, "composer.json")) || workspaceFileExists(filepath.Join(abs, "pyproject.toml")) || workspaceFileExists(filepath.Join(abs, "requirements.txt")) || workspaceFileExists(filepath.Join(abs, "setup.py")) {
 		return "backend"
 	}
+	if isBlenderAssetCollection(abs) {
+		return "assets"
+	}
 	return "project"
 }
 
 func workspaceProjectService(group, abs string) string {
+	if workspaceProjectKind(group, abs) == "assets" {
+		return ""
+	}
 	switch group {
 	case "microservices", "services", "backends":
 		return filepath.Base(abs)
@@ -949,6 +969,9 @@ func isWorkspaceGroup(name string) bool {
 }
 
 func hasProjectMarker(abs string) bool {
+	if workspaceRegularFileExists(filepath.Join(abs, "ProjectSettings", "ProjectVersion.txt")) && workspaceRegularFileExists(filepath.Join(abs, "Packages", "manifest.json")) {
+		return true
+	}
 	for _, name := range []string{
 		"package.json", "pom.xml", "build.gradle", "build.gradle.kts",
 		"settings.gradle", "settings.gradle.kts", "go.mod", "pyproject.toml",
@@ -962,11 +985,14 @@ func hasProjectMarker(abs string) bool {
 	}
 	entries, _ := os.ReadDir(abs)
 	for _, entry := range entries {
+		if entry.IsDir() && (strings.HasSuffix(entry.Name(), ".xcodeproj") && workspaceRegularFileExists(filepath.Join(abs, entry.Name(), "project.pbxproj")) || strings.HasSuffix(entry.Name(), ".xcworkspace") && workspaceRegularFileExists(filepath.Join(abs, entry.Name(), "contents.xcworkspacedata"))) {
+			return true
+		}
 		info, err := entry.Info()
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		for _, pattern := range []string{"*.gemspec", "*.sln", "*.csproj"} {
+		for _, pattern := range []string{"*.gemspec", "*.sln", "*.csproj", "*.blend"} {
 			if matched, _ := filepath.Match(pattern, entry.Name()); matched {
 				return true
 			}
@@ -1058,12 +1084,6 @@ func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexPr
 		})
 		for i := range loaded.capabilities {
 			loaded.capabilities[i].Project = project.Path
-		}
-		if err := readWorkspaceJSON(layout.Index("diagnostics-canonical.json"), &loaded.diagnostics); err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
-		if err := readWorkspaceJSON(layout.Index("diagnostic-families.json"), &loaded.diagnosticFamilies); err != nil && !os.IsNotExist(err) {
-			return nil, err
 		}
 		if err := readWorkspaceJSON(layout.Index("freshness.json"), &loaded.freshness); err != nil && !os.IsNotExist(err) {
 			return nil, err
@@ -4075,6 +4095,7 @@ func workspaceIndexFiles(target BuildTarget) []string {
 		"contract-matches.json",
 		"feature-flows.json",
 		"api-catalog.json",
+		"api-specifications.json",
 		"data-flows.json",
 		"feature-dossiers.json",
 		"workspace-graph.json",
@@ -4239,4 +4260,17 @@ func workspaceFileExists(path string) bool {
 func workspaceRegularFileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular()
+}
+
+func isBlenderAssetCollection(abs string) bool {
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Type().IsRegular() && strings.EqualFold(filepath.Ext(entry.Name()), ".blend") {
+			return true
+		}
+	}
+	return false
 }

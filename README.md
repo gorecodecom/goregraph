@@ -55,9 +55,25 @@ handling.
 Local 1.4.1 testing and rollback are documented in
 [`docs/LOCAL-1.4.1.md`](docs/LOCAL-1.4.1.md).
 
+## 1.4.4 — Unreleased
+
+C# and Swift now have structured, source-backed static adapters. C# covers typed overloads, inherited members, named/optional/ref arguments, ASP.NET controllers and literal minimal API registrations, HttpClient, DI registrations, EF Core operations and entity links. Swift covers types, extensions, actor/protocol declarations, labeled methods, inherited calls, SwiftUI state/query references, URLSession, SwiftData/Core Data/UserDefaults and XCTest/Swift Testing links. Ambiguous, conditional and unsupported compiler bindings remain explicit. Neither adapter executes application code, a compiler or an editor during indexing or context retrieval. See [language analysis](docs/LANGUAGE-ANALYSIS.md) and [Unity/Blender evidence](docs/ASSET-ANALYSIS.md).
+
+Project-root tooling audits now select sources only within the requested directory, even when GoreGraph uses a parent workspace index. Older neighboring projects no longer consume the audit's source budget. Pass the workspace root explicitly when the audit should include multiple projects. Ordinary production-code context keeps its existing cross-project behavior.
+
+The Data Quality dashboard now explains capability coverage and diagnostic guidance consistently in German. Unsupported capabilities that are expected for configuration, documentation, and build metadata are distinguished from missing code analysis. Workspace diagnostic groups use reconciled cross-service contracts, so resolved calls no longer retain stale missing-route warnings.
+
+The Workspace Explorer offers Light, Dark, and System appearance choices in its header. The selected preference is stored locally in the browser when storage is available and applied before rendering. System mode follows operating-system appearance changes. Tables, service diagrams, status badges, and detail views use the corresponding palette.
+
+Data Quality also shows Swagger 2.0 and OpenAPI 3.x contract documents, including files in documentation repositories without a build manifest. The separate contract projection preserves Git-repository ownership, source hashes, operation/model lines, and compatible indexed backend-route evidence. It respects workspace and repository selection rules; malformed documents remain visible without replacing code facts. Ambiguous service matches remain open. This addition does not add documentation to normal AI Context Packs or change existing code-project boundaries and runtime-call relationships.
+
+The coverage table includes separate JSON/YAML API-contract rows with context counts and links to contract details. A service-local path matching the documented HTTP method is shown as a `prefix_candidate` when only the documented server prefix differs; the gateway mapping remains explicitly unverified. Fully matching paths take precedence, and multiple candidate services remain ambiguous.
+
+Contract analysis can be disabled with `api_specifications: false` in the workspace's `.goregraph-workspace.yml`. The user-enabled workspace watcher tracks contract additions, changes, removals and ownership changes. Running watchers must be restarted by the user after installing a binary containing this change; installing a binary does not replace an existing watcher process. Use `goregraph watch restart <workspace-path>` to wait for the current update to finish and launch the installed version while preserving autostart. A timed-out restart reports the pending stop and does not launch a competing process.
+
 ## 1.4.3 — GitHub Release
 
-Version 1.4.3 is the current GitHub release. Its Winget manifest will be submitted separately after the pending 1.4.2 review.
+Version 1.4.3 is the current GitHub release. Version 1.4.2 is now available through Winget; the [1.4.3 manifest](https://github.com/microsoft/winget-pkgs/pull/445609) has been submitted for Microsoft approval.
 
 The regular MCP server now defaults to `adaptive-v2`, matching the existing adaptive CLI workflow. Incomplete context can lead to bounded verification or caller-authorized source fallback. Explicit `strict-v1` replay and tooling-audit boundaries remain available. Optional parameter limits are described in plain language, and invalid budget/file limits are reported together. Persistent agent instructions must allow the selected protocol while keeping GoreGraph ahead of optional skills.
 
@@ -84,7 +100,7 @@ Only dashboard presentation changes: source indexing, reconciliation, agent/MCP 
 ## Installation
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.3 with output Schema 3.
+Source version: GoreGraph 1.4.4 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 `v1.4.3` is the current GoreGraph release. Package-manager indexes can take some
@@ -106,10 +122,11 @@ the 1.4.3 release.
 
 ### Winget Windows — separate approval
 
-Winget offers only versions accepted by Microsoft. GoreGraph is available from
-the public Winget source under the stable package ID `GoreCode.GoreGraph`, but
-1.4.3 is not available there yet. For 1.4.3, use the ZIP below. To install an
-approved version through Winget:
+Winget currently offers GoreGraph 1.4.2 under the stable package ID
+`GoreCode.GoreGraph`. The [1.4.3 update](https://github.com/microsoft/winget-pkgs/pull/445609)
+has been submitted for Microsoft approval.
+For 1.4.3 before approval, use the ZIP below. To install the approved version
+through Winget:
 
 ```powershell
 winget install --id GoreCode.GoreGraph --exact --source winget
@@ -122,8 +139,7 @@ Upgrade an existing installation with:
 winget upgrade --id GoreCode.GoreGraph --exact --source winget
 ```
 
-The 1.4.2 Winget submission is still under Microsoft review. The 1.4.3 GitHub
-release does not submit a Winget manifest. If `winget` is missing, install or
+If `winget` is missing, install or
 update [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1) from
 Microsoft Store and open a new terminal.
 
@@ -891,9 +907,10 @@ Coverage describes implemented static analyzers, not proof that runtime behavior
 
 | Language / framework | Adapter | Symbols | Imports | Calls | Routes | Tests | API clients | Persistence | Messaging / RPC | Data flow | Exact symbols | Direct usages | HTTP reachability |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Blender asset exports | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — | — |
 | C | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
 | C++ | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
-| C# | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| C# / .NET / Unity | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | — | — | Full | Full | Consumer + provider |
 | Go | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
 | Java / Spring | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Provider |
 | JavaScript / TypeScript / Node.js / React | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Consumer + provider |
@@ -904,21 +921,26 @@ Coverage describes implemented static analyzers, not proof that runtime behavior
 | Rust | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
 | Scala | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
 | Shell | Integration | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — |
-| Swift | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| Swift / SwiftUI / Apple frameworks | Full | Full | Full | Full | — | Full | Pattern-backed | Pattern-backed | — | — | Full | Full | Consumer |
+| Unity serialized assets | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — | — |
 
 Pattern-backed extraction can miss runtime-generated behavior such as routes, reflective or dynamic dispatch, metaprogramming, dependency-injection aliases, arbitrary client wrappers, ORM behavior assembled at runtime, and configuration outside indexed source. Missing static evidence is not proof of runtime absence.
 
 Shell integration does not provide routes, tests, or architecture capabilities. Index adapters provide best-effort declarations and imports only; they do not provide normalized calls, routes, tests, or architecture facts.
 
 Supported static pattern families:
+- **C# / .NET / Unity:** C# type and member declarations; typed static calls with inheritance, named, optional and ref arguments; typed EF Core operations; literal DI registrations; literal ASP.NET controller routes; literal HttpClient requests; NUnit, xUnit and Unity test declarations.
 - **Go:** net/http and common routers; net/http clients; database/sql and GORM; Kafka and AMQP; gRPC; JSON request/response boundaries; go test and httptest.
 - **Java / Spring:** Spring MVC and WebFlux; Java and Spring HTTP clients; Spring Data; Spring Messaging; gRPC; Jakarta Validation; JUnit and Spring Test.
 - **JavaScript / TypeScript / Node.js / React:** Express and Fastify; NestJS; Next.js; Web and Node HTTP clients; common Node persistence; Kafka and AMQP; gRPC; Node request/response boundaries; Jest, Vitest, Node Test, and React Testing Library.
 - **PHP:** Laravel and Symfony routes; PHP HTTP clients; Eloquent, Doctrine, and PDO; queues and messaging; gRPC; PHP request/response boundaries; PHPUnit and Pest.
 - **Python:** FastAPI, Flask, and Django routes; requests, httpx, and aiohttp; SQLAlchemy, Django ORM, and DB-API; Kafka, Celery, and AMQP; gRPC; Python web and validation boundaries; pytest and unittest.
 - **Rust:** Axum, Actix, and Rocket routes; reqwest; SQLx, Diesel, and SeaORM; Kafka and AMQP; tonic gRPC; Rust web request/response boundaries; Rust and Tokio tests.
+- **Swift / SwiftUI / Apple frameworks:** Swift types, extensions, properties and labeled methods; typed static calls; SwiftUI property wrappers; literal URLSession requests; SwiftData, Core Data and UserDefaults; XCTest and Swift Testing declarations.
 
-For HTTP reachability, **Provider** means a supported Java/Spring or Node.js provider chain. **Consumer + provider** means supported JavaScript/TypeScript frontend origins plus supported Node.js handlers. These are static, evidence-backed relationships, not runtime reachability guarantees.
+Unity serialized assets and source-hash-verified Blender/Unity exports contribute static asset objects and references. Editors are never started by scans or context queries. See docs/ASSET-ANALYSIS.md for supported evidence and limits.
+
+For HTTP reachability, **Provider** means a supported Java/Spring, ASP.NET controller or Node.js provider chain. **Consumer + provider** means supported literal HttpClient or JavaScript/TypeScript origins plus supported ASP.NET or Node.js handlers. These are static, evidence-backed relationships, not runtime reachability guarantees.
 <!-- goregraph:generated language-coverage end -->
 
 ### API integration depth
@@ -1111,7 +1133,17 @@ GoreGraph so it loads the new server instructions. For a focused
 coding question, that tool uses the same bounded, evidence-backed Context
 Pack compiler as `goregraph context`. The pack contains the selected implementation path,
 line-numbered source sections, affected files, relevant tests, confidence,
-freshness, and explicit gaps. The MCP server:
+freshness, and explicit gaps.
+
+C# source analysis includes type/member declarations, supported static typed calls,
+NUnit/xUnit/Unity test links, literal ASP.NET routes and HttpClient requests. Native
+Unity serialized assets and explicit, source-hash-verified Blender/Unity reports add
+object, asset and script relationships. The [asset analysis guide](docs/ASSET-ANALYSIS.md)
+describes supported patterns, exporter commands and limits. Normal scans and MCP
+queries never start Unity/Blender or execute project code. Runtime dispatch and
+exhaustive 3D correctness remain outside the static analysis.
+
+The MCP server:
 
 - reads the existing agent index;
 - does not scan or execute project code;

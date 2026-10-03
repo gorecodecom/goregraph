@@ -24,7 +24,7 @@ Only dashboard presentation changes: source indexing, reconciliation, agent/MCP 
 ## Current Release Status
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.3 with output Schema 3.
+Source version: GoreGraph 1.4.4 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 `v1.4.3` is the current GoreGraph release. Its tag publishes the GitHub archives
@@ -602,7 +602,7 @@ Stable package identity:
 GoreCode.GoreGraph
 ```
 
-Winget installs Microsoft-approved versions. For 1.4.3 use the GitHub release
+Winget offers only versions accepted by Microsoft. For 1.4.3 use the GitHub release
 archive until its manifest is approved. Install command for an approved version:
 
 ```powershell

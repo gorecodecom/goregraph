@@ -166,7 +166,8 @@ func renderLanguageCoverage() string {
 		name := languageProfileDisplayName(profile)
 		fmt.Fprintf(&body, "- **%s:** %s.\n", name, strings.Join(profile.PatternFamilies, "; "))
 	}
-	body.WriteString("\nFor HTTP reachability, **Provider** means a supported Java/Spring or Node.js provider chain. **Consumer + provider** means supported JavaScript/TypeScript frontend origins plus supported Node.js handlers. These are static, evidence-backed relationships, not runtime reachability guarantees.")
+	body.WriteString("\nUnity serialized assets and source-hash-verified Blender/Unity exports contribute static asset objects and references. Editors are never started by scans or context queries. See docs/ASSET-ANALYSIS.md for supported evidence and limits.\n")
+	body.WriteString("\nFor HTTP reachability, **Provider** means a supported Java/Spring, ASP.NET controller or Node.js provider chain. **Consumer + provider** means supported literal HttpClient or JavaScript/TypeScript origins plus supported ASP.NET or Node.js handlers. These are static, evidence-backed relationships, not runtime reachability guarantees.")
 	return body.String()
 }
 
@@ -185,8 +186,8 @@ func renderLanguageInventorySummary() string {
 		}
 	}
 	return fmt.Sprintf(
-		"GoreGraph provides full adapters for %s. They emit normalized symbols, imports, calls, routes, tests, and pattern-backed architecture evidence for their supported static syntax.\n\n"+
-			"Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for %s provide best-effort declarations and imports only. All records share the Schema %d index.",
+		"GoreGraph provides full adapters for %s. They emit normalized evidence for their supported static syntax; the capability table identifies the outputs each adapter implements. Swift does not provide HTTP server routes, messaging or end-to-end data flow, and C# does not provide messaging or end-to-end data flow.\n\n"+
+			"Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for %s provide best-effort declarations and imports only. Unity serialized assets and explicit source-hash-verified Blender/Unity exports provide partial asset object and reference analysis; scans and context queries never start an editor. All records share the Schema %d index.",
 		humanList(fullAdapters),
 		humanList(indexAdapters),
 		scan.SchemaVersion,

@@ -293,7 +293,11 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 		)
 	}
 	if reason := adaptiveHealthFallbackReason(pack); reason != "" {
-		return adaptiveHealthFallbackPack(loaded.Index, request, pack.ContextID, loaded.Health, reason)
+		fallback, fallbackErr := adaptiveHealthFallbackPack(loaded.Index, request, pack.ContextID, loaded.Health, reason)
+		if fallbackErr == nil && reason == ContextFallbackUnsupportedAnalysis && loaded.Health.Integrity == "valid" && loaded.Health.Freshness != "stale" {
+			return attachAdaptiveFallbackEvidence(fallback, loaded, request)
+		}
+		return fallback, fallbackErr
 	}
 	if request.ProtocolVersion == AdaptiveV2 && !pack.FallbackRequired {
 		if reason := adaptiveSelectedSourceFallbackReason(pack, loaded); reason != "" {
@@ -317,7 +321,14 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 		pack = adaptiveContextMetadata(pack)
 		return finalizeContextPackWithinBudget(pack, request)
 	}
-	return attachContextSourceWithinFinalBudget(pack, loaded, request)
+	pack, err = attachContextSourceWithinFinalBudget(pack, loaded, request)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	if request.ProtocolVersion == AdaptiveV2 {
+		return attachAdaptiveCandidateEvidence(pack, loaded, request, true)
+	}
+	return pack, nil
 }
 
 func attachContextSourceWithinFinalBudget(

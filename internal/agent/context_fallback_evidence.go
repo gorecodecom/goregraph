@@ -5,6 +5,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/gorecodecom/goregraph/internal/scan"
@@ -15,8 +16,12 @@ const maximumFallbackSourceSections = 3
 // attachAdaptiveFallbackEvidence preserves source-backed candidates without
 // presenting them as a unique entrypoint or a complete answer to the task.
 func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex, request ContextRequest) (ContextPack, error) {
+	return attachAdaptiveCandidateEvidence(pack, loaded, request, false)
+}
+
+func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex, request ContextRequest, namedOnly bool) (ContextPack, error) {
 	pack = adaptiveContextMetadata(pack)
-	if pack.FallbackReason != ContextFallbackInsufficientRelevance && pack.FallbackReason != ContextFallbackAmbiguousEntrypoint && pack.FallbackReason != ContextFallbackEvidenceConflict {
+	if !namedOnly && pack.FallbackReason != ContextFallbackInsufficientRelevance && pack.FallbackReason != ContextFallbackAmbiguousEntrypoint && pack.FallbackReason != ContextFallbackEvidenceConflict && pack.FallbackReason != ContextFallbackUnsupportedAnalysis {
 		return finalizeContextPackWithinBudget(pack, request)
 	}
 	tokens := contextExpandedTokenSet(contextPrimaryQuery(request.Query))
@@ -41,6 +46,12 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 	}
 	byPath := map[string]evidence{}
 	files := map[string]sourceFile{}
+	literalNames := map[string]bool{}
+	for _, name := range strings.FieldsFunc(strings.ToLower(request.Query), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+	}) {
+		literalNames[name] = true
+	}
 	storyPriorities := map[string]int{}
 	storyRequested := contextQueryRequestsStorySources(request.Query)
 	sourceLimit := maximumFallbackSourceSections
@@ -71,6 +82,19 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 			break
 		}
 		fact := item.fact
+		if namedOnly && (!(strings.HasSuffix(strings.ToLower(fact.File), ".cs") || strings.HasSuffix(strings.ToLower(fact.File), ".swift")) || !literalNames[strings.ToLower(fact.Name)]) {
+			continue
+		}
+		alreadyRead := false
+		for _, section := range pack.SourceSections {
+			if section.Path == fact.File && normalizeContextProject(section.Project) == normalizeContextProject(fact.Project) {
+				alreadyRead = true
+				break
+			}
+		}
+		if alreadyRead {
+			continue
+		}
 		seen[fact.ID] = true
 		if storyRequested && storyPriorities[fact.ID] == 0 && !(fact.Kind == "configuration" && scan.IsStorybookConfigurationSource(fact.File)) {
 			continue
@@ -101,7 +125,23 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 				continue
 			}
 		}
+		if reason := assetExportDependencyFallback(loaded, candidate, file); reason != "" {
+			pack.FallbackRequired = true
+			pack.FallbackReason = reason
+			if pack.Health != nil {
+				pack.Health.Freshness = "stale"
+			}
+			pack.Uncertainties = append(pack.Uncertainties, ContextUncertainty{Scope: "asset_export", Reason: "The export source changed or cannot be verified. Exported object and geometry evidence is withheld; generate a new export explicitly."})
+			continue
+		}
 		section, err := renderSourceCandidate(candidate, file, "declaration_body")
+		if err != nil && (namedOnly || pack.FallbackReason == ContextFallbackUnsupportedAnalysis) &&
+			strings.HasSuffix(strings.ToLower(candidate.Path), ".cs") && literalNames[strings.ToLower(fact.Name)] {
+			section, err = renderSourceCandidate(candidate, file, "focused")
+		}
+		if err != nil && contextAssetSource(candidate.Path) {
+			section, err = renderSourceCandidate(candidate, file, "focused")
+		}
 		if err != nil {
 			continue
 		}
@@ -121,9 +161,25 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 			continue
 		}
 		key := normalizeContextProject(fact.Project) + "\x00" + candidate.Path
+		priority := storyPriorities[fact.ID]
+		if strings.Contains(fact.Qualified, "#sample:") && (literalNames["frame"] || literalNames["frames"]) {
+			if at := strings.LastIndex(strings.ToLower(fact.Name), " frame "); at >= 0 && literalNames[strings.ToLower(fact.Name[at+7:])] {
+				for _, name := range strings.Fields(strings.ToLower(fact.Name[:at])) {
+					if literalNames[name] {
+						priority = max(priority, 2)
+					}
+				}
+			}
+		}
+		if namedOnly || pack.FallbackReason == ContextFallbackUnsupportedAnalysis {
+			priority = max(priority, item.exactClass)
+			if literalNames[strings.ToLower(fact.Name)] {
+				priority = max(priority, 1)
+			}
+		}
 		previous, found := byPath[key]
-		if !found || score > previous.score || score == previous.score && fact.ID < previous.factID {
-			byPath[key] = evidence{section: section, factID: fact.ID, score: score, changed: adaptiveSourceHashChanged(loaded, candidate, file), priority: storyPriorities[fact.ID]}
+		if !found || priority > previous.priority || priority == previous.priority && (score > previous.score || score == previous.score && fact.ID < previous.factID) {
+			byPath[key] = evidence{section: section, factID: fact.ID, score: score, changed: adaptiveSourceHashChanged(loaded, candidate, file), priority: priority}
 		}
 	}
 	options := make([]evidence, 0, len(byPath))
@@ -140,6 +196,9 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 		return options[i].factID < options[j].factID
 	})
 	identities := []string{}
+	if namedOnly {
+		identities = append(identities, pack.ContextID)
+	}
 	included := map[string]bool{}
 	for _, option := range options {
 		if len(pack.SourceSections) >= min(sourceLimit, request.MaxFiles) {
@@ -148,6 +207,9 @@ func attachAdaptiveFallbackEvidence(pack ContextPack, loaded loadedContextIndex,
 		candidate := cloneContextPack(pack)
 		candidate.SourceSections = append(candidate.SourceSections, option.section)
 		candidate.SourceCoverage = "partial"
+		if namedOnly {
+			candidate.Uncertainties = append(candidate.Uncertainties, ContextUncertainty{Scope: "named_source_candidates", Reason: "Additional explicitly named C# declarations are supplied as source candidates; their relationship to the selected entrypoint is not established."})
+		}
 		if option.changed {
 			candidate.FallbackReason = ContextFallbackEvidenceConflict
 			if candidate.Health != nil {
@@ -263,6 +325,9 @@ func adaptiveSelectedSourceFallbackReason(pack ContextPack, loaded loadedContext
 		}
 		if adaptiveSourceHashChanged(loaded, candidate, file) {
 			return ContextFallbackEvidenceConflict
+		}
+		if reason := assetExportDependencyFallback(loaded, candidate, file); reason != "" {
+			return reason
 		}
 	}
 	return ""
