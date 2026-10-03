@@ -41,6 +41,7 @@ var IndexGeneratedFiles = []string{
 	"api-contracts.json",
 	"api-catalog.json",
 	"architecture-capabilities.json",
+	"assets.json",
 	"service-dependencies.json",
 	"frontend-usage.json",
 	"contract-matches.json",
@@ -230,12 +231,28 @@ func scanProject(root string, cfg config.Config, matcher gitignore.Matcher) (Ind
 func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config, matcher gitignore.Matcher, options BuildOptions) (Index, int, error) {
 	var index Index
 	javaBodies := map[string]string{}
+	var csharpSources []csharpSource
+	var unitySources []unitySource
+	var swiftSources []swiftSource
+	var exportSources []assetExportSource
+	var semanticSources []assetExportSource
+	var swiftMetadata []assetExportSource
+	semanticBodies := map[string]string{}
+	var dotnetFacts ProjectSymbolFacts
 	var scriptFacts ProjectSymbolFacts
 	skipped := 0
 	report, err := walkProjectFiles(ctx, root, cfg, matcher, func(file WalkedFile) error {
 		started := time.Now()
 		rel := file.Path
 		options.emit("extract", root, rel, "started", len(index.Files), 0, started)
+		if projectBinaryAssetFile(root, rel) {
+			record, err := binaryAssetRecord(ctx, root, file)
+			if err != nil {
+				return err
+			}
+			index.Files = append(index.Files, record)
+			return nil
+		}
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
 			return fmt.Errorf("read %s: %w", rel, err)
@@ -244,6 +261,12 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 			return fmt.Errorf("source changed during scan: %s", rel)
 		}
 		if isBinary(body) {
+			if detectLanguage(rel) == "unity" {
+				record := fileRecord(rel, file.Size, body)
+				record.Kind = "binary_asset"
+				index.Files = append(index.Files, record)
+				return nil
+			}
 			skipped++
 			return nil
 		}
@@ -268,6 +291,22 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 		}
 		index.Files = append(index.Files, record)
 		text := string(body)
+		if strings.HasSuffix(rel, ".pbxproj") || filepath.Base(rel) == "Package.swift" {
+			swiftMetadata = append(swiftMetadata, assetExportSource{record, text})
+		}
+		if record.Language == "csharp" || record.Language == "swift" {
+			semanticBodies[record.Path] = text
+		}
+		if strings.HasSuffix(rel, ".goregraph-csharp.json") || strings.HasSuffix(rel, ".goregraph-swift.json") {
+			semanticSources = append(semanticSources, assetExportSource{record, text})
+		}
+		MergeProjectSymbolFacts(&dotnetFacts, extractDotnetMetadata(record, text))
+		if strings.HasSuffix(rel, ".goregraph-blender.json") || strings.HasSuffix(rel, ".goregraph-unity.json") {
+			exportSources = append(exportSources, assetExportSource{record, text})
+		}
+		if record.Language == "unity" {
+			unitySources = append(unitySources, unitySource{record, text})
+		}
 		if source, ok := extractAgentAuditSource(record, text); ok {
 			index.AuditSources = append(index.AuditSources, source)
 			if notes := extractDashboardToolingObservations(source, text); len(notes) > 0 {
@@ -279,7 +318,23 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 		}
 		index.AgentContextConfigurationFacts = append(index.AgentContextConfigurationFacts, extractAgentContextConfigurationFacts(record, text)...)
 		index.AgentContextStoryFacts = append(index.AgentContextStoryFacts, extractAgentContextStoryFacts(record, text)...)
-		index.Symbols = append(index.Symbols, extractSymbols(record, text)...)
+		if record.Language == "swift" {
+			source := parseSwiftSource(record, text)
+			swiftSources = append(swiftSources, source)
+			for _, typ := range source.types {
+				symbol := typ.symbol
+				index.Symbols = append(index.Symbols, SymbolRecord{Name: symbol.Name, Kind: symbol.Kind, File: symbol.File, Line: symbol.Line})
+			}
+		} else if record.Language == "csharp" {
+			source := parseCSharpSource(record, text)
+			csharpSources = append(csharpSources, source)
+			for _, typ := range source.types {
+				symbol := typ.symbol
+				index.Symbols = append(index.Symbols, SymbolRecord{Name: symbol.Name, Kind: symbol.Kind, File: symbol.File, Line: symbol.Line})
+			}
+		} else {
+			index.Symbols = append(index.Symbols, extractSymbols(record, text)...)
+		}
 		index.Relations = append(index.Relations, extractRelations(record, text)...)
 		if record.Language == "java" {
 			source := extractJavaSource(record, text)
@@ -326,8 +381,28 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 				scriptFacts.Declarations[factIndex].Limitations = append([]string(nil), index.scriptConfigLimitations...)
 			}
 		}
+		dotnetFacts = resolveDotnetMetadata(dotnetFacts, unitySources)
+		assignCSharpModules(csharpSources, dotnetFacts)
+		index.CSharp = analyzeCSharpProject(csharpSources)
+		assignSwiftTargets(swiftSources, swiftMetadata)
+		index.Swift = analyzeSwiftProject(swiftSources)
+		applyLanguageSemanticSources(&index, semanticSources, semanticBodies)
+		mergeCodeIntelligence(&index.Code, index.CSharp.code)
+		mergeCodeIntelligence(&index.Code, index.Swift.code)
+		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, index.Swift.capabilities...)
+		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, index.CSharp.capabilities...)
 		index.SymbolFacts = javaFacts
+		MergeProjectSymbolFacts(&index.SymbolFacts, dotnetFacts)
+		MergeProjectSymbolFacts(&index.SymbolFacts, index.CSharp.facts)
+		MergeProjectSymbolFacts(&index.SymbolFacts, index.Swift.facts)
 		MergeProjectSymbolFacts(&index.SymbolFacts, scriptFacts)
+		var assetFacts ProjectSymbolFacts
+		index.Assets, assetFacts = analyzeUnityAssets(index.Files, unitySources, index.CSharp.facts, csharpSources)
+		MergeProjectSymbolFacts(&index.SymbolFacts, assetFacts)
+		exports, exportFacts := analyzeAssetExports(index.Files, exportSources)
+		mergeAssetIndex(&index.Assets, exports)
+		linkExportedUnityReferences(&index.Assets, &exportFacts)
+		MergeProjectSymbolFacts(&index.SymbolFacts, exportFacts)
 		index.SymbolFacts = FinalizeProjectSymbolFacts(index.Files, index.Workspace, index.SymbolFacts)
 	}
 	index.IgnoreDigest = report.IgnoreDigest
@@ -419,7 +494,8 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 	}
 	graph := buildGraph(index.Files, index.Symbols, index.Relations)
 	springIndex := buildSpringIndex(index.JavaSources)
-	callGraph := buildJavaCallGraph(index.JavaSources)
+	callGraph := mergeCallGraphs(buildJavaCallGraph(index.JavaSources), index.CSharp.graph)
+	callGraph = mergeCallGraphs(callGraph, index.Swift.graph)
 	callGraph = mergeCallGraphs(callGraph, buildGenericCallGraph(index.Code))
 	linkCallGraphSymbolFacts(&callGraph, index.SymbolFacts)
 	index.Relations = append(index.Relations, buildCallRelations(callGraph)...)
@@ -438,7 +514,8 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 	graph = buildGraph(index.Files, index.Symbols, index.Relations)
 	endpointFlows := buildEndpointFlows(springIndex, callGraph)
 	codeFlows := buildCodeFlows(index.Code, springIndex, endpointFlows, callGraph)
-	testMap := append(buildJavaTestMap(index.JavaSources, springIndex.Endpoints), buildGenericTestMap(index.Code)...)
+	testMap := append(append(buildJavaTestMap(index.JavaSources, springIndex.Endpoints), buildGenericTestMap(index.Code)...), index.CSharp.tests...)
+	testMap = append(testMap, index.Swift.tests...)
 	routes := buildCodeRoutes(index.Code, springIndex)
 	apiContracts := append([]APIContractRecord(nil), index.Code.APIContracts...)
 	apiContracts = append(apiContracts, buildJavaAPIContracts(index.JavaSources)...)
@@ -454,11 +531,18 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 	capabilities := BuildCapabilityInventory(index.Files, index.Workspace, index.ArchitectureCapabilities)
 	applyAnalysisIssues(capabilities, index.Files, index.AnalysisIssues)
 	coverage := BuildCoverage(index.Files, capabilities)
-	richSymbols := dedupeRichSymbolFacts(append(buildRichSymbols(index.Files, index.Symbols), index.SymbolFacts.Declarations...))
+	legacySymbols := []SymbolRecord{}
+	languages := languageMap(index.Files)
+	for _, symbol := range index.Symbols {
+		if languages[symbol.File] != "csharp" && languages[symbol.File] != "swift" {
+			legacySymbols = append(legacySymbols, symbol)
+		}
+	}
+	richSymbols := dedupeRichSymbolFacts(append(buildRichSymbols(index.Files, legacySymbols), index.SymbolFacts.Declarations...))
 	richRelations := dedupeRichRelationFacts(append(buildRichRelations(index.Files, index.Relations), index.SymbolFacts.References...))
 	richGraph := buildRichGraph(index.Files, richSymbols, richRelations)
 	evidence := LinkEvidenceReferences(filepath.Base(root), index.Files, richSymbols, richRelations, &callGraph, routes, codeFlows, contractMatches)
-	canonicalDiagnostics := BuildCanonicalDiagnostics(contractMatches, capabilities)
+	canonicalDiagnostics := append(BuildCanonicalDiagnostics(contractMatches, capabilities), canonicalAssetDiagnostics(index.Assets)...)
 	diagnosticFamilies := BuildDiagnosticFamilies(filepath.Base(root), canonicalDiagnostics)
 	finished := time.Now().UTC()
 	apiCatalog := BuildProjectAPICatalog(filepath.Base(root), finished.Format(time.RFC3339), routes, springIndex, apiContracts, capabilities)
@@ -476,6 +560,7 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 			evidence,
 			capabilities,
 		)
+		enrichAssetContext(&contextIndex, index.Assets)
 		contextIndex = appendAgentContextConfigurationFacts(
 			contextIndex,
 			filepath.Base(root),
@@ -486,9 +571,15 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 		contextIndex.AuditVersion = 1
 		contextIndex.AuditSources = finalizeAgentAuditSources(index.AuditSources, filepath.Base(root))
 		contextIndex.SourceHashes = make(map[string]string)
+		contextIndex.SemanticDependencies = index.SemanticDependencies
 		representedFiles := make(map[string]bool)
 		for _, fact := range contextIndex.Facts {
 			representedFiles[fact.File] = true
+		}
+		for _, node := range index.Assets.Nodes {
+			if source, ok := node.Properties["source_asset"].(string); ok {
+				representedFiles[source] = true
+			}
 		}
 		for _, file := range index.Files {
 			if representedFiles[file.Path] && file.Hash != "" {
@@ -580,6 +671,7 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 		{"api-contracts.json", apiContracts},
 		{"api-catalog.json", apiCatalog},
 		{"architecture-capabilities.json", index.ArchitectureCapabilities},
+		{"assets.json", index.Assets},
 		{"service-dependencies.json", serviceDependencies},
 		{"frontend-usage.json", frontendUsage},
 		{"contract-matches.json", contractMatches},

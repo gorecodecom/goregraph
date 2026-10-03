@@ -1835,6 +1835,11 @@ class CadasterController {
 		serviceMap.Edges[0].Resolved != 1 {
 		t.Fatalf("workspace service map missing directed frontend -> backend edge: %#v", serviceMap.Edges)
 	}
+	for _, family := range serviceMap.DiagnosticFamilies {
+		if family.Service == "frontend/frontend-monorepo" && family.Code == contractIssueMissingRoute {
+			t.Fatalf("workspace quality still reports a missing route after backend reconciliation: %#v", family)
+		}
+	}
 
 	var traceIndex WorkspaceEndpointTraceIndexRecord
 	readJSON(t, filepath.Join(workspace, ".goregraph-workspace", "workspace-endpoint-traces.json"), &traceIndex)

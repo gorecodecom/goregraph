@@ -47,6 +47,7 @@ func walkProjectFiles(ctx context.Context, root string, cfg config.Config, initi
 		return report, fmt.Errorf("scan root %q is not a directory", root)
 	}
 	output := filepath.Clean(filepath.Join(resolved, cfg.OutputDir))
+	unity := workspaceRegularFileExists(filepath.Join(resolved, "ProjectSettings", "ProjectVersion.txt")) && workspaceRegularFileExists(filepath.Join(resolved, "Packages", "manifest.json"))
 	digest := sha256.New()
 	var walk func(string, string, gitignore.Matcher) error
 	walk = func(directory, relative string, matcher gitignore.Matcher) error {
@@ -75,7 +76,7 @@ func walkProjectFiles(ctx context.Context, root string, cfg config.Config, initi
 			rel := filepath.ToSlash(filepath.Join(relative, entry.Name()))
 			path := filepath.Join(directory, entry.Name())
 			report.Visited++
-			if filepath.Clean(path) == output || generatedScratchName(entry.Name()) {
+			if filepath.Clean(path) == output || generatedScratchName(entry.Name()) || unity && entry.IsDir() && relative == "" && unityGeneratedDirectory(entry.Name()) {
 				report.Skipped["generated_output"]++
 				if entry.IsDir() {
 					report.SkippedDirectories++
@@ -118,7 +119,7 @@ func walkProjectFiles(ctx context.Context, root string, cfg config.Config, initi
 					report.Skipped["symlink"]++
 					continue
 				}
-				if info.Size() > cfg.MaxFileSizeBytes {
+				if info.Size() > projectAssetFileSizeLimit(rel, cfg, unity) {
 					report.Skipped["size_limit"]++
 					continue
 				}
@@ -141,7 +142,7 @@ func walkProjectFiles(ctx context.Context, root string, cfg config.Config, initi
 				report.Skipped["non_regular"]++
 				continue
 			}
-			if info.Size() > cfg.MaxFileSizeBytes {
+			if info.Size() > projectAssetFileSizeLimit(rel, cfg, unity) {
 				report.Skipped["size_limit"]++
 				continue
 			}
@@ -156,6 +157,15 @@ func walkProjectFiles(ctx context.Context, root string, cfg config.Config, initi
 	return report, err
 }
 
+func unityGeneratedDirectory(name string) bool {
+	switch strings.ToLower(name) {
+	case "library", "temp", "obj", "logs", "usersettings":
+		return true
+	default:
+		return false
+	}
+}
+
 func generatedScratchName(name string) bool {
 	return strings.HasPrefix(name, ".goregraph-stage-") || strings.HasPrefix(name, ".goregraph-backup-") || strings.HasPrefix(name, ".goregraph-journal-") || strings.HasPrefix(name, ".goregraph-lock-")
 }
@@ -164,6 +174,14 @@ func generatedScratchName(name string) bool {
 func SnapshotProjectFiles(ctx context.Context, root string, cfg config.Config) ([]FileRecord, FileWalkReport, error) {
 	var records []FileRecord
 	report, err := WalkProjectFiles(ctx, root, cfg, func(file WalkedFile) error {
+		if projectBinaryAssetFile(root, file.Path) {
+			record, err := binaryAssetRecord(ctx, root, file)
+			if err != nil {
+				return err
+			}
+			records = append(records, record)
+			return nil
+		}
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file.Path)))
 		if err != nil {
 			return fmt.Errorf("read %s: %w", file.Path, err)
@@ -171,8 +189,12 @@ func SnapshotProjectFiles(ctx context.Context, root string, cfg config.Config) (
 		if int64(len(body)) != file.Size {
 			return fmt.Errorf("source changed during snapshot: %s", file.Path)
 		}
-		if !isBinary(body) {
-			records = append(records, fileRecord(file.Path, file.Size, body))
+		if !isBinary(body) || detectLanguage(file.Path) == "unity" {
+			record := fileRecord(file.Path, file.Size, body)
+			if isBinary(body) {
+				record.Kind = "binary_asset"
+			}
+			records = append(records, record)
 		}
 		return nil
 	})

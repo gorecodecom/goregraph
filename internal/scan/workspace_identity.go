@@ -11,6 +11,18 @@ import (
 )
 
 func workspaceInputIdentity(root string, projects []WorkspaceProjectRecord, cfg config.Config, options BuildOptions) (BuildIdentity, error) {
+	return workspaceInputIdentityContext(context.Background(), root, projects, cfg, options)
+}
+
+func workspaceInputIdentityContext(ctx context.Context, root string, projects []WorkspaceProjectRecord, cfg config.Config, options BuildOptions) (BuildIdentity, error) {
+	fingerprint, err := WorkspaceAPISpecificationFingerprint(ctx, root, workspaceAPISpecificationProjectRoots(projects)...)
+	if err != nil {
+		return BuildIdentity{}, err
+	}
+	return workspaceInputIdentityWithSpecifications(root, projects, cfg, options, fingerprint)
+}
+
+func workspaceInputIdentityWithSpecifications(root string, projects []WorkspaceProjectRecord, cfg config.Config, options BuildOptions, specificationFingerprint string) (BuildIdentity, error) {
 	parts := make([]string, 0, len(projects)+1)
 	for _, project := range projects {
 		project.Status = "not_indexed"
@@ -34,6 +46,9 @@ func workspaceInputIdentity(root string, projects []WorkspaceProjectRecord, cfg 
 		return BuildIdentity{}, err
 	}
 	parts = append(parts, "dashboard_config\x00"+string(body))
+	if specificationFingerprint != "" {
+		parts = append(parts, "api_specifications\x00"+specificationFingerprint)
+	}
 	return CurrentBuildIdentity(cfg, options, "workspace", semanticFingerprint(parts)), nil
 }
 
@@ -75,7 +90,7 @@ func workspaceProjectionCurrentUnlocked(ctx context.Context, root string, cfg co
 	if manifest.Tool != ToolName || manifest.Schema != SchemaVersion || !validProjectionStatus(layout.Root, manifest.Index).Complete {
 		return false, nil
 	}
-	identity, err := workspaceInputIdentity(resolved, projects, cfg, options)
+	identity, err := workspaceInputIdentityContext(ctx, resolved, projects, cfg, options)
 	if err != nil {
 		return false, err
 	}

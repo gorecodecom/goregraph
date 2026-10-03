@@ -639,6 +639,11 @@ func fingerprint(ctx context.Context, root Root) (string, error) {
 			roots = append(roots, item.AbsPath)
 		}
 		_, _ = fmt.Fprintf(hash, "projects:%v\n", roots)
+		specifications, err := scan.WorkspaceAPISpecificationFingerprint(ctx, root.Path, roots...)
+		if err != nil {
+			return "", err
+		}
+		_, _ = fmt.Fprintf(hash, "api_specifications:%s\n", specifications)
 		for _, name := range []string{".goregraph-workspace.yml", ".goregraph-dashboard.json"} {
 			body, err := os.ReadFile(filepath.Join(root.Path, name))
 			if err == nil {

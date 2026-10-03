@@ -871,6 +871,9 @@ func stableContextSourceOmissionReason(err error) string {
 }
 
 func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode string) (ContextSourceSection, error) {
+	if contextAssetSource(candidate.Path) {
+		return renderAssetSourceCandidate(candidate, file), nil
+	}
 	if candidate.Kind == "configuration" && scan.IsStorybookConfigurationSource(candidate.Path) ||
 		candidate.Kind == "storybook_story" && scan.IsStorybookStorySource(candidate.Path) {
 		start, end := indexedSourceRange(candidate, len(file.Lines))
@@ -1838,6 +1841,28 @@ func declarationOccurrences(path string, lines []string, occurrences []sourceOcc
 
 func declarationLikeOccurrence(path, line string, start, end int) bool {
 	prefix := strings.TrimSpace(line[:start])
+	if strings.EqualFold(filepath.Ext(path), ".swift") {
+		if strings.ContainsAny(prefix, "\"'`") || strings.Contains(prefix, "//") || strings.Contains(prefix, "/*") {
+			return false
+		}
+		if at := strings.LastIndexAny(prefix, "{};"); at >= 0 {
+			prefix = strings.TrimSpace(prefix[at+1:])
+		}
+	}
+	if strings.EqualFold(filepath.Ext(path), ".swift") && (line[start:end] == "init" || line[start:end] == "deinit") {
+		suffix := strings.TrimSpace(line[end:])
+		modifiers := true
+		for _, word := range strings.Fields(prefix) {
+			switch word {
+			case "required", "convenience", "public", "internal", "private", "fileprivate", "override":
+			default:
+				modifiers = false
+			}
+		}
+		if modifiers && (strings.HasPrefix(suffix, "(") || line[start:end] == "deinit" && strings.HasPrefix(suffix, "{")) {
+			return true
+		}
+	}
 	if prefix == "" || sourcePrefixIsUnsafe(prefix) {
 		return false
 	}
@@ -1850,13 +1875,42 @@ func declarationLikeOccurrence(path, line string, start, end int) bool {
 	}
 
 	suffix := strings.TrimSpace(line[end:])
+	if strings.EqualFold(filepath.Ext(path), ".cs") && strings.HasPrefix(suffix, "<") {
+		suffix = csharpSourceAfterTypeParameters(suffix)
+	}
 	if !strings.HasPrefix(suffix, "(") {
 		return false
+	}
+	if strings.EqualFold(filepath.Ext(path), ".cs") {
+		prefix = csharpSourceCallablePrefix(prefix)
 	}
 	if strings.ContainsAny(prefix, "(){};,") {
 		return false
 	}
 	return conservativeCallablePrefix(path, prefix)
+}
+
+func csharpSourceAfterTypeParameters(suffix string) string {
+	depth := 0
+	for i, r := range suffix {
+		switch r {
+		case '<':
+			depth++
+			if depth > 64 {
+				return ""
+			}
+		case '>':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(suffix[i+1:])
+			}
+		default:
+			if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsSpace(r) && !strings.ContainsRune("_,.?[]@", r) {
+				return ""
+			}
+		}
+	}
+	return ""
 }
 
 func conservativeCallablePrefix(path, prefix string) bool {
@@ -2010,7 +2064,7 @@ func sourceDeclarationModifier(value string) bool {
 
 func lastDeclarationKeyword(prefix string) (string, int) {
 	lastKeyword, lastIndex := "", -1
-	for _, keyword := range []string{"class", "interface", "record", "enum", "type", "func", "function", "def", "fn", "fun"} {
+	for _, keyword := range []string{"class", "interface", "record", "enum", "type", "func", "function", "def", "fn", "fun", "struct", "actor", "protocol", "extension", "var", "let"} {
 		searchFrom := 0
 		for searchFrom <= len(prefix) {
 			index := strings.Index(prefix[searchFrom:], keyword)
@@ -2184,9 +2238,16 @@ func sourceDeclarationBodyRange(
 		end, ok := sourceIndentedDeclarationEnd(lines, codeLines, declaration.Line)
 		return start, end, ok
 	}
+	if strings.EqualFold(filepath.Ext(path), ".cs") {
+		if end, ok := csharpSourceExpressionEnd(codeLines, declaration); ok {
+			return start, end, true
+		}
+	}
 
 	depth := 0
+	parentheses, brackets := 0, 0
 	foundBody := false
+	typedSource := strings.EqualFold(filepath.Ext(path), ".cs") || strings.EqualFold(filepath.Ext(path), ".swift")
 	for lineNumber := declaration.Line; lineNumber <= len(codeLines); lineNumber++ {
 		line := codeLines[lineNumber-1]
 		offset := 0
@@ -2194,6 +2255,28 @@ func sourceDeclarationBodyRange(
 			offset = declaration.End
 		}
 		for index := offset; index < len(line); index++ {
+			if typedSource && !foundBody {
+				switch line[index] {
+				case '(':
+					parentheses++
+				case ')':
+					parentheses--
+				case '[':
+					brackets++
+				case ']':
+					brackets--
+				case ';':
+					if parentheses == 0 && brackets == 0 {
+						return 0, 0, false
+					}
+				}
+				if parentheses > 0 || brackets > 0 {
+					continue
+				}
+				if parentheses < 0 || brackets < 0 {
+					return 0, 0, false
+				}
+			}
 			switch line[index] {
 			case '{':
 				depth++
@@ -2213,6 +2296,59 @@ func sourceDeclarationBodyRange(
 		}
 	}
 	return 0, 0, false
+}
+
+func csharpSourceExpressionEnd(lines []string, declaration sourceOccurrence) (int, bool) {
+	parentheses, brackets, braces, angles := 0, 0, 0, 0
+	expression := false
+	for number := declaration.Line; number <= len(lines) && number-declaration.Line < 120; number++ {
+		line := lines[number-1]
+		start := 0
+		if number == declaration.Line {
+			start = declaration.End
+		}
+		for i := start; i < len(line); i++ {
+			level := parentheses == 0 && brackets == 0 && braces == 0 && angles == 0
+			if !expression && level && strings.HasPrefix(line[i:], "=>") {
+				expression = true
+				i++
+				continue
+			}
+			switch line[i] {
+			case '(':
+				parentheses++
+			case ')':
+				parentheses--
+			case '[':
+				brackets++
+			case ']':
+				brackets--
+			case '<':
+				if !expression {
+					angles++
+				}
+			case '>':
+				if !expression && angles > 0 {
+					angles--
+				}
+			case '{':
+				if !expression && level {
+					return 0, false
+				}
+				braces++
+			case '}':
+				braces--
+			case ';':
+				if level {
+					return number, expression
+				}
+			}
+			if parentheses < 0 || brackets < 0 || braces < 0 {
+				return 0, false
+			}
+		}
+	}
+	return 0, false
 }
 
 func sourceIndentedDeclarationEnd(lines, codeLines []string, declarationLine int) (int, bool) {
@@ -2444,14 +2580,18 @@ func readSourceFile(path string) (sourceFile, error) {
 	if !info.Mode().IsRegular() {
 		return sourceFile{}, fmt.Errorf("source file is not regular")
 	}
-	if info.Size() > MaxContextSourceFileBytes {
+	limit := int64(MaxContextSourceFileBytes)
+	if contextAssetSource(path) {
+		limit = 16 * 1024 * 1024
+	}
+	if info.Size() > limit {
 		return sourceFile{}, fmt.Errorf("source file exceeds maximum size")
 	}
-	body, err := io.ReadAll(io.LimitReader(file, MaxContextSourceFileBytes+1))
+	body, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return sourceFile{}, fmt.Errorf("source file is unreadable: %w", err)
 	}
-	if len(body) > MaxContextSourceFileBytes {
+	if int64(len(body)) > limit {
 		return sourceFile{}, fmt.Errorf("source file exceeds maximum size")
 	}
 	if !utf8.Valid(body) {
@@ -2467,4 +2607,32 @@ func readSourceFile(path string) (sourceFile, error) {
 		Lines: strings.Split(normalized, "\n"),
 		Hash:  hex.EncodeToString(sum[:]),
 	}, nil
+}
+
+func csharpSourceCallablePrefix(prefix string) string {
+	if at := strings.LastIndexAny(prefix, "{};"); at >= 0 {
+		prefix = prefix[at+1:]
+	}
+	prefix = strings.TrimSpace(prefix)
+	for strings.HasPrefix(prefix, "[") {
+		depth := 0
+		end := -1
+		for i, r := range prefix {
+			if r == '[' {
+				depth++
+			}
+			if r == ']' {
+				depth--
+				if depth == 0 {
+					end = i
+					break
+				}
+			}
+		}
+		if end < 0 {
+			return prefix
+		}
+		prefix = strings.TrimSpace(prefix[end+1:])
+	}
+	return prefix
 }

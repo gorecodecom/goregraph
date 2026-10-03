@@ -29,7 +29,7 @@ Example:
 ## Compatibility Rule
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.3 with output Schema 3.
+Source version: GoreGraph 1.4.4 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 Older Schema 1 and
@@ -48,6 +48,20 @@ Schema 3 adds explicit `index/`, `agent/`, and `dashboard/` ownership,
 `index/api-catalog.json`, compact endpoint facts in `agent/context-index.json`,
 and the eight-view dashboard without changing the meanings of retained facts.
 Schema 2 remains the historical stable 1.0/1.2 contract.
+
+Schema 3 additionally permits the optional workspace-only
+`index/api-specifications.json` projection and `api_specifications` service-map
+field. Contract documents remain separate from executable routes and AI facts.
+Document status is `parsed`, `partial`, `invalid` or `unsupported`; operation
+link status is `unlinked`, `unique_route`, `prefix_candidate` or `ambiguous`. The
+optional `match_basis` is `resolved_path` for the full documented path or
+`document_path` for a service-local path with an unverified server prefix.
+`prefix_candidate` retains a compatible method/local-path source in one service;
+it does not establish gateway routing. Multiple services remain ambiguous, and
+full-path matches take precedence over local-path candidates. A `unique_route` denotes
+compatible indexed code evidence in one service project, not a runtime call or
+proof that implementation and contract data models agree. Older exports without
+these additions remain readable.
 
 GoreGraph commands only support the current schema version.
 
@@ -326,7 +340,17 @@ selected and concern-expanded source against these snapshots before duplicate
 suppression. Changed source produces `evidence_conflict`, missing or unreadable
 source produces `source_unreadable`, and stale endpoint metadata is discarded.
 Absent hashes in older indexes cannot establish current source freshness. Rebuild
-the agent projection to populate hashes; the agent build revision is now 2.
+the agent projection to populate hashes; the agent build revision is now 7.
+
+Optional `semantic_dependencies` records contain a language, a project path for
+workspace projections, and project-relative source/configuration/report SHA-256
+`inputs`. They preserve the provenance of explicitly supplied C#/Swift compiler
+snapshots. Normal context requests verify hashes for selected projects/languages
+and detect newly indexed inputs; unrelated snapshots do not block unaffected
+context. Changed or unreadable selected inputs produce `index_stale` without delivering
+compiler bindings. Audits independently verify their selected audit sources.
+No dependency check runs a compiler or refreshes an index. See
+[Language analysis](docs/LANGUAGE-ANALYSIS.md) for the explicit report contract.
 
 
 ### Bounded CLI source reads and adaptive delivery receipts
@@ -521,3 +545,24 @@ The displayed query may be shortened to fit the budget; selection and context id
 ### Dashboard tooling record
 
 The optional project `index/tooling.json` record has `version: 1`, `sources`, `total` and optional `truncated`. Sources reuse audit file identity and static references, with optional `observations` (`kind`, `value`, `line`). Supported observation kinds are `a11y_test_literal` and `allow_failure_literal`; these are literal source declarations, not effective runtime states. The dashboard payload `tooling` maps project paths to these records. Missing/unsupported metadata is distinct from a version-1 empty inventory. The agent Context Pack schema and token budgets are unaffected by this dashboard field.
+
+## Asset evidence (Schema 3 additive output)
+
+`index/assets.json` has `schema_version: 1`, `nodes`, `references` and `diagnostics`.
+Nodes carry project-relative evidence files, lines, language, kind, name, optional
+GUID/fileID and bounded descriptive properties. References distinguish exact,
+ambiguous and unresolved serialized/exported identities. The same facts appear in
+full symbols/relations and the agent index; canonical diagnostic families include
+asset evidence gaps. Binary assets are hash inventories, not readable source.
+
+Explicit `.goregraph-blender.json` and `.goregraph-unity.json` reports carry
+`schema_version: 1`, `engine`, `producer_version`, project-relative `source`,
+`source_sha256`, `objects`, optional `samples`, `limitations` and `truncated`.
+Optional `dependencies` maps (Blender) or `dependency_files` lists with `file` and
+`sha256` (Unity) record owned linked/import inputs. Only reports matching current
+indexed source and dependency hashes contribute object facts. Frame samples may
+include bounded world-space `vertex_positions`, `triangle_indices`,
+`geometry_space` and `geometry_complete`; incomplete surfaces never claim complete
+geometry. Saved Unity `serialized_field` and `persistent_callback` relations are
+symbol uses, not execution callgraph edges.
+See [Asset analysis](docs/ASSET-ANALYSIS.md) for evidence boundaries.

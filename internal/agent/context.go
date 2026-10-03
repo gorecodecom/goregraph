@@ -223,6 +223,26 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 	if request.Mode == "audit" {
 		return buildAuditContext(loaded, request)
 	}
+	pack, err := buildProductionContext(loaded, request)
+	if err != nil {
+		return pack, err
+	}
+	selected := selectedSemanticDependencies(loaded, pack)
+	if len(selected) > 0 {
+		verification := loaded
+		verification.Index.SemanticDependencies = selected
+		if !semanticDependenciesCurrent(verification) {
+			if request.ProtocolVersion == AdaptiveV2 {
+				return adaptiveContextFailurePack(request, ContextFallbackIndexStale)
+			}
+			return ContextPack{}, fmt.Errorf("selected semantic source/configuration inputs changed; compiler snapshot requires an explicit new export")
+		}
+	}
+	return pack, nil
+}
+
+func buildProductionContext(loaded loadedContextIndex, request ContextRequest) (ContextPack, error) {
+	var err error
 	metadataRequest := request
 	loaded = withContextSourceSearch(loaded, request.Query)
 	metadataRequest.sourceSearchID = loaded.sourceSearchID
@@ -293,7 +313,11 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 		)
 	}
 	if reason := adaptiveHealthFallbackReason(pack); reason != "" {
-		return adaptiveHealthFallbackPack(loaded.Index, request, pack.ContextID, loaded.Health, reason)
+		fallback, fallbackErr := adaptiveHealthFallbackPack(loaded.Index, request, pack.ContextID, loaded.Health, reason)
+		if fallbackErr == nil && reason == ContextFallbackUnsupportedAnalysis && loaded.Health.Integrity == "valid" && loaded.Health.Freshness != "stale" {
+			return attachAdaptiveFallbackEvidence(fallback, loaded, request)
+		}
+		return fallback, fallbackErr
 	}
 	if request.ProtocolVersion == AdaptiveV2 && !pack.FallbackRequired {
 		if reason := adaptiveSelectedSourceFallbackReason(pack, loaded); reason != "" {
@@ -317,7 +341,14 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 		pack = adaptiveContextMetadata(pack)
 		return finalizeContextPackWithinBudget(pack, request)
 	}
-	return attachContextSourceWithinFinalBudget(pack, loaded, request)
+	pack, err = attachContextSourceWithinFinalBudget(pack, loaded, request)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	if request.ProtocolVersion == AdaptiveV2 {
+		return attachAdaptiveCandidateEvidence(pack, loaded, request, true)
+	}
+	return pack, nil
 }
 
 func attachContextSourceWithinFinalBudget(
@@ -769,15 +800,18 @@ func orderedContextIdentityValues(values []string) []string {
 
 func duplicateContextPack(pack ContextPack) (ContextPack, error) {
 	duplicate := ContextPack{
-		Schema:          pack.Schema,
-		Freshness:       pack.Freshness,
-		ProtocolVersion: pack.ProtocolVersion,
-		Generation:      pack.Generation,
-		Health:          pack.Health,
-		Confidence:      pack.Confidence,
-		ContextID:       pack.ContextID,
-		DuplicateOf:     pack.ContextID,
-		BudgetTokens:    pack.BudgetTokens,
+		Schema:                pack.Schema,
+		Freshness:             pack.Freshness,
+		ProtocolVersion:       pack.ProtocolVersion,
+		Generation:            pack.Generation,
+		Health:                pack.Health,
+		Confidence:            pack.Confidence,
+		ContextID:             pack.ContextID,
+		DuplicateOf:           pack.ContextID,
+		BudgetTokens:          pack.BudgetTokens,
+		selectedFactIDs:       append([]string(nil), pack.selectedFactIDs...),
+		selectedSourceFactIDs: append([]string(nil), pack.selectedSourceFactIDs...),
+		selectedEdgeIDs:       append([]string(nil), pack.selectedEdgeIDs...),
 	}
 	return finalizeContextEstimate(duplicate)
 }

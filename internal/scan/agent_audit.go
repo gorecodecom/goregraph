@@ -36,8 +36,12 @@ func extractAgentAuditSource(file FileRecord, body string) (AgentAuditSource, bo
 	ext := strings.ToLower(path.Ext(p))
 	kind := ""
 	switch ext {
-	case ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts":
+	case ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ".cs":
 		kind = "code"
+	case ".unity", ".prefab", ".asset", ".meta", ".mat", ".controller", ".overridecontroller", ".anim", ".playable", ".asmdef", ".asmref":
+		kind = "asset"
+	case ".csproj", ".sln", ".props", ".targets":
+		kind = "configuration"
 	case ".md", ".mdx":
 		kind = "documentation"
 	case ".yml", ".yaml":
@@ -46,6 +50,9 @@ func extractAgentAuditSource(file FileRecord, body string) (AgentAuditSource, bo
 		if path.Base(p) == "package.json" {
 			kind = "package"
 		}
+	}
+	if strings.HasSuffix(p, ".goregraph-blender.json") || strings.HasSuffix(p, ".goregraph-unity.json") {
+		kind = "asset"
 	}
 	if kind == "" {
 		return AgentAuditSource{}, false
@@ -92,7 +99,7 @@ func extractAgentAuditSource(file FileRecord, body string) (AgentAuditSource, bo
 		} else {
 			record.Unknown = append(record.Unknown, "package manifest could not be parsed")
 		}
-	} else if kind != "documentation" {
+	} else if kind != "documentation" && ext != ".cs" {
 		record.rawReferences = auditScriptPaths(body)
 		if len(record.rawReferences) >= 256 {
 			record.Unknown = append(record.Unknown, "literal reference limit reached")

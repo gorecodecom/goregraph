@@ -30,6 +30,56 @@ const scopeMatches = (file, filter) => filter === 'all' || sourceScope(file) ===
 function statusBadge(status) {
   return `<span class="pill ${['UNRESOLVED','AMBIGUOUS','MISMATCH','PARTIAL'].includes(status)?'warn':status==='UNAVAILABLE'||status==='UNKNOWN'?'neutral':''}">${esc(statusNames[status]||status||'Nicht angegeben')}</span>`;
 }
+function capabilityExpectedUnavailable(capability) {
+  return capability.coverage==='UNAVAILABLE'&&capability.expected_unavailable===true;
+}
+function qualityFreshnessLabel(freshness) {
+  return ({fresh:'Aktuell',current:'Aktuell',stale:'Veraltet',unknown:'Ungeprüft'})[freshness]||'Ungeprüft';
+}
+function qualityCoverageLabel(coverage) {
+  return ({partial:'Teilweise',complete:'Vollständig im Analyseumfang',none:'Nicht verfügbar',unknown:'Unbekannt'})[coverage]||'Unbekannt';
+}
+function capabilityLabel(capability) {
+  return capabilityExpectedUnavailable(capability)?'Für diese Fähigkeit nicht vorgesehen':statusNames[capability.coverage]||(capability.coverage==='FAILED'?'Analyse fehlgeschlagen':'Unbekannt');
+}
+function capabilityBadge(capability) {
+  if(!capabilityExpectedUnavailable(capability)&&capability.coverage!=='FAILED')return statusBadge(capability.coverage);
+  return `<span class="pill ${capability.coverage==='FAILED'?'warn':'neutral'}">${esc(capabilityLabel(capability))}</span>`;
+}
+function capabilityExplanation(capability) {
+  if(capabilityExpectedUnavailable(capability)) {
+    const types={configuration:'Konfigurationsdateien',documentation:'Dokumentationsdateien',build:'Build-Metadaten',text:'Textdateien'};
+    return `Für ${types[capability.source_class]||'diesen Dateityp'} erfasst der aktuelle Analyzer diese Fähigkeit nicht. Andere Metadaten oder Inhalte können dennoch ausgewertet werden; diese Zeile bewertet nur die genannte Fähigkeit.`;
+  }
+  switch(capability.coverage) {
+    case 'COMPLETE':return 'Der Analyzer erfasst diese Fähigkeit für die indexierten Dateien innerhalb seines Analyseumfangs.';
+    case 'PARTIAL':return capability.id==='symbols'&&capability.source_class==='text'?'Die allgemeine Indexierung erfasst Symbole bestmöglich; ein vollständiger Sprachadapter fehlt.':'Statisch erkennbare Muster werden erfasst und angezeigt. Erst zur Laufzeit bestimmte Ziele oder Beziehungen können unaufgelöst bleiben; der Analyzer führt den Anwendungscode nicht aus.';
+    case 'UNAVAILABLE':return 'Der aktive Analyzer unterstützt diese Fähigkeit für diese Sprache noch nicht.';
+    case 'FAILED':return 'Die Analyse dieser Fähigkeit ist fehlgeschlagen. Die zugehörigen Nachweise sind unvollständig; Details lassen sich mit goregraph doctor prüfen.';
+    default:return 'Für diese Fähigkeit liegt keine verlässliche Angabe zur Analyse-Abdeckung vor.';
+  }
+}
+function usageCapability(coverage,capabilities) {
+  const id=coverage.capability==='direct_usages'?'relations':'symbols';
+  const capability=capabilities.find(c=>c.project===coverage.project&&c.language===coverage.language&&c.id===id);
+  return {...coverage,expected_unavailable:capability?.expected_unavailable===true,source_class:capability?.source_class};
+}
+function qualityDiagnosticExplanation(family) {
+  const explanations={
+    frontend_internal_api:['Der Aufruf wird innerhalb des Frontends verarbeitet und muss keinem Backend-Service zugeordnet sein.','Prüfe, ob diese interne Verarbeitung beabsichtigt ist.'],
+    method_mismatch:['Eine passende Backend-Route existiert, aber ihre HTTP-Methode weicht vom Aufruf ab.','Vergleiche die HTTP-Methode des Clients mit der Backend-Route und möglichen Gateway-Regeln.'],
+    missing_backend_route:['Im indexierten Workspace konnte dem Aufruf keine passende Backend-Route zugeordnet werden.','Prüfe den zuständigen Service, die indexierten Routen und mögliche Gateway-Präfixe.'],
+    unscanned_service:['Für den referenzierten Service liegt im aktuellen Analyseumfang kein Routenindex vor.','Prüfe, ob der zuständige Service zum Workspace gehört und vom Watcher erfasst wird.'],
+    dynamic_endpoint_unresolved:['Der Endpunkt wird dynamisch zusammengesetzt. Sein Ziel lässt sich statisch nicht eindeutig bestimmen.','Prüfe die möglichen Werte der Variablen und Konfiguration sowie die erwartete Service-Zuordnung.'],
+    ambiguous_route:['Mehrere indexierte Backend-Routen passen zum Aufruf. Das beabsichtigte Ziel ist nicht eindeutig.','Prüfe Service-Zuständigkeit und Gateway-Konfiguration anhand der betroffenen Quellen.'],
+    ambiguous_service_identity:['Mehrere Projekte passen zur Service-Identität des Aufrufs.','Prüfe die Service-Namen und ihre Zuordnung zu den Workspace-Projekten.'],
+    gateway_or_proxy_prefix:['Die Route passt erst nach Anpassung eines Gateway- oder Proxy-Präfixes.','Vergleiche den Client-Pfad mit der Weiterleitung und der tatsächlichen Backend-Route.'],
+    unsafe_dynamic:['Dynamische Teile des Aufrufs verhindern eine verlässliche statische Zuordnung.','Prüfe die dynamischen Werte und ihre Service- und Routen-Zuordnung.'],
+    analyzer_failed:['Eine erwartete Analyse ist fehlgeschlagen. Die zugehörigen Nachweise sind unvollständig.','Prüfe die Fehlermeldung mit goregraph doctor und die Eingabedateien des Analyzers.']
+  };
+  const code=['indexed_backend_route_missing','scanned_service_no_route'].includes(family.code)?'missing_backend_route':family.code;
+  return explanations[code]||['Dieser Hinweis erfordert eine Prüfung anhand der betroffenen Quellen.','Prüfe die angeführten Nachweise und Artefakte im angegebenen Service.'];
+}
 function fileReference(project, file, line) {
   return `<div class="file-reference"><span>${esc(projectLabel(project))}</span><code>${esc(file||'Datei nicht angegeben')}${line?':'+line:''}</code></div>`;
 }
@@ -142,11 +192,11 @@ function renderQuality() {
   const traces=scopedTraces(),all=state.moduleScope==='all';
   const capabilities=workspace.capabilities.filter(c=>all||c.project===selectedProject());
   const codeCoverage=workspace.usageCoverage.filter(c=>all||c.project===selectedProject());
-  const families=workspace.diagnosticFamilies.filter(f=>all||f.service===name(state.selected)||(f.affected_projects||[]).some(p=>p===selectedProject()||p===name(state.selected)));
+  const families=workspace.diagnosticFamilies.filter(f=>all||f.service===selectedProject()||f.service===name(state.selected)||(f.affected_projects||[]).some(p=>p===selectedProject()||p===name(state.selected)));
   const counts=status=>traces.filter(t=>t.status===status).length;
   const coverageGroups=new Map();
-  for(const capability of capabilities){const key=[capability.id,capability.language,capability.coverage].join('|');if(!coverageGroups.has(key))coverageGroups.set(key,{...capability,projects:new Set()});coverageGroups.get(key).projects.add(capability.project);}
-  document.getElementById('content').innerHTML=moduleHeading('Datenqualität','Abdeckung, offene Zuordnungen und die Grenzen des aktuellen Datenstands.')+`<div class="quality-banner"><div><span>Datenstand</span><strong>${esc((workspace.generated?new Date(workspace.generated).toLocaleString('de-DE'):'Unbekannt'))}</strong></div><div><span>Integrität</span><strong>${esc(({valid:'Gültig',invalid:'Ungültig',unknown:'Unbekannt'})[workspace.health.integrity]||workspace.health.integrity||'Unbekannt')}</strong></div><div><span>Aktualität</span><strong>${(!workspace.health.freshness||workspace.health.freshness==='unknown')?'Ungeprüft':esc(workspace.health.freshness)}</strong></div><div><span>Abdeckung</span><strong>${workspace.health.coverage==='partial'?'Teilweise':esc(workspace.health.coverage||'Unbekannt')}</strong></div><div><span>Indexierte Projekte · Workspace</span><strong>${workspace.workspaceCoverage.indexed_projects??'—'} / ${workspace.workspaceCoverage.known_projects??'—'}</strong></div></div><p class="data-note">Ein indexiertes Projekt ist nicht automatisch vollständig analysiert. Aktualität wurde nicht gegen die aktuellen Quelldateien geprüft.</p>`+moduleStats([[traces.length,'HTTP-Aufrufnachweise im Kontext'],[counts('RESOLVED'),'Zugeordnet'],[counts('UNRESOLVED'),'Ungeklärt'],[counts('AMBIGUOUS')+counts('MISMATCH'),'Mehrdeutig / abweichend'],...(counts('OUT_OF_SCOPE')?[[counts('OUT_OF_SCOPE'),'Außerhalb des Analyseumfangs']]:[]),...(traces.some(t=>!['RESOLVED','UNRESOLVED','AMBIGUOUS','MISMATCH','OUT_OF_SCOPE'].includes(t.status))?[[traces.filter(t=>!['RESOLVED','UNRESOLVED','AMBIGUOUS','MISMATCH','OUT_OF_SCOPE'].includes(t.status)).length,'Andere / unbekannte Status']]:[])])+`<div class="quality-grid"><section class="quality-card"><h2>Offene Zuordnungen untersuchen</h2><p>Von einem Status direkt zu den betroffenen Aufrufen wechseln.</p><div class="quality-actions">${[['UNRESOLVED','Ungeklärte Aufrufe'],['AMBIGUOUS','Mehrdeutige Aufrufe'],['MISMATCH','Abweichende Aufrufe']].map(([status,label])=>`<button data-quality-status="${status}" ${counts(status)?'':'disabled'}><span>${label}</span><strong>${counts(status)}</strong><span>→</span></button>`).join('')}</div><p class="data-note">Im Service-Kontext zählen hier eingehende und ausgehende Aufrufe. Der Sprung zeigt die exakten betroffenen Nachweise.</p></section><section class="quality-card"><h2>Verwendungsanalyse einordnen</h2><p>Klassen und Verwendungen sind statische Nachweise. Insbesondere dynamische Bindungen können fehlen.</p><div class="coverage-tags">${[...new Set(codeCoverage.filter(c=>c.capability==='direct_usages').map(c=>`${c.language}: ${statusNames[c.coverage]||c.coverage}`))].map(label=>`<span class="pill neutral">${esc(label)}</span>`).join('')}</div><button class="button" data-area="code">Service-Code öffnen</button><p class="data-note">Vollständig bedeutet vollständig im jeweiligen Analyseumfang – keine Garantie für sämtliche Laufzeitbeziehungen.</p></section></div><section class="quality-card"><h2>Diagnosegruppen (${families.length})</h2><p>Zusammengefasste Hinweise aus dem Export. Die Zuordnung folgt den dort angegebenen Services.</p>${families.length?`<div class="diagnostic-list">${families.map(f=>`<details><summary><span>${esc(f.code)}</span><strong>${esc(f.service)} · ${esc(f.route_pattern||'Ohne Route')}</strong><small>${f.affected_count} betroffen</small></summary><p>${esc(f.root_cause)}</p><p>${esc(f.suggested_check)}</p></details>`).join('')}</div>`:emptyState('Keine Diagnosegruppe zugeordnet','Fehlende Hinweise beweisen keine vollständige Analyse.')}</section><section class="quality-card"><h2>Analyse-Abdeckung nach Fähigkeit</h2><div class="module-table-wrap"><table class="module-table"><thead><tr><th>Fähigkeit</th><th>Sprache</th><th>Abdeckung</th><th>${all?'Projekte':'Einordnung'}</th></tr></thead><tbody>${[...coverageGroups.values()].sort((a,b)=>a.id.localeCompare(b.id)||a.language.localeCompare(b.language)).map(c=>`<tr><td>${esc(c.id)}</td><td>${esc(c.language)}</td><td>${statusBadge(c.coverage)}</td><td>${all?c.projects.size:`<span>${esc(c.reason)}</span>`}</td></tr>`).join('')}</tbody></table></div></section>`;
+  for(const capability of capabilities){const key=[capability.id,capability.language,capability.coverage,capability.expected_unavailable,capability.source_class,capability.adapter].join('|');if(!coverageGroups.has(key))coverageGroups.set(key,{...capability,projects:new Set()});coverageGroups.get(key).projects.add(capability.project);}
+  document.getElementById('content').innerHTML=moduleHeading('Datenqualität','Abdeckung, offene Zuordnungen und die Grenzen des aktuellen Datenstands.')+`<div class="quality-banner"><div><span>Datenstand</span><strong>${esc((workspace.generated?new Date(workspace.generated).toLocaleString('de-DE'):'Unbekannt'))}</strong></div><div><span>Integrität</span><strong>${esc(({valid:'Gültig',invalid:'Ungültig',unknown:'Unbekannt'})[workspace.health.integrity]||workspace.health.integrity||'Unbekannt')}</strong></div><div><span>Aktualität</span><strong>${(!workspace.health.freshness||workspace.health.freshness==='unknown')?'Ungeprüft':esc(qualityFreshnessLabel(workspace.health.freshness))}</strong></div><div><span>Abdeckung</span><strong>${esc(qualityCoverageLabel(workspace.health.coverage))}</strong></div><div><span>Indexierte Projekte · Workspace</span><strong>${workspace.workspaceCoverage.indexed_projects??'—'} / ${workspace.workspaceCoverage.known_projects??'—'}</strong></div></div><p class="data-note">Ein indexiertes Projekt ist nicht automatisch vollständig analysiert. Aktualität wurde nicht gegen die aktuellen Quelldateien geprüft.</p>`+moduleStats([[traces.length,'HTTP-Aufrufnachweise im Kontext'],[counts('RESOLVED'),'Zugeordnet'],[counts('UNRESOLVED'),'Ungeklärt'],[counts('AMBIGUOUS')+counts('MISMATCH'),'Mehrdeutig / abweichend'],...(counts('OUT_OF_SCOPE')?[[counts('OUT_OF_SCOPE'),'Außerhalb des Analyseumfangs']]:[]),...(traces.some(t=>!['RESOLVED','UNRESOLVED','AMBIGUOUS','MISMATCH','OUT_OF_SCOPE'].includes(t.status))?[[traces.filter(t=>!['RESOLVED','UNRESOLVED','AMBIGUOUS','MISMATCH','OUT_OF_SCOPE'].includes(t.status)).length,'Andere / unbekannte Status']]:[])])+`<div class="quality-grid"><section class="quality-card"><h2>Offene Zuordnungen untersuchen</h2><p>Von einem Status direkt zu den betroffenen Aufrufen wechseln.</p><div class="quality-actions">${[['UNRESOLVED','Ungeklärte Aufrufe'],['AMBIGUOUS','Mehrdeutige Aufrufe'],['MISMATCH','Abweichende Aufrufe']].map(([status,label])=>`<button data-quality-status="${status}" ${counts(status)?'':'disabled'}><span>${label}</span><strong>${counts(status)}</strong><span>→</span></button>`).join('')}</div><p class="data-note">Im Service-Kontext zählen hier eingehende und ausgehende Aufrufe. Der Sprung zeigt die exakten betroffenen Nachweise.</p></section><section class="quality-card"><h2>Verwendungsanalyse einordnen</h2><p>Klassen und Verwendungen sind statische Nachweise. Insbesondere dynamische Bindungen können fehlen.</p><div class="coverage-tags">${[...new Set(codeCoverage.filter(c=>c.capability==='direct_usages').map(c=>`${c.language}: ${capabilityLabel(usageCapability(c,capabilities))}`))].map(label=>`<span class="pill neutral">${esc(label)}</span>`).join('')}</div><button class="button" data-area="code">Service-Code öffnen</button><p class="data-note">Vollständig bedeutet vollständig im jeweiligen Analyseumfang – keine Garantie für sämtliche Laufzeitbeziehungen.</p></section></div><section class="quality-card"><h2>Diagnosegruppen (${families.length})</h2><p>Hinweise nach dem Abgleich der Services im Workspace. Bereits zugeordnete Aufrufe erzeugen keine offene Routendiagnose.</p>${families.length?`<div class="diagnostic-list">${families.map(f=>`<details><summary><span>${esc(f.code)}</span><strong>${esc(f.service)} · ${esc(f.route_pattern||'Ohne Route')}</strong><small>${f.affected_count} betroffen</small></summary><p>${esc(qualityDiagnosticExplanation(f)[0])}</p><p>${esc(qualityDiagnosticExplanation(f)[1])}</p></details>`).join('')}</div>`:emptyState('Keine Diagnosegruppe zugeordnet','Fehlende Hinweise beweisen keine vollständige Analyse.')}</section>${renderAPISpecificationQuality()}<section class="quality-card"><h2>Analyse-Abdeckung nach Fähigkeit</h2><div class="module-table-wrap"><table class="module-table quality-capability-table"><thead><tr><th>Fähigkeit</th><th>Sprache / Dateityp</th><th>Abdeckung</th><th>Einordnung</th>${all?'<th>Projekte / Repositories</th>':''}</tr></thead><tbody>${renderAPISpecificationCoverage()}${[...coverageGroups.values()].sort((a,b)=>a.id.localeCompare(b.id)||a.language.localeCompare(b.language)).map(c=>`<tr><td>${esc(c.id)}</td><td>${esc(c.language)}</td><td>${capabilityBadge(c)}</td><td>${esc(capabilityExplanation(c))}</td>${all?`<td>${c.projects.size}</td>`:''}</tr>`).join('')}</tbody></table></div></section>`;
 }
 function jumpToSymbol(id, remember=true) {
   const symbol=symbolById.get(id),node=symbol&&data.nodes.find(n=>n.project===symbol.project);
@@ -161,6 +211,18 @@ function moduleClick(target) {
   if(area){if(area.dataset.area==='architecture'&&state.area!=='architecture')state.view='focus';state.area=area.dataset.area;state.edge=null;state.domainPair=null;state.endpoint=null;state.trace=null;state.qualityTraceIds=null;render();window.scrollTo({top:0});return;}
   const scope=target.closest('[data-module-scope]');
   if(scope){state.moduleScope=scope.dataset.moduleScope;state.endpoint=null;state.trace=null;state.qualityTraceIds=null;render();return;}
+  const specificationDetails=target.closest('[data-module-action="specification-details"]');
+  if(specificationDetails){
+    if(specificationDetails.dataset.specificationScope==='all'){state.moduleScope='all';render();}
+    const panel=document.querySelector('.api-specifications'),language=specificationDetails.dataset.specificationFilter;
+    panel?.scrollIntoView({block:'start'});
+    const contractElement=[...(panel?.querySelectorAll('.api-specification-document')||[])].find(item=>language==='json'?/\.json$/i.test(item.dataset.specificationFile):/\.ya?ml$/i.test(item.dataset.specificationFile));
+    if(contractElement)contractElement.open=true;
+    (contractElement?.querySelector('summary')||panel?.querySelector('h2'))?.focus({preventScroll:true});
+    return;
+  }
+  const specification=target.closest('[data-specification-project]');
+  if(specification){const node=data.nodes.find(item=>item.project===specification.dataset.specificationProject);if(node){state.selected=node.id;state.area='api';state.apiMode='offered';state.apiQuery=specification.dataset.specificationPath;state.apiStatus='all';state.moduleScope='service';state.endpoint=null;state.trace=null;state.qualityTraceIds=null;render();window.scrollTo({top:0});}return;}
   const symbol=target.closest('[data-symbol]');
   if(symbol){state.symbol=symbol.dataset.symbol;state.usageLimit=40;renderCode();if(innerWidth<1000)document.querySelector('.symbol-detail')?.scrollIntoView({block:'start'});return;}
   const jump=target.closest('[data-code-symbol]');
@@ -195,7 +257,7 @@ document.addEventListener('input',event=>{
   if(!field)return;const id=event.target.id,position=event.target.selectionStart;state[field]=event.target.value;if(field==='apiQuery'){state.endpoint=null;state.trace=null;}state.codeLimit=60;state.apiLimit=60;render();const input=document.getElementById(id);input.focus({preventScroll:true});input.setSelectionRange(position,position);
 });
 document.getElementById('workspace-name').textContent=workspace.root.replace(/\\/g,'/').split('/').filter(Boolean).pop()||'Workspace';
-document.getElementById('snapshot-health').textContent='Abdeckung: '+(workspace.health.coverage||'unbekannt')+' · Aktualität: '+(workspace.health.freshness||'unbekannt');
+document.getElementById('snapshot-health').textContent='Abdeckung: '+qualityCoverageLabel(workspace.health.coverage)+' · Aktualität: '+qualityFreshnessLabel(workspace.health.freshness);
 document.getElementById('advanced-tools').addEventListener('click',event=>{event.preventDefault();location.hash='advanced';location.reload();});
 const initialArea=location.hash.slice(1);
 if(areaNames[initialArea])state.area=initialArea;
