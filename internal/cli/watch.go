@@ -322,8 +322,9 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 	case "run":
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
-		update := func() error {
+		update := func(report func(scan.BuildEvent)) error {
 			execution := buildExecution{ctx: ctx, options: scan.DefaultBuildOptions()}
+			execution.options.Observer = report
 			if !workspace {
 				needed, err := scan.ProjectUpdateNeeded(ctx, root.Path, scan.BuildTargetAll, execution.options)
 				if err != nil {
@@ -349,7 +350,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 			}
 			return nil
 		}
-		if err := watch.Run(ctx, root, update); err != nil {
+		if err := watch.RunWithProgress(ctx, root, update); err != nil {
 			fmt.Fprintf(stderr, "error: watcher: %v\n", err)
 			return 1
 		}

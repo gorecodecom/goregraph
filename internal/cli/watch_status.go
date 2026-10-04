@@ -22,6 +22,22 @@ func printWatchActivity(stdout io.Writer, status watch.Status) {
 	case !status.UpdateStarted.IsZero():
 		fmt.Fprintln(stdout, "Activity: updating index")
 		fmt.Fprintf(stdout, "Update started: %s\n", status.UpdateStarted.Format("2006-01-02 15:04:05 MST"))
+		if progress := status.Progress; progress != nil {
+			fmt.Fprintf(stdout, "Update phase: %s\n", progress.Phase)
+			if progress.Project != "" {
+				fmt.Fprintf(stdout, "Current project: %s\n", progress.Project)
+			}
+			if progress.File != "" {
+				fmt.Fprintf(stdout, "Current file: %s\n", progress.File)
+			}
+			if progress.Total > 0 {
+				fmt.Fprintf(stdout, "Phase progress: %d/%d\n", progress.Completed, progress.Total)
+			}
+			if progress.ProjectsTotal > 0 {
+				fmt.Fprintf(stdout, "Projects prepared: %d/%d\n", progress.ProjectsCompleted, progress.ProjectsTotal)
+			}
+			fmt.Fprintf(stdout, "Last observed progress: %s\n", progress.LastProgress.Format("2006-01-02 15:04:05 MST"))
+		}
 	case status.LastCheck.IsZero():
 		fmt.Fprintln(stdout, "Activity: awaiting first reported file check")
 	default:

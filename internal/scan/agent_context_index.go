@@ -1346,6 +1346,11 @@ func contextTypeNavigationSymbol(symbol RichSymbolRecord) bool {
 	language := strings.ToLower(symbol.Language)
 	kind := strings.ToLower(symbol.Kind)
 	switch language {
+	case "go":
+		switch kind {
+		case "type", "function", "method", "test", "constant", "variable":
+			return true
+		}
 	case "unity", "blender":
 		return kind == "asset"
 	case "csharp":

@@ -55,24 +55,27 @@ func withOutputReadConfig(ctx context.Context, resolved string, cfg config.Confi
 
 func withOutputReadConfigMode(ctx context.Context, resolved string, cfg config.Config, read func() error, createMissing bool) error {
 	roots := []string{filepath.Join(resolved, cfg.OutputDir), filepath.Join(resolved, ".goregraph-workspace")}
+	var dependencies []string
 	workspaceRoot, ok, err := WorkspaceRoot(resolved, cfg)
 	if err != nil {
 		return err
 	}
 	if ok {
 		roots = append(roots, filepath.Join(workspaceRoot, ".goregraph-workspace"))
+		_, committedErr := os.Stat(filepath.Join(workspaceRoot, ".goregraph-workspace", ".goregraph-generation"))
 		projects, err := discoverWorkspaceProjects(workspaceRoot, resolved, cfg.OutputDir)
 		if err != nil {
 			return err
 		}
 		for _, project := range projects {
 			if info, err := os.Stat(project.AbsPath); err == nil && info.IsDir() {
-				roots = append(roots, filepath.Join(project.AbsPath, project.OutputDir))
+				if committedErr == nil {
+					dependencies = append(dependencies, filepath.Join(project.AbsPath, project.OutputDir))
+				} else {
+					roots = append(roots, filepath.Join(project.AbsPath, project.OutputDir))
+				}
 			}
 		}
 	}
-	if !createMissing {
-		return outputstore.WithExistingReads(ctx, roots, read)
-	}
-	return outputstore.WithReads(ctx, roots, read)
+	return outputstore.WithReadDependencies(ctx, roots, dependencies, read, createMissing)
 }

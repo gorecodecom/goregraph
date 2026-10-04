@@ -54,6 +54,20 @@ type Status struct {
 	PID            int       `json:"pid,omitempty"`
 	Version        string    `json:"version,omitempty"`
 	Commit         string    `json:"commit,omitempty"`
+	Progress       *Progress `json:"progress,omitempty"`
+}
+
+// Progress describes observed build work independently of process heartbeats.
+type Progress struct {
+	Phase             string    `json:"phase"`
+	Project           string    `json:"project,omitempty"`
+	File              string    `json:"file,omitempty"`
+	Outcome           string    `json:"outcome,omitempty"`
+	Completed         int       `json:"completed"`
+	Total             int       `json:"total,omitempty"`
+	ProjectsCompleted int       `json:"projects_completed"`
+	ProjectsTotal     int       `json:"projects_total,omitempty"`
+	LastProgress      time.Time `json:"last_progress"`
 }
 
 type setting struct {
@@ -76,6 +90,7 @@ type runtimeState struct {
 	Version       string    `json:"version,omitempty"`
 	Commit        string    `json:"commit,omitempty"`
 	Upgrading     bool      `json:"upgrading,omitempty"`
+	Progress      *Progress `json:"progress,omitempty"`
 }
 
 // Resolve canonicalizes a selected root without creating watcher state.
@@ -341,6 +356,9 @@ func GetStatus(root Root) (Status, error) {
 	status.LastCheck = live.LastCheck
 	if status.Running {
 		status.UpdateStarted = live.UpdateStarted
+		if !live.UpdateStarted.IsZero() {
+			status.Progress = live.Progress
+		}
 	}
 	status.LastError = live.LastError
 	if supervised && supervisor.LastError != "" {
@@ -466,6 +484,12 @@ func SetAutostart(root Root, enabled bool, executable string) error {
 
 // Run owns one watcher process and updates only after selected inputs change.
 func Run(ctx context.Context, root Root, update func() error) error {
+	return RunWithProgress(ctx, root, func(func(scan.BuildEvent)) error { return update() })
+}
+
+// RunWithProgress publishes observed update progress without advancing it on
+// heartbeats or exposing a previous attempt as current work.
+func RunWithProgress(ctx context.Context, root Root, update func(func(scan.BuildEvent)) error) error {
 	if err := requireExistingRoot(root); err != nil {
 		return err
 	}
@@ -516,6 +540,7 @@ func Run(ctx context.Context, root Root, update func() error) error {
 		mutex.Lock()
 		live.Stopped = true
 		live.UpdateStarted = time.Time{}
+		live.Progress = nil
 		mutex.Unlock()
 		_ = publish()
 	}()
@@ -526,15 +551,45 @@ func Run(ctx context.Context, root Root, update func() error) error {
 			return false
 		}
 		mutex.Lock()
-		live.UpdateStarted = time.Now()
+		started := time.Now()
+		live.UpdateStarted = started
+		live.Progress = nil
 		mutex.Unlock()
 		_ = publish()
-		err := update()
+		var lastPublished time.Time
+		report := func(event scan.BuildEvent) {
+			mutex.Lock()
+			if !live.UpdateStarted.Equal(started) || live.Stopped {
+				mutex.Unlock()
+				return
+			}
+			progress := Progress{}
+			if live.Progress != nil {
+				progress = *live.Progress
+			}
+			progress.Phase, progress.Project, progress.File = event.Phase, event.Project, event.File
+			progress.Outcome, progress.Completed, progress.Total = event.Outcome, event.Completed, event.Total
+			progress.LastProgress = time.Now()
+			if event.Phase == "workspace-project" {
+				progress.ProjectsCompleted, progress.ProjectsTotal = event.Completed, event.Total
+			}
+			live.Progress = &progress
+			flush := progress.LastProgress.Sub(lastPublished) >= time.Second || event.Phase == "workspace-project"
+			if flush {
+				lastPublished = progress.LastProgress
+			}
+			mutex.Unlock()
+			if flush {
+				_ = publish()
+			}
+		}
+		err := update(report)
 		if ctx.Err() != nil {
 			return false
 		}
 		mutex.Lock()
 		live.UpdateStarted = time.Time{}
+		live.Progress = nil
 		if err != nil {
 			live.LastError = err.Error()
 			retryAt = time.Now().Add(retryInterval)

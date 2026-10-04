@@ -536,6 +536,13 @@ rebuilds only changed, new, or incomplete projects, and reconciles the workspace
 once. Both commands default to `--target all`; neither installs hooks, runs in
 the background, or watches files.
 
+When projects need rebuilding, `workspace update` prepares their outputs and
+the workspace overlays together, then publishes them as one recoverable
+transaction. Failed preparation or reconciliation preserves the previous
+committed output set. Changes made after a project's analysis remain detectable
+by the next update; an active workspace can continue making progress while files
+are being edited.
+
 Inspect the detected workspace without scanning:
 
 ```bash
@@ -1224,6 +1231,10 @@ successful index update, and shows when an update is in progress. Unchanged file
 advance the file-check timestamp without claiming a new index update. Readers
 can use the previous committed index while replacement outputs are prepared;
 the final cross-project publication remains protected against mixed generations.
+During an update, status also reports the observed build phase, current project
+and file, phase counts, prepared-project counts, and last observed progress.
+Process heartbeats do not advance this progress timestamp. Completed or failed
+attempts stop being shown as active work.
 
 Each `task_context` call should pass the active project or workspace root
 explicitly. This avoids depending on the working directory from which an MCP

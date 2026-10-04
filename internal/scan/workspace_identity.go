@@ -32,7 +32,7 @@ func workspaceInputIdentityWithSpecifications(root string, projects []WorkspaceP
 		record, _ := json.Marshal(project)
 		part := string(record)
 		if project.Indexed {
-			manifest, err := readProjectOutputManifest(NewProjectOutputLayout(filepath.Join(project.AbsPath, project.OutputDir)).Manifest)
+			manifest, err := readProjectOutputManifest(NewProjectOutputLayout(options.outputRoot(filepath.Join(project.AbsPath, project.OutputDir))).Manifest)
 			if err != nil {
 				return BuildIdentity{}, fmt.Errorf("read project identity %s: %w", project.Path, err)
 			}

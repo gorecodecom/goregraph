@@ -370,7 +370,7 @@ func TestBuildProjectAgentContextIndexAcceptsReferencedJavaStringExpression(t *t
 	}
 }
 
-func TestBuildProjectAgentContextIndexRejectsLowSignalUnconnectedJavaMethods(t *testing.T) {
+func TestBuildProjectAgentContextIndexKeepsGoNavigationWithoutPromotingLowSignalJavaMethods(t *testing.T) {
 	symbols := []RichSymbolRecord{
 		{
 			ID: "format-debug", Name: "formatDebugMessage",
@@ -441,7 +441,7 @@ func TestBuildProjectAgentContextIndexRejectsLowSignalUnconnectedJavaMethods(t *
 		nil,
 		nil,
 	)
-	if len(index.Facts) != 0 || len(index.Edges) != 0 {
+	if len(index.Facts) != 1 || index.Facts[0].File != "internal/jobs/housekeeping.go" || index.Facts[0].Kind != "symbol" || len(index.Edges) != 0 {
 		t.Fatalf("low-signal or non-production methods leaked into compact context: %#v", index)
 	}
 }

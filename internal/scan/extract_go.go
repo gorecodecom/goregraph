@@ -44,6 +44,18 @@ func extractGoFileSymbols(file FileRecord, body string) ([]SymbolRecord, bool) {
 			symbols = append(symbols, SymbolRecord{Name: d.Name.Name, Kind: kind, File: file.Path, Line: fset.Position(d.Name.Pos()).Line})
 		case *ast.GenDecl:
 			for _, spec := range d.Specs {
+				if value, ok := spec.(*ast.ValueSpec); ok {
+					kind := "variable"
+					if d.Tok == token.CONST {
+						kind = "constant"
+					}
+					for _, name := range value.Names {
+						if name.Name != "_" {
+							symbols = append(symbols, SymbolRecord{Name: name.Name, Kind: kind, File: file.Path, Line: fset.Position(name.Pos()).Line})
+						}
+					}
+					continue
+				}
 				typeSpec, ok := spec.(*ast.TypeSpec)
 				if !ok {
 					continue

@@ -14,6 +14,25 @@ import (
 	"github.com/gorecodecom/goregraph/internal/watch"
 )
 
+func TestWatchActivityShowsObservedProgressOnlyDuringAnActiveUpdate(t *testing.T) {
+	now := time.Now()
+	status := watch.Status{Running: true, UpdateStarted: now, Progress: &watch.Progress{Phase: "analyze", Project: "services/orders", File: "OrderService.go", Completed: 4, Total: 10, ProjectsCompleted: 1, ProjectsTotal: 3, LastProgress: now}}
+	var output bytes.Buffer
+	printWatchActivity(&output, status)
+	for _, want := range []string{"Update phase: analyze", "Current project: services/orders", "Current file: OrderService.go", "Phase progress: 4/10", "Projects prepared: 1/3", "Last observed progress:"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("missing %q in status: %s", want, output.String())
+		}
+	}
+	status.UpdateStarted = time.Time{}
+	status.LastCheck = now
+	output.Reset()
+	printWatchActivity(&output, status)
+	if strings.Contains(output.String(), "Update phase:") || strings.Contains(output.String(), "Projects prepared:") {
+		t.Fatalf("idle status exposed a previous attempt's progress: %s", output.String())
+	}
+}
+
 func TestRunWatchStatusReportsCoveringWorkspace(t *testing.T) {
 	home, workspace, project := watchStatusWorkspaceFixture(t)
 	writeWatchStatusState(t, home, workspace, true, true, "update failed")

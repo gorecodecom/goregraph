@@ -82,7 +82,11 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", WorkspaceDashboardConfigName, err)
 	}
-	workspaceOut := filepath.Join(workspaceRoot, ".goregraph-workspace")
+	output := filepath.Join(workspaceRoot, ".goregraph-workspace")
+	if err := options.requireStagedOutput(output); err != nil {
+		return nil, err
+	}
+	workspaceOut := options.outputRoot(output)
 	if legacyGeneratedOutputExists(workspaceOut) {
 		return nil, fmt.Errorf("legacy pre-1.3.0 workspace output detected; run `goregraph workspace clean %s --execute` and `goregraph workspace build all %s`", currentRoot, currentRoot)
 	}
@@ -93,6 +97,17 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 	}
 	if len(projects) == 0 {
 		return nil, nil
+	}
+	if len(options.stagedOutputs) > 0 {
+		lockedRoots := make(map[string]string, len(options.stagedProjects))
+		for _, project := range options.stagedProjects {
+			lockedRoots[project.Path] = workspaceOutputKey(filepath.Join(project.AbsPath, project.OutputDir))
+		}
+		for _, project := range projects {
+			if previous, known := lockedRoots[project.Path]; known && previous != workspaceOutputKey(filepath.Join(project.AbsPath, project.OutputDir)) {
+				return nil, fmt.Errorf("workspace output root changed during preparation: %s", project.Path)
+			}
+		}
 	}
 
 	registry := WorkspaceRegistryRecord{
@@ -114,26 +129,46 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 	inputGenerations := map[string]string{}
 	readRoots := []string{workspaceOut}
 	for _, project := range projects {
-		readRoots = append(readRoots, filepath.Join(project.AbsPath, project.OutputDir))
+		output := filepath.Join(project.AbsPath, project.OutputDir)
+		if len(options.stagedOutputs) == 0 || options.outputRoot(output) != output {
+			readRoots = append(readRoots, output)
+		}
 	}
 	for _, root := range readRoots {
-		if err := outputstore.Recover(ctx, root); err != nil {
+		if len(options.stagedOutputs) > 0 && options.outputRoot(root) == root && root != workspaceOut {
+			continue
+		}
+		if err := outputstore.Recover(ctx, options.outputRoot(root)); err != nil {
 			return nil, err
 		}
 	}
-	if err := outputstore.WithReads(ctx, readRoots, func() error {
+	if err := outputstore.WithReads(ctx, options.outputRoots(readRoots), func() error {
 		var err error
-		projects, err = refreshLockedWorkspaceProjects(workspaceRoot, currentAbs, cfg.OutputDir, projects)
-		if err != nil {
-			return err
+		if len(options.stagedOutputs) == 0 {
+			projects, err = refreshLockedWorkspaceProjects(workspaceRoot, currentAbs, cfg.OutputDir, projects)
+			if err != nil {
+				return err
+			}
 		}
 		registry.Projects = projects
-		indexed, err = loadWorkspaceIndexes(projects)
+		if len(options.stagedOutputs) > 0 {
+			for i := range projects {
+				output := filepath.Join(projects[i].AbsPath, projects[i].OutputDir)
+				out := options.outputRoot(output)
+				projects[i].Indexed = out != output && validProjectOutput(out)
+				if projects[i].Indexed && projects[i].Status == "not_indexed" {
+					projects[i].Status = "indexed"
+				} else if !projects[i].Indexed {
+					projects[i].Status = "not_indexed"
+				}
+			}
+		}
+		indexed, err = loadWorkspaceIndexesWithOptions(projects, options)
 		if err != nil {
 			return err
 		}
 		if target.IncludesAgent() {
-			projectContextIndexes, err = loadWorkspaceAgentContextIndexes(indexed)
+			projectContextIndexes, err = loadWorkspaceAgentContextIndexesWithOptions(indexed, options)
 			if err != nil {
 				return err
 			}
@@ -151,7 +186,7 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 		previous.Agent = currentAgentProjectionStatus(workspaceOut, previous.Agent)
 		previous.Dashboard = validProjectionStatus(workspaceOut, previous.Dashboard)
 		for _, root := range readRoots {
-			manifest := readCurrentOutputManifest(filepath.Join(root, "manifest.json"))
+			manifest := readCurrentOutputManifest(filepath.Join(options.outputRoot(root), "manifest.json"))
 			inputGenerations[root] = manifest.GenerationID
 			manifests[root] = manifest
 		}
@@ -172,7 +207,7 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 			return fmt.Errorf("workspace inputs changed during reconciliation")
 		}
 		for root, generation := range inputGenerations {
-			if readCurrentOutputManifest(filepath.Join(root, "manifest.json")).GenerationID != generation {
+			if readCurrentOutputManifest(filepath.Join(options.outputRoot(root), "manifest.json")).GenerationID != generation {
 				return fmt.Errorf("output generation changed during reconciliation: %s", root)
 			}
 		}
@@ -427,7 +462,11 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 		},
 	}}
 	for _, project := range indexed {
-		out := filepath.Join(project.record.AbsPath, project.record.OutputDir)
+		output := filepath.Join(project.record.AbsPath, project.record.OutputDir)
+		if err := options.requireStagedOutput(output); err != nil {
+			return nil, err
+		}
+		out := options.outputRoot(output)
 		requests = append(requests, outputstore.UpdateRequest{
 			Root: out,
 			Write: func(stage string) error {
@@ -997,12 +1036,16 @@ func hasProjectMarker(abs string) bool {
 }
 
 func loadWorkspaceIndexes(projects []WorkspaceProjectRecord) ([]workspaceIndexProject, error) {
+	return loadWorkspaceIndexesWithOptions(projects, DefaultBuildOptions())
+}
+
+func loadWorkspaceIndexesWithOptions(projects []WorkspaceProjectRecord, options BuildOptions) ([]workspaceIndexProject, error) {
 	var result []workspaceIndexProject
 	for _, project := range projects {
 		if !project.Indexed {
 			continue
 		}
-		out := filepath.Join(project.AbsPath, project.OutputDir)
+		out := options.outputRoot(filepath.Join(project.AbsPath, project.OutputDir))
 		if !workspaceFileExists(filepath.Join(out, "manifest.json")) {
 			continue
 		}
@@ -1183,9 +1226,13 @@ func isWorkspaceTestNamespacePath(file, kind string) bool {
 }
 
 func loadWorkspaceAgentContextIndexes(projects []workspaceIndexProject) ([]AgentContextIndexRecord, error) {
+	return loadWorkspaceAgentContextIndexesWithOptions(projects, DefaultBuildOptions())
+}
+
+func loadWorkspaceAgentContextIndexesWithOptions(projects []workspaceIndexProject, options BuildOptions) ([]AgentContextIndexRecord, error) {
 	var indexes []AgentContextIndexRecord
 	for _, project := range projects {
-		out := filepath.Join(project.record.AbsPath, project.record.OutputDir)
+		out := options.outputRoot(filepath.Join(project.record.AbsPath, project.record.OutputDir))
 		layout := NewProjectOutputLayout(out)
 		manifest := readCurrentOutputManifest(layout.Manifest)
 		if manifest.Scope != "project" || !currentAgentProjectionStatus(layout.Root, manifest.Agent).Complete {

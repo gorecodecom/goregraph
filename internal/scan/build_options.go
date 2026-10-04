@@ -23,6 +23,33 @@ type BuildOptions struct {
 	FileTimeout    time.Duration
 	ProjectTimeout time.Duration
 	Observer       func(BuildEvent)
+	stagedOutputs  map[string]string
+	stagedProjects []WorkspaceProjectRecord
+}
+
+func (options BuildOptions) requireStagedOutput(root string) error {
+	if len(options.stagedOutputs) > 0 && options.stagedOutputs[workspaceOutputKey(root)] == "" {
+		return fmt.Errorf("workspace output root changed during preparation: %s", root)
+	}
+	return nil
+}
+
+func (options BuildOptions) outputRoot(root string) string {
+	if len(options.stagedOutputs) == 0 {
+		return root
+	}
+	if stage := options.stagedOutputs[workspaceOutputKey(root)]; stage != "" {
+		return stage
+	}
+	return root
+}
+
+func (options BuildOptions) outputRoots(roots []string) []string {
+	result := make([]string, len(roots))
+	for i, root := range roots {
+		result[i] = options.outputRoot(root)
+	}
+	return result
 }
 
 // DefaultBuildOptions supplies bounded per-file analysis without a project deadline.

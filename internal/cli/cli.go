@@ -374,52 +374,70 @@ func runWorkspaceUpdate(args []string, stdout, stderr io.Writer, execution build
 		}
 	}
 	updated := 0
-	for _, item := range plan.Items {
-		if item.Action != scan.WorkspaceUpdateActionBuild {
-			continue
-		}
-		projectConfig, err := config.Load(item.AbsPath)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
-			return 1
-		}
-		projectConfig.UpdateGitignore = loaded.UpdateGitignore
-		projectConfig.Workspace = false
-		projectConfig.WorkspaceRoot = plan.WorkspaceRoot
-		if projectConfig.UpdateGitignore {
-			changed, err := gitignore.EnsureOutputIgnored(item.AbsPath, projectConfig.OutputDir)
+	prepare := func(options scan.BuildOptions) error {
+		for _, item := range plan.Items {
+			if item.Action != scan.WorkspaceUpdateActionBuild {
+				continue
+			}
+			projectConfig, err := config.Load(item.AbsPath)
 			if err != nil {
-				fmt.Fprintf(stderr, "error: updating %s .gitignore failed: %v\n", item.Project, err)
-				return 1
+				return fmt.Errorf("loading %s failed: %w", item.Project, err)
 			}
-			if changed {
-				fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(item.AbsPath, ".gitignore"))
+			projectConfig.UpdateGitignore = loaded.UpdateGitignore
+			projectConfig.Workspace = false
+			projectConfig.WorkspaceRoot = plan.WorkspaceRoot
+			if projectConfig.UpdateGitignore {
+				changed, err := gitignore.EnsureOutputIgnored(item.AbsPath, projectConfig.OutputDir)
+				if err != nil {
+					return fmt.Errorf("updating %s .gitignore failed: %w", item.Project, err)
+				}
+				if changed {
+					fmt.Fprintf(stdout, "- Updated .gitignore: %s\n", filepath.Join(item.AbsPath, ".gitignore"))
+				}
 			}
+			projectOptions := options
+			if options.Observer != nil {
+				options.Observer(scan.BuildEvent{Phase: "workspace-project", Project: item.Project, Outcome: "started", Completed: updated, Total: buildCount})
+				projectOptions.Observer = func(event scan.BuildEvent) {
+					event.Project = item.Project
+					options.Observer(event)
+				}
+			}
+			result, err := scan.RunBuildWithOptions(execution.ctx, item.AbsPath, projectConfig, target, projectOptions)
+			if err != nil {
+				return fmt.Errorf("building %s failed: %w", item.Project, err)
+			}
+			updated++
+			if options.Observer != nil {
+				options.Observer(scan.BuildEvent{Phase: "workspace-project", Project: item.Project, Outcome: "completed", Completed: updated, Total: buildCount})
+			}
+			fmt.Fprintf(stdout, "Completed [%d/%d] %s (%d files, %d skipped, %d partial)\n", updated, buildCount, item.Project, result.ScannedFiles, result.SkippedFiles, result.PartialFiles)
 		}
-		result, err := scan.RunBuildWithOptions(execution.ctx, item.AbsPath, projectConfig, target, execution.options)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: building %s failed: %v\n", item.Project, err)
-			return 1
-		}
-		updated++
-		fmt.Fprintf(stdout, "Completed [%d/%d] %s (%d files, %d skipped, %d partial)\n", updated, buildCount, item.Project, result.ScannedFiles, result.SkippedFiles, result.PartialFiles)
-	}
 
-	loaded.Workspace = true
-	loaded.WorkspaceRoot = plan.WorkspaceRoot
-	current := false
-	if updated == 0 {
-		current, err = scan.WorkspaceProjectionCurrentContext(execution.ctx, plan.WorkspaceRoot, loaded, target, execution.options)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: checking workspace inputs failed: %v\n", err)
-			return 1
+		loaded.Workspace = true
+		loaded.WorkspaceRoot = plan.WorkspaceRoot
+		current := false
+		if updated == 0 {
+			current, err = scan.WorkspaceProjectionCurrentContext(execution.ctx, plan.WorkspaceRoot, loaded, target, options)
+			if err != nil {
+				return fmt.Errorf("checking workspace inputs failed: %w", err)
+			}
 		}
+		if !current {
+			if _, err := scan.ReconcileWorkspaceWithOptions(execution.ctx, plan.WorkspaceRoot, loaded, target, options); err != nil {
+				return fmt.Errorf("reconciling workspace failed: %w", err)
+			}
+		}
+		return nil
 	}
-	if !current {
-		if _, err := scan.ReconcileWorkspaceWithOptions(execution.ctx, plan.WorkspaceRoot, loaded, target, execution.options); err != nil {
-			fmt.Fprintf(stderr, "error: reconciling workspace failed: %v\n", err)
-			return 1
-		}
+	if buildCount > 0 {
+		err = scan.WithWorkspaceUpdatePublication(execution.ctx, loaded, plan, execution.options, prepare)
+	} else {
+		err = prepare(execution.options)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "error: workspace update failed: %v\n", err)
+		return 1
 	}
 	if loaded.UpdateGitignore {
 		changed, err := gitignore.EnsureWorkspaceIgnored(plan.WorkspaceRoot)

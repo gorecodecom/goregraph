@@ -104,7 +104,7 @@ func workspaceProjectUpdateItemWithOptions(ctx context.Context, project Workspac
 		return WorkspaceUpdateItemRecord{}, err
 	}
 	var result WorkspaceUpdateItemRecord
-	err = outputstore.WithReads(ctx, []string{filepath.Join(project.AbsPath, cfg.OutputDir)}, func() error {
+	err = outputstore.WithReads(ctx, []string{options.outputRoot(filepath.Join(project.AbsPath, cfg.OutputDir))}, func() error {
 		var err error
 		result, err = workspaceProjectUpdateItemUnlocked(ctx, project, target, options)
 		return err
@@ -122,7 +122,7 @@ func workspaceProjectUpdateItemUnlocked(ctx context.Context, project WorkspacePr
 	if err != nil {
 		return item, err
 	}
-	layout := NewProjectOutputLayout(filepath.Join(project.AbsPath, projectConfig.OutputDir))
+	layout := NewProjectOutputLayout(options.outputRoot(filepath.Join(project.AbsPath, projectConfig.OutputDir)))
 	manifest, manifestErr := readProjectOutputManifest(layout.Manifest)
 	switch {
 	case manifestErr != nil || manifest.Tool != ToolName || !currentProjectionStatus(layout.Root, manifest.Index, prefixedGeneratedFiles("index", IndexGeneratedFiles)).Complete:

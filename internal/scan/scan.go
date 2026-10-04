@@ -172,7 +172,11 @@ func RunBuildWithOptions(ctx context.Context, root string, cfg config.Config, ta
 	if !info.IsDir() {
 		return Result{}, fmt.Errorf("scan root %q is not a directory", root)
 	}
-	out := filepath.Join(resolved, cfg.OutputDir)
+	output := filepath.Join(resolved, cfg.OutputDir)
+	if err := options.requireStagedOutput(output); err != nil {
+		return Result{}, err
+	}
+	out := options.outputRoot(output)
 	if legacyGeneratedOutputExists(out) {
 		return Result{}, fmt.Errorf("legacy pre-1.3.0 output detected; run `goregraph clean %s --execute` and `goregraph build all %s`", root, root)
 	}

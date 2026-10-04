@@ -83,11 +83,25 @@ func UpdateManyValidated(ctx context.Context, requests []UpdateRequest, validate
 	return updateManyWithValidation(ctx, requests, systemOperations(), validate)
 }
 
+// UpdateManyPrepared prepares related snapshots together before validating or
+// publishing any of them. The callback receives private, prepopulated stages
+// keyed by canonical output roots. Progress reports copied snapshot counts.
+func UpdateManyPrepared(ctx context.Context, requests []UpdateRequest, prepare func(map[string]string) error, progress func(string, int, int)) error {
+	if prepare == nil {
+		return errors.New("shared output preparation is required")
+	}
+	return updateManyPrepared(ctx, requests, systemOperations(), prepare, nil, progress)
+}
+
 func updateMany(ctx context.Context, requests []UpdateRequest, ops fileOperations) error {
 	return updateManyWithValidation(ctx, requests, ops, nil)
 }
 
 func updateManyWithValidation(ctx context.Context, requests []UpdateRequest, ops fileOperations, validate func() error) error {
+	return updateManyPrepared(ctx, requests, ops, nil, validate, nil)
+}
+
+func updateManyPrepared(ctx context.Context, requests []UpdateRequest, ops fileOperations, prepare func(map[string]string) error, validate func() error, progress func(string, int, int)) error {
 	ordered, err := normalizeRequests(requests)
 	if err != nil {
 		return err
@@ -126,18 +140,46 @@ func updateManyWithValidation(ctx context.Context, requests []UpdateRequest, ops
 		return err
 	}
 	failPrepared := func(cause error) error { return errors.Join(cause, discardStages(transaction, ops)) }
+	if prepare != nil {
+		stages := make(map[string]string, len(ordered))
+		for i, entry := range transaction.Entries {
+			if err := ctx.Err(); err != nil {
+				return failPrepared(err)
+			}
+			if progress != nil {
+				progress(entry.Root, i, len(ordered))
+			}
+			if err := ops.mkdir(entry.Stage, 0755); err != nil {
+				return failPrepared(err)
+			}
+			if entry.Existed {
+				if err := copyTree(ctx, entry.Root, entry.Stage, ops); err != nil {
+					return failPrepared(err)
+				}
+			}
+			stages[entry.Root] = entry.Stage
+			if progress != nil {
+				progress(entry.Root, i+1, len(ordered))
+			}
+		}
+		if err := prepare(stages); err != nil {
+			return failPrepared(err)
+		}
+	}
 	for i, request := range ordered {
 		if err := ctx.Err(); err != nil {
 			return failPrepared(err)
 		}
 		entry := transaction.Entries[i]
 		failStage := func(err error) error { return failPrepared(fmt.Errorf("stage output %s: %w", entry.Root, err)) }
-		if err := ops.mkdir(entry.Stage, 0755); err != nil {
-			return failStage(err)
-		}
-		if entry.Existed {
-			if err := copyTree(ctx, entry.Root, entry.Stage, ops); err != nil {
+		if prepare == nil {
+			if err := ops.mkdir(entry.Stage, 0755); err != nil {
 				return failStage(err)
+			}
+			if entry.Existed {
+				if err := copyTree(ctx, entry.Root, entry.Stage, ops); err != nil {
+					return failStage(err)
+				}
 			}
 		}
 		if err := request.Write(entry.Stage); err != nil {
@@ -284,12 +326,28 @@ func WithExistingReads(ctx context.Context, roots []string, read func() error) e
 }
 
 func withReads(ctx context.Context, roots []string, read func() error, createMissing bool) error {
+	return withReadDependencies(ctx, roots, nil, read, createMissing)
+}
+
+// WithReadDependencies locks every output, but waits for first publication only
+// at required roots. A committed workspace can therefore be read while an
+// additional, not-yet-indexed project is being prepared.
+func WithReadDependencies(ctx context.Context, required, dependencies []string, read func() error, createMissing bool) error {
+	if len(required) == 0 {
+		return errors.New("at least one required read output is needed")
+	}
+	return withReadDependencies(ctx, required, dependencies, read, createMissing)
+}
+
+func withReadDependencies(ctx context.Context, required, dependencies []string, read func() error, createMissing bool) error {
 	if read == nil {
 		return errors.New("output reader is required")
 	}
+	roots := append(append([]string(nil), required...), dependencies...)
 	canonical := make([]string, 0, len(roots))
 	seen := make(map[string]bool)
-	for _, root := range roots {
+	initializationKeys := make(map[string]bool)
+	for i, root := range roots {
 		value, err := canonicalRoot(root)
 		if err != nil {
 			return fmt.Errorf("resolve output root %s: %w", root, err)
@@ -297,13 +355,22 @@ func withReads(ctx context.Context, roots []string, read func() error, createMis
 		if err := directoryExists(filepath.Dir(value)); err != nil {
 			return err
 		}
+		if i < len(required) {
+			initializationKeys[pathKey(value)] = true
+		}
 		if !seen[pathKey(value)] {
 			seen[pathKey(value)] = true
 			canonical = append(canonical, value)
 		}
 	}
 	sort.Slice(canonical, func(i, j int) bool { return pathKey(canonical[i]) < pathKey(canonical[j]) })
-	initializing, err := acquireInitializationLocks(ctx, canonical)
+	var initializationRoots []string
+	for _, root := range canonical {
+		if initializationKeys[pathKey(root)] {
+			initializationRoots = append(initializationRoots, root)
+		}
+	}
+	initializing, err := acquireInitializationLocks(ctx, initializationRoots)
 	if err != nil {
 		return err
 	}
