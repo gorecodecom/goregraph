@@ -166,7 +166,10 @@ func TestSupervisorRejectsInvalidReplacementWithoutStoppingWorker(t *testing.T) 
 	if err := os.WriteFile(executable, []byte("invalid-version"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return validations.Load() > 0 })
+	waitFor(t, func() bool {
+		status, err := GetStatus(root)
+		return err == nil && validations.Load() > 0 && status.LastError == "replacement invalid"
+	})
 	status, err := GetStatus(root)
 	if err != nil || !status.Running || status.PID != before.PID || starts.Load() != 1 || status.LastError != "replacement invalid" {
 		t.Fatalf("invalid executable displaced a healthy worker: %+v starts=%d err=%v", status, starts.Load(), err)
