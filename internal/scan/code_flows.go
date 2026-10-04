@@ -11,6 +11,9 @@ func mergeCallGraphs(base CallGraphRecord, extra CallGraphRecord) CallGraphRecor
 	var edges []CallGraphEdgeRecord
 	for _, edge := range append(base.Edges, extra.Edges...) {
 		key := edge.From.File + ":" + edge.From.Method + "->" + edge.To.File + ":" + edge.To.Method + fmt.Sprintf(":%d", edge.Line)
+		if edge.FromSymbolID != "" && edge.ToSymbolID != "" {
+			key += ":" + edge.FromSymbolID + ":" + edge.ToSymbolID
+		}
 		if seen[key] {
 			continue
 		}

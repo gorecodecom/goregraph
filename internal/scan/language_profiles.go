@@ -28,6 +28,7 @@ type LanguageCapabilityProfile struct {
 }
 
 var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
+	{Language: "blender", DisplayName: "Blender asset exports", Level: "partial", Scope: "asset-export", Symbols: true, Relations: true, Limitations: "Explicit source/dependency-hash-verified Blender exports, saved datablock links and bounded optional sampled surfaces only; Blender is never executed by a scan or context query. External libraries, unsampled frames and collision correctness are not proven.", Outputs: []string{"assets.json", "symbols-full.json", "relations-full.json", "graph-full.json"}},
 	{
 		Language: "c", DisplayName: "C", Level: "index", Scope: "language",
 		Symbols: true, Relations: true,
@@ -41,10 +42,12 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json"},
 	},
 	{
-		Language: "csharp", DisplayName: "C#", Level: "index", Scope: "language",
-		Symbols: true, Relations: true,
-		Limitations: indexAdapterLimitations,
-		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json"},
+		Language: "csharp", DisplayName: "C# / .NET / Unity", Level: "full", Scope: "language+aspnet+efcore+unity",
+		Symbols: true, Relations: true, Calls: true, Routes: true, Tests: true, APIClients: true, Persistence: true,
+		ExactSymbols: true, DirectUsages: true, HTTPProvider: true, HTTPConsumer: true,
+		PatternFamilies: []string{"C# type and member declarations", "typed static calls with inheritance, named, optional and ref arguments", "optional hash-verified Roslyn symbol and call snapshots", "typed EF Core operations", "literal DI registrations", "literal ASP.NET controller routes", "literal HttpClient requests", "NUnit, xUnit and Unity test declarations"},
+		Limitations:     "Static source patterns by default; explicitly generated Roslyn snapshots cover only their selected source/configuration inputs. No compiler or MSBuild is run by scans or queries. Runtime dispatch, reflection, SDK freshness and test execution remain unproven; unsupported bindings stay open.",
+		Outputs:         []string{"symbols-full.json", "relations-full.json", "callgraph.json", "routes.json", "api-contracts.json", "test-map.json", "graph-full.json"},
 	},
 	{
 		Language: "go", DisplayName: "Go", Level: "full", Scope: "language+routes",
@@ -160,10 +163,11 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 		Outputs:     []string{"symbols-full.json", "relations-full.json", "callgraph.json", "flows.json", "graph-full.json"},
 	},
 	{
-		Language: "swift", DisplayName: "Swift", Level: "index", Scope: "language",
-		Symbols: true, Relations: true,
-		Limitations: indexAdapterLimitations,
-		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json"},
+		Language: "swift", DisplayName: "Swift / SwiftUI / Apple frameworks", Level: "full", Scope: "language+swiftui+apple",
+		Symbols: true, Relations: true, Calls: true, Tests: true, APIClients: true, Persistence: true, ExactSymbols: true, DirectUsages: true, HTTPConsumer: true,
+		PatternFamilies: []string{"Swift types, extensions, properties and labeled methods", "typed static calls", "literal SwiftPM and Xcode target membership", "optional hash-verified SourceKit symbol and call snapshots", "SwiftUI property wrappers", "literal URLSession requests", "SwiftData, Core Data and UserDefaults", "XCTest and Swift Testing declarations"},
+		Limitations:     "Static source patterns and supported literal target metadata by default; explicitly generated SourceKit snapshots cover only their selected source/configuration inputs. No compiler or Xcode is run by scans or queries. Runtime protocol dispatch, closure activation, actor scheduling, SDK freshness and test execution remain unproven.",
+		Outputs:         []string{"symbols-full.json", "relations-full.json", "callgraph.json", "api-contracts.json", "test-map.json", "graph-full.json"},
 	},
 	{
 		Language: "typescript", DisplayName: "TypeScript / Node.js / React", Level: "full", Scope: "language+react+routes+api",
@@ -181,6 +185,7 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 			"flows.json", "api-contracts.json", "test-map.json", "graph-full.json",
 		},
 	},
+	{Language: "unity", DisplayName: "Unity serialized assets", Level: "partial", Scope: "serialized-assets", Symbols: true, Relations: true, Limitations: "Static serialized objects, GUID/fileID, prefab correspondence, assembly, script-field and supported persistent event references only; saved wiring does not prove runtime activation. Binary internals and imported geometry require explicit external evidence.", Outputs: []string{"assets.json", "symbols-full.json", "relations-full.json", "graph-full.json"}},
 }
 
 const (

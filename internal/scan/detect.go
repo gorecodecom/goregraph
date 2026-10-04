@@ -6,6 +6,12 @@ import (
 )
 
 func detectLanguage(rel string) string {
+	if strings.HasSuffix(rel, ".goregraph-blender.json") {
+		return "blender"
+	}
+	if strings.HasSuffix(rel, ".goregraph-unity.json") {
+		return "unity"
+	}
 	switch strings.ToLower(filepath.Base(rel)) {
 	case "go.mod":
 		return "go"
@@ -27,6 +33,10 @@ func detectLanguage(rel string) string {
 		return "swift"
 	case ".rb":
 		return "ruby"
+	case ".unity", ".prefab", ".asset", ".meta", ".mat", ".controller", ".overridecontroller", ".anim", ".playable", ".asmdef", ".asmref":
+		return "unity"
+	case ".blend":
+		return "blender"
 	case ".cs":
 		return "csharp"
 	case ".c", ".h":
@@ -41,6 +51,8 @@ func detectLanguage(rel string) string {
 		return "javascript"
 	case ".ts", ".tsx":
 		return "typescript"
+	case ".csproj", ".props", ".targets":
+		return "xml"
 	case ".json":
 		return "json"
 	case ".yaml", ".yml":

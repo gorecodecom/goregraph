@@ -1,0 +1,56 @@
+/* Theme colors preserve the existing layout and semantic status distinctions. */
+:root{color-scheme:light;--surface:#fff;--surface-subtle:#f5f8fa;--accent-surface:#eef8f8;--blue-surface:#dbeaf7}
+:root[data-theme="dark"]{color-scheme:dark;color:#e5edf3;background:#101e28;--ink:#e5edf3;--muted:#a8bdca;--teal:#68d4d2;--blue:#94bdf3;--amber:#f1ca7f;--line:#3c5261;--surface:#162b38;--surface-subtle:#1d3443;--accent-surface:#1a3b43;--blue-surface:#243c55;--success-surface:#1b3d34;--warning-surface:#44381f;--danger-surface:#482b32;--success-text:#89d9b7;--danger-text:#efa3a9}
+.theme-control{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.theme-label{font-size:11px;color:#b6c9d4}
+.theme-buttons{display:flex;gap:2px;padding:3px;border:1px solid #557181;border-radius:6px;background:#203a4a}
+.theme-buttons button{display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:3px;background:transparent;color:#b6c9d4;cursor:pointer}
+.theme-buttons button:hover{background:#28495c;color:#eaf3f7}
+.theme-buttons button[aria-pressed="true"]{background:#d1eeef;color:#172c3c}
+.theme-buttons button:focus-visible{outline:3px solid #68d4d2;outline-offset:3px}
+.theme-buttons svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+:root[data-theme="dark"] dialog{background:var(--surface);color:var(--ink)}
+:root[data-theme="dark"] input,:root[data-theme="dark"] select,:root[data-theme="dark"] textarea{color:var(--ink)}
+:root[data-theme="dark"] .domain-cell{background:rgba(104,212,210,var(--strength))}
+@media(max-width:800px){.topbar{height:auto;min-height:62px;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}.topbar .prototype{margin-left:0}.topbar .top-divider{display:none}.theme-control{margin-left:auto}}
+
+:root[data-theme="dark"] .sidebar,:root[data-theme="dark"] .map-panel,:root[data-theme="dark"] .page-control button,:root[data-theme="dark"] .table-wrap,:root[data-theme="dark"] .evidence-detail,:root[data-theme="dark"] .domain-card,:root[data-theme="dark"] .evidence-controls,:root[data-theme="dark"] .overview-view-tabs,:root[data-theme="dark"] .domain-matrix-panel,:root[data-theme="dark"] .domain-matrix,:root[data-theme="dark"] .area-navigation,:root[data-theme="dark"] .context-bar .segmented,:root[data-theme="dark"] .module-tabs,:root[data-theme="dark"] .symbol-browser,:root[data-theme="dark"] .symbol-detail,:root[data-theme="dark"] .quality-card,:root[data-theme="dark"] .module-table-wrap,:root[data-theme="dark"] .quality-banner,:root[data-theme="dark"] .quality-actions button,:root[data-theme="dark"] .tooling-summary,:root[data-theme="dark"] .tooling-results,:root[data-theme="dark"] .tooling-results-note{background:var(--surface)}
+:root[data-theme="dark"] .sidebar input,:root[data-theme="dark"] .scope-buttons button,:root[data-theme="dark"] .kind-select select,:root[data-theme="dark"] .operation,:root[data-theme="dark"] .inspector,:root[data-theme="dark"] .module-search input,:root[data-theme="dark"] .module-select select{border:1px solid var(--line);background:var(--surface)}
+:root[data-theme="dark"] .overview-button,:root[data-theme="dark"] .segmented button.active,:root[data-theme="dark"] .scope-buttons button.active span{background:var(--accent-surface);color:var(--teal)}
+:root[data-theme="dark"] .nav-group summary:before,:root[data-theme="dark"] .text-button,:root[data-theme="dark"] .interface-heading h3 span,:root[data-theme="dark"] .detail-summary,:root[data-theme="dark"] .source-path,:root[data-theme="dark"] .raw-evidence,:root[data-theme="dark"] .close-panel,:root[data-theme="dark"] .domain-pair-title h3 span,:root[data-theme="dark"] .pair-route>span,:root[data-theme="dark"] .pair-meta,:root[data-theme="dark"] .pair-meta b,:root[data-theme="dark"] .domain-matrix thead th,:root[data-theme="dark"] .domain-matrix .matrix-empty,:root[data-theme="dark"] .area-navigation button,:root[data-theme="dark"] .context-bar span,:root[data-theme="dark"] .context-bar small,:root[data-theme="dark"] .symbol-row small,:root[data-theme="dark"] .symbol-row-meta,:root[data-theme="dark"] .qualified-name,:root[data-theme="dark"] .file-reference,:root[data-theme="dark"] .symbol-summary,:root[data-theme="dark"] .usage-card p,:root[data-theme="dark"] .usage-card small,:root[data-theme="dark"] .module-table td small,:root[data-theme="dark"] .api-route-evidence,:root[data-theme="dark"] .reference-sites,:root[data-theme="dark"] .tooling-run-state,:root[data-theme="dark"] .tooling-run details{color:var(--muted)}
+:root[data-theme="dark"] .nav-item:hover,:root[data-theme="dark"] .page-heading .group-tag,:root[data-theme="dark"] .button:hover,:root[data-theme="dark"] .relation-row:hover,:root[data-theme="dark"] .relation-row.selected,:root[data-theme="dark"] .domain-card li button:hover,:root[data-theme="dark"] .pair-service:hover,:root[data-theme="dark"] .symbol-row:hover,:root[data-theme="dark"] .module-detail>header{background:var(--accent-surface)}
+:root[data-theme="dark"] .nav-item.active{color:var(--teal);background:var(--accent-surface);border-left-color:var(--teal)}
+:root[data-theme="dark"] .status-dot{background:var(--amber)}
+:root[data-theme="dark"] .button,:root[data-theme="dark"] .module-detail{background:var(--surface);border:1px solid var(--line)}
+:root[data-theme="dark"] .diagram .node:focus-visible rect{stroke:var(--teal)}
+:root[data-theme="dark"] .diagram .node:hover .node-surface{fill:var(--accent-surface);stroke:var(--line)}
+:root[data-theme="dark"] .diagram .edge-button:hover rect,:root[data-theme="dark"] .diagram .edge-button:focus rect{fill:var(--blue-surface);stroke:var(--blue)}
+:root[data-theme="dark"] .map-footer,:root[data-theme="dark"] .domain-card footer,:root[data-theme="dark"] .source-record,:root[data-theme="dark"] .domain-matrix-panel>footer,:root[data-theme="dark"] .module-table td{border-top:1px solid var(--line)}
+:root[data-theme="dark"] thead,:root[data-theme="dark"] .module-table th{background:var(--accent-surface);color:var(--muted)}
+:root[data-theme="dark"] th,:root[data-theme="dark"] td,:root[data-theme="dark"] .domain-card header,:root[data-theme="dark"] .usage-card{border-bottom:1px solid var(--line)}
+:root[data-theme="dark"] .pill,:root[data-theme="dark"] .http-method,:root[data-theme="dark"] .source-scope{background:var(--success-surface);color:var(--success-text)}
+:root[data-theme="dark"] .pill.warn,:root[data-theme="dark"] .evidence-tag.test,:root[data-theme="dark"] .http-method.put,:root[data-theme="dark"] .http-method.patch,:root[data-theme="dark"] .source-scope.test{background:var(--warning-surface);color:var(--amber)}
+:root[data-theme="dark"] .row-toggle,:root[data-theme="dark"] .detail-eyebrow,:root[data-theme="dark"] .panel-back,:root[data-theme="dark"] .domain-cell,:root[data-theme="dark"] .symbol-kind,:root[data-theme="dark"] .inline-link,:root[data-theme="dark"] .quality-actions button strong{color:var(--teal)}
+:root[data-theme="dark"] .evidence-tag{background:var(--blue-surface)}
+:root[data-theme="dark"] dialog{border:1px solid var(--line)}
+:root[data-theme="dark"] .scope-buttons button span{color:var(--muted);background:var(--surface-subtle)}
+:root[data-theme="dark"] .scope-buttons button.active{border-color:var(--teal);background:var(--accent-surface);color:var(--teal)}
+:root[data-theme="dark"] .connection-type,:root[data-theme="dark"] .http-method.post{background:var(--surface-subtle);color:var(--blue)}
+:root[data-theme="dark"] .connection-type.java,:root[data-theme="dark"] .connection-type.unknown,:root[data-theme="dark"] .pill.neutral,:root[data-theme="dark"] .source-scope.unknown,:root[data-theme="dark"] .raw-evidence code{background:var(--surface-subtle);color:var(--muted)}
+:root[data-theme="dark"] .operation-title>code,:root[data-theme="dark"] .domain-matrix th:first-child{color:var(--ink)}
+:root[data-theme="dark"] .http-method.delete{background:var(--danger-surface);color:var(--danger-text)}
+:root[data-theme="dark"] .inspector-header{border-bottom:1px solid var(--line);background:var(--accent-surface)}
+:root[data-theme="dark"] .inspector>footer{border-top:1px solid var(--line);color:var(--muted)}
+:root[data-theme="dark"] .pair-metrics{border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+:root[data-theme="dark"] .pair-service,:root[data-theme="dark"] .symbol-row{background:var(--surface);border-bottom:1px solid var(--line)}
+:root[data-theme="dark"] .domain-matrix td,:root[data-theme="dark"] .domain-matrix td.diagonal{background:var(--surface-subtle)}
+:root[data-theme="dark"] .domain-matrix .matrix-corner{color:var(--muted)!important}
+:root[data-theme="dark"] .domain-cell:hover{border-color:var(--teal);background:var(--accent-surface)}
+:root[data-theme="dark"] .domain-cell.selected{border:2px solid var(--teal);background:var(--accent-surface)}
+:root[data-theme="dark"] .diagonal-key{background:var(--surface-subtle);border:1px solid var(--line)}
+:root[data-theme="dark"] .area-navigation button.active{color:var(--teal);border-color:var(--teal);background:var(--accent-surface)}
+:root[data-theme="dark"] .context-bar{background:var(--accent-surface);border:1px solid var(--line)}
+:root[data-theme="dark"] .symbol-row.active{background:var(--accent-surface);border-left-color:var(--teal)}
+:root[data-theme="dark"] .notice{background:var(--warning-surface);color:var(--amber);border:1px solid var(--line)}
+:root[data-theme="dark"] .diagnostic-list summary>span,:root[data-theme="dark"] .tooling-highlights summary,:root[data-theme="dark"] .tooling-unknown summary,:root[data-theme="dark"] .tooling-note-label,:root[data-theme="dark"] .tooling-run-state.is-incomplete{color:var(--amber)}
+:root[data-theme="dark"] .tooling-observations{background:var(--warning-surface);border-left:3px solid var(--amber)}

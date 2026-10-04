@@ -104,10 +104,10 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 
 	languageInventory := renderLanguageInventorySummary()
 	for _, want := range []string{
-		"full adapters for Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, and Rust",
+		"full adapters for C# / .NET / Unity, Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, Rust, and Swift / SwiftUI / Apple frameworks",
 		"Shell integration provides symbols, imports, and calls",
 		"does not provide routes, tests, or architecture facts",
-		"Index adapters for C, C++, C#, Kotlin, Ruby, Scala, and Swift",
+		"Index adapters for C, C++, Kotlin, Ruby, and Scala",
 	} {
 		if !strings.Contains(languageInventory, want) {
 			t.Fatalf("language inventory is missing %q:\n%s", want, languageInventory)
@@ -129,7 +129,7 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	}
 
 	currentContract := renderCurrentContract()
-	for _, want := range []string{"Source version", "1.4.3", "Schema 3"} {
+	for _, want := range []string{"Source version", "1.4.4", "Schema 3"} {
 		if !strings.Contains(currentContract, want) {
 			t.Fatalf("current contract is missing %q: %s", want, currentContract)
 		}

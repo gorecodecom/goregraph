@@ -18,6 +18,8 @@ goregraph context <project-or-workspace-root> --mode audit --query "Prüfe Story
 
 The same request through MCP is `task_context` with `mode: "audit"`, the full `query`, `root`, `max_files: 20` and `budget_tokens: 6000`. Both `strict-v1` and `adaptive-v2` support explicit audit mode. Omit `mode` for ordinary production-code work. No extra MCP tools or dependencies are required.
 
+Starting with source version 1.4.4, an audit includes only indexed sources inside the requested root. A project-root request remains scoped to that project even when the index comes from its parent workspace; matching sources in neighboring projects are excluded before source traversal and budget allocation. Pass the workspace root explicitly for a multi-project audit. An unindexed project does not borrow unrelated audit sources from its neighbors. Ordinary production-code context retains its cross-project behavior.
+
 ## Evidence and scope
 
 Audit mode selects indexed Storybook, Playwright or Vitest sources named by the query and follows literal project-local file references. CI requests start at the project's `.gitlab-ci.yml` or indexed GitHub workflow files; unrelated GitLab YAML files are not assumed active. Literal local GitLab includes are followed recursively, with cycles bounded. External, conditional, complex or dynamic includes remain unverified. GitHub workflow source is delivered without interpreting actions or reusable workflows.

@@ -391,6 +391,9 @@ func deliverSourceReadFile(item sourceReadBatchFile) (SourceReadFileResult, erro
 }
 
 func redactSourceReadFile(file sourceFile) ([]string, error) {
+	if contextAssetSource(file.Path) {
+		return redactAssetSourceLines(file.Lines), nil
+	}
 	// Give the redactor explicit line prefixes so numeric property keys cannot
 	// be mistaken for renderer metadata; retain preceding multiline context.
 	numbered := renderNumberedSource(file.Lines, 1, len(file.Lines))

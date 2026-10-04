@@ -10,26 +10,30 @@ import (
 )
 
 type Config struct {
-	OutputDir         string
-	Include           []string
-	Exclude           []string
-	MaxFileSizeBytes  int64
-	FollowSymlinks    bool
-	UseGitignore      bool
-	UpdateGitignore   bool
-	Workspace         bool
-	WorkspaceRoot     string
-	EditorURLTemplate string
+	OutputDir               string
+	Include                 []string
+	Exclude                 []string
+	MaxFileSizeBytes        int64
+	MaxAssetFileSizeBytes   int64
+	MaxBinaryAssetSizeBytes int64
+	FollowSymlinks          bool
+	UseGitignore            bool
+	UpdateGitignore         bool
+	Workspace               bool
+	WorkspaceRoot           string
+	EditorURLTemplate       string
 }
 
 func Defaults() Config {
 	return Config{
-		OutputDir:        "goregraph-out",
-		MaxFileSizeBytes: 512 * 1024,
-		FollowSymlinks:   false,
-		UseGitignore:     true,
-		UpdateGitignore:  true,
-		Workspace:        true,
+		OutputDir:               "goregraph-out",
+		MaxFileSizeBytes:        512 * 1024,
+		MaxAssetFileSizeBytes:   16 * 1024 * 1024,
+		MaxBinaryAssetSizeBytes: 256 * 1024 * 1024,
+		FollowSymlinks:          false,
+		UseGitignore:            true,
+		UpdateGitignore:         true,
+		Workspace:               true,
 		Exclude: []string{
 			".git/",
 			".worktrees/",
@@ -131,6 +135,16 @@ func applyProjectConfig(cfg *Config, body string) error {
 				return fmt.Errorf("max_file_size_kb must be a positive integer")
 			}
 			cfg.MaxFileSizeBytes = kb * 1024
+		case "max_asset_file_size_kb", "max_binary_asset_size_kb":
+			kb, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || kb <= 0 || kb > 1048576 {
+				return fmt.Errorf("%s must be a positive integer up to 1048576", key)
+			}
+			if key == "max_asset_file_size_kb" {
+				cfg.MaxAssetFileSizeBytes = kb * 1024
+			} else {
+				cfg.MaxBinaryAssetSizeBytes = kb * 1024
+			}
 		case "follow_symlinks":
 			parsed, err := parseBool(value)
 			if err != nil {

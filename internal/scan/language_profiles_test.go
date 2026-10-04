@@ -51,13 +51,15 @@ func TestLanguageCapabilityProfilesMatchImplementedAdapters(t *testing.T) {
 		"shell": {
 			level: "partial", symbols: true, relations: true, calls: true,
 		},
-		"kotlin": {level: "index", symbols: true, relations: true},
-		"scala":  {level: "index", symbols: true, relations: true},
-		"swift":  {level: "index", symbols: true, relations: true},
-		"ruby":   {level: "index", symbols: true, relations: true},
-		"c":      {level: "index", symbols: true, relations: true},
-		"cpp":    {level: "index", symbols: true, relations: true},
-		"csharp": {level: "index", symbols: true, relations: true},
+		"kotlin":  {level: "index", symbols: true, relations: true},
+		"scala":   {level: "index", symbols: true, relations: true},
+		"swift":   {level: "full", symbols: true, relations: true, calls: true, tests: true, exactSymbols: true, directUsages: true, httpConsumer: true},
+		"ruby":    {level: "index", symbols: true, relations: true},
+		"c":       {level: "index", symbols: true, relations: true},
+		"cpp":     {level: "index", symbols: true, relations: true},
+		"unity":   {level: "partial", symbols: true, relations: true},
+		"blender": {level: "partial", symbols: true, relations: true},
+		"csharp":  {level: "full", symbols: true, relations: true, calls: true, routes: true, tests: true, exactSymbols: true, directUsages: true, httpProvider: true, httpConsumer: true},
 	}
 
 	profiles := LanguageCapabilityProfiles()
@@ -77,8 +79,8 @@ func TestLanguageCapabilityProfilesMatchImplementedAdapters(t *testing.T) {
 			profile.Calls != want.calls ||
 			profile.Routes != want.routes ||
 			profile.Tests != want.tests ||
-			profile.APIClients != want.architecture ||
-			profile.Persistence != want.architecture ||
+			profile.APIClients != (want.architecture || profile.Language == "csharp" || profile.Language == "swift") ||
+			profile.Persistence != (want.architecture || profile.Language == "csharp" || profile.Language == "swift") ||
 			profile.Messaging != want.architecture ||
 			profile.DataFlow != want.architecture ||
 			profile.ExactSymbols != want.exactSymbols ||
@@ -96,8 +98,8 @@ func TestLanguageCapabilityProfilesMatchImplementedAdapters(t *testing.T) {
 		}
 	}
 	wantLanguages := []string{
-		"c", "cpp", "csharp", "go", "java", "javascript", "kotlin", "php",
-		"python", "ruby", "rust", "scala", "shell", "swift", "typescript",
+		"blender", "c", "cpp", "csharp", "go", "java", "javascript", "kotlin", "php",
+		"python", "ruby", "rust", "scala", "shell", "swift", "typescript", "unity",
 	}
 	if !reflect.DeepEqual(languages, wantLanguages) {
 		t.Fatalf("profile order = %q, want %q", languages, wantLanguages)

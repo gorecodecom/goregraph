@@ -1248,6 +1248,7 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 	queryTokens := contextQueryTokens(primaryQuery)
 	queryTerm := normalizeContextTerm(query)
 	queryAnchors := contextQueryAnchors(query)
+	shortQualifiedAnchors := contextUniqueLanguageAnchors(facts, queryAnchors)
 	uniqueRequestedRouteKey := contextUniqueRequestedRouteKey(facts, query)
 	transitionSource := contextEndpointTransitionSource(primaryQuery)
 	ranked := make([]rankedContextFact, 0, len(facts))
@@ -1310,6 +1311,11 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 			embeddedExact = true
 			score += scoreEmbeddedExact
 			reason = "embedded exact qualified name"
+		case shortQualifiedAnchors[fact.ID] > 0:
+			exactClass = 2
+			embeddedExact = true
+			score += scoreEmbeddedExact + shortQualifiedAnchors[fact.ID]
+			reason = "unique source-qualified name"
 		case contextQueryHasAnchor(queryAnchors, normalizeContextTerm(fact.File)):
 			exactClass = 2
 			embeddedExact = true
@@ -1326,6 +1332,14 @@ func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []ranke
 			score += scoreAllTerms
 		}
 		score += matched * scorePerMatchedTerm
+		if reason == "unique source-qualified name" {
+			// Explicit owner/member identities follow their order in the request.
+			// File-name vocabulary must not select a later declaration instead.
+			score -= matched * scorePerMatchedTerm
+			if allTerms {
+				score -= scoreAllTerms
+			}
+		}
 		switch strings.ToLower(fact.Kind) {
 		case "route", "api_endpoint":
 			score += scoreRouteKind
@@ -3206,9 +3220,17 @@ func contextPrimaryQuery(value string) string {
 		value = problemStatement
 	}
 	value = contextFirstParagraph(value)
-	segments := strings.FieldsFunc(value, func(current rune) bool {
-		return current == '.' || current == '?' || current == '!'
-	})
+	// Dots in source identities and paths are not sentence boundaries.
+	runes := []rune(value)
+	segments := []string{}
+	start := 0
+	for i, current := range runes {
+		if (current == '.' || current == '?' || current == '!') && (i+1 == len(runes) || unicode.IsSpace(runes[i+1])) {
+			segments = append(segments, string(runes[start:i]))
+			start = i + 1
+		}
+	}
+	segments = append(segments, string(runes[start:]))
 	for _, segment := range segments {
 		segment = strings.TrimSpace(segment)
 		if segment == "" {

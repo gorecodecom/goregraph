@@ -170,7 +170,7 @@ func TestReleaseFilesDescribe143AsCurrentRelease(t *testing.T) {
 	}
 	text := combined.String()
 	for _, want := range []string{
-		"Source version: GoreGraph 1.4.3 with output Schema 3.",
+		"Source version: GoreGraph 1.4.4 with output Schema 3.",
 		"`v1.4.3` is the current GoreGraph release.",
 		"Winget offers only versions accepted by Microsoft.",
 		"PUBLISH_WINGET=true",

@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	currentExtractorRevision = "2"
+	currentExtractorRevision = "6"
 	currentResolverRevision  = "1"
-	currentAgentRevision     = "3"
-	currentDashboardRevision = "5"
+	currentAgentRevision     = "7"
+	currentDashboardRevision = "7"
 )
 
 // BuildIdentity records inputs that affect analysis independently of release labels.
@@ -28,11 +28,12 @@ type BuildIdentity struct {
 // CurrentBuildIdentity excludes observers, deadlines and release-only metadata.
 func CurrentBuildIdentity(cfg config.Config, options BuildOptions, ignoreDigest, source string) BuildIdentity {
 	selection := struct {
-		Include, Exclude             []string
-		MaxFileSize                  int64
-		FollowSymlinks, UseGitignore bool
-		OutputDir, EditorURLTemplate string
-	}{cfg.Include, cfg.Exclude, cfg.MaxFileSizeBytes, cfg.FollowSymlinks, cfg.UseGitignore, cfg.OutputDir, cfg.EditorURLTemplate}
+		Include, Exclude                     []string
+		MaxFileSize                          int64
+		MaxAssetFileSize, MaxBinaryAssetSize int64
+		FollowSymlinks, UseGitignore         bool
+		OutputDir, EditorURLTemplate         string
+	}{cfg.Include, cfg.Exclude, cfg.MaxFileSizeBytes, cfg.MaxAssetFileSizeBytes, cfg.MaxBinaryAssetSizeBytes, cfg.FollowSymlinks, cfg.UseGitignore, cfg.OutputDir, cfg.EditorURLTemplate}
 	body, _ := json.Marshal(selection)
 	policy, _ := json.Marshal(options.FileTimeout)
 	return BuildIdentity{

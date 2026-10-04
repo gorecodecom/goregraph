@@ -126,6 +126,9 @@ func uniqueSortedStrings(values []string) []string {
 func BuildCanonicalDiagnostics(matches []ContractMatchRecord, capabilities []CapabilityRecord) []CanonicalDiagnosticRecord {
 	records := make([]CanonicalDiagnosticRecord, 0, len(matches))
 	for _, match := range matches {
+		if match.Issue == contractIssueMatched {
+			continue
+		}
 		code := firstNonEmpty(match.Issue, "information")
 		record := diagnosticForCode(code)
 		record.Code = code
@@ -156,7 +159,7 @@ func diagnosticForCode(code string) CanonicalDiagnosticRecord {
 		return CanonicalDiagnosticRecord{Title: "Frontend-internal route", Category: "expected_behavior", Severity: SeverityInfo, Resolution: ResolutionOutOfScope, Explanation: "The request is handled inside the frontend boundary and is not expected to resolve to a backend service.", PossibleImpact: "No backend impact is expected unless the route was intended to leave the frontend.", NextChecks: []string{"Confirm that the frontend-internal boundary is intentional."}}
 	case "method_mismatch":
 		return CanonicalDiagnosticRecord{Title: "Frontend and backend use different HTTP methods", Category: "likely_defect", Severity: SeverityError, Resolution: ResolutionPartial, Explanation: "A related backend route exists, but its HTTP method does not match the client contract.", PossibleImpact: "The request may fail at runtime or reach a different handler.", NextChecks: []string{"Compare the client method with the backend route.", "Check for a stale gateway or client contract."}}
-	case "indexed_backend_route_missing":
+	case "missing_backend_route", "scanned_service_no_route", "indexed_backend_route_missing":
 		return CanonicalDiagnosticRecord{Title: "No matching indexed backend route", Category: "missing_scan_coverage", Severity: SeverityWarning, Resolution: ResolutionUnresolved, Explanation: "GoreGraph could not connect the client contract to a route in the indexed backend projects.", PossibleImpact: "The service may be unindexed, dynamically configured, or the route may be missing.", NextChecks: []string{"Confirm that the owning backend project was scanned.", "Inspect gateway prefixes and nearby routes."}}
 	case "unscanned_service":
 		return CanonicalDiagnosticRecord{Title: "Referenced service is not indexed", Category: "missing_scan_coverage", Severity: SeverityWarning, Resolution: ResolutionUnresolved, Explanation: "A client contract references a service whose route index is not available in the current scan scope.", PossibleImpact: "Endpoint and impact results may be incomplete until the owning project is scanned.", NextChecks: []string{"Scan the owning service project.", "Confirm the configured service alias."}}

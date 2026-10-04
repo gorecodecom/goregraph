@@ -25,8 +25,12 @@ func renderWorkspaceDashboardDocument(title string, payload []byte) string {
 	var b strings.Builder
 	b.WriteString("<!doctype html>\n<html lang=\"de\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><link rel=\"icon\" href=\"data:,\"><title>")
 	b.WriteString(html.EscapeString(title))
-	b.WriteString("</title><style id=\"workspace-modern-styles\">")
+	b.WriteString("</title><script>")
+	b.WriteString(dashboardFile("theme.js"))
+	b.WriteString("</script><style id=\"workspace-modern-styles\">")
 	b.WriteString(dashboardFile("styles.css"))
+	b.WriteString("\n")
+	b.WriteString(dashboardFile("theme.css"))
 	b.WriteString("</style><style id=\"workspace-extended-styles\" media=\"not all\">")
 	b.WriteString(workspaceDashboardStyles)
 	b.WriteString("</style></head><body>")
@@ -54,7 +58,7 @@ func renderWorkspaceDashboardDocument(title string, payload []byte) string {
     document.getElementById('workspace-extended-shell').remove();
     document.getElementById('workspace-extended-script').remove();
 `)
-	for _, name := range []string{"adapter.js", "evidence-model.js", "app.js", "tooling.js", "workspace-ui.js"} {
+	for _, name := range []string{"adapter.js", "evidence-model.js", "app.js", "tooling.js", "api-specifications.js", "workspace-ui.js"} {
 		b.WriteString(dashboardFile(name))
 		b.WriteString("\n")
 	}

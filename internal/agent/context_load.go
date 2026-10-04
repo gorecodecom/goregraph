@@ -124,10 +124,11 @@ func loadContextIndex(request ContextRequest) (loadedContextIndex, error) {
 				validateErr,
 			))
 		}
-		return loadedContextIndex{
+		loaded := loadedContextIndex{
 			Index: index, Path: candidate.Path, ScopeRoot: candidate.ScopeRoot, Workspace: candidate.Workspace,
 			Health: loadContextProjectionHealth(candidate.Path),
-		}, nil
+		}
+		return loaded, nil
 	}
 
 	return loadedContextIndex{}, newContextIndexLoadError(ContextFallbackIndexMissing, fmt.Errorf(
