@@ -103,13 +103,21 @@ func updateManyWithValidation(ctx context.Context, requests []UpdateRequest, ops
 			return err
 		}
 	}
-	locks, err := acquireRoots(ctx, requestRoots(ordered), false)
+	writers, err := acquireWriterLocks(ctx, requestRoots(ordered))
 	if err != nil {
 		return err
 	}
-	defer releaseLocks(locks)
+	defer releaseLocks(writers)
+	locks, err := acquireRoots(ctx, requestRoots(ordered), true)
+	if err != nil {
+		return err
+	}
+	defer func() { releaseLocks(locks) }()
 	for _, request := range ordered {
 		if err := rejectPendingJournal(request.Root); err != nil {
+			return err
+		}
+		if err := removeAbandonedStages(request.Root, ops); err != nil {
 			return err
 		}
 	}
@@ -117,10 +125,7 @@ func updateManyWithValidation(ctx context.Context, requests []UpdateRequest, ops
 	if err != nil {
 		return err
 	}
-	if err := persistPrepared(transaction, ops); err != nil {
-		return errors.Join(err, cleanupPrepared(transaction, ops))
-	}
-	failPrepared := func(cause error) error { return errors.Join(cause, cleanupPrepared(transaction, ops)) }
+	failPrepared := func(cause error) error { return errors.Join(cause, discardStages(transaction, ops)) }
 	for i, request := range ordered {
 		if err := ctx.Err(); err != nil {
 			return failPrepared(err)
@@ -170,6 +175,28 @@ func updateManyWithValidation(ctx context.Context, requests []UpdateRequest, ops
 			return failPrepared(err)
 		}
 	}
+	// Preparation uses shared snapshot locks. Only the recoverable publication
+	// excludes readers, after every new snapshot and input check is ready.
+	releaseLocks(locks)
+	locks = nil
+	locks, err = acquireRoots(ctx, requestRoots(ordered), false)
+	if err != nil {
+		return failPrepared(err)
+	}
+	for _, entry := range transaction.Entries {
+		if err := rejectPendingJournal(entry.Root); err != nil {
+			return failPrepared(err)
+		}
+		if err := verifyPrevious(entry); err != nil {
+			return failPrepared(err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return failPrepared(err)
+	}
+	if err := persistPrepared(transaction, ops); err != nil {
+		return errors.Join(err, cleanupPrepared(transaction, ops))
+	}
 	transaction.State = "publishing"
 	if err := writeJournal(journalPath(transaction.Entries[0].Root), transaction, ops); err != nil {
 		return errors.Join(err, fmt.Errorf("%w: publishing decision", ErrRecoveryRequired))
@@ -218,6 +245,11 @@ func WithRead(ctx context.Context, root string, read func(committed string) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	initializing, err := acquireInitializationLocks(ctx, []string{canonical})
+	if err != nil {
+		return err
+	}
+	defer releaseLocks(initializing)
 	lock, err := acquireFileLock(ctx, lockPath(canonical), true)
 	if err != nil {
 		return err
@@ -271,6 +303,11 @@ func withReads(ctx context.Context, roots []string, read func() error, createMis
 		}
 	}
 	sort.Slice(canonical, func(i, j int) bool { return pathKey(canonical[i]) < pathKey(canonical[j]) })
+	initializing, err := acquireInitializationLocks(ctx, canonical)
+	if err != nil {
+		return err
+	}
+	defer releaseLocks(initializing)
 	locks, err := acquireRootsMode(ctx, canonical, true, createMissing)
 	if err != nil {
 		return err

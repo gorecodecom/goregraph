@@ -30,7 +30,7 @@ func TestRunWatchStatusReportsCoveringWorkspace(t *testing.T) {
 		"Root: " + workspace.Path,
 		"Mode: workspace\nRunning: true\nAutostart: true",
 		"Target output: " + filepath.Join(workspace.Path, ".goregraph-workspace"),
-		"Last successful watcher check:",
+		"Last successful index update:",
 		"Last error: update failed",
 	} {
 		if !strings.Contains(stdout.String(), want) {
@@ -50,6 +50,33 @@ func TestRunWatchStatusReportsCoveringWorkspace(t *testing.T) {
 	}
 	if after := watchStatusStateFiles(t, home); !reflect.DeepEqual(before, after) {
 		t.Fatal("project stop changed the covering workspace watcher")
+	}
+}
+
+func TestWatchActivityDistinguishesIdleChecksFromIndexUpdates(t *testing.T) {
+	checked := time.Date(2026, 10, 4, 20, 0, 0, 0, time.UTC)
+	updated := checked.Add(-2 * time.Hour)
+	for _, updating := range []bool{false, true} {
+		status := watch.Status{Running: true, LastCheck: checked, LastSuccess: updated}
+		if updating {
+			status.UpdateStarted = checked.Add(time.Second)
+		}
+		var stdout bytes.Buffer
+		printWatchActivity(&stdout, status)
+		for _, want := range []string{"Last successful file check: 2026-10-04 20:00:00 UTC", "Last successful index update: 2026-10-04 18:00:00 UTC"} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("activity missing %q: %s", want, stdout.String())
+			}
+		}
+		if updating && !strings.Contains(stdout.String(), "Activity: updating index\nUpdate started:") {
+			t.Fatal(stdout.String())
+		}
+		if !updating && !strings.Contains(stdout.String(), "Activity: monitoring files") {
+			t.Fatal(stdout.String())
+		}
+		if strings.Contains(stdout.String(), "stale") || strings.Contains(stdout.String(), "Last successful watcher check") {
+			t.Fatalf("idle index was incorrectly described: %s", stdout.String())
+		}
 	}
 }
 

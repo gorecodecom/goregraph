@@ -46,6 +46,8 @@ type Status struct {
 	Method         string    `json:"method,omitempty"`
 	AutostartError string    `json:"autostart_error,omitempty"`
 	LastSuccess    time.Time `json:"last_success,omitempty"`
+	LastCheck      time.Time `json:"last_check,omitempty"`
+	UpdateStarted  time.Time `json:"update_started,omitempty"`
 	LastError      string    `json:"last_error,omitempty"`
 	Supervised     bool      `json:"supervised"`
 	SupervisorPID  int       `json:"supervisor_pid,omitempty"`
@@ -63,15 +65,17 @@ type setting struct {
 }
 
 type runtimeState struct {
-	Token       string    `json:"token"`
-	PID         int       `json:"pid"`
-	Stopped     bool      `json:"stopped,omitempty"`
-	Heartbeat   time.Time `json:"heartbeat"`
-	LastSuccess time.Time `json:"last_success,omitempty"`
-	LastError   string    `json:"last_error,omitempty"`
-	Version     string    `json:"version,omitempty"`
-	Commit      string    `json:"commit,omitempty"`
-	Upgrading   bool      `json:"upgrading,omitempty"`
+	Token         string    `json:"token"`
+	PID           int       `json:"pid"`
+	Stopped       bool      `json:"stopped,omitempty"`
+	Heartbeat     time.Time `json:"heartbeat"`
+	LastSuccess   time.Time `json:"last_success,omitempty"`
+	LastCheck     time.Time `json:"last_check,omitempty"`
+	UpdateStarted time.Time `json:"update_started,omitempty"`
+	LastError     string    `json:"last_error,omitempty"`
+	Version       string    `json:"version,omitempty"`
+	Commit        string    `json:"commit,omitempty"`
+	Upgrading     bool      `json:"upgrading,omitempty"`
 }
 
 // Resolve canonicalizes a selected root without creating watcher state.
@@ -334,6 +338,10 @@ func GetStatus(root Root) (Status, error) {
 	}
 	status.Running = !live.Stopped && live.Token != "" && ownsLock(root, live.Token) && time.Since(live.Heartbeat) >= 0 && time.Since(live.Heartbeat) < heartbeatLimit
 	status.LastSuccess = live.LastSuccess
+	status.LastCheck = live.LastCheck
+	if status.Running {
+		status.UpdateStarted = live.UpdateStarted
+	}
 	status.LastError = live.LastError
 	if supervised && supervisor.LastError != "" {
 		status.LastError = supervisor.LastError
@@ -507,6 +515,7 @@ func Run(ctx context.Context, root Root, update func() error) error {
 		<-doneHeartbeat
 		mutex.Lock()
 		live.Stopped = true
+		live.UpdateStarted = time.Time{}
 		mutex.Unlock()
 		_ = publish()
 	}()
@@ -516,11 +525,16 @@ func Run(ctx context.Context, root Root, update func() error) error {
 		if !ownsLock(root, token) {
 			return false
 		}
+		mutex.Lock()
+		live.UpdateStarted = time.Now()
+		mutex.Unlock()
+		_ = publish()
 		err := update()
 		if ctx.Err() != nil {
 			return false
 		}
 		mutex.Lock()
+		live.UpdateStarted = time.Time{}
 		if err != nil {
 			live.LastError = err.Error()
 			retryAt = time.Now().Add(retryInterval)
@@ -533,6 +547,11 @@ func Run(ctx context.Context, root Root, update func() error) error {
 		_ = publish()
 		return err == nil
 	}
+	checked := func() {
+		mutex.Lock()
+		live.LastCheck = time.Now()
+		mutex.Unlock()
+	}
 	previous, err := fingerprint(ctx, root)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -543,6 +562,7 @@ func Run(ctx context.Context, root Root, update func() error) error {
 		mutex.Unlock()
 		_ = publish()
 	} else {
+		checked()
 		apply()
 	}
 	var pending string
@@ -571,6 +591,7 @@ func Run(ctx context.Context, root Root, update func() error) error {
 				_ = publish()
 				continue
 			}
+			checked()
 			if current == previous {
 				pending = ""
 				if !retryAt.IsZero() && !time.Now().Before(retryAt) {

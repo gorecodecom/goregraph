@@ -48,3 +48,14 @@ func TestFileWalkCancellation(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+func TestFileWalkExcludesPublicationWriterState(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "main.ts", "export const value = 1")
+	writeFile(t, root, ".goregraph-writer-fixture.lock", "writer state")
+	writeFile(t, root, "nested/.goregraph-writer-fixture.lock", "writer state")
+	files, err := snapshotProjectFiles(root, config.Defaults())
+	if err != nil || len(files) != 1 || files[0].Path != "main.ts" {
+		t.Fatalf("publication writer state entered source inventory: %v %v", files, err)
+	}
+}

@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +12,28 @@ import (
 	"github.com/gorecodecom/goregraph/internal/scan"
 	"github.com/gorecodecom/goregraph/internal/watch"
 )
+
+func printWatchActivity(stdout io.Writer, status watch.Status) {
+	switch {
+	case !status.Running && status.Supervised:
+		fmt.Fprintln(stdout, "Activity: waiting for supervised watcher")
+	case !status.Running:
+		fmt.Fprintln(stdout, "Activity: stopped")
+	case !status.UpdateStarted.IsZero():
+		fmt.Fprintln(stdout, "Activity: updating index")
+		fmt.Fprintf(stdout, "Update started: %s\n", status.UpdateStarted.Format("2006-01-02 15:04:05 MST"))
+	case status.LastCheck.IsZero():
+		fmt.Fprintln(stdout, "Activity: awaiting first reported file check")
+	default:
+		fmt.Fprintln(stdout, "Activity: monitoring files")
+	}
+	if !status.LastCheck.IsZero() {
+		fmt.Fprintf(stdout, "Last successful file check: %s\n", status.LastCheck.Format("2006-01-02 15:04:05 MST"))
+	}
+	if !status.LastSuccess.IsZero() {
+		fmt.Fprintf(stdout, "Last successful index update: %s\n", status.LastSuccess.Format("2006-01-02 15:04:05 MST"))
+	}
+}
 
 // coveringWorkspaceWatcher reads existing state and registry metadata only.
 func coveringWorkspaceWatcher(requested watch.Root) (watch.Root, watch.Status, bool, error) {

@@ -1219,6 +1219,12 @@ project or workspace update for agent index and dashboard. It does not run tests
 or application code. An already open static dashboard may need a browser reload.
 See the [watcher design and platform behavior](docs/file-watcher-proposal.md).
 
+Watcher status reports the last successful file check separately from the last
+successful index update, and shows when an update is in progress. Unchanged files
+advance the file-check timestamp without claiming a new index update. Readers
+can use the previous committed index while replacement outputs are prepared;
+the final cross-project publication remains protected against mixed generations.
+
 Each `task_context` call should pass the active project or workspace root
 explicitly. This avoids depending on the working directory from which an MCP
 client launches the local process.

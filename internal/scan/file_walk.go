@@ -167,7 +167,7 @@ func unityGeneratedDirectory(name string) bool {
 }
 
 func generatedScratchName(name string) bool {
-	return strings.HasPrefix(name, ".goregraph-stage-") || strings.HasPrefix(name, ".goregraph-backup-") || strings.HasPrefix(name, ".goregraph-journal-") || strings.HasPrefix(name, ".goregraph-lock-")
+	return strings.HasPrefix(name, ".goregraph-stage-") || strings.HasPrefix(name, ".goregraph-backup-") || strings.HasPrefix(name, ".goregraph-journal-") || strings.HasPrefix(name, ".goregraph-lock-") || strings.HasPrefix(name, ".goregraph-writer-")
 }
 
 // SnapshotProjectFiles returns the same content inventory used by incremental updates.

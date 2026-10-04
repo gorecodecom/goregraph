@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,6 +30,83 @@ func TestBuildContextWaitsForOutputPublication(t *testing.T) {
 	}
 	if err := <-readDone; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuildContextUsesCommittedIndexDuringReplacementPreparation(t *testing.T) {
+	root := writeSourceBackedContextFixture(t, false)
+	output := filepath.Join(root, "goregraph-out")
+	if err := outputstore.Update(context.Background(), outputstore.UpdateRequest{Root: output, Write: func(string) error { return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	request := ContextRequest{Root: root, Query: "deleteFromCadaster removeRegulation", ProtocolVersion: AdaptiveV2}
+	before, err := BuildContext(request)
+	if err != nil || !contextPackHasFile(before, "Controller.java") {
+		t.Fatalf("fixture has no useful context: %+v %v", before, err)
+	}
+	ready, release := make(chan struct{}), make(chan struct{})
+	finished := false
+	defer func() {
+		if !finished {
+			close(release)
+		}
+	}()
+	done := make(chan error, 1)
+	go func() {
+		done <- outputstore.Update(context.Background(), outputstore.UpdateRequest{Root: output, Write: func(stage string) error {
+			path := filepath.Join(stage, "agent", "context-index.json")
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			var index map[string]any
+			if err := json.Unmarshal(body, &index); err != nil {
+				return err
+			}
+			index["generated"] = "2026-10-04T20:00:00Z"
+			body, err = json.Marshal(index)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(path, body, 0644); err != nil {
+				return err
+			}
+			close(ready)
+			<-release
+			return nil
+		}})
+	}()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("replacement preparation failed: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("replacement preparation did not start")
+	}
+	readDone := make(chan error, 1)
+	go func() {
+		pack, err := BuildContext(request)
+		if err == nil && (!contextPackHasFile(pack, "Controller.java") || pack.Freshness != before.Freshness) {
+			err = fmt.Errorf("committed context changed before publication: freshness=%s, want %s", pack.Freshness, before.Freshness)
+		}
+		readDone <- err
+	}()
+	select {
+	case err := <-readDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("context waited for replacement preparation")
+	}
+	close(release)
+	finished = true
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	after, err := BuildContext(request)
+	if err != nil || after.Freshness != "2026-10-04T20:00:00Z" || !contextPackHasFile(after, "Controller.java") {
+		t.Fatalf("completed replacement was not adopted: %+v %v", after, err)
 	}
 }
 
@@ -77,15 +156,10 @@ func holdOutputPublication(t *testing.T, root string) (chan struct{}, chan error
 
 func outputReadTestRoot(t *testing.T) string {
 	t.Helper()
-	root, err := os.MkdirTemp(".", ".agent-output-read-")
+	root, err := filepath.Abs(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err = filepath.Abs(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	return root
 }
 

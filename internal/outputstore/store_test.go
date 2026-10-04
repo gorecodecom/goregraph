@@ -249,6 +249,9 @@ func TestWithReadsRejectsAnyPendingSibling(t *testing.T) {
 
 func TestReaderSeesCompletePublishedGeneration(t *testing.T) {
 	root := previousOutput(t)
+	if err := os.WriteFile(filepath.Join(root, "second"), []byte("previous"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	staged := make(chan struct{})
 	publish := make(chan struct{})
 	writerDone := make(chan error, 1)
@@ -266,12 +269,16 @@ func TestReaderSeesCompletePublishedGeneration(t *testing.T) {
 	<-staged
 	go func() {
 		readerDone <- WithRead(context.Background(), root, func(committed string) error {
+			var generation string
 			for _, name := range []string{"sentinel", "second"} {
 				value, err := os.ReadFile(filepath.Join(committed, name))
 				if err != nil {
 					return err
 				}
-				if string(value) != "new" {
+				if generation == "" {
+					generation = string(value)
+				}
+				if string(value) != generation || (generation != "new" && generation != "previous") {
 					return errors.New("mixed generation")
 				}
 			}

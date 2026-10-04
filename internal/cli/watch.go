@@ -225,9 +225,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 		if status.AutostartError != "" {
 			fmt.Fprintf(stdout, "Autostart error: %s\n", status.AutostartError)
 		}
-		if !status.LastSuccess.IsZero() {
-			fmt.Fprintf(stdout, "Last successful watcher check: %s\n", status.LastSuccess.Format("2006-01-02 15:04:05 MST"))
-		}
+		printWatchActivity(stdout, status)
 		if status.LastError != "" {
 			fmt.Fprintf(stdout, "Last error: %s\n", status.LastError)
 		}
