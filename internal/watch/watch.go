@@ -18,6 +18,7 @@ import (
 
 	"github.com/gorecodecom/goregraph/internal/config"
 	"github.com/gorecodecom/goregraph/internal/scan"
+	"github.com/gorecodecom/goregraph/internal/version"
 )
 
 var (
@@ -46,6 +47,11 @@ type Status struct {
 	AutostartError string    `json:"autostart_error,omitempty"`
 	LastSuccess    time.Time `json:"last_success,omitempty"`
 	LastError      string    `json:"last_error,omitempty"`
+	Supervised     bool      `json:"supervised"`
+	SupervisorPID  int       `json:"supervisor_pid,omitempty"`
+	PID            int       `json:"pid,omitempty"`
+	Version        string    `json:"version,omitempty"`
+	Commit         string    `json:"commit,omitempty"`
 }
 
 type setting struct {
@@ -63,6 +69,9 @@ type runtimeState struct {
 	Heartbeat   time.Time `json:"heartbeat"`
 	LastSuccess time.Time `json:"last_success,omitempty"`
 	LastError   string    `json:"last_error,omitempty"`
+	Version     string    `json:"version,omitempty"`
+	Commit      string    `json:"commit,omitempty"`
+	Upgrading   bool      `json:"upgrading,omitempty"`
 }
 
 // Resolve canonicalizes a selected root without creating watcher state.
@@ -299,6 +308,14 @@ func GetStatus(root Root) (Status, error) {
 		return Status{}, err
 	}
 	status := Status{Root: root.Path, Workspace: saved.Workspace, Autostart: saved.Autostart, Method: saved.Method, AutostartError: saved.SetupError}
+	supervisor, supervised, err := liveSupervisor(root)
+	if err != nil {
+		return Status{}, err
+	}
+	status.Supervised, status.SupervisorPID = supervised, supervisor.PID
+	if supervised {
+		status.LastError = supervisor.LastError
+	}
 	path, err := statePath(root, "runtime.json")
 	if err != nil {
 		return Status{}, err
@@ -313,6 +330,10 @@ func GetStatus(root Root) (Status, error) {
 	status.Running = !live.Stopped && live.Token != "" && ownsLock(root, live.Token) && time.Since(live.Heartbeat) >= 0 && time.Since(live.Heartbeat) < heartbeatLimit
 	status.LastSuccess = live.LastSuccess
 	status.LastError = live.LastError
+	if supervised && supervisor.LastError != "" {
+		status.LastError = supervisor.LastError
+	}
+	status.PID, status.Version, status.Commit = live.PID, live.Version, live.Commit
 	if !status.Running && !live.Stopped && live.Token != "" && status.LastError == "" {
 		status.LastError = "watcher process is not active (stale heartbeat or lock)"
 	}
@@ -325,7 +346,7 @@ func ChangeMode(root Root, executable string) error {
 	if err != nil {
 		return err
 	}
-	if status.Running {
+	if status.Running || status.Supervised {
 		return fmt.Errorf("stop the watcher before changing its mode")
 	}
 	if status.Workspace == root.Workspace {
@@ -346,6 +367,24 @@ func ChangeMode(root Root, executable string) error {
 
 // RequestStop asks the live watcher to shut down after its current update.
 func RequestStop(root Root) (bool, error) {
+	supervisor, supervised, err := liveSupervisor(root)
+	if err != nil {
+		return false, err
+	}
+	if supervised {
+		path, err := statePath(root, "supervisor.stop.request")
+		if err != nil {
+			return false, err
+		}
+		if err := writeJSON(path, map[string]string{"token": supervisor.Token}); err != nil {
+			return false, err
+		}
+	}
+	requested, err := requestWorkerStop(root)
+	return requested || supervised, err
+}
+
+func requestWorkerStop(root Root) (bool, error) {
 	status, err := GetStatus(root)
 	if err != nil || !status.Running {
 		return false, err
@@ -429,7 +468,7 @@ func Run(ctx context.Context, root Root, update func() error) error {
 	if err != nil {
 		return err
 	}
-	live := runtimeState{Token: token, PID: os.Getpid(), Heartbeat: time.Now()}
+	live := runtimeState{Token: token, PID: os.Getpid(), Heartbeat: time.Now(), Version: version.Version, Commit: version.Commit}
 	var mutex sync.Mutex
 	publish := func() error {
 		mutex.Lock()
@@ -550,7 +589,11 @@ func Run(ctx context.Context, root Root, update func() error) error {
 }
 
 func stopRequested(root Root, token string) bool {
-	path, err := statePath(root, "stop.request")
+	return namedStopRequested(root, token, "stop.request")
+}
+
+func namedStopRequested(root Root, token, name string) bool {
+	path, err := statePath(root, name)
 	if err != nil {
 		return false
 	}
@@ -565,7 +608,11 @@ func stopRequested(root Root, token string) bool {
 }
 
 func acquire(root Root) (func(), string, error) {
-	lock, err := statePath(root, "run.lock")
+	return acquireNamed(root, "run.lock", "runtime.json")
+}
+
+func acquireNamed(root Root, lockName, runtimeName string) (func(), string, error) {
+	lock, err := statePath(root, lockName)
 	if err != nil {
 		return nil, "", err
 	}
@@ -573,11 +620,15 @@ func acquire(root Root) (func(), string, error) {
 		if !errors.Is(err, os.ErrExist) {
 			return nil, "", err
 		}
-		status, statusErr := GetStatus(root)
-		if statusErr != nil {
-			return nil, "", statusErr
+		path, pathErr := statePath(root, runtimeName)
+		if pathErr != nil {
+			return nil, "", pathErr
 		}
-		if status.Running {
+		var live runtimeState
+		if err := readJSON(path, &live); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, "", err
+		}
+		if runtimeAlive(root, live, lockName) {
 			return nil, "", fmt.Errorf("watcher already running for %s", root.Path)
 		}
 		info, statErr := os.Stat(lock)
@@ -608,7 +659,7 @@ func acquire(root Root) (func(), string, error) {
 		return nil, "", err
 	}
 	return func() {
-		if ownsLock(root, token) {
+		if ownsNamedLock(root, token, lockName) {
 			_ = os.Remove(filepath.Join(lock, "owner"))
 			_ = os.Remove(lock)
 		}
@@ -616,7 +667,11 @@ func acquire(root Root) (func(), string, error) {
 }
 
 func ownsLock(root Root, token string) bool {
-	lock, err := statePath(root, "run.lock")
+	return ownsNamedLock(root, token, "run.lock")
+}
+
+func ownsNamedLock(root Root, token, name string) bool {
+	lock, err := statePath(root, name)
 	if err != nil {
 		return false
 	}

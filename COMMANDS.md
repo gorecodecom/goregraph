@@ -524,29 +524,61 @@ Important behavior:
 - does not install hooks, watch files, or run in the background
 - returns a non-zero exit code if the refresh fails
 
-## `goregraph watch start|stop|status|autostart|run [path]`
+## `goregraph watch start|restart|stop|status|autostart|run [path]`
 
 The watcher is opt-in and is not started by installation. `watch start [path]`
-starts it in the background. Recognized workspace roots use workspace mode
+starts a supervisor and worker in the background. The supervisor restarts failed
+workers; on macOS and Linux with a user systemd session, the service manager
+also supervises the parent process. Recognized workspace roots use workspace mode
 automatically; add `--workspace` for an unrecognized workspace.
 On the first interactive start, GoreGraph asks whether to start it at future
 logins (default: no). Noninteractive use defaults to no; use `--autostart on|off`
 to make that choice explicitly. `watch autostart on|off [path]` changes the login
-setting later without starting or stopping the current process.
+setting later. Enabling it also starts a stopped watcher; disabling it leaves
+the current watcher running. An explicit stop remains respected until the next
+start or login.
 
 `watch status [path]` reports the live process, autostart setting, target output,
-agent/dashboard generation times, the last successful watcher check and any
+supervisor state, worker PID/version/commit, agent/dashboard generation times,
+the last successful watcher check and any
 error separately. A check can skip an unchanged build. It warns when an older
 project-mode watcher targets a recognized workspace and leaves its dashboard
 stale. Stop the watcher before restarting with `--workspace` to switch modes.
 `watch stop [path]` requests a
 graceful stop but leaves autostart unchanged. `watch run [path]` is the
-foreground form used by login startup. The watcher checks the same selected
+foreground worker form; login startup uses the internal supervisor. The watcher checks the same selected
 files as the scanner every three seconds, coalesces edits, and updates both
 agent and dashboard projections. It never runs tests or application code.
 The CLI is the same on Windows, macOS and Linux; login startup uses the
 current user's native mechanism when available. An already open static
 dashboard may need reloading.
+
+An active supervisor observes replacement of its executable at the same stable
+installation path, including symlink updates. It validates a stable replacement
+with `goregraph version` and read-only supervisor help, requests a graceful worker
+stop, waits for its current
+update and lock release, then launches the new executable. On macOS/Linux the
+supervisor replaces itself in place, preserving service-manager ownership; on
+Windows the existing supervisor replaces its worker. An invalid or missing
+replacement leaves the healthy worker running and appears in status. This does
+not download software, switch between independent installations, start stopped
+watchers, or update already running MCP servers. Legacy watchers require one
+explicit `watch restart` to activate supervision.
+
+`watch restart` waits for both worker and supervisor to stop and preserves
+autostart. Its timeout never launches a competing writer. macOS launchd and
+systemd restart a failed supervisor while successful explicit shutdown stays
+stopped. Windows login tasks run the supervisor with failure recovery (up to
+255 task retries); Windows and Linux desktop-only fallback sessions supervise
+worker crashes, but detached-parent failure recovery requires the native login
+manager. The Windows service-manager behavior is covered by generated task
+configuration checks, not native execution on macOS.
+
+The opt-in native macOS regression test uses disposable projects and services:
+
+```sh
+GOREGRAPH_NATIVE_WATCHER_SMOKE=1 go test ./internal/cli -run '^TestNativeMacWatcherLifecycle$' -count=1 -v
+```
 
 ## `goregraph dashboard path|open|edit [path]`
 

@@ -29,6 +29,12 @@ func runArguments(root Root) []string {
 	return args
 }
 
+func supervisedArguments(root Root) []string {
+	args := runArguments(root)
+	args[1] = "supervise"
+	return args
+}
+
 func enableAutostart(root Root, executable string) (string, error) {
 	switch runtime.GOOS {
 	case "darwin":
@@ -106,8 +112,24 @@ func enableLaunchAgent(root Root, executable string) (string, error) {
 		return "", err
 	}
 	label := "com.gorecode.goregraph.watch." + root.ID
+	body, err := launchAgentBody(root, executable)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, label+".plist"), body, 0o600); err != nil {
+		return "", err
+	}
+	return "launchd", nil
+}
+
+func launchAgentBody(root Root, executable string) ([]byte, error) {
+	directory, err := stateDir(root)
+	if err != nil {
+		return nil, err
+	}
+	label := "com.gorecode.goregraph.watch." + root.ID
 	var args strings.Builder
-	for _, arg := range append([]string{executable}, runArguments(root)...) {
+	for _, arg := range append([]string{executable}, supervisedArguments(root)...) {
 		fmt.Fprintf(&args, "    <string>%s</string>\n", xmlValue(arg))
 	}
 	body := "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
@@ -116,11 +138,14 @@ func enableLaunchAgent(root Root, executable string) (string, error) {
 		"  <key>Label</key><string>" + label + "</string>\n" +
 		"  <key>ProgramArguments</key><array>\n" + args.String() + "  </array>\n" +
 		"  <key>RunAtLoad</key><true/>\n" +
+		"  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n" +
+		"  <key>ThrottleInterval</key><integer>10</integer>\n" +
+		"  <key>ExitTimeOut</key><integer>0</integer>\n" +
+		"  <key>StandardOutPath</key><string>" + xmlValue(filepath.Join(directory, "watch.log")) + "</string>\n" +
+		"  <key>StandardErrorPath</key><string>" + xmlValue(filepath.Join(directory, "watch.log")) + "</string>\n" +
+		"  <key>EnvironmentVariables</key><dict><key>GOREGRAPH_WATCH_HOME</key><string>" + xmlValue(filepath.Dir(directory)) + "</string></dict>\n" +
 		"</dict></plist>\n"
-	if err := os.WriteFile(filepath.Join(dir, label+".plist"), []byte(body), 0o600); err != nil {
-		return "", err
-	}
-	return "launchd", nil
+	return []byte(body), nil
 }
 
 func taskName(root Root) string { return "GoreGraphWatch-" + root.ID }
@@ -130,7 +155,7 @@ func powershellArgument(value string) string {
 }
 
 func scheduledTaskAction(root Root, executable string) (string, string) {
-	parts := append([]string{executable}, runArguments(root)...)
+	parts := append([]string{executable}, supervisedArguments(root)...)
 	for i := range parts {
 		parts[i] = powershellArgument(parts[i])
 	}
@@ -150,7 +175,7 @@ func scheduledTaskXML(root Root, executable, username string) []byte {
 		"<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">" +
 		"<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>" + xmlValue(username) + "</UserId></LogonTrigger></Triggers>" +
 		"<Principals><Principal id=\"Author\"><UserId>" + xmlValue(username) + "</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>" +
-		"<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled></Settings>" +
+		"<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled><RestartOnFailure><Interval>PT1M</Interval><Count>255</Count></RestartOnFailure></Settings>" +
 		"<Actions Context=\"Author\"><Exec><Command>" + xmlValue(command) + "</Command><Arguments>" + xmlValue(arguments) + "</Arguments></Exec></Actions></Task>"
 	units := utf16.Encode([]rune(body))
 	encoded := make([]byte, 2+len(units)*2)
@@ -204,11 +229,11 @@ func enableLinuxAutostart(root Root, executable string) (string, error) {
 				return "", err
 			}
 			name := "goregraph-watch-" + root.ID + ".service"
-			parts := append([]string{executable}, runArguments(root)...)
+			parts := append([]string{executable}, supervisedArguments(root)...)
 			for i := range parts {
 				parts[i] = systemdArgument(parts[i])
 			}
-			body := "[Unit]\nDescription=GoreGraph watcher for " + root.ID + "\n\n[Service]\nType=simple\nExecStart=" + strings.Join(parts, " ") + "\nRestart=no\n\n[Install]\nWantedBy=default.target\n"
+			body := systemdServiceBody(root, parts)
 			path := filepath.Join(dir, name)
 			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 				return "", err
@@ -231,7 +256,7 @@ func enableLinuxAutostart(root Root, executable string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	parts := append([]string{executable}, runArguments(root)...)
+	parts := append([]string{executable}, supervisedArguments(root)...)
 	for i := range parts {
 		parts[i] = systemdArgument(parts[i])
 	}
@@ -240,4 +265,10 @@ func enableLinuxAutostart(root Root, executable string) (string, error) {
 		return "", err
 	}
 	return "xdg", nil
+}
+
+func systemdServiceBody(root Root, parts []string) string {
+	directory, _ := stateDir(root)
+	environment := systemdArgument("GOREGRAPH_WATCH_HOME=" + filepath.Dir(directory))
+	return "[Unit]\nDescription=GoreGraph watcher for " + root.ID + "\nStartLimitIntervalSec=0\n\n[Service]\nType=simple\nEnvironment=" + environment + "\nExecStart=" + strings.Join(parts, " ") + "\nRestart=on-failure\nRestartSec=2\nKillMode=process\nTimeoutStopSec=infinity\n\n[Install]\nWantedBy=default.target\n"
 }

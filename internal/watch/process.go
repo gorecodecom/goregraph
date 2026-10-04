@@ -27,17 +27,28 @@ func restartWithStart(ctx context.Context, root Root, start func(Root) error) er
 		return err
 	}
 	if requested {
-		lock, err := statePath(root, "run.lock")
-		if err != nil {
-			return err
-		}
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			if _, err := os.Lstat(lock); os.IsNotExist(err) {
-				break
-			} else if err != nil {
+			remaining := false
+			for _, name := range []string{"run.lock", "supervisor.lock"} {
+				lock, err := statePath(root, name)
+				if err != nil {
+					return err
+				}
+				if _, err := os.Lstat(lock); err == nil {
+					remaining = true
+				} else if !os.IsNotExist(err) {
+					return err
+				}
+			}
+			_, supervised, err := liveSupervisor(root)
+			if err != nil {
 				return err
+			}
+			remaining = remaining || supervised
+			if !remaining {
+				break
 			}
 			select {
 			case <-ctx.Done():
@@ -61,15 +72,22 @@ func Start(root Root) error {
 	if err != nil {
 		return err
 	}
-	if status.Running {
+	if status.Running || status.Supervised {
 		return fmt.Errorf("watcher already running for %s", root.Path)
 	}
 	if err := ensureStateDir(root); err != nil {
 		return err
 	}
-	executable, err := os.Executable()
+	executable, err := ExecutablePath()
 	if err != nil {
 		return err
+	}
+	managed, err := startManaged(root, executable)
+	if err != nil {
+		return err
+	}
+	if managed {
+		return waitForStart(root)
 	}
 	directory, err := stateDir(root)
 	if err != nil {
@@ -80,7 +98,7 @@ func Start(root Root) error {
 		return err
 	}
 	defer log.Close()
-	command := exec.Command(executable, runArguments(root)...)
+	command := exec.Command(executable, supervisedArguments(root)...)
 	command.Stdin = nil
 	command.Stdout = log
 	command.Stderr = log
@@ -89,6 +107,10 @@ func Start(root Root) error {
 		return err
 	}
 	_ = command.Process.Release()
+	return waitForStart(root)
+}
+
+func waitForStart(root Root) error {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		status, err := GetStatus(root)
@@ -97,5 +119,6 @@ func Start(root Root) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	directory, _ := stateDir(root)
 	return fmt.Errorf("watcher did not start; see %s", filepath.Join(directory, "watch.log"))
 }

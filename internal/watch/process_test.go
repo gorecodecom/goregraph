@@ -131,3 +131,38 @@ func TestRestartStartsStoppedRootAndHonorsCancellation(t *testing.T) {
 		t.Fatalf("stopped root did not start: starts=%d err=%v", starts, err)
 	}
 }
+
+func TestRestartWaitsForSupervisorHandoffWithoutCompetingStart(t *testing.T) {
+	root := restartFixture(t)
+	path, _ := statePath(root, "supervisor.json")
+	if err := writeJSON(path, runtimeState{Token: "handoff", PID: 1234, Heartbeat: time.Now(), Upgrading: true}); err != nil {
+		t.Fatal(err)
+	}
+	stopPath, _ := statePath(root, "supervisor.stop.request")
+	resumed := make(chan error, 1)
+	go func() {
+		for {
+			if _, err := os.Stat(stopPath); err == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		resumed <- supervise(context.Background(), root, "unused", supervisorOptions{})
+	}()
+	starts := 0
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := restartWithStart(ctx, root, func(root Root) error {
+		_, supervised, err := liveSupervisor(root)
+		if err != nil || supervised {
+			return errors.New("start raced the pending supervisor handoff")
+		}
+		starts++
+		return nil
+	}); err != nil || starts != 1 {
+		t.Fatalf("handoff restart failed: starts=%d err=%v", starts, err)
+	}
+	if err := <-resumed; err != nil {
+		t.Fatal(err)
+	}
+}

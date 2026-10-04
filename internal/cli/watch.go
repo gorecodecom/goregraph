@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,14 +35,15 @@ press Enter for no. For scripts, choose explicitly with --autostart on|off.
 
 To stop watching now, run "goregraph watch stop .". If Autostart is on,
 also run "goregraph watch autostart off ." to prevent future login startup.
-Use "goregraph watch restart ." after installing a new version. It waits for
-the current update to finish before starting the new process.
+Supervised watchers adopt new binaries automatically after their current update.
+Legacy watchers need one "goregraph watch restart ." to enable supervision.
 
 Recognized workspace roots are selected automatically. For a workspace that
 is not recognized, use "goregraph watch start <workspace-path> --workspace".
 Stop a running watcher before changing its project/workspace mode.
 The watcher updates the agent index and dashboard after file changes. It does
-not run tests or application code. Installation never enables or starts it.
+not run tests or application code. Installation never enables a watcher or
+starts a stopped watcher.
 
 All commands:
   start [path] [--workspace] [--autostart on|off]  Start in the background
@@ -59,7 +61,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	action := args[0]
-	if action != "start" && action != "restart" && action != "stop" && action != "status" && action != "autostart" && action != "run" {
+	if action != "start" && action != "restart" && action != "stop" && action != "status" && action != "autostart" && action != "run" && action != "supervise" {
 		fmt.Fprintf(stderr, "error: unknown watch command %q\n", action)
 		return 2
 	}
@@ -114,7 +116,16 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
-	if (action == "start" || action == "restart") && !workspaceFlag {
+	detectWorkspace := action == "start" || action == "restart"
+	if action == "autostart" && autoChoice == "on" {
+		registered, err := watch.HasSetting(root)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		detectWorkspace = !registered
+	}
+	if detectWorkspace && !workspaceFlag {
 		preferred, err := watch.PreferredWorkspace(root)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: detecting watcher mode: %v\n", err)
@@ -124,7 +135,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 			workspace, workspaceFlag, root.Workspace = true, true, true
 		}
 	}
-	if action == "start" || action == "restart" || action == "run" || action == "autostart" {
+	if action == "start" || action == "restart" || action == "run" || action == "supervise" || action == "autostart" {
 		registered, err := watch.HasSetting(root)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
@@ -144,11 +155,11 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 					fmt.Fprintln(stderr, "error: this root is already configured with a different project/workspace mode")
 					return 2
 				}
-				if status.Running {
+				if status.Running || status.Supervised {
 					fmt.Fprintf(stderr, "error: watcher is running in %s mode; run goregraph watch stop %s, then start it again with --workspace\n", watchMode(status.Workspace), root.Path)
 					return 2
 				}
-				executable, err := os.Executable()
+				executable, err := watch.ExecutablePath()
 				if err == nil {
 					err = watch.ChangeMode(root, executable)
 				}
@@ -184,6 +195,21 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		fmt.Fprintf(stdout, "Root: %s\nMode: %s\nRunning: %t\nAutostart: %t\n", root.Path, watchMode(status.Workspace), status.Running, status.Autostart)
+		fmt.Fprintf(stdout, "Supervised: %t\n", status.Supervised)
+		if status.Supervised {
+			fmt.Fprintf(stdout, "Supervisor PID: %d\n", status.SupervisorPID)
+			if !status.Running {
+				fmt.Fprintln(stdout, "Recovery: supervisor is waiting for or restarting the watcher; see Last error")
+			}
+		}
+		if status.Running {
+			fmt.Fprintf(stdout, "Watcher PID: %d\n", status.PID)
+			if status.Version == "" {
+				fmt.Fprintln(stdout, "Watcher version: unknown (legacy process; one restart is required)")
+			} else {
+				fmt.Fprintf(stdout, "Watcher version: %s\nWatcher commit: %s\n", status.Version, status.Commit)
+			}
+		}
 		if output, err := watchOutputPath(root.Path, status.Workspace); err == nil {
 			fmt.Fprintf(stdout, "Target output: %s\n", output)
 			printWatchOutputStatus(stdout, output)
@@ -219,13 +245,23 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "Stop requested. The current update may finish first.")
 		return 0
 	case "autostart":
-		executable, err := os.Executable()
+		executable, err := watch.ExecutablePath()
 		if err == nil {
 			err = watch.SetAutostart(root, autoChoice == "on", executable)
 		}
 		if err != nil {
 			fmt.Fprintf(stderr, "error: autostart: %v\n", err)
 			return 1
+		}
+		if autoChoice == "on" {
+			status, err := watch.GetStatus(root)
+			if err == nil && !status.Running && !status.Supervised {
+				err = watch.Start(root)
+			}
+			if err != nil {
+				fmt.Fprintf(stderr, "error: autostart enabled, but watcher startup failed: %v\n", err)
+				return 1
+			}
 		}
 		fmt.Fprintf(stdout, "Autostart: %s\n", autoChoice)
 		return 0
@@ -262,7 +298,7 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		if autoChoice != "" {
-			executable, err := os.Executable()
+			executable, err := watch.ExecutablePath()
 			if err == nil {
 				err = watch.SetAutostart(root, autoChoice == "on", executable)
 			}
@@ -272,6 +308,18 @@ func runWatch(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		fmt.Fprintf(stdout, "Watcher started for %s (%s mode).\n", root.Path, watchMode(workspace))
+		return 0
+	case "supervise":
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		err := watch.Supervise(ctx, root)
+		if errors.Is(err, watch.ErrSupervisorUpgrade) {
+			err = watch.ReloadSupervisor(root)
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "error: watcher supervisor: %v\n", err)
+			return 1
+		}
 		return 0
 	case "run":
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
