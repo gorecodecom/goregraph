@@ -11,6 +11,68 @@ import (
 	"github.com/gorecodecom/goregraph/internal/config"
 )
 
+func TestWorkspaceReconciliationSnapshotsContractsOnceAndRevalidatesOnce(t *testing.T) {
+	workspace, projects := writeWorkspaceBuildFixture(t)
+	buildWorkspaceProjects(t, workspace, projects, BuildTargetAll)
+	writeFile(t, workspace, "openapi.yaml", "openapi: 3.0.3\ninfo:\n  title: Fixture\n  version: 1\npaths: {}\n")
+	contract := filepath.Join(workspace, "openapi.yaml")
+	previousRead := specificationReadFile
+	reads := 0
+	specificationReadFile = func(path string) ([]byte, error) {
+		if filepath.Clean(path) == filepath.Clean(contract) {
+			reads++
+		}
+		return previousRead(path)
+	}
+	defer func() { specificationReadFile = previousRead }()
+	cfg := config.Defaults()
+	cfg.Workspace, cfg.WorkspaceRoot = true, workspace
+	if _, err := ReconcileWorkspaceTarget(projects[0], cfg, BuildTargetAll); err != nil {
+		t.Fatal(err)
+	}
+	if reads != 2 {
+		t.Fatalf("contract reads=%d, want one snapshot and one final shared validation", reads)
+	}
+}
+
+func TestWorkspaceRejectsChangedContractBeforePublishingAnyOutput(t *testing.T) {
+	workspace, projects := writeWorkspaceBuildFixture(t)
+	buildWorkspaceProjects(t, workspace, projects, BuildTargetAll)
+	writeFile(t, workspace, "openapi.yaml", "openapi: 3.0.3\ninfo:\n  title: Fixture\n  version: 1\npaths: {}\n")
+	paths := []string{filepath.Join(workspace, ".goregraph-workspace", "manifest.json")}
+	for _, project := range projects {
+		paths = append(paths, filepath.Join(project, config.Defaults().OutputDir, "manifest.json"))
+	}
+	before := map[string][]byte{}
+	for _, path := range paths {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[path] = body
+	}
+	changed := false
+	restore := replaceProjectionWriteHookForTest(func(scope, projection string) error {
+		if scope != "workspace" || projection != "index" || changed {
+			return nil
+		}
+		changed = true
+		return os.WriteFile(filepath.Join(workspace, "openapi.yaml"), []byte("openapi: 3.0.3\ninfo:\n  title: Changed\n  version: 2\npaths: {}\n"), 0644)
+	})
+	defer restore()
+	cfg := config.Defaults()
+	cfg.Workspace, cfg.WorkspaceRoot = true, workspace
+	if _, err := ReconcileWorkspaceTarget(projects[0], cfg, BuildTargetAll); err == nil || !changed {
+		t.Fatalf("changed contract was accepted: changed=%v, error=%v", changed, err)
+	}
+	for _, path := range paths {
+		after, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(before[path], after) {
+			t.Fatalf("published output changed after contract conflict: %s (%v)", path, err)
+		}
+	}
+}
+
 func TestFailedWorkspacePublicationPreservesEveryCommittedManifest(t *testing.T) {
 	workspace, projects := writeWorkspaceBuildFixture(t)
 	buildWorkspaceProjects(t, workspace, projects, BuildTargetAll)

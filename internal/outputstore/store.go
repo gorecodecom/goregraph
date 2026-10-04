@@ -74,7 +74,20 @@ func UpdateMany(ctx context.Context, requests []UpdateRequest) error {
 	return updateMany(ctx, requests, systemOperations())
 }
 
+// UpdateManyValidated validates shared inputs once after all stages have been
+// validated and synced, while all output locks are held and before promotion.
+func UpdateManyValidated(ctx context.Context, requests []UpdateRequest, validate func() error) error {
+	if validate == nil {
+		return errors.New("shared output validation is required")
+	}
+	return updateManyWithValidation(ctx, requests, systemOperations(), validate)
+}
+
 func updateMany(ctx context.Context, requests []UpdateRequest, ops fileOperations) error {
+	return updateManyWithValidation(ctx, requests, ops, nil)
+}
+
+func updateManyWithValidation(ctx context.Context, requests []UpdateRequest, ops fileOperations, validate func() error) error {
 	ordered, err := normalizeRequests(requests)
 	if err != nil {
 		return err
@@ -148,6 +161,14 @@ func updateMany(ctx context.Context, requests []UpdateRequest, ops fileOperation
 	}
 	if err := ctx.Err(); err != nil {
 		return failPrepared(err)
+	}
+	if validate != nil {
+		if err := validate(); err != nil {
+			return failPrepared(err)
+		}
+		if err := ctx.Err(); err != nil {
+			return failPrepared(err)
+		}
 	}
 	transaction.State = "publishing"
 	if err := writeJournal(journalPath(transaction.Entries[0].Root), transaction, ops); err != nil {

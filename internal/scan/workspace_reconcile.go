@@ -423,9 +423,6 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 			return writeOutputManifestAtomic(layout.Manifest, manifest)
 		},
 		Validate: func(stage string) error {
-			if err := validateInputs(); err != nil {
-				return err
-			}
 			return validateGeneratedOutput(stage, target)
 		},
 	}}
@@ -493,14 +490,11 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 				return writeOutputManifestAtomic(projectLayout.Manifest, projectManifest)
 			},
 			Validate: func(stage string) error {
-				if err := validateInputs(); err != nil {
-					return err
-				}
 				return validateGeneratedOutput(stage, "")
 			},
 		})
 	}
-	if err := outputstore.UpdateMany(ctx, requests); err != nil {
+	if err := outputstore.UpdateManyValidated(ctx, requests, validateInputs); err != nil {
 		return nil, err
 	}
 	return &registry, nil
