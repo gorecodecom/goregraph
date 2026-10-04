@@ -276,3 +276,48 @@ func TestAbandonedStageCleanupDoesNotRemoveForeignOrBackupData(t *testing.T) {
 		}
 	}
 }
+
+func TestWriterLeaseKeepsExistingIgnoreNamespaceAndWaitsForLegacyWriter(t *testing.T) {
+	root := previousOutput(t)
+	if !strings.HasPrefix(filepath.Base(writerLockPath(root)), ".goregraph-lock-") {
+		t.Fatal("writer lease bypasses existing ignore rules")
+	}
+	legacy, err := acquireFileLock(context.Background(), legacyWriterLockPath(root), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	defer cancel()
+	locks, err := acquireWriterLocks(ctx, []string{root})
+	releaseLocks(locks)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("running legacy writer was bypassed: %v", err)
+	}
+	if err := legacy.release(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(legacyWriterLockPath(root)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Update(context.Background(), replacement(root, "new")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacyWriterLockPath(root)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("new writer recreated a legacy artifact: %v", err)
+	}
+	assertSnapshot(t, root, "new")
+}
+
+func TestExclusiveExistingLeaseNeverCreatesMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "absent.lock")
+	lock, err := acquireFileLockMode(context.Background(), path, false, false)
+	if lock != nil {
+		lock.release()
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing existing lease was accepted: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("existing-only lock created a file: %v", err)
+	}
+}

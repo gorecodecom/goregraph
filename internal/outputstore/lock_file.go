@@ -8,7 +8,11 @@ import (
 
 func openLockFile(path string, shared, createMissing bool) (*os.File, error) {
 	if !shared {
-		return os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+		flags := os.O_RDWR
+		if createMissing {
+			flags |= os.O_CREATE
+		}
+		return os.OpenFile(path, flags, 0600)
 	}
 	file, err := os.Open(path)
 	if !errors.Is(err, os.ErrNotExist) {

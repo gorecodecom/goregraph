@@ -52,6 +52,7 @@ func TestFileWalkCancellation(t *testing.T) {
 func TestFileWalkExcludesPublicationWriterState(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, root, "main.ts", "export const value = 1")
+	writeFile(t, root, ".goregraph-lock-writer-fixture.lock", "writer state")
 	writeFile(t, root, ".goregraph-writer-fixture.lock", "writer state")
 	writeFile(t, root, "nested/.goregraph-writer-fixture.lock", "writer state")
 	files, err := snapshotProjectFiles(root, config.Defaults())
