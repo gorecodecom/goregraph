@@ -209,7 +209,7 @@ func RunBuildWithOptions(ctx context.Context, root string, cfg config.Config, ta
 		return Result{}, fmt.Errorf("source inputs changed during analysis; retry the build")
 	}
 	options.emit("project", resolved, "", "started", 0, 0, started)
-	if err := writeOutputsWithContext(ctx, out, resolved, cfg, index, skipped, started, target); err != nil {
+	if err := writeOutputsWithOptions(ctx, out, resolved, cfg, index, skipped, started, target, options); err != nil {
 		return Result{}, err
 	}
 	if _, err := ReconcileWorkspaceWithOptions(ctx, resolved, cfg, target, options); err != nil {
@@ -465,8 +465,13 @@ func writeOutputs(out, root string, cfg config.Config, index Index, skipped int,
 }
 
 func writeOutputsWithContext(ctx context.Context, out, root string, cfg config.Config, index Index, skipped int, started time.Time, target BuildTarget) error {
-	return outputstore.Update(ctx, outputstore.UpdateRequest{
-		Root: out,
+	return writeOutputsWithOptions(ctx, out, root, cfg, index, skipped, started, target, DefaultBuildOptions())
+}
+
+func writeOutputsWithOptions(ctx context.Context, out, root string, cfg config.Config, index Index, skipped int, started time.Time, target BuildTarget, options BuildOptions) error {
+	request := outputstore.UpdateRequest{
+		Root:    out,
+		Observe: options.outputObserver(root, "project"),
 		Write: func(stage string) error {
 			return writeOutputsStage(ctx, stage, root, cfg, index, skipped, started, target)
 		},
@@ -489,7 +494,11 @@ func writeOutputsWithContext(ctx context.Context, out, root string, cfg config.C
 			}
 			return nil
 		},
-	})
+	}
+	if len(options.stagedOutputs) > 0 {
+		return outputstore.PreparePrivate(ctx, []outputstore.UpdateRequest{request}, nil)
+	}
+	return outputstore.Update(ctx, request)
 }
 
 func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config, index Index, skipped int, started time.Time, target BuildTarget) error {
@@ -500,6 +509,7 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 	springIndex := buildSpringIndex(index.JavaSources)
 	callGraph := mergeCallGraphs(buildJavaCallGraph(index.JavaSources), index.CSharp.graph)
 	callGraph = mergeCallGraphs(callGraph, index.Swift.graph)
+	bindGoCodePackages(&index.Code, index.Symbols)
 	callGraph = mergeCallGraphs(callGraph, buildGenericCallGraph(index.Code))
 	linkCallGraphSymbolFacts(&callGraph, index.SymbolFacts)
 	index.Relations = append(index.Relations, buildCallRelations(callGraph)...)

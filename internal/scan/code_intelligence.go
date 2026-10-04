@@ -42,6 +42,7 @@ var (
 )
 
 func mergeCodeIntelligence(target *CodeIntelligenceRecord, next CodeIntelligenceRecord) {
+	target.goFiles = append(target.goFiles, next.goFiles...)
 	target.Functions = append(target.Functions, next.Functions...)
 	target.Routes = append(target.Routes, next.Routes...)
 	target.APIContracts = append(target.APIContracts, next.APIContracts...)
@@ -60,13 +61,22 @@ func extractCodeIntelligence(file FileRecord, body string) CodeIntelligenceRecor
 		return CodeIntelligenceRecord{APIContracts: extractAPIContracts(file, lines, functions)}
 	}
 	functions := extractCodeFunctions(file, lines)
+	var goFile *goFileScope
+	if file.Language == "go" {
+		functions, goFile = extractGoCodeIntelligence(file, body)
+	}
 	record := CodeIntelligenceRecord{
 		Functions:    functions,
 		Routes:       extractCodeRoutes(file, lines),
 		APIContracts: extractAPIContracts(file, lines, functions),
 	}
+	if goFile != nil {
+		record.goFiles = []*goFileScope{goFile}
+	}
 	for i := range record.Functions {
-		record.Functions[i].Calls = extractCallsForFunction(file.Language, lines, record.Functions[i])
+		if file.Language != "go" {
+			record.Functions[i].Calls = extractCallsForFunction(file.Language, lines, record.Functions[i])
+		}
 	}
 	sortCodeIntelligence(&record)
 	return record

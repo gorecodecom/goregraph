@@ -39,22 +39,32 @@ type Root struct {
 
 // Status separates the live process from its future login setting.
 type Status struct {
-	Root           string    `json:"root"`
-	Workspace      bool      `json:"workspace"`
-	Running        bool      `json:"running"`
-	Autostart      bool      `json:"autostart"`
-	Method         string    `json:"method,omitempty"`
-	AutostartError string    `json:"autostart_error,omitempty"`
-	LastSuccess    time.Time `json:"last_success,omitempty"`
-	LastCheck      time.Time `json:"last_check,omitempty"`
-	UpdateStarted  time.Time `json:"update_started,omitempty"`
-	LastError      string    `json:"last_error,omitempty"`
-	Supervised     bool      `json:"supervised"`
-	SupervisorPID  int       `json:"supervisor_pid,omitempty"`
-	PID            int       `json:"pid,omitempty"`
-	Version        string    `json:"version,omitempty"`
-	Commit         string    `json:"commit,omitempty"`
-	Progress       *Progress `json:"progress,omitempty"`
+	Root           string         `json:"root"`
+	Workspace      bool           `json:"workspace"`
+	Running        bool           `json:"running"`
+	Autostart      bool           `json:"autostart"`
+	Method         string         `json:"method,omitempty"`
+	AutostartError string         `json:"autostart_error,omitempty"`
+	LastSuccess    time.Time      `json:"last_success,omitempty"`
+	LastCheck      time.Time      `json:"last_check,omitempty"`
+	UpdateStarted  time.Time      `json:"update_started,omitempty"`
+	LastError      string         `json:"last_error,omitempty"`
+	Supervised     bool           `json:"supervised"`
+	SupervisorPID  int            `json:"supervisor_pid,omitempty"`
+	PID            int            `json:"pid,omitempty"`
+	Version        string         `json:"version,omitempty"`
+	Commit         string         `json:"commit,omitempty"`
+	Progress       *Progress      `json:"progress,omitempty"`
+	LastUpdate     *UpdateSummary `json:"last_update,omitempty"`
+}
+
+// UpdateSummary records observed wall time for the most recent update attempt.
+type UpdateSummary struct {
+	Started        time.Time                `json:"started"`
+	Finished       time.Time                `json:"finished"`
+	Duration       time.Duration            `json:"duration"`
+	Succeeded      bool                     `json:"succeeded"`
+	PhaseDurations map[string]time.Duration `json:"phase_durations"`
 }
 
 // Progress describes observed build work independently of process heartbeats.
@@ -68,6 +78,7 @@ type Progress struct {
 	ProjectsCompleted int       `json:"projects_completed"`
 	ProjectsTotal     int       `json:"projects_total,omitempty"`
 	LastProgress      time.Time `json:"last_progress"`
+	PhaseStarted      time.Time `json:"phase_started,omitempty"`
 }
 
 type setting struct {
@@ -79,18 +90,19 @@ type setting struct {
 }
 
 type runtimeState struct {
-	Token         string    `json:"token"`
-	PID           int       `json:"pid"`
-	Stopped       bool      `json:"stopped,omitempty"`
-	Heartbeat     time.Time `json:"heartbeat"`
-	LastSuccess   time.Time `json:"last_success,omitempty"`
-	LastCheck     time.Time `json:"last_check,omitempty"`
-	UpdateStarted time.Time `json:"update_started,omitempty"`
-	LastError     string    `json:"last_error,omitempty"`
-	Version       string    `json:"version,omitempty"`
-	Commit        string    `json:"commit,omitempty"`
-	Upgrading     bool      `json:"upgrading,omitempty"`
-	Progress      *Progress `json:"progress,omitempty"`
+	Token         string         `json:"token"`
+	PID           int            `json:"pid"`
+	Stopped       bool           `json:"stopped,omitempty"`
+	Heartbeat     time.Time      `json:"heartbeat"`
+	LastSuccess   time.Time      `json:"last_success,omitempty"`
+	LastCheck     time.Time      `json:"last_check,omitempty"`
+	UpdateStarted time.Time      `json:"update_started,omitempty"`
+	LastError     string         `json:"last_error,omitempty"`
+	Version       string         `json:"version,omitempty"`
+	Commit        string         `json:"commit,omitempty"`
+	Upgrading     bool           `json:"upgrading,omitempty"`
+	Progress      *Progress      `json:"progress,omitempty"`
+	LastUpdate    *UpdateSummary `json:"last_update,omitempty"`
 }
 
 // Resolve canonicalizes a selected root without creating watcher state.
@@ -353,6 +365,7 @@ func GetStatus(root Root) (Status, error) {
 	}
 	status.Running = !live.Stopped && live.Token != "" && ownsLock(root, live.Token) && time.Since(live.Heartbeat) >= 0 && time.Since(live.Heartbeat) < heartbeatLimit
 	status.LastSuccess = live.LastSuccess
+	status.LastUpdate = live.LastUpdate
 	status.LastCheck = live.LastCheck
 	if status.Running {
 		status.UpdateStarted = live.UpdateStarted
@@ -557,6 +570,8 @@ func RunWithProgress(ctx context.Context, root Root, update func(func(scan.Build
 		mutex.Unlock()
 		_ = publish()
 		var lastPublished time.Time
+		phaseDurations := make(map[string]time.Duration)
+		phase, phaseStarted := "planning", started
 		report := func(event scan.BuildEvent) {
 			mutex.Lock()
 			if !live.UpdateStarted.Equal(started) || live.Stopped {
@@ -567,6 +582,13 @@ func RunWithProgress(ctx context.Context, root Root, update func(func(scan.Build
 			if live.Progress != nil {
 				progress = *live.Progress
 			}
+
+			now := time.Now()
+			if phase != event.Phase {
+				phaseDurations[phase] += now.Sub(phaseStarted)
+				phase, phaseStarted = event.Phase, now
+			}
+			progress.PhaseStarted = phaseStarted
 			progress.Phase, progress.Project, progress.File = event.Phase, event.Project, event.File
 			progress.Outcome, progress.Completed, progress.Total = event.Outcome, event.Completed, event.Total
 			progress.LastProgress = time.Now()
@@ -584,12 +606,17 @@ func RunWithProgress(ctx context.Context, root Root, update func(func(scan.Build
 			}
 		}
 		err := update(report)
-		if ctx.Err() != nil {
-			return false
-		}
 		mutex.Lock()
+		finished := time.Now()
+		phaseDurations[phase] += finished.Sub(phaseStarted)
+		live.LastUpdate = &UpdateSummary{Started: started, Finished: finished, Duration: finished.Sub(started), Succeeded: err == nil && ctx.Err() == nil, PhaseDurations: phaseDurations}
 		live.UpdateStarted = time.Time{}
 		live.Progress = nil
+		if ctx.Err() != nil {
+			mutex.Unlock()
+			_ = publish()
+			return false
+		}
 		if err != nil {
 			live.LastError = err.Error()
 			retryAt = time.Now().Add(retryInterval)

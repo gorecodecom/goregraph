@@ -127,6 +127,8 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 	var inputIssues []AnalysisIssue
 	manifests := make(map[string]OutputManifest)
 	inputGenerations := map[string]string{}
+	loadStarted := time.Now()
+	options.emit("reconcile-load", workspaceRoot, "", "started", 0, len(projects), loadStarted)
 	readRoots := []string{workspaceOut}
 	for _, project := range projects {
 		output := filepath.Join(project.AbsPath, project.OutputDir)
@@ -195,7 +197,9 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 	}); err != nil {
 		return nil, err
 	}
-	validateInputs := func() error {
+	validateInputs := func(expectedGenerations map[string]string) error {
+		started := time.Now()
+		options.emit("reconcile-inputs", workspaceRoot, "", "started", 0, len(expectedGenerations), started)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -206,16 +210,20 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 		if current != identity {
 			return fmt.Errorf("workspace inputs changed during reconciliation")
 		}
-		for root, generation := range inputGenerations {
+		for root, generation := range expectedGenerations {
 			if readCurrentOutputManifest(filepath.Join(options.outputRoot(root), "manifest.json")).GenerationID != generation {
 				return fmt.Errorf("output generation changed during reconciliation: %s", root)
 			}
 		}
+		options.emit("reconcile-inputs", workspaceRoot, "", "completed", len(expectedGenerations), len(expectedGenerations), started)
 		return nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	options.emit("reconcile-load", workspaceRoot, "", "completed", len(projects), len(projects), loadStarted)
+	modelStarted := time.Now()
+	options.emit("reconcile-model", workspaceRoot, "", "started", 0, 0, modelStarted)
 	context := buildWorkspaceContext(registry, indexed)
 	matches, err := buildWorkspaceContractMatchesContext(ctx, indexed, registry.Projects)
 	if err != nil {
@@ -268,6 +276,9 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 	endpointTraces := BuildWorkspaceEndpointTraces(matches, featureFlows, featureDossiers)
 	directedTraces := BuildDirectedTraceIndex(endpointTraces)
 	endpointTraces.Directed = directedTraces.Traces
+	options.emit("reconcile-model", workspaceRoot, "", "completed", 0, 0, modelStarted)
+	agentStarted := time.Now()
+	options.emit("reconcile-agent", workspaceRoot, "", "started", 0, 0, agentStarted)
 	var agentContextIndex AgentContextIndexRecord
 	if target.IncludesAgent() {
 		agentContextIndex = BuildWorkspaceAgentContextIndex(
@@ -280,6 +291,9 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 			registry.Generated,
 		)
 	}
+	options.emit("reconcile-agent", workspaceRoot, "", "completed", 0, 0, agentStarted)
+	symbolsStarted := time.Now()
+	options.emit("reconcile-symbols", workspaceRoot, "", "started", 0, 0, symbolsStarted)
 	if target.IncludesDashboard() {
 		symbolIndex, symbolUsageIndex, err = BuildWorkspaceSymbolProjection(registry, indexed, registry.Generated)
 		if err != nil {
@@ -296,6 +310,7 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	options.emit("reconcile-symbols", workspaceRoot, "", "completed", 0, 0, symbolsStarted)
 	nextActions := renderWorkspaceNextActionsReport(context, matches, featureFlows)
 	workspaceFreshness := withReconciledAPICatalogFreshness(BuildWorkspaceFreshness(indexed, registry.Generated), registry.Generated)
 	generation, err := newOutputGeneration()
@@ -533,7 +548,33 @@ func ReconcileWorkspaceWithOptions(ctx context.Context, currentRoot string, cfg 
 			},
 		})
 	}
-	if err := outputstore.UpdateManyValidated(ctx, requests, validateInputs); err != nil {
+	for i := range requests {
+		requests[i].Observe = options.outputObserver(workspaceRoot, "reconcile")
+	}
+	if len(options.stagedOutputs) > 0 {
+		if err := validateInputs(inputGenerations); err != nil {
+			return nil, err
+		}
+		preparedGenerations := make(map[string]string, len(inputGenerations))
+		for root, current := range inputGenerations {
+			preparedGenerations[root] = current
+			for _, request := range requests {
+				if options.outputRoot(root) == request.Root {
+					preparedGenerations[root] = generation
+					break
+				}
+			}
+		}
+		// Final artifact validation is performed by the enclosing publication.
+		for i := range requests {
+			requests[i].Validate = nil
+		}
+		if err := outputstore.PreparePrivate(ctx, requests, func() error { return validateInputs(preparedGenerations) }); err != nil {
+			return nil, err
+		}
+		return &registry, nil
+	}
+	if err := outputstore.UpdateManyValidated(ctx, requests, func() error { return validateInputs(inputGenerations) }); err != nil {
 		return nil, err
 	}
 	return &registry, nil

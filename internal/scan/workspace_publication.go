@@ -37,11 +37,8 @@ func WithWorkspaceUpdatePublication(ctx context.Context, cfg config.Config, plan
 		roots[filepath.Join(item.AbsPath, projectConfig.OutputDir)] = true
 	}
 	var requests []outputstore.UpdateRequest
-	validated := 0
 	for root := range roots {
-		requests = append(requests, outputstore.UpdateRequest{Root: root, Write: func(string) error {
-			options.emit("validate-output", filepath.Dir(root), root, "started", validated, len(roots), time.Now())
-			validated++
+		requests = append(requests, outputstore.UpdateRequest{Root: root, Observe: options.outputObserver(plan.WorkspaceRoot, "workspace"), Write: func(string) error {
 			return nil
 		}, Validate: func(stage string) error {
 			return validateGeneratedOutput(stage, "")
@@ -97,11 +94,7 @@ func WithWorkspaceUpdatePublication(ctx context.Context, cfg config.Config, plan
 			options.emit("prepare-publication", plan.WorkspaceRoot, root, "completed", i+1, len(ordered), started)
 		}
 		return nil
-	}, func(root string, completed, total int) {
-		if options.Observer != nil {
-			options.Observer(BuildEvent{Phase: "stage-workspace", Project: workspaceRel(plan.WorkspaceRoot, filepath.Dir(root)), File: root, Outcome: "preparing", Completed: completed, Total: total, Elapsed: time.Since(started)})
-		}
-	})
+	}, nil)
 }
 
 func movePreparedFiles(from, to, except string) error {

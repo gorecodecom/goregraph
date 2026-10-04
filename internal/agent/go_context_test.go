@@ -53,3 +53,34 @@ func TestGoContextPreservesUnconnectedCLIImplementationAndReadableSource(t *test
 		t.Fatalf("Go configuration declaration is absent from context: %+v %v", limits, err)
 	}
 }
+
+func TestGoContextFollowsImportedCalleeInsteadOfSameNamedUtility(t *testing.T) {
+	root := t.TempDir()
+	writeSourceFile(t, root, "go.mod", "module example.test/graph\n\ngo 1.24\n")
+	writeSourceFile(t, root, "internal/cli/watch_status.go", `package cli
+import "example.test/graph/internal/watch"
+func coveringWorkspaceWatcher(directory string) { watch.Resolve(directory, true) }
+`)
+	writeSourceFile(t, root, "internal/watch/watch.go", `package watch
+func Resolve(directory string, workspace bool) {}
+`)
+	writeSourceFile(t, root, "internal/pathutil/resolve.go", `package pathutil
+func Resolve(directory string) {}
+`)
+	cfg := config.Defaults()
+	cfg.Workspace, cfg.UpdateGitignore = false, false
+	if _, err := scan.RunBuild(root, cfg, scan.BuildTargetAgent); err != nil {
+		t.Fatal(err)
+	}
+	initializeSourceReadLocks(t, root)
+	pack, err := BuildContext(ContextRequest{Root: root, Query: "coveringWorkspaceWatcher invokes watch.Resolve while determining the active workspace watcher", ProtocolVersion: AdaptiveV2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contextPackHasFile(pack, "internal/cli/watch_status.go") || !contextPackHasFile(pack, "internal/watch/watch.go") {
+		t.Fatalf("imported Go call chain missing from context: %+v", pack)
+	}
+	if contextPackHasFile(pack, "internal/pathutil/resolve.go") {
+		t.Fatalf("unrelated utility was presented as a callee: %+v", pack)
+	}
+}

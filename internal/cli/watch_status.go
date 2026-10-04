@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/gorecodecom/goregraph/internal/scan"
 	"github.com/gorecodecom/goregraph/internal/watch"
@@ -24,6 +26,9 @@ func printWatchActivity(stdout io.Writer, status watch.Status) {
 		fmt.Fprintf(stdout, "Update started: %s\n", status.UpdateStarted.Format("2006-01-02 15:04:05 MST"))
 		if progress := status.Progress; progress != nil {
 			fmt.Fprintf(stdout, "Update phase: %s\n", progress.Phase)
+			if !status.Progress.PhaseStarted.IsZero() {
+				fmt.Fprintf(stdout, "Phase elapsed: %s\n", time.Since(status.Progress.PhaseStarted).Round(time.Second))
+			}
 			if progress.Project != "" {
 				fmt.Fprintf(stdout, "Current project: %s\n", progress.Project)
 			}
@@ -43,6 +48,7 @@ func printWatchActivity(stdout io.Writer, status watch.Status) {
 	default:
 		fmt.Fprintln(stdout, "Activity: monitoring files")
 	}
+	printWatchUpdateSummary(stdout, status.LastUpdate)
 	if !status.LastCheck.IsZero() {
 		fmt.Fprintf(stdout, "Last successful file check: %s\n", status.LastCheck.Format("2006-01-02 15:04:05 MST"))
 	}
@@ -108,4 +114,33 @@ func watchStatusPathsEqual(left, right string) bool {
 		return strings.EqualFold(left, right)
 	}
 	return left == right
+}
+
+// printWatchUpdateSummary keeps completed attempts distinct from live progress.
+func printWatchUpdateSummary(writer io.Writer, summary *watch.UpdateSummary) {
+	if summary == nil {
+		return
+	}
+	outcome := "failed"
+	if summary.Succeeded {
+		outcome = "succeeded"
+	}
+	fmt.Fprintf(writer, "Last update attempt: %s (%s)\n", outcome, summary.Duration.Round(time.Millisecond))
+	phases := make([]string, 0, len(summary.PhaseDurations))
+	for phase := range summary.PhaseDurations {
+		phases = append(phases, phase)
+	}
+	sort.Slice(phases, func(i, j int) bool {
+		left, right := summary.PhaseDurations[phases[i]], summary.PhaseDurations[phases[j]]
+		if left != right {
+			return left > right
+		}
+		return phases[i] < phases[j]
+	})
+	for i, phase := range phases {
+		if i == 3 {
+			break
+		}
+		fmt.Fprintf(writer, "Observed phase time: %s %s\n", phase, summary.PhaseDurations[phase].Round(time.Millisecond))
+	}
 }

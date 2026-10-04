@@ -275,6 +275,7 @@ type AnalyzerRecord struct {
 }
 
 type CodeIntelligenceRecord struct {
+	goFiles      []*goFileScope
 	Functions    []CodeFunctionRecord `json:"functions,omitempty"`
 	Routes       []CodeRouteRecord    `json:"routes,omitempty"`
 	APIContracts []APIContractRecord  `json:"api_contracts,omitempty"`
@@ -289,6 +290,7 @@ type CodeFunctionRecord struct {
 	Line     int              `json:"line"`
 	EndLine  int              `json:"end_line,omitempty"`
 	Calls    []CodeCallRecord `json:"calls,omitempty"`
+	goScope  *goFunctionScope
 }
 
 type CodeCallRecord struct {
@@ -298,6 +300,7 @@ type CodeCallRecord struct {
 	Kind     string `json:"kind,omitempty"`
 	Raw      string `json:"raw,omitempty"`
 	Line     int    `json:"line"`
+	goScope  *goCallScope
 }
 
 type CodeRouteRecord struct {

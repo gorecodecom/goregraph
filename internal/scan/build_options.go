@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
+
+	"github.com/gorecodecom/goregraph/internal/outputstore"
 )
 
 // BuildEvent reports completed work and the current expensive operation.
@@ -50,6 +52,23 @@ func (options BuildOptions) outputRoots(roots []string) []string {
 		result[i] = options.outputRoot(root)
 	}
 	return result
+}
+
+func (options BuildOptions) outputObserver(workspaceRoot, prefix string) func(outputstore.Event) {
+	if options.Observer == nil {
+		return nil
+	}
+	originalRoots := make(map[string]string, len(options.stagedOutputs))
+	for original, private := range options.stagedOutputs {
+		originalRoots[workspaceOutputKey(private)] = original
+	}
+	return func(event outputstore.Event) {
+		root := event.Root
+		if original := originalRoots[workspaceOutputKey(root)]; original != "" {
+			root = original
+		}
+		options.Observer(BuildEvent{Phase: prefix + "-" + event.Phase, Project: workspaceRel(workspaceRoot, filepath.Dir(root)), File: event.File, Outcome: event.Outcome, Completed: event.Completed, Total: event.Total, Elapsed: event.Elapsed})
+	}
 }
 
 // DefaultBuildOptions supplies bounded per-file analysis without a project deadline.

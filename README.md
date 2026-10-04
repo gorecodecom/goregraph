@@ -1236,6 +1236,20 @@ and file, phase counts, prepared-project counts, and last observed progress.
 Process heartbeats do not advance this progress timestamp. Completed or failed
 attempts stop being shown as active work.
 
+Status also reports elapsed time for the current phase and the duration and
+slowest observed phases of the last update attempt, including failed attempts.
+Workspace preparation writes project and reconciliation overlays directly into
+private transaction snapshots, avoiding repeated copies and flushes. Final
+artifact validation, durable synchronization, input guards and cross-project
+rollback still run before the new outputs become available.
+
+Go call chains use parsed imports, package identity, receiver types and argument
+counts, including typed struct fields and declared interface methods. Interface
+bindings identify the declaration without guessing a runtime implementation.
+Same-named functions in unrelated packages are not substituted for an
+unresolved target. Dynamic receivers and ambiguous bindings remain unresolved;
+the analyzer does not invoke a compiler or execute application code.
+
 Each `task_context` call should pass the active project or workspace root
 explicitly. This avoids depending on the working directory from which an MCP
 client launches the local process.

@@ -221,3 +221,25 @@ func watchStatusStateFiles(t *testing.T, directory string) map[string]string {
 	}
 	return files
 }
+
+func TestWatchActivityReportsMeasuredAttemptAndSlowestPhases(t *testing.T) {
+	status := watch.Status{LastUpdate: &watch.UpdateSummary{Succeeded: true, Duration: 6 * time.Second, PhaseDurations: map[string]time.Duration{
+		"workspace-copy": 3 * time.Second, "reconcile-write": 2 * time.Second, "workspace-sync": time.Second,
+	}}}
+	var output bytes.Buffer
+	printWatchActivity(&output, status)
+	for _, want := range []string{"Last update attempt: succeeded (6s)", "Observed phase time: workspace-copy 3s", "Observed phase time: reconcile-write 2s", "Observed phase time: workspace-sync 1s"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("missing %q: %s", want, output.String())
+		}
+	}
+	if strings.Contains(output.String(), "Update phase:") {
+		t.Fatal("completed summary appears as live work")
+	}
+	status.LastUpdate.Succeeded = false
+	output.Reset()
+	printWatchActivity(&output, status)
+	if !strings.Contains(output.String(), "Last update attempt: failed") {
+		t.Fatal(output.String())
+	}
+}

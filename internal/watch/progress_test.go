@@ -59,7 +59,7 @@ func TestProgressReportsWorkWithoutConfusingHeartbeatsAndClearsFinishedAttempts(
 				return readJSON(runtimePath, &live) == nil && live.Heartbeat.After(before.Heartbeat)
 			})
 			idle, err := GetStatus(root)
-			if err != nil || !idle.Progress.LastProgress.Equal(first.Progress.LastProgress) {
+			if err != nil || !idle.Progress.LastProgress.Equal(first.Progress.LastProgress) || !idle.Progress.PhaseStarted.Equal(first.Progress.PhaseStarted) {
 				t.Fatalf("heartbeat falsely advanced work progress: %+v %v", idle, err)
 			}
 			close(next)
@@ -81,6 +81,17 @@ func TestProgressReportsWorkWithoutConfusingHeartbeatsAndClearsFinishedAttempts(
 			finished, err := GetStatus(root)
 			if err != nil || finished.Progress != nil {
 				t.Fatalf("completed or late attempt remained active: %+v %v", finished, err)
+			}
+			summary := finished.LastUpdate
+			if summary == nil || summary.Succeeded == failure || summary.Duration <= 0 || !summary.Finished.After(summary.Started) {
+				t.Fatalf("invalid update summary: %+v", summary)
+			}
+			var total time.Duration
+			for _, duration := range summary.PhaseDurations {
+				total += duration
+			}
+			if total != summary.Duration || summary.PhaseDurations["workspace-project"] <= 0 || summary.PhaseDurations["analyze"] <= 0 {
+				t.Fatalf("observed phases do not account for the attempt: %+v", summary)
 			}
 			cancel()
 			if err := <-done; err != nil {

@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gorecodecom/goregraph/internal/pathutil"
 )
@@ -32,6 +33,7 @@ type UpdateRequest struct {
 	Root     string
 	Write    func(stage string) error
 	Validate func(stage string) error
+	Observe  func(Event)
 }
 
 type journalEntry struct {
@@ -149,6 +151,8 @@ func updateManyPrepared(ctx context.Context, requests []UpdateRequest, ops fileO
 			if progress != nil {
 				progress(entry.Root, i, len(ordered))
 			}
+			copyStarted := time.Now()
+			observe(ordered[i], "copy", "started", i, len(ordered), copyStarted)
 			if err := ops.mkdir(entry.Stage, 0755); err != nil {
 				return failPrepared(err)
 			}
@@ -158,6 +162,7 @@ func updateManyPrepared(ctx context.Context, requests []UpdateRequest, ops fileO
 				}
 			}
 			stages[entry.Root] = entry.Stage
+			observe(ordered[i], "copy", "completed", i+1, len(ordered), copyStarted)
 			if progress != nil {
 				progress(entry.Root, i+1, len(ordered))
 			}
@@ -173,6 +178,8 @@ func updateManyPrepared(ctx context.Context, requests []UpdateRequest, ops fileO
 		entry := transaction.Entries[i]
 		failStage := func(err error) error { return failPrepared(fmt.Errorf("stage output %s: %w", entry.Root, err)) }
 		if prepare == nil {
+			copyStarted := time.Now()
+			observe(request, "copy", "started", i, len(ordered), copyStarted)
 			if err := ops.mkdir(entry.Stage, 0755); err != nil {
 				return failStage(err)
 			}
@@ -181,10 +188,14 @@ func updateManyPrepared(ctx context.Context, requests []UpdateRequest, ops fileO
 					return failStage(err)
 				}
 			}
+			observe(request, "copy", "completed", i+1, len(ordered), copyStarted)
 		}
+		writeStarted := time.Now()
+		observe(request, "write", "started", i, len(ordered), writeStarted)
 		if err := request.Write(entry.Stage); err != nil {
 			return failStage(err)
 		}
+		observe(request, "write", "completed", i+1, len(ordered), writeStarted)
 		if err := directoryExists(entry.Stage); err != nil {
 			return failStage(err)
 		}
@@ -195,13 +206,19 @@ func updateManyPrepared(ctx context.Context, requests []UpdateRequest, ops fileO
 			return failStage(err)
 		}
 		if request.Validate != nil {
+			validateStarted := time.Now()
+			observe(request, "validate", "started", i, len(ordered), validateStarted)
 			if err := request.Validate(entry.Stage); err != nil {
 				return failStage(err)
 			}
+			observe(request, "validate", "completed", i+1, len(ordered), validateStarted)
 		}
+		syncStarted := time.Now()
+		observe(request, "sync", "started", i, len(ordered), syncStarted)
 		if err := syncTree(ctx, entry.Stage, ops); err != nil {
 			return failStage(err)
 		}
+		observe(request, "sync", "completed", i+1, len(ordered), syncStarted)
 		if generation, err := readGeneration(entry.Stage); err != nil || generation != transaction.Generation {
 			return failPrepared(errors.Join(err, errors.New("staged generation marker changed")))
 		}
@@ -243,10 +260,12 @@ func updateManyPrepared(ctx context.Context, requests []UpdateRequest, ops fileO
 	if err := writeJournal(journalPath(transaction.Entries[0].Root), transaction, ops); err != nil {
 		return errors.Join(err, fmt.Errorf("%w: publishing decision", ErrRecoveryRequired))
 	}
-	for _, entry := range transaction.Entries {
+	for i, entry := range transaction.Entries {
 		if err := ctx.Err(); err != nil {
 			return rollbackFailure(transaction, ops, err)
 		}
+		publishStarted := time.Now()
+		observe(ordered[i], "publish", "started", i, len(ordered), publishStarted)
 		if err := verifyPrevious(entry); err != nil {
 			return rollbackFailure(transaction, ops, err)
 		}
@@ -258,6 +277,7 @@ func updateManyPrepared(ctx context.Context, requests []UpdateRequest, ops fileO
 		if err := ops.rename(entry.Stage, entry.Root); err != nil {
 			return rollbackFailure(transaction, ops, err)
 		}
+		observe(ordered[i], "publish", "completed", i+1, len(ordered), publishStarted)
 	}
 	if err := ctx.Err(); err != nil {
 		return rollbackFailure(transaction, ops, err)
@@ -1166,6 +1186,7 @@ func removeJournalsExcept(transaction journal, ops fileOperations, absent map[st
 	return nil
 }
 func copyTree(ctx context.Context, source, target string, ops fileOperations) error {
+	buffer := make([]byte, 64*1024)
 	return filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -1203,10 +1224,7 @@ func copyTree(ctx context.Context, source, target string, ops fileOperations) er
 		if err != nil {
 			return err
 		}
-		_, copyErr := io.CopyBuffer(output, contextReader{ctx: ctx, reader: input}, make([]byte, 64*1024))
-		if copyErr == nil {
-			copyErr = ops.sync(output)
-		}
+		_, copyErr := io.CopyBuffer(output, contextReader{ctx: ctx, reader: input}, buffer)
 		if err := errors.Join(copyErr, output.Close()); err != nil {
 			return err
 		}

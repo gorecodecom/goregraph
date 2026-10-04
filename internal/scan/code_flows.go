@@ -37,8 +37,12 @@ func buildGenericCallGraph(code CodeIntelligenceRecord) CallGraphRecord {
 			if confidence == "INFERRED" {
 				continue
 			}
+			identity := stableID("call", function.File, function.Name, target.File, target.Name, fmt.Sprint(call.Line))
+			if call.goScope != nil {
+				identity = stableID(identity, fmt.Sprint(call.goScope.offset))
+			}
 			edge := CallGraphEdgeRecord{
-				ID: stableID("call", function.File, function.Name, target.File, target.Name, fmt.Sprint(call.Line)),
+				ID: identity,
 				From: MethodRefRecord{
 					Owner:  function.Owner,
 					Method: function.Name,
@@ -57,6 +61,9 @@ func buildGenericCallGraph(code CodeIntelligenceRecord) CallGraphRecord {
 				Confidence:      confidence,
 				ConfidenceScore: codeCallConfidenceScore(confidence),
 				Reason:          codeCallReason(function.Language, call.Kind),
+			}
+			if target.goScope != nil && target.goScope.interfaceMethod {
+				edge.Reason = "go declared interface method"
 			}
 			edges = append(edges, edge)
 		}
@@ -199,6 +206,12 @@ func buildGenericTestMap(code CodeIntelligenceRecord) []TestMapRecord {
 }
 
 func codeCallConfidence(from, target CodeFunctionRecord) string {
+	if from.Language == "go" && target.Language == "go" && from.goScope != nil && target.goScope != nil {
+		if target.goScope.interfaceMethod {
+			return "MATCHED"
+		}
+		return "EXTRACTED"
+	}
 	if from.File == target.File {
 		return "EXTRACTED"
 	}
@@ -251,6 +264,9 @@ func indexedCodeFunctions(functions []CodeFunctionRecord) codeFunctionIndex {
 func resolveCodeCall(from CodeFunctionRecord, call CodeCallRecord, index codeFunctionIndex) (CodeFunctionRecord, bool) {
 	if isLowValueCallTarget(call.Method) {
 		return CodeFunctionRecord{}, false
+	}
+	if from.Language == "go" {
+		return resolveGoCodeCall(from, call, index)
 	}
 	if call.Owner != "" {
 		if target, ok := index.byOwnerName[call.Owner+"."+call.Method]; ok {
@@ -444,6 +460,9 @@ func sortCallGraphEdges(edges []CallGraphEdgeRecord) {
 		if edges[i].To.Method != edges[j].To.Method {
 			return edges[i].To.Method < edges[j].To.Method
 		}
-		return edges[i].Line < edges[j].Line
+		if edges[i].Line != edges[j].Line {
+			return edges[i].Line < edges[j].Line
+		}
+		return edges[i].ID < edges[j].ID
 	})
 }
