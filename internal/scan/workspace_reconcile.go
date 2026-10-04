@@ -30,6 +30,7 @@ type workspaceIndexProject struct {
 	maven           MavenGraphRecord
 	packages        PackageGraphRecord
 	evidence        []EvidenceRecord
+	symbolEvidence  map[string]workspaceSymbolEvidenceLocation
 	loadFailures    []string
 	missingFacts    []string
 	contracts       []APIContractRecord

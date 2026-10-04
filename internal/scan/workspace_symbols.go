@@ -26,6 +26,10 @@ func BuildWorkspaceSymbolProjection(registry WorkspaceRegistryRecord, projects [
 	if err := validateWorkspaceSymbolProjectPaths(registry, projects); err != nil {
 		return WorkspaceSymbolIndexRecord{}, WorkspaceSymbolUsageIndexRecord{}, err
 	}
+	projects = append([]workspaceIndexProject(nil), projects...)
+	for index := range projects {
+		projects[index].symbolEvidence = indexWorkspaceSymbolEvidence(projects[index].evidence)
+	}
 	symbolIndex := WorkspaceSymbolIndexRecord{
 		SchemaVersion: SchemaVersion,
 		Generated:     generated,
@@ -767,8 +771,8 @@ func workspaceSymbolCapabilityFiles(language, capability string) []string {
 		files = append(files, "maven-graph.json")
 	case "javascript", "typescript":
 		files = append(files, "package-graph.json")
-	case "csharp", "swift":
-		// Native target membership is already recorded in the project symbol facts.
+	case "csharp", "swift", "unity", "blender":
+		// Native and asset references are evidenced by the project symbol facts.
 	default:
 		files = append(files, "maven-graph.json", "package-graph.json")
 	}
@@ -835,7 +839,12 @@ func workspaceSymbolLanguages(project workspaceIndexProject) []string {
 }
 
 func isWorkspaceSymbolLanguageSupported(language string) bool {
-	return language == "java" || language == "csharp" || language == "swift" || isScriptLanguage(language)
+	switch language {
+	case "java", "csharp", "swift", "unity", "blender":
+		return true
+	default:
+		return isScriptLanguage(language)
+	}
 }
 
 func workspaceSymbolLanguageLimitations(language string) []string {
@@ -964,7 +973,7 @@ func isWorkspaceSymbolReference(reference RichRelationRecord) bool {
 	if reference.ToSymbolID != "" {
 		return true
 	}
-	if reference.Language == "java" || reference.Language == "csharp" || reference.Language == "swift" {
+	if isWorkspaceSymbolLanguageSupported(reference.Language) && !isScriptLanguage(reference.Language) {
 		return reference.TargetQualifiedName != ""
 	}
 	if isScriptLanguage(reference.Language) {
@@ -1594,6 +1603,16 @@ func workspaceEvidenceIDs(project string, localIDs []string) []string {
 
 func workspaceFactEvidenceIDs(project workspaceIndexProject, localIDs []string, file string, line int) []string {
 	ids := append([]string(nil), localIDs...)
+	if project.symbolEvidence != nil {
+		locations := project.symbolEvidence[file]
+		if line > 0 {
+			ids = append(ids, locations.byLine[0]...)
+			ids = append(ids, locations.byLine[line]...)
+		} else {
+			ids = append(ids, locations.all...)
+		}
+		return workspaceEvidenceIDs(project.record.Path, ids)
+	}
 	for _, evidence := range project.evidence {
 		if evidence.ID == "" || evidence.File != file {
 			continue
@@ -1604,4 +1623,30 @@ func workspaceFactEvidenceIDs(project workspaceIndexProject, localIDs []string, 
 		ids = append(ids, evidence.ID)
 	}
 	return workspaceEvidenceIDs(project.record.Path, ids)
+}
+
+type workspaceSymbolEvidenceLocation struct {
+	all    []string
+	byLine map[int][]string
+}
+
+func indexWorkspaceSymbolEvidence(evidence []EvidenceRecord) map[string]workspaceSymbolEvidenceLocation {
+	indexed := make(map[string]workspaceSymbolEvidenceLocation)
+	for _, record := range evidence {
+		if record.ID == "" {
+			continue
+		}
+		locations := indexed[record.File]
+		if locations.byLine == nil {
+			locations.byLine = make(map[int][]string)
+		}
+		line := record.Start.Line
+		if line < 0 {
+			line = 0
+		}
+		locations.all = append(locations.all, record.ID)
+		locations.byLine[line] = append(locations.byLine[line], record.ID)
+		indexed[record.File] = locations
+	}
+	return indexed
 }
