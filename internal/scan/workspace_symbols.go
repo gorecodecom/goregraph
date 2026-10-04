@@ -767,6 +767,8 @@ func workspaceSymbolCapabilityFiles(language, capability string) []string {
 		files = append(files, "maven-graph.json")
 	case "javascript", "typescript":
 		files = append(files, "package-graph.json")
+	case "csharp", "swift":
+		// Native target membership is already recorded in the project symbol facts.
 	default:
 		files = append(files, "maven-graph.json", "package-graph.json")
 	}
@@ -833,7 +835,7 @@ func workspaceSymbolLanguages(project workspaceIndexProject) []string {
 }
 
 func isWorkspaceSymbolLanguageSupported(language string) bool {
-	return language == "java" || isScriptLanguage(language)
+	return language == "java" || language == "csharp" || language == "swift" || isScriptLanguage(language)
 }
 
 func workspaceSymbolLanguageLimitations(language string) []string {
@@ -922,15 +924,26 @@ func resolveWorkspaceSymbolCandidates(project workspaceIndexProject, reference R
 
 func workspaceProjectSymbolReferences(project workspaceIndexProject) []RichRelationRecord {
 	references := append([]RichRelationRecord(nil), project.relations...)
+	languageBySymbolID := make(map[string]string, len(project.symbols))
+	for _, symbol := range project.symbols {
+		languageBySymbolID[symbol.ID] = symbol.Language
+	}
 	for _, edge := range project.callGraph.Edges {
 		if edge.TargetQualifiedName == "" && edge.ToSymbolID == "" {
 			continue
+		}
+		language := languageBySymbolID[edge.FromSymbolID]
+		if language == "" {
+			language = languageBySymbolID[edge.ToSymbolID]
+		}
+		if language == "" {
+			language = "java"
 		}
 		references = append(references, RichRelationRecord{
 			ID:                  edge.ID,
 			From:                edge.SourceFile,
 			Type:                edge.Type,
-			Language:            "java",
+			Language:            language,
 			Analyzer:            "callgraph",
 			Line:                edge.Line,
 			Confidence:          edge.Confidence,
@@ -951,7 +964,7 @@ func isWorkspaceSymbolReference(reference RichRelationRecord) bool {
 	if reference.ToSymbolID != "" {
 		return true
 	}
-	if reference.Language == "java" {
+	if reference.Language == "java" || reference.Language == "csharp" || reference.Language == "swift" {
 		return reference.TargetQualifiedName != ""
 	}
 	if isScriptLanguage(reference.Language) {
