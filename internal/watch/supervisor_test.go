@@ -114,7 +114,10 @@ func stopTestSupervisor(t *testing.T, root Root, done <-chan error) {
 func TestSupervisorRecoversCrashedWorkerAndHonorsStop(t *testing.T) {
 	root, executable, options, starts := supervisorFixture(t, false)
 	done := startTestSupervisor(t, root, executable, options)
-	before, _ := GetStatus(root)
+	before, err := GetStatus(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	process, err := os.FindProcess(before.PID)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +165,10 @@ func TestSupervisorRejectsInvalidReplacementWithoutStoppingWorker(t *testing.T) 
 		return errors.New("replacement invalid")
 	}
 	done := startTestSupervisor(t, root, executable, options)
-	before, _ := GetStatus(root)
+	before, err := GetStatus(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(executable, []byte("invalid-version"), 0o700); err != nil {
 		t.Fatal(err)
 	}

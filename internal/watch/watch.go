@@ -168,7 +168,12 @@ func ensureStateDir(root Root) error {
 }
 
 func readJSON(path string, value any) error {
-	body, err := os.ReadFile(path)
+	var body []byte
+	err := retryStateIO(func() error {
+		var err error
+		body, err = os.ReadFile(path)
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -197,7 +202,7 @@ func writeJSON(path string, value any) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(file.Name(), path)
+	return retryStateIO(func() error { return os.Rename(file.Name(), path) })
 }
 
 func loadSetting(root Root) (setting, error) {
