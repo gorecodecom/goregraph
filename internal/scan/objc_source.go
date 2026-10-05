@@ -1,36 +1,31 @@
 package scan
 
-import (
-	"fmt"
-	"strings"
-)
+import ()
 
 type objcMethod struct {
 	symbol     RichSymbolRecord
 	start, end int
 	parameters map[string]string
 	static     bool
+	returnType string
 }
 type objcSource struct {
-	file    FileRecord
-	tokens  []dartToken
-	pairs   map[int]int
-	methods []objcMethod
-	classes []RichSymbolRecord
-	imports []string
-	valid   bool
+	file       FileRecord
+	tokens     []dartToken
+	pairs      map[int]int
+	methods    []objcMethod
+	classes    []RichSymbolRecord
+	imports    []string
+	valid      bool
+	supers     map[string]string
+	properties map[string]map[string]string
 }
 
 func parseObjCSource(file FileRecord, body string) objcSource {
 	tokens, valid := dartTokens(body)
 	pairs, balanced := dartPairs(tokens)
-	s := objcSource{file: file, tokens: tokens, pairs: pairs, valid: valid && balanced}
-	for _, line := range strings.Split(body, "\n") {
-		text := strings.TrimSpace(line)
-		if strings.HasPrefix(text, "#define") || strings.HasPrefix(text, "#if") || strings.HasPrefix(text, "#elif") || strings.HasPrefix(text, "#else") {
-			s.valid = false
-		}
-	}
+	s := objcSource{file: file, tokens: tokens, pairs: pairs, valid: valid && balanced, supers: map[string]string{}, properties: map[string]map[string]string{}}
+	s.valid = s.valid && nativePreprocessorSafe(body)
 	owner := ""
 	for at := 0; at < len(tokens); at++ {
 		if tokens[at].text == "#" && at+1 < len(tokens) && (tokens[at+1].text == "import" || tokens[at+1].text == "include") {
@@ -58,6 +53,9 @@ func parseObjCSource(file FileRecord, body string) objcSource {
 			}
 			if (keyword == "interface" || keyword == "implementation" || keyword == "protocol") && at+2 < len(tokens) {
 				owner = tokens[at+2].text
+				if keyword == "interface" && at+4 < len(tokens) && tokens[at+3].text == ":" {
+					s.supers[owner] = tokens[at+4].text
+				}
 				kind := "class"
 				if keyword == "protocol" {
 					kind = "protocol"
@@ -79,6 +77,10 @@ func parseObjCSource(file FileRecord, body string) objcSource {
 					property := supplementarySymbol(file, "property", tokens[end-1].text, tokens[end-1].line)
 					property.Owner = owner
 					s.classes = append(s.classes, property)
+					if s.properties[owner] == nil {
+						s.properties[owner] = map[string]string{}
+					}
+					s.properties[owner][property.Name] = objcType(tokens[start : end-1])
 				}
 				at = end
 				continue
@@ -105,10 +107,10 @@ func parseObjCSource(file FileRecord, body string) objcSource {
 						if !ok {
 							break
 						}
-						typ := dartJoined(tokens[end+1 : close])
+						typ := objcType(tokens[end+1 : close])
 						end = close + 1
 						if end < len(tokens) && tokens[end].kind == "identifier" {
-							params[tokens[end].text] = strings.Trim(typ, " *")
+							params[tokens[end].text] = typ
 							end++
 						}
 					}
@@ -122,7 +124,7 @@ func parseObjCSource(file FileRecord, body string) objcSource {
 			if end >= len(tokens) {
 				continue
 			}
-			symbol := supplementarySymbol(file, "method", owner+"."+name, tokens[nameAt].line)
+			symbol := supplementaryTokenSymbol(file, "method", owner+"."+name, tokens[nameAt])
 			symbol.Name = name
 			symbol.Owner = owner
 			bodyEnd := end
@@ -131,7 +133,7 @@ func parseObjCSource(file FileRecord, body string) objcSource {
 					bodyEnd = close
 				}
 			}
-			s.methods = append(s.methods, objcMethod{symbol: symbol, start: end, end: bodyEnd, parameters: params, static: tokens[at].text == "+"})
+			s.methods = append(s.methods, objcMethod{symbol: symbol, start: end, end: bodyEnd, parameters: params, static: tokens[at].text == "+", returnType: objcType(tokens[at+2 : returnEnd])})
 			at = bodyEnd
 			continue
 		}
@@ -150,7 +152,18 @@ func parseObjCSource(file FileRecord, body string) objcSource {
 				continue
 			}
 			symbol := supplementarySymbol(file, "function", name, tokens[at-1].line)
-			s.methods = append(s.methods, objcMethod{symbol: symbol, start: close + 1, end: end, parameters: map[string]string{}})
+			params := map[string]string{}
+			for _, param := range dartParameters(tokens[at+1 : close]) {
+				if param.name != "void" {
+					params[param.name] = param.typeName
+				}
+			}
+			for j := at + 1; j+3 < close; j++ {
+				if tokens[j].text == "(" && tokens[j+1].text == "*" && tokens[j+3].text == ")" {
+					params[tokens[j+2].text] = ""
+				}
+			}
+			s.methods = append(s.methods, objcMethod{symbol: symbol, start: close + 1, end: end, parameters: params})
 			at = end
 		}
 	}
@@ -162,6 +175,19 @@ func parseObjCSource(file FileRecord, body string) objcSource {
 
 func analyzeObjCSources(sources []objcSource, result *supplementaryAnalysis) {
 	byMethod := map[string][]objcMethod{}
+	classificationFiles := map[string]objcSource{}
+	for _, s := range sources {
+		classificationFiles[s.file.Path] = s
+	}
+	for i := range sources {
+		files := classificationFiles
+		visible := objcVisibleHeaders(sources[i], files)
+		for j := range sources[i].methods {
+			if objcXCTestMethod(sources[i], sources[i].methods[j], visible, files) {
+				sources[i].methods[j].symbol.Kind = "test"
+			}
+		}
+	}
 	for _, s := range sources {
 		for _, symbol := range s.classes {
 			result.facts.Declarations = append(result.facts.Declarations, symbol)
@@ -177,88 +203,73 @@ func analyzeObjCSources(sources []objcSource, result *supplementaryAnalysis) {
 			result.facts.References = append(result.facts.References, supplementaryReference(s.file, uri, "imports_header", 1))
 		}
 	}
+	files := map[string]objcSource{}
+	for _, s := range sources {
+		files[s.file.Path] = s
+	}
 	for _, s := range sources {
 		if !s.valid {
 			continue
 		}
+		visible := objcVisibleHeaders(s, files)
 		for _, m := range s.methods {
+			if m.start == m.end {
+				continue
+			}
 			env := map[string]string{"self": m.symbol.Owner}
 			for name, typ := range m.parameters {
 				env[name] = typ
 			}
+			scopes := []map[string]string{}
 			for at := m.start + 1; at < m.end; at++ {
 				t := s.tokens[at]
-				targetOwner, targetName := "", ""
-				targetStatic := false
-				end := at
-				if t.kind == "identifier" && at+1 < m.end && s.tokens[at+1].text == "(" {
-					targetName = t.text
-				} else if t.text == "[" {
-					close, ok := s.pairs[at]
-					if !ok || at+2 >= close || s.tokens[at+1].kind != "identifier" {
+				if t.text == "^" {
+					if end := objcBlockEnd(s, at, m.end); end > at {
+						at = end
 						continue
 					}
-					receiver := s.tokens[at+1].text
-					targetStatic = receiver == "self" && m.static
-					targetOwner = env[receiver]
-					if targetOwner == "" {
-						for _, symbol := range s.classes {
-							if symbol.Kind == "class" && symbol.Name == receiver {
-								targetOwner = receiver
-								targetStatic = true
-							}
-						}
+				}
+				if t.text == "{" {
+					scopes = append(scopes, cloneNativeTypes(env))
+				}
+				if t.text == "}" && len(scopes) > 0 {
+					env = scopes[len(scopes)-1]
+					scopes = scopes[:len(scopes)-1]
+				}
+				objcLocalBinding(s, at, m.end, env)
+				name, owner, static := "", "", false
+				if t.text == "[" {
+					owner, static, name = objcMessage(s, at, m, env, visible, files, byMethod, 0)
+				} else if t.kind == "identifier" && at+1 < m.end && s.tokens[at+1].text == "(" {
+					if at > 0 && (s.tokens[at-1].text == "." || s.tokens[at-1].text == ">" || s.tokens[at-1].text == "^") {
+						continue
 					}
-					for j := at + 2; j < close; j++ {
-						if j+1 < close && s.tokens[j].kind == "identifier" && s.tokens[j+1].text == ":" {
-							targetName += s.tokens[j].text + ":"
-						}
-						if targetName == "" && j == at+2 && s.tokens[j].kind == "identifier" {
-							targetName = s.tokens[j].text
-						}
-						if close, ok := s.pairs[j]; ok && close > j {
-							j = close
-						}
+					if _, shadow := env[t.text]; shadow {
+						continue
 					}
-					end = close
+					name = t.text
 				} else {
 					continue
 				}
-				if targetName == "" || dartControlWord(targetName) {
+				if name == "" || dartControlWord(name) {
 					continue
 				}
-				if t.text == "[" && targetOwner == "" {
-					result.facts.References = append(result.facts.References, supplementaryReference(s.file, targetName, "calls_method_owner", t.line))
-					continue
+				var candidates []objcMethod
+				if t.text == "[" && owner != "" {
+					candidates = objcLookup(owner, name, static, visible, files, byMethod, map[string]bool{})
 				}
-				key := targetOwner + "." + targetName
-				candidates := byMethod[key]
-				var visible []objcMethod
-				for _, candidate := range candidates {
-					if candidate.symbol.File == s.file.Path && (t.text != "[" || candidate.static == targetStatic) {
-						visible = append(visible, candidate)
+				if t.text != "[" {
+					for _, candidate := range byMethod["."+name] {
+						if candidate.symbol.File == s.file.Path {
+							candidates = append(candidates, candidate)
+						}
 					}
 				}
-				ref := supplementaryReference(s.file, targetName, "calls_method_owner", t.line)
-				ref.FromSymbolID = m.symbol.ID
-				if len(visible) == 1 {
-					target := visible[0].symbol
-					ref.To = target.File
-					ref.ToSymbolID = target.ID
-					ref.TargetQualifiedName = target.QualifiedName
-					ref.Internal = true
-					ref.Resolution = SymbolResolutionExact
-					ref.NonPromotable = false
-					ref.preventExact = false
-					ref.Reason = "unique local Objective-C selector or C entrypoint declaration; runtime dispatch is not evaluated"
-					result.graph.Edges = append(result.graph.Edges, CallGraphEdgeRecord{ID: stableID("objc-call", m.symbol.ID, target.ID, fmt.Sprint(at)), From: MethodRefRecord{Owner: m.symbol.Owner, Method: m.symbol.Name, File: s.file.Path, Line: m.symbol.Line}, To: MethodRefRecord{Owner: target.Owner, Method: target.Name, File: target.File, Line: target.Line}, Type: "calls", Line: t.line, SourceFile: s.file.Path, Confidence: "EXTRACTED", ConfidenceScore: 1, FromSymbolID: m.symbol.ID, ToSymbolID: target.ID, TargetQualifiedName: target.QualifiedName, Resolution: SymbolResolutionExact, Reason: ref.Reason})
-				} else if len(visible) > 1 {
-					ref.Resolution = SymbolResolutionAmbiguous
+				targets := []RichSymbolRecord{}
+				for _, candidate := range candidates {
+					targets = append(targets, candidate.symbol)
 				}
-				result.facts.References = append(result.facts.References, ref)
-				if end > at {
-					at = end
-				}
+				addNativeCall(result, s.file, m.symbol, name, t.line, at, targets, "unique indexed Objective-C selector visible through local/imported interfaces; runtime dispatch and swizzling are not evaluated")
 			}
 		}
 	}

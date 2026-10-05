@@ -1,20 +1,19 @@
 package scan
 
 import (
-	"fmt"
-	"path"
 	"regexp"
 	"strings"
 )
 
 type cFamilySource struct {
-	file     FileRecord
-	tokens   []dartToken
-	pairs    map[int]int
-	members  []dartMember
-	types    []RichSymbolRecord
-	includes []string
-	valid    bool
+	file          FileRecord
+	tokens        []dartToken
+	pairs         map[int]int
+	members       []dartMember
+	types         []RichSymbolRecord
+	includes      []string
+	valid         bool
+	unsafeMembers map[string]bool
 }
 
 var cRawStart = regexp.MustCompile(`(?:u8|u|U|L)?R"([^ ()\\\t\r\n]{0,16})\(`)
@@ -62,17 +61,21 @@ func cFamilyTokens(body string) ([]dartToken, bool) {
 func parseCFamilySource(file FileRecord, body string) cFamilySource {
 	tokens, valid := cFamilyTokens(body)
 	pairs, balanced := dartPairs(tokens)
-	s := cFamilySource{file: file, tokens: tokens, pairs: pairs, valid: valid && balanced}
-	for _, line := range strings.Split(body, "\n") {
+	s := cFamilySource{file: file, tokens: tokens, pairs: pairs, valid: valid && balanced, unsafeMembers: map[string]bool{}}
+	for _, line := range strings.Split(nativeDirectiveMask(body), "\n") {
 		if match := cIncludeRE.FindStringSubmatch(line); len(match) == 2 {
 			s.includes = append(s.includes, match[1])
 		}
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#define") || strings.HasPrefix(trimmed, "#if") || strings.HasPrefix(trimmed, "#elif") || strings.HasPrefix(trimmed, "#else") {
+
+	}
+	s.valid = s.valid && nativePreprocessorSafe(body)
+	for _, token := range tokens {
+		if token.text == "template" {
 			s.valid = false
 		}
 	}
 	s.region(0, len(tokens), "")
+	cGoogleTestMembers(&s)
 	return s
 }
 func (s *cFamilySource) region(start, end int, owner string) {
@@ -83,6 +86,13 @@ func (s *cFamilySource) region(start, end int, owner string) {
 			nameAt := at + 1
 			if (t[nameAt].text == "class" || t[nameAt].text == "struct") && nameAt+1 < end {
 				nameAt++
+			}
+			if kind == "namespace" && t[nameAt].text == "{" {
+				if close, ok := s.pairs[nameAt]; ok {
+					s.region(nameAt+1, close, owner+"::anonymous@"+sourceLocation(t[at].line))
+					at = close
+				}
+				continue
 			}
 			if t[nameAt].kind != "identifier" {
 				continue
@@ -99,6 +109,11 @@ func (s *cFamilySource) region(start, end int, owner string) {
 				continue
 			}
 			name := t[nameAt].text
+			if kind == "namespace" {
+				for j := nameAt + 1; j+2 < body && t[j].text == ":" && t[j+1].text == ":" && t[j+2].kind == "identifier"; j += 3 {
+					name += "::" + t[j+2].text
+				}
+			}
 			qualified := name
 			if owner != "" {
 				qualified = owner + "::" + name
@@ -151,6 +166,9 @@ func (s *cFamilySource) region(start, end int, owner string) {
 				begin -= 3
 			}
 			functionOwner = dartJoined(t[begin : nameAt-2])
+			if owner != "" && !strings.HasPrefix(functionOwner, owner+"::") {
+				functionOwner = owner + "::" + functionOwner
+			}
 		}
 		kind := "function"
 		if functionOwner != "" {
@@ -158,6 +176,9 @@ func (s *cFamilySource) region(start, end int, owner string) {
 		}
 		symbol := supplementaryTokenSymbol(s.file, kind, name, t[nameAt])
 		symbol.Owner = functionOwner
+		if dartContains(prefix, "template") || dartContains(prefix, "virtual") || dartContains(prefix, "friend") || dartContains(t[close+1:body], "override") {
+			s.unsafeMembers[symbol.ID] = true
+		}
 		bodyEnd := body
 		if t[body].text == "{" {
 			if e, ok := s.pairs[body]; ok {
@@ -191,104 +212,75 @@ func analyzeCFamilySources(sources []cFamilySource, result *supplementaryAnalysi
 		}
 	}
 	for _, s := range sources {
+		visibleFiles := cVisibleHeaders(s, files)
 		for _, m := range s.members {
-			if !s.valid || m.start == m.end {
+			if !s.valid || m.start == m.end || s.unsafeMembers[m.symbol.ID] {
 				continue
 			}
 			env := map[string]string{}
-			for at := 0; at < m.start; at++ {
-				if s.tokens[at].line < m.symbol.Line {
-					continue
-				}
-				if at+3 < m.start && s.tokens[at].text == "(" && s.tokens[at+1].text == "*" && s.tokens[at+2].kind == "identifier" && s.tokens[at+3].text == ")" {
-					env[s.tokens[at+2].text] = ""
+			for _, typ := range s.types {
+				if (typ.Kind == "class" || typ.Kind == "struct") && (typ.Owner+"::"+typ.Name == m.symbol.Owner || typ.Owner == "" && typ.Name == m.symbol.Owner) && !m.static {
+					env["this"] = m.symbol.Owner
 				}
 			}
-
 			for _, parameter := range m.parameters {
 				env[parameter.name] = strings.Trim(parameter.typeName, "*& ")
 			}
-			for at := m.start + 1; at < m.end; at++ {
-				if at+3 < m.end && s.tokens[at].text == "(" && s.tokens[at+1].text == "*" && s.tokens[at+2].kind == "identifier" && s.tokens[at+3].text == ")" {
+			for at := 0; at < m.start; at++ {
+				if s.tokens[at].line >= m.symbol.Line && at+3 < m.start && s.tokens[at].text == "(" && s.tokens[at+1].text == "*" && s.tokens[at+3].text == ")" {
 					env[s.tokens[at+2].text] = ""
 				}
-
-				if s.tokens[at].text != "(" || at == 0 || s.tokens[at-1].kind != "identifier" {
+			}
+			scopes := []map[string]string{}
+			for at := m.start + 1; at < m.end; at++ {
+				token := s.tokens[at]
+				if token.text == "{" {
+					scopes = append(scopes, cloneNativeTypes(env))
+				}
+				if token.text == "}" && len(scopes) > 0 {
+					env = scopes[len(scopes)-1]
+					scopes = scopes[:len(scopes)-1]
+				}
+				if token.text == "[" { // Lambda bodies have their own execution identity.
+					if end := cLambdaEnd(s, at, m.end); end > at {
+						at = end
+						continue
+					}
+				}
+				cLocalBinding(s, at, m.end, env)
+				if token.text != "(" || at == 0 || s.tokens[at-1].kind != "identifier" {
 					continue
 				}
 				nameAt := at - 1
 				name := s.tokens[nameAt].text
-				if dartControlWord(name) || name == "sizeof" || name == "decltype" {
-					continue
-				}
-				if _, shadow := env[name]; shadow {
+				if dartControlWord(name) || name == "sizeof" || name == "decltype" || name == "alignof" || name == "noexcept" {
 					continue
 				}
 				close, ok := s.pairs[at]
 				if !ok {
 					continue
 				}
-				owner := m.symbol.Owner
-				unknownReceiver := false
-				if nameAt >= 2 && (s.tokens[nameAt-1].text == "." || s.tokens[nameAt-1].text == ">") {
-					receiver := s.tokens[nameAt-2].text
-					if s.tokens[nameAt-1].text == ">" && nameAt >= 3 && s.tokens[nameAt-2].text == "-" {
-						receiver = s.tokens[nameAt-3].text
-					}
-					owner = env[receiver]
-					unknownReceiver = owner == ""
-				} else if nameAt >= 3 && s.tokens[nameAt-1].text == ":" && s.tokens[nameAt-2].text == ":" {
-					owner = s.tokens[nameAt-3].text
-				}
-				if unknownReceiver {
+				owner, explicit, unknown := cCallOwner(s.tokens, nameAt, m.symbol.Owner, env)
+				if _, shadow := env[name]; shadow && !explicit {
 					continue
 				}
 				candidates := functions[owner+"."+name]
-				if len(candidates) == 0 && owner != "" {
-					candidates = functions["."+name]
+				if !explicit {
+					candidates = cUnqualifiedCandidates(m.symbol.Owner, name, visibleFiles, files, functions)
 				}
 				var visible []dartMember
+				seen := map[string]bool{}
 				for _, candidate := range candidates {
-					if !dartAccepts(candidate, s.tokens[at+1:close]) {
+					if unknown || !dartAccepts(candidate, s.tokens[at+1:close]) || files[candidate.symbol.File].unsafeMembers[candidate.symbol.ID] {
 						continue
 					}
-					if candidate.symbol.File == s.file.Path {
-						visible = append(visible, candidate)
+					if !cMemberVisible(s, candidate, visibleFiles, files) || seen[candidate.symbol.ID] {
 						continue
 					}
-					if candidate.static {
-						continue
-					}
-					for _, include := range s.includes {
-						header, exists := files[path.Clean(path.Join(path.Dir(s.file.Path), include))]
-						if !exists || !header.valid {
-							continue
-						}
-						for _, prototype := range header.members {
-							if prototype.symbol.Name == candidate.symbol.Name && prototype.symbol.Owner == candidate.symbol.Owner && len(prototype.parameters) == len(candidate.parameters) {
-								visible = append(visible, candidate)
-								break
-							}
-						}
-					}
+					seen[candidate.symbol.ID] = true
+					visible = append(visible, candidate)
 				}
-				ref := supplementaryReference(s.file, name, "calls_method_owner", s.tokens[at].line)
-				ref.FromSymbolID = m.symbol.ID
-				if len(visible) == 1 {
-					target := visible[0].symbol
-					ref.To = target.File
-					ref.ToSymbolID = target.ID
-					ref.TargetQualifiedName = target.QualifiedName
-					ref.Resolution = SymbolResolutionExact
-					ref.NonPromotable = false
-					ref.preventExact = false
-					ref.Internal = true
-					ref.Reason = "unique visible C/C++ declaration; preprocessing, linking, overload conversions and runtime dispatch are not evaluated"
-					result.graph.Edges = append(result.graph.Edges, CallGraphEdgeRecord{ID: stableID("c-family-call", m.symbol.ID, target.ID, fmt.Sprint(at)), From: MethodRefRecord{Owner: m.symbol.Owner, Method: m.symbol.Name, File: s.file.Path, Line: m.symbol.Line}, To: MethodRefRecord{Owner: target.Owner, Method: target.Name, File: target.File, Line: target.Line}, Type: "calls", Line: s.tokens[at].line, SourceFile: s.file.Path, Confidence: "EXTRACTED", ConfidenceScore: 1, FromSymbolID: m.symbol.ID, ToSymbolID: target.ID, TargetQualifiedName: target.QualifiedName, Resolution: SymbolResolutionExact, Reason: ref.Reason})
-				} else if len(visible) > 1 {
-					ref.Resolution = SymbolResolutionAmbiguous
-				}
-				result.facts.References = append(result.facts.References, ref)
+				addNativeCall(result, s.file, m.symbol, name, token.line, at, nativeMemberSymbols(visible), "unique visible C/C++ source declaration; conversions, linking and runtime dispatch are not evaluated")
 			}
 		}
 	}

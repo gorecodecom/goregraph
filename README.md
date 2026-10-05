@@ -917,7 +917,7 @@ Coverage describes implemented static analyzers, not proof that runtime behavior
 | Windows Batch | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
 | Blender asset exports | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — | — |
 | C | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
-| C++ | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
+| C++ | Integration | Integration | Integration | Integration | — | Integration | — | — | — | — | Full | Full | — |
 | C# / .NET / Unity | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | — | — | Full | Full | Consumer + provider |
 | CSS / Unity USS | Integration | Integration | Integration | — | — | — | — | — | — | — | Full | Full | — |
 | Dart / Flutter | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | — | Full | Full | Consumer |
@@ -926,10 +926,10 @@ Coverage describes implemented static analyzers, not proof that runtime behavior
 | Java / Spring | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Provider |
 | JavaScript / TypeScript / Node.js / React | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Consumer + provider |
 | Kotlin | Integration | Integration | Integration | Integration | Integration | Integration | Pattern-backed | — | Pattern-backed | — | Full | Full | Consumer + provider |
-| Objective-C / Objective-C++ | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
+| Objective-C / Objective-C++ | Integration | Integration | Integration | Integration | — | Integration | — | — | — | — | Full | Full | — |
 | PHP | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
 | Python | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
-| Ruby | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
+| Ruby | Integration | Integration | Integration | Integration | — | Integration | — | — | — | — | Full | Full | — |
 | Rust | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
 | Scala | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
 | Shell | Integration | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — |
@@ -950,7 +950,7 @@ Supported static pattern families:
 - **Java / Spring:** Spring MVC and WebFlux; Java and Spring HTTP clients; Spring Data; Spring Messaging; gRPC; Jakarta Validation; JUnit and Spring Test.
 - **JavaScript / TypeScript / Node.js / React:** Express and Fastify; NestJS; Next.js; Web and Node HTTP clients; common Node persistence; Kafka and AMQP; gRPC; Node request/response boundaries; Jest, Vitest, Node Test, and React Testing Library.
 - **Kotlin:** typed visible Kotlin calls with named/default parameters; JUnit and kotlin.test; literal Spring mappings, Ktor requests and Flutter MethodChannel.
-- **Objective-C / Objective-C++:** interfaces, properties, class and instance selectors, C ABI entrypoints.
+- **Objective-C / Objective-C++:** interfaces, properties, class and instance selectors, C ABI entrypoints, imported selectors, XCTest.
 - **PHP:** Laravel and Symfony routes; PHP HTTP clients; Eloquent, Doctrine, and PDO; queues and messaging; gRPC; PHP request/response boundaries; PHPUnit and Pest.
 - **Python:** FastAPI, Flask, and Django routes; requests, httpx, and aiohttp; SQLAlchemy, Django ORM, and DB-API; Kafka, Celery, and AMQP; gRPC; Python web and validation boundaries; pytest and unittest.
 - **Rust:** Axum, Actix, and Rocket routes; reqwest; SQLx, Diesel, and SeaORM; Kafka and AMQP; tonic gRPC; Rust web request/response boundaries; Rust and Tokio tests.

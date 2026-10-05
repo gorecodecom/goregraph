@@ -124,3 +124,43 @@ func TestStructuredLanguagesReachNormalContextSource(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeDeepCrossFileCallsDeliverVerifiedContext(t *testing.T) {
+	fixtures := []struct {
+		name, query, caller, target, callerProof, targetProof string
+		files                                                 map[string]string
+	}{
+		{"cpp", "Explain runBridgeEvidence C++", "main.cpp", "value.cpp", "prepareBridgeEvidence();", "int prepareBridgeEvidence()", map[string]string{"main.cpp": "#include \"value.h\"\nint runBridgeEvidence(){ return prepareBridgeEvidence(); }\n", "value.h": "int prepareBridgeEvidence();\n", "value.cpp": "int prepareBridgeEvidence(){ return 42; }\n"}},
+		{"objectivec", "Explain Client.runBridgeEvidence Objective-C", "Client.m", "Service.m", "[service prepareBridgeEvidence]", "- (void)prepareBridgeEvidence", map[string]string{"Client.m": "#import \"Service.h\"\n@implementation Client\n- (void)runBridgeEvidence:(Service *)service { [service prepareBridgeEvidence]; }\n@end\n", "Service.h": "@interface Service\n- (void)prepareBridgeEvidence;\n@end\n", "Service.m": "#import \"Service.h\"\n@implementation Service\n- (void)prepareBridgeEvidence {}\n@end\n"}},
+		{"ruby", "Explain Runner.runBridgeEvidence Ruby", "runner.rb", "service.rb", "Service.prepareBridgeEvidence()", "def self.prepareBridgeEvidence()", map[string]string{"runner.rb": "require_relative 'service'\nclass Runner\n def runBridgeEvidence()\n  Service.prepareBridgeEvidence()\n end\nend\n", "service.rb": "class Service\n def self.prepareBridgeEvidence()\n  42\n end\nend\n"}},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			root := t.TempDir()
+			for file, body := range fixture.files {
+				writeSourceFile(t, root, file, body)
+			}
+			cfg := config.Defaults()
+			cfg.Workspace = false
+			cfg.UpdateGitignore = false
+			if _, err := scan.RunBuild(root, cfg, scan.BuildTargetAgent); err != nil {
+				t.Fatal(err)
+			}
+			pack, err := BuildContext(ContextRequest{Root: root, Query: fixture.query, ProtocolVersion: AdaptiveV2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			caller, target := false, false
+			for _, section := range pack.SourceSections {
+				if section.ReadReceipt == "" {
+					t.Fatal("missing source receipt", section)
+				}
+				caller = caller || section.Path == fixture.caller && strings.Contains(section.Content, fixture.callerProof)
+				target = target || section.Path == fixture.target && strings.Contains(section.Content, fixture.targetProof)
+			}
+			if !caller || !target {
+				t.Fatalf("call chain source missing: caller=%v target=%v pack=%#v", caller, target, pack)
+			}
+		})
+	}
+}

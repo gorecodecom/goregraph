@@ -44,9 +44,9 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 	},
 	{
 		Language: "cpp", DisplayName: "C++", Level: "partial", Scope: "language",
-		Symbols: true, Relations: true, Calls: true, ExactSymbols: true, DirectUsages: true,
-		Limitations: "Structured C/C++ declarations and uniquely visible direct calls. Preprocessor branches, macros, function pointers, implicit conversions, templates and linker configuration remain unresolved.",
-		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json"},
+		Symbols: true, Relations: true, Calls: true, Tests: true, ExactSymbols: true, DirectUsages: true,
+		Limitations: "Structured C/C++ declarations, qualified namespaces, scoped typed receivers, transitive indexed headers and GoogleTest test calls. Preprocessor branches, macros, function pointers, implicit conversions, templates and linker configuration remain unresolved.",
+		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json", "callgraph.json", "test-map.json"},
 	},
 	{
 		Language: "csharp", DisplayName: "C# / .NET / Unity", Level: "full", Scope: "language+aspnet+efcore+unity",
@@ -132,10 +132,10 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 	},
 	{
 		Language: "objectivec", DisplayName: "Objective-C / Objective-C++", Level: "partial", Scope: "language+objc+c-abi",
-		Symbols: true, Relations: true, Calls: true, ExactSymbols: true, DirectUsages: true,
-		PatternFamilies: []string{"interfaces, properties, class and instance selectors, C ABI entrypoints"},
-		Limitations:     "Unique local selector and C entrypoint declarations only; runtime dispatch, swizzling, SDK methods, macros and conditional compilation remain unresolved.",
-		Outputs:         []string{"symbols-full.json", "relations-full.json", "callgraph.json"},
+		Symbols: true, Relations: true, Calls: true, Tests: true, ExactSymbols: true, DirectUsages: true,
+		PatternFamilies: []string{"interfaces, properties, class and instance selectors, C ABI entrypoints, imported selectors, XCTest"},
+		Limitations:     "Imported interfaces, typed properties/parameters/locals, nested messages, super and unique source selectors; XCTest test calls. Runtime dispatch, swizzling, category collisions, SDK methods, arbitrary macros and conditional compilation remain unresolved.",
+		Outputs:         []string{"symbols-full.json", "relations-full.json", "callgraph.json", "test-map.json"},
 	},
 	{
 		Language: "php", DisplayName: "PHP", Level: "full", Scope: "language+routes",
@@ -168,9 +168,9 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 	},
 	{
 		Language: "ruby", DisplayName: "Ruby", Level: "partial", Scope: "language",
-		Symbols: true, Relations: true, Calls: true, ExactSymbols: true, DirectUsages: true,
-		Limitations: "Structured declarations and conservative direct call bindings. Dynamic dispatch, metaprogramming, unavailable imports and runtime callbacks remain unresolved.",
-		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json"},
+		Symbols: true, Relations: true, Calls: true, Tests: true, ExactSymbols: true, DirectUsages: true,
+		Limitations: "Implicit/explicit self calls, qualified class receivers, singleton/endless methods, literal relative imports, unique mixin/inherited methods and Minitest test calls. Dynamic receivers, reopening conflicts, metaprogramming, unavailable imports and deferred callbacks remain unresolved.",
+		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json", "callgraph.json", "test-map.json"},
 	},
 	{
 		Language: "rust", DisplayName: "Rust", Level: "full", Scope: "language+routes",

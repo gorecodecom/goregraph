@@ -30,6 +30,9 @@ func analyzeSupplementarySources(sources []supplementarySource, files []FileReco
 	}
 	analyzeKotlinSources(kotlinSources, &result)
 	result.capabilities = append(result.capabilities, kotlinCapabilities(result.code)...)
+	result.capabilities = append(result.capabilities, nativeTestCapabilities(result.code, "cpp", "GoogleTest")...)
+	result.capabilities = append(result.capabilities, nativeTestCapabilities(result.code, "objectivec", "XCTest")...)
+	result.capabilities = append(result.capabilities, nativeTestCapabilities(result.code, "ruby", "Minitest")...)
 	resolveSupplementaryResources(sources, files, &result.facts)
 	for _, contract := range result.code.APIContracts {
 		if contract.Language != "html" {
