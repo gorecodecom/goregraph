@@ -153,10 +153,12 @@ type ContextEndpoint struct {
 }
 
 type ContextPack struct {
-	Mode                   string        `json:"mode,omitempty"`
-	Audit                  *ContextAudit `json:"audit,omitempty"`
-	Schema                 int           `json:"schema"`
-	Query                  string        `json:"query"`
+	Watcher                *ContextWatcher               `json:"watcher,omitempty"`
+	CallDiagnostics        []scan.GoCallDiagnosticRecord `json:"call_diagnostics,omitempty"`
+	Mode                   string                        `json:"mode,omitempty"`
+	Audit                  *ContextAudit                 `json:"audit,omitempty"`
+	Schema                 int                           `json:"schema"`
+	Query                  string                        `json:"query"`
 	selectionQuery         string
 	budgetQuery            string
 	Freshness              string                              `json:"freshness,omitempty"`
@@ -201,12 +203,16 @@ func BuildContext(request ContextRequest) (ContextPack, error) {
 	if err != nil {
 		return ContextPack{}, err
 	}
+	watcher := inspectContextWatcher(request.Root)
 	var pack ContextPack
 	err = scan.WithOutputRead(context.Background(), request.Root, func() error {
 		pack, err = buildContext(request)
 		return err
 	})
-	return pack, err
+	if err != nil {
+		return pack, err
+	}
+	return attachContextWatcher(pack, watcher)
 }
 
 func buildContext(request ContextRequest) (ContextPack, error) {
@@ -238,7 +244,7 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 			return ContextPack{}, fmt.Errorf("selected semantic source/configuration inputs changed; compiler snapshot requires an explicit new export")
 		}
 	}
-	return pack, nil
+	return attachContextCallDiagnostics(pack, loaded)
 }
 
 func buildProductionContext(loaded loadedContextIndex, request ContextRequest) (ContextPack, error) {

@@ -574,6 +574,10 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 			evidence,
 			capabilities,
 		)
+		contextIndex.CallDiagnostics = append([]GoCallDiagnosticRecord(nil), callGraph.UnresolvedCalls...)
+		for i := range contextIndex.CallDiagnostics {
+			contextIndex.CallDiagnostics[i].Project = filepath.Base(root)
+		}
 		enrichAssetContext(&contextIndex, index.Assets)
 		contextIndex = appendAgentContextConfigurationFacts(
 			contextIndex,

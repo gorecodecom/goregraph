@@ -48,6 +48,7 @@ type AgentContextCoverageRecord struct {
 }
 
 type AgentContextIndexRecord struct {
+	CallDiagnostics      []GoCallDiagnosticRecord     `json:"call_diagnostics,omitempty"`
 	SemanticDependencies []SemanticDependencyRecord   `json:"semantic_dependencies,omitempty"`
 	AuditVersion         int                          `json:"audit_version,omitempty"`
 	AuditIncomplete      bool                         `json:"audit_incomplete,omitempty"`

@@ -200,8 +200,19 @@ type MethodRefRecord struct {
 	Line   int    `json:"line,omitempty"`
 }
 
+// GoCallDiagnosticRecord identifies a call without a proven static target.
+type GoCallDiagnosticRecord struct {
+	Project string `json:"project,omitempty"`
+	File    string `json:"file"`
+	Line    int    `json:"line"`
+	Caller  string `json:"caller"`
+	Method  string `json:"method"`
+	Reason  string `json:"reason"`
+}
+
 type CallGraphRecord struct {
-	Edges []CallGraphEdgeRecord `json:"edges"`
+	UnresolvedCalls []GoCallDiagnosticRecord `json:"unresolved_calls,omitempty"`
+	Edges           []CallGraphEdgeRecord    `json:"edges"`
 }
 
 type CallGraphEdgeRecord struct {

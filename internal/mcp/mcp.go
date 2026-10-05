@@ -116,13 +116,15 @@ func tools(options Options) []map[string]any {
 	if options.ProtocolVersion == agentguide.AdaptiveV2 {
 		contextTool["description"] = instructionsForProtocol(options.ProtocolVersion)
 	}
-	contextTool["description"] = contextTool["description"].(string) + "\n\n" + taskContextParameterInstruction()
+	contextTool["description"] = contextTool["description"].(string) + "\n\n" + taskContextParameterInstruction() + "\n\n" + taskContextRuntimeInstruction
 	listed := []map[string]any{contextTool}
 	if options.ExpertTools {
 		listed = append(listed, legacyTools()...)
 	}
 	return listed
 }
+
+const taskContextRuntimeInstruction = "Optional watcher metadata describes observed operation and verified coverage independently of health and source freshness; do not infer a stale index from a stopped watcher, or a current index from a heartbeat or file check. Missing watcher metadata means unavailable within the response budget, not stopped. call_diagnostics explain unsupported static Go targets in delivered current source; they are not call edges or proven runtime defects."
 
 func taskContextTool() map[string]any {
 	return map[string]any{

@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	currentExtractorRevision = "8"
-	currentResolverRevision  = "4"
-	currentAgentRevision     = "9"
+	currentExtractorRevision = "9"
+	currentResolverRevision  = "5"
+	currentAgentRevision     = "10"
 	currentDashboardRevision = "7"
 )
 

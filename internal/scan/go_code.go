@@ -124,6 +124,9 @@ func extractGoCodeIntelligence(file FileRecord, body string) ([]CodeFunctionReco
 			entry.Raw = strings.TrimSpace(stripCodeLineComment("go", lines[entry.Line-1]))
 			switch target := unwrapGoExpression(call.Fun).(type) {
 			case *ast.Ident:
+				if target.Obj != nil && target.Obj.Kind == ast.Typ {
+					return true
+				}
 				entry.Method = target.Name
 				binding.dynamic = target.Obj != nil && target.Obj.Kind != ast.Fun
 			case *ast.SelectorExpr:
@@ -169,6 +172,14 @@ func unwrapGoExpression(expression ast.Expr) ast.Expr {
 			return expression
 		}
 	}
+}
+
+func goPredeclaredType(name string) bool {
+	switch name {
+	case "any", "bool", "byte", "complex64", "complex128", "error", "float32", "float64", "int", "int8", "int16", "int32", "int64", "rune", "string", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr":
+		return true
+	}
+	return false
 }
 
 func goTypeName(expression ast.Expr) (string, string) {
@@ -293,12 +304,24 @@ func bindGoCodePackages(code *CodeIntelligenceRecord, symbols []SymbolRecord) {
 }
 
 func resolveGoCodeCall(from CodeFunctionRecord, call CodeCallRecord, index codeFunctionIndex) (CodeFunctionRecord, bool) {
-	if from.goScope == nil || call.goScope == nil || call.goScope.dynamic {
-		return CodeFunctionRecord{}, false
+	target, reason := resolveGoCodeCallWithReason(from, call, index)
+	return target, reason == ""
+}
+
+func resolveGoCodeCallWithReason(from CodeFunctionRecord, call CodeCallRecord, index codeFunctionIndex) (CodeFunctionRecord, string) {
+	if from.goScope == nil || call.goScope == nil {
+		return CodeFunctionRecord{}, "scope_unavailable"
 	}
+	if call.goScope.dynamic {
+		if call.goScope.receiver == nil {
+			return CodeFunctionRecord{}, "dynamic_function_value"
+		}
+		return CodeFunctionRecord{}, "receiver_type_unresolved"
+	}
+	arityMismatch := false
 	var matches []CodeFunctionRecord
 	for _, candidate := range index.byName[call.Method] {
-		if candidate.Language != "go" || candidate.goScope == nil || candidate.Owner != call.goScope.receiverType || !goCallArityMatches(call.goScope, candidate.goScope) {
+		if candidate.Language != "go" || candidate.goScope == nil || candidate.Owner != call.goScope.receiverType {
 			continue
 		}
 		local := path.Dir(candidate.File) == path.Dir(from.File) && candidate.goScope.packageName == from.goScope.packageName
@@ -310,13 +333,29 @@ func resolveGoCodeCall(from CodeFunctionRecord, call CodeCallRecord, index codeF
 			local = ast.IsExported(call.Method) && goImportedPackageMatches(from.goScope, ".", candidate.goScope)
 		}
 		if local {
+			if !goCallArityMatches(call.goScope, candidate.goScope) {
+				arityMismatch = true
+				continue
+			}
 			matches = append(matches, candidate)
 		}
 	}
 	if len(matches) == 1 {
-		return matches[0], true
+		return matches[0], ""
 	}
-	return CodeFunctionRecord{}, false
+	if len(matches) > 1 {
+		return CodeFunctionRecord{}, "ambiguous_target"
+	}
+	if arityMismatch {
+		return CodeFunctionRecord{}, "argument_mismatch"
+	}
+	if call.goScope.importAlias != "" {
+		return CodeFunctionRecord{}, "external_target"
+	}
+	if call.goScope.receiver != nil {
+		return CodeFunctionRecord{}, "unsupported_type_binding"
+	}
+	return CodeFunctionRecord{}, "target_not_indexed"
 }
 
 func goImportedPackageMatches(from *goFunctionScope, alias string, candidate *goFunctionScope) bool {

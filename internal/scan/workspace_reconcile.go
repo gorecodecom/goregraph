@@ -1488,6 +1488,7 @@ func (builder *workspaceAgentContextBuilder) findCanonicalContractFact(
 }
 
 type workspaceAgentContextBuilder struct {
+	callDiagnostics      []GoCallDiagnosticRecord
 	auditSources         []AgentAuditSource
 	auditEnabled         bool
 	auditIncomplete      bool
@@ -1538,6 +1539,13 @@ func (builder *workspaceAgentContextBuilder) mergeProjectIndex(index AgentContex
 	project := contextPathKey(index.Root)
 	if project == "" || !builder.hasProject(project) {
 		return
+	}
+	for _, diagnostic := range index.CallDiagnostics {
+		diagnostic.Project = project
+		diagnostic.File = workspaceAgentFile(project, diagnostic.File)
+		if diagnostic.File != "" {
+			builder.callDiagnostics = append(builder.callDiagnostics, diagnostic)
+		}
 	}
 	if index.AuditVersion == 1 {
 		builder.auditEnabled = true
@@ -2352,6 +2360,7 @@ func (builder *workspaceAgentContextBuilder) index(generated string) AgentContex
 		SchemaVersion:        SchemaVersion,
 		Generated:            generated,
 		Root:                 builder.registry.Root,
+		CallDiagnostics:      mergeGoCallDiagnostics(builder.callDiagnostics, nil),
 		SourceHashes:         builder.sourceHashes,
 		SemanticDependencies: builder.semanticDependencies,
 		AuditVersion:         auditVersion,

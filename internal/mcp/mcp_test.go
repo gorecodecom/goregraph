@@ -245,7 +245,7 @@ func TestDefaultMCPTaskContextSchemaAndInstructions(t *testing.T) {
 			},
 		},
 	}
-	want["description"] = want["description"].(string) + "\n\n" + taskContextParameterInstruction()
+	want["description"] = want["description"].(string) + "\n\n" + taskContextParameterInstruction() + "\n\n" + taskContextRuntimeInstruction
 	if len(listed) != 1 || !reflect.DeepEqual(listed[0], want) {
 		t.Fatalf("task_context schema = %#v, want %#v", listed, want)
 	}

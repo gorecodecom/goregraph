@@ -21,16 +21,24 @@ func mergeCallGraphs(base CallGraphRecord, extra CallGraphRecord) CallGraphRecor
 		edges = append(edges, edge)
 	}
 	sortCallGraphEdges(edges)
-	return CallGraphRecord{Edges: edges}
+	return CallGraphRecord{Edges: edges, UnresolvedCalls: mergeGoCallDiagnostics(base.UnresolvedCalls, extra.UnresolvedCalls)}
 }
 
 func buildGenericCallGraph(code CodeIntelligenceRecord) CallGraphRecord {
 	functions := indexedCodeFunctions(code.Functions)
 	var edges []CallGraphEdgeRecord
+	var diagnostics []GoCallDiagnosticRecord
 	for _, function := range code.Functions {
 		for _, call := range function.Calls {
 			target, ok := resolveCodeCall(function, call, functions)
 			if !ok {
+				if function.goScope != nil && call.goScope != nil {
+					if call.goScope.receiver == nil && !call.goScope.dynamic && goPredeclaredType(call.Method) {
+						continue
+					}
+					_, reason := resolveGoCodeCallWithReason(function, call, functions)
+					diagnostics = append(diagnostics, GoCallDiagnosticRecord{File: function.File, Line: call.Line, Caller: function.Name, Method: call.Method, Reason: reason})
+				}
 				continue
 			}
 			confidence := codeCallConfidence(function, target)
@@ -69,7 +77,7 @@ func buildGenericCallGraph(code CodeIntelligenceRecord) CallGraphRecord {
 		}
 	}
 	sortCallGraphEdges(edges)
-	return CallGraphRecord{Edges: edges}
+	return CallGraphRecord{Edges: edges, UnresolvedCalls: mergeGoCallDiagnostics(diagnostics, nil)}
 }
 
 func buildCodeRoutes(code CodeIntelligenceRecord, spring SpringIndex) []CodeRouteRecord {
@@ -465,4 +473,35 @@ func sortCallGraphEdges(edges []CallGraphEdgeRecord) {
 		}
 		return edges[i].ID < edges[j].ID
 	})
+}
+
+func mergeGoCallDiagnostics(base, extra []GoCallDiagnosticRecord) []GoCallDiagnosticRecord {
+	seen := map[GoCallDiagnosticRecord]bool{}
+	var result []GoCallDiagnosticRecord
+	for _, diagnostic := range append(append([]GoCallDiagnosticRecord(nil), base...), extra...) {
+		if !seen[diagnostic] {
+			seen[diagnostic] = true
+			result = append(result, diagnostic)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		l, r := result[i], result[j]
+		if l.Project != r.Project {
+			return l.Project < r.Project
+		}
+		if l.File != r.File {
+			return l.File < r.File
+		}
+		if l.Line != r.Line {
+			return l.Line < r.Line
+		}
+		if l.Caller != r.Caller {
+			return l.Caller < r.Caller
+		}
+		if l.Method != r.Method {
+			return l.Method < r.Method
+		}
+		return l.Reason < r.Reason
+	})
+	return result
 }

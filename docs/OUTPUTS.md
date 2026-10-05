@@ -349,6 +349,33 @@ facts; Context output never includes the full `index/api-catalog.json`, the
 dashboard payload, or `.goregraph-dashboard.json` merely because an agent uses
 GoreGraph.
 
+Context Packs can include a read-only `watcher` observation: `state` distinguishes
+`monitoring`, `updating`, `recovering`, `not_running` and `unknown`; `coverage`
+identifies a direct watcher or an exactly registered project in an active or recovering supervised workspace
+watcher. A workspace registry that cannot be verified produces `unknown` and
+`unverified`, rather than a claim that the watcher stopped. Optional fields report
+the responsible root, last successful file check, last index update and current
+phase. Runtime tokens, process credentials and raw error details are never emitted.
+This observation is separate from `health` and source freshness: a heartbeat or
+recent file check cannot establish that a projection matches current inputs. A
+stopped watcher likewise does not establish that its last export is stale.
+
+Go `index/callgraph.json` records `unresolved_calls` with file, line, caller, method
+and a reason such as `dynamic_function_value`, `receiver_type_unresolved`,
+`unsupported_type_binding`, `ambiguous_target`, `argument_mismatch`,
+`external_target` or `target_not_indexed`. These are analysis limits, not proven
+runtime defects. `agent/context-index.json` preserves their project ownership.
+Normal Context Packs may include at most three `call_diagnostics` for selected
+source ranges whose read receipts match the indexed file hash. External targets
+are omitted from this compact explanation; unrelated projects, changed source
+and relocated old positions are never promoted to current call evidence. A
+diagnostic never creates a call edge or guesses a runtime implementation.
+
+Both additions obey the existing token and byte limits. Source evidence takes
+priority: watcher details become compact, and optional runtime metadata or call
+diagnostics can be omitted when the caller has exhausted the budget. The fields
+do not trigger indexing, alter watcher state or widen source selection.
+
 ## Benchmark metric meaning
 
 Both raw and effective counters are retained. `effective_tokens` is
