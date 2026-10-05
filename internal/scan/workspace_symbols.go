@@ -771,7 +771,7 @@ func workspaceSymbolCapabilityFiles(language, capability string) []string {
 		files = append(files, "maven-graph.json")
 	case "javascript", "typescript":
 		files = append(files, "package-graph.json")
-	case "csharp", "swift", "unity", "blender":
+	case "csharp", "swift", "dart", "html", "css", "batch", "objectivec", "c", "cpp", "ruby", "kotlin", "unity", "blender":
 		// Native and asset references are evidenced by the project symbol facts.
 	default:
 		files = append(files, "maven-graph.json", "package-graph.json")
@@ -840,7 +840,7 @@ func workspaceSymbolLanguages(project workspaceIndexProject) []string {
 
 func isWorkspaceSymbolLanguageSupported(language string) bool {
 	switch language {
-	case "java", "csharp", "swift", "unity", "blender":
+	case "java", "csharp", "swift", "dart", "html", "css", "batch", "objectivec", "c", "cpp", "ruby", "kotlin", "unity", "blender":
 		return true
 	default:
 		return isScriptLanguage(language)

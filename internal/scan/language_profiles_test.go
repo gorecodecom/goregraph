@@ -7,14 +7,20 @@ import (
 
 func TestLanguageCapabilityProfilesMatchImplementedAdapters(t *testing.T) {
 	type expectedProfile struct {
-		level                      string
-		symbols, relations, calls  bool
-		routes, tests              bool
-		architecture               bool
-		exactSymbols, directUsages bool
-		httpProvider, httpConsumer bool
+		level                              string
+		symbols, relations, calls          bool
+		routes, tests                      bool
+		architecture                       bool
+		exactSymbols, directUsages         bool
+		httpProvider, httpConsumer         bool
+		apiClients, persistence, messaging bool
 	}
 	expected := map[string]expectedProfile{
+		"dart":       {level: "full", symbols: true, relations: true, calls: true, routes: true, tests: true, exactSymbols: true, directUsages: true, httpConsumer: true, apiClients: true, persistence: true, messaging: true},
+		"batch":      {level: "partial", symbols: true, relations: true, calls: true, exactSymbols: true, directUsages: true},
+		"html":       {level: "partial", symbols: true, relations: true, exactSymbols: true, directUsages: true, httpConsumer: true, apiClients: true},
+		"css":        {level: "partial", symbols: true, relations: true, exactSymbols: true, directUsages: true},
+		"objectivec": {level: "partial", symbols: true, relations: true, calls: true, exactSymbols: true, directUsages: true},
 		"java": {
 			level: "full", symbols: true, relations: true, calls: true,
 			routes: true, tests: true, architecture: true,
@@ -51,12 +57,12 @@ func TestLanguageCapabilityProfilesMatchImplementedAdapters(t *testing.T) {
 		"shell": {
 			level: "partial", symbols: true, relations: true, calls: true,
 		},
-		"kotlin":  {level: "index", symbols: true, relations: true},
+		"kotlin":  {level: "partial", symbols: true, relations: true, calls: true, routes: true, tests: true, exactSymbols: true, directUsages: true, apiClients: true, messaging: true, httpProvider: true, httpConsumer: true},
 		"scala":   {level: "index", symbols: true, relations: true},
 		"swift":   {level: "full", symbols: true, relations: true, calls: true, tests: true, exactSymbols: true, directUsages: true, httpConsumer: true},
-		"ruby":    {level: "index", symbols: true, relations: true},
-		"c":       {level: "index", symbols: true, relations: true},
-		"cpp":     {level: "index", symbols: true, relations: true},
+		"ruby":    {level: "partial", symbols: true, relations: true, calls: true, exactSymbols: true, directUsages: true},
+		"c":       {level: "partial", symbols: true, relations: true, calls: true, exactSymbols: true, directUsages: true},
+		"cpp":     {level: "partial", symbols: true, relations: true, calls: true, exactSymbols: true, directUsages: true},
 		"unity":   {level: "partial", symbols: true, relations: true},
 		"blender": {level: "partial", symbols: true, relations: true},
 		"csharp":  {level: "full", symbols: true, relations: true, calls: true, routes: true, tests: true, exactSymbols: true, directUsages: true, httpProvider: true, httpConsumer: true},
@@ -79,9 +85,9 @@ func TestLanguageCapabilityProfilesMatchImplementedAdapters(t *testing.T) {
 			profile.Calls != want.calls ||
 			profile.Routes != want.routes ||
 			profile.Tests != want.tests ||
-			profile.APIClients != (want.architecture || profile.Language == "csharp" || profile.Language == "swift") ||
-			profile.Persistence != (want.architecture || profile.Language == "csharp" || profile.Language == "swift") ||
-			profile.Messaging != want.architecture ||
+			profile.APIClients != (want.architecture || want.apiClients || profile.Language == "csharp" || profile.Language == "swift") ||
+			profile.Persistence != (want.architecture || want.persistence || profile.Language == "csharp" || profile.Language == "swift") ||
+			profile.Messaging != (want.architecture || want.messaging) ||
 			profile.DataFlow != want.architecture ||
 			profile.ExactSymbols != want.exactSymbols ||
 			profile.DirectUsages != want.directUsages ||
@@ -98,7 +104,7 @@ func TestLanguageCapabilityProfilesMatchImplementedAdapters(t *testing.T) {
 		}
 	}
 	wantLanguages := []string{
-		"blender", "c", "cpp", "csharp", "go", "java", "javascript", "kotlin", "php",
+		"batch", "blender", "c", "cpp", "csharp", "css", "dart", "go", "html", "java", "javascript", "kotlin", "objectivec", "php",
 		"python", "ruby", "rust", "scala", "shell", "swift", "typescript", "unity",
 	}
 	if !reflect.DeepEqual(languages, wantLanguages) {

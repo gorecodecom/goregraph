@@ -53,6 +53,8 @@ func extractWorkspaceRecord(file FileRecord, body string) WorkspaceIndex {
 			result.MavenPackages = []MavenPackageRecord{record}
 		}
 		return result
+	case "pubspec.yaml":
+		return WorkspaceIndex{DartPackages: []DartPackageRecord{extractDartPackage(file.Path, body)}}
 	case "package.json":
 		if record, ok := extractNodePackage(file.Path, body); ok {
 			return WorkspaceIndex{NodePackages: []NodePackageRecord{record}}
@@ -71,6 +73,8 @@ func mergeWorkspaceIndex(index *WorkspaceIndex, add WorkspaceIndex) {
 	index.MavenPackages = append(index.MavenPackages, add.MavenPackages...)
 	index.GradlePackages = append(index.GradlePackages, add.GradlePackages...)
 	index.NodePackages = append(index.NodePackages, add.NodePackages...)
+	index.DartPackages = append(index.DartPackages, add.DartPackages...)
+	sort.Slice(index.DartPackages, func(i, j int) bool { return index.DartPackages[i].Path < index.DartPackages[j].Path })
 	index.gradleLimitations = append(index.gradleLimitations, add.gradleLimitations...)
 	index.mavenLimitations = append(index.mavenLimitations, add.mavenLimitations...)
 	sort.Slice(index.MavenPackages, func(i, j int) bool { return index.MavenPackages[i].Path < index.MavenPackages[j].Path })

@@ -949,6 +949,8 @@ func workspaceProjectBuildSystem(abs string) string {
 		return "gradle"
 	case workspaceFileExists(filepath.Join(abs, "package.json")):
 		return "node"
+	case workspaceFileExists(filepath.Join(abs, "pubspec.yaml")):
+		return "pub"
 	case workspaceFileExists(filepath.Join(abs, "go.mod")):
 		return "go"
 	default:
@@ -957,6 +959,9 @@ func workspaceProjectBuildSystem(abs string) string {
 }
 
 func workspaceProjectTestRunner(abs string) string {
+	if workspaceFileExists(filepath.Join(abs, "pubspec.yaml")) {
+		return "dart / flutter test"
+	}
 	for _, name := range []string{"playwright.config.ts", "playwright.config.js", "playwright.config.mjs"} {
 		if workspaceFileExists(filepath.Join(abs, name)) {
 			return "playwright"
@@ -1052,7 +1057,7 @@ func hasProjectMarker(abs string) bool {
 		"settings.gradle", "settings.gradle.kts", "go.mod", "pyproject.toml",
 		"requirements.txt", "setup.py", "Cargo.toml", "composer.json",
 		"build.sbt", "Package.swift", "Gemfile", "CMakeLists.txt",
-		"meson.build", "goregraph.yml",
+		"meson.build", "pubspec.yaml", "goregraph.yml",
 	} {
 		if workspaceRegularFileExists(filepath.Join(abs, name)) {
 			return true

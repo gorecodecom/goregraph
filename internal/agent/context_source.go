@@ -901,6 +901,12 @@ func renderSourceCandidate(candidate sourceCandidate, file sourceFile, mode stri
 			Content:     redactContextConfigurationValues(file.Path, content),
 		}, nil
 	}
+	if strings.EqualFold(filepath.Ext(candidate.Path), ".dart") {
+		return renderDartSourceCandidate(candidate, file, mode)
+	}
+	if anchors, supported := scan.StructuredSourceDeclarations(candidate.Path, strings.Join(file.Lines, "\n")); supported {
+		return renderStructuredSourceCandidate(candidate, file, mode, anchors)
+	}
 	identifier := contextIdentifier(candidate)
 	occurrences := identifierOccurrences(file.Lines, identifier)
 	codeLines := sourceCodeMask(file.Lines)

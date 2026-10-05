@@ -555,9 +555,9 @@ matched test coverage.
 ## Language Inventory
 
 <!-- goregraph:generated language-inventory start -->
-GoreGraph provides full adapters for C# / .NET / Unity, Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, Rust, and Swift / SwiftUI / Apple frameworks. They emit normalized evidence for their supported static syntax; the capability table identifies the outputs each adapter implements. Swift does not provide HTTP server routes, messaging or end-to-end data flow, and C# does not provide messaging or end-to-end data flow.
+GoreGraph provides full adapters for C# / .NET / Unity, Dart / Flutter, Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, Rust, and Swift / SwiftUI / Apple frameworks. They emit normalized evidence for their supported static syntax; the capability table identifies the outputs each adapter implements. Swift does not provide HTTP server routes, messaging or end-to-end data flow, and C# does not provide messaging or end-to-end data flow.
 
-Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for C, C++, Kotlin, Ruby, and Scala provide best-effort declarations and imports only. Unity serialized assets and explicit source-hash-verified Blender/Unity exports provide partial asset object and reference analysis; scans and context queries never start an editor. All records share the Schema 3 index.
+Structured integrations for Windows Batch, C, C++, CSS / Unity USS, HTML, Kotlin, Objective-C / Objective-C++, and Ruby provide source declarations and references, with capability-specific calls, HTTP evidence and tests where listed. Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for Scala provide best-effort declarations and imports only. Unity serialized assets and explicit source-hash-verified Blender/Unity exports provide partial asset object and reference analysis; scans and context queries never start an editor. All records share the Schema 3 index.
 <!-- goregraph:generated language-inventory end -->
 
 ## 1.4.1 publication, identity and health

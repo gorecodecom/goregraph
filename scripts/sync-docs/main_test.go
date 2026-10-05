@@ -90,6 +90,7 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 		"| Java / Spring | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Provider |",
 		"| JavaScript / TypeScript / Node.js / React | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Consumer + provider |",
 		"| Rust | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |",
+		"| Dart / Flutter | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | — | Full | Full | Consumer |",
 		"| Shell | Integration | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — |",
 		"runtime-generated behavior",
 		"Shell integration does not provide routes, tests, or architecture capabilities",
@@ -104,10 +105,11 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 
 	languageInventory := renderLanguageInventorySummary()
 	for _, want := range []string{
-		"full adapters for C# / .NET / Unity, Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, Rust, and Swift / SwiftUI / Apple frameworks",
+		"full adapters for C# / .NET / Unity, Dart / Flutter, Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, Rust, and Swift / SwiftUI / Apple frameworks",
+		"Structured integrations for Windows Batch, C, C++, CSS / Unity USS, HTML, Kotlin, Objective-C / Objective-C++, and Ruby",
 		"Shell integration provides symbols, imports, and calls",
 		"does not provide routes, tests, or architecture facts",
-		"Index adapters for C, C++, Kotlin, Ruby, and Scala",
+		"Index adapters for Scala",
 	} {
 		if !strings.Contains(languageInventory, want) {
 			t.Fatalf("language inventory is missing %q:\n%s", want, languageInventory)

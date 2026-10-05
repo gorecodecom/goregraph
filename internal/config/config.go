@@ -38,6 +38,8 @@ func Defaults() Config {
 			".git/",
 			".worktrees/",
 			"node_modules/",
+			".dart_tool/",
+			".pub-cache/",
 			"vendor/",
 			"target/",
 			"build/",

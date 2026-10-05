@@ -238,6 +238,8 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 	var csharpSources []csharpSource
 	var unitySources []unitySource
 	var swiftSources []swiftSource
+	var dartSources []dartSource
+	var supplementarySources []supplementarySource
 	var exportSources []assetExportSource
 	var semanticSources []assetExportSource
 	var swiftMetadata []assetExportSource
@@ -293,8 +295,9 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		index.Files = append(index.Files, record)
 		text := string(body)
+		record.Language = detectSourceLanguage(rel, text)
+		index.Files = append(index.Files, record)
 		if strings.HasSuffix(rel, ".pbxproj") || filepath.Base(rel) == "Package.swift" {
 			swiftMetadata = append(swiftMetadata, assetExportSource{record, text})
 		}
@@ -322,7 +325,15 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 		}
 		index.AgentContextConfigurationFacts = append(index.AgentContextConfigurationFacts, extractAgentContextConfigurationFacts(record, text)...)
 		index.AgentContextStoryFacts = append(index.AgentContextStoryFacts, extractAgentContextStoryFacts(record, text)...)
-		if record.Language == "swift" {
+		if supplementaryLanguage(record.Language) {
+			supplementarySources = append(supplementarySources, supplementarySource{record, text})
+		} else if record.Language == "dart" {
+			source := parseDartSource(record, text)
+			dartSources = append(dartSources, source)
+			for _, typ := range source.types {
+				index.Symbols = append(index.Symbols, SymbolRecord{Name: typ.symbol.Name, Kind: typ.symbol.Kind, File: record.Path, Line: typ.symbol.Line})
+			}
+		} else if record.Language == "swift" {
 			source := parseSwiftSource(record, text)
 			swiftSources = append(swiftSources, source)
 			for _, typ := range source.types {
@@ -390,15 +401,24 @@ func scanProjectWithOptions(ctx context.Context, root string, cfg config.Config,
 		index.CSharp = analyzeCSharpProject(csharpSources)
 		assignSwiftTargets(swiftSources, swiftMetadata)
 		index.Swift = analyzeSwiftProject(swiftSources)
+		assignDartPackages(dartSources, index.Workspace.DartPackages)
+		index.Dart = analyzeDartProject(dartSources, index.Workspace.DartPackages)
+		index.Supplementary = analyzeSupplementarySources(supplementarySources, index.Files, index.Workspace)
 		applyLanguageSemanticSources(&index, semanticSources, semanticBodies)
 		mergeCodeIntelligence(&index.Code, index.CSharp.code)
 		mergeCodeIntelligence(&index.Code, index.Swift.code)
+		mergeCodeIntelligence(&index.Code, index.Dart.code)
+		mergeCodeIntelligence(&index.Code, index.Supplementary.code)
 		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, index.Swift.capabilities...)
+		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, index.Dart.capabilities...)
+		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, index.Supplementary.capabilities...)
 		index.ArchitectureCapabilities = append(index.ArchitectureCapabilities, index.CSharp.capabilities...)
 		index.SymbolFacts = javaFacts
 		MergeProjectSymbolFacts(&index.SymbolFacts, dotnetFacts)
 		MergeProjectSymbolFacts(&index.SymbolFacts, index.CSharp.facts)
 		MergeProjectSymbolFacts(&index.SymbolFacts, index.Swift.facts)
+		MergeProjectSymbolFacts(&index.SymbolFacts, index.Dart.facts)
+		MergeProjectSymbolFacts(&index.SymbolFacts, index.Supplementary.facts)
 		MergeProjectSymbolFacts(&index.SymbolFacts, scriptFacts)
 		var assetFacts ProjectSymbolFacts
 		index.Assets, assetFacts = analyzeUnityAssets(index.Files, unitySources, index.CSharp.facts, csharpSources)
@@ -509,6 +529,8 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 	springIndex := buildSpringIndex(index.JavaSources)
 	callGraph := mergeCallGraphs(buildJavaCallGraph(index.JavaSources), index.CSharp.graph)
 	callGraph = mergeCallGraphs(callGraph, index.Swift.graph)
+	callGraph = mergeCallGraphs(callGraph, index.Dart.graph)
+	callGraph = mergeCallGraphs(callGraph, index.Supplementary.graph)
 	bindGoCodePackages(&index.Code, index.Symbols)
 	callGraph = mergeCallGraphs(callGraph, buildGenericCallGraph(index.Code))
 	linkCallGraphSymbolFacts(&callGraph, index.SymbolFacts)
@@ -530,6 +552,8 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 	codeFlows := buildCodeFlows(index.Code, springIndex, endpointFlows, callGraph)
 	testMap := append(append(buildJavaTestMap(index.JavaSources, springIndex.Endpoints), buildGenericTestMap(index.Code)...), index.CSharp.tests...)
 	testMap = append(testMap, index.Swift.tests...)
+	testMap = append(testMap, index.Dart.tests...)
+	testMap = append(testMap, index.Supplementary.tests...)
 	routes := buildCodeRoutes(index.Code, springIndex)
 	apiContracts := append([]APIContractRecord(nil), index.Code.APIContracts...)
 	apiContracts = append(apiContracts, buildJavaAPIContracts(index.JavaSources)...)
@@ -548,7 +572,7 @@ func writeOutputsStage(ctx context.Context, out, root string, cfg config.Config,
 	legacySymbols := []SymbolRecord{}
 	languages := languageMap(index.Files)
 	for _, symbol := range index.Symbols {
-		if languages[symbol.File] != "csharp" && languages[symbol.File] != "swift" {
+		if languages[symbol.File] != "csharp" && languages[symbol.File] != "swift" && languages[symbol.File] != "dart" && !supplementaryLanguage(languages[symbol.File]) {
 			legacySymbols = append(legacySymbols, symbol)
 		}
 	}

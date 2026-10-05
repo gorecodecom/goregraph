@@ -174,6 +174,7 @@ func renderLanguageCoverage() string {
 func renderLanguageInventorySummary() string {
 	var fullAdapters []string
 	var indexAdapters []string
+	var integrations []string
 	for _, profile := range scan.LanguageCapabilityProfiles() {
 		if profile.Language == "typescript" {
 			continue
@@ -181,14 +182,19 @@ func renderLanguageInventorySummary() string {
 		switch profile.Level {
 		case "full":
 			fullAdapters = append(fullAdapters, languageProfileDisplayName(profile))
+		case "partial":
+			if profile.Language != "shell" && profile.Language != "unity" && profile.Language != "blender" {
+				integrations = append(integrations, languageProfileDisplayName(profile))
+			}
 		case "index":
 			indexAdapters = append(indexAdapters, languageProfileDisplayName(profile))
 		}
 	}
 	return fmt.Sprintf(
 		"GoreGraph provides full adapters for %s. They emit normalized evidence for their supported static syntax; the capability table identifies the outputs each adapter implements. Swift does not provide HTTP server routes, messaging or end-to-end data flow, and C# does not provide messaging or end-to-end data flow.\n\n"+
-			"Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for %s provide best-effort declarations and imports only. Unity serialized assets and explicit source-hash-verified Blender/Unity exports provide partial asset object and reference analysis; scans and context queries never start an editor. All records share the Schema %d index.",
+			"Structured integrations for %s provide source declarations and references, with capability-specific calls, HTTP evidence and tests where listed. Shell integration provides symbols, imports, and calls, but does not provide routes, tests, or architecture facts. Index adapters for %s provide best-effort declarations and imports only. Unity serialized assets and explicit source-hash-verified Blender/Unity exports provide partial asset object and reference analysis; scans and context queries never start an editor. All records share the Schema %d index.",
 		humanList(fullAdapters),
+		humanList(integrations),
 		humanList(indexAdapters),
 		scan.SchemaVersion,
 	)

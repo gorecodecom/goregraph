@@ -28,17 +28,24 @@ type LanguageCapabilityProfile struct {
 }
 
 var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
+	{
+		Language: "batch", DisplayName: "Windows Batch", Level: "partial", Scope: "language+cmd",
+		Symbols: true, Relations: true, Calls: true, ExactSymbols: true, DirectUsages: true,
+		PatternFamilies: []string{"literal labels and CALL/GOTO targets"},
+		Limitations:     "Variable expansion, command execution and computed targets are not evaluated; duplicate labels remain ambiguous.",
+		Outputs:         []string{"symbols-full.json", "relations-full.json", "callgraph.json"},
+	},
 	{Language: "blender", DisplayName: "Blender asset exports", Level: "partial", Scope: "asset-export", Symbols: true, Relations: true, Limitations: "Explicit source/dependency-hash-verified Blender exports, saved datablock links and bounded optional sampled surfaces only; Blender is never executed by a scan or context query. External libraries, unsampled frames and collision correctness are not proven.", Outputs: []string{"assets.json", "symbols-full.json", "relations-full.json", "graph-full.json"}},
 	{
-		Language: "c", DisplayName: "C", Level: "index", Scope: "language",
-		Symbols: true, Relations: true,
-		Limitations: indexAdapterLimitations,
+		Language: "c", DisplayName: "C", Level: "partial", Scope: "language",
+		Symbols: true, Relations: true, Calls: true, ExactSymbols: true, DirectUsages: true,
+		Limitations: "Structured C/C++ declarations and uniquely visible direct calls. Preprocessor branches, macros, function pointers, implicit conversions, templates and linker configuration remain unresolved.",
 		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json"},
 	},
 	{
-		Language: "cpp", DisplayName: "C++", Level: "index", Scope: "language",
-		Symbols: true, Relations: true,
-		Limitations: indexAdapterLimitations,
+		Language: "cpp", DisplayName: "C++", Level: "partial", Scope: "language",
+		Symbols: true, Relations: true, Calls: true, ExactSymbols: true, DirectUsages: true,
+		Limitations: "Structured C/C++ declarations and uniquely visible direct calls. Preprocessor branches, macros, function pointers, implicit conversions, templates and linker configuration remain unresolved.",
 		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json"},
 	},
 	{
@@ -48,6 +55,21 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 		PatternFamilies: []string{"C# type and member declarations", "typed static calls with inheritance, named, optional and ref arguments", "optional hash-verified Roslyn symbol and call snapshots", "typed EF Core operations", "literal DI registrations", "literal ASP.NET controller routes", "literal HttpClient requests", "NUnit, xUnit and Unity test declarations"},
 		Limitations:     "Static source patterns by default; explicitly generated Roslyn snapshots cover only their selected source/configuration inputs. No compiler or MSBuild is run by scans or queries. Runtime dispatch, reflection, SDK freshness and test execution remain unproven; unsupported bindings stay open.",
 		Outputs:         []string{"symbols-full.json", "relations-full.json", "callgraph.json", "routes.json", "api-contracts.json", "test-map.json", "graph-full.json"},
+	},
+	{
+		Language: "css", DisplayName: "CSS / Unity USS", Level: "partial", Scope: "styles+assets",
+		Symbols: true, Relations: true, ExactSymbols: true, DirectUsages: true,
+		PatternFamilies: []string{"selectors, custom properties, imports and resource URLs"},
+		Limitations:     "Literal style declarations and references only; browser rendering, selector applicability, cascading, inheritance and Unity visual state are not evaluated.",
+		Outputs:         []string{"symbols-full.json", "relations-full.json"},
+	},
+	{
+		Language: "dart", DisplayName: "Dart / Flutter", Level: "full", Scope: "language+pub+flutter",
+		Symbols: true, Relations: true, Calls: true, Routes: true, Tests: true, APIClients: true, Persistence: true, Messaging: true, HTTPConsumer: true,
+		ExactSymbols: true, DirectUsages: true,
+		PatternFamilies: []string{"typed calls / library privacy / parts / export barrels", "Flutter widgets / callbacks / navigation / widget tests", "http / Dio / sqflite / preferences / Riverpod", "library declarations", "classes / mixins / extensions", "constructors / methods / getters", "pub package metadata"},
+		Limitations:     "Static source analysis does not execute the Dart VM, Flutter engine, build_runner, or package resolution. Runtime dispatch and conditional or unavailable library bindings remain unresolved.",
+		Outputs:         []string{"symbols-full.json", "relations-full.json", "workspace.json", "callgraph.json", "routes.json", "api-contracts.json", "test-map.json", "context-index.json"},
 	},
 	{
 		Language: "go", DisplayName: "Go", Level: "full", Scope: "language+routes",
@@ -62,6 +84,13 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 			"symbols.json", "relations.json", "callgraph.json", "routes.json",
 			"flows.json", "test-map.json", "graph-full.json",
 		},
+	},
+	{
+		Language: "html", DisplayName: "HTML", Level: "partial", Scope: "document+resources+forms",
+		Symbols: true, Relations: true, ExactSymbols: true, DirectUsages: true, APIClients: true, HTTPConsumer: true,
+		PatternFamilies: []string{"elements, labels, accessibility IDs, resources and form actions"},
+		Limitations:     "Literal document and form evidence only; embedded scripts, templates, DOM mutations, browser validation and submission are not executed.",
+		Outputs:         []string{"symbols-full.json", "relations-full.json", "api-contracts.json"},
 	},
 	{
 		Language: "java", DisplayName: "Java / Spring", Level: "full", Scope: "language+spring",
@@ -95,10 +124,18 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 		},
 	},
 	{
-		Language: "kotlin", DisplayName: "Kotlin", Level: "index", Scope: "language",
-		Symbols: true, Relations: true,
-		Limitations: indexAdapterLimitations,
-		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json"},
+		Language: "kotlin", DisplayName: "Kotlin", Level: "partial", Scope: "language+gradle+spring+ktor+flutter-platform",
+		Symbols: true, Relations: true, Calls: true, Tests: true, Routes: true, APIClients: true, Messaging: true, HTTPProvider: true, HTTPConsumer: true, ExactSymbols: true, DirectUsages: true,
+		PatternFamilies: []string{"typed visible Kotlin calls with named/default parameters", "JUnit and kotlin.test", "literal Spring mappings, Ktor requests and Flutter MethodChannel"},
+		Limitations:     "Structured declarations and conservative direct call bindings. Dynamic dispatch, metaprogramming, unavailable imports and runtime callbacks remain unresolved.",
+		Outputs:         []string{"symbols-full.json", "relations-full.json", "callgraph.json", "routes.json", "api-contracts.json", "test-map.json"},
+	},
+	{
+		Language: "objectivec", DisplayName: "Objective-C / Objective-C++", Level: "partial", Scope: "language+objc+c-abi",
+		Symbols: true, Relations: true, Calls: true, ExactSymbols: true, DirectUsages: true,
+		PatternFamilies: []string{"interfaces, properties, class and instance selectors, C ABI entrypoints"},
+		Limitations:     "Unique local selector and C entrypoint declarations only; runtime dispatch, swizzling, SDK methods, macros and conditional compilation remain unresolved.",
+		Outputs:         []string{"symbols-full.json", "relations-full.json", "callgraph.json"},
 	},
 	{
 		Language: "php", DisplayName: "PHP", Level: "full", Scope: "language+routes",
@@ -130,9 +167,9 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 		},
 	},
 	{
-		Language: "ruby", DisplayName: "Ruby", Level: "index", Scope: "language",
-		Symbols: true, Relations: true,
-		Limitations: indexAdapterLimitations,
+		Language: "ruby", DisplayName: "Ruby", Level: "partial", Scope: "language",
+		Symbols: true, Relations: true, Calls: true, ExactSymbols: true, DirectUsages: true,
+		Limitations: "Structured declarations and conservative direct call bindings. Dynamic dispatch, metaprogramming, unavailable imports and runtime callbacks remain unresolved.",
 		Outputs:     []string{"symbols-full.json", "relations-full.json", "graph-full.json"},
 	},
 	{

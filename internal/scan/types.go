@@ -19,6 +19,8 @@ type Index struct {
 	Assets                         AssetIndexRecord
 	CSharp                         csharpAnalysis
 	Swift                          swiftAnalysis
+	Dart                           dartAnalysis          `json:"-"`
+	Supplementary                  supplementaryAnalysis `json:"-"`
 	JavaSources                    []JavaSourceRecord
 	Workspace                      WorkspaceIndex
 	Code                           CodeIntelligenceRecord
@@ -1141,6 +1143,7 @@ type SpringBeanRecord struct {
 }
 
 type WorkspaceIndex struct {
+	DartPackages      []DartPackageRecord   `json:"dart_packages,omitempty"`
 	MavenPackages     []MavenPackageRecord  `json:"maven_packages,omitempty"`
 	GradlePackages    []GradlePackageRecord `json:"gradle_packages,omitempty"`
 	NodePackages      []NodePackageRecord   `json:"node_packages,omitempty"`

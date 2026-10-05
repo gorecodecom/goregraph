@@ -914,17 +914,22 @@ Coverage describes implemented static analyzers, not proof that runtime behavior
 
 | Language / framework | Adapter | Symbols | Imports | Calls | Routes | Tests | API clients | Persistence | Messaging / RPC | Data flow | Exact symbols | Direct usages | HTTP reachability |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Windows Batch | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
 | Blender asset exports | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — | — |
-| C | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
-| C++ | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| C | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
+| C++ | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
 | C# / .NET / Unity | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | — | — | Full | Full | Consumer + provider |
+| CSS / Unity USS | Integration | Integration | Integration | — | — | — | — | — | — | — | Full | Full | — |
+| Dart / Flutter | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | — | Full | Full | Consumer |
 | Go | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
+| HTML | Integration | Integration | Integration | — | — | — | Pattern-backed | — | — | — | Full | Full | Consumer |
 | Java / Spring | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Provider |
 | JavaScript / TypeScript / Node.js / React | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Consumer + provider |
-| Kotlin | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| Kotlin | Integration | Integration | Integration | Integration | Integration | Integration | Pattern-backed | — | Pattern-backed | — | Full | Full | Consumer + provider |
+| Objective-C / Objective-C++ | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
 | PHP | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
 | Python | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
-| Ruby | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
+| Ruby | Integration | Integration | Integration | Integration | — | — | — | — | — | — | Full | Full | — |
 | Rust | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
 | Scala | Index | Index | Index | — | — | — | — | — | — | — | — | — | — |
 | Shell | Integration | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — |
@@ -936,10 +941,16 @@ Pattern-backed extraction can miss runtime-generated behavior such as routes, re
 Shell integration does not provide routes, tests, or architecture capabilities. Index adapters provide best-effort declarations and imports only; they do not provide normalized calls, routes, tests, or architecture facts.
 
 Supported static pattern families:
+- **Windows Batch:** literal labels and CALL/GOTO targets.
 - **C# / .NET / Unity:** C# type and member declarations; typed static calls with inheritance, named, optional and ref arguments; optional hash-verified Roslyn symbol and call snapshots; typed EF Core operations; literal DI registrations; literal ASP.NET controller routes; literal HttpClient requests; NUnit, xUnit and Unity test declarations.
+- **CSS / Unity USS:** selectors, custom properties, imports and resource URLs.
+- **Dart / Flutter:** typed calls / library privacy / parts / export barrels; Flutter widgets / callbacks / navigation / widget tests; http / Dio / sqflite / preferences / Riverpod; library declarations; classes / mixins / extensions; constructors / methods / getters; pub package metadata.
 - **Go:** net/http and common routers; net/http clients; database/sql and GORM; Kafka and AMQP; gRPC; JSON request/response boundaries; go test and httptest.
+- **HTML:** elements, labels, accessibility IDs, resources and form actions.
 - **Java / Spring:** Spring MVC and WebFlux; Java and Spring HTTP clients; Spring Data; Spring Messaging; gRPC; Jakarta Validation; JUnit and Spring Test.
 - **JavaScript / TypeScript / Node.js / React:** Express and Fastify; NestJS; Next.js; Web and Node HTTP clients; common Node persistence; Kafka and AMQP; gRPC; Node request/response boundaries; Jest, Vitest, Node Test, and React Testing Library.
+- **Kotlin:** typed visible Kotlin calls with named/default parameters; JUnit and kotlin.test; literal Spring mappings, Ktor requests and Flutter MethodChannel.
+- **Objective-C / Objective-C++:** interfaces, properties, class and instance selectors, C ABI entrypoints.
 - **PHP:** Laravel and Symfony routes; PHP HTTP clients; Eloquent, Doctrine, and PDO; queues and messaging; gRPC; PHP request/response boundaries; PHPUnit and Pest.
 - **Python:** FastAPI, Flask, and Django routes; requests, httpx, and aiohttp; SQLAlchemy, Django ORM, and DB-API; Kafka, Celery, and AMQP; gRPC; Python web and validation boundaries; pytest and unittest.
 - **Rust:** Axum, Actix, and Rocket routes; reqwest; SQLx, Diesel, and SeaORM; Kafka and AMQP; tonic gRPC; Rust web request/response boundaries; Rust and Tokio tests.

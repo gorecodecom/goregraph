@@ -1359,12 +1359,19 @@ func contextTypeNavigationSymbol(symbol RichSymbolRecord) bool {
 		case "class", "interface", "record", "enum", "struct", "method", "function", "constructor", "property", "field", "enum_case", "typealias", "assembly", "persistence", "registration":
 			return true
 		}
+	case "html", "css", "batch", "objectivec", "c", "cpp", "ruby", "kotlin":
+		return true
+	case "dart":
+		switch kind {
+		case "class", "mixin", "enum", "extension", "extension_type", "typealias", "method", "function", "constructor", "getter", "setter", "field", "variable", "enumcase", "test", "package", "closure":
+			return true
+		}
 	case "swift":
 		switch kind {
 		case "class", "struct", "enum", "actor", "protocol", "function", "method", "constructor", "property", "variable", "persistence", "destructor", "typealias", "associatedtype", "enum_case":
 			return true
 		}
-	case "java", "kotlin":
+	case "java":
 		switch kind {
 		case "class", "interface", "record", "enum", "annotation", "annotation_class", "annotation_type", "@interface":
 			return true

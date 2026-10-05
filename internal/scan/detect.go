@@ -15,6 +15,8 @@ func detectLanguage(rel string) string {
 	switch strings.ToLower(filepath.Base(rel)) {
 	case "go.mod":
 		return "go"
+	case "pubspec.lock":
+		return "yaml"
 	case "package.json":
 		return "json"
 	}
@@ -29,6 +31,16 @@ func detectLanguage(rel string) string {
 		return "scala"
 	case ".rs":
 		return "rust"
+	case ".html", ".htm":
+		return "html"
+	case ".css", ".uss":
+		return "css"
+	case ".cmd", ".bat":
+		return "batch"
+	case ".m", ".mm":
+		return "objectivec"
+	case ".dart":
+		return "dart"
 	case ".swift":
 		return "swift"
 	case ".rb":
@@ -59,7 +71,7 @@ func detectLanguage(rel string) string {
 		return "yaml"
 	case ".md":
 		return "markdown"
-	case ".sh", ".bash", ".zsh":
+	case ".sh", ".bash", ".zsh", ".command":
 		return "shell"
 	default:
 		return "text"
@@ -74,11 +86,27 @@ func IsSupportedSourceFile(rel string) bool {
 func detectKind(rel string) string {
 	base := strings.ToLower(filepath.Base(rel))
 	switch base {
-	case "go.mod", "package.json", "composer.json", "pom.xml", "build.gradle", "settings.gradle":
+	case "pubspec.yaml", "go.mod", "package.json", "composer.json", "pom.xml", "build.gradle", "settings.gradle":
 		return "build"
 	case "readme.md":
 		return "documentation"
 	default:
 		return "source"
 	}
+}
+
+func detectSourceLanguage(file, body string) string {
+	language := detectLanguage(file)
+	if strings.EqualFold(filepath.Ext(file), ".h") {
+		tokens, _ := cFamilyTokens(body)
+		for at, token := range tokens {
+			if token.text == "@" && at+1 < len(tokens) {
+				switch tokens[at+1].text {
+				case "interface", "implementation", "protocol", "class":
+					return "objectivec"
+				}
+			}
+		}
+	}
+	return language
 }

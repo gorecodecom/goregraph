@@ -13,7 +13,7 @@ func TestBuildCapabilityInventoryReportsHonestCoverage(t *testing.T) {
 	assertCapabilityCoverage(t, records, "typescript", CapabilityPersistence, CoveragePartial)
 	assertCapabilityCoverage(t, records, "rust", CapabilityRoutes, CoverageComplete)
 	assertCapabilityCoverage(t, records, "rust", CapabilityMessaging, CoveragePartial)
-	assertCapabilityCoverage(t, records, "kotlin", CapabilityCalls, CoverageUnavailable)
+	assertCapabilityCoverage(t, records, "kotlin", CapabilityCalls, CoverageComplete)
 }
 
 func TestGenericLanguagesExplainExpectedCoverage(t *testing.T) {
