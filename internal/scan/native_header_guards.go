@@ -1,6 +1,11 @@
 package scan
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+var nativeRawStart = regexp.MustCompile("^" + cRawStart.String())
 
 // nativePreprocessorSafe accepts only unconditional directives and a canonical header guard.
 // It does not evaluate macros, arbitrary branches or compiler command-line definitions.
@@ -105,7 +110,7 @@ func nativeDirectiveMask(body string) string {
 			if close >= 0 {
 				end = at + close + 4
 			}
-		} else if match := cRawStart.FindStringSubmatchIndex(body[at:]); match != nil && match[0] == 0 {
+		} else if match := nativeRawStart.FindStringSubmatchIndex(body[at:]); match != nil {
 			delimiter := body[at+match[2] : at+match[3]]
 			content := at + match[1]
 			close := strings.Index(body[content:], ")"+delimiter+"\"")
