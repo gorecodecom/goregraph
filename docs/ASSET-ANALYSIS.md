@@ -63,6 +63,10 @@ collection remains a separate workspace source, not a backend service or a made-
 runtime dependency. This preserves the Unity code root and lets the workspace query
 include both actual registered source collections.
 
+Workspace discovery respects directory-scoped `.gitignore` rules, including
+negation. Ignored scratch trees and archived Unity/Blender copies are not
+registered as independent projects.
+
 Unique script classes also connect serialized field names to their source members,
 including supported inherited members. Unique prefab component correspondence can
 retain the source script for stripped scene components. Supported saved UnityEvent
