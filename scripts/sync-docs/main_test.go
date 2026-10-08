@@ -91,6 +91,8 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 		"| JavaScript / TypeScript / Node.js / React | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Consumer + provider |",
 		"| Rust | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |",
 		"| Dart / Flutter | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | — | Full | Full | Consumer |",
+		"| GDScript | Integration | Integration | Integration | Integration | — | Integration | — | — | — | — | Full | Full | — |",
+		"| Godot resources | Integration | Integration | Integration | — | — | — | — | — | — | — | Full | Full | — |",
 		"| Shell | Integration | Integration | Integration | Integration | — | — | — | — | — | — | — | — | — |",
 		"runtime-generated behavior",
 		"Shell integration does not provide routes, tests, or architecture capabilities",
@@ -106,7 +108,7 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	languageInventory := renderLanguageInventorySummary()
 	for _, want := range []string{
 		"full adapters for C# / .NET / Unity, Dart / Flutter, Go, Java / Spring, JavaScript / TypeScript / Node.js / React, PHP, Python, Rust, and Swift / SwiftUI / Apple frameworks",
-		"Structured integrations for Windows Batch, C, C++, CSS / Unity USS, HTML, Kotlin, Objective-C / Objective-C++, and Ruby",
+		"Structured integrations for Windows Batch, C, C++, CSS / Unity USS, GDScript, Godot resources, HTML, Kotlin, Objective-C / Objective-C++, and Ruby",
 		"Shell integration provides symbols, imports, and calls",
 		"does not provide routes, tests, or architecture facts",
 		"Index adapters for Scala",

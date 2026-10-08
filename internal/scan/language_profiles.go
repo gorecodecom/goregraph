@@ -72,6 +72,14 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 		Outputs:         []string{"symbols-full.json", "relations-full.json", "workspace.json", "callgraph.json", "routes.json", "api-contracts.json", "test-map.json", "context-index.json"},
 	},
 	{
+		Language: "gdscript", DisplayName: "GDScript", Level: "partial",
+		Scope:   "language+godot",
+		Symbols: true, Relations: true, Calls: true, Tests: true, ExactSymbols: true, DirectUsages: true,
+		PatternFamilies: []string{"class and member declarations; literal preload/load paths", "local and explicitly constructed script calls; signal callbacks; test-source links"},
+		Limitations:     "Static source analysis only; dynamic dispatch, engine APIs, nested classes, escaped or computed paths and runtime signal execution remain unresolved",
+		Outputs:         []string{"symbols-full.json", "relations-full.json", "callgraph.json", "test-map.json"},
+	},
+	{
 		Language: "go", DisplayName: "Go", Level: "full", Scope: "language+routes",
 		Symbols: true, Relations: true, Calls: true, Routes: true, Tests: true,
 		APIClients: true, Persistence: true, Messaging: true, DataFlow: true,
@@ -84,6 +92,14 @@ var sourceLanguageCapabilityProfiles = []LanguageCapabilityProfile{
 			"symbols.json", "relations.json", "callgraph.json", "routes.json",
 			"flows.json", "test-map.json", "graph-full.json",
 		},
+	},
+	{
+		Language: "godot", DisplayName: "Godot resources", Level: "partial",
+		Scope:   "scenes+resources+project",
+		Symbols: true, Relations: true, ExactSymbols: true, DirectUsages: true,
+		PatternFamilies: []string{"scene nodes; external and embedded resources; attached scripts", "serialized signal callbacks; project main scene and autoloads"},
+		Limitations:     "Text formats only; binary resources, inherited scene expansion, UID resolution and engine execution are not analyzed",
+		Outputs:         []string{"symbols-full.json", "relations-full.json"},
 	},
 	{
 		Language: "html", DisplayName: "HTML", Level: "partial", Scope: "document+resources+forms",

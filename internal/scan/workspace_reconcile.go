@@ -1078,7 +1078,7 @@ func hasProjectMarker(abs string) bool {
 		"settings.gradle", "settings.gradle.kts", "go.mod", "pyproject.toml",
 		"requirements.txt", "setup.py", "Cargo.toml", "composer.json",
 		"build.sbt", "Package.swift", "Gemfile", "CMakeLists.txt",
-		"meson.build", "pubspec.yaml", "goregraph.yml",
+		"meson.build", "pubspec.yaml", "goregraph.yml", "project.godot",
 	} {
 		if workspaceRegularFileExists(filepath.Join(abs, name)) {
 			return true

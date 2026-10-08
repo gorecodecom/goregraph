@@ -16,6 +16,8 @@ func TestLanguageCapabilityProfilesMatchImplementedAdapters(t *testing.T) {
 		apiClients, persistence, messaging bool
 	}
 	expected := map[string]expectedProfile{
+		"gdscript":   {level: "partial", symbols: true, relations: true, calls: true, tests: true, exactSymbols: true, directUsages: true},
+		"godot":      {level: "partial", symbols: true, relations: true, exactSymbols: true, directUsages: true},
 		"dart":       {level: "full", symbols: true, relations: true, calls: true, routes: true, tests: true, exactSymbols: true, directUsages: true, httpConsumer: true, apiClients: true, persistence: true, messaging: true},
 		"batch":      {level: "partial", symbols: true, relations: true, calls: true, exactSymbols: true, directUsages: true},
 		"html":       {level: "partial", symbols: true, relations: true, exactSymbols: true, directUsages: true, httpConsumer: true, apiClients: true},
@@ -104,7 +106,7 @@ func TestLanguageCapabilityProfilesMatchImplementedAdapters(t *testing.T) {
 		}
 	}
 	wantLanguages := []string{
-		"batch", "blender", "c", "cpp", "csharp", "css", "dart", "go", "html", "java", "javascript", "kotlin", "objectivec", "php",
+		"batch", "blender", "c", "cpp", "csharp", "css", "dart", "gdscript", "go", "godot", "html", "java", "javascript", "kotlin", "objectivec", "php",
 		"python", "ruby", "rust", "scala", "shell", "swift", "typescript", "unity",
 	}
 	if !reflect.DeepEqual(languages, wantLanguages) {

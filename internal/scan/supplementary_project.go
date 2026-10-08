@@ -33,6 +33,13 @@ func analyzeSupplementarySources(sources []supplementarySource, files []FileReco
 	result.capabilities = append(result.capabilities, nativeTestCapabilities(result.code, "cpp", "GoogleTest")...)
 	result.capabilities = append(result.capabilities, nativeTestCapabilities(result.code, "objectivec", "XCTest")...)
 	result.capabilities = append(result.capabilities, nativeTestCapabilities(result.code, "ruby", "Minitest")...)
+	godot := analyzeGodotSources(sources, files)
+	result.facts.Declarations = append(result.facts.Declarations, godot.facts.Declarations...)
+	result.facts.References = append(result.facts.References, godot.facts.References...)
+	mergeCodeIntelligence(&result.code, godot.code)
+	result.graph.Edges = append(result.graph.Edges, godot.graph.Edges...)
+	result.graph.UnresolvedCalls = mergeGoCallDiagnostics(result.graph.UnresolvedCalls, godot.graph.UnresolvedCalls)
+	result.tests = append(result.tests, godot.tests...)
 	resolveSupplementaryResources(sources, files, &result.facts)
 	for _, contract := range result.code.APIContracts {
 		if contract.Language != "html" {
