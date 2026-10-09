@@ -21,20 +21,17 @@ The tool is intentionally conservative:
 - writes scan output to `goregraph-out/` and, when a workspace is detected, workspace metadata to `.goregraph-workspace/`
 - may add generated GoreGraph output paths to the relevant `.gitignore` files
 
-## Measured token use
+## Historical token measurements
 
-The latest completed normal-MCP development comparison saved **32.97% effective
-tokens** across two unchanged pairs on one frozen diagnosis task. The assisted
-answers scored 11/12 and 10/12 static criteria, compared with 9/12 for both
-controls; they still missed one conditional side effect. See the
-[measurement and its limits](docs/AGENT-ADAPTIVE-MCP-MEASUREMENT-2026-09-23.md).
+The [September 2026 development comparison](docs/AGENT-ADAPTIVE-MCP-MEASUREMENT-2026-09-23.md)
+recorded **32.97% fewer effective tokens** across two unchanged pairs on one
+frozen diagnosis task. This is a historical result, not a measurement of the
+current checkout or a general savings guarantee.
 
-The older **52.08%** figure is a separate macOS 1.4.1 development experiment
-(79,464 versus a previously saved 165,839-token reference). Its baseline was
-not rerun alongside that candidate. See the
-[historical follow-up](#local-141-development-follow-up). Neither figure is a
-general savings guarantee. The current answer-check and instruction changes
-were made after the latest measured series; no new percentage is claimed.
+The report retains the observed evidence-selection, answer-composition and
+citation gaps for those runs. They are not a current bug inventory: later
+changes require fresh reproductions before a gap can be called still present
+or fixed. No new end-to-end savings or answer-quality result is claimed here.
 
 ## What GoreGraph does
 
@@ -56,6 +53,14 @@ Local 1.4.1 testing and rollback are documented in
 [`docs/LOCAL-1.4.1.md`](docs/LOCAL-1.4.1.md).
 
 ## 1.4.4 — Unreleased
+
+When adaptive context cannot find a sufficiently relevant entrypoint, lexical
+fallback candidates now use the full question and stay within the requested
+directory unless another project or an exact source identity is explicitly
+named. A project name alone does not make a declaration relevant. Unsupported
+broad questions can therefore return no candidate source and require focused
+source discovery. This change does not restrict verified cross-project call
+paths or turn normal Context Packs into a general documentation search.
 
 C# and Swift now have structured, source-backed static adapters. C# covers typed overloads, inherited members, named/optional/ref arguments, ASP.NET controllers and literal minimal API registrations, HttpClient, DI registrations, EF Core operations and entity links. Swift covers types, extensions, actor/protocol declarations, labeled methods, inherited calls, SwiftUI state/query references, URLSession, SwiftData/Core Data/UserDefaults and XCTest/Swift Testing links. Ambiguous, conditional and unsupported compiler bindings remain explicit. Neither adapter executes application code, a compiler or an editor during indexing or context retrieval. See [language analysis](docs/LANGUAGE-ANALYSIS.md) and [Unity/Blender evidence](docs/ASSET-ANALYSIS.md).
 
@@ -1664,27 +1669,10 @@ the 1.3.0 release.
 ### Local 1.4.1 development follow-up
 
 The [reader auto-paging follow-up from September 11, 2026](docs/AGENT-READER-AUTOPAGE-2026-09-11.md)
-records a newer local development experiment, separate from the controlled
-release comparison above:
-
-| Measurement | Saved reference without GoreGraph | Successful third GoreGraph run |
-| --- | ---: | ---: |
-| Effective tokens | 165,839 | 79,464 |
-| Runtime, seconds | 600.300493 | 505.816309 |
-| Static core criteria met | 12/12 | 12/12 |
-
-The documented reductions are **52.08% effective tokens** and **15.74% runtime**.
-The assisted run also found 7/7 required test identities, completed 14 commands
-without a failed GoreGraph command, and delivered no repeated source rows in the
-verified read outputs.
-
-The tested binary was a local 1.4.1 development build, labeled
-`d67d1f4ab3c3-dirty`, built at `2026-09-11T15:09:29Z`. Sharing the version
-number with the current release does not establish that the tested binary and
-the released binary are identical. The saved reference was not rerun, and the
-two preceding diagnostic runs had remaining command or coverage failures. This
-is one successful run on one frozen workspace, not a matched multi-run median
-or a result that can be combined with the earlier 85.92% release benchmark.
+retains the historical measurements and limitations of a local 1.4.1 experiment.
+Its saved baseline was not rerun alongside the candidate. It is separate from
+both the controlled release comparison above and the September 23 MCP pairs;
+none of these results establishes the performance of the current checkout.
 
 Effective tokens mean input tokens minus cached input tokens plus output tokens.
 They are not total tokens or a monetary cost measure; cached tokens are not

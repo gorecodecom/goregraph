@@ -1,5 +1,21 @@
 # Adaptive MCP comparison, September 2026
 
+## Historical scope
+
+This report records the September experiments and their limitations. It is
+retained to explain the published token measurements, not as a list of open
+defects in the current version. The later runs described below do not establish
+that every earlier issue remains present or has been fixed.
+
+The October 2026 [fallback-relevance regression tests](../internal/agent/context_fallback_relevance_test.go)
+cover a separate issue:
+broad project questions could return unrelated lexical candidates. They do not
+replay the private diagnosis task, validate its notification conditions or
+establish new token savings. Current status for those historical answer-quality
+gaps requires a fresh matched evaluation with the original external evidence.
+
+## Recorded experiment
+
 This Windows-host development measurement used a frozen three-service Java workspace,
 normal Codex MCP access, `gpt-5.6-sol` at high reasoning, and effective tokens
 (`input_tokens - cached_input_tokens + output_tokens`). It measures one static

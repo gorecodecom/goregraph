@@ -1244,7 +1244,10 @@ func retainSelectedSourceFactIDs(pack *ContextPack, included map[string]bool) {
 }
 
 func rankContextFacts(facts []scan.AgentContextFactRecord, query string) []rankedContextFact {
-	primaryQuery := contextPrimaryQuery(query)
+	return rankContextFactsForPrimaryQuery(facts, query, contextPrimaryQuery(query))
+}
+
+func rankContextFactsForPrimaryQuery(facts []scan.AgentContextFactRecord, query, primaryQuery string) []rankedContextFact {
 	queryTokens := contextQueryTokens(primaryQuery)
 	queryTerm := normalizeContextTerm(query)
 	queryAnchors := contextQueryAnchors(query)

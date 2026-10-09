@@ -3,11 +3,13 @@ package agent
 import (
 	"encoding/json"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/gorecodecom/goregraph/internal/pathutil"
 	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
@@ -24,18 +26,85 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 	if !namedOnly && pack.FallbackReason != ContextFallbackInsufficientRelevance && pack.FallbackReason != ContextFallbackAmbiguousEntrypoint && pack.FallbackReason != ContextFallbackEvidenceConflict && pack.FallbackReason != ContextFallbackUnsupportedAnalysis {
 		return finalizeContextPackWithinBudget(pack, request)
 	}
-	tokens := contextExpandedTokenSet(contextPrimaryQuery(request.Query))
+	lowRelevance := !namedOnly && pack.FallbackReason == ContextFallbackInsufficientRelevance
+	query := contextPrimaryQuery(request.Query)
+	if lowRelevance {
+		query = request.Query
+	}
+	tokens := contextExpandedTokenSet(query)
+	queryNames := strings.FieldsFunc(request.Query, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+	})
+	aliases := contextProjectAliases(loaded.Index.Facts, loaded.Index.Coverage)
+	explicitProjects := contextExplicitProjects(request.Query, aliases)
+	requestRoot := ""
+	scopeRoot := loaded.ScopeRoot
+	if lowRelevance {
+		// A project name selects scope; it does not establish source relevance.
+		literalProjects := map[string]string{}
+		for project, names := range aliases {
+			for _, name := range names {
+				literalProjects[strings.ToLower(name)] = project
+			}
+		}
+		if !loaded.Workspace {
+			literalProjects[strings.ToLower(filepath.Base(loaded.ScopeRoot))] = ""
+		}
+		for _, name := range queryNames {
+			project, found := literalProjects[strings.ToLower(name)]
+			if !found {
+				continue
+			}
+			if loaded.Workspace {
+				explicitProjects[project] = true
+			}
+			for token := range contextExpandedTokenSet(name) {
+				delete(tokens, token)
+			}
+		}
+		for project := range explicitProjects {
+			for _, alias := range aliases[project] {
+				for token := range contextExpandedTokenSet(alias) {
+					delete(tokens, token)
+				}
+			}
+		}
+		if !loaded.Workspace {
+			for token := range contextExpandedTokenSet(filepath.Base(loaded.ScopeRoot)) {
+				delete(tokens, token)
+			}
+		}
+		if loaded.Workspace {
+			var err error
+			requestRoot, err = pathutil.Resolve(request.Root)
+			if err != nil {
+				return ContextPack{}, err
+			}
+			scopeRoot, err = pathutil.Resolve(loaded.ScopeRoot)
+			if err != nil {
+				return ContextPack{}, err
+			}
+		}
+	}
 	for token := range tokens {
 		if utf8.RuneCountInString(token) < 4 || contextEndpointGenericDomainToken(token) {
 			delete(tokens, token)
 		}
 	}
-	for _, token := range strings.Fields("which what when that this have from with without keep trace explain state current existing provided supplied describe determine source sources file files project projects production evidence change changes required deren diese einer eines einen einem nicht sollen sollte welche erkläre nenne behalte vorhandene vorhandenen quellcode quelle quellen") {
+	for _, token := range strings.Fields("which what when that this have from with without keep trace explain state current existing provided supplied describe determine behavior behaviour verhalten source sources file files project projects production evidence change changes required deren diese einer eines einen einem nicht sollen sollte welche erkläre nenne behalte vorhandene vorhandenen quellcode quelle quellen") {
 		delete(tokens, token)
 	}
 	storybookRequested := contextTokenSet(request.Query)["storybook"]
 	if len(tokens) == 0 && !storybookRequested {
 		return finalizeContextPackWithinBudget(pack, request)
+	}
+	if lowRelevance {
+		terms := make([]string, 0, len(tokens))
+		for token := range tokens {
+			terms = append(terms, token)
+		}
+		sort.Strings(terms)
+		query = strings.Join(terms, " ")
 	}
 	type evidence struct {
 		section  ContextSourceSection
@@ -47,16 +116,20 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 	byPath := map[string]evidence{}
 	files := map[string]sourceFile{}
 	literalNames := map[string]bool{}
-	for _, name := range strings.FieldsFunc(strings.ToLower(request.Query), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
-	}) {
-		literalNames[name] = true
+	for _, name := range queryNames {
+		literalNames[strings.ToLower(name)] = true
 	}
 	storyPriorities := map[string]int{}
 	assetPriorities := associatedAssetEvidencePriorities(loaded.Index, request.Query, literalNames)
 	storyRequested := contextQueryRequestsStorySources(request.Query)
 	sourceLimit := maximumFallbackSourceSections
-	ranked := rankContextFacts(loaded.Index.Facts, request.Query)
+	ranked := rankContextFactsForPrimaryQuery(loaded.Index.Facts, request.Query, query)
+	exactCandidates := map[string]bool{}
+	for _, item := range ranked {
+		if item.exactClass > 0 || len(contextTokens(item.fact.Name)) > 1 && literalNames[strings.ToLower(item.fact.Name)] {
+			exactCandidates[item.fact.ID] = true
+		}
+	}
 	if storybookRequested {
 		// Configuration evidence can be requested in a later sentence. Keep the
 		// production ranking intact and recover only these explicit file candidates.
@@ -76,6 +149,19 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 	}
 	seen := map[string]bool{}
 	for _, item := range ranked {
+		if lowRelevance && !exactCandidates[item.fact.ID] {
+			if len(exactCandidates) > 0 {
+				continue
+			}
+			project := normalizeContextProject(item.fact.Project)
+			if len(explicitProjects) > 0 {
+				if !explicitProjects[project] {
+					continue
+				}
+			} else if loaded.Workspace && !pathIsWithin(requestRoot, filepath.Join(scopeRoot, filepath.FromSlash(item.fact.Project), filepath.FromSlash(item.fact.File))) {
+				continue
+			}
+		}
 		if seen[item.fact.ID] {
 			continue
 		}
@@ -174,7 +260,7 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 				}
 			}
 		}
-		if namedOnly || pack.FallbackReason == ContextFallbackUnsupportedAnalysis {
+		if namedOnly || lowRelevance || pack.FallbackReason == ContextFallbackUnsupportedAnalysis {
 			priority = max(priority, item.exactClass)
 			if literalNames[strings.ToLower(fact.Name)] {
 				priority = max(priority, 1)

@@ -7,9 +7,11 @@ it is not a benchmark of the dashboard.
 The [September 2026 adaptive MCP development comparison](AGENT-ADAPTIVE-MCP-MEASUREMENT-2026-09-23.md)
 reports two unchanged normal-workflow pairs separately from the historical
 strict release gate and the older 1.4.1 development result. Its incomplete
-three-pair protocol and remaining answer-quality gaps do not make it a new
-release-gate result. When a development benchmark audits answer citations with
-`goregraph answer-check`, set `require_line_citations: true`, retain
+three-pair protocol and answer-quality gaps observed in those runs do not make
+it a new release-gate result or a current bug inventory. Later regression tests
+do not replace a fresh matched end-to-end comparison. When a development
+benchmark audits answer citations with `goregraph answer-check`, set
+`require_line_citations: true`, retain
 `citation_status` and `checked_ranges`, and review unsupported syntax separately.
 Zero recognized line citations are not a passing source-coverage check.
 
