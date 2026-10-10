@@ -47,6 +47,7 @@ type Status struct {
 	AutostartError string         `json:"autostart_error,omitempty"`
 	LastSuccess    time.Time      `json:"last_success,omitempty"`
 	LastCheck      time.Time      `json:"last_check,omitempty"`
+	CheckStarted   time.Time      `json:"check_started,omitempty"`
 	UpdateStarted  time.Time      `json:"update_started,omitempty"`
 	LastError      string         `json:"last_error,omitempty"`
 	Supervised     bool           `json:"supervised"`
@@ -96,8 +97,10 @@ type runtimeState struct {
 	Heartbeat     time.Time      `json:"heartbeat"`
 	LastSuccess   time.Time      `json:"last_success,omitempty"`
 	LastCheck     time.Time      `json:"last_check,omitempty"`
+	CheckStarted  time.Time      `json:"check_started,omitempty"`
 	UpdateStarted time.Time      `json:"update_started,omitempty"`
 	LastError     string         `json:"last_error,omitempty"`
+	CheckError    string         `json:"file_check_error,omitempty"`
 	Version       string         `json:"version,omitempty"`
 	Commit        string         `json:"commit,omitempty"`
 	Upgrading     bool           `json:"upgrading,omitempty"`
@@ -368,12 +371,19 @@ func GetStatus(root Root) (Status, error) {
 	status.LastUpdate = live.LastUpdate
 	status.LastCheck = live.LastCheck
 	if status.Running {
+		status.CheckStarted = live.CheckStarted
 		status.UpdateStarted = live.UpdateStarted
 		if !live.UpdateStarted.IsZero() {
 			status.Progress = live.Progress
 		}
 	}
 	status.LastError = live.LastError
+	if live.CheckError != "" {
+		if status.LastError != "" {
+			status.LastError += "; "
+		}
+		status.LastError += live.CheckError
+	}
 	if supervised && supervisor.LastError != "" {
 		status.LastError = supervisor.LastError
 	}
@@ -503,6 +513,10 @@ func Run(ctx context.Context, root Root, update func() error) error {
 // RunWithProgress publishes observed update progress without advancing it on
 // heartbeats or exposing a previous attempt as current work.
 func RunWithProgress(ctx context.Context, root Root, update func(func(scan.BuildEvent)) error) error {
+	return runWithProgress(ctx, root, update, fingerprint)
+}
+
+func runWithProgress(ctx context.Context, root Root, update func(func(scan.BuildEvent)) error, snapshot func(context.Context, Root) (string, error)) error {
 	if err := requireExistingRoot(root); err != nil {
 		return err
 	}
@@ -552,6 +566,7 @@ func RunWithProgress(ctx context.Context, root Root, update func(func(scan.Build
 		<-doneHeartbeat
 		mutex.Lock()
 		live.Stopped = true
+		live.CheckStarted = time.Time{}
 		live.UpdateStarted = time.Time{}
 		live.Progress = nil
 		mutex.Unlock()
@@ -632,15 +647,27 @@ func RunWithProgress(ctx context.Context, root Root, update func(func(scan.Build
 	checked := func() {
 		mutex.Lock()
 		live.LastCheck = time.Now()
+		live.CheckError = ""
 		mutex.Unlock()
 	}
-	previous, err := fingerprint(ctx, root)
+	check := func() (string, error) {
+		mutex.Lock()
+		live.CheckStarted = time.Now()
+		mutex.Unlock()
+		_ = publish()
+		value, err := fingerprintUntilStopped(ctx, root, token, snapshot)
+		mutex.Lock()
+		live.CheckStarted = time.Time{}
+		mutex.Unlock()
+		return value, err
+	}
+	previous, err := check()
 	if err != nil {
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || errors.Is(err, errWatcherStopped) {
 			return nil
 		}
 		mutex.Lock()
-		live.LastError = err.Error()
+		live.CheckError = err.Error()
 		mutex.Unlock()
 		_ = publish()
 	} else {
@@ -662,13 +689,13 @@ func RunWithProgress(ctx context.Context, root Root, update func(func(scan.Build
 			if stopRequested(root, token) {
 				return nil
 			}
-			current, err := fingerprint(ctx, root)
+			current, err := check()
 			if err != nil {
-				if ctx.Err() != nil {
+				if ctx.Err() != nil || errors.Is(err, errWatcherStopped) {
 					return nil
 				}
 				mutex.Lock()
-				live.LastError = err.Error()
+				live.CheckError = err.Error()
 				mutex.Unlock()
 				_ = publish()
 				continue

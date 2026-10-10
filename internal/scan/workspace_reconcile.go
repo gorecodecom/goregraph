@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorecodecom/goregraph/internal/config"
+	"github.com/gorecodecom/goregraph/internal/gitignore"
 	"github.com/gorecodecom/goregraph/internal/outputstore"
 	"github.com/gorecodecom/goregraph/internal/testresults"
 )
@@ -853,11 +854,28 @@ func discoverWorkspaceProjects(workspaceRoot, currentAbs, defaultOutput string) 
 }
 
 func walkWorkspaceProjectRoots(workspaceRoot, currentAbs, dir, group, defaultOutput string, projects map[string]WorkspaceProjectRecord) error {
-	_, err := walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defaultOutput, projects)
+	cfg, err := config.Load(workspaceRoot)
+	if err != nil {
+		return err
+	}
+	_, err = walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defaultOutput, projects, cfg.UseGitignore, gitignore.Matcher{})
 	return err
 }
 
-func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defaultOutput string, projects map[string]WorkspaceProjectRecord) (bool, error) {
+func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defaultOutput string, projects map[string]WorkspaceProjectRecord, useGitignore bool, matcher gitignore.Matcher) (bool, error) {
+	if useGitignore {
+		body, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+		if err != nil && !os.IsNotExist(err) {
+			return false, fmt.Errorf("read workspace ignore rules %s: %w", dir, err)
+		}
+		if err == nil {
+			relative := workspaceRel(workspaceRoot, dir)
+			if relative == "." {
+				relative = ""
+			}
+			matcher = matcher.WithFile(relative, string(body))
+		}
+	}
 	entries, err := workspaceReadDir(dir)
 	if err != nil {
 		return false, fmt.Errorf("read workspace directory %s: %w", dir, err)
@@ -869,6 +887,9 @@ func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defau
 			continue
 		}
 		abs := filepath.Join(dir, name)
+		if matcher.Ignored(workspaceRel(workspaceRoot, abs), true) {
+			continue
+		}
 		nextGroup := group
 		if isWorkspaceGroup(name) {
 			nextGroup = name
@@ -878,7 +899,7 @@ func walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, dir, group, defau
 			foundProjectRoot = true
 			continue
 		}
-		foundNestedProjectRoot, err := walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, abs, nextGroup, defaultOutput, projects)
+		foundNestedProjectRoot, err := walkWorkspaceProjectRootsFound(workspaceRoot, currentAbs, abs, nextGroup, defaultOutput, projects, useGitignore, matcher)
 		if err != nil {
 			return false, err
 		}
@@ -1057,7 +1078,7 @@ func hasProjectMarker(abs string) bool {
 		"settings.gradle", "settings.gradle.kts", "go.mod", "pyproject.toml",
 		"requirements.txt", "setup.py", "Cargo.toml", "composer.json",
 		"build.sbt", "Package.swift", "Gemfile", "CMakeLists.txt",
-		"meson.build", "pubspec.yaml", "goregraph.yml",
+		"meson.build", "pubspec.yaml", "goregraph.yml", "project.godot",
 	} {
 		if workspaceRegularFileExists(filepath.Join(abs, name)) {
 			return true

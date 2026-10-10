@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,25 +58,7 @@ func ServeWithOptions(input io.Reader, output io.Writer, options Options) error 
 	if _, err := agentguide.Instruction(options.ProtocolVersion); err != nil {
 		return err
 	}
-	scanner := bufio.NewScanner(input)
-	encoder := json.NewEncoder(output)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var req request
-		if err := json.Unmarshal([]byte(line), &req); err != nil {
-			if encodeErr := encoder.Encode(errorResponse(nil, -32700, "parse error")); encodeErr != nil {
-				return encodeErr
-			}
-			continue
-		}
-		if err := encoder.Encode(handle(req, options)); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
+	return serveStream(input, output, options, nil, nil)
 }
 
 func handle(req request, options Options) response {

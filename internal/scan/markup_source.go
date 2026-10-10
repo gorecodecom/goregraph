@@ -30,7 +30,7 @@ type htmlTag struct {
 
 func supplementaryLanguage(language string) bool {
 	switch language {
-	case "html", "css", "batch", "objectivec", "c", "cpp", "ruby", "kotlin":
+	case "gdscript", "godot", "html", "css", "batch", "objectivec", "c", "cpp", "ruby", "kotlin":
 		return true
 	}
 	return false

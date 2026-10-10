@@ -73,7 +73,7 @@ func TestRunWatchStatusReportsCoveringWorkspace(t *testing.T) {
 }
 
 func TestWatchActivityDistinguishesIdleChecksFromIndexUpdates(t *testing.T) {
-	checked := time.Date(2026, 10, 4, 20, 0, 0, 0, time.UTC)
+	checked := time.Now().UTC().Truncate(time.Second)
 	updated := checked.Add(-2 * time.Hour)
 	for _, updating := range []bool{false, true} {
 		status := watch.Status{Running: true, LastCheck: checked, LastSuccess: updated}
@@ -82,7 +82,7 @@ func TestWatchActivityDistinguishesIdleChecksFromIndexUpdates(t *testing.T) {
 		}
 		var stdout bytes.Buffer
 		printWatchActivity(&stdout, status)
-		for _, want := range []string{"Last successful file check: 2026-10-04 20:00:00 UTC", "Last successful index update: 2026-10-04 18:00:00 UTC"} {
+		for _, want := range []string{"Last successful file check: " + checked.Format("2006-01-02 15:04:05 MST"), "Last successful index update: " + updated.Format("2006-01-02 15:04:05 MST")} {
 			if !strings.Contains(stdout.String(), want) {
 				t.Fatalf("activity missing %q: %s", want, stdout.String())
 			}
@@ -96,6 +96,26 @@ func TestWatchActivityDistinguishesIdleChecksFromIndexUpdates(t *testing.T) {
 		if strings.Contains(stdout.String(), "stale") || strings.Contains(stdout.String(), "Last successful watcher check") {
 			t.Fatalf("idle index was incorrectly described: %s", stdout.String())
 		}
+	}
+}
+
+func TestWatchActivitySeparatesBlockedChecksFromLiveMonitoring(t *testing.T) {
+	for _, scenario := range []struct {
+		name   string
+		status watch.Status
+		want   string
+	}{
+		{"checking", watch.Status{Running: true, CheckStarted: time.Now()}, "Activity: checking files"},
+		{"blocked", watch.Status{Running: true, CheckStarted: time.Now().Add(-2 * time.Minute)}, "Activity: file check is taking unusually long"},
+		{"legacy-overdue", watch.Status{Running: true, LastCheck: time.Now().Add(-2 * time.Hour)}, "Activity: file checks overdue"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			var output bytes.Buffer
+			printWatchActivity(&output, scenario.status)
+			if !strings.Contains(output.String(), scenario.want) || strings.Contains(output.String(), "Activity: monitoring files") || strings.Contains(output.String(), "stale") {
+				t.Fatalf("incorrect file-check activity: %s", output.String())
+			}
+		})
 	}
 }
 

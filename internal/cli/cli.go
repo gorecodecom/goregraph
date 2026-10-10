@@ -117,6 +117,10 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 }
 
 func runMCP(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && args[0] == "--reload-protocol" {
+		fmt.Fprintln(stdout, mcp.ReloadProtocol)
+		return 0
+	}
 	const help = `Usage: goregraph mcp [--expert-tools] [--protocol strict-v1|adaptive-v2]
 
 Starts the read-only MCP stdio server.
@@ -155,7 +159,7 @@ The default protocol is adaptive-v2; use --protocol strict-v1 for historical rep
 			return 2
 		}
 	}
-	if err := mcp.ServeWithOptions(os.Stdin, stdout, options); err != nil {
+	if err := mcp.ServeInstalled(stdout, stderr, options); err != nil {
 		fmt.Fprintf(stderr, "error: mcp failed: %v\n", err)
 		return 1
 	}

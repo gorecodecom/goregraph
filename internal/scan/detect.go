@@ -6,6 +6,9 @@ import (
 )
 
 func detectLanguage(rel string) string {
+	if filepath.Base(rel) == "export_presets.cfg" {
+		return "godot"
+	}
 	if strings.HasSuffix(rel, ".goregraph-blender.json") {
 		return "blender"
 	}
@@ -21,6 +24,10 @@ func detectLanguage(rel string) string {
 		return "json"
 	}
 	switch strings.ToLower(filepath.Ext(rel)) {
+	case ".gd":
+		return "gdscript"
+	case ".tscn", ".tres", ".godot":
+		return "godot"
 	case ".go":
 		return "go"
 	case ".java":
@@ -86,7 +93,7 @@ func IsSupportedSourceFile(rel string) bool {
 func detectKind(rel string) string {
 	base := strings.ToLower(filepath.Base(rel))
 	switch base {
-	case "pubspec.yaml", "go.mod", "package.json", "composer.json", "pom.xml", "build.gradle", "settings.gradle":
+	case "project.godot", "export_presets.cfg", "pubspec.yaml", "go.mod", "package.json", "composer.json", "pom.xml", "build.gradle", "settings.gradle":
 		return "build"
 	case "readme.md":
 		return "documentation"

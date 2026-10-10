@@ -37,6 +37,16 @@ func printWatchActivity(stdout io.Writer, status watch.Status) {
 			}
 			fmt.Fprintf(stdout, "Last observed progress: %s\n", progress.LastProgress.Format("2006-01-02 15:04:05 MST"))
 		}
+	case !status.CheckStarted.IsZero():
+		elapsed := time.Since(status.CheckStarted).Round(time.Second)
+		if elapsed >= time.Minute {
+			fmt.Fprintln(stdout, "Activity: file check is taking unusually long")
+		} else {
+			fmt.Fprintln(stdout, "Activity: checking files")
+		}
+		fmt.Fprintf(stdout, "File check elapsed: %s\n", elapsed)
+	case !status.LastCheck.IsZero() && time.Since(status.LastCheck) >= time.Minute:
+		fmt.Fprintln(stdout, "Activity: file checks overdue")
 	case status.LastCheck.IsZero():
 		fmt.Fprintln(stdout, "Activity: awaiting first reported file check")
 	default:

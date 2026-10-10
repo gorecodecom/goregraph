@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/gorecodecom/goregraph/internal/scan"
 )
 
 func TestSupervisorWorkerProcess(t *testing.T) {
@@ -23,6 +25,18 @@ func TestSupervisorWorkerProcess(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	if os.Getenv("GOREGRAPH_SUPERVISOR_TEST_BLOCK_CHECK") == "1" {
+		err = runWithProgress(ctx, root, func(func(scan.BuildEvent)) error { return nil }, func(context.Context, Root) (string, error) {
+			if err := os.WriteFile(filepath.Join(root.Path, "checking"), nil, 0o600); err != nil {
+				return "", err
+			}
+			select {} // Simulate a non-cancellable kernel read in this subprocess.
+		})
+		if err != nil {
+			os.Exit(23)
+		}
+		os.Exit(0)
+	}
 	err = Run(ctx, root, func() error {
 		if os.Getenv("GOREGRAPH_SUPERVISOR_TEST_BLOCK") == "1" {
 			if err := os.WriteFile(filepath.Join(root.Path, "updating"), nil, 0o600); err != nil {
@@ -154,6 +168,35 @@ func TestSupervisorReplacementWaitsForCurrentUpdate(t *testing.T) {
 	}
 	waitFor(t, func() bool { return starts.Load() == 2 })
 	waitFor(t, func() bool { status, err := GetStatus(root); return err == nil && status.Running })
+	stopTestSupervisor(t, root, done)
+}
+
+func TestSupervisorReplacementDrainsBlockedReadWithoutAnotherWriter(t *testing.T) {
+	root, executable, options, starts := supervisorFixture(t, false)
+	command := options.command
+	options.command = func(path string, root Root) *exec.Cmd {
+		child := command(path, root)
+		if starts.Load() == 1 {
+			child.Env = append(child.Env, "GOREGRAPH_SUPERVISOR_TEST_BLOCK_CHECK=1")
+		}
+		return child
+	}
+	done := startTestSupervisor(t, root, executable, options)
+	waitFor(t, func() bool { _, err := os.Stat(filepath.Join(root.Path, "checking")); return err == nil })
+	before, err := GetStatus(root)
+	if err != nil || before.CheckStarted.IsZero() || !before.UpdateStarted.IsZero() || !before.LastSuccess.IsZero() {
+		t.Fatalf("blocked snapshot was not isolated from publication: %+v %v", before, err)
+	}
+	if err := os.WriteFile(executable, []byte("version-b"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		status, err := GetStatus(root)
+		return err == nil && status.Running && status.PID != before.PID && !status.LastSuccess.IsZero()
+	})
+	if starts.Load() != 2 {
+		t.Fatalf("replacement launched competing workers: %d", starts.Load())
+	}
 	stopTestSupervisor(t, root, done)
 }
 

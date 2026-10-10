@@ -54,6 +54,15 @@ Local 1.4.1 testing and rollback are documented in
 
 ## 1.4.4 — Unreleased
 
+On macOS and Linux, MCP servers now adopt a validated replacement at their stable
+installation path automatically, including while idle. Active requests finish
+before the process is replaced; the stdio connection, protocol options and unread
+request bytes survive. Supervised watchers retain their existing automatic
+upgrade behavior. This uses the locally installed executable and does not download
+updates or enable watchers. Older MCP builds require one client reconnection to
+activate this lifecycle. See [process updates](docs/PROCESS-UPDATES.md), including
+the Windows reconnect requirement and verification steps.
+
 When adaptive context cannot find a sufficiently relevant entrypoint, lexical
 fallback candidates now use the full question and stay within the requested
 directory unless another project or an exact source identity is explicitly
@@ -62,7 +71,7 @@ broad questions can therefore return no candidate source and require focused
 source discovery. This change does not restrict verified cross-project call
 paths or turn normal Context Packs into a general documentation search.
 
-C# and Swift now have structured, source-backed static adapters. C# covers typed overloads, inherited members, named/optional/ref arguments, ASP.NET controllers and literal minimal API registrations, HttpClient, DI registrations, EF Core operations and entity links. Swift covers types, extensions, actor/protocol declarations, labeled methods, inherited calls, SwiftUI state/query references, URLSession, SwiftData/Core Data/UserDefaults and XCTest/Swift Testing links. Ambiguous, conditional and unsupported compiler bindings remain explicit. Neither adapter executes application code, a compiler or an editor during indexing or context retrieval. See [language analysis](docs/LANGUAGE-ANALYSIS.md) and [Unity/Blender evidence](docs/ASSET-ANALYSIS.md).
+C# and Swift now have structured, source-backed static adapters. C# covers typed overloads, inherited members, named/optional/ref arguments, ASP.NET controllers and literal minimal API registrations, HttpClient, DI registrations, EF Core operations and entity links. Swift covers types, extensions, actor/protocol declarations, labeled methods, inherited calls, SwiftUI state/query references, URLSession, SwiftData/Core Data/UserDefaults and XCTest/Swift Testing links. Ambiguous, conditional and unsupported compiler bindings remain explicit. Neither adapter executes application code, a compiler or an editor during indexing or context retrieval. See [language analysis](docs/LANGUAGE-ANALYSIS.md) and [Unity/Blender evidence](docs/ASSET-ANALYSIS.md). Godot projects also have [GDScript and text-resource analysis](docs/GODOT-ANALYSIS.md), including literal resource paths, script calls, scene callbacks and test-source links.
 
 Project-root tooling audits now select sources only within the requested directory, even when GoreGraph uses a parent workspace index. Older neighboring projects no longer consume the audit's source budget. Pass the workspace root explicitly when the audit should include multiple projects. Ordinary production-code context keeps its existing cross-project behavior.
 
@@ -926,7 +935,9 @@ Coverage describes implemented static analyzers, not proof that runtime behavior
 | C# / .NET / Unity | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | — | — | Full | Full | Consumer + provider |
 | CSS / Unity USS | Integration | Integration | Integration | — | — | — | — | — | — | — | Full | Full | — |
 | Dart / Flutter | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | — | Full | Full | Consumer |
+| GDScript | Integration | Integration | Integration | Integration | — | Integration | — | — | — | — | Full | Full | — |
 | Go | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | — | — | — |
+| Godot resources | Integration | Integration | Integration | — | — | — | — | — | — | — | Full | Full | — |
 | HTML | Integration | Integration | Integration | — | — | — | Pattern-backed | — | — | — | Full | Full | Consumer |
 | Java / Spring | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Provider |
 | JavaScript / TypeScript / Node.js / React | Full | Full | Full | Full | Full | Full | Pattern-backed | Pattern-backed | Pattern-backed | Pattern-backed | Full | Full | Consumer + provider |
@@ -950,7 +961,9 @@ Supported static pattern families:
 - **C# / .NET / Unity:** C# type and member declarations; typed static calls with inheritance, named, optional and ref arguments; optional hash-verified Roslyn symbol and call snapshots; typed EF Core operations; literal DI registrations; literal ASP.NET controller routes; literal HttpClient requests; NUnit, xUnit and Unity test declarations.
 - **CSS / Unity USS:** selectors, custom properties, imports and resource URLs.
 - **Dart / Flutter:** typed calls / library privacy / parts / export barrels; Flutter widgets / callbacks / navigation / widget tests; http / Dio / sqflite / preferences / Riverpod; library declarations; classes / mixins / extensions; constructors / methods / getters; pub package metadata.
+- **GDScript:** class and member declarations; literal preload/load paths; local and explicitly constructed script calls; signal callbacks; test-source links.
 - **Go:** net/http and common routers; net/http clients; database/sql and GORM; Kafka and AMQP; gRPC; JSON request/response boundaries; go test and httptest.
+- **Godot resources:** scene nodes; external and embedded resources; attached scripts; serialized signal callbacks; project main scene and autoloads.
 - **HTML:** elements, labels, accessibility IDs, resources and form actions.
 - **Java / Spring:** Spring MVC and WebFlux; Java and Spring HTTP clients; Spring Data; Spring Messaging; gRPC; Jakarta Validation; JUnit and Spring Test.
 - **JavaScript / TypeScript / Node.js / React:** Express and Fastify; NestJS; Next.js; Web and Node HTTP clients; common Node persistence; Kafka and AMQP; gRPC; Node request/response boundaries; Jest, Vitest, Node Test, and React Testing Library.

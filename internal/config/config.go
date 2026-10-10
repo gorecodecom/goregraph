@@ -36,6 +36,7 @@ func Defaults() Config {
 		Workspace:               true,
 		Exclude: []string{
 			".git/",
+			".godot/",
 			".worktrees/",
 			"node_modules/",
 			".dart_tool/",
