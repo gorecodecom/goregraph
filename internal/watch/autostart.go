@@ -2,8 +2,8 @@ package watch
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -150,33 +150,54 @@ func launchAgentBody(root Root, executable string) ([]byte, error) {
 
 func taskName(root Root) string { return "GoreGraphWatch-" + root.ID }
 
-func powershellArgument(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+func windowsArgument(value string) string {
+	var result strings.Builder
+	result.WriteByte('"')
+	backslashes := 0
+	for _, char := range value {
+		if char == '\\' {
+			backslashes++
+			continue
+		}
+		if char == '"' {
+			result.WriteString(strings.Repeat("\\", backslashes*2+1))
+		} else {
+			result.WriteString(strings.Repeat("\\", backslashes))
+		}
+		result.WriteRune(char)
+		backslashes = 0
+	}
+	result.WriteString(strings.Repeat("\\", backslashes*2))
+	result.WriteByte('"')
+	return result.String()
 }
 
-func scheduledTaskAction(root Root, executable string) (string, string) {
-	parts := append([]string{executable}, supervisedArguments(root)...)
-	for i := range parts {
-		parts[i] = powershellArgument(parts[i])
+func scheduledTaskLauncher(arguments []string) []byte {
+	parts := make([]string, len(arguments))
+	for i, argument := range arguments {
+		parts[i] = windowsArgument(argument)
 	}
-	script := "$ErrorActionPreference = 'Stop'; try { & " + strings.Join(parts, " ") + "; exit $LASTEXITCODE } catch { exit 1 }"
-	units := utf16.Encode([]rune(script))
-	encoded := make([]byte, len(units)*2)
-	for i, unit := range units {
-		binary.LittleEndian.PutUint16(encoded[i*2:], unit)
-	}
-	return `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`,
-		"-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand " + base64.StdEncoding.EncodeToString(encoded)
+	command, _ := json.Marshal(strings.Join(parts, " "))
+	// Expand one variable so percent signs inside paths are not expanded again.
+	script := "var shell = new ActiveXObject(\"WScript.Shell\");\r\n" +
+		"shell.Environment(\"Process\")(\"GOREGRAPH_WATCH_COMMAND\") = " + string(command) + ";\r\n" +
+		"try { WScript.Quit(shell.Run(\"%GOREGRAPH_WATCH_COMMAND%\", 0, true)); } catch (error) { WScript.Quit(1); }\r\n"
+	return encodeUTF16LE(script)
 }
 
-func scheduledTaskXML(root Root, executable, username string) []byte {
-	command, arguments := scheduledTaskAction(root, executable)
+func scheduledTaskXML(launcher, username string) []byte {
+	command := `%SystemRoot%\System32\wscript.exe`
+	arguments := "//B //NoLogo //E:JScript " + windowsArgument(launcher)
 	body := "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\n" +
 		"<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">" +
 		"<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>" + xmlValue(username) + "</UserId></LogonTrigger></Triggers>" +
 		"<Principals><Principal id=\"Author\"><UserId>" + xmlValue(username) + "</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>" +
 		"<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Enabled>true</Enabled><RestartOnFailure><Interval>PT1M</Interval><Count>255</Count></RestartOnFailure></Settings>" +
 		"<Actions Context=\"Author\"><Exec><Command>" + xmlValue(command) + "</Command><Arguments>" + xmlValue(arguments) + "</Arguments></Exec></Actions></Task>"
+	return encodeUTF16LE(body)
+}
+
+func encodeUTF16LE(body string) []byte {
 	units := utf16.Encode([]rune(body))
 	encoded := make([]byte, 2+len(units)*2)
 	encoded[0], encoded[1] = 0xff, 0xfe
@@ -191,12 +212,20 @@ func enableScheduledTask(root Root, executable string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	directory, err := stateDir(root)
+	if err != nil {
+		return "", err
+	}
+	launcher := filepath.Join(directory, "autostart.js")
+	if err := os.WriteFile(launcher, scheduledTaskLauncher(append([]string{executable}, supervisedArguments(root)...)), 0o600); err != nil {
+		return "", fmt.Errorf("write scheduled task launcher: %w", err)
+	}
 	file, err := os.CreateTemp("", "goregraph-watch-*.xml")
 	if err != nil {
 		return "", err
 	}
 	defer os.Remove(file.Name())
-	if _, err := file.Write(scheduledTaskXML(root, executable, current.Username)); err != nil {
+	if _, err := file.Write(scheduledTaskXML(launcher, current.Username)); err != nil {
 		file.Close()
 		return "", err
 	}

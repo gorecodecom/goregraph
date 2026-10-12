@@ -133,6 +133,7 @@ func validateReplacement(ctx context.Context, path string) error {
 		{[]string{"watch", "supervise", "--help"}, "Usage: goregraph watch "},
 	} {
 		command := exec.CommandContext(ctx, path, probe.args...)
+		hideConsole(command)
 		var output versionProbeOutput
 		command.Stdout, command.Stderr = &output, &output
 		if err := command.Run(); err != nil {
@@ -257,6 +258,7 @@ func supervise(ctx context.Context, root Root, executable string, options superv
 			}
 			if err == nil {
 				command := options.command(executable, root)
+				hideConsole(command)
 				err = command.Start()
 				if err == nil {
 					done := make(chan error, 1)

@@ -208,8 +208,11 @@ method values, rejected compiler errors and refusal to overwrite reports. Snapsh
 consumer tests separately cover stale/added inputs and overload identity boundaries.
 
 The extractor/agent revisions invalidate old generations independently of the
-release version. An existing watcher process retains its original executable
-until the user explicitly restarts it. After installing the new binary, restart
-the user-enabled watcher to regenerate its project/workspace indexes, and restart
-long-running MCP processes. Rebuilding only dashboard HTML cannot introduce new
-source facts. Agents do not perform these maintenance actions automatically.
+release version. Supervised watchers adopt a validated replacement at the same
+installation path after their current update finishes. Older unsupervised
+watchers require one explicit restart; installation does not start a stopped
+watcher. macOS/Linux MCP processes with replacement support also adopt local
+updates; Windows MCP clients require reconnection. Processes predating this
+support require one restart. See [process updates](PROCESS-UPDATES.md) for checks
+and platform limits. Rebuilding only dashboard HTML cannot introduce new source
+facts. Agents leave index refreshes to the user-enabled watcher.

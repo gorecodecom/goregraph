@@ -127,7 +127,7 @@ func repositoryDocumentSpecs() []documentSpec {
 
 func renderLanguageCoverage() string {
 	var body strings.Builder
-	body.WriteString("Coverage describes implemented static analyzers, not proof that runtime behavior is absent. **Full** adapters emit normalized symbols, relations, calls, routes, and tests for their supported syntax. **Pattern-backed** capabilities recognize only the listed static families. **Integration** and **Index** are intentionally shallower. `—` means unavailable.\n\n")
+	body.WriteString("Coverage describes implemented static analyzers, not proof that runtime behavior is absent. **Full** identifies a structured static adapter; each capability is available only where its column is enabled and only for supported syntax. It does not mean complete language or compiler semantics. **Pattern-backed** capabilities recognize only the listed static families. **Integration** and **Index** are intentionally shallower. **Exact symbols** and **Direct usages** describe dedicated lookup projections, separately from call extraction. `—` means unavailable.\n\n")
 	body.WriteString("| Language / framework | Adapter | Symbols | Imports | Calls | Routes | Tests | API clients | Persistence | Messaging / RPC | Data flow | Exact symbols | Direct usages | HTTP reachability |\n")
 	body.WriteString("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
 	profiles := scan.LanguageCapabilityProfiles()

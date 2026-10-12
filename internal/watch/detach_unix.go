@@ -10,3 +10,5 @@ import (
 func detach(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
+
+func hideConsole(command *exec.Cmd) {}

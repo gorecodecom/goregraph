@@ -35,6 +35,9 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Check generated documentation
+        run: go run ./scripts/sync-docs --check
+
       - name: Test
         if: runner.os != 'Windows'
         run: go test ./... -timeout 20m

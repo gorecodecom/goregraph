@@ -54,6 +54,11 @@ Local 1.4.1 testing and rollback are documented in
 
 ## 1.4.4 — Unreleased
 
+Windows watcher autostart uses Task Scheduler and the built-in Windows Script
+Host (JScript), and supervised workers start without a visible console window.
+Re-register older Windows tasks with `goregraph watch autostart on .` after
+upgrading. This Windows console fix is part of the current source checkout.
+
 On macOS and Linux, MCP servers now adopt a validated replacement at their stable
 installation path automatically, including while idle. Active requests finish
 before the process is replaced; the stdio connection, protocol options and unread
@@ -87,7 +92,7 @@ Contract analysis can be disabled with `api_specifications: false` in the worksp
 
 ## 1.4.3 — GitHub Release
 
-Version 1.4.3 is the current GitHub release. Version 1.4.2 is now available through Winget; the [1.4.3 manifest](https://github.com/microsoft/winget-pkgs/pull/445609) has been submitted for Microsoft approval.
+Version 1.4.3 is the current GitHub release and is available through Winget. The [1.4.3 manifest](https://github.com/microsoft/winget-pkgs/pull/445609) was merged and published on October 2, 2026. The source checkout is 1.4.4 (unreleased); its additional capabilities below are not a promise about the 1.4.3 binaries.
 
 The regular MCP server now defaults to `adaptive-v2`, matching the existing adaptive CLI workflow. Incomplete context can lead to bounded verification or caller-authorized source fallback. Explicit `strict-v1` replay and tooling-audit boundaries remain available. Optional parameter limits are described in plain language, and invalid budget/file limits are reported together. Persistent agent instructions must allow the selected protocol while keeping GoreGraph ahead of optional skills.
 
@@ -99,9 +104,9 @@ The offline dashboard adds **Tests & Tooling** under Service Code: a project-sco
 
 An optional local watcher now refreshes the agent index and dashboard after
 source changes. It starts only on request; login autostart is a separate
-per-user choice on Windows, macOS, and Linux. Windows login autostart runs
-without a visible console window, and normal shutdown no longer appears as an
-update error.
+per-user choice on Windows, macOS, and Linux. Normal shutdown no longer appears
+as an update error. The additional Windows console fixes are described under
+the unreleased 1.4.4 changes above.
 
 ## 1.4.2 — Workspace Explorer
 
@@ -136,11 +141,10 @@ the 1.4.3 release.
 
 ### Winget Windows — separate approval
 
-Winget currently offers GoreGraph 1.4.2 under the stable package ID
+Winget offers GoreGraph 1.4.3 under the stable package ID
 `GoreCode.GoreGraph`. The [1.4.3 update](https://github.com/microsoft/winget-pkgs/pull/445609)
-has been submitted for Microsoft approval.
-For 1.4.3 before approval, use the ZIP below. To install the approved version
-through Winget:
+was published on October 2, 2026. Package availability can lag behind a source
+checkout or GitHub release. To install the approved version through Winget:
 
 ```powershell
 winget install --id GoreCode.GoreGraph --exact --source winget
@@ -923,8 +927,30 @@ Print build metadata including version, commit, build date, Go version, platform
 
 ## Language Coverage
 
+This section describes the **1.4.4 source checkout**, including unreleased
+adapters. Support has several independent dimensions: declarations and imports,
+static call binding, framework patterns, exact symbol/usages lookup and HTTP
+consumer/provider reconciliation. A language can support call graphs without
+supporting every dashboard or exact-lookup projection.
+
+| Depth | Languages and formats | Practical meaning |
+| --- | --- | --- |
+| Full static adapters | Java/Spring; JavaScript/TypeScript/Node.js/React; Go; Python; PHP; Rust; C#/.NET/Unity; Swift/SwiftUI; Dart/Flutter | Structured declarations and supported static calls/tests; routes and framework evidence vary by language in the matrix below. This does not mean compiler-complete analysis. |
+| Focused integrations | Kotlin; C; C++; Objective-C/Objective-C++; Ruby; GDScript; Shell; Windows Batch; HTML; CSS/Unity USS | Specific declarations, references and literal patterns. Individual integrations can expose exact symbols or HTTP links while retaining narrower language coverage. |
+| Declaration index | Scala | Best-effort declarations and imports, without normalized call, route or test analysis. |
+| Asset/resource evidence | Unity serialized assets; Blender exports; Godot text scenes/resources | Static objects, resource references and supported source links; no editor or engine execution. |
+
+For binding rules, framework families and unresolved cases, see
+[C# and Swift](docs/LANGUAGE-ANALYSIS.md),
+[Dart and Flutter](docs/DART-FLUTTER-ANALYSIS.md),
+[native and integration languages](docs/NATIVE-LANGUAGE-DEPTH.md),
+[Godot](docs/GODOT-ANALYSIS.md) and [assets](docs/ASSET-ANALYSIS.md).
+C# and Swift can additionally consume explicitly generated, hash-verified
+compiler snapshots. Scans, watchers and MCP do not run the exporters. Snapshots
+cover the selected compiler configuration and are not runtime proof.
+
 <!-- goregraph:generated language-coverage start -->
-Coverage describes implemented static analyzers, not proof that runtime behavior is absent. **Full** adapters emit normalized symbols, relations, calls, routes, and tests for their supported syntax. **Pattern-backed** capabilities recognize only the listed static families. **Integration** and **Index** are intentionally shallower. `—` means unavailable.
+Coverage describes implemented static analyzers, not proof that runtime behavior is absent. **Full** identifies a structured static adapter; each capability is available only where its column is enabled and only for supported syntax. It does not mean complete language or compiler semantics. **Pattern-backed** capabilities recognize only the listed static families. **Integration** and **Index** are intentionally shallower. **Exact symbols** and **Direct usages** describe dedicated lookup projections, separately from call extraction. `—` means unavailable.
 
 | Language / framework | Adapter | Symbols | Imports | Calls | Routes | Tests | API clients | Persistence | Messaging / RPC | Data flow | Exact symbols | Direct usages | HTTP reachability |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -988,10 +1014,27 @@ it does not turn missing static evidence into a runtime claim.
 | --- | --- | --- | --- | --- | --- | --- |
 | Java / Spring | Provider endpoints | Reconciled callers | Endpoint security | Statically extracted DTO identities | Full API Catalog and Endpoints | Relevant endpoint facts |
 | JavaScript / TypeScript / Node.js / React | Supported Node provider routes | HTTP client call sites | Consumer call authentication; provider security unknown | Handler identity; request/response types unknown | Full API Catalog and Endpoints | Relevant endpoint and consumer facts |
+| C# / ASP.NET | Supported controller and literal minimal-API route facts | Literal typed HttpClient calls; supported provider reconciliation | Runtime middleware/authentication unknown | Supported static identities; runtime responses unknown | Supported API and source evidence | Relevant source-backed routes, clients, DI, EF Core and tests |
+| Swift / SwiftUI | No server-route adapter | Literal URLSession requests; supported consumer links | Runtime authentication unknown | Runtime responses unknown | Consumer and source evidence | Supported declarations, calls, UI references, persistence and tests |
+| Dart / Flutter | Supported route/navigation patterns; not a canonical HTTP provider chain | Supported http/Dio clients and consumer links | Runtime authentication unknown | Runtime responses unknown | Consumer, widget and source evidence | Supported calls, callbacks, navigation, persistence and tests |
+| Kotlin | Supported literal Spring mappings | Supported Ktor requests and consumer/provider links | Runtime authentication unknown | Runtime responses unknown | Supported API and source evidence | Focused static calls, routes, tests and platform-channel facts |
+| HTML | No server-route adapter | Literal form actions | Runtime submission/authentication unknown | Not inferred | Form and resource evidence | Literal document evidence |
 | Go, PHP, Python, Rust | Pattern-backed route facts | Pattern-backed client facts; no reconciled consumer/provider chain | Not projected into canonical endpoint security | Pattern-backed request/response boundaries | Architecture evidence; no canonical API reachability | Relevant route, client, persistence, messaging, data-flow, and test facts |
 
 For all rows, `unknown` means evidence was not detected. It does not mean an
 endpoint is public or that authentication is absent at runtime.
+
+### Keeping this documentation current
+
+The detailed matrix is generated from `internal/scan/language_profiles.go`.
+After changing an adapter or its declared capabilities, run
+`go run ./scripts/sync-docs --write`, then
+`go run ./scripts/sync-docs --check` and `go test ./scripts/sync-docs`.
+These commands synchronize documentation; they do not scan a workspace.
+Review the prose summaries, API-depth table and linked language guides together.
+Release refreshes must also verify package-manager status and the German/English
+product page, including screenshot version, public-data provenance and captions.
+Historical benchmark results retain their original measurement version.
 
 ## Output Files
 
