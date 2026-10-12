@@ -52,12 +52,12 @@ handling.
 Local 1.4.1 testing and rollback are documented in
 [`docs/LOCAL-1.4.1.md`](docs/LOCAL-1.4.1.md).
 
-## 1.4.4 — Unreleased
+## 1.4.4 — GitHub Release
 
 Windows watcher autostart uses Task Scheduler and the built-in Windows Script
 Host (JScript), and supervised workers start without a visible console window.
 Re-register older Windows tasks with `goregraph watch autostart on .` after
-upgrading. This Windows console fix is part of the current source checkout.
+upgrading. See [1.4.4 release notes](docs/RELEASE-1.4.4.md) for upgrade notes and limits.
 
 On macOS and Linux, MCP servers now adopt a validated replacement at their stable
 installation path automatically, including while idle. Active requests finish
@@ -92,7 +92,7 @@ Contract analysis can be disabled with `api_specifications: false` in the worksp
 
 ## 1.4.3 — GitHub Release
 
-Version 1.4.3 is the current GitHub release and is available through Winget. The [1.4.3 manifest](https://github.com/microsoft/winget-pkgs/pull/445609) was merged and published on October 2, 2026. The source checkout is 1.4.4 (unreleased); its additional capabilities below are not a promise about the 1.4.3 binaries.
+Version 1.4.3 is the previous GitHub release and is available through Winget. The [1.4.3 manifest](https://github.com/microsoft/winget-pkgs/pull/445609) was merged and published on October 2, 2026. Version 1.4.4 adds the capabilities described above; these are not a promise about older 1.4.3 binaries.
 
 The regular MCP server now defaults to `adaptive-v2`, matching the existing adaptive CLI workflow. Incomplete context can lead to bounded verification or caller-authorized source fallback. Explicit `strict-v1` replay and tooling-audit boundaries remain available. Optional parameter limits are described in plain language, and invalid budget/file limits are reported together. Persistent agent instructions must allow the selected protocol while keeping GoreGraph ahead of optional skills.
 
@@ -106,7 +106,7 @@ An optional local watcher now refreshes the agent index and dashboard after
 source changes. It starts only on request; login autostart is a separate
 per-user choice on Windows, macOS, and Linux. Normal shutdown no longer appears
 as an update error. The additional Windows console fixes are described under
-the unreleased 1.4.4 changes above.
+the 1.4.4 changes above.
 
 ## 1.4.2 — Workspace Explorer
 
@@ -122,7 +122,7 @@ Only dashboard presentation changes: source indexing, reconciliation, agent/MCP 
 Source version: GoreGraph 1.4.4 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-`v1.4.3` is the current GoreGraph release. Package-manager indexes can take some
+`v1.4.4` is the current GoreGraph release. Package-manager indexes can take some
 time to ingest a new release, so always verify the installed version with
 `goregraph version` after installing or upgrading.
 
@@ -927,7 +927,7 @@ Print build metadata including version, commit, build date, Go version, platform
 
 ## Language Coverage
 
-This section describes the **1.4.4 source checkout**, including unreleased
+This section describes **GoreGraph 1.4.4**, including its additional static
 adapters. Support has several independent dimensions: declarations and imports,
 static call binding, framework patterns, exact symbol/usages lookup and HTTP
 consumer/provider reconciliation. A language can support call graphs without

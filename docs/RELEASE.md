@@ -1,8 +1,12 @@
 # GoreGraph Release Checklist
 
+## 1.4.4 — GitHub Release
+
+Version 1.4.4 retains Schema 3 and adds language/asset analysis, scoped context improvements, supervised process updates and Windows console fixes. See [release notes](RELEASE-1.4.4.md) for features, migration and limitations. Winget 1.4.4 requires its own manifest review; 1.4.3 was published through Winget on October 2, 2026.
+
 ## 1.4.3 — GitHub Release
 
-Version 1.4.3 is the current GitHub release. Its Winget manifest will be submitted separately after the pending 1.4.2 review.
+Version 1.4.3 is the previous GitHub release. Its Winget manifest was merged and published on October 2, 2026.
 
 Explicit tooling inventories now use `task_context` with `mode: "audit"` or `goregraph context <path> --mode audit`. Both context protocols return bounded current sources for Storybook configuration, stories and their literal file references, package scripts, runner configuration, local CI includes, visual-test preparation and documentation. Audits allow multiple source roots, retain the full query for retrieval and report scoped coverage, static links and unknowns. Ordinary production-entrypoint requests retain their existing contract.
 
@@ -10,8 +14,8 @@ The mandatory synthetic acceptance test delivers all seven Storybook evidence gr
 
 The Service Code area now includes a **Tests & Tooling** subview alongside the existing classes and usages. It shows a project-scoped, filterable inventory, static source links, literal A11y/CI declarations and explicit evidence limits. Missing older exports are distinguished from an empty inventory. The four primary dashboard areas and the agent-context workflow remain unchanged. Rebuild the dashboard projection with this version to populate the new view.
 
-Windows login autostart now runs without a visible console window, and a normal
-watcher shutdown no longer appears as an update error.
+Normal watcher shutdown no longer appears as an update error. Version 1.4.4
+adds the Windows Script Host launcher and console-free supervised workers.
 
 ## 1.4.2 — Workspace Explorer
 
@@ -27,10 +31,7 @@ Only dashboard presentation changes: source indexing, reconciliation, agent/MCP 
 Source version: GoreGraph 1.4.4 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
-`v1.4.3` is the current GoreGraph release. Its tag publishes the GitHub archives
-and updates Homebrew and Scoop when configured. Winget submission is disabled
-for this release and remains a separate follow-up after Microsoft's review of
-1.4.2.
+`v1.4.4` is the current GoreGraph release. Its tag publishes GitHub archives and updates Homebrew and Scoop when configured. This release also submits Winget 1.4.4 for separate Microsoft approval.
 
 Release scope: reliable scoped file selection, indexed script extraction,
 cooperative cancellation and progress, build/input identities, last-good-output
@@ -227,7 +228,7 @@ reads and caps bounded reads by the case contract. That diagnostic
 classification does not weaken this release gate, which continues comparing
 the total source-read median.
 
-GoreGraph remains offline, explicit, dependency-free, and watcher-free.
+The historical 1.3.0 benchmark used explicit offline analysis without a watcher. Current versions additionally provide an optional user-enabled watcher.
 
 If a token or structural threshold fails, assisted quality is below baseline,
 the run protocol is violated, or the required external evidence is missing, do
@@ -246,13 +247,7 @@ changes are confined to documentation, tests, and documentation-sync tooling. A
 different runtime candidate requires a fresh matched matrix before entering the
 1.3.0 release flow.
 
-`v1.4.3`, prepared on 2026-09-29, is the current GoreGraph release. Its annotated
-tag publishes checksummed macOS, Linux, and Windows archives through GitHub
-Releases. Homebrew and Scoop publication are configured. The public Winget
-package ID `GoreCode.GoreGraph` is live, but its 1.4.2 update remains under
-Microsoft review and no 1.4.3 manifest is submitted by this release.
-`v1.4.2`, prepared on 2026-09-21, is the previous release.
-`v1.4.1` was prepared on 2026-09-11.
+`v1.4.4`, prepared on 2026-10-12, publishes checksummed macOS, Linux and Windows archives. Homebrew and Scoop are configured; Winget publication follows Microsoft approval of the 1.4.4 manifest. Prior releases: 1.4.3 (2026-09-29), 1.4.2 (2026-09-21), and 1.4.1 (2026-09-11).
 `v1.4.0` was prepared on 2026-08-27.
 
 ## Completed v1.2.0 Milestone
@@ -528,7 +523,7 @@ go build -o /tmp/goregraph ./cmd/goregraph
 Expected version output shape:
 
 ```text
-goregraph 1.4.3
+goregraph 1.4.4
 commit: <commit>
 built: <timestamp>
 go: <go-version>
@@ -539,8 +534,8 @@ schema: 3
 ## Release Flow
 
 This is the flow used for the current release. The exact tagged commit must pass
-every documented release gate and have explicit release approval. The v1.4.3
-release adds tooling evidence and watcher improvements while retaining Schema 3.
+every documented release gate and have explicit release approval. The v1.4.4
+release adds language analysis and process lifecycle improvements while retaining Schema 3.
 
 1. Confirm `main` is clean and pushed.
 2. Confirm README installation instructions are current.
@@ -548,8 +543,8 @@ release adds tooling evidence and watcher improvements while retaining Schema 3.
 4. Create an annotated release tag:
 
    ```bash
-   git tag -a v1.4.3 -m "Release v1.4.3"
-   git push origin v1.4.3
+   git tag -a v1.4.4 -m "Release v1.4.4"
+   git push origin v1.4.4
    ```
 
 5. GitHub Actions runs GoReleaser.
@@ -562,8 +557,8 @@ release adds tooling evidence and watcher improvements while retaining Schema 3.
 7. GoReleaser uploads release archives and `checksums.txt`.
 8. GoReleaser updates the Homebrew tap.
 9. GoReleaser updates the Scoop bucket when `SCOOP_BUCKET_TOKEN` is present.
-10. GoReleaser skips Winget for 1.4.3. A later release can submit a manifest
-    when `PUBLISH_WINGET=true` and `WINGET_TOKEN` is present.
+10. GoReleaser submits the Winget manifest when `PUBLISH_WINGET=true` and
+    `WINGET_TOKEN` is present. Verify the upstream PR; approval is separate.
 11. Verify a downloaded binary:
 
    ```bash
@@ -602,7 +597,7 @@ Stable package identity:
 GoreCode.GoreGraph
 ```
 
-Winget offers only versions accepted by Microsoft. For 1.4.3 use the GitHub release
+Winget offers only versions accepted by Microsoft. For 1.4.4 use the GitHub release
 archive until its manifest is approved. Install command for an approved version:
 
 ```powershell
