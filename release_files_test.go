@@ -157,7 +157,7 @@ func TestMilestone6ReleaseFilesAreConfigured(t *testing.T) {
 	}
 }
 
-func TestReleaseFilesDescribe143AsCurrentRelease(t *testing.T) {
+func TestReleaseFilesDescribe144AsCurrentRelease(t *testing.T) {
 	files := []string{"README.md", "docs/RELEASE.md"}
 	var combined strings.Builder
 	for _, file := range files {
@@ -171,10 +171,10 @@ func TestReleaseFilesDescribe143AsCurrentRelease(t *testing.T) {
 	text := combined.String()
 	for _, want := range []string{
 		"Source version: GoreGraph 1.4.4 with output Schema 3.",
-		"`v1.4.3` is the current GoreGraph release.",
+		"`v1.4.4` is the current GoreGraph release.",
 		"Winget offers only versions accepted by Microsoft.",
 		"PUBLISH_WINGET=true",
-		"git tag -a v1.4.3",
+		"git tag -a v1.4.4",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("release documentation missing %q", want)
@@ -311,7 +311,7 @@ func TestReleaseDocumentationDefinesSourceBackedContextContract(t *testing.T) {
 		"source_unrepresented",
 		"Both raw and effective counters are retained.",
 		"`effective_tokens` is\n`input_tokens - cached_input_tokens + output_tokens`, or uncached input plus\noutput",
-		"offline, explicit, dependency-free, and watcher-free",
+		"Current versions additionally provide an optional user-enabled watcher.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("release notes missing source-backed Context contract %q", want)
@@ -327,7 +327,7 @@ func TestReleaseNotesDescribeEditableDashboardForCurrentRelease(t *testing.T) {
 	text := string(body)
 	for _, want := range []string{
 		"Current Release",
-		"`v1.4.3` is the current GoreGraph release.",
+		"`v1.4.4` is the current GoreGraph release.",
 		"goregraph workspace dashboard edit .",
 		".goregraph-dashboard.json",
 		"API Catalog",

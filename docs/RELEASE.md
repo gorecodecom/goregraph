@@ -247,7 +247,7 @@ changes are confined to documentation, tests, and documentation-sync tooling. A
 different runtime candidate requires a fresh matched matrix before entering the
 1.3.0 release flow.
 
-`v1.4.4`, prepared on 2026-10-12, publishes checksummed macOS, Linux and Windows archives. Homebrew and Scoop are configured; Winget publication follows Microsoft approval of the 1.4.4 manifest. Prior releases: 1.4.3 (2026-09-29), 1.4.2 (2026-09-21), and 1.4.1 (2026-09-11).
+`v1.4.4`, prepared on 2026-10-12, publishes checksummed macOS, Linux and Windows archives. Homebrew and Scoop are configured; Winget publication follows Microsoft approval of the 1.4.4 manifest. Prior releases: v1.4.3 (2026-09-29), v1.4.2 (2026-09-21), and v1.4.1 (2026-09-11).
 `v1.4.0` was prepared on 2026-08-27.
 
 ## Completed v1.2.0 Milestone
