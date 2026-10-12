@@ -9,3 +9,8 @@ goregraph-out/
 .goregraph-journal-*
 .goregraph-stage-*
 .goregraph-backup-*
+
+# Local verification output and generated browser artifacts
+/output/
+/.playwright-mcp/console-*.log
+/.playwright-mcp/page-*.yml

@@ -69,3 +69,6 @@ saved reference, not these newly paired runs. Its model, build, timing and
 protocol must remain attached to that historical result. See the
 [original development follow-up](AGENT-READER-AUTOPAGE-2026-09-11.md).
 Neither figure is a general guarantee, and the two series must not be pooled.
+
+A later direct old/new agent-guide A/B did not establish a useful improvement;
+see the [September 24 direct comparison](AGENT-GUIDE-AB-MEASUREMENT-2026-09-24.md).
