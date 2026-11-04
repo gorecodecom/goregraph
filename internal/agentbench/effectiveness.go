@@ -321,30 +321,38 @@ func requireNonBlankList(field string, values []string) error {
 
 // EffectivenessAttempt records one externally executed task attempt and its measured outcome.
 type EffectivenessAttempt struct {
-	Schema                  int     `json:"schema"`
-	CaseID                  string  `json:"case_id"`
-	Language                string  `json:"language"`
-	Treatment               string  `json:"treatment"`
-	SnapshotID              string  `json:"snapshot_id"`
-	CandidateCommit         string  `json:"candidate_commit"`
-	Repetition              int     `json:"repetition"`
-	Completed               bool    `json:"completed"`
-	Correct                 bool    `json:"correct"`
-	FailureReason           string  `json:"failure_reason,omitempty"`
-	RubricScore             float64 `json:"rubric_score"`
-	DurationMilliseconds    int64   `json:"duration_milliseconds"`
-	ColdStart               bool    `json:"cold_start"`
-	IndexSetupMilliseconds  int64   `json:"index_setup_milliseconds"`
-	IndexUpdateMilliseconds int64   `json:"index_update_milliseconds"`
-	UsageRecorded           bool    `json:"usage_recorded"`
-	InputTokens             int64   `json:"input_tokens"`
-	CachedInputTokens       int64   `json:"cached_input_tokens"`
-	OutputTokens            int64   `json:"output_tokens"`
-	ReasoningOutputTokens   int64   `json:"reasoning_output_tokens"`
-	ToolCalls               int     `json:"tool_calls"`
-	SourceReads             int     `json:"source_reads"`
-	Retries                 int     `json:"retries"`
-	Corrections             int     `json:"corrections"`
+	Schema                  int                    `json:"schema"`
+	CaseID                  string                 `json:"case_id"`
+	Language                string                 `json:"language"`
+	Treatment               string                 `json:"treatment"`
+	SnapshotID              string                 `json:"snapshot_id"`
+	CandidateCommit         string                 `json:"candidate_commit"`
+	Repetition              int                    `json:"repetition"`
+	Completed               bool                   `json:"completed"`
+	Correct                 bool                   `json:"correct"`
+	FailureReason           string                 `json:"failure_reason,omitempty"`
+	RubricScore             float64                `json:"rubric_score"`
+	DurationMilliseconds    int64                  `json:"duration_milliseconds"`
+	ColdStart               bool                   `json:"cold_start"`
+	IndexSetupMilliseconds  int64                  `json:"index_setup_milliseconds"`
+	IndexUpdateMilliseconds int64                  `json:"index_update_milliseconds"`
+	UsageRecorded           bool                   `json:"usage_recorded"`
+	InputTokens             int64                  `json:"input_tokens"`
+	CachedInputTokens       int64                  `json:"cached_input_tokens"`
+	OutputTokens            int64                  `json:"output_tokens"`
+	ReasoningOutputTokens   int64                  `json:"reasoning_output_tokens"`
+	ToolCalls               int                    `json:"tool_calls"`
+	SourceReads             int                    `json:"source_reads"`
+	Retries                 int                    `json:"retries"`
+	Corrections             int                    `json:"corrections"`
+	Navigation              *NavigationObservation `json:"navigation,omitempty"`
+}
+
+// NavigationObservation records evaluator-checked navigation, when available.
+type NavigationObservation struct {
+	FirstResultUseful bool `json:"first_result_useful"`
+	WrongFileOpens    int  `json:"wrong_file_opens"`
+	CallsToEvidence   *int `json:"calls_to_evidence,omitempty"`
 }
 
 // ValidateEffectivenessAttempt validates identities, outcome relationships, and measured counters.
@@ -389,6 +397,14 @@ func ValidateEffectivenessAttempt(attempt EffectivenessAttempt) error {
 	} {
 		if value < 0 {
 			return fmt.Errorf("%s must not be negative", name)
+		}
+	}
+	if navigation := attempt.Navigation; navigation != nil {
+		if navigation.WrongFileOpens < 0 || navigation.WrongFileOpens > attempt.SourceReads {
+			return fmt.Errorf("navigation wrong_file_opens must be between zero and source_reads")
+		}
+		if navigation.CallsToEvidence != nil && (*navigation.CallsToEvidence < 1 || *navigation.CallsToEvidence > attempt.ToolCalls) {
+			return fmt.Errorf("navigation calls_to_evidence must be between one and tool_calls")
 		}
 	}
 	if !attempt.UsageRecorded {
@@ -467,12 +483,13 @@ type TaskPairSummary struct {
 
 // PairedOutcome is the quality and usage state of one treatment in a task pair.
 type PairedOutcome struct {
-	Treatment            string `json:"treatment"`
-	Completed            bool   `json:"completed"`
-	Correct              bool   `json:"correct"`
-	UsageRecorded        bool   `json:"usage_recorded"`
-	DurationMilliseconds int64  `json:"duration_milliseconds"`
-	EffectiveTokens      *int64 `json:"effective_tokens,omitempty"`
+	Treatment            string                 `json:"treatment"`
+	Completed            bool                   `json:"completed"`
+	Correct              bool                   `json:"correct"`
+	UsageRecorded        bool                   `json:"usage_recorded"`
+	DurationMilliseconds int64                  `json:"duration_milliseconds"`
+	EffectiveTokens      *int64                 `json:"effective_tokens,omitempty"`
+	Navigation           *NavigationObservation `json:"navigation,omitempty"`
 }
 
 // EffectivenessGate reports the fixed quality and successful-pair efficiency gates.
@@ -625,6 +642,7 @@ func summarizePair(attempts []EffectivenessAttempt) (TaskPairSummary, error) {
 		outcome := PairedOutcome{
 			Treatment: attempt.Treatment, Completed: attempt.Completed, Correct: attempt.Correct,
 			UsageRecorded: attempt.UsageRecorded, DurationMilliseconds: attempt.DurationMilliseconds,
+			Navigation: attempt.Navigation,
 		}
 		if attempt.UsageRecorded {
 			usage, err := attemptTokenUsage(attempt)

@@ -1,0 +1,5 @@
+module_purposes:
+  - "internal/agent: Repository navigation, source evidence, context packs and scope verification."
+  - "internal/agentbench: Benchmark scoring, answer quality, token usage and navigation measurements."
+  - "internal/scan: Static extraction, service relationships, index generation and dashboard publication."
+  - "internal/watch: Filesystem monitoring, index refresh, process supervision and autostart."

@@ -352,6 +352,22 @@ func attachAdaptiveCandidateEvidence(pack ContextPack, loaded loadedContextIndex
 			identities = append(identities, fallbackSourceIdentity(option.factID, option.section))
 		}
 	}
+	if pack.ProtocolVersion == AdaptiveV2 && !namedOnly && !storybookRequested &&
+		(pack.FallbackReason == ContextFallbackInsufficientRelevance || pack.FallbackReason == ContextFallbackAmbiguousEntrypoint) {
+		for _, module := range contextModuleCandidates(loaded, request.Root, tokens) {
+			next, accepted, err := tryContextPack(pack, request.BudgetTokens, func(candidate *ContextPack) bool {
+				candidate.NavigationCandidates = append(append([]ContextNavigationCandidate(nil), candidate.NavigationCandidates...), module)
+				return true
+			})
+			if err != nil {
+				return ContextPack{}, err
+			}
+			if accepted {
+				pack = next
+				identities = append(identities, module.Path, module.Purpose, strings.Join(module.MatchedTerms, " "))
+			}
+		}
+	}
 	if len(identities) > 0 {
 		pack.ContextID = contextIdentityForProtocol(request.ProtocolVersion, pack.Generation, identities, nil, nil)
 	}

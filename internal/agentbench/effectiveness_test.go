@@ -100,6 +100,29 @@ func TestSummarizeEffectivenessKeepsFailuresAndMissingUsage(t *testing.T) {
 	}
 }
 
+func TestSummarizeEffectivenessPreservesOptionalNavigation(t *testing.T) {
+	ordinary := validEffectivenessAttempt("ordinary", true, true, true)
+	adaptive := validEffectivenessAttempt("adaptive-v2", true, true, true)
+	call := 2
+	adaptive.Navigation = &NavigationObservation{FirstResultUseful: true, WrongFileOpens: 1, CallsToEvidence: &call}
+	report, err := SummarizeEffectiveness([]EffectivenessAttempt{ordinary, adaptive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, outcome := range report.Pairs[0].Outcomes {
+		if outcome.Treatment == adaptive.Treatment && outcome.Navigation != adaptive.Navigation {
+			t.Fatalf("navigation observation lost: %+v", outcome)
+		}
+		if outcome.Treatment == ordinary.Treatment && outcome.Navigation != nil {
+			t.Fatalf("missing observation treated as measured: %+v", outcome)
+		}
+	}
+	call = adaptive.ToolCalls + 1
+	if err := ValidateEffectivenessAttempt(adaptive); err == nil {
+		t.Fatal("accepted evidence after the final tool call")
+	}
+}
+
 func TestSummarizeEffectivenessCountsCompletedIncorrectAttemptAsFailure(t *testing.T) {
 	attempt := validEffectivenessAttempt("ordinary", true, false, true)
 	attempt.FailureReason = "changed the wrong route"

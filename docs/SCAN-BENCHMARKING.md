@@ -126,6 +126,34 @@ already generated output and use the read-only command under test, such as
 output snapshot ID and bytes read so different candidates consume identical
 artifacts.
 
+Measure the agent index loader separately against a stable, already generated
+project or workspace index:
+
+```sh
+GOREGRAPH_BENCH_INDEX_ROOT=/path/to/root go test ./internal/agent -run '^$' \
+  -bench '^BenchmarkContextIndexLoad$' -benchmem -count=5
+```
+
+This reports index size as bytes processed per operation, plus loader time and
+heap allocations. It does not measure ranking, peak process memory or Codex
+tokens. Pair it with the context measurement below before choosing between
+generation-scoped caching and selective storage reads.
+
+A November 2026 macOS arm64 sample with an Apple M4 Pro and an existing
+99,945,179-byte workspace index took 210–213 ms per load and allocated about
+389 MB per operation across three runs of three iterations. This identifies
+full-index decoding as a cost worth comparing against selective reads. The
+sample does not establish SQLite performance or a reduction in task latency.
+
+A disposable Python/SQLite probe on the same snapshot selected one indexed
+file's 65 facts and their 98 inbound or outbound edges. Both paths returned
+identical records. The median of five lookups was 352 ms for full JSON parsing
+and filtering and 0.73 ms for the indexed SQL query, including connection and
+payload decoding. The SQLite prototype took about 32 seconds to populate and
+occupied 137 MB. This compares storage access for one exact query. A migration
+decision still needs a Go prototype that preserves Context Pack ranking,
+freshness checks and workspace scope, then measures complete tasks and updates.
+
 ### Context command
 
 Use one fixed query, token budget, and file limit against the same generated

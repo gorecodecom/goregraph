@@ -1535,7 +1535,9 @@ func TestBuildContextLoadsDetectedParentWorkspaceBeforeProject(t *testing.T) {
 	if err := os.MkdirAll(project, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeContextIndexAt(t, filepath.Join(workspace, ".goregraph-workspace", "agent", "context-index.json"), contextIndexWithFact("workspace", "parent workspace route"))
+	workspaceIndex := contextIndexWithFact("workspace", "parent workspace route")
+	workspaceIndex.Facts[0].Project = "services/users"
+	writeContextIndexAt(t, filepath.Join(workspace, ".goregraph-workspace", "agent", "context-index.json"), workspaceIndex)
 	writeContextIndexAt(t, filepath.Join(project, "goregraph-out", "agent", "context-index.json"), contextIndexWithFact("project", "project route"))
 
 	pack, err := BuildContext(ContextRequest{Root: project, Query: "parent workspace route"})

@@ -32,6 +32,10 @@ func buildReviewContext(loaded loadedContextIndex, request ContextRequest) (Cont
 	if err != nil {
 		return ContextPack{}, err
 	}
+	loaded.ScopeRoot, err = pathutil.Resolve(loaded.ScopeRoot)
+	if err != nil {
+		return ContextPack{}, err
+	}
 	var facts []scan.AgentContextFactRecord
 	for _, fact := range loaded.Index.Facts {
 		if auditSourceWithinRoot(loaded, scan.AgentAuditSource{Project: fact.Project, File: fact.File}, root) {

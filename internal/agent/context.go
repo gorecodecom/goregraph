@@ -192,6 +192,8 @@ type ContextPack struct {
 	RetryAllowed           bool                                `json:"retry_allowed"`
 	RetryAnchors           []string                            `json:"retry_anchors,omitempty"`
 	VerificationRequests   []ContextVerificationRequest        `json:"verification_requests,omitempty"`
+	NavigationCandidates   []ContextNavigationCandidate        `json:"navigation_candidates,omitempty"`
+	NextRead               *ReadSourceRequest                  `json:"next_read,omitempty"`
 
 	selectedSourceFactIDs []string
 	selectedFactIDs       []string
@@ -252,7 +254,11 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 			return ContextPack{}, fmt.Errorf("selected semantic source/configuration inputs changed; compiler snapshot requires an explicit new export")
 		}
 	}
-	return attachContextCallDiagnostics(pack, loaded)
+	pack, err = attachContextCallDiagnostics(pack, loaded)
+	if err != nil {
+		return ContextPack{}, err
+	}
+	return attachContextNextRead(pack, loaded, request)
 }
 
 func buildProductionContext(loaded loadedContextIndex, request ContextRequest) (ContextPack, error) {

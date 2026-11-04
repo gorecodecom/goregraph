@@ -276,6 +276,16 @@ Existing indexed siblings receive `workspace-context.md`, `workspace-contract-ma
 
 Markdown reports are human-readable and deterministic, but not intended as strict machine APIs.
 
+## Adaptive navigation metadata
+
+Schema 3 context responses may include `navigation_candidates` in normal
+`adaptive-v2` mode. Each row has a request-root-relative `path`, an authored
+`purpose` and `matched_terms`. These rows provide navigation metadata only.
+Optional `next_read` uses the existing `goregraph read` request shape and
+includes only exact unseen ranges already named in `verification_requests`.
+Paths are relative to the original context request root. Both fields are
+bounded by the existing context budget.
+
 ## Confidence Values
 
 GoreGraph confidence values are static-analysis labels, not runtime proof:

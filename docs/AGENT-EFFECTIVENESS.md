@@ -45,6 +45,15 @@ effective_tokens = input_tokens - cached_input_tokens + output_tokens
 
 ## Pairing and gates
 
+An attempt can include a `navigation` observation evaluated against the task's
+source rubric. Record `first_result_useful` when the first tool result identifies
+a correct, actionable source target. Count irrelevant source-read calls as
+`wrong_file_opens`. Use `calls_to_evidence` for the one-based tool call that first
+delivers a required source passage. Omit that field if no required evidence was
+reached. Omit the whole observation when the attempt was not scored for
+navigation. The paired report keeps these observations alongside the existing
+quality and usage results.
+
 Attempts pair by case ID, language, and repetition. Every treatment in a pair must use the same snapshot, and a treatment can appear only once. The report retains every attempt in completion, failure, duration, and activity denominators. Token aggregates include only attempts with recorded usage and disclose the missing count.
 
 Quality passes only when adaptive-v2 does not reduce the all-attempt completion rate or mean rubric score relative to ordinary workflow and does not increase critical incorrect completed edits. Efficiency is evaluated only on pairs where both ordinary and adaptive-v2 completed correctly. Their paired medians must show at least 25% lower effective tokens and 20% lower end-to-end task duration. The report always accompanies those successful-pair comparisons with all-attempt completion and failure rates, per-case regressions, and uncertainty. Missing treatment or pair evidence produces `not_evaluated`, not a pass.

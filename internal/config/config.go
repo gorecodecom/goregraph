@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,6 +23,13 @@ type Config struct {
 	Workspace               bool
 	WorkspaceRoot           string
 	EditorURLTemplate       string
+	ModulePurposes          []ModulePurpose
+}
+
+// ModulePurpose describes an explicitly configured module for source navigation.
+type ModulePurpose struct {
+	Path        string
+	Description string
 }
 
 func Defaults() Config {
@@ -101,6 +109,10 @@ func applyProjectConfig(cfg *Config, body string) error {
 				cfg.Include = appendUnique(cfg.Include, value)
 			case "exclude":
 				cfg.Exclude = appendUnique(cfg.Exclude, value)
+			case "module_purposes":
+				if err := addModulePurpose(cfg, value); err != nil {
+					return err
+				}
 			default:
 				return fmt.Errorf("list item %q has no supported parent key", value)
 			}
@@ -116,7 +128,7 @@ func applyProjectConfig(cfg *Config, body string) error {
 		value = cleanValue(strings.TrimSpace(value))
 		if value == "" {
 			switch key {
-			case "include", "exclude":
+			case "include", "exclude", "module_purposes":
 				activeList = key
 				continue
 			default:
@@ -176,6 +188,28 @@ func applyProjectConfig(cfg *Config, body string) error {
 		}
 	}
 	return scanner.Err()
+}
+
+func addModulePurpose(cfg *Config, value string) error {
+	directory, description, ok := strings.Cut(value, ": ")
+	directory = strings.TrimSpace(directory)
+	description = strings.TrimSpace(description)
+	if !ok || directory == "." || directory == ".." || strings.HasPrefix(directory, "../") ||
+		path.IsAbs(directory) || path.Clean(directory) != directory ||
+		strings.ContainsAny(directory, ":\\\x00") || len(directory) > 160 ||
+		description == "" || len(description) > 240 {
+		return fmt.Errorf("module_purposes requires a relative directory and a description of up to 240 bytes")
+	}
+	for _, purpose := range cfg.ModulePurposes {
+		if purpose.Path == directory {
+			return fmt.Errorf("module_purposes contains a duplicate directory")
+		}
+	}
+	if len(cfg.ModulePurposes) == 32 {
+		return fmt.Errorf("module_purposes accepts up to 32 directories")
+	}
+	cfg.ModulePurposes = append(cfg.ModulePurposes, ModulePurpose{Path: directory, Description: description})
+	return nil
 }
 
 func validateOutputDir(value string) error {

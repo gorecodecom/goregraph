@@ -1802,6 +1802,34 @@ Important behavior:
 
 All commands that read generated output respect `goregraph.yml` when present.
 
+### Module purposes and follow-up reads
+
+Add short, reviewed descriptions to the `goregraph.yml` in the directory used
+as the context request root:
+
+```yaml
+module_purposes:
+  - "internal/orders: Order retention, disposal and customer notification."
+  - "internal/billing: Invoice calculation and payment reconciliation."
+```
+
+Use up to 32 unique, root-relative directories and descriptions of up to 240
+bytes. Write descriptions in the language normally used for requests and keep
+them suitable for inclusion in agent output. The descriptions are read from
+the request root and can be edited without regenerating the index. The
+directory must already contain indexed production sources.
+
+In normal `adaptive-v2` mode, when the entrypoint is ambiguous or has weak
+relevance, `navigation_candidates` can show up to three directories and their
+matching terms. These are authored search hints for permitted source fallback.
+The source coverage and confidence still come from code evidence.
+
+If the response includes `next_read`, pass that JSON object to
+`goregraph read <same-root> --request '<next_read JSON>'` when the listed
+verification ranges are material. It contains only exact in-scope ranges from
+`verification_requests` and relevant receipts. Requests that did not fit or
+could not be prepared remain subject to the original verification instructions.
+
 Supported example:
 
 ```yaml

@@ -54,6 +54,10 @@ Local 1.4.1 testing and rollback are documented in
 
 ## 1.4.5 — Unreleased
 
+Adaptive context can suggest indexed directories from opt-in, human-authored
+module purposes. It explains the matched terms and can prepare a read request
+for exact missing evidence. See [agent navigation](COMMANDS.md#module-purposes-and-follow-up-reads).
+
 Use `goregraph context <project-root> --mode review --query "HTTP routes and authentication; Git branch scan and checkout"` to gather source candidates for independent review topics. The response shares the existing budget across topics, stays within the requested root, and reports evidence gaps. The same mode is available through MCP `task_context`.
 
 ## 1.4.4 — GitHub Release

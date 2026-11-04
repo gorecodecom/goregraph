@@ -46,6 +46,22 @@ func TestLoadEditorURLTemplate(t *testing.T) {
 	}
 }
 
+func TestModulePurposesRejectUnsafeOrDuplicateDirectories(t *testing.T) {
+	for _, value := range []string{
+		"../outside: Retention policy",
+		"/absolute: Retention policy",
+		"C:/absolute: Retention policy",
+		"orders/../billing: Retention policy",
+		"orders: ",
+		"orders: Retention policy\"\n  - \"orders: Disposal policy",
+	} {
+		cfg := Defaults()
+		if err := applyProjectConfig(&cfg, "module_purposes:\n  - \""+value+"\"\n"); err == nil {
+			t.Errorf("accepted invalid module purpose %q", value)
+		}
+	}
+}
+
 func TestLoadUsesDefaultsWhenProjectConfigIsMissing(t *testing.T) {
 	dir := t.TempDir()
 

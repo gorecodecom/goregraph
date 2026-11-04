@@ -17,6 +17,7 @@ type loadedContextIndex struct {
 	ReviewRoot     string
 	Workspace      bool
 	Health         scan.ProjectionHealth
+	ModulePurposes []config.ModulePurpose
 	sourceSearchID string
 }
 
@@ -127,7 +128,7 @@ func loadContextIndex(request ContextRequest) (loadedContextIndex, error) {
 		}
 		loaded := loadedContextIndex{
 			Index: index, Path: candidate.Path, ScopeRoot: candidate.ScopeRoot, Workspace: candidate.Workspace,
-			Health: loadContextProjectionHealth(candidate.Path),
+			Health: loadContextProjectionHealth(candidate.Path), ModulePurposes: cfg.ModulePurposes,
 		}
 		return loaded, nil
 	}
