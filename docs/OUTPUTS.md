@@ -1,7 +1,7 @@
 # GoreGraph Output Contract
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.4 with output Schema 3.
+Source version: GoreGraph 1.4.5 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 ## Build Targets and Extraction

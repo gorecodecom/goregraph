@@ -2539,7 +2539,8 @@ func resolveSourcePath(loaded loadedContextIndex, candidate sourceCandidate) (st
 	if err != nil {
 		return "", fmt.Errorf("source file is unreadable: %w", err)
 	}
-	if !pathIsWithin(resolvedProjectRoot, resolvedCandidate) {
+	if !pathIsWithin(resolvedProjectRoot, resolvedCandidate) ||
+		(loaded.ReviewRoot != "" && !pathIsWithin(loaded.ReviewRoot, resolvedCandidate)) {
 		return "", fmt.Errorf("source path is unsafe")
 	}
 

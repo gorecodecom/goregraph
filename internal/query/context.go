@@ -54,6 +54,12 @@ func RenderContextMarkdown(pack agent.ContextPack) string {
 		"",
 		"Query: " + contextInline(pack.Query),
 	}
+	if len(pack.Review) > 0 {
+		lines = append(lines, "Mode: review")
+		for _, topic := range pack.Review {
+			lines = append(lines, fmt.Sprintf("- %s: source sections %v. %s", contextInline(topic.Topic), topic.Sections, contextInline(topic.Gap)))
+		}
+	}
 	if pack.Audit != nil {
 		lines = append(lines, "Mode: audit", "Audit scope: "+contextInline(pack.Audit.Scope), "Execution evidence: "+contextInline(pack.Audit.Execution))
 		for _, area := range pack.Audit.Areas {

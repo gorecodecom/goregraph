@@ -1368,13 +1368,14 @@ func emptyCLI(value string) string {
 
 func runContext(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && isHelp(args[0]) {
-		fmt.Fprint(stdout, `Usage: goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12] [--mode audit] [--format markdown|json] [--previous-context-id <id>]
+		fmt.Fprint(stdout, `Usage: goregraph context <path> --query <task> [--budget-tokens 4000] [--max-files 12] [--mode audit|review] [--format markdown|json] [--previous-context-id <id>]
 
 Builds one deterministic, budgeted Context Pack from existing generated output.
 Budget tokens: 256-6000. Max files: 1-20.
 Protocol: --protocol strict-v1 (default) or adaptive-v2 (bounded verification/fallback).
 
 Audit mode: --mode audit permits multiple tooling sources and reports scoped coverage.
+Review mode: --mode review selects indexed candidates per semicolon-separated topic within the requested root.
 Use --max-files 20 for broad audits; runtime execution and repository-wide absence remain unproven.
 
 `+agentguide.AuditInstruction+`
@@ -1764,6 +1765,16 @@ func printProjectionSummaryUnlocked(stdout io.Writer, target scan.BuildTarget, m
 		fmt.Fprintln(stdout, "Preserved projections: none")
 	} else {
 		fmt.Fprintf(stdout, "Preserved projections: %s\n", strings.Join(preserved, ", "))
+	}
+	if target.IncludesDashboard() && manifest.Dashboard.Complete && !manifest.Dashboard.Stale {
+		name, next := "report.md", "Open the report to see indexed files, symbols, and analysis limits."
+		if manifest.Scope == "workspace" {
+			name, next = "workspace-map.html", "Open the dashboard, select a project, then go to Service Code to find a symbol and its usages."
+		}
+		path := filepath.Join(filepath.Dir(manifestPath), "dashboard", name)
+		if regularFileExists(path) {
+			fmt.Fprintf(stdout, "Dashboard: %s\nNext: %s\n", path, next)
+		}
 	}
 	return nil
 }

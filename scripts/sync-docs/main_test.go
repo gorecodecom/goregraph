@@ -133,7 +133,7 @@ func TestGeneratedFactsDescribeImplementedRuntimeDepth(t *testing.T) {
 	}
 
 	currentContract := renderCurrentContract()
-	for _, want := range []string{"Source version", "1.4.4", "Schema 3"} {
+	for _, want := range []string{"Source version", "1.4.5", "Schema 3"} {
 		if !strings.Contains(currentContract, want) {
 			t.Fatalf("current contract is missing %q: %s", want, currentContract)
 		}

@@ -110,14 +110,14 @@ const taskContextRuntimeInstruction = "Optional watcher metadata describes obser
 func taskContextTool() map[string]any {
 	return map[string]any{
 		"name":        "task_context",
-		"description": "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Call it once with a focused query containing the caller's problem statement and requested evidence scope. Preserve domain language and identifiers; exclude workspace setup, tool policy, safety constraints, and output formatting, and never add inferred repository or component responsibilities. A missing future call, route, or symbol required by the fix is evidence of the current gap, not a source-fallback trigger. Treat source_sections as already read: for complete coverage, run no source-reading commands on indexed project files; answer only from source_sections and mark absent details as unknown. For partial or missing coverage, inspect only exact project/path and start_line/end_line ranges in source_omissions; do not inspect outside those ranges or other files, and report pathless or unbounded omissions as uncertainty. Retry only when retry_allowed is true, with one retry_anchor and previous_context_id." + "\n\n" + agentguide.AuditInstruction,
+		"description": agentguide.ReviewInstruction + "\n\n" + "Return one evidence-backed Context Pack with current, line-numbered source for the central coding path. Call it once with a focused query containing the caller's problem statement and requested evidence scope. Preserve domain language and identifiers; exclude workspace setup, tool policy, safety constraints, and output formatting, and never add inferred repository or component responsibilities. A missing future call, route, or symbol required by the fix is evidence of the current gap, not a source-fallback trigger. Treat source_sections as already read: for complete coverage, run no source-reading commands on indexed project files; answer only from source_sections and mark absent details as unknown. For partial or missing coverage, inspect only exact project/path and start_line/end_line ranges in source_omissions; do not inspect outside those ranges or other files, and report pathless or unbounded omissions as uncertainty. Retry only when retry_allowed is true, with one retry_anchor and previous_context_id." + "\n\n" + agentguide.AuditInstruction,
 		"inputSchema": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"required":             []string{"query"},
 			"properties": map[string]any{
 				"root":                map[string]any{"type": "string"},
-				"mode":                map[string]any{"type": "string", "enum": []string{"audit"}, "description": "Optional tooling inventory mode. Multiple source roots are valid; audit coverage is scoped to indexed sources and does not prove activation, execution, or repository-wide absence. Omit for the unchanged production-entrypoint workflow."},
+				"mode":                map[string]any{"type": "string", "enum": []string{"audit", "review"}, "description": "Use audit for tooling inventories or review for semicolon-separated evidence topics within the requested root. Omit for focused production questions."},
 				"query":               map[string]any{"type": "string", "minLength": 1},
 				"budget_tokens":       map[string]any{"type": "integer", "minimum": agent.MinContextBudgetTokens, "maximum": agent.MaxContextBudgetTokens, "default": agent.DefaultContextBudgetTokens, "description": "Optional response budget. Omit for normal tasks; use the documented integer bounds only when the caller requests a different budget."},
 				"max_files":           map[string]any{"type": "integer", "minimum": agent.MinContextMaxFiles, "maximum": agent.MaxContextMaxFiles, "default": agent.DefaultContextMaxFiles, "description": "Optional context file limit. Omit for normal tasks; this is not an instruction to retrieve every project file."},
@@ -232,11 +232,11 @@ func instructionsForProtocol(protocol string) string {
 	if protocol == agentguide.AdaptiveV2 {
 		instruction += "\n\nReader results may provide next_request: a ready-to-use batched goregraph read request with independent find cursors and cumulative receipts. Use it only when remaining matches are material and already authorized; do not exhaust pages merely because they exist. Copy files[].citations for exact newly delivered source ranges; keep disjoint citations separate and never extend them across unread gaps."
 	}
-	return instruction + "\n\n" + agentguide.AuditInstruction
+	return agentguide.ReviewInstruction + "\n\n" + instruction + "\n\n" + agentguide.AuditInstruction
 }
 
 func taskContextParameterInstruction() string {
-	return fmt.Sprintf("Make task_context the first investigative action, before optional skills or source reads. For normal tasks pass only root and query; omit budget_tokens and max_files. Defaults: budget_tokens=%d, max_files=%d. If explicitly needed, budget_tokens must be an integer from %d to %d and max_files from %d to %d. Do not guess larger values to cover more concerns: use the returned verification and fallback guidance for missing evidence.",
+	return fmt.Sprintf("Make task_context the first investigative action, before optional skills or source reads. For focused code questions pass only root and query. For a broad review or tooling inventory also pass the corresponding mode. Omit budget_tokens and max_files by default. Defaults: budget_tokens=%d, max_files=%d. If explicitly needed, budget_tokens must be an integer from %d to %d and max_files from %d to %d. Do not guess larger values to cover more concerns: use the returned verification and fallback guidance for missing evidence.",
 		agent.DefaultContextBudgetTokens, agent.DefaultContextMaxFiles,
 		agent.MinContextBudgetTokens, agent.MaxContextBudgetTokens,
 		agent.MinContextMaxFiles, agent.MaxContextMaxFiles)
@@ -294,8 +294,8 @@ func callTaskContextWithProtocol(args map[string]any, protocol string) (string, 
 	if value, present := args["mode"]; present {
 		var valid bool
 		mode, valid = value.(string)
-		if !valid || mode != "audit" {
-			return "", fmt.Errorf("task_context mode must be audit")
+		if !valid || (mode != "audit" && mode != "review") {
+			return "", fmt.Errorf("task_context mode must be audit or review")
 		}
 	}
 	pack, err := agent.BuildContext(agent.ContextRequest{

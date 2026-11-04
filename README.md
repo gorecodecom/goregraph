@@ -52,6 +52,10 @@ handling.
 Local 1.4.1 testing and rollback are documented in
 [`docs/LOCAL-1.4.1.md`](docs/LOCAL-1.4.1.md).
 
+## 1.4.5 — Unreleased
+
+Use `goregraph context <project-root> --mode review --query "HTTP routes and authentication; Git branch scan and checkout"` to gather source candidates for independent review topics. The response shares the existing budget across topics, stays within the requested root, and reports evidence gaps. The same mode is available through MCP `task_context`.
+
 ## 1.4.4 — GitHub Release
 
 Windows watcher autostart uses Task Scheduler and the built-in Windows Script
@@ -119,7 +123,7 @@ Only dashboard presentation changes: source indexing, reconciliation, agent/MCP 
 ## Installation
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.4 with output Schema 3.
+Source version: GoreGraph 1.4.5 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 `v1.4.4` is the current GoreGraph release. Package-manager indexes can take some
@@ -328,6 +332,45 @@ After extracting an archive, follow the manual installation steps above so the
 executable is available from every project directory.
 
 ## Quick Start
+
+**See who calls a function in five minutes.** From a clone or source archive,
+open the [small example workspace](examples/first-look/README.md) and follow its
+build and open commands. No AI integration is required. Open the
+workspace dashboard, select a project, search for a symbol, then choose **Used by**
+(*Wird verwendet von*) to see source files and line numbers. **Data quality**
+(*Datenqualität*) shows the snapshot date and coverage by language and capability.
+An empty list is only a statement about the index; the view distinguishes filtered
+results, no indexed evidence, and limited analysis.
+
+For reports on a single project, run `goregraph build dashboard . --no-workspace
+--no-update-gitignore` from that project and open the printed report path.
+Use a workspace build for the interactive dashboard on your own code.
+
+### Review several questions at once
+
+Use the exact project root and separate the evidence topics with semicolons:
+
+```sh
+goregraph context . --mode review --query "HTTP route registration and authentication; Git checkout and working tree changes"
+```
+
+With GoreGraph MCP, call `task_context` on that same root with `mode: "review"`
+and the same `query`. Check each topic's source references and evidence gaps.
+For coding agents, add a rule to your project instructions: use review mode
+for broad reviews with independent topics; omit `mode` for focused code questions.
+The review uses the existing index; no separate server or scan is required.
+For indexed Go HTTP routes, it can show current registration lines and locally
+named handlers or wrappers. These excerpts do not prove effective authorization.
+Focused queries in a workspace project omit unrelated neighboring projects;
+explicit project names and resolved links can still bring in relevant evidence.
+Codex can choose the mode from the tool description once its MCP process runs
+GoreGraph 1.4.5 or newer. To try a local checkout with Go installed, run
+`go install ./cmd/goregraph`. If the existing MCP command is `goregraph` with
+argument `mcp`, keep that configuration and restart the Codex client to reload
+the executable and tool schema. Check `goregraph version` to confirm the version
+on your PATH.
+
+### Choose an output
 
 Choose the integration depth and projection for the consumer that needs it:
 

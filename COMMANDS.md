@@ -647,7 +647,9 @@ effective activation, successful execution or repository-wide absence. Use
 `--max-files 20 --budget-tokens 6000` for broad audits. Read exact bounded
 `source_omissions`; if only `source_unrepresented` remains, narrow the request
 or increase the supported budget. See [tooling audits](docs/TOOLING-AUDITS.md).
-The production-workflow rules below apply when `--mode audit` is omitted.
+For a broad source review, pass the project root and `--mode review` (MCP: `mode: "review"`). Separate one to eight evidence topics with semicolons. The `review` array maps each topic to one-based `source_sections` references and explains remaining gaps. Candidates are confined to the requested root and share the file and token limits. This mode does not verify runtime behavior or complete repository coverage.
+
+The production-workflow rules below apply when no mode is specified.
 
 
 Returns the bounded Context Pack for the normal AI workflow. It reads only the

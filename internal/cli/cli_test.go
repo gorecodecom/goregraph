@@ -1411,7 +1411,7 @@ func TestRunVersionPrintsBuildMetadata(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	for _, want := range []string{
-		"goregraph 1.4.4",
+		"goregraph 1.4.5",
 		"commit:",
 		"built:",
 		"go:",
@@ -2823,5 +2823,36 @@ func TestContextCLIAuditModePreservesFullQuery(t *testing.T) {
 	stderr.Reset()
 	if code := Run([]string{"context", root, "--mode", "typo", "--query", "Storybook"}, &stdout, &stderr); code == 0 || !strings.Contains(stderr.String(), "mode") {
 		t.Fatalf("accepted unknown mode: %s", stderr.String())
+	}
+}
+
+func TestProjectionSummaryGuidesFirstDashboardOpen(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "dashboard", "workspace-map.html")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("<html></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, "manifest.json")
+	manifest := scan.OutputManifest{Scope: "workspace", Dashboard: scan.ProjectionStatus{Complete: true}}
+	for _, stale := range []bool{false, true} {
+		manifest.Dashboard.Stale = stale
+		body, err := json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manifestPath, body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var stdout bytes.Buffer
+		if err := printProjectionSummaryUnlocked(&stdout, scan.BuildTargetDashboard, manifestPath); err != nil {
+			t.Fatal(err)
+		}
+		got := stdout.String()
+		if strings.Contains(got, "Dashboard: "+path) != !stale || strings.Contains(got, "Service Code") != !stale {
+			t.Fatalf("stale=%v: unexpected dashboard guidance: %s", stale, got)
+		}
 	}
 }

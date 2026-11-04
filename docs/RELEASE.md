@@ -1,5 +1,9 @@
 # GoreGraph Release Checklist
 
+## 1.4.5 — Unreleased
+
+Add project-scoped review context with source candidates and gaps per topic, including indexed Go route registrations and locally named handlers. Focused context excludes unrelated projects while retaining explicit project references and resolved links. Dashboard builds print the output path and next step. Service Code distinguishes filtered results from missing evidence and limited analysis. The first-look example demonstrates navigation from a function to its callers. Schema remains 3.
+
 ## 1.4.4 — GitHub Release
 
 Version 1.4.4 retains Schema 3 and adds language/asset analysis, scoped context improvements, supervised process updates and Windows console fixes. See [release notes](RELEASE-1.4.4.md) for features, migration and limitations. Winget 1.4.4 requires its own manifest review; 1.4.3 was published through Winget on October 2, 2026.
@@ -28,7 +32,7 @@ Only dashboard presentation changes: source indexing, reconciliation, agent/MCP 
 ## Current Release Status
 
 <!-- goregraph:generated current-contract start -->
-Source version: GoreGraph 1.4.4 with output Schema 3.
+Source version: GoreGraph 1.4.5 with output Schema 3.
 <!-- goregraph:generated current-contract end -->
 
 `v1.4.4` is the current GoreGraph release. Its tag publishes GitHub archives and updates Homebrew and Scoop when configured. This release also submits Winget 1.4.4 for separate Microsoft approval.

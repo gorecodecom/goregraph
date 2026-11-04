@@ -156,6 +156,7 @@ type ContextPack struct {
 	Watcher                *ContextWatcher               `json:"watcher,omitempty"`
 	CallDiagnostics        []scan.GoCallDiagnosticRecord `json:"call_diagnostics,omitempty"`
 	Mode                   string                        `json:"mode,omitempty"`
+	Review                 []ContextReviewTopic          `json:"review,omitempty"`
 	Audit                  *ContextAudit                 `json:"audit,omitempty"`
 	Schema                 int                           `json:"schema"`
 	Query                  string                        `json:"query"`
@@ -228,6 +229,13 @@ func buildContext(request ContextRequest) (ContextPack, error) {
 	}
 	if request.Mode == "audit" {
 		return buildAuditContext(loaded, request)
+	}
+	if request.Mode == "review" {
+		return buildReviewContext(loaded, request)
+	}
+	loaded, err = scopeProductionIndex(loaded, request)
+	if err != nil {
+		return ContextPack{}, err
 	}
 	pack, err := buildProductionContext(loaded, request)
 	if err != nil {
@@ -906,8 +914,8 @@ func contextByteBudget(tokens int) int {
 }
 
 func normalizeContextRequest(request ContextRequest) (ContextRequest, error) {
-	if request.Mode != "" && request.Mode != "audit" {
-		return ContextRequest{}, fmt.Errorf("context mode must be audit or omitted")
+	if request.Mode != "" && request.Mode != "audit" && request.Mode != "review" {
+		return ContextRequest{}, fmt.Errorf("context mode must be audit, review, or omitted")
 	}
 	if strings.TrimSpace(request.Root) == "" {
 		request.Root = "."

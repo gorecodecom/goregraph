@@ -14,6 +14,7 @@ type loadedContextIndex struct {
 	Index          scan.AgentContextIndexRecord
 	Path           string
 	ScopeRoot      string
+	ReviewRoot     string
 	Workspace      bool
 	Health         scan.ProjectionHealth
 	sourceSearchID string
