@@ -1643,6 +1643,15 @@ The configured `output` directory is used by `scan`, `report`, `query`, and `exp
 
 Unsupported nested config sections are intentionally rejected for now so configuration mistakes do not silently change scan behavior.
 
+`module_purposes` is optional descriptive metadata for source navigation. Valid
+entries are kept; malformed, unsafe, duplicate, or excess entries are ignored
+with a warning containing the config path and line number. Scan/build/update
+commands continue, and operational settings such as `include`, `exclude`, and
+`output` are still validated normally. Unknown keys remain errors, including
+unknown list headings: check the spelling or use a version that supports the
+configuration. This behavior requires the updated development version; it cannot
+change how an older installed binary parses the same file.
+
 ## Explain Context
 
 ```text

@@ -296,6 +296,7 @@ Build controls: --progress auto|plain|json|off, --file-timeout 5s, --project-tim
 }
 
 func runWorkspaceUpdate(args []string, stdout, stderr io.Writer, execution buildExecution) int {
+	configLoader := newProjectConfigLoader(stderr)
 	root := "."
 	dryRun := false
 	target := scan.BuildTargetAll
@@ -338,7 +339,7 @@ func runWorkspaceUpdate(args []string, stdout, stderr io.Writer, execution build
 		}
 	}
 
-	loaded, err := config.Load(root)
+	loaded, err := configLoader.load(root)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
@@ -352,7 +353,7 @@ func runWorkspaceUpdate(args []string, stdout, stderr io.Writer, execution build
 			return 1
 		}
 		if loaded.UpdateGitignore {
-			if err := migrateWorkspaceIgnores(execution.ctx, root, loaded, stdout); err != nil {
+			if err := migrateWorkspaceIgnores(execution.ctx, root, loaded, stdout, configLoader.load); err != nil {
 				fmt.Fprintf(stderr, "error: updating generated-output ignore rules failed: %v\n", err)
 				return 1
 			}
@@ -383,7 +384,7 @@ func runWorkspaceUpdate(args []string, stdout, stderr io.Writer, execution build
 			if item.Action != scan.WorkspaceUpdateActionBuild {
 				continue
 			}
-			projectConfig, err := config.Load(item.AbsPath)
+			projectConfig, err := configLoader.load(item.AbsPath)
 			if err != nil {
 				return fmt.Errorf("loading %s failed: %w", item.Project, err)
 			}
@@ -976,6 +977,7 @@ func runWorkspaceStatus(args []string, stdout, stderr io.Writer) int {
 }
 
 func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer, execution buildExecution) int {
+	configLoader := newProjectConfigLoader(stderr)
 	root := "."
 	top := 5
 	execute := false
@@ -1018,7 +1020,7 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer, execution 
 		}
 	}
 
-	loaded, err := config.Load(root)
+	loaded, err := configLoader.load(root)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
@@ -1039,7 +1041,7 @@ func runWorkspaceScanMissing(args []string, stdout, stderr io.Writer, execution 
 	printWorkspaceMissingScanPlan(stdout, plan, false)
 	scanned := 0
 	for _, item := range plan.Items {
-		projectCfg, err := config.Load(item.AbsPath)
+		projectCfg, err := configLoader.load(item.AbsPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
 			return 1
@@ -1076,6 +1078,7 @@ func runWorkspaceScanAll(args []string, stdout, stderr io.Writer, execution buil
 }
 
 func runWorkspaceScanAllTarget(args []string, stdout, stderr io.Writer, target scan.BuildTarget, execution buildExecution) int {
+	configLoader := newProjectConfigLoader(stderr)
 	root := "."
 	dryRun := false
 	overrides := config.Defaults()
@@ -1126,7 +1129,7 @@ Workspace detection:
 		}
 	}
 
-	loaded, err := config.Load(root)
+	loaded, err := configLoader.load(root)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
@@ -1154,7 +1157,7 @@ Workspace detection:
 			fmt.Fprintf(stderr, "error: workspace scan canceled: %v\n", err)
 			return 1
 		}
-		projectCfg, err := config.Load(item.AbsPath)
+		projectCfg, err := configLoader.load(item.AbsPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: loading %s failed: %v\n", item.Project, err)
 			failed = append(failed, item.Project)
@@ -1624,6 +1627,7 @@ func runReport(args []string, stdout, stderr io.Writer) int {
 }
 
 func runScan(args []string, stdout, stderr io.Writer, update, allowTarget bool, execution buildExecution) int {
+	configLoader := newProjectConfigLoader(stderr)
 	if len(args) > 0 && isHelp(args[0]) {
 		if update {
 			printUpdateHelp(stdout)
@@ -1687,7 +1691,7 @@ func runScan(args []string, stdout, stderr io.Writer, update, allowTarget bool, 
 		root = "."
 	}
 
-	loaded, err := config.Load(root)
+	loaded, err := configLoader.load(root)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1

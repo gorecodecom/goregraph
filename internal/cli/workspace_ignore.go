@@ -12,7 +12,7 @@ import (
 )
 
 // migrateWorkspaceIgnores runs before snapshot planning, including unchanged projects.
-func migrateWorkspaceIgnores(ctx context.Context, root string, cfg config.Config, stdout io.Writer) error {
+func migrateWorkspaceIgnores(ctx context.Context, root string, cfg config.Config, stdout io.Writer, loadConfig func(string) (config.Config, error)) error {
 	plan, err := scan.WorkspaceProjectScanPlan(root, cfg)
 	if err != nil {
 		return err
@@ -21,7 +21,7 @@ func migrateWorkspaceIgnores(ctx context.Context, root string, cfg config.Config
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		projectConfig, err := config.Load(project.AbsPath)
+		projectConfig, err := loadConfig(project.AbsPath)
 		if err != nil {
 			return err
 		}

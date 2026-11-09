@@ -24,6 +24,14 @@ type Config struct {
 	WorkspaceRoot           string
 	EditorURLTemplate       string
 	ModulePurposes          []ModulePurpose
+	Warnings                []Warning `json:"-"`
+}
+
+// Warning identifies ignored optional metadata without retaining its value.
+type Warning struct {
+	Line    int
+	Key     string
+	Message string
 }
 
 // ModulePurpose describes an explicitly configured module for source navigation.
@@ -96,14 +104,16 @@ func Load(root string) (Config, error) {
 func applyProjectConfig(cfg *Config, body string) error {
 	scanner := bufio.NewScanner(strings.NewReader(body))
 	activeList := ""
+	lineNumber := 0
 	for scanner.Scan() {
+		lineNumber++
 		line := stripComment(scanner.Text())
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "- ") {
-			value := cleanValue(strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+		if strings.HasPrefix(trimmed, "- ") || trimmed == "-" && activeList == "module_purposes" {
+			value := cleanValue(strings.TrimSpace(strings.TrimPrefix(trimmed, "-")))
 			switch activeList {
 			case "include":
 				cfg.Include = appendUnique(cfg.Include, value)
@@ -111,7 +121,7 @@ func applyProjectConfig(cfg *Config, body string) error {
 				cfg.Exclude = appendUnique(cfg.Exclude, value)
 			case "module_purposes":
 				if err := addModulePurpose(cfg, value); err != nil {
-					return err
+					cfg.Warnings = append(cfg.Warnings, Warning{Line: lineNumber, Key: activeList, Message: err.Error() + "; entry ignored"})
 				}
 			default:
 				return fmt.Errorf("list item %q has no supported parent key", value)
@@ -126,6 +136,13 @@ func applyProjectConfig(cfg *Config, body string) error {
 		}
 		key = strings.TrimSpace(key)
 		value = cleanValue(strings.TrimSpace(value))
+		if !supportedProjectKey(key) {
+			return fmt.Errorf("unsupported key %q; check the spelling or upgrade GoreGraph if this configuration requires a newer version", key)
+		}
+		if key == "module_purposes" && value != "" {
+			cfg.Warnings = append(cfg.Warnings, Warning{Line: lineNumber, Key: key, Message: "expected a list of module descriptions; value ignored"})
+			continue
+		}
 		if value == "" {
 			switch key {
 			case "include", "exclude", "module_purposes":
@@ -188,6 +205,15 @@ func applyProjectConfig(cfg *Config, body string) error {
 		}
 	}
 	return scanner.Err()
+}
+
+func supportedProjectKey(key string) bool {
+	switch key {
+	case "version", "include", "exclude", "module_purposes", "output", "max_file_size_kb", "max_asset_file_size_kb", "max_binary_asset_size_kb", "follow_symlinks", "use_gitignore", "update_gitignore", "editor_url_template":
+		return true
+	default:
+		return false
+	}
 }
 
 func addModulePurpose(cfg *Config, value string) error {
